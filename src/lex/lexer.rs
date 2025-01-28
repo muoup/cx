@@ -1,5 +1,5 @@
+use crate::lex::token::Token;
 use std::io::BufRead;
-use crate::lex::token::{OperatorType, Token};
 
 pub struct Lexer<'a> {
     source: &'a str,
@@ -28,7 +28,7 @@ impl Lexer<'_> {
             let next_char = self.peek_char().unwrap();
 
             if let Some(op) = Token::try_op(next_char)
-                        .or_else(|| Token::try_punc(next_char)) {
+                .or_else(|| Token::try_punc(next_char)) {
                 self.consume(pre_iter);
                 self.tokens.push(op);
                 self.current_iter += 1;
@@ -41,6 +41,16 @@ impl Lexer<'_> {
             } else if self.try_next_char(' ') || self.try_next_char('\n') {
                 self.consume(pre_iter);
                 self.last_consume = self.current_iter;
+            } else if self.try_next_char('"') {
+                self.consume(pre_iter);
+                self.current_iter = self.source[self.current_iter..]
+                    .find('"')
+                    .map(|i| i + 1 + self.current_iter)
+                    .unwrap();
+                self.last_consume = self.current_iter;
+                self.tokens.push(Token::StringLiteral(
+                    self.source[pre_iter + 1..self.current_iter - 1].to_string()
+                ));
             } else {
                 self.current_iter += 1;
             }

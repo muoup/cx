@@ -28,7 +28,7 @@ impl Node for Root {
 pub struct FunctionDeclaration {
     pub return_type: KeywordType,
     pub name: String,
-    pub body: Vec<Box<dyn Node>>
+    pub body: Vec<Expression>
 }
 
 impl Node for FunctionDeclaration {
@@ -42,9 +42,15 @@ impl Node for FunctionDeclaration {
 
 #[derive(Debug)]
 pub enum Expression {
+    FunctionCall(Box<Expression>, Vec<Expression>),
     Return(Box<Expression>),
+
+    Identifier(String),
+
+    StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
+    Unit
 }
 
 impl Node for Expression {

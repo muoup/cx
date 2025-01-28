@@ -2,7 +2,7 @@
 pub enum OperatorType {
     Plus, Minus, Multiply, Divide, Modulo,
     Equal, Exclamation, LessThan, GreaterThan,
-    Tilde, Ampersand, Pipe, Caret,
+    Tilde, Ampersand, Pipe, Caret, Semicolon
 }
 
 #[derive(Debug, PartialEq)]
