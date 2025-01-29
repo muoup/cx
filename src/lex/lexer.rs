@@ -38,7 +38,7 @@ impl Lexer<'_> {
                 self.tokens.push(tok);
                 self.current_iter += end + 1;
                 self.last_consume = self.current_iter;
-            } else if self.try_next_char(' ') || self.try_next_char('\n') {
+            } else if self.try_next_char(' ') || self.try_next_whitespace() {
                 self.consume(pre_iter);
                 self.last_consume = self.current_iter;
             } else if self.try_next_char('"') {
@@ -81,6 +81,14 @@ impl Lexer<'_> {
     }
     fn try_next_char(&mut self, c: char) -> bool {
         if self.peek_char() == Some(c) {
+            self.next_char();
+            true
+        } else {
+            false
+        }
+    }
+    fn try_next_whitespace(&mut self) -> bool {
+        if self.peek_char().map(|c| c.is_whitespace()) == Some(true) {
             self.next_char();
             true
         } else {
