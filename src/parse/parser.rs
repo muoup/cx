@@ -1,14 +1,15 @@
 use std::iter::Peekable;
 use std::slice;
 
-use crate::lex::token::Punctuator::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
+use crate::lex::token::PunctuatorType::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, Token};
 use crate::parse::ast::{Expression, FunctionDeclaration, Root, AST};
 use crate::parse::expression::{parse_expression, parse_expressions};
+use crate::parse::val_type::parse_type;
 
 pub(crate) struct TokenIter<'a> {
-    slice: &'a [Token],
-    index: usize,
+    pub(crate) slice: &'a [Token],
+    pub(crate) index: usize,
 }
 
 impl<'a> TokenIter<'_> {
@@ -50,25 +51,31 @@ fn parse_root(toks: &mut TokenIter) -> Option<Root> {
 
 fn parse_fn_declarations(toks: &mut TokenIter) -> Option<Vec<FunctionDeclaration>> {
     let mut fns = Vec::new();
-    fns.push(parse_fn_declaration(toks)?);
+
+    while toks.peek() != None {
+        fns.push(parse_fn_declaration(toks)?);
+    }
+
     Some(fns)
 }
 
 fn parse_fn_declaration(toks: &mut TokenIter) -> Option<FunctionDeclaration> {
-    let return_type = match &toks.next()? {
-        Token::Keyword(keyword) => *keyword,
-        _ => return None
-    };
+    let return_type = parse_type(toks)?;
     let name = match toks.next()? {
         Token::Identifier(name) => name.clone(),
-        _ => return None
+        _ => return panic!("Expected function name")
     };
     assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
+
+    let arguments = parse_expressions(toks, Token::Punctuator(Comma), Token::Punctuator(CloseParen))?;
+    assert!(arguments.iter().all(|arg| matches!(arg, Expression::VariableDeclaration {..})));
+
     assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
     let body = parse_body(toks);
     Some(
         FunctionDeclaration {
             return_type,
+            arguments,
             name,
             body
         }

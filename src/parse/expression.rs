@@ -1,4 +1,4 @@
-use crate::lex::token::Punctuator::{CloseParen, Comma, OpenParen, Semicolon};
+use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, Token};
 use crate::parse::ast::Expression;
 use crate::parse::parser::{parse_body, TokenIter};
@@ -6,12 +6,14 @@ use crate::parse::val_type::parse_type;
 
 pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
     let mut exprs = Vec::new();
+    let mut recent_iter = toks.index;
 
     while let Some(expression) = parse_expression(toks) {
         exprs.push(expression);
 
         if toks.peek() == Some(&&splitter) {
             toks.next();
+            recent_iter = toks.index;
         }
 
         if toks.peek() == Some(&&terminator) {
@@ -19,7 +21,7 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
         }
     }
 
-    None
+    panic!("Expression could not be formed starting at token: {:?}", toks.slice[recent_iter]);
 }
 
 pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
@@ -86,7 +88,7 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
                 _ => return None
             };
 
-            if toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
+            if matches!(toks.peek(), Some(&Token::Punctuator(_))) {
                 Some(Expression::VariableDeclaration { type_, name })
             } else {
                 unimplemented!("Variable assignment");
@@ -98,7 +100,7 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
 fn parse_identifier_expression(toks: &mut TokenIter) -> Option<Expression> {
     let identifier = match toks.next()? {
         Token::Identifier(identifier) => identifier.clone(),
-        _ => return None
+        _ => panic!("Called parse_identifier_expression with non-identifier")
     };
 
     match toks.next()? {
@@ -113,6 +115,9 @@ fn parse_identifier_expression(toks: &mut TokenIter) -> Option<Expression> {
                 }
             )
         },
-        _ => None
+        _ => {
+            toks.back();
+            Some(Expression::Identifier(identifier.clone()))
+        }
     }
 }

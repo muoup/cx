@@ -27,14 +27,17 @@ impl Node for Root {
 
 #[derive(Debug)]
 pub struct FunctionDeclaration {
-    pub return_type: KeywordType,
+    pub return_type: ValType,
+    pub arguments: Vec<Expression>,
+
     pub name: String,
     pub body: Vec<Expression>
 }
 
 impl Node for FunctionDeclaration {
     fn print(&self, indent: usize) {
-        println!("{:indent$}{:?} {}", "", self.return_type, self.name, indent = indent);
+        println!("{:indent$}Function: {} -> {:?}", "", self.name, self.return_type, indent = indent);
+        println!("{:indent$}Args: {:?}", "", self.arguments, indent = indent + 2);
         for stmt in &self.body {
             stmt.print(indent + 4);
         }
@@ -63,6 +66,10 @@ pub enum Expression {
         name: String
     },
 
+    VariableReference {
+        name: String
+    },
+
     StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
@@ -78,6 +85,9 @@ impl Node for Expression {
                 println!("{:indent$}then", "", indent = indent);
                 for stmt in then {
                     stmt.print(indent + 4);
+                }
+                if else_.len() == 0 {
+                    return;
                 }
                 println!("{:indent$}else", "", indent = indent);
                 for stmt in else_ {

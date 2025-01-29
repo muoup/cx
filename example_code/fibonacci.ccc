@@ -1,9 +1,7 @@
-void fib() {
-    int x;
-
-    if (1) {
-        printf("1");
-    } else {
-        printf("2");
+int fib(int n) {
+    if (n) {
+        return fib(n);
     }
+
+    return n;
 }

@@ -1,8 +1,10 @@
-use crate::lex::token::{KeywordType, OperatorType, Token};
+use std::fmt::{Debug, Formatter};
+use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::parser::TokenIter;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ValType {
+    Unit,
     Integer {
         size: u8,
         signed: bool
@@ -18,6 +20,27 @@ pub enum ValType {
     Array(Box<ValType>, usize)
 }
 
+impl Debug for ValType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValType::Unit => write!(f, "void"),
+            ValType::Integer { size, signed } => {
+                if *signed {
+                    write!(f, "u")
+                } else {
+                    write!(f, "i")
+                }.expect("Cannot write signed");
+
+                write!(f, "{}", size * 8)
+            },
+            ValType::Float { size } => write!(f, "f{}", size * 8),
+            ValType::Struct { name } => write!(f, "struct {}", name),
+            ValType::Pointer(inner) => write!(f, "{:?}*", inner),
+            ValType::Array(inner, size) => write!(f, "{:?}[{}]", inner, size)
+        }
+    }
+}
+
 pub fn parse_type(toks: &mut TokenIter) -> Option<ValType> {
     let mut base = match toks.next()? {
         Token::Keyword(keyword) => match keyword {
@@ -30,6 +53,8 @@ pub fn parse_type(toks: &mut TokenIter) -> Option<ValType> {
             KeywordType::Float      => ValType::Float   { size: 4 },
             KeywordType::Double     => ValType::Float   { size: 8 },
 
+            KeywordType::Void       => ValType::Unit,
+
             KeywordType::Unsigned => {
                 match parse_type(toks).unwrap() {
                     ValType::Integer { size, signed: true } => ValType::Integer { size, signed: true },
@@ -38,7 +63,7 @@ pub fn parse_type(toks: &mut TokenIter) -> Option<ValType> {
                 }
             },
 
-            _ => panic!("Expected type")
+            keyword => panic!("Expected type got {:?}", keyword)
         },
         Token::Identifier(name) => ValType::Struct { name: name.clone() },
 
@@ -48,6 +73,16 @@ pub fn parse_type(toks: &mut TokenIter) -> Option<ValType> {
     while let Some(&Token::Operator(OperatorType::Multiply)) = toks.peek() {
         toks.next();
         base = ValType::Pointer(Box::new(base));
+    }
+
+    while let Some(&Token::Punctuator(PunctuatorType::OpenBracket)) = toks.peek() {
+        toks.next();
+        if let Token::IntLiteral(size) = *toks.next().unwrap() {
+            assert_eq!(toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseBracket)));
+            base = ValType::Array(Box::new(base), size as usize);
+        } else {
+            base = ValType::Pointer(Box::new(base));
+        }
     }
 
     Some(base)
