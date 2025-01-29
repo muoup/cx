@@ -18,8 +18,9 @@ fn main() {
     lexer.generate_tokens();
 
     let ast = parse::parser::parse_ast(&lexer.tokens);
+    ast.map(|ast| ast.root.print(0));
 
-    if let Some(ast) = ast {
-        codegen::codegen::ast_codegen(&ast);
-    }
+    // if let Some(ast) = ast {
+    //     codegen::codegen::ast_codegen(&ast);
+    // }
 }
