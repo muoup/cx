@@ -17,6 +17,10 @@ fn main() {
     let mut lexer = lex::lexer::Lexer::new(source.as_str());
     lexer.generate_tokens();
 
+    // lexer.tokens.iter().for_each(|token| {
+    //     println!("{:?}", token);
+    // });
+
     let ast = parse::parser::parse_ast(&lexer.tokens);
     ast.map(|ast| ast.root.print(0));
 

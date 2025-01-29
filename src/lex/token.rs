@@ -24,8 +24,10 @@ pub enum KeywordType {
 
     Struct, Enum, Union,
 
-    Int, Float, Char, Void, Auto,
+    Void, Bool, Char, Short, Int, Long, Auto,
+    Float, Double,
     Unsigned, Signed,
+
     Static, Extern, Const, Register,
     Volatile, Inline, Restrict,
 

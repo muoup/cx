@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use crate::lex::token::KeywordType;
+use crate::parse::val_type::ValType;
 
 pub trait Node: Debug {
     fn print(&self, indent: usize) where Self: Debug {
@@ -42,10 +43,25 @@ impl Node for FunctionDeclaration {
 
 #[derive(Debug)]
 pub enum Expression {
-    FunctionCall(Box<Expression>, Vec<Expression>),
+    FunctionCall {
+        name: Box<Expression>,
+        args: Vec<Expression>
+    },
     Return(Box<Expression>),
-
     Identifier(String),
+
+    Continue, Break,
+
+    If {
+        condition: Box<Expression>,
+        then: Vec<Expression>,
+        else_: Vec<Expression>
+    },
+
+    VariableDeclaration {
+        type_: ValType,
+        name: String
+    },
 
     StringLiteral(String),
     IntLiteral(i64),
@@ -55,6 +71,20 @@ pub enum Expression {
 
 impl Node for Expression {
     fn print(&self, indent: usize) {
-        println!("{:indent$}{:?}", "", self, indent = indent);
+        match self {
+            Expression::If { condition, then, else_ } => {
+                println!("{:indent$}if", "", indent = indent);
+                condition.print(indent + 4);
+                println!("{:indent$}then", "", indent = indent);
+                for stmt in then {
+                    stmt.print(indent + 4);
+                }
+                println!("{:indent$}else", "", indent = indent);
+                for stmt in else_ {
+                    stmt.print(indent + 4);
+                }
+            },
+            _ => println!("{:indent$}{:?}", "", self, indent = indent)
+        }
     }
 }

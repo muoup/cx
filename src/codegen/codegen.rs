@@ -80,7 +80,7 @@ pub fn codegen_function(fn_decl: &FunctionDeclaration, context: &mut CodegenCont
 
 fn codegen_expression(context: &mut CodegenContext, builder: &mut FunctionBuilder, expr: &Expression) -> Option<Value> {
     match expr {
-        Expression::FunctionCall(name, args) => {
+        Expression::FunctionCall { name, args } => {
             let Expression::Identifier(fn_name) = name.as_ref() else { return None; };
 
             let mut sig = context.object_module.make_signature();

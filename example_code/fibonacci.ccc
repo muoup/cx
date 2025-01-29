@@ -1,0 +1,9 @@
+void fib() {
+    int x;
+
+    if (1) {
+        printf("1");
+    } else {
+        printf("2");
+    }
+}
