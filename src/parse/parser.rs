@@ -26,6 +26,10 @@ impl<'a> TokenIter<'_> {
     pub(crate) fn back(&mut self) {
         self.index -= 1;
     }
+
+    pub(crate) fn has_next(&self) -> bool {
+        self.slice.get(self.index).is_some()
+    }
 }
 
 // pub(crate) type TokenIter<'a> = Peekable<slice::Iter<'a, Token>>;

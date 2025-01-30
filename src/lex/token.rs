@@ -1,11 +1,17 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Plus, Minus, Multiply, Divide, Modulo,
-    Equal, Exclamation, LessThan, GreaterThan,
+    Add, Subtract, Multiply, Divide, Modulo,
+
+    NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
+
+    LAnd, LOr, LNot, BitAnd, BitOr, BitXor, BitNot,
+    LShift, RShift,
+
+    Exclamation, LessThan, GreaterThan,
     Tilde, Ampersand, Pipe, Caret, Semicolon
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum PunctuatorType {
     OpenParen, CloseParen,
     OpenBracket, CloseBracket,
@@ -34,82 +40,21 @@ pub enum KeywordType {
     Sizeof
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
-    Identifier(String),
-
+    Assignment(Option<OperatorType>),
     Operator(OperatorType),
+
     Keyword(KeywordType),
     Punctuator(PunctuatorType),
 
+    Identifier(String),
     StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
 }
 
 impl Token {
-    pub(crate) fn try_op(c: char) -> Option<Token> {
-        match c {
-            '+' => Some(Token::Operator(OperatorType::Plus)),
-            '-' => Some(Token::Operator(OperatorType::Minus)),
-            '*' => Some(Token::Operator(OperatorType::Multiply)),
-            '/' => Some(Token::Operator(OperatorType::Divide)),
-            '%' => Some(Token::Operator(OperatorType::Modulo)),
-            '=' => Some(Token::Operator(OperatorType::Equal)),
-            '!' => Some(Token::Operator(OperatorType::Exclamation)),
-            '<' => Some(Token::Operator(OperatorType::LessThan)),
-            '>' => Some(Token::Operator(OperatorType::GreaterThan)),
-            '~' => Some(Token::Operator(OperatorType::Tilde)),
-            '&' => Some(Token::Operator(OperatorType::Ampersand)),
-            '|' => Some(Token::Operator(OperatorType::Pipe)),
-            '^' => Some(Token::Operator(OperatorType::Caret)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn try_punc(c: char) -> Option<Token> {
-        match c {
-            '(' => Some(Token::Punctuator(PunctuatorType::OpenParen)),
-            ')' => Some(Token::Punctuator(PunctuatorType::CloseParen)),
-            '[' => Some(Token::Punctuator(PunctuatorType::OpenBracket)),
-            ']' => Some(Token::Punctuator(PunctuatorType::CloseBracket)),
-            '{' => Some(Token::Punctuator(PunctuatorType::OpenBrace)),
-            '}' => Some(Token::Punctuator(PunctuatorType::CloseBrace)),
-            ',' => Some(Token::Punctuator(PunctuatorType::Comma)),
-            ';' => Some(Token::Punctuator(PunctuatorType::Semicolon)),
-            ':' => Some(Token::Punctuator(PunctuatorType::Colon)),
-            '.' => Some(Token::Punctuator(PunctuatorType::Period)),
-            '?' => Some(Token::Punctuator(PunctuatorType::QuestionMark)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn try_number(str: &str) -> Option<(Token, usize)> {
-        if str.is_empty() || !str.chars().next().unwrap().is_digit(10) {
-            return None;
-        }
-
-        let mut end = 0;
-        let mut dot = false;
-        for (i, c) in str.chars().enumerate() {
-            if c == '.' {
-                if dot {
-                    break;
-                }
-                dot = true;
-            } else if !c.is_digit(10) {
-                break;
-            }
-            end = i;
-        }
-        let num = &str[..=end];
-        if dot {
-            Some((Token::FloatLiteral(num.parse().unwrap()), end))
-        } else {
-            Some((Token::IntLiteral(num.parse().unwrap()), end))
-        }
-    }
-
     pub(crate) fn from_str(str: String) -> Token {
         match str.trim() {
             "if" => Token::Keyword(KeywordType::If),
@@ -142,6 +87,26 @@ impl Token {
             "restrict" => Token::Keyword(KeywordType::Restrict),
             "sizeof" => Token::Keyword(KeywordType::Sizeof),
             _ => Token::Identifier(str),
+        }
+    }
+}
+
+impl OperatorType {
+    pub(crate) fn precedence(&self) -> i32 {
+        match self {
+            OperatorType::LAnd => 2,
+            OperatorType::LOr => 3,
+            OperatorType::Equal | OperatorType::NotEqual => 4,
+            OperatorType::Less | OperatorType::LessEqual | OperatorType::Greater | OperatorType::GreaterEqual => 5,
+            OperatorType::Add | OperatorType::Subtract => 6,
+            OperatorType::Multiply | OperatorType::Divide | OperatorType::Modulo => 7,
+            OperatorType::LShift | OperatorType::RShift => 8,
+            OperatorType::BitAnd | OperatorType::BitXor | OperatorType::BitOr => 9,
+            OperatorType::Exclamation | OperatorType::Tilde | OperatorType::LessThan | OperatorType::GreaterThan => 10,
+            OperatorType::Ampersand | OperatorType::Pipe | OperatorType::Caret => 11,
+            OperatorType::Semicolon => 12,
+
+            _ => 100
         }
     }
 }

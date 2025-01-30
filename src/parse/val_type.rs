@@ -63,11 +63,17 @@ pub fn parse_type(toks: &mut TokenIter) -> Option<ValType> {
                 }
             },
 
-            keyword => panic!("Expected type got {:?}", keyword)
+            _ => return {
+                toks.back();
+                None
+            }
         },
         Token::Identifier(name) => ValType::Struct { name: name.clone() },
 
-        _ => panic!("Expected type")
+        _ => return {
+            toks.back();
+            None
+        }
     };
 
     while let Some(&Token::Operator(OperatorType::Multiply)) = toks.peek() {

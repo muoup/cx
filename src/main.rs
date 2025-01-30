@@ -13,16 +13,14 @@ fn main() {
     };
 
     let source = std::fs::read_to_string(file_name).unwrap();
+    let mut lexer = lex::generate_tokens(&source);
 
-    let mut lexer = lex::lexer::Lexer::new(source.as_str());
-    lexer.generate_tokens();
+    // for (i, token) in lexer.iter().enumerate() {
+    //     println!("{}: {:?}", i, token);
+    // }
 
-    // lexer.tokens.iter().for_each(|token| {
-    //     println!("{:?}", token);
-    // });
-
-    let ast = parse::parser::parse_ast(&lexer.tokens);
-    ast.map(|ast| ast.root.print(0));
+    parse::parser::parse_ast(&mut lexer)
+        .map(|ast| ast.root.print(0));
 
     // if let Some(ast) = ast {
     //     codegen::codegen::ast_codegen(&ast);

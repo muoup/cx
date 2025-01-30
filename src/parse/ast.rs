@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use crate::lex::token::KeywordType;
+use crate::lex::token::{KeywordType, OperatorType};
 use crate::parse::val_type::ValType;
 
 pub trait Node: Debug {
@@ -36,8 +36,7 @@ pub struct FunctionDeclaration {
 
 impl Node for FunctionDeclaration {
     fn print(&self, indent: usize) {
-        println!("{:indent$}Function: {} -> {:?}", "", self.name, self.return_type, indent = indent);
-        println!("{:indent$}Args: {:?}", "", self.arguments, indent = indent + 2);
+        println!("{:indent$}fn {}({:?}) -> {:?}", "", self.name, self.arguments, self.return_type, indent = indent);
         for stmt in &self.body {
             stmt.print(indent + 4);
         }
@@ -68,6 +67,17 @@ pub enum Expression {
 
     VariableReference {
         name: String
+    },
+
+    BinaryOperation {
+        operator: OperatorType,
+        left: Box<Expression>,
+        right: Box<Expression>
+    },
+    Assignment {
+        left: Box<Expression>,
+        right: Box<Expression>,
+        op: Option<OperatorType>
     },
 
     StringLiteral(String),

@@ -9,7 +9,6 @@ use cranelift_module::{DataDescription, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 pub(crate) struct CodegenContext {
-    pub(crate) str_literal_count: usize,
     pub(crate) context: Context,
     pub(crate) object_module: ObjectModule,
 }
@@ -31,7 +30,6 @@ pub fn ast_codegen(ast: &AST) {
     let context = object_module.make_context();
 
     let mut context = CodegenContext {
-        str_literal_count: 0,
         context,
         object_module,
     };
@@ -127,9 +125,6 @@ fn codegen_expression(context: &mut CodegenContext, builder: &mut FunctionBuilde
 }
 
 fn string_literal(context: &mut CodegenContext, builder: &mut FunctionBuilder, str: &str) -> GlobalValue {
-    let strlit_name = format!("strlit_{}", context.str_literal_count);
-    context.str_literal_count += 1;
-
     let id = context.object_module.declare_anonymous_data(
         false,
         false
