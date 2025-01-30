@@ -6,7 +6,7 @@ pub enum OperatorType {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Punctuator {
+pub enum PunctuatorType {
     OpenParen, CloseParen,
     OpenBracket, CloseBracket,
     OpenBrace, CloseBrace,
@@ -40,7 +40,7 @@ pub enum Token {
 
     Operator(OperatorType),
     Keyword(KeywordType),
-    Punctuator(Punctuator),
+    Punctuator(PunctuatorType),
 
     StringLiteral(String),
     IntLiteral(i64),
@@ -69,17 +69,17 @@ impl Token {
 
     pub(crate) fn try_punc(c: char) -> Option<Token> {
         match c {
-            '(' => Some(Token::Punctuator(Punctuator::OpenParen)),
-            ')' => Some(Token::Punctuator(Punctuator::CloseParen)),
-            '[' => Some(Token::Punctuator(Punctuator::OpenBracket)),
-            ']' => Some(Token::Punctuator(Punctuator::CloseBracket)),
-            '{' => Some(Token::Punctuator(Punctuator::OpenBrace)),
-            '}' => Some(Token::Punctuator(Punctuator::CloseBrace)),
-            ',' => Some(Token::Punctuator(Punctuator::Comma)),
-            ';' => Some(Token::Punctuator(Punctuator::Semicolon)),
-            ':' => Some(Token::Punctuator(Punctuator::Colon)),
-            '.' => Some(Token::Punctuator(Punctuator::Period)),
-            '?' => Some(Token::Punctuator(Punctuator::QuestionMark)),
+            '(' => Some(Token::Punctuator(PunctuatorType::OpenParen)),
+            ')' => Some(Token::Punctuator(PunctuatorType::CloseParen)),
+            '[' => Some(Token::Punctuator(PunctuatorType::OpenBracket)),
+            ']' => Some(Token::Punctuator(PunctuatorType::CloseBracket)),
+            '{' => Some(Token::Punctuator(PunctuatorType::OpenBrace)),
+            '}' => Some(Token::Punctuator(PunctuatorType::CloseBrace)),
+            ',' => Some(Token::Punctuator(PunctuatorType::Comma)),
+            ';' => Some(Token::Punctuator(PunctuatorType::Semicolon)),
+            ':' => Some(Token::Punctuator(PunctuatorType::Colon)),
+            '.' => Some(Token::Punctuator(PunctuatorType::Period)),
+            '?' => Some(Token::Punctuator(PunctuatorType::QuestionMark)),
             _ => None,
         }
     }
