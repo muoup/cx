@@ -1,3 +1,7 @@
+use cranelift::codegen::ir::GlobalValue;
+use cranelift::frontend::FunctionBuilder;
+use cranelift_module::{DataDescription, Module};
+use crate::codegen::codegen::CodegenContext;
 use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, Token};
 use crate::parse::ast::Expression;
@@ -8,9 +12,7 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
     let mut exprs = Vec::new();
     let mut recent_iter = toks.index;
 
-    while let Some(expression) = parse_expression(toks) {
-        exprs.push(expression);
-
+    loop {
         if toks.peek() == Some(&&splitter) {
             toks.next();
             recent_iter = toks.index;
@@ -19,9 +21,13 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
         if toks.peek() == Some(&&terminator) {
             return Some(exprs);
         }
-    }
 
-    panic!("Expression could not be formed starting at token: {:?}", toks.slice[recent_iter]);
+        let Some (expr) = parse_expression(toks) else {
+            panic!("Expression could not be formed starting at token: {:?}", toks.slice[recent_iter]);
+        };
+
+        exprs.push(expr);
+    }
 }
 
 pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {

@@ -15,14 +15,7 @@ fn main() {
     let source = std::fs::read_to_string(file_name).unwrap();
     let mut lexer = lex::generate_tokens(&source);
 
-    // for (i, token) in lexer.iter().enumerate() {
-    //     println!("{}: {:?}", i, token);
-    // }
-
-    parse::parser::parse_ast(&mut lexer)
-        .map(|ast| ast.root.print(0));
-
-    // if let Some(ast) = ast {
-    //     codegen::codegen::ast_codegen(&ast);
-    // }
+    if let Some(ast) = parse::parser::parse_ast(&mut lexer) {
+        codegen::codegen::ast_codegen(&ast);
+    }
 }

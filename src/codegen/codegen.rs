@@ -1,16 +1,20 @@
-use crate::codegen::codegen::ir::GlobalValue;
+use crate::codegen::expression::codegen_expression;
+use crate::codegen::scope::VariableTable;
 use crate::parse::ast::{Expression, FunctionDeclaration, AST};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::codegen::isa::CallConv;
 use cranelift::codegen::{ir, settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift::prelude::{AbiParam, InstBuilder, Signature, Value};
-use cranelift_module::{DataDescription, Linkage, Module};
+use cranelift::prelude::Signature;
+use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-pub(crate) struct CodegenContext {
-    pub(crate) context: Context,
-    pub(crate) object_module: ObjectModule,
+pub(crate) struct CodegenContext<'a> {
+    pub(crate) context: &'a mut Context,
+    pub(crate) object_module: &'a mut ObjectModule,
+    pub(crate) builder: FunctionBuilder<'a>,
+    pub(crate) variable_table: VariableTable,
+    pub(crate) current_block_exited: bool
 }
 
 pub fn ast_codegen(ast: &AST) {
@@ -26,116 +30,74 @@ pub fn ast_codegen(ast: &AST) {
         cranelift_module::default_libcall_names(),
     ).unwrap();
 
-    let object_module = ObjectModule::new(object_builder);
-    let context = object_module.make_context();
-
-    let mut context = CodegenContext {
-        context,
-        object_module,
-    };
+    let mut object_module = ObjectModule::new(object_builder);
+    let mut context = object_module.make_context();
 
     for fn_decl in &ast.root.fn_declarations {
-        let func = codegen_function(fn_decl, &mut context);
-
-        println!("{:?}", func);
-
-        let id = context.object_module
-            .declare_function(&fn_decl.name, Linkage::Export, &func.signature)
-            .unwrap();
-
-        context.context.func = func;
-        context.object_module
-            .define_function(id, &mut context.context)
-            .unwrap();
-
-        context.object_module.clear_context(&mut context.context);
+        codegen_function(fn_decl, &mut context, &mut object_module);
     }
 
-    let obj = context.object_module.finish();
+    let obj = object_module.finish();
     std::fs::write("test.o", obj.emit().unwrap()).unwrap();
 }
 
-pub fn codegen_function(fn_decl: &FunctionDeclaration, context: &mut CodegenContext) -> Function {
-    let sig = Signature::new(CallConv::SystemV);
+pub fn codegen_function(fn_decl: &FunctionDeclaration, context: &mut Context, module: &mut ObjectModule) {
+    let sig = Signature::new(CallConv::WindowsFastcall);
     let mut func = Function::with_name_signature(UserFuncName::user(0, 0), sig);
 
     let mut binding = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut func, &mut binding);
 
     let block = builder.create_block();
-
     builder.switch_to_block(block);
+    let mut var_table = VariableTable::new();
+    var_table.push_scope();
 
-    for expr in &fn_decl.body {
-        codegen_expression(context, &mut builder, expr);
+    for arg in &fn_decl.arguments {
+        let Expression::VariableDeclaration { type_, name } = arg else {
+            panic!("Expected variable declaration");
+        };
+
+        builder.func.signature.params.push(ir::AbiParam::new(ir::types::I64));
+        builder.func.signature.returns.push(ir::AbiParam::new(ir::types::I64));
+        var_table.insert(
+            name.clone(),
+            builder.append_block_param(block, ir::types::I64)
+        );
     }
 
-    builder.seal_all_blocks();
-    builder.finalize();
+    let gen_id = ||
+    {
+        let mut context = CodegenContext {
+            context,
+            object_module: module,
+            builder,
+            variable_table: var_table,
+            current_block_exited: false
+        };
 
-    func
-}
+        let id = context.object_module
+            .declare_function(&fn_decl.name, Linkage::Export, &context.builder.func.signature)
+            .unwrap();
 
-fn codegen_expression(context: &mut CodegenContext, builder: &mut FunctionBuilder, expr: &Expression) -> Option<Value> {
-    match expr {
-        Expression::FunctionCall { name, args } => {
-            let Expression::Identifier(fn_name) = name.as_ref() else { return None; };
-
-            let mut sig = context.object_module.make_signature();
-            sig.params.push(AbiParam::new(ir::types::I64));
-
-            let call = context.object_module
-                .declare_function(&fn_name, Linkage::Import, &sig)
-                .unwrap();
-            let local_call = context.object_module.declare_func_in_func(call, builder.func);
-
-            let arguments = args.iter()
-                .filter_map(|arg| codegen_expression(context, builder, arg))
-                .collect::<Vec<_>>();
-
-            Value::with_number(
-                builder.ins().call(
-                    local_call,
-                    arguments.as_slice()
-                ).as_u32()
-            )
+        for expr in &fn_decl.body {
+            codegen_expression(&mut context, expr);
         }
-        Expression::Return(expr) => {
-            match codegen_expression(context, builder, expr) {
-                Some(val) => {
-                    builder.ins().return_(&[val]);
-                },
-                None => {
-                    builder.ins().return_(&[]);
-                }
-            }
-            None
-        },
-        Expression::IntLiteral(val) => {
-            Some(builder.ins().iconst(ir::types::I64, *val))
-        },
-        Expression::StringLiteral(str) => {
-            let literal = string_literal(context, builder, str.as_ref());
 
-            Some(builder.ins().global_value(ir::types::I64, literal))
-        },
-        Expression::Unit => None,
-        _ => unimplemented!("Expression not implemented: {:?}", expr)
-    }
-}
+        context.builder.seal_all_blocks();
+        context.builder.finalize();
 
-fn string_literal(context: &mut CodegenContext, builder: &mut FunctionBuilder, str: &str) -> GlobalValue {
-    let id = context.object_module.declare_anonymous_data(
-        false,
-        false
-    ).unwrap();
+        id
+    };
 
-    let mut data = DataDescription::new();
-    data.define(str.as_bytes().to_vec().into_boxed_slice());
+    let id = gen_id();
 
-    context.object_module.define_data(id, &data).unwrap();
-    context.object_module.declare_data_in_func(
-        id,
-        builder.func
-    )
+    println!("{:?}", func);
+
+    context.func = func;
+    module
+        .define_function(id, context)
+        .expect("Failed to define function");
+
+    module.clear_context(context);
 }

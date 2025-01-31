@@ -7,8 +7,7 @@ pub enum OperatorType {
     LAnd, LOr, LNot, BitAnd, BitOr, BitXor, BitNot,
     LShift, RShift,
 
-    Exclamation, LessThan, GreaterThan,
-    Tilde, Ampersand, Pipe, Caret, Semicolon
+    Semicolon
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -102,8 +101,8 @@ impl OperatorType {
             OperatorType::Multiply | OperatorType::Divide | OperatorType::Modulo => 7,
             OperatorType::LShift | OperatorType::RShift => 8,
             OperatorType::BitAnd | OperatorType::BitXor | OperatorType::BitOr => 9,
-            OperatorType::Exclamation | OperatorType::Tilde | OperatorType::LessThan | OperatorType::GreaterThan => 10,
-            OperatorType::Ampersand | OperatorType::Pipe | OperatorType::Caret => 11,
+            OperatorType::LNot | OperatorType::BitNot | OperatorType::Less | OperatorType::Greater => 10,
+            OperatorType::BitAnd | OperatorType::BitOr | OperatorType::BitXor => 11,
             OperatorType::Semicolon => 12,
 
             _ => 100

@@ -126,14 +126,13 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
 
 fn string_lex(iter: &mut CharIter) -> Option<Token> {
     assert_eq!(iter.next(), Some('"'));
-    let mut end = 0;
-    for (i, c) in iter.source.chars().enumerate() {
+    let start_iter = iter.current_iter;
+    while let Some(c) = iter.next() {
         if c == '"' {
             break;
         }
-        end = i;
     }
-    let string = &iter.source[..=end];
+    let string = &iter.source[start_iter..iter.current_iter - 1];
     Some(Token::StringLiteral(string.to_string()))
 }
 
@@ -177,14 +176,14 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                 iter.next();
                 found_operator(iter, OperatorType::RShift)
             },
-            _ => found_operator(iter, OperatorType::GreaterThan)
+            _ => found_operator(iter, OperatorType::Greater)
         },
         '<' => match iter.peek() {
             Some('<') => {
                 iter.next();
                 found_operator(iter, OperatorType::LShift)
             },
-            _ => found_operator(iter, OperatorType::LessThan)
+            _ => found_operator(iter, OperatorType::Less)
         },
         '=' => match iter.peek() {
             Some('=') => {
