@@ -1,7 +1,7 @@
 use cranelift::codegen::ir::GlobalValue;
 use cranelift::frontend::FunctionBuilder;
 use cranelift_module::{DataDescription, Module};
-use crate::codegen::codegen::CodegenContext;
+use crate::codegen::codegen::FunctionState;
 use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, Token};
 use crate::parse::ast::Expression;

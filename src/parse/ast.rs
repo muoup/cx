@@ -1,6 +1,6 @@
-use std::fmt::Debug;
-use crate::lex::token::{KeywordType, OperatorType};
+use crate::lex::token::OperatorType;
 use crate::parse::val_type::ValType;
+use std::fmt::Debug;
 
 pub trait Node: Debug {
     fn print(&self, indent: usize) where Self: Debug {
@@ -14,7 +14,7 @@ pub struct AST {
 
 #[derive(Debug)]
 pub struct Root {
-    pub fn_declarations: Vec<FunctionDeclaration>,
+    pub fn_declarations: Vec<GlobalStatement>,
 }
 
 impl Node for Root {
@@ -26,19 +26,26 @@ impl Node for Root {
 }
 
 #[derive(Debug)]
-pub struct FunctionDeclaration {
-    pub return_type: ValType,
-    pub arguments: Vec<Expression>,
-
-    pub name: String,
-    pub body: Vec<Expression>
+pub enum GlobalStatement {
+    Function {
+        name: String,
+        arguments: Vec<(String, ValType)>,
+        return_type: ValType,
+        body: Option<Vec<Expression>>
+    },
 }
 
-impl Node for FunctionDeclaration {
+impl Node for GlobalStatement {
     fn print(&self, indent: usize) {
-        println!("{:indent$}fn {}({:?}) -> {:?}", "", self.name, self.arguments, self.return_type, indent = indent);
-        for stmt in &self.body {
-            stmt.print(indent + 4);
+        match self {
+            GlobalStatement::Function { name, arguments, return_type, body } => {
+                println!("{:indent$}fn {} -> {:?}({:?})", "", name, return_type, arguments, indent = indent);
+                if let Some(body) = body {
+                    for stmt in body {
+                        stmt.print(indent + 4);
+                    }
+                }
+            }
         }
     }
 }

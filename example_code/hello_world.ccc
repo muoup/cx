@@ -1,4 +1,6 @@
-void main(int argc) {
+int printf(char* c);
+
+int main() {
     printf("Hello, World!");
-    return;
+    return 0;
 }

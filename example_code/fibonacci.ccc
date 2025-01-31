@@ -1,3 +1,10 @@
+int putchar(char c);
+
+int main() {
+    putchar('0' + fib(5));
+    return 0;
+}
+
 int fib(int n) {
     if (n < 2) {
         return fib(n - 1) + (n - 2);

@@ -16,6 +16,7 @@ fn main() {
     let mut lexer = lex::generate_tokens(&source);
 
     if let Some(ast) = parse::parser::parse_ast(&mut lexer) {
+        ast.root.print(0);
         codegen::codegen::ast_codegen(&ast);
     }
 }

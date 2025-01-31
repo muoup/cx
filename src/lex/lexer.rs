@@ -140,17 +140,21 @@ fn char_lex(iter: &mut CharIter) -> Option<Token> {
     assert_eq!(iter.next(), Some('\''));
     let c = iter.next()?;
 
-    if c != '\\' {
-        Some(Token::IntLiteral(c as i64))
-    } else {
-        let break_char = iter.next()?;
-
-        match break_char {
-            'n' => Some(Token::IntLiteral('\n' as i64)),
-            't' => Some(Token::IntLiteral('\t' as i64)),
-            'r' => Some(Token::IntLiteral('\r' as i64)),
-            _ => panic!("Invalid escape character")
-        }
+    match iter.next()? {
+        '\'' => Some(Token::IntLiteral(c as i64)),
+        'n' => {
+            assert_eq!(iter.next(), Some('\''));
+            Some(Token::IntLiteral('\n' as i64))
+        },
+        't' => {
+            assert_eq!(iter.next(), Some('\''));
+            Some(Token::IntLiteral('\t' as i64))
+        },
+        'r' => {
+            assert_eq!(iter.next(), Some('\''));
+            Some(Token::IntLiteral('\r' as i64))
+        },
+        _ => None
     }
 }
 

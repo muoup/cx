@@ -1,9 +1,6 @@
-use std::iter::Peekable;
-use std::slice;
-
 use crate::lex::token::PunctuatorType::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
-use crate::lex::token::{KeywordType, Token};
-use crate::parse::ast::{Expression, FunctionDeclaration, Root, AST};
+use crate::lex::token::Token;
+use crate::parse::ast::{Expression, GlobalStatement, Root, AST};
 use crate::parse::expression::{parse_expression, parse_expressions};
 use crate::parse::val_type::parse_type;
 
@@ -48,12 +45,12 @@ pub fn parse_ast(toks: &[Token]) -> Option<AST> {
 fn parse_root(toks: &mut TokenIter) -> Option<Root> {
     Some(
         Root {
-            fn_declarations: parse_fn_declarations(toks)?
+            fn_declarations: parse_global_stmts(toks)?
         }
     )
 }
 
-fn parse_fn_declarations(toks: &mut TokenIter) -> Option<Vec<FunctionDeclaration>> {
+fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<GlobalStatement>> {
     let mut fns = Vec::new();
 
     while toks.peek() != None {
@@ -63,7 +60,7 @@ fn parse_fn_declarations(toks: &mut TokenIter) -> Option<Vec<FunctionDeclaration
     Some(fns)
 }
 
-fn parse_fn_declaration(toks: &mut TokenIter) -> Option<FunctionDeclaration> {
+fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
     let return_type = parse_type(toks)?;
     let name = match toks.next()? {
         Token::Identifier(name) => name.clone(),
@@ -75,12 +72,23 @@ fn parse_fn_declaration(toks: &mut TokenIter) -> Option<FunctionDeclaration> {
     assert!(arguments.iter().all(|arg| matches!(arg, Expression::VariableDeclaration {..})));
 
     assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
-    let body = parse_body(toks);
+
+    let body = match toks.peek()? {
+        Token::Punctuator(Semicolon) => { toks.next(); None },
+        _ => Some(parse_body(toks))
+    };
+
     Some(
-        FunctionDeclaration {
-            return_type,
-            arguments,
+        GlobalStatement::Function {
             name,
+            arguments: arguments.into_iter().map(|arg| {
+                if let Expression::VariableDeclaration { name, type_ } = arg {
+                    (name, type_)
+                } else {
+                    panic!("Expected variable declaration")
+                }
+            }).collect(),
+            return_type,
             body
         }
     )
