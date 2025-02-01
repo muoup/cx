@@ -1,13 +1,13 @@
 use cranelift::codegen::ir;
 use cranelift_module::Module;
-use crate::codegen::codegen::GlobalState;
+use cranelift_object::ObjectModule;
 use crate::parse::val_type::ValType;
 
-pub(crate) fn get_cranelift_abi_type(global_state: &GlobalState, val_type: &ValType) -> ir::AbiParam {
-    ir::AbiParam::new(get_cranelift_type(global_state, val_type))
+pub(crate) fn get_cranelift_abi_type(object_module: &ObjectModule, val_type: &ValType) -> ir::AbiParam {
+    ir::AbiParam::new(get_cranelift_type(object_module, val_type))
 }
 
-pub(crate) fn get_cranelift_type(global_state: &GlobalState, val_type: &ValType) -> ir::Type {
+pub(crate) fn get_cranelift_type(object_module: &ObjectModule, val_type: &ValType) -> ir::Type {
     match val_type {
         ValType::Integer { size, .. } => {
             match size {
@@ -27,7 +27,7 @@ pub(crate) fn get_cranelift_type(global_state: &GlobalState, val_type: &ValType)
         },
         ValType::Unit => ir::types::INVALID,
         ValType::Pointer(..) | ValType::Array(..) => {
-            global_state.object_module.target_config().pointer_type()
+            object_module.target_config().pointer_type()
         },
         ValType::Struct { .. } => {
             unimplemented!()

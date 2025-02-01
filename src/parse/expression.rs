@@ -1,7 +1,3 @@
-use cranelift::codegen::ir::GlobalValue;
-use cranelift::frontend::FunctionBuilder;
-use cranelift_module::{DataDescription, Module};
-use crate::codegen::codegen::FunctionState;
 use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, Token};
 use crate::parse::ast::Expression;
@@ -13,17 +9,17 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
     let mut recent_iter = toks.index;
 
     loop {
-        if toks.peek() == Some(&&splitter) {
+        if toks.peek() == Some(&splitter) {
             toks.next();
             recent_iter = toks.index;
         }
 
-        if toks.peek() == Some(&&terminator) {
+        if toks.peek() == Some(&terminator) {
             return Some(exprs);
         }
 
         let Some (expr) = parse_expression(toks) else {
-            panic!("Expression could not be formed starting at token: {:?}", toks.slice[recent_iter]);
+            panic!("Expression could not be formed starting at token, near token: {:?} {:?}", toks.slice[recent_iter], toks.slice[toks.index]);
         };
 
         exprs.push(expr);
@@ -70,6 +66,18 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
 
                 op_stack.push(op);
             },
+            Token::Assignment(_) => {
+                let left = expr_stack.pop().unwrap();
+                let Token::Assignment(op) = toks.next().unwrap().clone() else { unreachable!() };
+                let right = parse_expression(toks)?;
+
+                expr_stack.push(Expression::Assignment {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    op
+                });
+                break;
+            },
             _ => break
         }
     }
@@ -100,7 +108,12 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
             Token::IntLiteral(int) => Some(Expression::IntLiteral(*int)),
             Token::FloatLiteral(float) => Some(Expression::FloatLiteral(*float)),
 
-            _ => None
+            _ => {
+                toks.back();
+                println!("Unexpected token: {:?}", toks.peek());
+
+                None
+            }
         }
     }
 }
@@ -135,6 +148,29 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             };
 
             Some(Expression::If { condition, then, else_ })
+        },
+
+        KeywordType::While => {
+            let condition = Box::new(parse_expression(toks)?);
+            let body = parse_body(toks);
+
+            Some(Expression::Loop {
+                condition,
+                body,
+                evaluate_condition_first: true
+            })
+        },
+        KeywordType::Do => {
+            let body = parse_body(toks);
+
+            assert_eq!(toks.next(), Some(&Token::Keyword(KeywordType::While)));
+            let condition = Box::new(parse_expression(toks)?);
+
+            Some(Expression::Loop {
+                condition,
+                body,
+                evaluate_condition_first: false
+            })
         },
 
         _ => {

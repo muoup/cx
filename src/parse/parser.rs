@@ -97,6 +97,7 @@ fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
 pub(crate) fn parse_body(toks: &mut TokenIter) -> Vec<Expression> {
     if toks.peek() == Some(&&Token::Punctuator(OpenBrace)) {
         toks.next();
+
         let body = parse_expressions(toks, Token::Punctuator(Semicolon), Token::Punctuator(CloseBrace)).unwrap();
         assert_eq!(toks.next(), Some(&Token::Punctuator(CloseBrace)));
 

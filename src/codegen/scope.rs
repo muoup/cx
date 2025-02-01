@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use cranelift::codegen::ir;
 
 pub(crate) struct VariableTable {
-    data: Vec<HashMap<String, ir::Value>>
+    data: Vec<HashMap<String, (ir::Value, ir::Type)>>
 }
 
 impl VariableTable {
@@ -20,11 +20,11 @@ impl VariableTable {
         self.data.pop();
     }
 
-    pub fn insert(&mut self, name: String, value: ir::Value) {
-        self.data.last_mut().unwrap().insert(name, value);
+    pub fn insert(&mut self, name: String, value: ir::Value, type_: ir::Type) {
+        self.data.last_mut().unwrap().insert(name, (value, type_));
     }
 
-    pub fn get(&self, name: &str) -> Option<&ir::Value> {
+    pub fn get(&self, name: &str) -> Option<&(ir::Value, ir::Type)> {
         for scope in self.data.iter().rev() {
             if let Some(value) = scope.get(name) {
                 return Some(value);

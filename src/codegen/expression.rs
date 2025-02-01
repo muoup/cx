@@ -5,6 +5,8 @@ use cranelift::codegen::ir;
 use cranelift::codegen::ir::GlobalValue;
 use cranelift::prelude::{InstBuilder, Value};
 use cranelift_module::{DataDescription, Linkage, Module};
+use crate::codegen::routines::allocate_variable;
+use crate::codegen::value_type::get_cranelift_type;
 
 pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression) -> Option<Value> {
     match expr {
@@ -115,9 +117,70 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
 
             None
         },
+        Expression::Loop { condition, body, evaluate_condition_first } => {
+            let loop_block = context.builder.create_block();
+            let body_block = context.builder.create_block();
+            let merge_block = context.builder.create_block();
+
+            if *evaluate_condition_first {
+                context.builder.ins().jump(loop_block, &[]);
+            } else {
+                context.builder.ins().jump(body_block, &[]);
+            }
+
+            context.builder.switch_to_block(loop_block);
+            let condition = codegen_expression(context, condition).unwrap();
+            context.builder.ins().brif(condition, body_block, &[], merge_block, &[]);
+
+            context.builder.switch_to_block(body_block);
+            context.variable_table.push_scope();
+
+            for expr in body {
+                codegen_expression(context, expr);
+            }
+
+            context.variable_table.pop_scope();
+            if !context.current_block_exited {
+                context.builder.ins().jump(loop_block, &[]);
+            }
+
+            context.builder.switch_to_block(merge_block);
+            None
+        },
+
+        Expression::Assignment{ left, right, op } => {
+            let left = match left.as_ref() {
+                Expression::Identifier(name) => {
+                    context.variable_table.get(name.as_str())
+                        .expect(format!("Variable not found: {}", name.as_str()).as_str())
+                        .0
+                },
+                Expression::VariableDeclaration { .. } => {
+                    codegen_expression(context, left).unwrap()
+                },
+                _ => panic!("Invalid left hand side of assignment")
+            };
+
+            let right = codegen_expression(context, right).unwrap();
+
+            context.builder.ins().store(ir::MemFlags::new(), right, left, 0);
+            Some(right)
+        },
+        Expression::VariableDeclaration { name, type_ } => {
+            let param_type = get_cranelift_type(context.object_module, type_);
+
+            allocate_variable(
+                &mut context.builder, &mut context.variable_table,
+                name, param_type,
+                None
+            )
+        },
 
         Expression::Identifier(name) => {
-            context.variable_table.get(name.as_str()).cloned()
+            let (val, type_) = context.variable_table.get(name.as_str())
+                .expect(format!("Variable not found: {}", name.as_str()).as_str());
+
+            Some(context.builder.ins().load(*type_, ir::MemFlags::new(), *val, 0))
         },
         Expression::IntLiteral(val) => {
             Some(context.builder.ins().iconst(ir::types::I32, *val))

@@ -1,3 +1,5 @@
+use std::alloc::alloc;
+use std::clone;
 use crate::codegen::expression::codegen_expression;
 use crate::codegen::scope::VariableTable;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
@@ -6,10 +8,12 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::codegen::isa::CallConv;
 use cranelift::codegen::{settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift::prelude::Signature;
+use cranelift::prelude::{InstBuilder, Signature, StackSlotData, StackSlotKind};
 use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use crate::codegen::routines::allocate_variable;
+use crate::parse::val_type::ValType;
 
 pub(crate) struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -17,7 +21,10 @@ pub(crate) struct FunctionState<'a> {
 
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) variable_table: VariableTable,
-    pub(crate) current_block_exited: bool
+
+    pub(crate) merge_block_id: Option<u32>,
+    pub(crate) loop_block_id: Option<u32>,
+    pub(crate) current_block_exited: bool,
 }
 
 pub(crate) struct GlobalState {
@@ -64,10 +71,15 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
     );
 
     for (_, type_) in arguments {
-        func.signature.params.push(get_cranelift_abi_type(global_state, type_));
+        func.signature.params.push(get_cranelift_abi_type(&global_state.object_module, type_));
     }
 
-    func.signature.returns.push(get_cranelift_abi_type(global_state, return_type));
+    match return_type {
+        ValType::Unit => {},
+        type_ => {
+            func.signature.returns.push(get_cranelift_abi_type(&global_state.object_module, type_));
+        }
+    }
 
     let id = global_state.object_module
         .declare_function(name, Linkage::Export, &func.signature)
@@ -89,31 +101,34 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
     var_table.push_scope();
 
     for (name, type_) in arguments {
-        var_table.insert(
-            name.clone(),
-            builder.append_block_param(block, get_cranelift_type(global_state, type_))
-        );
+        let param_type = get_cranelift_type(&global_state.object_module, type_);
+        let param = builder.append_block_param(block, param_type);
+
+        allocate_variable(
+            &mut builder, &mut var_table,
+            name, param_type,
+            Some(param)
+        ).expect("Failed to allocate variable");
     }
 
-    {
-        let mut context = FunctionState {
-            object_module: &mut global_state.object_module,
-            functions: &global_state.functions,
+    let mut context = FunctionState {
+        object_module: &mut global_state.object_module,
+        functions: &global_state.functions,
 
-            builder,
-            variable_table: var_table,
-            current_block_exited: false
-        };
+        builder,
+        variable_table: var_table,
 
-        for expr in body {
-            codegen_expression(&mut context, expr);
-        }
-
-        context.builder.seal_all_blocks();
-        context.builder.finalize();
-
-        id
+        merge_block_id: None,
+        loop_block_id: None,
+        current_block_exited: false
     };
+
+    for expr in body {
+        codegen_expression(&mut context, expr);
+    }
+
+    context.builder.seal_all_blocks();
+    context.builder.finalize();
 
     println!("{:?}", func);
 

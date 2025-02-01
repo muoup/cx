@@ -67,6 +67,13 @@ pub enum Expression {
         else_: Vec<Expression>
     },
 
+    Loop {
+        condition: Box<Expression>,
+        body: Vec<Expression>,
+
+        evaluate_condition_first: bool
+    },
+
     VariableDeclaration {
         type_: ValType,
         name: String
