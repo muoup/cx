@@ -1,6 +1,5 @@
-int printf(char* c);
+int puts(char* str);
 
 int main() {
-    printf("Hello, World!");
-    return 0;
+    puts("Hello, World!\n");
 }

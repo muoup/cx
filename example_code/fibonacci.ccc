@@ -1,9 +1,4 @@
-int putchar(char c);
-
-int main() {
-    putchar('0' + fib(5));
-    return 0;
-}
+#include <stdio.h>
 
 int fib(int n) {
     if (n < 2) {
@@ -11,4 +6,9 @@ int fib(int n) {
     }
 
     return n;
+}
+
+int main() {
+    putchar('0' + fib(5));
+    return 0;
 }

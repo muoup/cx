@@ -4,6 +4,7 @@ use crate::parse::ast::Node;
 mod lex;
 mod parse;
 mod codegen;
+mod preprocessor;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -13,10 +14,10 @@ fn main() {
     };
 
     let source = std::fs::read_to_string(file_name).unwrap();
-    let mut lexer = lex::generate_tokens(&source);
+    let preprocessed = preprocessor::preprocess(&source);
+    let mut lexer = lex::generate_tokens(preprocessed.as_str());
 
     if let Some(ast) = parse::parser::parse_ast(&mut lexer) {
-        ast.root.print(0);
         codegen::codegen::ast_codegen(&ast);
     }
 }

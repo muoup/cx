@@ -1,18 +1,17 @@
 use crate::codegen::expression::codegen_expression;
 use crate::codegen::scope::VariableTable;
+use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::parse::ast::{GlobalStatement, AST};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::codegen::isa::CallConv;
-use cranelift::codegen::{ir, settings, Context};
+use cranelift::codegen::{settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift::prelude::Signature;
 use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
-use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 
 pub(crate) struct FunctionState<'a> {
-    pub(crate) context: &'a mut Context,
     pub(crate) object_module: &'a mut ObjectModule,
     pub(crate) functions: &'a HashMap<String, FuncId>,
 
@@ -76,7 +75,10 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
 
     global_state.functions.insert(name.clone(), id);
 
-    let Some(body) = body else { return; };
+    let Some(body) = body else {
+        println!("{:?}", func);
+        return;
+    };
 
     let mut binding = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut func, &mut binding);
@@ -95,7 +97,6 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
 
     {
         let mut context = FunctionState {
-            context: &mut global_state.context,
             object_module: &mut global_state.object_module,
             functions: &global_state.functions,
 

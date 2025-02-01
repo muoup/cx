@@ -27,7 +27,7 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
         Expression::FunctionCall { name, args } => {
             let Expression::Identifier(fn_name) = name.as_ref() else { return None; };
 
-            let id = context.functions.get(fn_name.as_str()).expect("Function not found");
+            let id = context.functions.get(fn_name.as_str()).expect(format!("Function not found: {}", fn_name.as_str()).as_str());
             let sig = context.object_module.declarations().get_function_decl(*id).signature.clone();
 
             let call = context.object_module
@@ -59,7 +59,13 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
                 OperatorType::Multiply => Some(context.builder.ins().imul(left, right)),
                 OperatorType::Divide => Some(context.builder.ins().udiv(left, right)),
                 OperatorType::Modulo => Some(context.builder.ins().urem(left, right)),
+
                 OperatorType::Less => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right)),
+                OperatorType::LessEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right)),
+                OperatorType::Equal => Some(context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right)),
+                OperatorType::Greater => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right)),
+                OperatorType::GreaterEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right)),
+
                 _ => unimplemented!("Operator not implemented: {:?}", operator)
             }
         },

@@ -1,5 +1,6 @@
 use std::io::BufRead;
 use crate::lex::token::{OperatorType, PunctuatorType, Token};
+use crate::parse::ast::Expression;
 
 pub(crate) struct Lexer<'a> {
     source: &'a str,
@@ -178,16 +179,24 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '>' => match iter.peek() {
             Some('>') => {
                 iter.next();
-                found_operator(iter, OperatorType::RShift)
+                Some(Token::Operator(OperatorType::RShift))
             },
-            _ => found_operator(iter, OperatorType::Greater)
+            Some('=') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::GreaterEqual))
+            },
+            _ => Some(Token::Operator(OperatorType::Greater))
         },
         '<' => match iter.peek() {
             Some('<') => {
                 iter.next();
-                found_operator(iter, OperatorType::LShift)
+                Some(Token::Operator(OperatorType::LShift))
             },
-            _ => found_operator(iter, OperatorType::Less)
+            Some('=') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::LessEqual))
+            },
+            _ => Some(Token::Operator(OperatorType::Less))
         },
         '=' => match iter.peek() {
             Some('=') => {
