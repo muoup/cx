@@ -1,0 +1,13 @@
+#include <stdio.h>
+
+int for_loop(int n) {
+    for (int i = n; i > 0; i = i - 1) {
+        putchar('0' + i);
+    }
+    return 0;
+}
+
+int main() {
+    for_loop(5);
+    return 0;
+}

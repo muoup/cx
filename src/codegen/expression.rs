@@ -147,20 +147,41 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
             context.builder.switch_to_block(merge_block);
             None
         },
+        Expression::ForLoop { init, increment, condition, body } => {
+            let cond_block = context.builder.create_block();
+            let body_block = context.builder.create_block();
+            let increment_block = context.builder.create_block();
+            let merge_block = context.builder.create_block();
+
+            codegen_expression(context, init.as_ref());
+            context.builder.ins().jump(cond_block, &[]);
+
+            context.builder.switch_to_block(cond_block);
+            let condition = codegen_expression(context, condition).unwrap();
+            context.builder.ins().brif(condition, body_block, &[], merge_block, &[]);
+
+            context.builder.switch_to_block(body_block);
+            context.variable_table.push_scope();
+
+            for expr in body {
+                codegen_expression(context, expr);
+            }
+
+            context.variable_table.pop_scope();
+            if !context.current_block_exited {
+                context.builder.ins().jump(increment_block, &[]);
+            }
+
+            context.builder.switch_to_block(increment_block);
+            codegen_expression(context, increment.as_ref());
+            context.builder.ins().jump(cond_block, &[]);
+
+            context.builder.switch_to_block(merge_block);
+            None
+        },
 
         Expression::Assignment{ left, right, op } => {
-            let left = match left.as_ref() {
-                Expression::Identifier(name) => {
-                    context.variable_table.get(name.as_str())
-                        .expect(format!("Variable not found: {}", name.as_str()).as_str())
-                        .0
-                },
-                Expression::VariableDeclaration { .. } => {
-                    codegen_expression(context, left).unwrap()
-                },
-                _ => panic!("Invalid left hand side of assignment")
-            };
-
+            let left = codegen_expression(context, left).unwrap();
             let right = codegen_expression(context, right).unwrap();
 
             context.builder.ins().store(ir::MemFlags::new(), right, left, 0);
@@ -175,13 +196,19 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
                 None
             )
         },
+        Expression::VariableStorage { name } => {
+            let (val, _) = context.variable_table.get(name.as_str())
+                .expect(format!("Variable not found: {}", name.as_str()).as_str());
 
+            Some(*val)
+        },
         Expression::Identifier(name) => {
             let (val, type_) = context.variable_table.get(name.as_str())
                 .expect(format!("Variable not found: {}", name.as_str()).as_str());
 
             Some(context.builder.ins().load(*type_, ir::MemFlags::new(), *val, 0))
         },
+
         Expression::IntLiteral(val) => {
             Some(context.builder.ins().iconst(ir::types::I32, *val))
         },

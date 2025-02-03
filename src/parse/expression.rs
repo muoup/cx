@@ -1,4 +1,5 @@
-use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
+use std::clone;
+use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, Token};
 use crate::parse::ast::Expression;
 use crate::parse::parser::{parse_body, TokenIter};
@@ -67,7 +68,10 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
                 op_stack.push(op);
             },
             Token::Assignment(_) => {
-                let left = expr_stack.pop().unwrap();
+                let left = match expr_stack.pop().unwrap() {
+                    Expression::Identifier(name) => Expression::VariableStorage { name },
+                    l => l
+                };
                 let Token::Assignment(op) = toks.next().unwrap().clone() else { unreachable!() };
                 let right = parse_expression(toks)?;
 
@@ -83,6 +87,10 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
     }
 
     condense_stack(&mut expr_stack, &mut op_stack);
+
+    if expr_stack.is_empty() {
+        return Some(Expression::NOP);
+    }
 
     assert_eq!(expr_stack.len(), 1);
     Some(expr_stack.pop().unwrap())
@@ -158,6 +166,25 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
                 condition,
                 body,
                 evaluate_condition_first: true
+            })
+        },
+        KeywordType::For => {
+            assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
+
+            let mut exprs = parse_expressions(toks, Token::Punctuator(Semicolon), Token::Punctuator(CloseParen))?;
+            assert_eq!(exprs.len(), 3);
+
+            let increment = exprs.pop().unwrap();
+            let condition = exprs.pop().unwrap();
+            let init = exprs.pop().unwrap();
+            assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
+
+            let body = parse_body(toks);
+
+            Some(Expression::ForLoop {
+                init: Box::new(init),
+                increment: Box::new(increment),
+                condition: Box::new(condition), body
             })
         },
         KeywordType::Do => {

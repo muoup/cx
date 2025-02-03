@@ -67,6 +67,13 @@ pub enum Expression {
         else_: Vec<Expression>
     },
 
+    ForLoop {
+        init: Box<Expression>,
+        condition: Box<Expression>,
+        increment: Box<Expression>,
+        body: Vec<Expression>
+    },
+
     Loop {
         condition: Box<Expression>,
         body: Vec<Expression>,
@@ -79,7 +86,7 @@ pub enum Expression {
         name: String
     },
 
-    VariableReference {
+    VariableStorage {
         name: String
     },
 
@@ -94,6 +101,7 @@ pub enum Expression {
         op: Option<OperatorType>
     },
 
+    NOP,
     StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
