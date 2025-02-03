@@ -1,6 +1,5 @@
 use std::io::BufRead;
 use crate::lex::token::{OperatorType, PunctuatorType, Token};
-use crate::parse::ast::Expression;
 
 pub(crate) struct Lexer<'a> {
     source: &'a str,
