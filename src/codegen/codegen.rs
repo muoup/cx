@@ -64,7 +64,9 @@ pub fn ast_codegen(ast: &AST) {
 pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut GlobalState) {
     let GlobalStatement::Function { name, arguments, return_type, body } = global_stmt;
 
-    let sig = Signature::new(CallConv::WindowsFastcall);
+    let sig = Signature::new(
+        global_state.object_module.target_config().default_call_conv
+    );
     let mut func = Function::with_name_signature(
         UserFuncName::user(0, global_state.functions.len() as u32),
         sig

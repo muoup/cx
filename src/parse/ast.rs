@@ -90,6 +90,10 @@ pub enum Expression {
         name: String
     },
 
+    UnaryOperation {
+        operator: OperatorType,
+        operand: Box<Expression>
+    },
     BinaryOperation {
         operator: OperatorType,
         left: Box<Expression>,

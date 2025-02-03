@@ -51,6 +51,32 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
                 .cloned()
         },
 
+        Expression::UnaryOperation { operator, operand } => {
+            let operand = codegen_expression(context, operand).unwrap();
+
+            match operator.clone() {
+                OperatorType::Subtract => Some(context.builder.ins().ineg(operand)),
+                OperatorType::BitNot => Some(context.builder.ins().bnot(operand)),
+                OperatorType::LNot => {
+                    let zero = context.builder.ins().iconst(ir::types::I32, 0);
+                    Some(context.builder.ins().icmp(ir::condcodes::IntCC::Equal, operand, zero))
+                },
+                OperatorType::Increment => {
+                    let one = context.builder.ins().iconst(ir::types::I32, 1);
+                    let add = context.builder.ins().iadd(operand, one);
+                    context.builder.ins().store(ir::MemFlags::new(), add, operand, 0);
+                    Some(add)
+                },
+                OperatorType::Decrement => {
+                    let one = context.builder.ins().iconst(ir::types::I32, 1);
+                    let sub = context.builder.ins().isub(operand, one);
+                    context.builder.ins().store(ir::MemFlags::new(), sub, operand, 0);
+                    Some(sub)
+                },
+                _ => unimplemented!("Operator not implemented: {:?}", operator)
+            }
+        },
+
         Expression::BinaryOperation { left, right, operator } => {
             let left = codegen_expression(context, left).unwrap();
             let right = codegen_expression(context, right).unwrap();

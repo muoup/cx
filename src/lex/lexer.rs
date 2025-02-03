@@ -159,7 +159,7 @@ fn char_lex(iter: &mut CharIter) -> Option<Token> {
 }
 
 fn operator_lex(iter: &mut CharIter) -> Option<Token> {
-    fn found_operator(iter: &mut CharIter, operator: OperatorType) -> Option<Token> {
+    fn try_assignment(iter: &mut CharIter, operator: OperatorType) -> Option<Token> {
         if Some('=') == iter.peek() {
             iter.next();
             Some(Token::Assignment(Some(operator)))
@@ -169,19 +169,27 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
     }
 
     match iter.next()? {
-        '+' => found_operator(iter, OperatorType::Add),
-        '*' => found_operator(iter, OperatorType::Multiply),
-        '/' => found_operator(iter, OperatorType::Divide),
-        '%' => found_operator(iter, OperatorType::Modulo),
+        '*' => try_assignment(iter, OperatorType::Multiply),
+        '/' => try_assignment(iter, OperatorType::Divide),
+        '%' => try_assignment(iter, OperatorType::Modulo),
 
-        '-' => {
-            match iter.peek() {
-                Some('>') => {
-                    iter.next();
-                    Some(Token::Operator(OperatorType::PointerAccess))
-                },
-                _ => Some(Token::Operator(OperatorType::Subtract))
-            }
+        '+' => match iter.peek() {
+            Some('+') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::Increment))
+            },
+            _ => try_assignment(iter, OperatorType::Add)
+        }
+        '-' => match iter.peek() {
+            Some('>') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::PointerAccess))
+            },
+            Some('-') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::Decrement))
+            },
+            _ => try_assignment(iter, OperatorType::Subtract)
         },
         '.' => Some(Token::Operator(OperatorType::Access)),
 

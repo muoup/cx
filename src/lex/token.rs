@@ -7,6 +7,8 @@ pub enum OperatorType {
     LAnd, LOr, LNot, BitAnd, BitOr, BitXor, BitNot,
     LShift, RShift,
 
+    Increment, Decrement,
+
     Access, PointerAccess, AddressOf,
     ScopeRes,
 

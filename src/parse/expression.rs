@@ -20,6 +20,7 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
         }
 
         let Some (expr) = parse_expression(toks) else {
+            println!("{:?}", exprs);
             panic!("Expression could not be formed starting at token, near token: {:?} {:?}", toks.slice[recent_iter], toks.slice[toks.index]);
         };
 
@@ -101,9 +102,14 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
         return Some(var);
     }
 
-    match toks.peek()? {
+    let expr = match toks.peek()? {
         Token::Keyword(_) => parse_keyword_expression(toks),
         Token::Identifier(_) => parse_identifier_expression(toks),
+
+        Token::Operator(op) => Some(Expression::UnaryOperation {
+            operator: *op,
+            operand: Box::new(parse_expression(toks)?)
+        }),
 
         _ => match toks.next().unwrap() {
             Token::Punctuator(OpenParen) => {
@@ -123,6 +129,25 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
                 None
             }
         }
+    }?;
+
+    match toks.peek() {
+        Some(Token::Operator(OperatorType::Increment)) => {
+            toks.next();
+            Some(Expression::UnaryOperation {
+                operator: OperatorType::Increment,
+                operand: Box::new(expr)
+            })
+        },
+        Some(Token::Operator(OperatorType::Decrement)) => {
+            toks.next();
+            Some(Expression::UnaryOperation {
+                operator: OperatorType::Decrement,
+                operand: Box::new(expr)
+            })
+        },
+
+        _ => Some(expr)
     }
 }
 
