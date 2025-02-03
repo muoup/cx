@@ -1,6 +1,10 @@
 use crate::lex::token::Token;
 
 pub(crate) fn preprocess_line(string: &str) -> String {
+    if string.contains("//") {
+        return string.split("//").next().unwrap().to_string();
+    }
+
     if !string.starts_with("#") {
         return string.to_string();
     }
