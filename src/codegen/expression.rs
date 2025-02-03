@@ -62,9 +62,17 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
                 OperatorType::Divide => Some(context.builder.ins().udiv(left, right)),
                 OperatorType::Modulo => Some(context.builder.ins().urem(left, right)),
 
+                OperatorType::BitNot => Some(context.builder.ins().bnot(left)),
+                OperatorType::BitAnd => Some(context.builder.ins().band(left, right)),
+                OperatorType::BitOr => Some(context.builder.ins().bor(left, right)),
+                OperatorType::BitXor => Some(context.builder.ins().bxor(left, right)),
+                OperatorType::LShift => Some(context.builder.ins().ishl(left, right)),
+                OperatorType::RShift => Some(context.builder.ins().ushr(left, right)),
+
                 OperatorType::Less => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right)),
                 OperatorType::LessEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right)),
                 OperatorType::Equal => Some(context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right)),
+                OperatorType::NotEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right)),
                 OperatorType::Greater => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right)),
                 OperatorType::GreaterEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right)),
 

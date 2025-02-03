@@ -171,10 +171,48 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
 
     match iter.next()? {
         '+' => found_operator(iter, OperatorType::Add),
-        '-' => found_operator(iter, OperatorType::Subtract),
         '*' => found_operator(iter, OperatorType::Multiply),
         '/' => found_operator(iter, OperatorType::Divide),
         '%' => found_operator(iter, OperatorType::Modulo),
+
+        '-' => {
+            match iter.peek() {
+                Some('>') => {
+                    iter.next();
+                    Some(Token::Operator(OperatorType::PointerAccess))
+                },
+                _ => Some(Token::Operator(OperatorType::Subtract))
+            }
+        },
+        '.' => Some(Token::Operator(OperatorType::Access)),
+
+        '|' => match iter.peek() {
+            Some('|') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::LOr))
+            },
+            _ => Some(Token::Operator(OperatorType::BitOr))
+        },
+        '&' => match iter.peek() {
+            Some('&') => {
+                iter.next();
+                Some(Token::Operator(OperatorType::LAnd))
+            },
+            _ => Some(Token::Operator(OperatorType::BitAnd))
+        },
+        '^' => Some(Token::Operator(OperatorType::BitXor)),
+        '!' => Some(Token::Operator(OperatorType::LNot)),
+        '~' => Some(Token::Operator(OperatorType::BitNot)),
+
+        ':' => {
+            if Some(':') == iter.peek() {
+                iter.next();
+                Some(Token::Operator(OperatorType::ScopeRes))
+            } else {
+                iter.back();
+                None
+            }
+        },
 
         '>' => match iter.peek() {
             Some('>') => {
