@@ -216,7 +216,17 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
 
         Expression::Assignment{ left, right, op } => {
             let left = codegen_expression(context, left).unwrap();
-            let right = codegen_expression(context, right).unwrap();
+            let mut right = codegen_expression(context, right).unwrap();
+
+            if let Some(op) = op {
+                let left_val = context.builder.ins().load(ir::types::I32, ir::MemFlags::new(), left, 0);
+
+                right = match op {
+                    OperatorType::Subtract => context.builder.ins().isub(left_val, right),
+
+                    _ => unimplemented!("Operator not implemented: {:?}", op)
+                }
+            }
 
             context.builder.ins().store(ir::MemFlags::new(), right, left, 0);
             Some(right)
