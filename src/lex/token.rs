@@ -9,7 +9,7 @@ pub enum OperatorType {
 
     Increment, Decrement,
 
-    Access, PointerAccess, AddressOf,
+    Access, PointerAccess, AddressOf, Dereference,
     ScopeRes,
 
     Semicolon

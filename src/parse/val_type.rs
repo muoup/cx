@@ -4,7 +4,7 @@ use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::ast::Expression;
 use crate::parse::parser::TokenIter;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum ValType {
     Unit,
     Integer {

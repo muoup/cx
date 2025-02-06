@@ -1,3 +1,4 @@
+use std::env::args;
 use crate::lex::token::OperatorType;
 use crate::parse::val_type::ValType;
 use std::fmt::Debug;
@@ -14,12 +15,12 @@ pub struct AST {
 
 #[derive(Debug)]
 pub struct Root {
-    pub fn_declarations: Vec<GlobalStatement>,
+    pub global_stmts: Vec<GlobalStatement>,
 }
 
 impl Node for Root {
     fn print(&self, indent: usize) {
-        for fn_decl in &self.fn_declarations {
+        for fn_decl in &self.global_stmts {
             fn_decl.print(indent);
         }
     }
@@ -50,46 +51,25 @@ impl Node for GlobalStatement {
     }
 }
 
-#[derive(Debug)]
-pub enum Expression {
-    FunctionCall {
-        name: Box<Expression>,
+#[derive(Debug, Clone)]
+pub enum LiteralExpression {
+    IntLiteral {
+        val: i64,
+        bytes: u8
+    },
+    FloatLiteral {
+        val: f64,
+        bytes: u8
+    },
+    StringLiteral(String)
+}
+
+#[derive(Debug, Clone)]
+pub enum ValueExpression {
+    DirectFunctionCall {
+        name: String,
         args: Vec<Expression>
     },
-    Return(Box<Expression>),
-    Identifier(String),
-
-    Continue, Break,
-
-    If {
-        condition: Box<Expression>,
-        then: Vec<Expression>,
-        else_: Vec<Expression>
-    },
-
-    ForLoop {
-        init: Box<Expression>,
-        condition: Box<Expression>,
-        increment: Box<Expression>,
-        body: Vec<Expression>
-    },
-
-    Loop {
-        condition: Box<Expression>,
-        body: Vec<Expression>,
-
-        evaluate_condition_first: bool
-    },
-
-    VariableDeclaration {
-        type_: ValType,
-        name: String
-    },
-
-    VariableStorage {
-        name: String
-    },
-
     UnaryOperation {
         operator: OperatorType,
         operand: Box<Expression>
@@ -102,20 +82,83 @@ pub enum Expression {
     Assignment {
         left: Box<Expression>,
         right: Box<Expression>,
-        op: Option<OperatorType>
+        operator: Option<OperatorType>
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MemoryExpression {
+    VariableDeclaration {
+        name: String,
+        type_: ValType,
     },
+    VariableReference {
+        name: String
+    },
+    VariableStorage {
+        name: String,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ControlExpression {
+    Return(Box<Expression>),
+    Continue, Break,
+    If {
+        condition: Box<Expression>,
+        then: Vec<Expression>,
+        else_: Vec<Expression>
+    },
+    ForLoop {
+        init: Box<Expression>,
+        condition: Box<Expression>,
+        increment: Box<Expression>,
+        body: Vec<Expression>
+    },
+    Loop {
+        condition: Box<Expression>,
+        body: Vec<Expression>,
+
+        evaluate_condition_first: bool
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum UnverifiedExpression {
+    Identifier(String),
+    Cast {
+        expr: Box<Expression>,
+        type_: ValType
+    },
+    FunctionCall {
+        name: Box<Expression>,
+        args: Vec<Expression>
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Expression {
+    Literal(LiteralExpression),
+    Value(ValueExpression),
+    Memory(MemoryExpression),
+    Control(ControlExpression),
+
+    // Any expression that should be eliminated by the type checker,
+    // if the codegen phase encounters this, behavior is undefined (likely a panic)
+    Unverified(UnverifiedExpression),
 
     NOP,
-    StringLiteral(String),
-    IntLiteral(i64),
-    FloatLiteral(f64),
-    Unit
+    Unit,
 }
 
 impl Node for Expression {
     fn print(&self, indent: usize) {
         match self {
-            Expression::If { condition, then, else_ } => {
+            Expression::Control(
+                ControlExpression::If {
+                    condition, then, else_
+                }
+            ) => {
                 println!("{:indent$}if", "", indent = indent);
                 condition.print(indent + 4);
                 println!("{:indent$}then", "", indent = indent);

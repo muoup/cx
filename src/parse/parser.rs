@@ -1,6 +1,7 @@
 use crate::lex::token::PunctuatorType::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
 use crate::lex::token::Token;
-use crate::parse::ast::{Expression, GlobalStatement, Root, AST};
+use crate::parse::ast::{Expression, GlobalStatement, Root};
+use crate::parse::ast::MemoryExpression::VariableDeclaration;
 use crate::parse::expression::{parse_expression, parse_expressions};
 use crate::parse::val_type::parse_type;
 
@@ -29,23 +30,10 @@ impl<'a> TokenIter<'_> {
     }
 }
 
-// pub(crate) type TokenIter<'a> = Peekable<slice::Iter<'a, Token>>;
-
-pub fn parse_ast(toks: &[Token]) -> Option<AST> {
-    Some(
-        AST {
-            root: parse_root(&mut TokenIter {
-                slice: toks,
-                index: 0
-            })?
-        }
-    )
-}
-
-fn parse_root(toks: &mut TokenIter) -> Option<Root> {
+pub(crate) fn parse_root(toks: &mut TokenIter) -> Option<Root> {
     Some(
         Root {
-            fn_declarations: parse_global_stmts(toks)?
+            global_stmts: parse_global_stmts(toks)?
         }
     )
 }
@@ -69,7 +57,7 @@ fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
     assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
 
     let arguments = parse_expressions(toks, Token::Punctuator(Comma), Token::Punctuator(CloseParen))?;
-    assert!(arguments.iter().all(|arg| matches!(arg, Expression::VariableDeclaration {..})));
+    assert!(arguments.iter().all(|arg| matches!(arg, Expression::Memory(VariableDeclaration { .. }))));
 
     assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
 
@@ -82,7 +70,7 @@ fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
         GlobalStatement::Function {
             name,
             arguments: arguments.into_iter().map(|arg| {
-                if let Expression::VariableDeclaration { name, type_ } = arg {
+                if let Expression::Memory(VariableDeclaration { name, type_ }) = arg {
                     (name, type_)
                 } else {
                     panic!("Expected variable declaration")

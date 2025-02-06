@@ -53,7 +53,7 @@ pub fn ast_codegen(ast: &AST) {
         functions: HashMap::new()
     };
 
-    for fn_decl in &ast.root.fn_declarations {
+    for fn_decl in &ast.root.global_stmts {
         codegen_function(fn_decl, &mut global_state);
     }
 

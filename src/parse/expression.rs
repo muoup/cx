@@ -1,7 +1,6 @@
-use std::clone;
-use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
+use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, Token};
-use crate::parse::ast::Expression;
+use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, MemoryExpression, UnverifiedExpression, ValueExpression};
 use crate::parse::parser::{parse_body, TokenIter};
 use crate::parse::val_type::parse_type;
 
@@ -37,11 +36,15 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
             let right = expr_stack.pop().unwrap();
             let left = expr_stack.pop().unwrap();
 
-            expr_stack.push(Expression::BinaryOperation {
-                operator: op,
-                left: Box::new(left),
-                right: Box::new(right)
-            });
+            expr_stack.push(
+                Expression::Value (
+                    ValueExpression::BinaryOperation {
+                        operator: op,
+                        left: Box::new(left),
+                        right: Box::new(right)
+                    }
+                )
+            );
         }
     }
 
@@ -69,18 +72,17 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
                 op_stack.push(op);
             },
             Token::Assignment(_) => {
-                let left = match expr_stack.pop().unwrap() {
-                    Expression::Identifier(name) => Expression::VariableStorage { name },
-                    l => l
-                };
-                let Token::Assignment(op) = toks.next().unwrap().clone() else { unreachable!() };
+                let left = expr_stack.pop().unwrap();
+                let Token::Assignment(operator) = toks.next().unwrap().clone() else { unreachable!() };
                 let right = parse_expression(toks)?;
 
-                expr_stack.push(Expression::Assignment {
-                    left: Box::new(left),
-                    right: Box::new(right),
-                    op
-                });
+                expr_stack.push(Expression::Value (
+                    ValueExpression::Assignment {
+                        left: Box::new(left),
+                        right: Box::new(right),
+                        operator
+                    }
+                ));
                 break;
             },
             _ => break
@@ -106,10 +108,14 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
         Token::Keyword(_) => parse_keyword_expression(toks),
         Token::Identifier(_) => parse_identifier_expression(toks),
 
-        Token::Operator(op) => Some(Expression::UnaryOperation {
-            operator: *op,
-            operand: Box::new(parse_expression(toks)?)
-        }),
+        Token::Operator(op) => Some(
+            Expression::Value(
+                ValueExpression::UnaryOperation {
+                    operator: *op,
+                    operand: Box::new(parse_expression(toks)?)
+                }
+            )
+        ),
 
         _ => match toks.next().unwrap() {
             Token::Punctuator(OpenParen) => {
@@ -118,9 +124,15 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
                 Some(expr)
             }
 
-            Token::StringLiteral(str) => Some(Expression::StringLiteral(str.clone())),
-            Token::IntLiteral(int) => Some(Expression::IntLiteral(*int)),
-            Token::FloatLiteral(float) => Some(Expression::FloatLiteral(*float)),
+            Token::StringLiteral(str) => Some(
+                Expression::Literal(LiteralExpression::StringLiteral(str.clone()))
+            ),
+            Token::IntLiteral(int) => Some(
+                Expression::Literal(LiteralExpression::IntLiteral { val: *int, bytes: 4 })
+            ),
+            Token::FloatLiteral(float) => Some(
+                Expression::Literal(LiteralExpression::FloatLiteral { val: *float, bytes: 4 })
+            ),
 
             _ => {
                 toks.back();
@@ -134,17 +146,25 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
     match toks.peek() {
         Some(Token::Operator(OperatorType::Increment)) => {
             toks.next();
-            Some(Expression::UnaryOperation {
-                operator: OperatorType::Increment,
-                operand: Box::new(expr)
-            })
+            Some(
+                Expression::Value (
+                    ValueExpression::UnaryOperation {
+                        operator: OperatorType::Increment,
+                        operand: Box::new(expr)
+                    }
+                )
+            )
         },
         Some(Token::Operator(OperatorType::Decrement)) => {
             toks.next();
-            Some(Expression::UnaryOperation {
-                operator: OperatorType::Decrement,
-                operand: Box::new(expr)
-            })
+            Some(
+                Expression::Value (
+                    ValueExpression::UnaryOperation {
+                        operator: OperatorType::Decrement,
+                        operand: Box::new(expr)
+                    }
+                )
+            )
         },
 
         _ => Some(expr)
@@ -159,14 +179,19 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
     match keyword {
         KeywordType::Return =>
             Some (
-                if toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
-                    Expression::Return(Box::new(Expression::Unit))
-                } else {
-                    Expression::Return(Box::new(parse_expression(toks)?))
-                }
+                Expression::Control(
+                    ControlExpression::Return(Box::new(
+                        if toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
+                            toks.next();
+                            Expression::Unit
+                        } else {
+                            parse_expression(toks)?
+                        }
+                    ))
+                )
             ),
-        KeywordType::Continue => Some(Expression::Continue),
-        KeywordType::Break => Some(Expression::Break),
+        KeywordType::Continue => Some(Expression::Control(ControlExpression::Continue)),
+        KeywordType::Break => Some(Expression::Control(ControlExpression::Break)),
 
         KeywordType::If => {
             let condition = Box::new(parse_expression(toks)?);
@@ -180,18 +205,28 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
                 Vec::new()
             };
 
-            Some(Expression::If { condition, then, else_ })
+            Some(
+                Expression::Control(
+                    ControlExpression::If {
+                        condition, then, else_
+                    }
+                )
+            )
         },
 
         KeywordType::While => {
             let condition = Box::new(parse_expression(toks)?);
             let body = parse_body(toks);
 
-            Some(Expression::Loop {
-                condition,
-                body,
-                evaluate_condition_first: true
-            })
+            Some(
+                Expression::Control(
+                    ControlExpression::Loop {
+                        condition,
+                        body,
+                        evaluate_condition_first: true
+                    }
+                )
+            )
         },
         KeywordType::For => {
             assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
@@ -206,11 +241,15 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
 
             let body = parse_body(toks);
 
-            Some(Expression::ForLoop {
-                init: Box::new(init),
-                increment: Box::new(increment),
-                condition: Box::new(condition), body
-            })
+            Some(
+                Expression::Control(
+                    ControlExpression::ForLoop {
+                        init: Box::new(init),
+                        increment: Box::new(increment),
+                        condition: Box::new(condition), body
+                    }
+                )
+            )
         },
         KeywordType::Do => {
             let body = parse_body(toks);
@@ -218,11 +257,15 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             assert_eq!(toks.next(), Some(&Token::Keyword(KeywordType::While)));
             let condition = Box::new(parse_expression(toks)?);
 
-            Some(Expression::Loop {
-                condition,
-                body,
-                evaluate_condition_first: false
-            })
+            Some(
+                Expression::Control (
+                    ControlExpression::Loop {
+                        condition,
+                        body,
+                        evaluate_condition_first: false
+                    }
+                )
+            )
         },
 
         _ => {
@@ -234,7 +277,11 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             };
 
             if matches!(toks.peek(), Some(&Token::Punctuator(_))) {
-                Some(Expression::VariableDeclaration { type_, name })
+                Some(
+                    Expression::Memory (
+                        MemoryExpression::VariableDeclaration { name, type_ }
+                    )
+                )
             } else {
                 unimplemented!("Variable assignment");
             }
@@ -253,7 +300,11 @@ fn parse_variable_declaration(toks: &mut TokenIter) -> Option<Expression> {
         }
     };
 
-    Some(Expression::VariableDeclaration { type_, name })
+    Some(
+        Expression::Memory(
+            MemoryExpression::VariableDeclaration { name, type_ }
+        )
+    )
 }
 
 fn parse_identifier_expression(toks: &mut TokenIter) -> Option<Expression> {
@@ -268,15 +319,25 @@ fn parse_identifier_expression(toks: &mut TokenIter) -> Option<Expression> {
             let args = parse_expressions(toks, Token::Punctuator(Comma), Token::Punctuator(CloseParen))?;
             assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
             Some(
-                Expression::FunctionCall {
-                    name: Box::new(Expression::Identifier(identifier.clone())),
-                    args
-                }
+                Expression::Unverified (
+                    UnverifiedExpression::FunctionCall {
+                        name: Box::new (
+                            Expression::Unverified(
+                                UnverifiedExpression::Identifier(identifier.clone())
+                            )
+                        ),
+                        args
+                    }
+                )
             )
         },
         _ => {
             toks.back();
-            Some(Expression::Identifier(identifier.clone()))
+            Some(
+                Expression::Unverified (
+                    UnverifiedExpression::Identifier(identifier.clone())
+                )
+            )
         }
     }
 }

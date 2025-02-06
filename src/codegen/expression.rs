@@ -1,39 +1,39 @@
 use crate::codegen::codegen::FunctionState;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::Expression;
+use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, MemoryExpression, ValueExpression};
 use cranelift::codegen::ir;
-use cranelift::codegen::ir::GlobalValue;
-use cranelift::prelude::{InstBuilder, Value};
-use cranelift_module::{DataDescription, Linkage, Module};
-use crate::codegen::routines::allocate_variable;
+use cranelift::prelude::{EntityRef, InstBuilder, Value};
+use cranelift_module::{Linkage, Module};
+use log::warn;
+use crate::codegen::routines::{allocate_variable, load_value, signed_bin_op, string_literal};
 use crate::codegen::value_type::get_cranelift_type;
 
 pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression) -> Option<Value> {
     match expr {
-        Expression::Return(expr) => {
-            context.current_block_exited = true;
-            match expr.as_ref() {
-                &Expression::Unit => {
-                    context.builder.ins().return_(&[]);
-                },
-                _ => {
-                    let codegen_expr = codegen_expression(context, expr).unwrap();
+        Expression::Value(value) => codegen_value_expr(context, value),
+        Expression::Control(control) => codegen_control_expr(context, control),
+        Expression::Memory(memory) => codegen_memory_expr(context, memory),
+        Expression::Literal(literal) => codegen_literal_expr(context, literal),
 
-                    context.builder.ins().return_(&[
-                        codegen_expr
-                    ]);
-                }
-            }
-            None
-        },
-        Expression::FunctionCall { name, args } => {
-            let Expression::Identifier(fn_name) = name.as_ref() else { return None; };
+        Expression::Unit => None,
+        Expression::Unverified(_) => panic!("Unverified expression encountered {:?}", expr),
 
-            let id = context.functions.get(fn_name.as_str()).expect(format!("Function not found: {}", fn_name.as_str()).as_str());
-            let sig = context.object_module.declarations().get_function_decl(*id).signature.clone();
+        _ => unimplemented!("Expression not implemented: {:?}", expr)
+    }
+}
+
+pub(crate) fn codegen_value_expr(context: &mut FunctionState, expr: &ValueExpression) -> Option<Value> {
+    match expr {
+        ValueExpression::DirectFunctionCall { name, args } => {
+            let id = context.functions
+                .get(name.as_str())
+                .expect(format!("Function not found: {}", name.as_str()).as_str());
+            let sig = context.object_module
+                .declarations()
+                .get_function_decl(*id).signature.clone();
 
             let call = context.object_module
-                .declare_function(&fn_name, Linkage::Export, &sig)
+                .declare_function(name.as_str(), Linkage::Export, &sig)
                 .unwrap();
             let local_call = context.object_module.declare_func_in_func(call, context.builder.func);
 
@@ -51,23 +51,30 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
                 .cloned()
         },
 
-        Expression::UnaryOperation { operator, operand } => {
-            let operand = codegen_expression(context, operand).unwrap();
-
-            match operator.clone() {
-                OperatorType::Subtract => Some(context.builder.ins().ineg(operand)),
-                OperatorType::BitNot => Some(context.builder.ins().bnot(operand)),
+        ValueExpression::UnaryOperation { operator, operand } => {
+            match operator {
+                OperatorType::Subtract => {
+                    let operand = codegen_expression(context, operand).unwrap();
+                    Some(context.builder.ins().ineg(operand))
+                },
+                OperatorType::BitNot => {
+                    let operand = codegen_expression(context, operand).unwrap();
+                    Some(context.builder.ins().bnot(operand))
+                },
                 OperatorType::LNot => {
+                    let operand = codegen_expression(context, operand).unwrap();
                     let zero = context.builder.ins().iconst(ir::types::I32, 0);
                     Some(context.builder.ins().icmp(ir::condcodes::IntCC::Equal, operand, zero))
                 },
                 OperatorType::Increment => {
+                    let operand = codegen_expression(context, operand).unwrap();
                     let one = context.builder.ins().iconst(ir::types::I32, 1);
                     let add = context.builder.ins().iadd(operand, one);
                     context.builder.ins().store(ir::MemFlags::new(), add, operand, 0);
                     Some(add)
                 },
                 OperatorType::Decrement => {
+                    let operand = codegen_expression(context, operand).unwrap();
                     let one = context.builder.ins().iconst(ir::types::I32, 1);
                     let sub = context.builder.ins().isub(operand, one);
                     context.builder.ins().store(ir::MemFlags::new(), sub, operand, 0);
@@ -77,161 +84,72 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
             }
         },
 
-        Expression::BinaryOperation { left, right, operator } => {
+        ValueExpression::BinaryOperation { operator, left, right } => {
             let left = codegen_expression(context, left).unwrap();
             let right = codegen_expression(context, right).unwrap();
 
-            match operator.clone() {
-                OperatorType::Add => Some(context.builder.ins().iadd(left, right)),
-                OperatorType::Subtract => Some(context.builder.ins().isub(left, right)),
-                OperatorType::Multiply => Some(context.builder.ins().imul(left, right)),
-                OperatorType::Divide => Some(context.builder.ins().udiv(left, right)),
-                OperatorType::Modulo => Some(context.builder.ins().urem(left, right)),
-
-                OperatorType::BitNot => Some(context.builder.ins().bnot(left)),
-                OperatorType::BitAnd => Some(context.builder.ins().band(left, right)),
-                OperatorType::BitOr => Some(context.builder.ins().bor(left, right)),
-                OperatorType::BitXor => Some(context.builder.ins().bxor(left, right)),
-                OperatorType::LShift => Some(context.builder.ins().ishl(left, right)),
-                OperatorType::RShift => Some(context.builder.ins().ushr(left, right)),
-
-                OperatorType::Less => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right)),
-                OperatorType::LessEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right)),
-                OperatorType::Equal => Some(context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right)),
-                OperatorType::NotEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right)),
-                OperatorType::Greater => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right)),
-                OperatorType::GreaterEqual => Some(context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right)),
-
-                _ => unimplemented!("Operator not implemented: {:?}", operator)
-            }
+            signed_bin_op(&mut context.builder, operator.clone(), left, right)
         },
 
-        Expression::If { condition, then, else_ } => {
-            let condition = codegen_expression(context, condition).unwrap();
-            let then_block = context.builder.create_block();
-            let else_block = context.builder.create_block();
+        ValueExpression::Assignment { left, right, operator } => {
+            let left_val = codegen_expression(context, left).unwrap();
+            let mut right_val = codegen_expression(context, right).unwrap();
 
-            context.builder.ins().brif(condition, then_block, &[], else_block, &[]);
-            context.builder.switch_to_block(then_block);
-            context.variable_table.push_scope();
-            context.current_block_exited = false;
-
-            for expr in then {
-                codegen_expression(context, expr);
+            if let Some(operator) = operator {
+                let loaded_left = load_value(context, left.as_ref()).unwrap();
+                right_val = signed_bin_op(&mut context.builder, operator.clone(), loaded_left, right_val).unwrap();
             }
 
-            context.variable_table.pop_scope();
+            context.builder.ins().store(ir::MemFlags::new(), right_val, left_val, 0);
+            Some(right_val)
+        },
 
-            if else_.is_empty() {
-                if !context.current_block_exited {
-                    context.builder.ins().jump(else_block, &[]);
-                }
-                context.current_block_exited = false;
+        _ => unimplemented!("Value expression not implemented: {:?}", expr)
+    }
+}
 
-                context.builder.switch_to_block(else_block);
-                return None;
-            }
+pub(crate) fn codegen_control_expr(context: &mut FunctionState, expr: &ControlExpression) -> Option<Value> {
+    match expr {
+        ControlExpression::If { condition, then, else_ } =>
+            cg_expr_if(context, condition, then, else_),
 
-            let merge_block = context.builder.create_block();
-            if !context.current_block_exited {
-                context.builder.ins().jump(merge_block, &[]);
-            }
+        ControlExpression::Loop { condition, body, evaluate_condition_first } =>
+            cg_expr_loop(context, condition, body, *evaluate_condition_first),
 
-            context.builder.switch_to_block(else_block);
+        ControlExpression::ForLoop { init, increment, condition, body } =>
+            cg_expr_for_loop(context, init, increment, condition, body),
 
-            for expr in else_ {
-                codegen_expression(context, expr);
-            }
-
-            if !context.current_block_exited {
-                context.builder.ins().jump(merge_block, &[]);
-            }
-
-            context.builder.switch_to_block(merge_block);
+        ControlExpression::Return(expr) => {
+            let val = codegen_expression(context, expr).unwrap();
+            context.builder.ins().return_(&[val]);
+            context.current_block_exited = true;
 
             None
         },
-        Expression::Loop { condition, body, evaluate_condition_first } => {
-            let loop_block = context.builder.create_block();
-            let body_block = context.builder.create_block();
-            let merge_block = context.builder.create_block();
 
-            if *evaluate_condition_first {
-                context.builder.ins().jump(loop_block, &[]);
-            } else {
-                context.builder.ins().jump(body_block, &[]);
-            }
+        ControlExpression::Continue => {
+            let block_id = context.loop_block_id.expect("Loop block not found");
+            context.builder.ins().jump(ir::Block::from_u32(block_id), &[]);
+            context.current_block_exited = true;
 
-            context.builder.switch_to_block(loop_block);
-            let condition = codegen_expression(context, condition).unwrap();
-            context.builder.ins().brif(condition, body_block, &[], merge_block, &[]);
-
-            context.builder.switch_to_block(body_block);
-            context.variable_table.push_scope();
-
-            for expr in body {
-                codegen_expression(context, expr);
-            }
-
-            context.variable_table.pop_scope();
-            if !context.current_block_exited {
-                context.builder.ins().jump(loop_block, &[]);
-            }
-
-            context.builder.switch_to_block(merge_block);
-            None
-        },
-        Expression::ForLoop { init, increment, condition, body } => {
-            let cond_block = context.builder.create_block();
-            let body_block = context.builder.create_block();
-            let increment_block = context.builder.create_block();
-            let merge_block = context.builder.create_block();
-
-            codegen_expression(context, init.as_ref());
-            context.builder.ins().jump(cond_block, &[]);
-
-            context.builder.switch_to_block(cond_block);
-            let condition = codegen_expression(context, condition).unwrap();
-            context.builder.ins().brif(condition, body_block, &[], merge_block, &[]);
-
-            context.builder.switch_to_block(body_block);
-            context.variable_table.push_scope();
-
-            for expr in body {
-                codegen_expression(context, expr);
-            }
-
-            context.variable_table.pop_scope();
-            if !context.current_block_exited {
-                context.builder.ins().jump(increment_block, &[]);
-            }
-
-            context.builder.switch_to_block(increment_block);
-            codegen_expression(context, increment.as_ref());
-            context.builder.ins().jump(cond_block, &[]);
-
-            context.builder.switch_to_block(merge_block);
             None
         },
 
-        Expression::Assignment{ left, right, op } => {
-            let left = codegen_expression(context, left).unwrap();
-            let mut right = codegen_expression(context, right).unwrap();
+        ControlExpression::Break => {
+            let block_id = context.merge_block_id.expect("Merge block not found");
+            context.builder.ins().jump(ir::Block::from_u32(block_id), &[]);
+            context.current_block_exited = true;
 
-            if let Some(op) = op {
-                let left_val = context.builder.ins().load(ir::types::I32, ir::MemFlags::new(), left, 0);
-
-                right = match op {
-                    OperatorType::Subtract => context.builder.ins().isub(left_val, right),
-
-                    _ => unimplemented!("Operator not implemented: {:?}", op)
-                }
-            }
-
-            context.builder.ins().store(ir::MemFlags::new(), right, left, 0);
-            Some(right)
+            None
         },
-        Expression::VariableDeclaration { name, type_ } => {
+
+        _ => unimplemented!("Control expression not implemented: {:?}", expr)
+    }
+}
+
+pub(crate) fn codegen_memory_expr(context: &mut FunctionState, expr: &MemoryExpression) -> Option<Value> {
+    match expr {
+        MemoryExpression::VariableDeclaration { name, type_ } => {
             let param_type = get_cranelift_type(context.object_module, type_);
 
             allocate_variable(
@@ -240,48 +158,159 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
                 None
             )
         },
-        Expression::VariableStorage { name } => {
+        MemoryExpression::VariableStorage { name, .. } => {
             let (val, _) = context.variable_table.get(name.as_str())
                 .expect(format!("Variable not found: {}", name.as_str()).as_str());
 
             Some(*val)
         },
-        Expression::Identifier(name) => {
+        MemoryExpression::VariableReference { name, .. } => {
             let (val, type_) = context.variable_table.get(name.as_str())
                 .expect(format!("Variable not found: {}", name.as_str()).as_str());
 
             Some(context.builder.ins().load(*type_, ir::MemFlags::new(), *val, 0))
         },
+        _ => unimplemented!("Memory expression not implemented: {:?}", expr)
+    }
+}
 
-        Expression::IntLiteral(val) => {
-            Some(context.builder.ins().iconst(ir::types::I32, *val))
-        },
-        Expression::StringLiteral(str) => {
+pub(crate) fn codegen_literal_expr(context: &mut FunctionState, expr: &LiteralExpression) -> Option<Value> {
+    match expr {
+        LiteralExpression::IntLiteral { val, .. } =>
+            Some(context.builder.ins().iconst(ir::types::I32, *val)),
+
+        LiteralExpression::StringLiteral(str) => {
             let literal = string_literal(context, str.as_ref());
             let ptr_type = context.object_module.target_config().pointer_type();
 
             Some(context.builder.ins().global_value(ptr_type, literal))
         },
-        Expression::Unit => None,
-        _ => unimplemented!("Expression not implemented: {:?}", expr)
+
+        _ => unimplemented!("Literal expression not implemented: {:?}", expr)
     }
 }
 
-fn string_literal(context: &mut FunctionState, str: &str) -> GlobalValue {
-    let id = context.object_module.declare_anonymous_data(
-        false,
-        false
-    ).unwrap();
+fn cg_expr_if(context: &mut FunctionState, condition: &Expression,
+              then: &Vec<Expression>, else_: &Vec<Expression>) -> Option<Value> {
+    let condition = codegen_expression(context, condition).unwrap();
+    let then_block = context.builder.create_block();
+    let else_block = context.builder.create_block();
 
-    let mut data = DataDescription::new();
-    let mut str_data = str.as_bytes().to_vec();
-    str_data.push('\0' as u8);
+    context.builder.ins().brif(condition, then_block, &[], else_block, &[]);
+    context.builder.switch_to_block(then_block);
+    context.variable_table.push_scope();
+    context.current_block_exited = false;
 
-    data.define(str_data.into_boxed_slice());
+    for expr in then {
+        codegen_expression(context, expr);
+    }
 
-    context.object_module.define_data(id, &data).unwrap();
-    context.object_module.declare_data_in_func(
-        id,
-        context.builder.func
-    )
+    context.variable_table.pop_scope();
+
+    if else_.is_empty() {
+        if !context.current_block_exited {
+            context.builder.ins().jump(else_block, &[]);
+        }
+        context.current_block_exited = false;
+
+        context.builder.switch_to_block(else_block);
+        return None;
+    }
+
+    let merge_block = context.builder.create_block();
+    if !context.current_block_exited {
+        context.builder.ins().jump(merge_block, &[]);
+    }
+
+    context.builder.switch_to_block(else_block);
+
+    for expr in else_ {
+        codegen_expression(context, expr);
+    }
+
+    if !context.current_block_exited {
+        context.builder.ins().jump(merge_block, &[]);
+    }
+
+    context.builder.switch_to_block(merge_block);
+
+    None
+}
+
+fn cg_expr_loop(context: &mut FunctionState, condition: &Expression,
+                body: &Vec<Expression>, eval_cond_first: bool) -> Option<Value> {
+    let loop_block = context.builder.create_block();
+    let body_block = context.builder.create_block();
+    let merge_block = context.builder.create_block();
+
+    if eval_cond_first {
+        context.builder.ins().jump(loop_block, &[]);
+    } else {
+        context.builder.ins().jump(body_block, &[]);
+    }
+
+    context.builder.switch_to_block(loop_block);
+    let condition = codegen_expression(context, condition).unwrap();
+    context.builder.ins().brif(condition, body_block, &[], merge_block, &[]);
+
+    context.builder.switch_to_block(body_block);
+    context.variable_table.push_scope();
+    context.merge_block_id = Some(merge_block.as_u32());
+    context.loop_block_id = Some(loop_block.as_u32());
+
+    for expr in body {
+        codegen_expression(context, expr);
+    }
+
+    context.merge_block_id = None;
+    context.loop_block_id = None;
+    context.variable_table.pop_scope();
+    if !context.current_block_exited {
+        context.builder.ins().jump(loop_block, &[]);
+    }
+
+    context.builder.switch_to_block(merge_block);
+    context.current_block_exited = false;
+
+    None
+}
+
+fn cg_expr_for_loop(context: &mut FunctionState, init: &Expression,
+                    increment: &Expression, condition: &Expression,
+                    body: &Vec<Expression>) -> Option<Value> {
+    let cond_block = context.builder.create_block();
+    let body_block = context.builder.create_block();
+    let increment_block = context.builder.create_block();
+    let merge_block = context.builder.create_block();
+
+    codegen_expression(context, init);
+    context.builder.ins().jump(cond_block, &[]);
+
+    context.builder.switch_to_block(cond_block);
+    let condition = codegen_expression(context, condition).unwrap();
+    context.builder.ins().brif(condition, body_block, &[], merge_block, &[]);
+
+    context.builder.switch_to_block(body_block);
+    context.variable_table.push_scope();
+    context.merge_block_id = Some(merge_block.as_u32());
+    context.loop_block_id = Some(cond_block.as_u32());
+
+    for expr in body {
+        codegen_expression(context, expr);
+    }
+
+    context.merge_block_id = None;
+    context.loop_block_id = None;
+    context.variable_table.pop_scope();
+    if !context.current_block_exited {
+        context.builder.ins().jump(increment_block, &[]);
+    }
+
+    context.builder.switch_to_block(increment_block);
+    codegen_expression(context, increment);
+    context.builder.ins().jump(cond_block, &[]);
+
+    context.builder.switch_to_block(merge_block);
+
+    None
 }
