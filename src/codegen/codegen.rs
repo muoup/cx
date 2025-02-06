@@ -89,10 +89,7 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
 
     global_state.functions.insert(name.clone(), id);
 
-    let Some(body) = body else {
-        println!("{:?}", func);
-        return;
-    };
+    let Some(body) = body else { return; };
 
     let mut binding = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut func, &mut binding);

@@ -27,14 +27,14 @@ pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &
 }
 
 pub(crate) fn load_value(context: &mut FunctionState, value: &Expression) -> Option<Value> {
-    let (value, _) = match value {
+    let (value, type_) = match value {
         Expression::Memory(MemoryExpression::VariableStorage { name })
             => context.variable_table.get(name)?.clone(),
 
         _ => return None
     };
 
-    Some(context.builder.ins().load(ir::types::I32, MemFlags::new(), value, 0))
+    Some(context.builder.ins().load(type_, MemFlags::new(), value, 0))
 }
 
 pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs: Value, rhs: Value) -> Option<Value> {
