@@ -1,8 +1,9 @@
-use crate::lex::token::PunctuatorType::{CloseParen, Comma, OpenParen, Semicolon};
+use std::clone;
+use log::warn;
+use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, Token};
-use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, MemoryExpression, UnverifiedExpression, ValueExpression};
-use crate::parse::parser::{parse_body, TokenIter};
-use crate::parse::val_type::parse_type;
+use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, UnverifiedExpression, ValueExpression};
+use crate::parse::parser::{parse_body, parse_data_type, TokenIter};
 
 pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
     let mut exprs = Vec::new();
@@ -27,26 +28,68 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
     }
 }
 
+fn compress_lval_stack(expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+    compress_stack(expr_stack, op_stack);
+
+    // If say we have the lvalue expression int *b, this will initially be parsed as
+    // int * b which is incorrect, we need to convert this to int and *b which is correct
+    if let Some(Expression::Value(ValueExpression::BinaryOperation { .. })) = expr_stack.last() {
+        let Some(
+            Expression::Value (
+                ValueExpression::BinaryOperation {
+                    operator,
+                    left, right
+                }
+            )
+        ) = expr_stack.pop() else { unreachable!() };
+
+        expr_stack.push(
+            Expression::Value (
+                ValueExpression::UnaryOperation {
+                    operator,
+                    operand: right
+                }
+            )
+        );
+
+        expr_stack.push(*left);
+    }
+
+    if !op_stack.is_empty() {
+        warn!("Unexpected operator stack {:?}", op_stack);
+        return None
+    }
+
+    if expr_stack.len() != 1 {
+        warn!("Unexpected expression stack {:?}", expr_stack);
+        return None
+    }
+
+    Some(())
+}
+
+fn compress_stack(expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+    while let Some(op) = op_stack.pop() {
+        let right = expr_stack.pop()?;
+        let left = expr_stack.pop()?;
+
+        expr_stack.push(
+            Expression::Value (
+                ValueExpression::BinaryOperation {
+                    operator: op,
+                    left: Box::new(left),
+                    right: Box::new(right)
+                }
+            )
+        );
+    }
+
+    Some(())
+}
+
 pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
     let mut expr_stack = Vec::new();
     let mut op_stack = Vec::new();
-
-    fn condense_stack(expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorType>) {
-        while let Some(op) = op_stack.pop() {
-            let right = expr_stack.pop().unwrap();
-            let left = expr_stack.pop().unwrap();
-
-            expr_stack.push(
-                Expression::Value (
-                    ValueExpression::BinaryOperation {
-                        operator: op,
-                        left: Box::new(left),
-                        right: Box::new(right)
-                    }
-                )
-            );
-        }
-    }
 
     loop {
         expr_stack.push(parse_expression_value(toks)?);
@@ -55,7 +98,7 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
             break;
         }
 
-        match toks.peek().unwrap() {
+        match toks.peek()? {
             Token::Operator(_) => {
                 // This is hacky, but I'm not sure how else to make the borrow checker happy
                 let Token::Operator(op) = *toks.next().unwrap() else { unreachable!() };
@@ -66,13 +109,15 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
                 let curr_precedence = op.precedence();
 
                 if curr_precedence < prev_precedence {
-                    condense_stack(&mut expr_stack, &mut op_stack);
+                    compress_stack(&mut expr_stack, &mut op_stack);
                 }
 
                 op_stack.push(op);
             },
             Token::Assignment(_) => {
-                let left = expr_stack.pop().unwrap();
+                compress_lval_stack(&mut expr_stack, &mut op_stack);
+
+                let left = expr_stack.pop()?;
                 let Token::Assignment(operator) = toks.next().unwrap().clone() else { unreachable!() };
                 let right = parse_expression(toks)?;
 
@@ -85,11 +130,29 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
                 ));
                 break;
             },
-            _ => break
+            Token::Punctuator(_) => break,
+
+            _ => {
+                // Assume the expression before is a type
+                let lvalue_expression = parse_expression_value(toks)?;
+                let identifier = expr_stack.pop()?;
+
+                expr_stack.push(
+                    Expression::Unverified(
+                        UnverifiedExpression::CompoundIdentifier {
+                            identifier: match identifier {
+                                Expression::Unverified(UnverifiedExpression::Identifier(name)) => name,
+                                _ => unreachable!()
+                            },
+                            suffix: Box::new(lvalue_expression)
+                        }
+                    )
+                );
+            }
         }
     }
 
-    condense_stack(&mut expr_stack, &mut op_stack);
+    compress_stack(&mut expr_stack, &mut op_stack);
 
     if expr_stack.is_empty() {
         return Some(Expression::NOP);
@@ -100,76 +163,61 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
 }
 
 fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
-    if let Some(var) = parse_variable_declaration(toks) {
-        return Some(var);
-    }
-
-    let expr = match toks.peek()? {
+    match toks.next()? {
         Token::Keyword(_) => parse_keyword_expression(toks),
-        Token::Identifier(_) => parse_identifier_expression(toks),
-
+        Token::Intrinsic(_) => parse_data_type(toks),
+        Token::Punctuator(OpenParen) => {
+            let expr = parse_expression(toks)?;
+            assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
+            Some(expr)
+        },
         Token::Operator(op) => Some(
             Expression::Value(
                 ValueExpression::UnaryOperation {
                     operator: *op,
-                    operand: Box::new(parse_expression(toks)?)
+                    operand: Box::new(parse_expression_value(toks)?)
                 }
             )
         ),
+        Token::Identifier(name) => Some(
+            Expression::Unverified(
+                UnverifiedExpression::Identifier(name.clone())
+            )
+        ),
+        Token::IntLiteral(val) => {
+            Some(
+                Expression::Literal(
+                    LiteralExpression::IntLiteral { val: *val, bytes: 4 }
+                )
+            )
+        },
+        Token::FloatLiteral(val) => {
+            Some(
+                Expression::Literal(
+                    LiteralExpression::FloatLiteral { val: *val, bytes: 4 }
+                )
+            )
+        },
+        Token::StringLiteral(val) => {
+            Some(
+                Expression::Literal(
+                    LiteralExpression::StringLiteral(val.clone())
+                )
+            )
+        },
+        Token::Punctuator(OpenParen) => {
+            let expr = parse_expression(toks)?;
+            assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
+            Some(expr)
+        },
 
-        _ => match toks.next().unwrap() {
-            Token::Punctuator(OpenParen) => {
-                let expr = parse_expression(toks)?;
-                assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
-                Some(expr)
-            }
-
-            Token::StringLiteral(str) => Some(
-                Expression::Literal(LiteralExpression::StringLiteral(str.clone()))
-            ),
-            Token::IntLiteral(int) => Some(
-                Expression::Literal(LiteralExpression::IntLiteral { val: *int, bytes: 4 })
-            ),
-            Token::FloatLiteral(float) => Some(
-                Expression::Literal(LiteralExpression::FloatLiteral { val: *float, bytes: 4 })
-            ),
-
-            _ => {
-                toks.back();
-                println!("Unexpected token: {:?}", toks.peek());
-
-                None
-            }
+        _ => {
+            warn!("Unexpected expression value starting with {:?}", toks.slice);
+            None
         }
-    }?;
-
-    match toks.peek() {
-        Some(Token::Operator(OperatorType::Increment)) => {
-            toks.next();
-            Some(
-                Expression::Value (
-                    ValueExpression::UnaryOperation {
-                        operator: OperatorType::Increment,
-                        operand: Box::new(expr)
-                    }
-                )
-            )
-        },
-        Some(Token::Operator(OperatorType::Decrement)) => {
-            toks.next();
-            Some(
-                Expression::Value (
-                    ValueExpression::UnaryOperation {
-                        operator: OperatorType::Decrement,
-                        operand: Box::new(expr)
-                    }
-                )
-            )
-        },
-
-        _ => Some(expr)
     }
 }
+
 
 fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
     let Some(Token::Keyword(keyword)) = toks.next() else {
@@ -268,76 +316,6 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             )
         },
 
-        _ => {
-            toks.back();
-            let type_ = parse_type(toks)?;
-            let name = match toks.next()? {
-                Token::Identifier(name) => name.clone(),
-                _ => return None
-            };
-
-            if matches!(toks.peek(), Some(&Token::Punctuator(_))) {
-                Some(
-                    Expression::Memory (
-                        MemoryExpression::VariableDeclaration { name, type_ }
-                    )
-                )
-            } else {
-                unimplemented!("Variable assignment");
-            }
-        }
-    }
-}
-
-fn parse_variable_declaration(toks: &mut TokenIter) -> Option<Expression> {
-    let pre_index = toks.index;
-    let type_ = parse_type(toks)?;
-    let name = match toks.next()? {
-        Token::Identifier(name) => name.clone(),
-        _ => {
-            toks.index = pre_index;
-            return None;
-        }
-    };
-
-    Some(
-        Expression::Memory(
-            MemoryExpression::VariableDeclaration { name, type_ }
-        )
-    )
-}
-
-fn parse_identifier_expression(toks: &mut TokenIter) -> Option<Expression> {
-    let identifier = match toks.next()? {
-        Token::Identifier(identifier) => identifier.clone(),
-        _ => panic!("Called parse_identifier_expression with non-identifier")
-    };
-
-    match toks.next()? {
-        // Function call (identifier followed by open paren)
-        Token::Punctuator(OpenParen) => {
-            let args = parse_expressions(toks, Token::Punctuator(Comma), Token::Punctuator(CloseParen))?;
-            assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
-            Some(
-                Expression::Unverified (
-                    UnverifiedExpression::FunctionCall {
-                        name: Box::new (
-                            Expression::Unverified(
-                                UnverifiedExpression::Identifier(identifier.clone())
-                            )
-                        ),
-                        args
-                    }
-                )
-            )
-        },
-        _ => {
-            toks.back();
-            Some(
-                Expression::Unverified (
-                    UnverifiedExpression::Identifier(identifier.clone())
-                )
-            )
-        }
+        _ => None,
     }
 }

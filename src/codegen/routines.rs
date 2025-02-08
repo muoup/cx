@@ -6,7 +6,7 @@ use cranelift_module::{DataDescription, Module};
 use crate::codegen::codegen::FunctionState;
 use crate::codegen::scope::VariableTable;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::{Expression, MemoryExpression};
+use crate::parse::ast::{Expression, ValueExpression};
 
 pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &mut VariableTable,
                                 name: &str, type_: ir::Type, initial_value: Option<ir::Value>) -> Option<Value> {
@@ -28,7 +28,7 @@ pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &
 
 pub(crate) fn load_value(context: &mut FunctionState, value: &Expression) -> Option<Value> {
     let (value, type_) = match value {
-        Expression::Memory(MemoryExpression::VariableStorage { name })
+        Expression::Value(ValueExpression::VariableReference { name, .. })
             => context.variable_table.get(name)?.clone(),
 
         _ => return None

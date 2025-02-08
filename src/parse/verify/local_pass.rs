@@ -1,11 +1,14 @@
 use std::clone;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
+use cranelift_module::Module;
 use log::{log, warn, Level};
 use crate::lex::token::OperatorType;
 use crate::lex::token::Token::Operator;
-use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LiteralExpression, MemoryExpression, Root, UnverifiedExpression, ValueExpression};
-use crate::parse::val_type::ValType;
+use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LValueExpression, LiteralExpression, Root, UnverifiedExpression, ValueExpression, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
+use crate::parse::verify::type_verification::verify_type;
+use crate::parse::verify::ValueTypeRef;
 
 pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option<()> {
     for stmt in root.global_stmts.iter_mut() {
@@ -19,8 +22,8 @@ pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option
                 context.current_return_type = Some(return_type.clone());
                 context.push_scope();
 
-                for (name, val_type) in arguments {
-                    context.insert_variable(name.clone(), val_type.clone());
+                for arg in arguments {
+                    verify_expression(context, arg);
                 }
 
                 for expr in body.iter_mut() {
@@ -28,31 +31,108 @@ pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option
                 }
 
                 context.pop_scope();
-            }
+            },
+
+            _ => ()
         }
     }
 
     Some(())
 }
-
-fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Option<()> {
+fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueTypeRef> {
     match expr {
-        Expression::Control(control) => verify_control_expr(context, control)?,
-        Expression::Memory(memory) => verify_mem_expr(context, memory)?,
-        Expression::Value(value) => verify_val_expr(context, value)?,
+        Expression::Control(control) => verify_control_expr(context, control),
+        Expression::Value(value) => verify_val_expr(context, value),
         Expression::Unverified(unverified) => {
             *expr = characterize_unverified_expr(context, unverified)?;
-            verify_expression(context, expr);
+            verify_expression(context, expr)
+        },
+        Expression::LValue(lvalue) => {
+            warn!("Attempting to call verify_expression on l-value {:?}", lvalue);
+            None
         },
 
-
-        _ => warn!("Unimplemented expression {:?}", expr),
-    };
-
-    Some(())
+        _ => {
+            warn!("Unimplemented expression {:?}", expr);
+            None
+        },
+    }
 }
 
-fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression) -> Option<()> {
+fn generate_lvalue(context: &mut VerifyContext, expr: &mut Expression, internal_type: ValueTypeRef) -> Option<(Option<String>, ValueType)> {
+    match expr {
+        Expression::Unverified(UnverifiedExpression::Identifier(name)) =>
+            Some((Some(name.clone()), ValueType::Standard(internal_type.clone()))),
+
+        _ => None
+    }
+}
+
+fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueTypeRef> {
+    match expr {
+        // Variable Declaration
+        Expression::Unverified(unverified) => match unverified {
+            UnverifiedExpression::CompoundIdentifier { identifier, suffix } => {
+                let type_ = verify_type(context, identifier)?;
+                let Some((Some(name), lval_type)) = generate_lvalue(context, suffix, type_) else {
+                    warn!("Failed to generate l-value for typed expression");
+                    return None
+                };
+                let lval_type = ValueTypeRef::new(lval_type);
+
+                *expr =
+                    Expression::LValue(
+                        LValueExpression::Alloca {
+                            name,
+                            type_: lval_type.clone()
+                        }
+                    );
+
+                Some(lval_type)
+            },
+
+            // Variable reference
+            UnverifiedExpression::Identifier(name) => {
+                let Some(val_type) = context.get_variable(name) else {
+                    warn!("Variable {} not found", name);
+                    return None
+                };
+
+                *expr = Expression::LValue(
+                    LValueExpression::Value {
+                        name: name.clone(),
+                    }
+                );
+
+                Some(val_type.clone())
+            },
+
+            _ => {
+                warn!("Invalid l-value: {:?}", expr);
+                None
+            },
+        },
+
+        // Pointer to
+        Expression::Value(value) => match value {
+            ValueExpression::UnaryOperation { operator: OperatorType::Dereference, operand } => {
+                None
+            },
+
+            _ => {
+                warn!("Invalid l-value: {:?}", expr);
+                None
+            },
+        },
+
+        _ => {
+            warn!("Invalid l-value: {:?}", expr);
+            None
+        },
+    }
+}
+
+fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression) -> Option<ValueTypeRef> {
     match expr {
         ControlExpression::Return(expr) => {
             verify_expression(context, expr);
@@ -94,74 +174,65 @@ fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression
         _ => warn!("Unimplemented control expression {:?}", expr),
     };
 
-    Some(())
+    Some(context.get_type("void"))
 }
 
-fn verify_mem_expr(context: &mut VerifyContext, expr: &mut MemoryExpression) -> Option<()> {
-    match expr {
-        MemoryExpression::VariableDeclaration { name, type_ } => {
-            context.insert_variable(name.clone(), type_.clone());
-        },
-        MemoryExpression::VariableReference { name } => {
-            if context.get_variable(name).is_none() {
-                warn!("Variable {} not found", name);
-            }
-        },
-        MemoryExpression::VariableStorage { name } => {
-            if context.get_variable(name).is_none() {
-                warn!("Variable {} not found", name);
-            }
-        },
-        _ => warn!("Unimplemented memory expression {:?}", expr),
-    };
-
-    Some(())
-}
-
-fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> Option<()> {
+fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> Option<ValueTypeRef> {
     match expr {
         ValueExpression::DirectFunctionCall {
-            args, ..
+            args, name
         } => {
-            for arg in args.iter_mut() {
-                verify_expression(context, arg);
+            let Some(FunctionPrototype { return_type, args: intended_args }) =
+                context.get_function(&name) else {
+                warn!("Function {} not found", name);
+                return None
+            };
+            let return_type = return_type.clone();
+
+            for (arg, intended_type) in args.iter_mut().zip(intended_args.clone().into_iter()) {
+                verify_expression(context, arg)?;
+                attempt_implicit_cast(arg, intended_type)?;
             }
+
+            Some(return_type)
         },
         ValueExpression::UnaryOperation { operand, .. } => {
-            verify_expression(context, operand);
+            verify_expression(context, operand)
         },
         ValueExpression::BinaryOperation { left, right, .. } => {
-            verify_expression(context, left);
             verify_expression(context, right);
+            verify_expression(context, left)
         },
         ValueExpression::Assignment { left, right, .. } => {
-            verify_expression(context, left);
-            verify_expression(context, right);
+            let output = verify_lvalue(context, left)?;
+            verify_expression(context, right)?;
 
-            // Interpret l-value
-            match left.as_mut() {
-                Expression::Memory(MemoryExpression::VariableReference { name }) => {
-                    *(left.as_mut()) = Expression::Memory(MemoryExpression::VariableStorage { name: name.clone() });
-                },
-                _ => warn!("Invalid left-hand side of assignment")
-            }
+            attempt_implicit_cast(right, output.clone());
+
+            Some(output)
         },
-    };
 
-    Some(())
+        _ => {
+            warn!("Unimplemented value expression {:?}", expr);
+            None
+        },
+    }
 }
 
 fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut UnverifiedExpression) -> Option<Expression> {
     match expr {
         UnverifiedExpression::Identifier(name) => {
-            let Some(_) = context.get_variable(name.as_ref()) else {
+            let Some(type_) = context.get_variable(name.as_ref()) else {
                 warn!("Variable {} not found", name);
                 return None;
             };
 
             Some(
-                Expression::Memory(
-                    MemoryExpression::VariableReference { name: name.clone() }
+                Expression::Value(
+                    ValueExpression::VariableReference {
+                        name: name.clone(),
+                        lval_type: type_.clone()
+                    }
                 )
             )
         },
@@ -192,89 +263,21 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
     }
 }
 
-fn get_expression_type(context: &VerifyContext, expr: &mut Expression) -> Option<ValType> {
-    match expr {
-        Expression::Value(expr) => value_expr_type(context, expr),
-        Expression::Memory(expr) => memory_expr_type(context, expr),
-        Expression::Literal(expr) => literal_expr_type(expr),
-
-        Expression::Control(_) | Expression::Unit => Some(ValType::Unit),
-
-        _ => None
-    }
-}
-
-fn value_expr_type(context: &VerifyContext, expr: &mut ValueExpression) -> Option<ValType> {
-    Some(
-        match expr {
-            ValueExpression::DirectFunctionCall { name, .. } => {
-                let function = context.function_table.get(name)?;
-                function.return_type.clone()
-            }
-
-            ValueExpression::BinaryOperation { left, .. } =>
-                get_expression_type(context, left)?,
-
-            ValueExpression::UnaryOperation { operand, operator } =>
-                match operator {
-                    OperatorType::Dereference => {
-                        if let ValType::Pointer(inner) = get_expression_type(context, operand)? {
-                            *inner
-                        } else {
-                            return None
-                        }
-                    },
-                    OperatorType::AddressOf =>
-                        ValType::Pointer(Box::new(get_expression_type(context, operand)?)),
-
-                    _ => return get_expression_type(context, operand)
-                }
-
-            _ => return None
-        }
-    )
-}
-
-fn literal_expr_type(expr: &LiteralExpression) -> Option<ValType> {
-    match expr {
-        LiteralExpression::IntLiteral { bytes, .. } => Some(ValType::Integer { size: *bytes, signed: true }),
-        LiteralExpression::FloatLiteral { bytes, .. } => Some(ValType::Float { size: *bytes }),
-        LiteralExpression::StringLiteral(_) => Some(ValType::Pointer(Box::new(ValType::Integer { size: 1, signed: false }))),
-
-        _ => None
-    }
-}
-
-fn memory_expr_type(context: &VerifyContext, expr: &mut MemoryExpression) -> Option<ValType> {
-    match expr {
-        MemoryExpression::VariableDeclaration { type_, .. } => Some(type_.clone()),
-        MemoryExpression::VariableReference { name } => context.get_variable(name).cloned(),
-        MemoryExpression::VariableStorage { name } => context.get_variable(name).cloned(),
-
-        _ => None
-    }
-}
-
-fn attempt_implicit_cast(expr: &mut Expression, target_type: ValType) -> Option<()> {
+fn attempt_implicit_cast(expr: &mut Expression, target_type: ValueTypeRef) -> Option<()> {
     match expr {
         Expression::Literal(lit) => {
-            let lit_type = literal_expr_type(lit)?;
-            if lit_type == target_type {
-                return Some(())
-            }
-
             if let LiteralExpression::IntLiteral { val, .. } = lit {
-                if let ValType::Integer { size, signed } = target_type {
-                    if signed {
-                        *lit = LiteralExpression::IntLiteral { val: *val, bytes: size };
+                if let ValueType::Integer { bytes, signed } = target_type.as_ref() {
+                    if *signed {
+                        *lit = LiteralExpression::IntLiteral { val: *val, bytes: *bytes };
                         return Some(())
                     }
                 }
             }
 
             if let LiteralExpression::FloatLiteral { val, .. } = lit {
-                if let ValType::Float { size } = target_type {
-                    *lit = LiteralExpression::FloatLiteral { val: *val, bytes: size };
+                if let ValueType::Float { bytes } = target_type.as_ref() {
+                    *lit = LiteralExpression::FloatLiteral { val: *val, bytes: *bytes };
                     return Some(())
                 }
             }

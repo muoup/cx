@@ -1,16 +1,15 @@
 use cranelift::codegen::ir;
-use cranelift_module::Module;
-use cranelift_object::ObjectModule;
-use crate::parse::val_type::ValType;
+use crate::parse::ast::{ValueType};
+use crate::parse::verify::ValueTypeRef;
 
-pub(crate) fn get_cranelift_abi_type(object_module: &ObjectModule, val_type: &ValType) -> ir::AbiParam {
-    ir::AbiParam::new(get_cranelift_type(object_module, val_type))
+pub(crate) fn get_cranelift_abi_type(val_type: ValueTypeRef) -> ir::AbiParam {
+    ir::AbiParam::new(get_cranelift_type(val_type))
 }
 
-pub(crate) fn get_cranelift_type(object_module: &ObjectModule, val_type: &ValType) -> ir::Type {
-    match val_type {
-        ValType::Integer { size, .. } => {
-            match size {
+pub(crate) fn get_cranelift_type(val_type: ValueTypeRef) -> ir::Type {
+    match val_type.as_ref() {
+        ValueType::Integer { bytes, .. } => {
+            match bytes {
                 1 => ir::types::I8,
                 2 => ir::types::I16,
                 4 => ir::types::I32,
@@ -18,19 +17,15 @@ pub(crate) fn get_cranelift_type(object_module: &ObjectModule, val_type: &ValTyp
                 _ => panic!("Invalid integer size")
             }
         },
-        ValType::Float { size } => {
-            match size {
+        ValueType::Float { bytes } => {
+            match bytes {
                 4 => ir::types::F32,
                 8 => ir::types::F64,
                 _ => panic!("Invalid float size")
             }
         },
-        ValType::Unit => ir::types::INVALID,
-        ValType::Pointer(..) | ValType::Array(..) => {
-            object_module.target_config().pointer_type()
-        },
-        ValType::Struct { .. } => {
-            unimplemented!()
-        }
+        ValueType::Unit => ir::types::INVALID,
+
+        _ => panic!("Unverified type"),
     }
 }

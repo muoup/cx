@@ -1,13 +1,6 @@
-use std::env::args;
 use crate::lex::token::OperatorType;
-use crate::parse::val_type::ValType;
+use crate::parse::verify::{ValueTypeRef};
 use std::fmt::Debug;
-
-pub trait Node: Debug {
-    fn print(&self, indent: usize) where Self: Debug {
-        println!("{:indent$}{:?}", "", self, indent = indent);
-    }
-}
 
 pub struct AST {
     pub root: Root
@@ -18,36 +11,30 @@ pub struct Root {
     pub global_stmts: Vec<GlobalStatement>,
 }
 
-impl Node for Root {
-    fn print(&self, indent: usize) {
-        for fn_decl in &self.global_stmts {
-            fn_decl.print(indent);
-        }
-    }
+pub struct StructDefinition {
+    pub name: Option<String>,
+    pub fields: Vec<(String, ValueTypeRef)>
 }
 
 #[derive(Debug)]
 pub enum GlobalStatement {
     Function {
         name: String,
-        arguments: Vec<(String, ValType)>,
-        return_type: ValType,
+        arguments: Vec<Expression>,
+        return_type: Expression,
         body: Option<Vec<Expression>>
     },
-}
 
-impl Node for GlobalStatement {
-    fn print(&self, indent: usize) {
-        match self {
-            GlobalStatement::Function { name, arguments, return_type, body } => {
-                println!("{:indent$}fn {} -> {:?}({:?})", "", name, return_type, arguments, indent = indent);
-                if let Some(body) = body {
-                    for stmt in body {
-                        stmt.print(indent + 4);
-                    }
-                }
-            }
-        }
+    // Both typedef and non-typedef declarations will be squeezed into this variant
+    // C++ allows implicit typedef, so why shouldn't we?
+    TypeDeclaration {
+        name: Option<String>,
+        type_: ValueTypeRef,
+    },
+    GlobalVariable {
+        name: String,
+        type_: ValueTypeRef,
+        value: Option<Expression>
     }
 }
 
@@ -74,6 +61,10 @@ pub enum ValueExpression {
         operator: OperatorType,
         operand: Box<Expression>
     },
+    FunctionCall {
+        func: Box<Expression>,
+        args: Vec<Expression>
+    },
     BinaryOperation {
         operator: OperatorType,
         left: Box<Expression>,
@@ -83,21 +74,11 @@ pub enum ValueExpression {
         left: Box<Expression>,
         right: Box<Expression>,
         operator: Option<OperatorType>
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum MemoryExpression {
-    VariableDeclaration {
-        name: String,
-        type_: ValType,
     },
     VariableReference {
-        name: String
-    },
-    VariableStorage {
         name: String,
-    }
+        lval_type: ValueTypeRef
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -126,10 +107,23 @@ pub enum ControlExpression {
 #[derive(Debug, Clone)]
 pub enum UnverifiedExpression {
     Identifier(String),
+
+    CompoundIdentifier {
+        identifier: String,
+        suffix: Box<Expression>
+    },
+
+    // e.g. int x, int *x also counts as (*x) is an expression not just an identifier
+    TypedExpression {
+        expr: Box<Expression>,
+        type_: String
+    },
+
     Cast {
         expr: Box<Expression>,
-        type_: ValType
+        type_: String
     },
+
     FunctionCall {
         name: Box<Expression>,
         args: Vec<Expression>
@@ -137,11 +131,37 @@ pub enum UnverifiedExpression {
 }
 
 #[derive(Debug, Clone)]
+pub enum ValueType {
+    Integer { bytes: u8, signed: bool },
+    Float { bytes: u8 },
+    Structured { fields: Vec<(String, ValueTypeRef)> },
+    Unit,
+
+    Standard(ValueTypeRef),
+    PointerTo(Box<ValueType>),
+    Array {
+        size: usize,
+        type_: Box<ValueType>
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum LValueExpression {
+    Alloca {
+        name: String,
+        type_: ValueTypeRef,
+    },
+    Value {
+        name: String,
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(LiteralExpression),
     Value(ValueExpression),
-    Memory(MemoryExpression),
     Control(ControlExpression),
+    LValue(LValueExpression),
 
     // Any expression that should be eliminated by the type checker,
     // if the codegen phase encounters this, behavior is undefined (likely a panic)
@@ -149,31 +169,4 @@ pub enum Expression {
 
     NOP,
     Unit,
-}
-
-impl Node for Expression {
-    fn print(&self, indent: usize) {
-        match self {
-            Expression::Control(
-                ControlExpression::If {
-                    condition, then, else_
-                }
-            ) => {
-                println!("{:indent$}if", "", indent = indent);
-                condition.print(indent + 4);
-                println!("{:indent$}then", "", indent = indent);
-                for stmt in then {
-                    stmt.print(indent + 4);
-                }
-                if else_.len() == 0 {
-                    return;
-                }
-                println!("{:indent$}else", "", indent = indent);
-                for stmt in else_ {
-                    stmt.print(indent + 4);
-                }
-            },
-            _ => println!("{:indent$}{:?}", "", self, indent = indent)
-        }
-    }
 }

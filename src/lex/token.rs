@@ -34,14 +34,17 @@ pub enum KeywordType {
 
     Struct, Enum, Union,
 
-    Void, Bool, Char, Short, Int, Long, Auto,
-    Float, Double,
-    Unsigned, Signed,
-
     Static, Extern, Const, Register,
     Volatile, Inline, Restrict,
 
     Sizeof
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum IntrinsicType {
+    Void, Bool, Char, Short, Int, Long, Auto,
+    Float, Double,
+    Unsigned, Signed,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -50,6 +53,7 @@ pub enum Token {
     Operator(OperatorType),
 
     Keyword(KeywordType),
+    Intrinsic(IntrinsicType),
     Punctuator(PunctuatorType),
 
     Identifier(String),
@@ -75,13 +79,13 @@ impl Token {
             "struct" => Token::Keyword(KeywordType::Struct),
             "enum" => Token::Keyword(KeywordType::Enum),
             "union" => Token::Keyword(KeywordType::Union),
-            "int" => Token::Keyword(KeywordType::Int),
-            "float" => Token::Keyword(KeywordType::Float),
-            "char" => Token::Keyword(KeywordType::Char),
-            "void" => Token::Keyword(KeywordType::Void),
-            "auto" => Token::Keyword(KeywordType::Auto),
-            "unsigned" => Token::Keyword(KeywordType::Unsigned),
-            "signed" => Token::Keyword(KeywordType::Signed),
+            "int" => Token::Intrinsic(IntrinsicType::Int),
+            "float" => Token::Intrinsic(IntrinsicType::Float),
+            "char" => Token::Intrinsic(IntrinsicType::Char),
+            "void" => Token::Intrinsic(IntrinsicType::Void),
+            "auto" => Token::Intrinsic(IntrinsicType::Auto),
+            "unsigned" => Token::Intrinsic(IntrinsicType::Unsigned),
+            "signed" => Token::Intrinsic(IntrinsicType::Signed),
             "static" => Token::Keyword(KeywordType::Static),
             "extern" => Token::Keyword(KeywordType::Extern),
             "const" => Token::Keyword(KeywordType::Const),

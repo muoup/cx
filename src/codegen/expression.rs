@@ -1,12 +1,11 @@
 use crate::codegen::codegen::FunctionState;
+use crate::codegen::routines::{allocate_variable, load_value, signed_bin_op, string_literal};
+use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, MemoryExpression, ValueExpression};
+use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, ValueExpression};
 use cranelift::codegen::ir;
 use cranelift::prelude::{EntityRef, InstBuilder, Value};
 use cranelift_module::{Linkage, Module};
-use log::warn;
-use crate::codegen::routines::{allocate_variable, load_value, signed_bin_op, string_literal};
-use crate::codegen::value_type::get_cranelift_type;
 
 pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression) -> Option<Value> {
     match expr {
@@ -144,33 +143,6 @@ pub(crate) fn codegen_control_expr(context: &mut FunctionState, expr: &ControlEx
         },
 
         _ => unimplemented!("Control expression not implemented: {:?}", expr)
-    }
-}
-
-pub(crate) fn codegen_memory_expr(context: &mut FunctionState, expr: &MemoryExpression) -> Option<Value> {
-    match expr {
-        MemoryExpression::VariableDeclaration { name, type_ } => {
-            let param_type = get_cranelift_type(context.object_module, type_);
-
-            allocate_variable(
-                &mut context.builder, &mut context.variable_table,
-                name, param_type,
-                None
-            )
-        },
-        MemoryExpression::VariableStorage { name, .. } => {
-            let (val, _) = context.variable_table.get(name.as_str())
-                .expect(format!("Variable not found: {}", name.as_str()).as_str());
-
-            Some(*val)
-        },
-        MemoryExpression::VariableReference { name, .. } => {
-            let (val, type_) = context.variable_table.get(name.as_str())
-                .expect(format!("Variable not found: {}", name.as_str()).as_str());
-
-            Some(context.builder.ins().load(*type_, ir::MemFlags::new(), *val, 0))
-        },
-        _ => unimplemented!("Memory expression not implemented: {:?}", expr)
     }
 }
 

@@ -1,10 +1,9 @@
 use crate::lex::token::PunctuatorType::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
 use crate::lex::token::Token;
-use crate::parse::ast::{Expression, GlobalStatement, Root};
-use crate::parse::ast::MemoryExpression::VariableDeclaration;
+use crate::parse::ast::{Expression, GlobalStatement, Root, UnverifiedExpression};
 use crate::parse::expression::{parse_expression, parse_expressions};
-use crate::parse::val_type::parse_type;
 
+#[derive(Debug, Clone)]
 pub(crate) struct TokenIter<'a> {
     pub(crate) slice: &'a [Token],
     pub(crate) index: usize,
@@ -49,16 +48,13 @@ fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<GlobalStatement>> {
 }
 
 fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    let return_type = parse_type(toks)?;
+    let return_type = parse_data_type(toks)?;
     let name = match toks.next()? {
         Token::Identifier(name) => name.clone(),
         _ => return panic!("Expected function name")
     };
     assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
-
     let arguments = parse_expressions(toks, Token::Punctuator(Comma), Token::Punctuator(CloseParen))?;
-    assert!(arguments.iter().all(|arg| matches!(arg, Expression::Memory(VariableDeclaration { .. }))));
-
     assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
 
     let body = match toks.peek()? {
@@ -69,13 +65,7 @@ fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
     Some(
         GlobalStatement::Function {
             name,
-            arguments: arguments.into_iter().map(|arg| {
-                if let Expression::Memory(VariableDeclaration { name, type_ }) = arg {
-                    (name, type_)
-                } else {
-                    panic!("Expected variable declaration")
-                }
-            }).collect(),
+            arguments,
             return_type,
             body
         }
@@ -92,5 +82,42 @@ pub(crate) fn parse_body(toks: &mut TokenIter) -> Vec<Expression> {
         body
     } else {
         vec![parse_expression(toks).unwrap()]
+    }
+}
+
+pub(crate) fn parse_data_type(toks: &mut TokenIter) -> Option<Expression> {
+    if let Some(Token::Identifier(name)) = toks.next() {
+        return Some(
+            Expression::Unverified(
+                UnverifiedExpression::Identifier(name.clone())
+            )
+        );
+    }
+
+    match toks.next()? {
+        Token::Identifier(name) => Some(
+            Expression::Unverified(
+                UnverifiedExpression::Identifier(name.clone())
+            )
+        ),
+        Token::Intrinsic(_) => {
+            toks.back();
+
+            let mut accumulator = String::new();
+
+            while let Some(Token::Intrinsic(_)) = toks.peek() {
+                let Some(Token::Intrinsic(keyword)) = toks.next() else { unreachable!(); };
+                accumulator.push_str(format!("{:?} ", keyword).as_str());
+            }
+
+            accumulator.pop(); // Remove trailing space
+
+            Some(
+                Expression::Unverified(
+                    UnverifiedExpression::Identifier(accumulator)
+                )
+            )
+        },
+        _ => unimplemented!("Struct type parsing")
     }
 }

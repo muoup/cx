@@ -1,16 +1,17 @@
-use crate::parse::ast::{GlobalStatement, Root};
+use crate::parse::ast::{GlobalStatement, Root, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
+use crate::parse::verify::ValueTypeRef;
 
 pub(crate) fn global_pass(context: &mut VerifyContext, root: &Root) {
-    for fn_decl in &root.global_stmts {
-        match fn_decl {
+    for global_stmt in &root.global_stmts {
+        match global_stmt {
             GlobalStatement::Function { name, return_type, arguments, .. } =>
                 context.insert_function(name, FunctionPrototype {
-                    return_type: return_type.clone(),
-                    args: arguments.iter()
-                        .map(|arg| arg.1.clone())
-                        .collect()
+                    return_type: ValueTypeRef::new(ValueType::Unit),
+                    args: vec![]
                 }),
+
+            _ => {}
         };
     }
 }
