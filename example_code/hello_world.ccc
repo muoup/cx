@@ -1,4 +1,4 @@
-#include <stdio.h>
+int puts(char* str);
 
 int main() {
     puts("Hello, World!");

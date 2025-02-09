@@ -113,12 +113,6 @@ pub enum UnverifiedExpression {
         suffix: Box<Expression>
     },
 
-    // e.g. int x, int *x also counts as (*x) is an expression not just an identifier
-    TypedExpression {
-        expr: Box<Expression>,
-        type_: String
-    },
-
     Cast {
         expr: Box<Expression>,
         type_: String
@@ -127,6 +121,17 @@ pub enum UnverifiedExpression {
     FunctionCall {
         name: Box<Expression>,
         args: Vec<Expression>
+    },
+
+    UnaryOperation {
+        operator: OperatorType,
+        operand: Box<Expression>
+    },
+
+    BinaryOperation {
+        operator: OperatorType,
+        left: Box<Expression>,
+        right: Box<Expression>
     }
 }
 

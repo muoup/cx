@@ -8,6 +8,7 @@ pub mod ast;
 
 mod parser;
 mod expression;
+mod type_expr;
 
 pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
     let mut ast = AST {
@@ -16,6 +17,8 @@ pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
             index: 0
         })?
     };
+
+    println!("{:?}", ast.root);
 
     let verified_ast = verify::verify_ast(ast);
 

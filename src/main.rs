@@ -16,7 +16,7 @@ fn main() {
     let preprocessed = preprocessor::preprocess(&source);
     let mut lexer = lex::generate_tokens(preprocessed.as_str());
 
-    // if let Some(ast) = parse::parse_ast(&mut lexer) {
-    //     codegen::codegen::ast_codegen(&ast);
-    // }
+    if let Some(ast) = parse::parse_ast(&mut lexer) {
+        // codegen::codegen::ast_codegen(&ast);
+    }
 }

@@ -10,9 +10,7 @@ pub enum OperatorType {
     Increment, Decrement,
 
     Access, PointerAccess, AddressOf, Dereference,
-    ScopeRes,
-
-    Semicolon
+    ScopeRes
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -112,7 +110,6 @@ impl OperatorType {
             OperatorType::BitAnd | OperatorType::BitXor | OperatorType::BitOr => 9,
             OperatorType::LNot | OperatorType::BitNot | OperatorType::Less | OperatorType::Greater => 10,
             OperatorType::BitAnd | OperatorType::BitOr | OperatorType::BitXor => 11,
-            OperatorType::Semicolon => 12,
 
             _ => 100
         }
