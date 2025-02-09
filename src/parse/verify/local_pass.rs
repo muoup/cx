@@ -197,7 +197,11 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
             Some(return_type)
         },
         ValueExpression::UnaryOperation { operand, .. } => {
-            verify_expression(context, operand)
+            if let Some(operand) = operand {
+                verify_expression(context, operand)
+            } else {
+                None
+            }
         },
         ValueExpression::BinaryOperation { left, right, .. } => {
             verify_expression(context, right);

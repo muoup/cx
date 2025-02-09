@@ -171,7 +171,7 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
             Expression::Value(
                 ValueExpression::UnaryOperation {
                     operator: *op,
-                    operand: Box::new(parse_expression_value(toks)?)
+                    operand: parse_expression_value(toks).map(Box::new)
                 }
             )
         ),

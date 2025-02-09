@@ -59,7 +59,7 @@ pub enum ValueExpression {
     },
     UnaryOperation {
         operator: OperatorType,
-        operand: Box<Expression>
+        operand: Option<Box<Expression>>
     },
     FunctionCall {
         func: Box<Expression>,

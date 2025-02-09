@@ -18,7 +18,7 @@ pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
         })?
     };
 
-    println!("{:?}", ast.root);
+    println!("{:#?}", ast.root);
 
     let verified_ast = verify::verify_ast(ast);
 
