@@ -9,6 +9,8 @@ pub enum OperatorType {
 
     Increment, Decrement,
 
+    ArrayIndex,
+
     Access, PointerAccess, AddressOf, Dereference,
     ScopeRes
 }
@@ -31,6 +33,8 @@ pub enum KeywordType {
     Switch, Case, Default,
 
     Struct, Enum, Union,
+
+    Typedef,
 
     Static, Extern, Const, Register,
     Volatile, Inline, Restrict,
@@ -77,6 +81,7 @@ impl Token {
             "struct" => Token::Keyword(KeywordType::Struct),
             "enum" => Token::Keyword(KeywordType::Enum),
             "union" => Token::Keyword(KeywordType::Union),
+            "typedef" => Token::Keyword(KeywordType::Typedef),
             "int" => Token::Intrinsic(IntrinsicType::Int),
             "float" => Token::Intrinsic(IntrinsicType::Float),
             "char" => Token::Intrinsic(IntrinsicType::Char),

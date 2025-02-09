@@ -27,7 +27,10 @@ pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option
                 }
 
                 for expr in body.iter_mut() {
-                    verify_expression(context, expr).expect("Failed to verify expression");
+                    verify_expression(context, expr).or_else(|| {
+                        warn!("Failed to verify expression {:?}", expr);
+                        None
+                    });
                 }
 
                 context.pop_scope();
@@ -93,18 +96,28 @@ fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<V
 
             // Variable reference
             UnverifiedExpression::Identifier(name) => {
-                let Some(val_type) = context.get_variable(name) else {
-                    warn!("Variable {} not found", name);
-                    return None
-                };
+                if let Some(val_type) = context.get_variable(name) {
+                    *expr = Expression::LValue(
+                        LValueExpression::Value {
+                            name: name.clone(),
+                        }
+                    );
 
-                *expr = Expression::LValue(
-                    LValueExpression::Value {
-                        name: name.clone(),
-                    }
-                );
+                    return Some(val_type.clone())
+                }
 
-                Some(val_type.clone())
+                if let Some(type_id) = context.get_type(name) {
+                    *expr = Expression::LValue(
+                        LValueExpression::Value {
+                            name: name.clone(),
+                        }
+                    );
+
+                    return Some(type_id.clone())
+                }
+
+                warn!("Variable {} not found", name);
+                None
             },
 
             _ => {
@@ -174,7 +187,7 @@ fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression
         _ => warn!("Unimplemented control expression {:?}", expr),
     };
 
-    Some(context.get_type("void"))
+    Some(context.get_type("void").unwrap())
 }
 
 fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> Option<ValueTypeRef> {

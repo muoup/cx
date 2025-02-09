@@ -1,8 +1,8 @@
 use crate::lex::token::PunctuatorType::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
 use crate::lex::token::Token;
-use crate::parse::ast::{Expression, GlobalStatement, Root};
+use crate::parse::ast::{Expression, GlobalStatement, Root, ValueExpression};
+use crate::parse::ast::UnverifiedExpression::CompoundIdentifier;
 use crate::parse::expression::{parse_expression, parse_expressions};
-use crate::parse::type_expr::parse_type_aware_identifier;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TokenIter<'a> {
@@ -42,35 +42,14 @@ fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<GlobalStatement>> {
     let mut fns = Vec::new();
 
     while toks.peek() != None {
-        fns.push(parse_fn_declaration(toks)?);
+        fns.push(parse_global_stmt(toks)?);
     }
 
     Some(fns)
 }
 
-fn parse_fn_declaration(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    let return_type = parse_type_aware_identifier(toks)?;
-    let name = match toks.next()? {
-        Token::Identifier(name) => name.clone(),
-        _ => return panic!("Expected function name")
-    };
-    assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
-    let arguments = parse_expressions(toks, Token::Punctuator(Comma), Token::Punctuator(CloseParen))?;
-    assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
+fn parse_global_stmt(toks: &mut TokenIter) -> Option<GlobalStatement> {
 
-    let body = match toks.peek()? {
-        Token::Punctuator(Semicolon) => { toks.next(); None },
-        _ => Some(parse_body(toks))
-    };
-
-    Some(
-        GlobalStatement::Function {
-            name,
-            arguments,
-            return_type,
-            body
-        }
-    )
 }
 
 pub(crate) fn parse_body(toks: &mut TokenIter) -> Vec<Expression> {

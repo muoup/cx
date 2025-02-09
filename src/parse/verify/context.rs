@@ -47,7 +47,7 @@ impl VerifyContext {
         self.function_table.get(name)
     }
 
-    pub(crate) fn get_type(&self, name: &str) -> ValueTypeRef {
-        self.types_table.get(name).unwrap().clone()
+    pub(crate) fn get_type(&self, name: &str) -> Option<ValueTypeRef> {
+        self.types_table.get(name).cloned()
     }
 }

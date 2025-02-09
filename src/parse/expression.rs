@@ -2,7 +2,7 @@ use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, UnverifiedExpression, ValueExpression};
 use crate::parse::parser::{parse_body, TokenIter};
-use crate::parse::type_expr::parse_intrinsic_identifier;
+use crate::parse::type_expr::parse_identifier;
 
 pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
     let mut exprs = Vec::new();
@@ -45,6 +45,72 @@ fn compress_stack(expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorT
     Some(())
 }
 
+fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+    match toks.peek()? {
+        Token::Operator(_) => {
+            // This is hacky, but I'm not sure how else to make the borrow checker happy
+            let Token::Operator(op) = *toks.next().unwrap() else { unreachable!() };
+
+            let prev_precedence = op_stack.last()
+                .map(|op: &OperatorType| op.precedence())
+                .unwrap_or_else(|| i32::MAX);
+            let curr_precedence = op.precedence();
+
+            if curr_precedence < prev_precedence {
+                compress_stack(expr_stack, op_stack);
+            }
+
+            op_stack.push(op);
+            Some(())
+        },
+        Token::Assignment(_) => {
+            compress_stack(expr_stack, op_stack);
+
+            let left = expr_stack.pop()?;
+            let Token::Assignment(operator) = toks.next().unwrap().clone() else { unreachable!() };
+            let right = parse_expression(toks)?;
+
+            expr_stack.push(Expression::Value (
+                ValueExpression::Assignment {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    operator
+                }
+            ));
+            None
+        },
+        Token::Punctuator(_) => None,
+
+        _ => {
+            let top_expr = expr_stack.pop()?;
+
+            let Expression::Unverified(UnverifiedExpression::Identifier(name)) = top_expr else {
+                expr_stack.push(top_expr);
+                return Some(());
+            };
+
+            if let Some(expr) = parse_expression(toks) {
+                expr_stack.push(
+                    Expression::Unverified(
+                        UnverifiedExpression::CompoundIdentifier {
+                            identifier: name,
+                            suffix: Box::new(expr)
+                        }
+                    )
+                );
+                return parse_operator(toks, expr_stack, op_stack);
+            } else {
+                expr_stack.push(
+                    Expression::Unverified(
+                        UnverifiedExpression::Identifier(name)
+                    )
+                );
+                return None
+            }
+        }
+    }
+}
+
 pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
     let mut expr_stack = Vec::new();
     let mut op_stack = Vec::new();
@@ -54,71 +120,9 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
         let suffixed = parse_expression_suffix(expr, toks)?;
         expr_stack.push(suffixed);
 
-        if !toks.has_next() {
-            break;
-        }
-
-        match toks.peek()? {
-            Token::Operator(_) => {
-                // This is hacky, but I'm not sure how else to make the borrow checker happy
-                let Token::Operator(op) = *toks.next().unwrap() else { unreachable!() };
-
-                let prev_precedence = op_stack.last()
-                    .map(|op: &OperatorType| op.precedence())
-                    .unwrap_or_else(|| i32::MAX);
-                let curr_precedence = op.precedence();
-
-                if curr_precedence < prev_precedence {
-                    compress_stack(&mut expr_stack, &mut op_stack);
-                }
-
-                op_stack.push(op);
-            },
-            Token::Assignment(_) => {
-                compress_stack(&mut expr_stack, &mut op_stack);
-
-                let left = expr_stack.pop()?;
-                let Token::Assignment(operator) = toks.next().unwrap().clone() else { unreachable!() };
-                let right = parse_expression(toks)?;
-
-                expr_stack.push(Expression::Value (
-                    ValueExpression::Assignment {
-                        left: Box::new(left),
-                        right: Box::new(right),
-                        operator
-                    }
-                ));
-                break;
-            },
-            Token::Punctuator(_) => break,
-
-            _ => {
-                let top_expr = expr_stack.pop()?;
-
-                let Expression::Unverified(UnverifiedExpression::Identifier(name)) = top_expr else {
-                    expr_stack.push(top_expr);
-                    break;
-                };
-
-                if let Some(expr) = parse_expression(toks) {
-                    expr_stack.push(
-                        Expression::Unverified(
-                            UnverifiedExpression::CompoundIdentifier {
-                                identifier: name,
-                                suffix: Box::new(expr)
-                            }
-                        )
-                    );
-                } else {
-                    expr_stack.push(
-                        Expression::Unverified(
-                            UnverifiedExpression::Identifier(name)
-                        )
-                    );
-                    break;
-                }
-            }
-        }
+        let Some(_) = parse_operator(toks, &mut expr_stack, &mut op_stack) else {
+            break
+        };
     }
 
     compress_stack(&mut expr_stack, &mut op_stack);
@@ -144,6 +148,19 @@ fn parse_expression_suffix(expr: Expression, toks: &mut TokenIter) -> Option<Exp
                 }
             )
         },
+        Token::Punctuator(PunctuatorType::OpenBracket) => {
+            toks.next();
+            let index = parse_expression(toks)?;
+            assert_eq!(toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseBracket)));
+
+            Expression::Unverified (
+                UnverifiedExpression::BinaryOperation {
+                    operator: OperatorType::ArrayIndex,
+                    left: Box::new(expr),
+                    right: Box::new(index)
+                }
+            )
+        }
 
         _ => return Some(expr),
     };
@@ -160,7 +177,7 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
         },
         Token::Intrinsic(_) => {
             toks.back();
-            parse_intrinsic_identifier(toks)
+            parse_identifier(toks)
         },
         Token::Punctuator(OpenParen) => {
             let expr = parse_expression(toks)?;

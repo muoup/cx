@@ -9,6 +9,8 @@ pub mod ast;
 mod parser;
 mod expression;
 mod type_expr;
+mod global_scope;
+mod macros;
 
 pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
     let mut ast = AST {
@@ -20,7 +22,9 @@ pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
 
     println!("{:#?}", ast.root);
 
-    let verified_ast = verify::verify_ast(ast);
+    let verified_ast = verify::verify_ast(ast)?;
 
-    verified_ast
+    println!("{:#?}", verified_ast.root);
+
+    Some(verified_ast)
 }

@@ -13,7 +13,7 @@ use crate::parse::parser::TokenIter;
  *  languages will have clear types like "u32" or "i32", C has the possibility of multi-word types
  *  like "unsigned int" or "long long". This function will handle those cases.
  */
-pub fn parse_intrinsic_identifier(toks: &mut TokenIter) -> Option<Expression> {
+pub fn parse_identifier(toks: &mut TokenIter) -> Option<Expression> {
     let mut accumulator = String::new();
 
     while let Some(Token::Intrinsic(name)) = toks.peek() {
@@ -28,20 +28,4 @@ pub fn parse_intrinsic_identifier(toks: &mut TokenIter) -> Option<Expression> {
             UnverifiedExpression::Identifier(accumulator)
         )
     )
-}
-
-pub fn parse_type_aware_identifier(toks: &mut TokenIter) -> Option<Expression> {
-    match toks.next()? {
-        Token::Identifier(name) => Some(
-            Expression::Unverified(UnverifiedExpression::Identifier(name.clone()))
-        ),
-        Token::Intrinsic(_) => {
-            toks.back();
-            parse_intrinsic_identifier(toks)
-        },
-        _ => {
-            toks.back();
-            None
-        }
-    }
 }
