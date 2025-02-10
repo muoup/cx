@@ -1,0 +1,6 @@
+val main();
+
+struct Test {
+    int x;
+    int y;
+}

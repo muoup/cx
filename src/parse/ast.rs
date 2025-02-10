@@ -1,6 +1,7 @@
 use crate::lex::token::OperatorType;
 use crate::parse::verify::{ValueTypeRef};
 use std::fmt::Debug;
+use crate::parse::global_scope::ExprType;
 
 pub struct AST {
     pub root: Root
@@ -21,7 +22,7 @@ pub enum GlobalStatement {
     Function {
         name: String,
         arguments: Vec<Expression>,
-        return_type: Expression,
+        return_type: ExprType,
         body: Option<Vec<Expression>>
     },
 
@@ -29,11 +30,11 @@ pub enum GlobalStatement {
     // C++ allows implicit typedef, so why shouldn't we?
     TypeDeclaration {
         name: Option<String>,
-        type_: ValueTypeRef,
+        type_: ExprType,
     },
     GlobalVariable {
         name: String,
-        type_: ValueTypeRef,
+        type_: ExprType,
         value: Option<Expression>
     }
 }
@@ -109,7 +110,7 @@ pub enum UnverifiedExpression {
     Identifier(String),
 
     CompoundIdentifier {
-        identifier: String,
+        ident: String,
         suffix: Box<Expression>
     },
 

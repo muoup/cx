@@ -1,6 +1,7 @@
 use crate::parse::ast::Expression;
 use crate::parse::verify::ValueTypeRef;
 use std::collections::HashMap;
+use crate::parse::global_scope::ExprType;
 
 #[derive(Debug, Clone)]
 pub(crate) struct FunctionPrototype {
@@ -13,7 +14,7 @@ pub(crate) struct VerifyContext {
     pub(crate) function_table: HashMap<String, FunctionPrototype>,
     pub(crate) types_table: HashMap<String, ValueTypeRef>,
 
-    pub(crate) current_return_type: Option<Expression>,
+    pub(crate) current_return_type: Option<ExprType>,
 }
 
 impl VerifyContext {

@@ -3,6 +3,7 @@ use crate::lex::token::Token;
 use crate::parse::ast::{Expression, GlobalStatement, Root, ValueExpression};
 use crate::parse::ast::UnverifiedExpression::CompoundIdentifier;
 use crate::parse::expression::{parse_expression, parse_expressions};
+use crate::parse::global_scope::parse_global_stmt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TokenIter<'a> {
@@ -46,10 +47,6 @@ fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<GlobalStatement>> {
     }
 
     Some(fns)
-}
-
-fn parse_global_stmt(toks: &mut TokenIter) -> Option<GlobalStatement> {
-
 }
 
 pub(crate) fn parse_body(toks: &mut TokenIter) -> Vec<Expression> {

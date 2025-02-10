@@ -75,7 +75,7 @@ fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<V
     match expr {
         // Variable Declaration
         Expression::Unverified(unverified) => match unverified {
-            UnverifiedExpression::CompoundIdentifier { identifier, suffix } => {
+            UnverifiedExpression::CompoundIdentifier { ident: identifier, suffix } => {
                 let type_ = verify_type(context, identifier)?;
                 let Some((Some(name), lval_type)) = generate_lvalue(context, suffix, type_) else {
                     warn!("Failed to generate l-value for typed expression");

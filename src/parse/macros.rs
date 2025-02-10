@@ -1,10 +1,10 @@
 #[macro_export]
 macro_rules! assert_token_matches {
-    ($pattern:pat) => {
-        let $pattern = toks.next()? else {
-            toks.back();
+    ($toks:ident, $pattern:pat) => {
+        let $pattern = $toks.next()? else {
+            $toks.back();
             warn!("Expected token to match pattern: {:?}", stringify!($pattern));
-            warn!("Found: {:?}", toks.peek());
+            warn!("Found: {:?}", $toks.peek());
             return None;
         };
     }
@@ -12,10 +12,24 @@ macro_rules! assert_token_matches {
 
 #[macro_export]
 macro_rules! try_token_matches {
-    ($pattern:pat) => {
-        let $pattern = toks.next()? else {
-            toks.back();
+    ($toks:ident, $pattern:pat) => {
+        let $pattern = $toks.next()? else {
+            $toks.back();
             return None;
         };
+    }
+}
+
+#[macro_export]
+macro_rules! try_routine {
+    ($iter:ident, $routine:expr) => {
+        let iter_save = $iter.clone();
+
+        if let Some(result) = $routine {
+            result
+        } else {
+            *$iter = iter_save;
+            None
+        }
     }
 }

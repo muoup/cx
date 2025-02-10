@@ -93,7 +93,7 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
                 expr_stack.push(
                     Expression::Unverified(
                         UnverifiedExpression::CompoundIdentifier {
-                            identifier: name,
+                            ident: name,
                             suffix: Box::new(expr)
                         }
                     )
@@ -141,9 +141,9 @@ fn parse_expression_suffix(expr: Expression, toks: &mut TokenIter) -> Option<Exp
             toks.next();
             let mut args = parse_expressions(toks, Token::Punctuator(PunctuatorType::Comma), Token::Punctuator(PunctuatorType::CloseParen))?;
             assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
-            Expression::Value (
-                ValueExpression::FunctionCall {
-                    func: Box::new(expr),
+            Expression::Unverified (
+                UnverifiedExpression::FunctionCall {
+                    name: Box::new(expr),
                     args
                 }
             )
@@ -177,7 +177,7 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
         },
         Token::Intrinsic(_) => {
             toks.back();
-            parse_identifier(toks)
+            unimplemented!("parse_expression_value -- Intrinsic")
         },
         Token::Punctuator(OpenParen) => {
             let expr = parse_expression(toks)?;
