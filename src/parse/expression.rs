@@ -1,8 +1,25 @@
 use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, UnverifiedExpression, ValueExpression};
+use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, UnverifiedExpression, ValueExpression, ValueType};
+use crate::parse::global_scope::parse_struct_definition;
 use crate::parse::parser::{parse_body, TokenIter};
-use crate::parse::type_expr::parse_identifier;
+
+/**
+ *  This function is essentially a function for the sake of backwards compatibility. While modern
+ *  languages will have clear types like "u32" or "i32", C has the possibility of multi-word types
+ *  like "unsigned int" or "long long". This function will handle those cases.
+ */
+pub fn parse_identifier(toks: &mut TokenIter) -> Option<String> {
+    let mut accumulator = String::new();
+
+    while let Some(Token::Intrinsic(name)) = toks.peek() {
+        accumulator.push_str(format!("{:?} ", name).to_lowercase().as_str());
+        toks.next();
+    }
+
+    accumulator.pop(); // Remove trailing space
+    Some(accumulator)
+}
 
 pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
     let mut exprs = Vec::new();
@@ -92,20 +109,22 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
             if let Some(expr) = parse_expression(toks) {
                 expr_stack.push(
                     Expression::Unverified(
-                        UnverifiedExpression::CompoundIdentifier {
-                            ident: name,
+                        UnverifiedExpression::TypedExpression {
+                            type_: ValueType::Unverified(name.clone()),
                             suffix: Box::new(expr)
                         }
                     )
                 );
-                return parse_operator(toks, expr_stack, op_stack);
+
+                parse_operator(toks, expr_stack, op_stack)
             } else {
                 expr_stack.push(
                     Expression::Unverified(
                         UnverifiedExpression::Identifier(name)
                     )
                 );
-                return None
+
+                None
             }
         }
     }
@@ -177,8 +196,17 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
         },
         Token::Intrinsic(_) => {
             toks.back();
-            unimplemented!("parse_expression_value -- Intrinsic")
+            Some(
+                Expression::Unverified(
+                    UnverifiedExpression::Identifier(parse_identifier(toks)?)
+                )
+            )
         },
+        Token::Identifier(name) => Some(
+            Expression::Unverified (
+                UnverifiedExpression::Identifier(name.clone())
+            )
+        ),
         Token::Punctuator(OpenParen) => {
             let expr = parse_expression(toks)?;
             assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
@@ -190,11 +218,6 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
                     operator: *op,
                     operand: parse_expression_value(toks).map(Box::new)
                 }
-            )
-        ),
-        Token::Identifier(name) => Some(
-            Expression::Unverified (
-                UnverifiedExpression::Identifier(name.clone())
             )
         ),
         Token::IntLiteral(val) => {

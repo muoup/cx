@@ -2,11 +2,11 @@ use cranelift::codegen::ir;
 use crate::parse::ast::{ValueType};
 use crate::parse::verify::ValueTypeRef;
 
-pub(crate) fn get_cranelift_abi_type(val_type: ValueTypeRef) -> ir::AbiParam {
+pub(crate) fn get_cranelift_abi_type(val_type: ValueType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type))
 }
 
-pub(crate) fn get_cranelift_type(val_type: ValueTypeRef) -> ir::Type {
+pub(crate) fn get_cranelift_type(val_type: ValueType) -> ir::Type {
     match val_type.as_ref() {
         ValueType::Integer { bytes, .. } => {
             match bytes {

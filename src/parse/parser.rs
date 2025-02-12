@@ -1,7 +1,6 @@
-use crate::lex::token::PunctuatorType::{CloseBrace, CloseParen, Comma, OpenBrace, OpenParen, Semicolon};
+use crate::lex::token::PunctuatorType::{CloseBrace, OpenBrace, Semicolon};
 use crate::lex::token::Token;
-use crate::parse::ast::{Expression, GlobalStatement, Root, ValueExpression};
-use crate::parse::ast::UnverifiedExpression::CompoundIdentifier;
+use crate::parse::ast::{Expression, UnverifiedAST, UnverifiedGlobalStatement};
 use crate::parse::expression::{parse_expression, parse_expressions};
 use crate::parse::global_scope::parse_global_stmt;
 
@@ -31,19 +30,27 @@ impl<'a> TokenIter<'_> {
     }
 }
 
-pub(crate) fn parse_root(toks: &mut TokenIter) -> Option<Root> {
+pub(crate) fn parse_ast(toks: &mut TokenIter) -> Option<UnverifiedAST> {
     Some(
-        Root {
-            global_stmts: parse_global_stmts(toks)?
+        UnverifiedAST {
+            statements: parse_global_stmts(toks)?
         }
     )
 }
 
-fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<GlobalStatement>> {
+fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<UnverifiedGlobalStatement>> {
     let mut fns = Vec::new();
 
     while toks.peek() != None {
-        fns.push(parse_global_stmt(toks)?);
+        let start = toks.index;
+        let stmt =
+            parse_global_stmt(toks)
+                .expect(
+                    format!("Failed to parse global statement starting at: {:?}", &toks.slice[start])
+                        .as_str()
+                );
+
+        fns.push(stmt);
     }
 
     Some(fns)

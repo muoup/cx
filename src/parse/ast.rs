@@ -1,20 +1,15 @@
 use crate::lex::token::OperatorType;
-use crate::parse::verify::{ValueTypeRef};
 use std::fmt::Debug;
-use crate::parse::global_scope::ExprType;
-
-pub struct AST {
-    pub root: Root
-}
+use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct Root {
-    pub global_stmts: Vec<GlobalStatement>,
+pub struct UnverifiedAST {
+    pub statements: Vec<UnverifiedGlobalStatement>
 }
 
 pub struct StructDefinition {
     pub name: Option<String>,
-    pub fields: Vec<(String, ValueTypeRef)>
+    pub fields: Vec<(String, ValueType)>
 }
 
 #[derive(Debug)]
@@ -22,7 +17,7 @@ pub enum GlobalStatement {
     Function {
         name: String,
         arguments: Vec<Expression>,
-        return_type: ExprType,
+        return_type: ValueType,
         body: Option<Vec<Expression>>
     },
 
@@ -30,11 +25,32 @@ pub enum GlobalStatement {
     // C++ allows implicit typedef, so why shouldn't we?
     TypeDeclaration {
         name: Option<String>,
-        type_: ExprType,
+        type_: ValueType,
     },
     GlobalVariable {
         name: String,
-        type_: ExprType,
+        type_: ValueType,
+        value: Option<Expression>
+    }
+}
+
+#[derive(Debug)]
+pub enum UnverifiedGlobalStatement {
+    Function {
+        return_type: ValueType,
+        name_header: Expression,
+        params: Vec<Expression>,
+        body: Option<Vec<Expression>>
+    },
+
+    StructDeclaration {
+        name: String,
+        field_declarations: Vec<Expression>,
+    },
+
+    GlobalVariable {
+        type_: ValueType,
+        name_expr: Expression,
         value: Option<Expression>
     }
 }
@@ -78,7 +94,7 @@ pub enum ValueExpression {
     },
     VariableReference {
         name: String,
-        lval_type: ValueTypeRef
+        lval_type: ValueType
     },
 }
 
@@ -109,8 +125,8 @@ pub enum ControlExpression {
 pub enum UnverifiedExpression {
     Identifier(String),
 
-    CompoundIdentifier {
-        ident: String,
+    TypedExpression {
+        type_: ValueType,
         suffix: Box<Expression>
     },
 
@@ -140,22 +156,23 @@ pub enum UnverifiedExpression {
 pub enum ValueType {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
-    Structured { fields: Vec<(String, ValueTypeRef)> },
+    Structured { fields: Vec<(String, ValueType)> },
     Unit,
 
-    Standard(ValueTypeRef),
-    PointerTo(Box<ValueType>),
+    PointerTo(Arc<ValueType>),
     Array {
         size: usize,
-        type_: Box<ValueType>
-    }
+        type_: Arc<ValueType>
+    },
+
+    Unverified(String)
 }
 
 #[derive(Debug, Clone)]
 pub enum LValueExpression {
     Alloca {
         name: String,
-        type_: ValueTypeRef,
+        type_: ValueType,
     },
     Value {
         name: String,

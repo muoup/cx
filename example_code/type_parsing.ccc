@@ -1,6 +1,8 @@
-val main();
+int main();
 
 struct Test {
     int x;
     int y;
 }
+
+int x = 2;

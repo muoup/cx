@@ -3,8 +3,8 @@ macro_rules! assert_token_matches {
     ($toks:ident, $pattern:pat) => {
         let $pattern = $toks.next()? else {
             $toks.back();
-            warn!("Expected token to match pattern: {:?}", stringify!($pattern));
-            warn!("Found: {:?}", $toks.peek());
+            println!("Expected token to match pattern: {:?}", stringify!($pattern));
+            println!("Found: {:?}", $toks.peek());
             return None;
         };
     }

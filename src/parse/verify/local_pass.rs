@@ -5,13 +5,12 @@ use cranelift_module::Module;
 use log::{log, warn, Level};
 use crate::lex::token::OperatorType;
 use crate::lex::token::Token::Operator;
-use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LValueExpression, LiteralExpression, Root, UnverifiedExpression, ValueExpression, ValueType};
+use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LValueExpression, LiteralExpression, UnverifiedAST, UnverifiedExpression, ValueExpression, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
 use crate::parse::verify::type_verification::verify_type;
-use crate::parse::verify::ValueTypeRef;
 
-pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option<()> {
-    for stmt in root.global_stmts.iter_mut() {
+pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut UnverifiedAST) -> Option<()> {
+    for stmt in root.statements.iter_mut() {
         match stmt {
             GlobalStatement::Function {
                 return_type, arguments,
@@ -28,7 +27,7 @@ pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option
 
                 for expr in body.iter_mut() {
                     verify_expression(context, expr).or_else(|| {
-                        warn!("Failed to verify expression {:?}", expr);
+                        println!("Failed to verify expression {:?}", expr);
                         None
                     });
                 }
@@ -42,7 +41,7 @@ pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut Root) -> Option
 
     Some(())
 }
-fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueTypeRef> {
+fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueType> {
     match expr {
         Expression::Control(control) => verify_control_expr(context, control),
         Expression::Value(value) => verify_val_expr(context, value),
@@ -51,18 +50,18 @@ fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Opti
             verify_expression(context, expr)
         },
         Expression::LValue(lvalue) => {
-            warn!("Attempting to call verify_expression on l-value {:?}", lvalue);
+            println!("Attempting to call verify_expression on l-value {:?}", lvalue);
             None
         },
 
         _ => {
-            warn!("Unimplemented expression {:?}", expr);
+            println!("Unimplemented expression {:?}", expr);
             None
         },
     }
 }
 
-fn generate_lvalue(context: &mut VerifyContext, expr: &mut Expression, internal_type: ValueTypeRef) -> Option<(Option<String>, ValueType)> {
+fn generate_lvalue(context: &mut VerifyContext, expr: &mut Expression, internal_type: ValueType) -> Option<(Option<String>, ValueType)> {
     match expr {
         Expression::Unverified(UnverifiedExpression::Identifier(name)) =>
             Some((Some(name.clone()), ValueType::Standard(internal_type.clone()))),
@@ -71,17 +70,17 @@ fn generate_lvalue(context: &mut VerifyContext, expr: &mut Expression, internal_
     }
 }
 
-fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueTypeRef> {
+fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueType> {
     match expr {
         // Variable Declaration
         Expression::Unverified(unverified) => match unverified {
-            UnverifiedExpression::CompoundIdentifier { ident: identifier, suffix } => {
+            UnverifiedExpression::TypedExpression { type_: identifier, suffix } => {
                 let type_ = verify_type(context, identifier)?;
                 let Some((Some(name), lval_type)) = generate_lvalue(context, suffix, type_) else {
-                    warn!("Failed to generate l-value for typed expression");
+                    println!("Failed to generate l-value for typed expression");
                     return None
                 };
-                let lval_type = ValueTypeRef::new(lval_type);
+                let lval_type = ValueType::new(lval_type);
 
                 *expr =
                     Expression::LValue(
@@ -116,12 +115,12 @@ fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<V
                     return Some(type_id.clone())
                 }
 
-                warn!("Variable {} not found", name);
+                println!("Variable {} not found", name);
                 None
             },
 
             _ => {
-                warn!("Invalid l-value: {:?}", expr);
+                println!("Invalid l-value: {:?}", expr);
                 None
             },
         },
@@ -133,19 +132,19 @@ fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<V
             },
 
             _ => {
-                warn!("Invalid l-value: {:?}", expr);
+                println!("Invalid l-value: {:?}", expr);
                 None
             },
         },
 
         _ => {
-            warn!("Invalid l-value: {:?}", expr);
+            println!("Invalid l-value: {:?}", expr);
             None
         },
     }
 }
 
-fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression) -> Option<ValueTypeRef> {
+fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression) -> Option<ValueType> {
     match expr {
         ControlExpression::Return(expr) => {
             verify_expression(context, expr);
@@ -184,20 +183,20 @@ fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression
             }
             context.pop_scope();
         },
-        _ => warn!("Unimplemented control expression {:?}", expr),
+        _ => println!("Unimplemented control expression {:?}", expr),
     };
 
     Some(context.get_type("void").unwrap())
 }
 
-fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> Option<ValueTypeRef> {
+fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> Option<ValueType> {
     match expr {
         ValueExpression::DirectFunctionCall {
             args, name
         } => {
             let Some(FunctionPrototype { return_type, args: intended_args }) =
                 context.get_function(&name) else {
-                warn!("Function {} not found", name);
+                println!("Function {} not found", name);
                 return None
             };
             let return_type = return_type.clone();
@@ -230,7 +229,7 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
         },
 
         _ => {
-            warn!("Unimplemented value expression {:?}", expr);
+            println!("Unimplemented value expression {:?}", expr);
             None
         },
     }
@@ -240,7 +239,7 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
     match expr {
         UnverifiedExpression::Identifier(name) => {
             let Some(type_) = context.get_variable(name.as_ref()) else {
-                warn!("Variable {} not found", name);
+                println!("Variable {} not found", name);
                 return None;
             };
 
@@ -280,7 +279,7 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
     }
 }
 
-fn attempt_implicit_cast(expr: &mut Expression, target_type: ValueTypeRef) -> Option<()> {
+fn attempt_implicit_cast(expr: &mut Expression, target_type: ValueType) -> Option<()> {
     match expr {
         Expression::Literal(lit) => {
             if let LiteralExpression::IntLiteral { val, .. } = lit {
