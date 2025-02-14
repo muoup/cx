@@ -47,10 +47,13 @@ pub fn verify_ast(ast: UnverifiedAST) -> Option<VerifiedAST> {
         current_return_type: None
     };
 
-    let mut stmts = global_pass::global_pass(&mut context, ast.statements)?;
+    let Some(mut stmts) = global_pass::global_pass(&mut context, ast.statements) else {
+        println!("Failed to verify global pass");
+        return None;
+    };
     let Some(_) = local_pass::local_pass(&mut context, &mut stmts) else {
         println!("Failed to verify local pass");
-        println!("Tree: {:#?}", stmts);
+        // println!("Tree: {:#?}", stmts);
 
         return None;
     };

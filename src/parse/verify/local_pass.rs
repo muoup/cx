@@ -1,7 +1,9 @@
-use std::rc::Rc;
-use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LiteralExpression, UnverifiedAST, UnverifiedExpression, UnverifiedGlobalStatement, ValueExpression, ValueType};
+use std::{clone, iter};
+use crate::lex::token::OperatorType;
+use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LValueExpression, LiteralExpression, UnverifiedExpression, ValueExpression, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
-use crate::parse::verify::typing::{format_lvalue, verify_type};
+use crate::parse::verify::typing::{format_lvalue, verify_compound_pair, verify_type};
+use std::rc::Rc;
 
 pub(crate) type VerifyResult<T> = Option<T>;
 pub(crate) type ExprVerifyResult = Option<ValueType>;
@@ -39,7 +41,9 @@ fn verify_global_statement(context: &mut VerifyContext, stmt: &mut GlobalStateme
             context.pop_scope();
         },
 
-        _ => return None
+        _ => {
+            println!("Unimplemented global statement {:?}", stmt);
+        }
     }
 
     Some(())
@@ -53,10 +57,7 @@ fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Expr
             *expr = characterize_unverified_expr(context, unverified)?;
             verify_expression(context, expr)
         },
-        Expression::LValue(lvalue) => {
-            println!("Attempting to call verify_expression on l-value {:?}", lvalue);
-            None
-        },
+        Expression::LValue(_) => verify_lvalue(context, expr),
         Expression::Literal(lit) => {
             match lit {
                 LiteralExpression::IntLiteral { bytes, .. }
@@ -77,11 +78,50 @@ fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Expr
     }
 }
 
-fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> ExprVerifyResult {
+pub(crate) fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> ExprVerifyResult {
     format_lvalue(context, expr)?;
 
     match expr {
+        Expression::LValue(lvalue) => {
+            match lvalue {
+                LValueExpression::Alloca { type_, .. } => {
+                    verify_type(context, type_)?;
+                    Some(type_.clone())
+                },
+                LValueExpression::Value { name } => {
+                    let Some(type_) = context.get_variable(name.as_ref()) else {
+                        println!("Variable {} not found", name);
+                        return None
+                    };
 
+                    Some(type_.clone())
+                },
+                _ => unimplemented!("Unimplemented l-value: {:?}", lvalue)
+            }
+        },
+        Expression::Unverified (
+            UnverifiedExpression::BinaryOperation {
+                left, right,
+                operator: OperatorType::Access
+            }
+        ) => {
+            let _type = verify_expression(context, left)?;
+            let ValueType::Structured { fields } = _type else {
+                println!("Cannot access fields of non-struct type: {:?}", _type);
+                return None
+            };
+            let Expression::Unverified(UnverifiedExpression::Identifier(right)) = right.as_ref() else {
+                println!("Field access requires an identifier, found: {:?}", right);
+                return None
+            };
+
+            let Some(field) = fields.iter().find(|(name, _)| name == right) else {
+                println!("Field {} not found in struct", right);
+                return None
+            };
+
+            Some(field.1.clone())
+        },
 
         _ => {
             println!("Invalid l-value: {:?}", expr);
@@ -179,6 +219,8 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
 
             Some(output)
         },
+        ValueExpression::VariableReference { lval_type, .. } => Some(lval_type.clone()),
+        ValueExpression::StructFieldReference { field_type, .. } => Some(field_type.clone()),
 
         _ => {
             println!("Unimplemented value expression {:?}", expr);
@@ -190,7 +232,7 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
 fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut UnverifiedExpression) -> Option<Expression> {
     match expr {
         UnverifiedExpression::Identifier(name) => {
-            let Some(type_) = context.get_variable(name.as_ref()) else {
+            let Some(type_) = context.get_variable(name.as_ref()).cloned() else {
                 println!("Variable {} not found", name);
                 return None;
             };
@@ -204,6 +246,22 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
                 )
             )
         },
+
+        UnverifiedExpression::CompoundExpression { prefix, suffix } => {
+            let (type_, name) = verify_compound_pair(context, prefix, suffix)?;
+
+            context.insert_variable(name.clone(), type_.clone());
+
+            Some(
+                Expression::LValue(
+                    LValueExpression::Alloca {
+                        type_,
+                        name
+                    }
+                )
+            )
+        },
+
         UnverifiedExpression::FunctionCall {
             name, args
         } => {
@@ -230,7 +288,75 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
             }
         },
 
-        _ => None
+        UnverifiedExpression::BinaryOperation {
+            left, right, operator: OperatorType::PointerAccess
+        } => {
+            *expr = UnverifiedExpression::BinaryOperation {
+                left: Box::new(
+                    Expression::Value(
+                        ValueExpression::UnaryOperation {
+                            operator: OperatorType::Dereference,
+                            operand: Some(left.clone())
+                        }
+                    )
+                ),
+                right: right.clone(),
+                operator: OperatorType::Access
+            };
+
+            characterize_unverified_expr(context, expr)
+        },
+
+        UnverifiedExpression::BinaryOperation {
+            left, right, operator: OperatorType::Access,
+        } => {
+            let _type = verify_expression(context, left)?;
+            let ValueType::Structured { fields } = _type else {
+                println!("Cannot access fields of non-struct type: {:?}", _type);
+                return None;
+            };
+            let Expression::Unverified(UnverifiedExpression::Identifier(right)) = right.as_ref() else {
+                println!("Field access requires an identifier, found: {:?}", right);
+                return None;
+            };
+
+            let Some(field) = fields.iter().find(|(name, _)| name == right) else {
+                println!("Field {} not found in struct", right);
+                return None;
+            };
+
+            Some(
+                Expression::Value(
+                    ValueExpression::StructFieldReference {
+                        struct_: left.to_owned(),
+                        field: field.0.clone(),
+                        field_type: field.1.clone()
+                    }
+                )
+            )
+        }
+
+        UnverifiedExpression::BinaryOperation {
+            left, right, operator
+        } => {
+            verify_expression(context, left)?;
+            verify_expression(context, right)?;
+
+            Some(
+                Expression::Value(
+                    ValueExpression::BinaryOperation {
+                        left: left.to_owned(),
+                        right: left.to_owned(),
+                        operator: operator.clone()
+                    }
+                )
+            )
+        }
+
+        _ => {
+            println!("Unimplemented unverified expression {:?}", expr);
+            None
+        }
     }
 }
 

@@ -8,12 +8,28 @@ pub struct UnverifiedAST {
     pub statements: Vec<UnverifiedGlobalStatement>
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValueType {
+    Integer { bytes: u8, signed: bool },
+    Float { bytes: u8 },
+    Structured { fields: Rc<[(String, ValueType)]> },
+    Unit,
+
+    PointerTo(Rc<ValueType>),
+    Array {
+        size: usize,
+        type_: Rc<ValueType>
+    },
+
+    Unverified(String)
+}
+
 pub struct StructDefinition {
     pub name: Option<String>,
     pub fields: Vec<(String, ValueType)>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
     pub name: String,
     pub type_: ValueType
@@ -96,6 +112,11 @@ pub enum ValueExpression {
         right: Box<Expression>,
         operator: Option<OperatorType>
     },
+    StructFieldReference {
+        struct_: Box<Expression>,
+        field: String,
+        field_type: ValueType
+    },
     VariableReference {
         name: String,
         lval_type: ValueType
@@ -154,22 +175,6 @@ pub enum UnverifiedExpression {
         left: Box<Expression>,
         right: Box<Expression>
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ValueType {
-    Integer { bytes: u8, signed: bool },
-    Float { bytes: u8 },
-    Structured { fields: Rc<[(String, ValueType)]> },
-    Unit,
-
-    PointerTo(Rc<ValueType>),
-    Array {
-        size: usize,
-        type_: Rc<ValueType>
-    },
-
-    Unverified(String)
 }
 
 #[derive(Debug, Clone)]

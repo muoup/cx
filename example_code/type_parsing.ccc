@@ -1,8 +1,12 @@
-int main();
-
 struct Test {
-    int x;
-    int y;
+    int i1;
+    int i2;
 }
 
-int x = 2;
+int main() {
+    Test x;
+    x.i1 = 1;
+    x.i2 = 2;
+
+    return x.i1 + x.i2;
+}

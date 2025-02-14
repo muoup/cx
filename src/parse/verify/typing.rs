@@ -13,23 +13,34 @@ use crate::parse::verify::local_pass::{ExprVerifyResult, VerifyResult};
  */
 pub(crate) fn format_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> VerifyResult<()> {
     match expr {
+        // (type) * (identifier) -> type (*identifier)
         Expression::Unverified(
             UnverifiedExpression::BinaryOperation {
                 operator: OperatorType::Multiply,
                 left, right
             }
         ) => {
-            let Expression::Unverified(
-                UnverifiedExpression::Identifier(name)
-            ) = left.as_ref() else {
-                println!("Invalid type identifier: {:?}", expr);
-                return None
-            };
+            *expr = Expression::Unverified(
+                UnverifiedExpression::CompoundExpression {
+                    prefix: left.clone(),
+                    suffix: Box::new(
+                        Expression::Unverified(
+                            UnverifiedExpression::UnaryOperation {
+                                operator: OperatorType::Dereference,
+                                operand: right.clone()
+                            }
+                        )
+                    )
+                }
+            );
 
-            let base_type = ValueType::PointerTo(Rc::new(context.get_type(name)?));
+            format_lvalue(context, expr);
+        },
 
-            let (type_, name) =
-                coalesce_typed_identifier(context, base_type, right)?;
+        Expression::Unverified(
+            UnverifiedExpression::CompoundExpression { prefix, suffix }
+        ) => {
+            let (type_, name) = verify_compound_pair(context, prefix, suffix)?;
 
             *expr = Expression::LValue(
                 LValueExpression::Alloca {
@@ -37,7 +48,7 @@ pub(crate) fn format_lvalue(context: &mut VerifyContext, expr: &mut Expression) 
                     name: name.clone(),
                 }
             );
-        }
+        },
 
         _ => ()
     };

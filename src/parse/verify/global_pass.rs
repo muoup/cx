@@ -1,7 +1,8 @@
+use std::rc::Rc;
 use log::warn;
-use crate::parse::ast::{Expression, FunctionParameter, GlobalStatement, LValueExpression, UnverifiedAST, UnverifiedGlobalStatement};
+use crate::parse::ast::{Expression, FunctionParameter, GlobalStatement, LValueExpression, UnverifiedAST, UnverifiedGlobalStatement, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
-use crate::parse::verify::local_pass::VerifyResult;
+use crate::parse::verify::local_pass::{verify_lvalue, VerifyResult};
 use crate::parse::verify::typing::{format_lvalue, verify_compound_pair};
 
 pub(crate) fn global_pass(context: &mut VerifyContext, stmts: Vec<UnverifiedGlobalStatement>) -> VerifyResult<Vec<GlobalStatement>> {
@@ -32,7 +33,7 @@ pub(crate) fn examine_global_statement(context: &mut VerifyContext, stmt: Unveri
                 format_lvalue(context, &mut param);
 
                 let Expression::LValue(LValueExpression::Alloca { type_, name }) = param else {
-                    warn!("Function parameter must be an l-value alloca, found {:#?}", param);
+                    println!("Function parameter must be an l-value alloca, found {:#?}", param);
                     return None
                 };
 
@@ -46,7 +47,7 @@ pub(crate) fn examine_global_statement(context: &mut VerifyContext, stmt: Unveri
                 return_type: return_type.clone(),
                 args: formatted_parameters
             };
-            context.insert_function(name.as_str(), prototype);
+            context.insert_function(name.as_str(), prototype)?;
 
             Some(
                 GlobalStatement::Function {
@@ -56,6 +57,36 @@ pub(crate) fn examine_global_statement(context: &mut VerifyContext, stmt: Unveri
             )
         },
 
-        _ => None
+        UnverifiedGlobalStatement::StructDeclaration {
+            name, field_declarations
+        } => {
+            let mut fields = Vec::new();
+
+            for mut field in field_declarations.into_iter() {
+                verify_lvalue(context, &mut field)?;
+
+                let Expression::LValue(LValueExpression::Alloca { type_, name }) = field else {
+                    println!("Struct field must be an l-value alloca, found {:#?}", field);
+                    return None
+                };
+
+                fields.push((name, type_));
+            }
+
+            let struct_type = ValueType::Structured {
+                fields: fields.into_boxed_slice().into()
+            };
+
+            context.insert_type(name.as_str(), struct_type.clone());
+
+            Some(
+                GlobalStatement::TypeDeclaration {
+                    name: Some(name),
+                    type_: struct_type
+                }
+            )
+        }
+
+        _ => unimplemented!("Unimplemented global statement: {:#?}", stmt),
     }
 }

@@ -2,7 +2,7 @@ use crate::parse::ast::{Expression, FunctionParameter, ValueType};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FunctionPrototype {
     pub(crate) return_type: ValueType,
     pub(crate) args: Vec<FunctionParameter>,
@@ -29,8 +29,22 @@ impl VerifyContext {
         self.variable_table.last_mut().unwrap().insert(name, val_type);
     }
 
-    pub(crate) fn insert_function(&mut self, name: &str, fn_prototype: FunctionPrototype) {
+    pub(crate) fn insert_type(&mut self, name: &str, val_type: ValueType) {
+        self.types_table.insert(name.to_owned(), val_type);
+    }
+
+    pub(crate) fn insert_function(&mut self, name: &str, fn_prototype: FunctionPrototype) -> Option<()> {
+        if let Some(func) = self.function_table.get(name) {
+            if fn_prototype != **func {
+                println!("Function {} already exists with a different prototype", name);
+                return None;
+            }
+
+            return Some(());
+        }
+
         self.function_table.insert(name.to_owned(), Rc::new(fn_prototype));
+        Some(())
     }
 
     pub(crate) fn get_variable(&self, name: &str) -> Option<&ValueType> {
