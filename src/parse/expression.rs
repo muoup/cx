@@ -101,16 +101,11 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
         _ => {
             let top_expr = expr_stack.pop()?;
 
-            let Expression::Unverified(UnverifiedExpression::Identifier(name)) = top_expr else {
-                expr_stack.push(top_expr);
-                return Some(());
-            };
-
             if let Some(expr) = parse_expression(toks) {
                 expr_stack.push(
                     Expression::Unverified(
-                        UnverifiedExpression::TypedExpression {
-                            type_: ValueType::Unverified(name.clone()),
+                        UnverifiedExpression::CompoundExpression {
+                            prefix: Box::new(top_expr),
                             suffix: Box::new(expr)
                         }
                     )
@@ -118,11 +113,7 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
 
                 parse_operator(toks, expr_stack, op_stack)
             } else {
-                expr_stack.push(
-                    Expression::Unverified(
-                        UnverifiedExpression::Identifier(name)
-                    )
-                );
+                expr_stack.push(top_expr);
 
                 None
             }

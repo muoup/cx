@@ -41,8 +41,11 @@ pub(crate) fn parse_union_definition(toks: &mut TokenIter) -> Option<UnverifiedG
 
 pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<UnverifiedGlobalStatement> {
     let expr = parse_expression(toks)?;
-    let Expression::Unverified(UnverifiedExpression::TypedExpression { type_, suffix, .. })
-        = expr else {
+    let Expression::Unverified(
+        UnverifiedExpression::CompoundExpression {
+            prefix: type_, suffix, ..
+        }
+    ) = expr else {
         println!("Global Expressions must be declarative, found: {:?}", expr);
         return None;
     };
@@ -62,7 +65,7 @@ pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<Unverified
 
             Some(
                 UnverifiedGlobalStatement::Function {
-                    return_type: type_,
+                    return_type: *type_,
                     name_header: *name,
                     params: args,
                     body,
@@ -72,12 +75,12 @@ pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<Unverified
         Expression::Value(
             ValueExpression::Assignment { left, right, operator }
         ) => {
+            assert_eq!(operator, None);
             assert_token_matches!(toks, Token::Punctuator(PunctuatorType::Semicolon));
 
             Some(
                 UnverifiedGlobalStatement::GlobalVariable {
-                    type_,
-                    name_expr: *left,
+                    left: *left,
                     value: Some(*right)
                 }
             )

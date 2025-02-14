@@ -1,18 +1,15 @@
+use crate::parse::ast::{GlobalStatement, UnverifiedAST, ValueType};
+use crate::parse::verify::context::VerifyContext;
 use std::collections::HashMap;
-use std::sync::Arc;
-use crate::parse::ast::{ValueType, UnverifiedAST, GlobalStatement};
-use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
 
 pub mod context;
 mod global_pass;
 mod local_pass;
-mod type_verification;
+mod typing;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
     pub global_statements: Vec<GlobalStatement>,
-    pub functions: HashMap<String, FunctionPrototype>,
-    pub named_typedefs: HashMap<String, ValueType>
 }
 
 fn base_type_defs() -> HashMap<String, ValueType> {
@@ -33,13 +30,15 @@ fn base_type_defs() -> HashMap<String, ValueType> {
     type_defs.insert("unsigned int".to_owned(), type_defs.get("u32").unwrap().clone());
     type_defs.insert("float".to_owned(), type_defs.get("f32").unwrap().clone());
     type_defs.insert("double".to_owned(), type_defs.get("f64").unwrap().clone());
+    type_defs.insert("char".to_owned(), type_defs.get("i8").unwrap().clone());
+    type_defs.insert("unsigned char".to_owned(), type_defs.get("u8").unwrap().clone());
 
-    type_defs.insert("void".to_owned(), ValueTypeRef::new(ValueType::Unit));
+    type_defs.insert("void".to_owned(), ValueType::Unit);
 
     type_defs
 }
 
-pub fn verify_ast(mut ast: UnverifiedAST) -> Option<VerifiedAST> {
+pub fn verify_ast(ast: UnverifiedAST) -> Option<VerifiedAST> {
     let mut context = VerifyContext {
         variable_table: vec![],
         function_table: HashMap::new(),
@@ -48,14 +47,17 @@ pub fn verify_ast(mut ast: UnverifiedAST) -> Option<VerifiedAST> {
         current_return_type: None
     };
 
-    global_pass::global_pass(&mut context, &ast);
-    local_pass::local_pass(&mut context, &mut ast)?;
+    let mut stmts = global_pass::global_pass(&mut context, ast.statements)?;
+    let Some(_) = local_pass::local_pass(&mut context, &mut stmts) else {
+        println!("Failed to verify local pass");
+        println!("Tree: {:#?}", stmts);
+
+        return None;
+    };
 
     Some(
         VerifiedAST {
-            global_statements: vec![],
-            functions: context.function_table,
-            named_typedefs: HashMap::new()
+            global_statements: stmts
         }
     )
 }

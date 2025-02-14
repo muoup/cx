@@ -1,6 +1,7 @@
 use crate::lex::token::OperatorType;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::rc::Rc;
+use crate::parse::verify::context::FunctionPrototype;
 
 #[derive(Debug)]
 pub struct UnverifiedAST {
@@ -12,12 +13,16 @@ pub struct StructDefinition {
     pub fields: Vec<(String, ValueType)>
 }
 
+#[derive(Debug, Clone)]
+pub struct FunctionParameter {
+    pub name: String,
+    pub type_: ValueType
+}
+
 #[derive(Debug)]
 pub enum GlobalStatement {
     Function {
-        name: String,
-        arguments: Vec<Expression>,
-        return_type: ValueType,
+        prototype: Rc<FunctionPrototype>,
         body: Option<Vec<Expression>>
     },
 
@@ -37,7 +42,7 @@ pub enum GlobalStatement {
 #[derive(Debug)]
 pub enum UnverifiedGlobalStatement {
     Function {
-        return_type: ValueType,
+        return_type: Expression,
         name_header: Expression,
         params: Vec<Expression>,
         body: Option<Vec<Expression>>
@@ -49,8 +54,7 @@ pub enum UnverifiedGlobalStatement {
     },
 
     GlobalVariable {
-        type_: ValueType,
-        name_expr: Expression,
+        left: Expression,
         value: Option<Expression>
     }
 }
@@ -125,8 +129,8 @@ pub enum ControlExpression {
 pub enum UnverifiedExpression {
     Identifier(String),
 
-    TypedExpression {
-        type_: ValueType,
+    CompoundExpression {
+        prefix: Box<Expression>,
         suffix: Box<Expression>
     },
 
@@ -152,17 +156,17 @@ pub enum UnverifiedExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ValueType {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
-    Structured { fields: Vec<(String, ValueType)> },
+    Structured { fields: Rc<[(String, ValueType)]> },
     Unit,
 
-    PointerTo(Arc<ValueType>),
+    PointerTo(Rc<ValueType>),
     Array {
         size: usize,
-        type_: Arc<ValueType>
+        type_: Rc<ValueType>
     },
 
     Unverified(String)

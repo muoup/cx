@@ -1,47 +1,51 @@
-use std::clone;
-use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-use cranelift_module::Module;
-use log::{log, warn, Level};
-use crate::lex::token::OperatorType;
-use crate::lex::token::Token::Operator;
-use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LValueExpression, LiteralExpression, UnverifiedAST, UnverifiedExpression, ValueExpression, ValueType};
+use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LiteralExpression, UnverifiedAST, UnverifiedExpression, UnverifiedGlobalStatement, ValueExpression, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
-use crate::parse::verify::type_verification::verify_type;
+use crate::parse::verify::typing::{format_lvalue, verify_type};
 
-pub(crate) fn local_pass(context: &mut VerifyContext, root: &mut UnverifiedAST) -> Option<()> {
-    for stmt in root.statements.iter_mut() {
-        match stmt {
-            GlobalStatement::Function {
-                return_type, arguments,
-                body, ..
-            } => {
-                let Some(body) = body else { continue; };
+pub(crate) type VerifyResult<T> = Option<T>;
+pub(crate) type ExprVerifyResult = Option<ValueType>;
 
-                context.current_return_type = Some(return_type.clone());
-                context.push_scope();
-
-                for arg in arguments {
-                    verify_expression(context, arg);
-                }
-
-                for expr in body.iter_mut() {
-                    verify_expression(context, expr).or_else(|| {
-                        println!("Failed to verify expression {:?}", expr);
-                        None
-                    });
-                }
-
-                context.pop_scope();
-            },
-
-            _ => ()
-        }
+pub(crate) fn local_pass(context: &mut VerifyContext, stmts: &mut Vec<GlobalStatement>) -> VerifyResult<()> {
+    for stmt in stmts {
+        verify_global_statement(context, stmt)?;
     }
 
     Some(())
 }
-fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueType> {
+
+fn verify_global_statement(context: &mut VerifyContext, stmt: &mut GlobalStatement) -> VerifyResult<()> {
+    match stmt {
+        GlobalStatement::Function {
+            prototype, body
+        } => {
+            context.push_scope();
+
+            for param in prototype.args.iter() {
+                context.insert_variable(param.name.clone(), param.type_.clone());
+            }
+
+            context.current_return_type = Some(prototype.return_type.clone());
+
+            if let Some(body) = body {
+                for expr in body.iter_mut() {
+                    let Some(_) = verify_expression(context, expr) else {
+                        println!("Failed to verify expression: {:#?}", expr);
+                        return None
+                    };
+                }
+            }
+
+            context.pop_scope();
+        },
+
+        _ => return None
+    }
+
+    Some(())
+}
+
+fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> ExprVerifyResult {
     match expr {
         Expression::Control(control) => verify_control_expr(context, control),
         Expression::Value(value) => verify_val_expr(context, value),
@@ -53,6 +57,18 @@ fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Opti
             println!("Attempting to call verify_expression on l-value {:?}", lvalue);
             None
         },
+        Expression::Literal(lit) => {
+            match lit {
+                LiteralExpression::IntLiteral { bytes, .. }
+                    => Some(ValueType::Integer { bytes: *bytes, signed: true }),
+                LiteralExpression::FloatLiteral { bytes, .. }
+                    => Some(ValueType::Float { bytes: *bytes }),
+                LiteralExpression::StringLiteral { .. } => {
+                    let _char = context.get_type("char")?;
+                    Some(ValueType::PointerTo(Rc::new(_char)))
+                }
+            }
+        }
 
         _ => {
             println!("Unimplemented expression {:?}", expr);
@@ -61,81 +77,11 @@ fn verify_expression(context: &mut VerifyContext, expr: &mut Expression) -> Opti
     }
 }
 
-fn generate_lvalue(context: &mut VerifyContext, expr: &mut Expression, internal_type: ValueType) -> Option<(Option<String>, ValueType)> {
+fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> ExprVerifyResult {
+    format_lvalue(context, expr)?;
+
     match expr {
-        Expression::Unverified(UnverifiedExpression::Identifier(name)) =>
-            Some((Some(name.clone()), ValueType::Standard(internal_type.clone()))),
 
-        _ => None
-    }
-}
-
-fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<ValueType> {
-    match expr {
-        // Variable Declaration
-        Expression::Unverified(unverified) => match unverified {
-            UnverifiedExpression::TypedExpression { type_: identifier, suffix } => {
-                let type_ = verify_type(context, identifier)?;
-                let Some((Some(name), lval_type)) = generate_lvalue(context, suffix, type_) else {
-                    println!("Failed to generate l-value for typed expression");
-                    return None
-                };
-                let lval_type = ValueType::new(lval_type);
-
-                *expr =
-                    Expression::LValue(
-                        LValueExpression::Alloca {
-                            name,
-                            type_: lval_type.clone()
-                        }
-                    );
-
-                Some(lval_type)
-            },
-
-            // Variable reference
-            UnverifiedExpression::Identifier(name) => {
-                if let Some(val_type) = context.get_variable(name) {
-                    *expr = Expression::LValue(
-                        LValueExpression::Value {
-                            name: name.clone(),
-                        }
-                    );
-
-                    return Some(val_type.clone())
-                }
-
-                if let Some(type_id) = context.get_type(name) {
-                    *expr = Expression::LValue(
-                        LValueExpression::Value {
-                            name: name.clone(),
-                        }
-                    );
-
-                    return Some(type_id.clone())
-                }
-
-                println!("Variable {} not found", name);
-                None
-            },
-
-            _ => {
-                println!("Invalid l-value: {:?}", expr);
-                None
-            },
-        },
-
-        // Pointer to
-        Expression::Value(value) => match value {
-            ValueExpression::UnaryOperation { operator: OperatorType::Dereference, operand } => {
-                None
-            },
-
-            _ => {
-                println!("Invalid l-value: {:?}", expr);
-                None
-            },
-        },
 
         _ => {
             println!("Invalid l-value: {:?}", expr);
@@ -144,13 +90,17 @@ fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) -> Option<V
     }
 }
 
-fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression) -> Option<ValueType> {
+fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression) -> ExprVerifyResult {
     match expr {
         ControlExpression::Return(expr) => {
-            verify_expression(context, expr);
-        },
-        ControlExpression::If { condition, then, else_ } => {
-            verify_expression(context, condition);
+            let target_type = context.current_return_type.as_ref().cloned()?;
+            verify_and_coerce(context, expr, &target_type)?;
+        }
+        ControlExpression::If {
+            condition, then,
+            else_
+        } => {
+            verify_expression(context, condition)?;
 
             context.push_scope();
             for expr in then.iter_mut() {
@@ -164,7 +114,10 @@ fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression
             }
             context.pop_scope();
         },
-        ControlExpression::ForLoop { init, condition, increment, body } => {
+        ControlExpression::ForLoop {
+            init, condition,
+            increment, body
+        } => {
             verify_expression(context, init);
             verify_expression(context, condition);
             verify_expression(context, increment);
@@ -175,7 +128,9 @@ fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression
             }
             context.pop_scope();
         },
-        ControlExpression::Loop { condition, body, .. } => {
+        ControlExpression::Loop {
+            condition, body, ..
+        } => {
             verify_expression(context, condition);
             context.push_scope();
             for expr in body.iter_mut() {
@@ -186,7 +141,7 @@ fn verify_control_expr(context: &mut VerifyContext, expr: &mut ControlExpression
         _ => println!("Unimplemented control expression {:?}", expr),
     };
 
-    Some(context.get_type("void").unwrap())
+    Some(ValueType::Unit)
 }
 
 fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> Option<ValueType> {
@@ -194,19 +149,17 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
         ValueExpression::DirectFunctionCall {
             args, name
         } => {
-            let Some(FunctionPrototype { return_type, args: intended_args }) =
-                context.get_function(&name) else {
+            let Some(func) = context.get_function(&name) else {
                 println!("Function {} not found", name);
                 return None
             };
-            let return_type = return_type.clone();
+            let FunctionPrototype { return_type, args: intended_args } = func.as_ref();
 
-            for (arg, intended_type) in args.iter_mut().zip(intended_args.clone().into_iter()) {
-                verify_expression(context, arg)?;
-                attempt_implicit_cast(arg, intended_type)?;
+            for (arg, intended_type) in args.iter_mut().zip(intended_args.iter()) {
+                verify_and_coerce(context, arg, &intended_type.type_)?;
             }
 
-            Some(return_type)
+            Some(return_type.clone())
         },
         ValueExpression::UnaryOperation { operand, .. } => {
             if let Some(operand) = operand {
@@ -221,9 +174,8 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
         },
         ValueExpression::Assignment { left, right, .. } => {
             let output = verify_lvalue(context, left)?;
-            verify_expression(context, right)?;
 
-            attempt_implicit_cast(right, output.clone());
+            verify_and_coerce(context, right, &output);
 
             Some(output)
         },
@@ -259,7 +211,10 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
                 Expression::Unverified(
                     UnverifiedExpression::Identifier(name)
                 ) => {
-                    context.function_table.get(name)?;
+                    let Some(_) = context.function_table.get(name) else {
+                        println!("Function {} not found", name);
+                        return None;
+                    };
 
                     Some(
                         Expression::Value(
@@ -279,28 +234,37 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
     }
 }
 
-fn attempt_implicit_cast(expr: &mut Expression, target_type: ValueType) -> Option<()> {
+fn verify_and_coerce(context: &mut VerifyContext, expr: &mut Expression, target_type: &ValueType) -> Option<()> {
+    let current_type = verify_expression(context, expr)?;
+
+    if current_type == *target_type {
+        return Some(())
+    }
+
     match expr {
-        Expression::Literal(lit) => {
-            if let LiteralExpression::IntLiteral { val, .. } = lit {
-                if let ValueType::Integer { bytes, signed } = target_type.as_ref() {
-                    if *signed {
-                        *lit = LiteralExpression::IntLiteral { val: *val, bytes: *bytes };
-                        return Some(())
-                    }
-                }
-            }
+        Expression::Literal(LiteralExpression::IntLiteral { val, .. }) => {
+            if let ValueType::Integer { bytes, .. } = target_type {
+                *expr = Expression::Literal(
+                    LiteralExpression::IntLiteral { val: *val, bytes: *bytes }
+                );
 
-            if let LiteralExpression::FloatLiteral { val, .. } = lit {
-                if let ValueType::Float { bytes } = target_type.as_ref() {
-                    *lit = LiteralExpression::FloatLiteral { val: *val, bytes: *bytes };
-                    return Some(())
-                }
+                return Some(())
             }
-
-            None
         },
 
-        _ => None
-    }
+        Expression::Literal(LiteralExpression::FloatLiteral { val, .. }) => {
+            if let ValueType::Float { bytes } = target_type {
+                *expr = Expression::Literal(
+                    LiteralExpression::FloatLiteral { val: *val, bytes: *bytes }
+                );
+
+                return Some(())
+            }
+        },
+
+        _ => ()
+    };
+
+    println!("Failed to coerce {:?} to {:?}", expr, target_type);
+    None
 }
