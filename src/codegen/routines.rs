@@ -5,8 +5,29 @@ use cranelift::prelude::{FunctionBuilder, InstBuilder, MemFlags, StackSlotData, 
 use cranelift_module::{DataDescription, Module};
 use crate::codegen::codegen::FunctionState;
 use crate::codegen::scope::VariableTable;
+use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::{Expression, ValueExpression};
+use crate::parse::ast::{ValueType};
+
+pub(crate) fn stack_alloca(context: &mut FunctionState, type_: ValueType) -> Option<Value> {
+    match type_ {
+        ValueType::Structured { fields } => {
+            let field_values = fields.iter()
+                .map(|(_, type_)| stack_alloca(context, type_.clone()))
+                .collect::<Vec<_>>();
+
+            Some(field_values[0]?.to_owned())
+        },
+
+        _ => allocate_variable(
+            &mut context.builder,
+            &mut context.variable_table,
+            "alloca",
+            get_cranelift_type(&type_),
+            None
+        )
+    }
+}
 
 pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &mut VariableTable,
                                 name: &str, type_: ir::Type, initial_value: Option<ir::Value>) -> Option<Value> {
@@ -18,23 +39,7 @@ pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &
         builder.ins().stack_store(initial_value, stack_slot, 0);
     }
 
-    variable_table.insert(
-        name.to_string(),
-        stack_pointer, type_
-    );
-
     Some(stack_pointer)
-}
-
-pub(crate) fn load_value(context: &mut FunctionState, value: &Expression) -> Option<Value> {
-    let (value, type_) = match value {
-        Expression::Value(ValueExpression::VariableReference { name, .. })
-            => context.variable_table.get(name)?.clone(),
-
-        _ => return None
-    };
-
-    Some(context.builder.ins().load(type_, MemFlags::new(), value, 0))
 }
 
 pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs: Value, rhs: Value) -> Option<Value> {

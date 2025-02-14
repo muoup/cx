@@ -1,9 +1,9 @@
 use std::env;
-use cranelift::codegen;
 
 mod lex;
 mod parse;
 mod preprocessor;
+mod codegen;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -17,6 +17,6 @@ fn main() {
     let mut lexer = lex::generate_tokens(preprocessed.as_str());
 
     if let Some(ast) = parse::parse_ast(&mut lexer) {
-        // codegen::codegen::ast_codegen(&ast);
+        codegen::codegen::ast_codegen(&ast);
     }
 }

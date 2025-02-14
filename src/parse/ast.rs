@@ -89,6 +89,13 @@ pub enum LiteralExpression {
 }
 
 #[derive(Debug, Clone)]
+pub enum IntegerCastType {
+    IReduce,
+    SignExtend,
+    ZeroExtend
+}
+
+#[derive(Debug, Clone)]
 pub enum ValueExpression {
     DirectFunctionCall {
         name: String,
@@ -112,9 +119,18 @@ pub enum ValueExpression {
         right: Box<Expression>,
         operator: Option<OperatorType>
     },
+    IntegerCast {
+        expr: Box<Expression>,
+        type_: ValueType,
+        cast_type: IntegerCastType
+    },
+    FloatCast {
+        expr: Box<Expression>,
+        type_: ValueType
+    },
     StructFieldReference {
         struct_: Box<Expression>,
-        field: String,
+        field_offset: usize,
         field_type: ValueType
     },
     VariableReference {
@@ -185,6 +201,9 @@ pub enum LValueExpression {
     },
     Value {
         name: String,
+    },
+    DereferencedPointer {
+        pointer: Box<Expression>,
     }
 }
 

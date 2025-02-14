@@ -50,6 +50,14 @@ pub(crate) fn format_lvalue(context: &mut VerifyContext, expr: &mut Expression) 
             );
         },
 
+        Expression::Unverified(UnverifiedExpression::Identifier(name)) => {
+            *expr = Expression::LValue(
+                LValueExpression::Value {
+                    name: name.clone(),
+                }
+            );
+        }
+
         _ => ()
     };
 
@@ -141,4 +149,43 @@ pub(crate) fn coalesce_typed_identifier(context: &mut VerifyContext, l_type: Val
             None
         }
     }
+}
+
+pub(crate) fn get_type_size(context: &VerifyContext, type_: ValueType) -> Option<usize> {
+    match type_ {
+        ValueType::Integer { bytes, .. } => Some(bytes as usize),
+        ValueType::Float { bytes, .. } => Some(bytes as usize),
+        ValueType::Unit => Some(0),
+
+        ValueType::Structured { fields } =>
+            Some(fields.iter().map(|(_, type_)| get_type_size(context, type_.clone()).unwrap()).sum()),
+
+        ValueType::Array { .. } |
+        ValueType::PointerTo(_) => Some(8),
+
+        _ => {
+            println!("Unknown type: {:?}", type_);
+            None
+        }
+    }
+}
+
+pub(crate) fn get_struct_field_offset(context: &VerifyContext, _type: ValueType, field_name: &str) -> Option<usize> {
+    let ValueType::Structured { fields } = _type else {
+        println!("Expected structured type, found: {:?}", _type);
+        return None
+    };
+
+    let mut offset = 0;
+
+    for (name, type_) in fields.iter() {
+        if name == field_name {
+            return Some(offset)
+        }
+
+        offset += get_type_size(context, type_.clone()).unwrap();
+    }
+
+    println!("Field not found: {:?}", field_name);
+    None
 }

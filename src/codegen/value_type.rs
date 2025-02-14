@@ -1,13 +1,11 @@
 use cranelift::codegen::ir;
 use crate::parse::ast::{ValueType};
-use crate::parse::verify::ValueTypeRef;
-
-pub(crate) fn get_cranelift_abi_type(val_type: ValueType) -> ir::AbiParam {
+pub(crate) fn get_cranelift_abi_type(val_type: &ValueType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type))
 }
 
-pub(crate) fn get_cranelift_type(val_type: ValueType) -> ir::Type {
-    match val_type.as_ref() {
+pub(crate) fn get_cranelift_type(val_type: &ValueType) -> ir::Type {
+    match val_type {
         ValueType::Integer { bytes, .. } => {
             match bytes {
                 1 => ir::types::I8,
@@ -24,8 +22,9 @@ pub(crate) fn get_cranelift_type(val_type: ValueType) -> ir::Type {
                 _ => panic!("Invalid float size")
             }
         },
+        ValueType::PointerTo(_) | ValueType::Array { .. } | ValueType::Structured { .. } => ir::types::I64,
         ValueType::Unit => ir::types::INVALID,
 
-        _ => panic!("Unverified type"),
+        _ => panic!("Unverified type: {:#?}", val_type),
     }
 }

@@ -1,19 +1,19 @@
+use std::clone;
 use crate::codegen::codegen::FunctionState;
-use crate::codegen::routines::{allocate_variable, load_value, signed_bin_op, string_literal};
-use crate::codegen::value_type::get_cranelift_type;
+use crate::codegen::routines::{signed_bin_op, stack_alloca, string_literal};
 use crate::lex::token::OperatorType;
-use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, ValueExpression};
+use crate::parse::ast::{ControlExpression, Expression, IntegerCastType, LValueExpression, LiteralExpression, ValueExpression};
 use cranelift::codegen::ir;
 use cranelift::prelude::{EntityRef, InstBuilder, Value};
 use cranelift_module::{Linkage, Module};
+use crate::codegen::value_type::get_cranelift_type;
 
 pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression) -> Option<Value> {
     match expr {
         Expression::Value(value) => codegen_value_expr(context, value),
         Expression::Control(control) => codegen_control_expr(context, control),
-        Expression::Memory(memory) => codegen_memory_expr(context, memory),
         Expression::Literal(literal) => codegen_literal_expr(context, literal),
-
+        Expression::LValue(lvalue) => codegen_lvalue_expr(context, lvalue),
         Expression::Unit => None,
         Expression::Unverified(_) => panic!("Unverified expression encountered {:?}", expr),
 
@@ -51,29 +51,26 @@ pub(crate) fn codegen_value_expr(context: &mut FunctionState, expr: &ValueExpres
         },
 
         ValueExpression::UnaryOperation { operator, operand } => {
+            let operand = codegen_expression(context, operand.as_ref()?.as_ref()).unwrap();
+
             match operator {
                 OperatorType::Subtract => {
-                    let operand = codegen_expression(context, operand).unwrap();
                     Some(context.builder.ins().ineg(operand))
                 },
                 OperatorType::BitNot => {
-                    let operand = codegen_expression(context, operand).unwrap();
                     Some(context.builder.ins().bnot(operand))
                 },
                 OperatorType::LNot => {
-                    let operand = codegen_expression(context, operand).unwrap();
                     let zero = context.builder.ins().iconst(ir::types::I32, 0);
                     Some(context.builder.ins().icmp(ir::condcodes::IntCC::Equal, operand, zero))
                 },
                 OperatorType::Increment => {
-                    let operand = codegen_expression(context, operand).unwrap();
                     let one = context.builder.ins().iconst(ir::types::I32, 1);
                     let add = context.builder.ins().iadd(operand, one);
                     context.builder.ins().store(ir::MemFlags::new(), add, operand, 0);
                     Some(add)
                 },
                 OperatorType::Decrement => {
-                    let operand = codegen_expression(context, operand).unwrap();
                     let one = context.builder.ins().iconst(ir::types::I32, 1);
                     let sub = context.builder.ins().isub(operand, one);
                     context.builder.ins().store(ir::MemFlags::new(), sub, operand, 0);
@@ -92,16 +89,39 @@ pub(crate) fn codegen_value_expr(context: &mut FunctionState, expr: &ValueExpres
 
         ValueExpression::Assignment { left, right, operator } => {
             let left_val = codegen_expression(context, left).unwrap();
-            let mut right_val = codegen_expression(context, right).unwrap();
-
-            if let Some(operator) = operator {
-                let loaded_left = load_value(context, left.as_ref()).unwrap();
-                right_val = signed_bin_op(&mut context.builder, operator.clone(), loaded_left, right_val).unwrap();
-            }
+            let right_val = codegen_expression(context, right).unwrap();
 
             context.builder.ins().store(ir::MemFlags::new(), right_val, left_val, 0);
             Some(right_val)
         },
+
+        ValueExpression::VariableReference { name, lval_type } => {
+            let val = context.variable_table
+                .get(name.as_str())
+                .expect(format!("Variable not found: {}", name.as_str()).as_str());
+            let type_ = get_cranelift_type(lval_type);
+
+            Some(context.builder.ins().load(type_, ir::MemFlags::new(), *val, 0))
+        },
+
+        ValueExpression::StructFieldReference { struct_, field_offset, field_type } => {
+            let struct_ = codegen_expression(context, struct_).unwrap();
+            let field_type = get_cranelift_type(field_type);
+            let field_offset = *field_offset as i32;
+
+            Some(context.builder.ins().load(field_type, ir::MemFlags::new(), struct_, field_offset))
+        },
+
+        ValueExpression::IntegerCast { expr, type_, cast_type } => {
+            let expr = codegen_expression(context, expr).unwrap();
+            let type_ = get_cranelift_type(type_);
+
+            match cast_type {
+                IntegerCastType::IReduce => Some(context.builder.ins().ireduce(type_, expr)),
+                IntegerCastType::ZeroExtend => Some(context.builder.ins().uextend(type_, expr)),
+                IntegerCastType::SignExtend => Some(context.builder.ins().sextend(type_, expr))
+            }
+        }
 
         _ => unimplemented!("Value expression not implemented: {:?}", expr)
     }
@@ -159,6 +179,30 @@ pub(crate) fn codegen_literal_expr(context: &mut FunctionState, expr: &LiteralEx
         },
 
         _ => unimplemented!("Literal expression not implemented: {:?}", expr)
+    }
+}
+
+pub(crate) fn codegen_lvalue_expr(context: &mut FunctionState, expr: &LValueExpression) -> Option<Value> {
+    match expr {
+        LValueExpression::Value { name, .. } => {
+            let val = context.variable_table.get(name.as_str()).unwrap();
+
+            Some(*val)
+        },
+        LValueExpression::Alloca { name, type_ }
+            => {
+            let val = stack_alloca(context, type_.clone())?;
+
+            context.variable_table.insert(name.clone(), val);
+
+            Some(val)
+        },
+
+        LValueExpression::DereferencedPointer {
+            pointer
+        } => codegen_expression(context, pointer),
+
+        _ => unimplemented!("LValue expression not implemented: {:?}", expr)
     }
 }
 

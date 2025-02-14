@@ -1,8 +1,8 @@
 use std::{clone, iter};
 use crate::lex::token::OperatorType;
-use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, LValueExpression, LiteralExpression, UnverifiedExpression, ValueExpression, ValueType};
+use crate::parse::ast::{ControlExpression, Expression, GlobalStatement, IntegerCastType, LValueExpression, LiteralExpression, UnverifiedExpression, ValueExpression, ValueType};
 use crate::parse::verify::context::{FunctionPrototype, VerifyContext};
-use crate::parse::verify::typing::{format_lvalue, verify_compound_pair, verify_type};
+use crate::parse::verify::typing::{format_lvalue, get_struct_field_offset, verify_compound_pair, verify_type};
 use std::rc::Rc;
 
 pub(crate) type VerifyResult<T> = Option<T>;
@@ -105,8 +105,8 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) 
                 operator: OperatorType::Access
             }
         ) => {
-            let _type = verify_expression(context, left)?;
-            let ValueType::Structured { fields } = _type else {
+            let _type = verify_lvalue(context, left)?;
+            let ValueType::Structured { fields } = _type.clone() else {
                 println!("Cannot access fields of non-struct type: {:?}", _type);
                 return None
             };
@@ -119,6 +119,30 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) 
                 println!("Field {} not found in struct", right);
                 return None
             };
+
+            // ptr = structure pointer + field offset
+            let mut ptr = Box::new(
+                Expression::Value(
+                    ValueExpression::BinaryOperation {
+                        left: left.to_owned(),
+                        right: Box::new(
+                            Expression::Literal(
+                                LiteralExpression::IntLiteral {
+                                    val: get_struct_field_offset(context, _type, right)? as i64,
+                                    bytes: 8
+                                }
+                            )
+                        ),
+                        operator: OperatorType::Add
+                    }
+                )
+            );
+
+            *expr = Expression::LValue(
+                LValueExpression::DereferencedPointer {
+                    pointer: ptr
+                }
+            );
 
             Some(field.1.clone())
         },
@@ -193,7 +217,7 @@ fn verify_val_expr(context: &mut VerifyContext, expr: &mut ValueExpression) -> O
                 println!("Function {} not found", name);
                 return None
             };
-            let FunctionPrototype { return_type, args: intended_args } = func.as_ref();
+            let FunctionPrototype { return_type, args: intended_args, .. } = func.as_ref();
 
             for (arg, intended_type) in args.iter_mut().zip(intended_args.iter()) {
                 verify_and_coerce(context, arg, &intended_type.type_)?;
@@ -310,8 +334,8 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
         UnverifiedExpression::BinaryOperation {
             left, right, operator: OperatorType::Access,
         } => {
-            let _type = verify_expression(context, left)?;
-            let ValueType::Structured { fields } = _type else {
+            let _type = verify_lvalue(context, left)?;
+            let ValueType::Structured { fields } = _type.clone() else {
                 println!("Cannot access fields of non-struct type: {:?}", _type);
                 return None;
             };
@@ -329,7 +353,7 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
                 Expression::Value(
                     ValueExpression::StructFieldReference {
                         struct_: left.to_owned(),
-                        field: field.0.clone(),
+                        field_offset: get_struct_field_offset(context, _type, right)?,
                         field_type: field.1.clone()
                     }
                 )
@@ -346,7 +370,7 @@ fn characterize_unverified_expr(context: &mut VerifyContext, expr: &mut Unverifi
                 Expression::Value(
                     ValueExpression::BinaryOperation {
                         left: left.to_owned(),
-                        right: left.to_owned(),
+                        right: right.to_owned(),
                         operator: operator.clone()
                     }
                 )
@@ -365,6 +389,37 @@ fn verify_and_coerce(context: &mut VerifyContext, expr: &mut Expression, target_
 
     if current_type == *target_type {
         return Some(())
+    }
+
+    if let ValueType::Integer { bytes: current_bytes, .. } = current_type {
+        if let ValueType::Integer { bytes: target_bytes, .. } = target_type {
+            let cast_type = if current_bytes > *target_bytes {
+                IntegerCastType::IReduce
+            } else {
+                IntegerCastType::ZeroExtend
+            };
+
+            *expr = Expression::Value(
+                ValueExpression::IntegerCast {
+                    expr: Box::new(expr.clone()),
+                    type_: target_type.clone(),
+                    cast_type
+                }
+            );
+            return Some(())
+        }
+    }
+
+    if let ValueType::Float { bytes: current_bytes } = current_type {
+        if let ValueType::Float { bytes: target_bytes } = target_type {
+            *expr = Expression::Value(
+                ValueExpression::FloatCast {
+                    expr: Box::new(expr.clone()),
+                    type_: target_type.clone()
+                }
+            );
+            return Some(())
+        }
     }
 
     match expr {

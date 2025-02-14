@@ -1,3 +1,6 @@
+int putchar(char c);
+int puts(char* c);
+
 struct Test {
     int i1;
     int i2;
@@ -8,5 +11,7 @@ int main() {
     x.i1 = 1;
     x.i2 = 2;
 
-    return x.i1 + x.i2;
+    putchar('0' + x.i1 + x.i2);
+    puts("");
+    return 0;
 }

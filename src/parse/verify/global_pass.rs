@@ -44,6 +44,7 @@ pub(crate) fn examine_global_statement(context: &mut VerifyContext, stmt: Unveri
             }
 
             let prototype = FunctionPrototype {
+                name: name.clone(),
                 return_type: return_type.clone(),
                 args: formatted_parameters
             };

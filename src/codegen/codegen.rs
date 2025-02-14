@@ -2,7 +2,7 @@ use crate::codegen::expression::codegen_expression;
 use crate::codegen::routines::allocate_variable;
 use crate::codegen::scope::VariableTable;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
-use crate::parse::ast::{ValueType, GlobalStatement, AST};
+use crate::parse::ast::{ValueType, GlobalStatement, Expression, FunctionParameter};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::codegen::{settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -10,6 +10,8 @@ use cranelift::prelude::Signature;
 use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use crate::parse::verify::context::FunctionPrototype;
+use crate::parse::verify::VerifiedAST;
 
 pub(crate) struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -30,7 +32,7 @@ pub(crate) struct GlobalState {
     pub(crate) functions: HashMap<String, FuncId>
 }
 
-pub fn ast_codegen(ast: &AST) {
+pub fn ast_codegen(ast: &VerifiedAST) {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
@@ -49,17 +51,29 @@ pub fn ast_codegen(ast: &AST) {
         functions: HashMap::new()
     };
 
-    for fn_decl in &ast.root.global_stmts {
-        codegen_function(fn_decl, &mut global_state);
+    for global_stmt in &ast.global_statements {
+        codegen_global_statement(global_stmt, &mut global_state);
     }
 
     let obj = global_state.object_module.finish();
     std::fs::write("test.o", obj.emit().unwrap()).expect("Failed to write object file");
 }
 
-pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut GlobalState) {
-    let GlobalStatement::Function { name, arguments, return_type, body } = global_stmt;
+pub fn codegen_global_statement(global_stmt: &GlobalStatement, global_state: &mut GlobalState) {
+    match global_stmt {
+        GlobalStatement::Function { prototype, body } => {
+            codegen_function(global_state, prototype, body);
+        },
+        GlobalStatement::TypeDeclaration { name, type_ } => {
 
+        },
+        _ => {
+            println!("Unsupported global statement: {:?}", global_stmt);
+        }
+    }
+}
+
+fn codegen_function(global_state: &mut GlobalState, prototype: &FunctionPrototype, body: &Option<Vec<Expression>>) {
     let sig = Signature::new(
         global_state.object_module.target_config().default_call_conv
     );
@@ -68,11 +82,11 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
         sig
     );
 
-    for (_, type_) in arguments {
+    for FunctionParameter { type_, .. } in prototype.args.iter() {
         func.signature.params.push(get_cranelift_abi_type(type_));
     }
 
-    match return_type {
+    match &prototype.return_type {
         ValueType::Unit => {},
         type_ => {
             func.signature.returns.push(get_cranelift_abi_type(type_));
@@ -80,10 +94,10 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
     }
 
     let id = global_state.object_module
-        .declare_function(name, Linkage::Export, &func.signature)
+        .declare_function(prototype.name.as_str(), Linkage::Export, &func.signature)
         .unwrap();
 
-    global_state.functions.insert(name.clone(), id);
+    global_state.functions.insert(prototype.name.clone(), id);
 
     let Some(body) = body else { return; };
 
@@ -95,13 +109,13 @@ pub fn codegen_function(global_stmt: &GlobalStatement, global_state: &mut Global
     let mut var_table = VariableTable::new();
     var_table.push_scope();
 
-    for (name, type_) in arguments {
+    for FunctionParameter { name, type_ } in prototype.args.iter() {
         let param_type = get_cranelift_type(type_);
         let param = builder.append_block_param(block, param_type);
 
         allocate_variable(
             &mut builder, &mut var_table,
-            name, param_type,
+            name.as_str(), param_type,
             Some(param)
         ).expect("Failed to allocate variable");
     }

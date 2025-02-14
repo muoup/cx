@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FunctionPrototype {
+    pub(crate) name: String,
     pub(crate) return_type: ValueType,
     pub(crate) args: Vec<FunctionParameter>,
 }
