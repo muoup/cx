@@ -1,12 +1,22 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Plus, Minus, Multiply, Divide, Modulo,
-    Equal, Exclamation, LessThan, GreaterThan,
-    Tilde, Ampersand, Pipe, Caret, Semicolon
+    Add, Subtract, Multiply, Divide, Modulo,
+
+    NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
+
+    LAnd, LOr, LNot, BitAnd, BitOr, BitXor, BitNot,
+    LShift, RShift,
+
+    Increment, Decrement,
+
+    ArrayIndex,
+
+    Access, PointerAccess, AddressOf, Dereference,
+    ScopeRes
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Punctuator {
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum PunctuatorType {
     OpenParen, CloseParen,
     OpenBracket, CloseBracket,
     OpenBrace, CloseBrace,
@@ -24,90 +34,37 @@ pub enum KeywordType {
 
     Struct, Enum, Union,
 
-    Int, Float, Char, Void, Auto,
-    Unsigned, Signed,
+    Typedef,
+
     Static, Extern, Const, Register,
     Volatile, Inline, Restrict,
 
     Sizeof
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum IntrinsicType {
+    Void, Bool, Char, Short, Int, Long, Auto,
+    Float, Double,
+    Unsigned, Signed,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
-    Identifier(String),
-
+    Assignment(Option<OperatorType>),
     Operator(OperatorType),
-    Keyword(KeywordType),
-    Punctuator(Punctuator),
 
+    Keyword(KeywordType),
+    Intrinsic(IntrinsicType),
+    Punctuator(PunctuatorType),
+
+    Identifier(String),
     StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
 }
 
 impl Token {
-    pub(crate) fn try_op(c: char) -> Option<Token> {
-        match c {
-            '+' => Some(Token::Operator(OperatorType::Plus)),
-            '-' => Some(Token::Operator(OperatorType::Minus)),
-            '*' => Some(Token::Operator(OperatorType::Multiply)),
-            '/' => Some(Token::Operator(OperatorType::Divide)),
-            '%' => Some(Token::Operator(OperatorType::Modulo)),
-            '=' => Some(Token::Operator(OperatorType::Equal)),
-            '!' => Some(Token::Operator(OperatorType::Exclamation)),
-            '<' => Some(Token::Operator(OperatorType::LessThan)),
-            '>' => Some(Token::Operator(OperatorType::GreaterThan)),
-            '~' => Some(Token::Operator(OperatorType::Tilde)),
-            '&' => Some(Token::Operator(OperatorType::Ampersand)),
-            '|' => Some(Token::Operator(OperatorType::Pipe)),
-            '^' => Some(Token::Operator(OperatorType::Caret)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn try_punc(c: char) -> Option<Token> {
-        match c {
-            '(' => Some(Token::Punctuator(Punctuator::OpenParen)),
-            ')' => Some(Token::Punctuator(Punctuator::CloseParen)),
-            '[' => Some(Token::Punctuator(Punctuator::OpenBracket)),
-            ']' => Some(Token::Punctuator(Punctuator::CloseBracket)),
-            '{' => Some(Token::Punctuator(Punctuator::OpenBrace)),
-            '}' => Some(Token::Punctuator(Punctuator::CloseBrace)),
-            ',' => Some(Token::Punctuator(Punctuator::Comma)),
-            ';' => Some(Token::Punctuator(Punctuator::Semicolon)),
-            ':' => Some(Token::Punctuator(Punctuator::Colon)),
-            '.' => Some(Token::Punctuator(Punctuator::Period)),
-            '?' => Some(Token::Punctuator(Punctuator::QuestionMark)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn try_number(str: &str) -> Option<(Token, usize)> {
-        if str.is_empty() || !str.chars().next().unwrap().is_digit(10) {
-            return None;
-        }
-
-        let mut end = 0;
-        let mut dot = false;
-        for (i, c) in str.chars().enumerate() {
-            if c == '.' {
-                if dot {
-                    break;
-                }
-                dot = true;
-            } else if !c.is_digit(10) {
-                break;
-            }
-            end = i;
-        }
-        let num = &str[..=end];
-        if dot {
-            Some((Token::FloatLiteral(num.parse().unwrap()), end))
-        } else {
-            Some((Token::IntLiteral(num.parse().unwrap()), end))
-        }
-    }
-
     pub(crate) fn from_str(str: String) -> Token {
         match str.trim() {
             "if" => Token::Keyword(KeywordType::If),
@@ -124,13 +81,14 @@ impl Token {
             "struct" => Token::Keyword(KeywordType::Struct),
             "enum" => Token::Keyword(KeywordType::Enum),
             "union" => Token::Keyword(KeywordType::Union),
-            "int" => Token::Keyword(KeywordType::Int),
-            "float" => Token::Keyword(KeywordType::Float),
-            "char" => Token::Keyword(KeywordType::Char),
-            "void" => Token::Keyword(KeywordType::Void),
-            "auto" => Token::Keyword(KeywordType::Auto),
-            "unsigned" => Token::Keyword(KeywordType::Unsigned),
-            "signed" => Token::Keyword(KeywordType::Signed),
+            "typedef" => Token::Keyword(KeywordType::Typedef),
+            "int" => Token::Intrinsic(IntrinsicType::Int),
+            "float" => Token::Intrinsic(IntrinsicType::Float),
+            "char" => Token::Intrinsic(IntrinsicType::Char),
+            "void" => Token::Intrinsic(IntrinsicType::Void),
+            "auto" => Token::Intrinsic(IntrinsicType::Auto),
+            "unsigned" => Token::Intrinsic(IntrinsicType::Unsigned),
+            "signed" => Token::Intrinsic(IntrinsicType::Signed),
             "static" => Token::Keyword(KeywordType::Static),
             "extern" => Token::Keyword(KeywordType::Extern),
             "const" => Token::Keyword(KeywordType::Const),
@@ -140,6 +98,25 @@ impl Token {
             "restrict" => Token::Keyword(KeywordType::Restrict),
             "sizeof" => Token::Keyword(KeywordType::Sizeof),
             _ => Token::Identifier(str),
+        }
+    }
+}
+
+impl OperatorType {
+    pub(crate) fn precedence(&self) -> i32 {
+        match self {
+            OperatorType::LAnd => 2,
+            OperatorType::LOr => 3,
+            OperatorType::Equal | OperatorType::NotEqual => 4,
+            OperatorType::Less | OperatorType::LessEqual | OperatorType::Greater | OperatorType::GreaterEqual => 5,
+            OperatorType::Add | OperatorType::Subtract => 6,
+            OperatorType::Multiply | OperatorType::Divide | OperatorType::Modulo => 7,
+            OperatorType::LShift | OperatorType::RShift => 8,
+            OperatorType::BitAnd | OperatorType::BitXor | OperatorType::BitOr => 9,
+            OperatorType::LNot | OperatorType::BitNot | OperatorType::Less | OperatorType::Greater => 10,
+            OperatorType::BitAnd | OperatorType::BitOr | OperatorType::BitXor => 11,
+
+            _ => 100
         }
     }
 }

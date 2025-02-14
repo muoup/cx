@@ -1,0 +1,14 @@
+#include <stdio.h>
+
+int for_loop(int n) {
+    // Test Comment
+    for (int i = n; i > 0; i -= 1) {
+        putchar('0' + i); // Test Comment 2
+    }
+    return 0;
+}
+
+int main() {
+    for_loop(5);
+    return 0;
+}

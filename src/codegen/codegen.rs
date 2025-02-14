@@ -1,146 +1,152 @@
-use crate::codegen::codegen::ir::GlobalValue;
-use crate::parse::ast::{Expression, FunctionDeclaration, AST};
+use crate::codegen::expression::codegen_expression;
+use crate::codegen::routines::allocate_variable;
+use crate::codegen::scope::VariableTable;
+use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
+use crate::parse::ast::{ValueType, GlobalStatement, Expression, FunctionParameter};
 use cranelift::codegen::ir::{Function, UserFuncName};
-use cranelift::codegen::isa::CallConv;
-use cranelift::codegen::{ir, settings, Context};
+use cranelift::codegen::{settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift::prelude::{AbiParam, InstBuilder, Signature, Value};
-use cranelift_module::{DataDescription, Linkage, Module};
+use cranelift::prelude::Signature;
+use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+use std::collections::HashMap;
+use crate::parse::verify::context::FunctionPrototype;
+use crate::parse::verify::VerifiedAST;
 
-pub(crate) struct CodegenContext {
-    pub(crate) str_literal_count: usize,
-    pub(crate) context: Context,
-    pub(crate) object_module: ObjectModule,
+pub(crate) struct FunctionState<'a> {
+    pub(crate) object_module: &'a mut ObjectModule,
+    pub(crate) functions: &'a HashMap<String, FuncId>,
+
+    pub(crate) builder: FunctionBuilder<'a>,
+    pub(crate) variable_table: VariableTable,
+
+    pub(crate) merge_block_id: Option<u32>,
+    pub(crate) loop_block_id: Option<u32>,
+    pub(crate) current_block_exited: bool,
 }
 
-pub fn ast_codegen(ast: &AST) {
+pub(crate) struct GlobalState {
+    pub(crate) context: Context,
+    pub(crate) object_module: ObjectModule,
+
+    pub(crate) functions: HashMap<String, FuncId>
+}
+
+pub fn ast_codegen(ast: &VerifiedAST) {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
     let native_builder = cranelift_native::builder().unwrap();
     let isa = native_builder.finish(flags).unwrap();
 
-    let object_builder = ObjectBuilder::new(
-        isa.clone(),
-        "test.o",
-        cranelift_module::default_libcall_names(),
-    ).unwrap();
-
-    let object_module = ObjectModule::new(object_builder);
-    let context = object_module.make_context();
-
-    let mut context = CodegenContext {
-        str_literal_count: 0,
-        context,
-        object_module,
+    let mut global_state = GlobalState {
+        context: Context::new(),
+        object_module: ObjectModule::new(
+            ObjectBuilder::new(
+                isa.clone(),
+                "test.o",
+                cranelift_module::default_libcall_names(),
+            ).unwrap()
+        ),
+        functions: HashMap::new()
     };
 
-    for fn_decl in &ast.root.fn_declarations {
-        let func = codegen_function(fn_decl, &mut context);
-
-        println!("{:?}", func);
-
-        let id = context.object_module
-            .declare_function(&fn_decl.name, Linkage::Export, &func.signature)
-            .unwrap();
-
-        context.context.func = func;
-        context.object_module
-            .define_function(id, &mut context.context)
-            .unwrap();
-
-        context.object_module.clear_context(&mut context.context);
+    for global_stmt in &ast.global_statements {
+        codegen_global_statement(global_stmt, &mut global_state);
     }
 
-    let obj = context.object_module.finish();
-    std::fs::write("test.o", obj.emit().unwrap()).unwrap();
+    let obj = global_state.object_module.finish();
+    std::fs::write("test.o", obj.emit().unwrap()).expect("Failed to write object file");
 }
 
-pub fn codegen_function(fn_decl: &FunctionDeclaration, context: &mut CodegenContext) -> Function {
-    let sig = Signature::new(CallConv::SystemV);
-    let mut func = Function::with_name_signature(UserFuncName::user(0, 0), sig);
+pub fn codegen_global_statement(global_stmt: &GlobalStatement, global_state: &mut GlobalState) {
+    match global_stmt {
+        GlobalStatement::Function { prototype, body } => {
+            codegen_function(global_state, prototype, body);
+        },
+        GlobalStatement::TypeDeclaration { name, type_ } => {
+
+        },
+        _ => {
+            println!("Unsupported global statement: {:?}", global_stmt);
+        }
+    }
+}
+
+fn codegen_function(global_state: &mut GlobalState, prototype: &FunctionPrototype, body: &Option<Vec<Expression>>) {
+    let sig = Signature::new(
+        global_state.object_module.target_config().default_call_conv
+    );
+    let mut func = Function::with_name_signature(
+        UserFuncName::user(0, global_state.functions.len() as u32),
+        sig
+    );
+
+    for FunctionParameter { type_, .. } in prototype.args.iter() {
+        func.signature.params.push(get_cranelift_abi_type(type_));
+    }
+
+    match &prototype.return_type {
+        ValueType::Unit => {},
+        type_ => {
+            func.signature.returns.push(get_cranelift_abi_type(type_));
+        }
+    }
+
+    let id = global_state.object_module
+        .declare_function(prototype.name.as_str(), Linkage::Export, &func.signature)
+        .unwrap();
+
+    global_state.functions.insert(prototype.name.clone(), id);
+
+    let Some(body) = body else { return; };
 
     let mut binding = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut func, &mut binding);
 
     let block = builder.create_block();
-
     builder.switch_to_block(block);
+    let mut var_table = VariableTable::new();
+    var_table.push_scope();
 
-    for expr in &fn_decl.body {
-        codegen_expression(context, &mut builder, expr);
+    for FunctionParameter { name, type_ } in prototype.args.iter() {
+        let param_type = get_cranelift_type(type_);
+        let param = builder.append_block_param(block, param_type);
+
+        allocate_variable(
+            &mut builder, &mut var_table,
+            name.as_str(), param_type,
+            Some(param)
+        ).expect("Failed to allocate variable");
     }
 
-    builder.seal_all_blocks();
-    builder.finalize();
+    let mut context = FunctionState {
+        object_module: &mut global_state.object_module,
+        functions: &global_state.functions,
 
-    func
-}
+        builder,
+        variable_table: var_table,
 
-fn codegen_expression(context: &mut CodegenContext, builder: &mut FunctionBuilder, expr: &Expression) -> Option<Value> {
-    match expr {
-        Expression::FunctionCall(name, args) => {
-            let Expression::Identifier(fn_name) = name.as_ref() else { return None; };
+        merge_block_id: None,
+        loop_block_id: None,
+        current_block_exited: false
+    };
 
-            let mut sig = context.object_module.make_signature();
-            sig.params.push(AbiParam::new(ir::types::I64));
-
-            let call = context.object_module
-                .declare_function(&fn_name, Linkage::Import, &sig)
-                .unwrap();
-            let local_call = context.object_module.declare_func_in_func(call, builder.func);
-
-            let arguments = args.iter()
-                .filter_map(|arg| codegen_expression(context, builder, arg))
-                .collect::<Vec<_>>();
-
-            Value::with_number(
-                builder.ins().call(
-                    local_call,
-                    arguments.as_slice()
-                ).as_u32()
-            )
-        }
-        Expression::Return(expr) => {
-            match codegen_expression(context, builder, expr) {
-                Some(val) => {
-                    builder.ins().return_(&[val]);
-                },
-                None => {
-                    builder.ins().return_(&[]);
-                }
-            }
-            None
-        },
-        Expression::IntLiteral(val) => {
-            Some(builder.ins().iconst(ir::types::I64, *val))
-        },
-        Expression::StringLiteral(str) => {
-            let literal = string_literal(context, builder, str.as_ref());
-
-            Some(builder.ins().global_value(ir::types::I64, literal))
-        },
-        Expression::Unit => None,
-        _ => unimplemented!("Expression not implemented: {:?}", expr)
+    for expr in body {
+        codegen_expression(&mut context, expr);
     }
-}
 
-fn string_literal(context: &mut CodegenContext, builder: &mut FunctionBuilder, str: &str) -> GlobalValue {
-    let strlit_name = format!("strlit_{}", context.str_literal_count);
-    context.str_literal_count += 1;
+    context.builder.seal_all_blocks();
+    context.builder.finalize();
 
-    let id = context.object_module.declare_anonymous_data(
-        false,
-        false
-    ).unwrap();
+    println!("{:?}", func);
 
-    let mut data = DataDescription::new();
-    data.define(str.as_bytes().to_vec().into_boxed_slice());
+    let GlobalState { object_module, context, .. } = global_state;
 
-    context.object_module.define_data(id, &data).unwrap();
-    context.object_module.declare_data_in_func(
-        id,
-        builder.func
-    )
+    context.func = func;
+    object_module
+        .define_function(id, context)
+        .expect("Failed to define function");
+
+    object_module.clear_context(context);
 }

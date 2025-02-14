@@ -1,8 +1,8 @@
 use std::env;
-use crate::parse::ast::Node;
 
 mod lex;
 mod parse;
+mod preprocessor;
 mod codegen;
 
 fn main() {
@@ -13,13 +13,10 @@ fn main() {
     };
 
     let source = std::fs::read_to_string(file_name).unwrap();
+    let preprocessed = preprocessor::preprocess(&source);
+    let mut lexer = lex::generate_tokens(preprocessed.as_str());
 
-    let mut lexer = lex::lexer::Lexer::new(source.as_str());
-    lexer.generate_tokens();
-
-    let ast = parse::parser::parse_ast(&lexer.tokens);
-
-    if let Some(ast) = ast {
+    if let Some(ast) = parse::parse_ast(&mut lexer) {
         codegen::codegen::ast_codegen(&ast);
     }
 }
