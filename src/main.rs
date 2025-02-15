@@ -1,9 +1,11 @@
 use std::env;
+use crate::preprocessor::preprocess;
 
 mod lex;
 mod parse;
 mod preprocessor;
 mod codegen;
+mod pipeline;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -12,11 +14,9 @@ fn main() {
         return;
     };
 
-    let source = std::fs::read_to_string(file_name).unwrap();
-    let preprocessed = preprocessor::preprocess(&source);
-    let mut lexer = lex::generate_tokens(preprocessed.as_str());
-
-    if let Some(ast) = parse::parse_ast(&mut lexer) {
-        codegen::codegen::ast_codegen(&ast);
-    }
+    pipeline::CompilerPipeline::new(file_name.clone(), "test.o".to_string())
+        .preprocess()
+        .lex()
+        .parse()
+        .codegen();
 }

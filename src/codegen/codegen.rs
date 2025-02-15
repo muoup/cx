@@ -32,7 +32,7 @@ pub(crate) struct GlobalState {
     pub(crate) functions: HashMap<String, FuncId>
 }
 
-pub fn ast_codegen(ast: &VerifiedAST) {
+pub fn ast_codegen(ast: &VerifiedAST, output: &str) {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
@@ -44,7 +44,7 @@ pub fn ast_codegen(ast: &VerifiedAST) {
         object_module: ObjectModule::new(
             ObjectBuilder::new(
                 isa.clone(),
-                "test.o",
+                output.to_string(),
                 cranelift_module::default_libcall_names(),
             ).unwrap()
         ),
