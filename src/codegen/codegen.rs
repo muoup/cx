@@ -2,7 +2,9 @@ use crate::codegen::expression::codegen_expression;
 use crate::codegen::routines::allocate_variable;
 use crate::codegen::scope::VariableTable;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
-use crate::parse::ast::{ValueType, GlobalStatement, Expression, FunctionParameter};
+use crate::parse::ast::{Expression, FunctionParameter, GlobalStatement, ValueType};
+use crate::parse::verify::context::FunctionPrototype;
+use crate::parse::verify::VerifiedAST;
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::codegen::{settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -10,8 +12,6 @@ use cranelift::prelude::Signature;
 use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
-use crate::parse::verify::context::FunctionPrototype;
-use crate::parse::verify::VerifiedAST;
 
 pub(crate) struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -45,7 +45,7 @@ pub fn ast_codegen(ast: &VerifiedAST, output: &str) {
             ObjectBuilder::new(
                 isa.clone(),
                 output.to_string(),
-                cranelift_module::default_libcall_names(),
+                cranelift_module::default_libcall_names()
             ).unwrap()
         ),
         functions: HashMap::new()
@@ -56,17 +56,14 @@ pub fn ast_codegen(ast: &VerifiedAST, output: &str) {
     }
 
     let obj = global_state.object_module.finish();
-    std::fs::write("test.o", obj.emit().unwrap()).expect("Failed to write object file");
+    std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
 }
 
 pub fn codegen_global_statement(global_stmt: &GlobalStatement, global_state: &mut GlobalState) {
     match global_stmt {
-        GlobalStatement::Function { prototype, body } => {
-            codegen_function(global_state, prototype, body);
-        },
-        GlobalStatement::TypeDeclaration { name, type_ } => {
-
-        },
+        GlobalStatement::Function { prototype, body }
+            => codegen_function(global_state, prototype, body),
+        GlobalStatement::TypeDeclaration { .. } => (),
         _ => {
             println!("Unsupported global statement: {:?}", global_stmt);
         }
@@ -114,8 +111,7 @@ fn codegen_function(global_state: &mut GlobalState, prototype: &FunctionPrototyp
         let param = builder.append_block_param(block, param_type);
 
         allocate_variable(
-            &mut builder, &mut var_table,
-            name.as_str(), param_type,
+            &mut builder, param_type,
             Some(param)
         ).expect("Failed to allocate variable");
     }

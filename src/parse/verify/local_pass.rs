@@ -121,26 +121,28 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, expr: &mut Expression) 
             };
 
             // ptr = structure pointer + field offset
-            let mut ptr = Box::new(
-                Expression::Value(
-                    ValueExpression::BinaryOperation {
-                        left: left.to_owned(),
-                        right: Box::new(
-                            Expression::Literal(
-                                LiteralExpression::IntLiteral {
-                                    val: get_struct_field_offset(context, _type, right)? as i64,
-                                    bytes: 8
-                                }
-                            )
-                        ),
-                        operator: OperatorType::Add
-                    }
-                )
-            );
+            // let mut ptr = Box::new(
+            //     Expression::Value(
+            //         ValueExpression::BinaryOperation {
+            //             left: left.to_owned(),
+            //             right: Box::new(
+            //                 Expression::Literal(
+            //                     LiteralExpression::IntLiteral {
+            //                         val: get_struct_field_offset(context, _type, right)? as i64,
+            //                         bytes: 8
+            //                     }
+            //                 )
+            //             ),
+            //             operator: OperatorType::Add
+            //         }
+            //     )
+            // );
 
             *expr = Expression::LValue(
-                LValueExpression::DereferencedPointer {
-                    pointer: ptr
+                LValueExpression::StructField {
+                    struct_: left.to_owned(),
+                    field_offset: get_struct_field_offset(context, _type, right)?,
+                    field_type: field.1.clone()
                 }
             );
 

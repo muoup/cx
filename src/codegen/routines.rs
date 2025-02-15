@@ -21,16 +21,13 @@ pub(crate) fn stack_alloca(context: &mut FunctionState, type_: ValueType) -> Opt
 
         _ => allocate_variable(
             &mut context.builder,
-            &mut context.variable_table,
-            "alloca",
             get_cranelift_type(&type_),
             None
         )
     }
 }
 
-pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &mut VariableTable,
-                                name: &str, type_: ir::Type, initial_value: Option<ir::Value>) -> Option<Value> {
+pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, type_: ir::Type, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, type_.bytes(), 1);
     let stack_slot = builder.create_sized_stack_slot(stack_slot_data);
     let stack_pointer = builder.ins().stack_addr(type_, stack_slot, 0);

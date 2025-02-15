@@ -204,6 +204,11 @@ pub enum LValueExpression {
     },
     DereferencedPointer {
         pointer: Box<Expression>,
+    },
+    StructField {
+        struct_: Box<Expression>,
+        field_offset: usize,
+        field_type: ValueType
     }
 }
 

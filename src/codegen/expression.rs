@@ -4,7 +4,7 @@ use crate::codegen::routines::{signed_bin_op, stack_alloca, string_literal};
 use crate::lex::token::OperatorType;
 use crate::parse::ast::{ControlExpression, Expression, IntegerCastType, LValueExpression, LiteralExpression, ValueExpression};
 use cranelift::codegen::ir;
-use cranelift::prelude::{EntityRef, InstBuilder, Value};
+use cranelift::prelude::{EntityRef, Imm64, InstBuilder, Value};
 use cranelift_module::{Linkage, Module};
 use crate::codegen::value_type::get_cranelift_type;
 
@@ -201,6 +201,14 @@ pub(crate) fn codegen_lvalue_expr(context: &mut FunctionState, expr: &LValueExpr
         LValueExpression::DereferencedPointer {
             pointer
         } => codegen_expression(context, pointer),
+
+        LValueExpression::StructField {
+            struct_, field_offset, field_type
+        } => {
+            let struct_ = codegen_expression(context, struct_).unwrap();
+
+            Some(context.builder.ins().iadd_imm(struct_, Imm64::new(*field_offset as i64)))
+        }
 
         _ => unimplemented!("LValue expression not implemented: {:?}", expr)
     }

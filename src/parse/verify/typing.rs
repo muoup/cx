@@ -64,6 +64,22 @@ pub(crate) fn format_lvalue(context: &mut VerifyContext, expr: &mut Expression) 
     Some(())
 }
 
+pub(crate) fn verify_compound_pair(context: &mut VerifyContext, prefix: &mut Expression, suffix: &mut Expression) -> VerifyResult<(ValueType, String)> {
+    let Expression::Unverified(
+        UnverifiedExpression::Identifier(name)
+    ) = prefix else {
+        println!("Compound expressions must begin with an identifier, found: {:?}", suffix);
+        return None
+    };
+
+    let (mut val_type, name) =
+        coalesce_typed_identifier(context, ValueType::Unverified(name.clone()), suffix)?;
+
+    verify_type(context, &mut val_type)?;
+
+    Some((val_type, name))
+}
+
 pub(crate) fn verify_type(context: &mut VerifyContext, type_: &mut ValueType) -> VerifyResult<()> {
     match type_ {
         ValueType::Unverified(name) => {
@@ -77,8 +93,8 @@ pub(crate) fn verify_type(context: &mut VerifyContext, type_: &mut ValueType) ->
             Some(())
         },
 
-        // Yuck
         ValueType::PointerTo(inner) => {
+            // Yuck
             let mut inner_clone = inner.as_ref().clone();
             verify_type(context, &mut inner_clone)?;
             *inner = Rc::new(inner_clone);
@@ -94,41 +110,6 @@ pub(crate) fn verify_type(context: &mut VerifyContext, type_: &mut ValueType) ->
         },
         _ => Some(())
     }
-}
-
-pub(crate) fn verify_compound_expression(context: &mut VerifyContext, expression: &mut Expression) -> ExprVerifyResult {
-    let Expression::Unverified(
-        UnverifiedExpression::CompoundExpression { prefix, suffix }
-    ) = expression else {
-        panic!("verify_compound_expression reached with: {:?}", expression)
-    };
-
-    let (val_type, name) = verify_compound_pair(context, prefix, suffix)?;
-
-    *expression = Expression::LValue(
-        LValueExpression::Alloca {
-            name,
-            type_: val_type.clone()
-        }
-    );
-
-    Some(val_type)
-}
-
-pub(crate) fn verify_compound_pair(context: &mut VerifyContext, prefix: &mut Expression, suffix: &mut Expression) -> VerifyResult<(ValueType, String)> {
-    let Expression::Unverified(
-        UnverifiedExpression::Identifier(name)
-    ) = prefix else {
-        println!("Compound expressions must begin with an identifier, found: {:?}", suffix);
-        return None
-    };
-
-    let (mut val_type, name) =
-        coalesce_typed_identifier(context, ValueType::Unverified(name.clone()), suffix)?;
-
-    verify_type(context, &mut val_type)?;
-
-    Some((val_type, name))
 }
 
 pub(crate) fn coalesce_typed_identifier(context: &mut VerifyContext, l_type: ValueType, mut expr_header: &Expression) -> VerifyResult<(ValueType, String)> {
