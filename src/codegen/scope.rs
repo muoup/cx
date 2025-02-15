@@ -2,35 +2,41 @@ use std::collections::HashMap;
 use cranelift::codegen::ir;
 
 pub(crate) struct VariableTable {
-    data: Vec<HashMap<String, ir::Value>>
+    data: HashMap<String, ir::Value>,
+    overwrites: Vec<Vec<(String, ir::Value)>>
 }
 
 impl VariableTable {
     pub fn new() -> Self {
         Self {
-            data: Vec::new()
+            data: HashMap::new(),
+            overwrites: Vec::new()
         }
     }
 
     pub fn push_scope(&mut self) {
-        self.data.push(HashMap::new());
+        self.overwrites.push(Vec::new());
     }
 
     pub fn pop_scope(&mut self) {
-        self.data.pop();
+        for (name, value) in self.overwrites.pop().unwrap() {
+            self.data.insert(name, value);
+        }
+
+        self.overwrites.pop();
     }
 
     pub fn insert(&mut self, name: String, value: ir::Value) {
-        self.data.last_mut().unwrap().insert(name, value);
+        if let Some((name, old_value)) = self.data.get_key_value(&name) {
+            self.overwrites
+                .last_mut().unwrap()
+                .push((name.clone(), old_value.clone()));
+        }
+
+        self.data.insert(name, value);
     }
 
     pub fn get(&self, name: &str) -> Option<&ir::Value> {
-        for scope in self.data.iter().rev() {
-            if let Some(value) = scope.get(name) {
-                return Some(value);
-            }
-        }
-
-        None
+        self.data.get(name)
     }
 }
