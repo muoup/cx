@@ -1,0 +1,30 @@
+/**
+ *  Responsible for the basis of the move semantics, 'moving' a value
+ *  disables the destructor of the value, returning moved<T>, a static
+ *  alias for the memory, which can be either assigned to a new value
+ *  or memcpy'd to a new location which is then responsible for running
+ *  the destructor.
+ */
+public struct moved<T> {
+    T value;
+}
+
+/**
+ *  When an object is moved in a conditional branch, meaning it cannot be
+ *  determined at compile time whether or not it is dropped afterwards, the
+ *  value is promoted to a movable, allocating an extra byte for a field letting
+ *  the runtime know whether or not to run the object's destructor.
+ */
+public struct movable<T> {
+    bool moved;
+    T value;
+}
+
+// Explicit no-op, to prevent a destructor from being called
+moved::~moved() {}
+
+// Movable values must be checked at runtime if they still own their value
+movable::~movable() {
+    if (!moved)
+        value.~value();
+}
