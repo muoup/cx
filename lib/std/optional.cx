@@ -1,0 +1,29 @@
+public:
+
+enum optional<T> {
+    Some(T),
+    None
+}
+
+bool optional<T>::is_some(this) {
+    switch opt {
+        case Some(T value) => true;
+        case None => false;
+    }
+}
+
+optional<U> optional::map<U>(this, U (*func)()) {
+    if Some(T value) = opt {
+        return Some(func(value));
+    }
+
+    return None;
+}
+
+T optional::or_else<T>(this, T otherwise) {
+    if Some(T value) = opt {
+        return value;
+    }
+
+    return otherwise;
+}

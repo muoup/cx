@@ -1,0 +1,53 @@
+// C-style string functions
+
+public:
+
+u64 strlen(char* c) {
+    u64 i = 0;
+    while (c[i] != '\0')
+        i++;
+    return i;
+}
+
+u64 strcpy(char* dest, char* src) {
+    u64 i = 0;
+    while (src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+// String class implementation
+
+struct string {
+    char* data;
+    u64 length;
+}
+
+string string::new(char* s) {
+    u64 length = strlen(s);
+    char* data = malloc(length + 1);
+
+    strcpy(data, s);
+
+    return string {
+        .data = data,
+        .length = length
+    };
+}
+
+string string::take(char* s) {
+    return string {
+        .data = s,
+        .length = strlen(s)
+    };
+}
+
+string::~string() {
+    free(data);
+}
+
+char* string::c_str() {
+    return data;
+}

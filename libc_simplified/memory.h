@@ -1,6 +1,6 @@
-void* malloc(size_t size);
-void* realloc(void* ptr, size_t size);
-void* calloc(size_t nmemb, size_t size);
+void* malloc(u64 size);
+void* calloc(u64 num, u64 size);
+void* realloc(void* ptr, u64 size);
 
 void free(void* ptr);
 

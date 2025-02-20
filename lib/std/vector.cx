@@ -1,0 +1,44 @@
+import std::optional;
+
+public:
+
+struct vector<T> {
+    T* data;
+    u64 length;
+    u64 capacity;
+}
+
+vector<T> vector::new<T>() {
+    return vector<T> {
+        .data = 0,
+        .length = 0,
+        .capacity = 0
+    };
+}
+
+vector<T> vector::with_capacity<T>(u64 capacity) {
+    return vector<T> {
+        .data = malloc(capacity * sizeof(T)),
+        .length = 0,
+        .capacity = capacity
+    }
+}
+
+void vector<T>::push(this, T object) {
+    if (this->length < this->capacity) {
+        this->data[this->length] = object;
+        this->length++;
+        return;
+    }
+
+    this->capacity = this->capacity * 2 + 1;
+    this->data = realloc(this->data, this->capacity * sizeof(T));
+}
+
+optional<T> vector<T>::at(this, u64 index) {
+    if (index >= this->length) {
+        return null;
+    }
+
+    return this->data[index];
+}
