@@ -1,0 +1,11 @@
+#include <stdio.h>
+
+public:
+
+void println(string str) {
+   puts(str.c_str());
+}
+
+private:
+
+int puts(char* str);
