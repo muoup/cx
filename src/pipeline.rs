@@ -1,7 +1,7 @@
+use cranelift::codegen;
 use crate::lex::token::Token;
 use crate::parse::verify::VerifiedAST;
-use crate::{codegen, lex, parse, preprocessor};
-use crate::lex::token::KeywordType::Default;
+use crate::{lex, parse, preprocessor};
 
 #[derive(Default, Debug)]
 pub(crate) struct CompilerPipeline {
@@ -43,11 +43,11 @@ impl CompilerPipeline {
         self
     }
 
-    pub(crate) fn codegen(mut self) -> Self {
-        if let Some(ast) = &self.ast {
-            codegen::codegen::ast_codegen(ast, self.output.as_str());
-        }
-
-        self
-    }
+    // pub(crate) fn codegen(mut self) -> Self {
+    //     if let Some(ast) = &self.ast {
+    //         codegen::codegen::ast_codegen(ast, self.output.as_str());
+    //     }
+    //
+    //     self
+    // }
 }

@@ -15,9 +15,9 @@ pub(crate) fn codegen_expression(context: &mut FunctionState, expr: &Expression)
         Expression::Literal(literal) => codegen_literal_expr(context, literal),
         Expression::LValue(lvalue) => codegen_lvalue_expr(context, lvalue),
         Expression::Unit => None,
-        Expression::Unverified(_) => panic!("Unverified expression encountered {:?}", expr),
+        Expression::Unverified(_) => panic!("Unverified expression encountered {:#?}", expr),
 
-        _ => unimplemented!("Expression not implemented: {:?}", expr)
+        _ => unimplemented!("Expression not implemented: {:#?}", expr)
     }
 }
 
@@ -76,7 +76,7 @@ pub(crate) fn codegen_value_expr(context: &mut FunctionState, expr: &ValueExpres
                     context.builder.ins().store(ir::MemFlags::new(), sub, operand, 0);
                     Some(sub)
                 },
-                _ => unimplemented!("Operator not implemented: {:?}", operator)
+                _ => unimplemented!("Operator not implemented: {:#?}", operator)
             }
         },
 
@@ -123,7 +123,7 @@ pub(crate) fn codegen_value_expr(context: &mut FunctionState, expr: &ValueExpres
             }
         }
 
-        _ => unimplemented!("Value expression not implemented: {:?}", expr)
+        _ => unimplemented!("Value expression not implemented: {:#?}", expr)
     }
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn codegen_control_expr(context: &mut FunctionState, expr: &ControlEx
             None
         },
 
-        _ => unimplemented!("Control expression not implemented: {:?}", expr)
+        _ => unimplemented!("Control expression not implemented: {:#?}", expr)
     }
 }
 
@@ -178,7 +178,7 @@ pub(crate) fn codegen_literal_expr(context: &mut FunctionState, expr: &LiteralEx
             Some(context.builder.ins().global_value(ptr_type, literal))
         },
 
-        _ => unimplemented!("Literal expression not implemented: {:?}", expr)
+        _ => unimplemented!("Literal expression not implemented: {:#?}", expr)
     }
 }
 
@@ -210,7 +210,7 @@ pub(crate) fn codegen_lvalue_expr(context: &mut FunctionState, expr: &LValueExpr
             Some(context.builder.ins().iadd_imm(struct_, Imm64::new(*field_offset as i64)))
         }
 
-        _ => unimplemented!("LValue expression not implemented: {:?}", expr)
+        _ => unimplemented!("LValue expression not implemented: {:#?}", expr)
     }
 }
 

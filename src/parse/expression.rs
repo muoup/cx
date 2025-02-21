@@ -1,8 +1,11 @@
+use crate::assert_token_matches;
+use crate::log_error;
 use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, UnverifiedExpression, ValueExpression, ValueType};
-use crate::parse::global_scope::parse_struct_definition;
+use crate::parse::ast::{ControlExpression, Expression, FunctionParameter, LiteralExpression, ValueExpression, ValueType, VarInitialization};
+use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, detangle_initialization, ContextlessExpression};
 use crate::parse::parser::{parse_body, TokenIter};
+use std::fmt::Debug;
 
 /**
  *  This function is essentially a function for the sake of backwards compatibility. While modern
@@ -21,7 +24,10 @@ pub fn parse_identifier(toks: &mut TokenIter) -> Option<String> {
     Some(accumulator)
 }
 
-pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
+pub(crate) fn parse_list<T>(toks: &mut TokenIter, splitter: Token, terminator: Token, parser: fn(&mut TokenIter) -> Option<T>)
+    -> Option<Vec<T>>
+    where T: Debug
+{
     let mut exprs = Vec::new();
     let mut recent_iter = toks.index;
 
@@ -35,34 +41,41 @@ pub(crate) fn parse_expressions(toks: &mut TokenIter, splitter: Token, terminato
             return Some(exprs);
         }
 
-        let Some (expr) = parse_expression(toks) else {
+        let Some (expr) = parser(toks) else {
             println!("{:?}", exprs);
-            panic!("Expression could not be formed starting at token, near token: {:?} {:?}", toks.slice[recent_iter], toks.slice[toks.index]);
+            return None;
         };
 
         exprs.push(expr);
     }
 }
-fn compress_stack(expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+
+pub(crate) fn parse_rvals(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
+    parse_list(toks, splitter, terminator, parse_rvalue)
+}
+
+pub(crate) fn parse_lvals(toks: &mut TokenIter, splitter: Token, terminator: Token) -> Option<Vec<Expression>> {
+    parse_list(toks, splitter, terminator, parse_lvalue)
+}
+
+fn compress_stack(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
     while let Some(op) = op_stack.pop() {
         let right = expr_stack.pop()?;
         let left = expr_stack.pop()?;
 
         expr_stack.push(
-            Expression::Unverified (
-                UnverifiedExpression::BinaryOperation {
-                    operator: op,
-                    left: Box::new(left),
-                    right: Box::new(right)
-                }
-            )
+            ContextlessExpression::BinaryOperation {
+                op,
+                left: Box::new(left),
+                right: Box::new(right)
+            }
         );
     }
 
     Some(())
 }
 
-fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
     match toks.peek()? {
         Token::Operator(_) => {
             // This is hacky, but I'm not sure how else to make the borrow checker happy
@@ -87,13 +100,18 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
             let Token::Assignment(operator) = toks.next().unwrap().clone() else { unreachable!() };
             let right = parse_expression(toks)?;
 
-            expr_stack.push(Expression::Value (
-                ValueExpression::Assignment {
-                    left: Box::new(left),
-                    right: Box::new(right),
-                    operator
-                }
-            ));
+            expr_stack.push(
+                ContextlessExpression::UnambiguousExpression(
+                    Expression::Value(
+                        ValueExpression::Assignment {
+                            operator,
+
+                            left: Box::new(contextualize_lvalue(left)?),
+                            right: Box::new(contextualize_rvalue(right)?)
+                        }
+                    )
+                )
+            );
             None
         },
         Token::Punctuator(_) => None,
@@ -103,12 +121,10 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
 
             if let Some(expr) = parse_expression(toks) {
                 expr_stack.push(
-                    Expression::Unverified(
-                        UnverifiedExpression::CompoundExpression {
-                            prefix: Box::new(top_expr),
-                            suffix: Box::new(expr)
-                        }
-                    )
+                    ContextlessExpression::CompoundExpression {
+                        left: Box::new(top_expr),
+                        right: Box::new(expr)
+                    }
                 );
 
                 parse_operator(toks, expr_stack, op_stack)
@@ -121,7 +137,24 @@ fn parse_operator(toks: &mut TokenIter, expr_stack: &mut Vec<Expression>, op_sta
     }
 }
 
-pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
+pub(crate) fn parse_rvalue(toks: &mut TokenIter) -> Option<Expression> {
+    contextualize_rvalue(
+        parse_expression(toks)?
+    )
+}
+
+pub(crate) fn parse_lvalue(toks: &mut TokenIter) -> Option<Expression> {
+    contextualize_lvalue(
+        parse_expression(toks)?
+    )
+}
+
+pub(crate) fn parse_initialization(toks: &mut TokenIter) -> Option<VarInitialization> {
+    let expr = parse_expression(toks)?;
+    detangle_initialization(expr)
+}
+
+pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<ContextlessExpression> {
     let mut expr_stack = Vec::new();
     let mut op_stack = Vec::new();
 
@@ -138,38 +171,40 @@ pub(crate) fn parse_expression(toks: &mut TokenIter) -> Option<Expression> {
     compress_stack(&mut expr_stack, &mut op_stack);
 
     if expr_stack.is_empty() {
-        return Some(Expression::NOP);
+        return Some(ContextlessExpression::UnambiguousExpression(Expression::NOP));
     }
 
     assert_eq!(expr_stack.len(), 1);
-    Some(expr_stack.pop().unwrap())
+
+    expr_stack.pop()
 }
 
-fn parse_expression_suffix(expr: Expression, toks: &mut TokenIter) -> Option<Expression> {
+fn parse_expression_suffix(expr: ContextlessExpression, toks: &mut TokenIter) -> Option<ContextlessExpression> {
     let expr = match toks.peek()? {
         Token::Punctuator(OpenParen) => {
             toks.next();
-            let mut args = parse_expressions(toks, Token::Punctuator(PunctuatorType::Comma), Token::Punctuator(PunctuatorType::CloseParen))?;
-            assert_eq!(toks.next(), Some(&Token::Punctuator(CloseParen)));
-            Expression::Unverified (
-                UnverifiedExpression::FunctionCall {
-                    name: Box::new(expr),
-                    args
-                }
-            )
+            let mut args = parse_list(
+                toks,
+                Token::Punctuator(PunctuatorType::Comma), Token::Punctuator(CloseParen),
+                parse_expression
+            )?;
+            assert_token_matches!(toks, Token::Punctuator(CloseParen));
+
+            ContextlessExpression::FunctionCall {
+                reference: Box::new(expr),
+                args
+            }
         },
         Token::Punctuator(PunctuatorType::OpenBracket) => {
             toks.next();
             let index = parse_expression(toks)?;
             assert_eq!(toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseBracket)));
 
-            Expression::Unverified (
-                UnverifiedExpression::BinaryOperation {
-                    operator: OperatorType::ArrayIndex,
-                    left: Box::new(expr),
-                    right: Box::new(index)
-                }
-            )
+            ContextlessExpression::BinaryOperation {
+                op: OperatorType::ArrayIndex,
+                left: Box::new(expr),
+                right: Box::new(index)
+            }
         }
 
         _ => return Some(expr),
@@ -179,24 +214,24 @@ fn parse_expression_suffix(expr: Expression, toks: &mut TokenIter) -> Option<Exp
 }
 
 
-fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
+fn parse_expression_value(toks: &mut TokenIter) -> Option<ContextlessExpression> {
     match toks.next()? {
         Token::Keyword(_) => {
             toks.back();
-            parse_keyword_expression(toks)
+            Some(
+                ContextlessExpression::UnambiguousExpression(
+                    parse_keyword_expression(toks)?
+                )
+            )
         },
         Token::Intrinsic(_) => {
             toks.back();
             Some(
-                Expression::Unverified(
-                    UnverifiedExpression::Identifier(parse_identifier(toks)?)
-                )
+                ContextlessExpression::Identifier(parse_identifier(toks)?)
             )
         },
         Token::Identifier(name) => Some(
-            Expression::Unverified (
-                UnverifiedExpression::Identifier(name.clone())
-            )
+            ContextlessExpression::Identifier(name.clone())
         ),
         Token::Punctuator(OpenParen) => {
             let expr = parse_expression(toks)?;
@@ -204,31 +239,35 @@ fn parse_expression_value(toks: &mut TokenIter) -> Option<Expression> {
             Some(expr)
         },
         Token::Operator(op) => Some(
-            Expression::Value(
-                ValueExpression::UnaryOperation {
-                    operator: *op,
-                    operand: parse_expression_value(toks).map(Box::new)
-                }
-            )
+            ContextlessExpression::UnaryOperation {
+                op: *op,
+                operand: parse_expression_value(toks).map(Box::new)?
+            }
         ),
         Token::IntLiteral(val) => {
             Some(
-                Expression::Literal(
-                    LiteralExpression::IntLiteral { val: *val, bytes: 4 }
+                ContextlessExpression::UnambiguousExpression(
+                    Expression::Literal(
+                        LiteralExpression::IntLiteral { val: *val, bytes: 4 }
+                    )
                 )
             )
         },
         Token::FloatLiteral(val) => {
             Some(
-                Expression::Literal(
-                    LiteralExpression::FloatLiteral { val: *val, bytes: 4 }
+                ContextlessExpression::UnambiguousExpression(
+                    Expression::Literal(
+                        LiteralExpression::FloatLiteral { val: *val, bytes: 4 }
+                    )
                 )
             )
         },
         Token::StringLiteral(val) => {
             Some(
-                Expression::Literal(
-                    LiteralExpression::StringLiteral(val.clone())
+                ContextlessExpression::UnambiguousExpression(
+                    Expression::Literal(
+                        LiteralExpression::StringLiteral(val.clone())
+                    )
                 )
             )
         },
@@ -254,14 +293,16 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
         KeywordType::Return =>
             Some (
                 Expression::Control(
-                    ControlExpression::Return(Box::new(
-                        if toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
-                            toks.next();
-                            Expression::Unit
-                        } else {
-                            parse_expression(toks)?
-                        }
-                    ))
+                    ControlExpression::Return(
+                        Box::new(
+                            if toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
+                                toks.next();
+                                Expression::Unit
+                            } else {
+                                parse_rvalue(toks)?
+                            }
+                        )
+                    )
                 )
             ),
         KeywordType::Continue => Some(Expression::Control(ControlExpression::Continue)),
@@ -282,7 +323,8 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             Some(
                 Expression::Control(
                     ControlExpression::If {
-                        condition, then, else_
+                        condition: Box::new(contextualize_rvalue(*condition)?),
+                        then, else_
                     }
                 )
             )
@@ -295,7 +337,7 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             Some(
                 Expression::Control(
                     ControlExpression::Loop {
-                        condition,
+                        condition: Box::new(contextualize_rvalue(*condition)?),
                         body,
                         evaluate_condition_first: true
                     }
@@ -305,7 +347,7 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
         KeywordType::For => {
             assert_eq!(toks.next(), Some(&Token::Punctuator(OpenParen)));
 
-            let mut exprs = parse_expressions(toks, Token::Punctuator(Semicolon), Token::Punctuator(CloseParen))?;
+            let mut exprs = parse_rvals(toks, Token::Punctuator(Semicolon), Token::Punctuator(CloseParen))?;
             assert_eq!(exprs.len(), 3);
 
             let increment = exprs.pop().unwrap();
@@ -334,7 +376,7 @@ fn parse_keyword_expression(toks: &mut TokenIter) -> Option<Expression> {
             Some(
                 Expression::Control (
                     ControlExpression::Loop {
-                        condition,
+                        condition: Box::new(contextualize_rvalue(*condition)?),
                         body,
                         evaluate_condition_first: false
                     }

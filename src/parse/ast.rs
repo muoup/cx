@@ -4,26 +4,34 @@ use std::rc::Rc;
 use crate::parse::verify::context::FunctionPrototype;
 
 #[derive(Debug)]
-pub struct UnverifiedAST {
-    pub statements: Vec<UnverifiedGlobalStatement>
+pub struct AST {
+    pub statements: Vec<GlobalStatement>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarInitialization {
+    pub name: String,
+    pub type_: ValueType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueType {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
-    Structured { fields: Rc<[(String, ValueType)]> },
+    Structured { fields: Vec<VarInitialization> },
     Unit,
 
-    PointerTo(Rc<ValueType>),
+    PointerTo(Box<ValueType>),
     Array {
         size: usize,
-        type_: Rc<ValueType>
+        type_: Box<ValueType>
     },
 
+    Identifier(String),
     Unverified(String)
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
     pub name: Option<String>,
     pub fields: Vec<(String, ValueType)>
@@ -36,14 +44,32 @@ pub struct FunctionParameter {
 }
 
 #[derive(Debug)]
-pub enum GlobalStatement {
+pub enum FirstPassGlobals {
+    Struct {
+        name: String,
+        fields: Vec<(String, ValueType)>
+    }
+}
+
+#[derive(Debug)]
+pub enum SecondPassGlobals {
     Function {
         prototype: Rc<FunctionPrototype>,
         body: Option<Vec<Expression>>
     },
+}
 
-    // Both typedef and non-typedef declarations will be squeezed into this variant
-    // C++ allows implicit typedef, so why shouldn't we?
+#[derive(Debug)]
+pub enum ThirdPassGlobals {
+    GlobalExpression(Expression)
+}
+
+#[derive(Debug)]
+pub enum GlobalStatement {
+    Function {
+        prototype: FunctionPrototype,
+        body: Option<Vec<Expression>>
+    },
     TypeDeclaration {
         name: Option<String>,
         type_: ValueType,
@@ -58,7 +84,7 @@ pub enum GlobalStatement {
 #[derive(Debug)]
 pub enum UnverifiedGlobalStatement {
     Function {
-        return_type: Expression,
+        return_type: ValueType,
         name_header: Expression,
         params: Vec<Expression>,
         body: Option<Vec<Expression>>
@@ -75,7 +101,7 @@ pub enum UnverifiedGlobalStatement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LiteralExpression {
     IntLiteral {
         val: i64,
@@ -88,14 +114,14 @@ pub enum LiteralExpression {
     StringLiteral(String)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IntegerCastType {
     IReduce,
     SignExtend,
     ZeroExtend
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ValueExpression {
     DirectFunctionCall {
         name: String,
@@ -128,18 +154,14 @@ pub enum ValueExpression {
         expr: Box<Expression>,
         type_: ValueType
     },
-    StructFieldReference {
+    StructFieldValue {
         struct_: Box<Expression>,
-        field_offset: usize,
-        field_type: ValueType
+        field_name: String
     },
-    VariableReference {
-        name: String,
-        lval_type: ValueType
-    },
+    VariableReference(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ControlExpression {
     Return(Box<Expression>),
     Continue, Break,
@@ -162,7 +184,7 @@ pub enum ControlExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnverifiedExpression {
     Identifier(String),
 
@@ -193,13 +215,10 @@ pub enum UnverifiedExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LValueExpression {
-    Alloca {
-        name: String,
-        type_: ValueType,
-    },
-    Value {
+    Initialization(VarInitialization),
+    Variable {
         name: String,
     },
     DereferencedPointer {
@@ -207,12 +226,11 @@ pub enum LValueExpression {
     },
     StructField {
         struct_: Box<Expression>,
-        field_offset: usize,
-        field_type: ValueType
+        field_name: String
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(LiteralExpression),
     Value(ValueExpression),

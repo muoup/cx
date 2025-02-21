@@ -1,13 +1,11 @@
-use std::clone;
-use cranelift::codegen::ir;
-use cranelift::codegen::ir::GlobalValue;
-use cranelift::prelude::{FunctionBuilder, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
-use cranelift_module::{DataDescription, Module};
 use crate::codegen::codegen::FunctionState;
-use crate::codegen::scope::VariableTable;
 use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::{ValueType};
+use crate::parse::ast::ValueType;
+use cranelift::codegen::ir;
+use cranelift::codegen::ir::GlobalValue;
+use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
+use cranelift_module::{DataDescription, Module};
 
 pub(crate) fn stack_alloca(context: &mut FunctionState, type_: ValueType) -> Option<Value> {
     match type_ {
@@ -53,7 +51,7 @@ pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs
             OperatorType::LessEqual => builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, lhs, rhs),
             OperatorType::Greater => builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, lhs, rhs),
             OperatorType::GreaterEqual => builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, lhs, rhs),
-            _ => panic!("Unimplemented operator {:?}", op)
+            _ => panic!("Unimplemented operator {:#?}", op)
         }
     )
 }

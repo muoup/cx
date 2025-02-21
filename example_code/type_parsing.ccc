@@ -1,9 +1,15 @@
+int *pointer_return(int x);
 int putchar(char c);
 int puts(char* c);
 
 struct Test {
     int i1;
     int i2;
+}
+
+struct Test2 {
+    Test t;
+    int i3;
 }
 
 int main() {

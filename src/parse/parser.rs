@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+use std::rc::Rc;
 use crate::lex::token::PunctuatorType::{CloseBrace, OpenBrace, Semicolon};
 use crate::lex::token::Token;
-use crate::parse::ast::{Expression, UnverifiedAST, UnverifiedGlobalStatement};
-use crate::parse::expression::{parse_expression, parse_expressions};
+use crate::parse::ast::{Expression, FirstPassGlobals, SecondPassGlobals, AST, UnverifiedExpression, UnverifiedGlobalStatement, ValueExpression};
+use crate::parse::expression::{parse_expression, parse_lvals, parse_lvalue, parse_rvals, parse_rvalue};
 use crate::parse::global_scope::parse_global_stmt;
 
 #[derive(Debug, Clone)]
@@ -30,41 +32,31 @@ impl<'a> TokenIter<'_> {
     }
 }
 
-pub(crate) fn parse_ast(toks: &mut TokenIter) -> Option<UnverifiedAST> {
-    Some(
-        UnverifiedAST {
-            statements: parse_global_stmts(toks)?
-        }
-    )
-}
-
-fn parse_global_stmts(toks: &mut TokenIter) -> Option<Vec<UnverifiedGlobalStatement>> {
-    let mut fns = Vec::new();
+pub(crate) fn parse_ast(toks: &mut TokenIter) -> Option<AST> {
+    let mut ast = AST {
+        statements: Vec::new()
+    };
 
     while toks.peek() != None {
-        let start = toks.index;
-        let stmt =
-            parse_global_stmt(toks)
-                .expect(
-                    format!("Failed to parse global statement starting at: {:?}", &toks.slice[start])
-                        .as_str()
-                );
+        let stmt = parse_global_stmt(toks)?;
 
-        fns.push(stmt);
+        // println!("{:?}", stmt);
+
+        ast.statements.push(stmt);
     }
 
-    Some(fns)
+    Some(ast)
 }
 
 pub(crate) fn parse_body(toks: &mut TokenIter) -> Vec<Expression> {
     if toks.peek() == Some(&&Token::Punctuator(OpenBrace)) {
         toks.next();
 
-        let body = parse_expressions(toks, Token::Punctuator(Semicolon), Token::Punctuator(CloseBrace)).unwrap();
+        let body = parse_rvals(toks, Token::Punctuator(Semicolon), Token::Punctuator(CloseBrace)).unwrap();
         assert_eq!(toks.next(), Some(&Token::Punctuator(CloseBrace)));
 
         body
     } else {
-        vec![parse_expression(toks).unwrap()]
+        vec![parse_rvalue(toks).unwrap()]
     }
 }

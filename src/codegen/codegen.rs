@@ -1,24 +1,24 @@
 use crate::codegen::expression::codegen_expression;
 use crate::codegen::routines::allocate_variable;
-use crate::codegen::scope::VariableTable;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::parse::ast::{Expression, FunctionParameter, GlobalStatement, ValueType};
 use crate::parse::verify::context::FunctionPrototype;
 use crate::parse::verify::VerifiedAST;
 use cranelift::codegen::ir::{Function, UserFuncName};
-use cranelift::codegen::{settings, Context};
+use cranelift::codegen::{ir, settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift::prelude::Signature;
 use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use crate::util::ScopedMap;
 
 pub(crate) struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
     pub(crate) functions: &'a HashMap<String, FuncId>,
 
     pub(crate) builder: FunctionBuilder<'a>,
-    pub(crate) variable_table: VariableTable,
+    pub(crate) variable_table: ScopedMap<ir::Value>,
 
     pub(crate) merge_block_id: Option<u32>,
     pub(crate) loop_block_id: Option<u32>,
@@ -51,23 +51,8 @@ pub fn ast_codegen(ast: &VerifiedAST, output: &str) {
         functions: HashMap::new()
     };
 
-    for global_stmt in &ast.global_statements {
-        codegen_global_statement(global_stmt, &mut global_state);
-    }
-
     let obj = global_state.object_module.finish();
     std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
-}
-
-pub fn codegen_global_statement(global_stmt: &GlobalStatement, global_state: &mut GlobalState) {
-    match global_stmt {
-        GlobalStatement::Function { prototype, body }
-            => codegen_function(global_state, prototype, body),
-        GlobalStatement::TypeDeclaration { .. } => (),
-        _ => {
-            println!("Unsupported global statement: {:?}", global_stmt);
-        }
-    }
 }
 
 fn codegen_function(global_state: &mut GlobalState, prototype: &FunctionPrototype, body: &Option<Vec<Expression>>) {
@@ -103,7 +88,7 @@ fn codegen_function(global_state: &mut GlobalState, prototype: &FunctionPrototyp
 
     let block = builder.create_block();
     builder.switch_to_block(block);
-    let mut var_table = VariableTable::new();
+    let mut var_table = ScopedMap::new();
     var_table.push_scope();
 
     for FunctionParameter { name, type_ } in prototype.args.iter() {

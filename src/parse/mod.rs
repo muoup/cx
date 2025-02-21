@@ -10,12 +10,15 @@ mod parser;
 mod expression;
 mod global_scope;
 mod macros;
+mod contextless_expression;
 
 pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
     let ast = parser::parse_ast(&mut TokenIter {
         slice: toks,
         index: 0
     })?;
+
+    println!("{:#?}", ast);
 
     let verified_ast = verify::verify_ast(ast)?;
 

@@ -4,8 +4,8 @@ use crate::preprocessor::preprocess;
 mod lex;
 mod parse;
 mod preprocessor;
-mod codegen;
 mod pipeline;
+mod util;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -17,6 +17,6 @@ fn main() {
     pipeline::CompilerPipeline::new(file_name.clone(), "test.o".to_string())
         .preprocess()
         .lex()
-        .parse()
-        .codegen();
+        .parse();
+        // .codegen();
 }
