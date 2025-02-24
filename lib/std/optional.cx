@@ -7,8 +7,10 @@ enum optional<T> {
 
 bool optional<T>::is_some(this) {
     switch opt {
-        case Some(T value) => true;
-        case None => false;
+        case Some(T value):
+            return true;
+        case None:
+            return false;
     }
 }
 

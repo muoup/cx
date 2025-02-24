@@ -1,3 +1,5 @@
+public:
+
 /**
  *  Responsible for the basis of the move semantics, 'moving' a value
  *  disables the destructor of the value, returning moved<T>, a static
@@ -5,7 +7,8 @@
  *  or memcpy'd to a new location which is then responsible for running
  *  the destructor.
  */
-public struct moved<T> {
+[instrinsic, not_constructable]
+struct moved<T> {
     T value;
 }
 
@@ -15,7 +18,7 @@ public struct moved<T> {
  *  value is promoted to a movable, allocating an extra byte for a field letting
  *  the runtime know whether or not to run the object's destructor.
  */
-public struct movable<T> {
+struct movable<T> {
     bool moved;
     T value;
 }
