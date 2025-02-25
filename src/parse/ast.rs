@@ -24,11 +24,10 @@ pub enum ValueType {
     PointerTo(Box<ValueType>),
     Array {
         size: usize,
-        type_: Box<ValueType>
+        _type: Box<ValueType>
     },
 
-    Identifier(String),
-    Unverified(String)
+    Identifier(String)
 }
 
 #[derive(Debug, Clone, PartialEq)]

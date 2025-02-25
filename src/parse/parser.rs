@@ -10,9 +10,16 @@ use crate::util::ScopedMap;
 pub(crate) type VarTable = ScopedMap<ValueType>;
 
 #[derive(Debug, Clone)]
+pub(crate) enum VisibilityMode {
+    Package,
+    Public,
+    Private,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ParserData<'a> {
     pub(crate) toks: TokenIter<'a>,
-    pub(crate) vars: VarTable,
+    pub(crate) visibility: VisibilityMode,
 }
 
 #[derive(Debug, Clone)]
@@ -61,16 +68,12 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Vec<Expression> {
     if data.toks.peek() == Some(&&Token::Punctuator(OpenBrace)) {
         data.toks.next();
 
-        data.vars.push_scope();
         let body = parse_rvals(data, Token::Punctuator(Semicolon), Token::Punctuator(CloseBrace)).unwrap();
         assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseBrace)));
-        data.vars.pop_scope();
 
         body
     } else {
-        data.vars.push_scope();
         let body = vec![parse_rvalue(data).unwrap()];
-        data.vars.pop_scope();
 
         body
     }

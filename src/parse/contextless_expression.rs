@@ -33,20 +33,8 @@ pub(crate) enum ContextlessExpression {
 pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpression) -> Option<Expression> {
     match expr {
         // Case 1 - Non-declarative lvalue (i.e. variable_reference)
-        ContextlessExpression::Identifier(name) => {
-            match data.vars.get(&name) {
-                Some(_type) => Some(
-                    Expression::LValue(
-                        LValueExpression::Variable {
-                            name,
-                            _type: _type.clone()
-                        }
-                    )
-                ),
-
-                None => Some(Expression::Identifier(name))
-            }
-        },
+        ContextlessExpression::Identifier(name) =>
+            Some(Expression::Identifier(name)),
 
         ContextlessExpression::UnaryOperation {
             op: OperatorType::Multiply, operand
@@ -73,36 +61,19 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
 
         ContextlessExpression::UnambiguousExpression(expr) => Some(expr),
 
-        _ => {
-            let initialization = detangle_initialization(expr)?;
-
-            data.vars.insert(initialization.name.clone(), initialization.type_.clone());
-
+        _ =>
             Some(
                 Expression::LValue(
-                    LValueExpression::Initialization(initialization)
+                    LValueExpression::Initialization(detangle_initialization(expr)?)
                 )
-            )
-        }
+            ),
     }
 }
 
 pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpression) -> Option<Expression> {
     match expr {
-        ContextlessExpression::Identifier(name) => {
-            match data.vars.get(&name) {
-                Some(_type) => Some(
-                    Expression::Value(
-                        ValueExpression::VariableReference {
-                            name,
-                            _type: _type.clone()
-                        }
-                    )
-                ),
-
-                None => Some(Expression::Identifier(name))
-            }
-        },
+        ContextlessExpression::Identifier(name) =>
+            Some(Expression::Identifier(name)),
 
         ContextlessExpression::BinaryOperation {
             op, left, right

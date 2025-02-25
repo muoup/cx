@@ -1,6 +1,5 @@
-use crate::parse::ast::{FunctionParameter, GlobalStatement, UnverifiedGlobalStatement, ValueType, AST};
-use crate::parse::contextless_expression::coalesce_type;
-use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap};
+use crate::parse::ast::{GlobalStatement, ValueType, AST};
+use crate::parse::verify::context::{FnMap, TypeMap};
 
 pub(crate) fn gen_declarations(ast: &AST) -> Option<(TypeMap, FnMap)> {
     Some((gen_type_decls(ast)?, gen_fn_decls(ast)?))
