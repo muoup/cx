@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[derive(Debug, Clone)]
 pub(crate) struct ScopedMap<T> {
     data: HashMap<String, T>,
     overwrites: Vec<Vec<(String, T)>>

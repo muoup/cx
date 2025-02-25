@@ -106,8 +106,8 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
                         ValueExpression::Assignment {
                             operator,
 
-                            left: Box::new(contextualize_lvalue(left)?),
-                            right: Box::new(contextualize_rvalue(right)?)
+                            left: Box::new(contextualize_lvalue(data, left)?),
+                            right: Box::new(contextualize_rvalue(data, right)?)
                         }
                     )
                 )
@@ -138,15 +138,13 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
 }
 
 pub(crate) fn parse_rvalue(data: &mut ParserData) -> Option<Expression> {
-    contextualize_rvalue(
-        parse_expression(data)?
-    )
+    let expr = parse_expression(data)?;
+    contextualize_rvalue(data, expr)
 }
 
 pub(crate) fn parse_lvalue(data: &mut ParserData) -> Option<Expression> {
-    contextualize_lvalue(
-        parse_expression(data)?
-    )
+    let expr = parse_expression(data)?;
+    contextualize_lvalue(data, expr)
 }
 
 pub(crate) fn parse_initialization(data: &mut ParserData) -> Option<VarInitialization> {
@@ -323,7 +321,7 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             Some(
                 Expression::Control(
                     ControlExpression::If {
-                        condition: Box::new(contextualize_rvalue(*condition)?),
+                        condition: Box::new(contextualize_rvalue(data, *condition)?),
                         then, else_
                     }
                 )
@@ -337,7 +335,7 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             Some(
                 Expression::Control(
                     ControlExpression::Loop {
-                        condition: Box::new(contextualize_rvalue(*condition)?),
+                        condition: Box::new(contextualize_rvalue(data, *condition)?),
                         body,
                         evaluate_condition_first: true
                     }
@@ -376,7 +374,7 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             Some(
                 Expression::Control (
                     ControlExpression::Loop {
-                        condition: Box::new(contextualize_rvalue(*condition)?),
+                        condition: Box::new(contextualize_rvalue(data, *condition)?),
                         body,
                         evaluate_condition_first: false
                     }

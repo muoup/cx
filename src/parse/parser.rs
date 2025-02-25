@@ -2,13 +2,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use crate::lex::token::PunctuatorType::{CloseBrace, OpenBrace, Semicolon};
 use crate::lex::token::Token;
-use crate::parse::ast::{Expression, FirstPassGlobals, SecondPassGlobals, AST, UnverifiedExpression, UnverifiedGlobalStatement, ValueExpression};
+use crate::parse::ast::{Expression, FirstPassGlobals, SecondPassGlobals, AST, UnverifiedExpression, UnverifiedGlobalStatement, ValueExpression, ValueType};
 use crate::parse::expression::{parse_expression, parse_lvals, parse_lvalue, parse_rvals, parse_rvalue};
 use crate::parse::global_scope::parse_global_stmt;
+use crate::util::ScopedMap;
+
+pub(crate) type VarTable = ScopedMap<ValueType>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParserData<'a> {
     pub(crate) toks: TokenIter<'a>,
+    pub(crate) vars: VarTable,
 }
 
 #[derive(Debug, Clone)]
@@ -57,11 +61,17 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Vec<Expression> {
     if data.toks.peek() == Some(&&Token::Punctuator(OpenBrace)) {
         data.toks.next();
 
+        data.vars.push_scope();
         let body = parse_rvals(data, Token::Punctuator(Semicolon), Token::Punctuator(CloseBrace)).unwrap();
         assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseBrace)));
+        data.vars.pop_scope();
 
         body
     } else {
-        vec![parse_rvalue(data).unwrap()]
+        data.vars.push_scope();
+        let body = vec![parse_rvalue(data).unwrap()];
+        data.vars.pop_scope();
+
+        body
     }
 }

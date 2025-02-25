@@ -158,7 +158,10 @@ pub enum ValueExpression {
         struct_: Box<Expression>,
         field_name: String
     },
-    VariableReference(String),
+    VariableReference {
+        name: String,
+        _type: ValueType
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -220,13 +223,17 @@ pub enum LValueExpression {
     Initialization(VarInitialization),
     Variable {
         name: String,
+        _type: ValueType
     },
     DereferencedPointer {
         pointer: Box<Expression>,
     },
     StructField {
         struct_: Box<Expression>,
-        field_name: String
+        field_name: String,
+
+        field_type: ValueType,
+        field_offset: usize
     }
 }
 
@@ -236,10 +243,7 @@ pub enum Expression {
     Value(ValueExpression),
     Control(ControlExpression),
     LValue(LValueExpression),
-
-    // Any expression that should be eliminated by the type checker,
-    // if the codegen phase encounters this, behavior is undefined (likely a panic)
-    Unverified(UnverifiedExpression),
+    Identifier(String),
 
     NOP,
     Unit,
