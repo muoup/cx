@@ -1,5 +1,5 @@
 use crate::lex::token::Token;
-use crate::parse::parser::TokenIter;
+use crate::parse::parser::{ParserData, TokenIter};
 use crate::parse::verify::VerifiedAST;
 
 // pub mod verify;
@@ -12,11 +12,17 @@ mod global_scope;
 mod macros;
 mod contextless_expression;
 
+
+
 pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
-    let ast = parser::parse_ast(&mut TokenIter {
-        slice: toks,
-        index: 0
-    })?;
+    let mut parser_data = ParserData {
+        toks: TokenIter {
+            slice: toks,
+            index: 0
+        },
+    };
+
+    let ast = parser::parse_ast(&mut parser_data)?;
 
     println!("{:#?}", ast);
 

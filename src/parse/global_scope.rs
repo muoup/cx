@@ -3,23 +3,23 @@ use crate::lex::token::{KeywordType, PunctuatorType, Token};
 use crate::parse::ast::{GlobalStatement, UnverifiedGlobalStatement, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{coalesce_type, detangle_initialization, detangle_typed_expr, ContextlessExpression};
 use crate::parse::expression::{parse_expression, parse_initialization, parse_list};
-use crate::parse::parser::{parse_body, TokenIter};
+use crate::parse::parser::{parse_body, ParserData, TokenIter};
 use crate::parse::verify::context::FunctionPrototype;
 
-pub(crate) fn parse_struct_definition(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    assert_token_matches!(toks, Token::Keyword(KeywordType::Struct));
-    assert_token_matches!(toks, Token::Identifier(name));
+pub(crate) fn parse_struct_definition(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Struct));
+    assert_token_matches!(data, Token::Identifier(name));
     let name = name.clone();
-    assert_token_matches!(toks, Token::Punctuator(PunctuatorType::OpenBrace));
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
     let mut fields = parse_list(
-        toks,
+        data,
         Token::Punctuator(PunctuatorType::Semicolon),
         Token::Punctuator(PunctuatorType::CloseBrace),
         parse_initialization
     )?;
 
-    assert_token_matches!(toks, Token::Punctuator(PunctuatorType::CloseBrace));
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
 
     Some(
         GlobalStatement::TypeDeclaration {
@@ -29,20 +29,20 @@ pub(crate) fn parse_struct_definition(toks: &mut TokenIter) -> Option<GlobalStat
     )
 }
 
-pub(crate) fn parse_enum_definition(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    assert_token_matches!(toks, Token::Keyword(KeywordType::Enum));
+pub(crate) fn parse_enum_definition(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Enum));
 
     unimplemented!("parse_enum_definition")
 }
 
-pub(crate) fn parse_union_definition(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    assert_token_matches!(toks, Token::Keyword(KeywordType::Union));
+pub(crate) fn parse_union_definition(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Union));
 
     unimplemented!("parse_union_definition")
 }
 
-pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    let expr = parse_expression(toks)?;
+pub(crate) fn parse_global_expression(data: &mut ParserData) -> Option<GlobalStatement> {
+    let expr = parse_expression(data)?;
     let Some((type_, expr)) = detangle_typed_expr(expr) else {
         log_error!("Global-scope expression must be declarative");
     };
@@ -65,8 +65,8 @@ pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<GlobalStat
                     .collect::<Option<Vec<_>>>()?
             };
 
-            if let Some(&Token::Punctuator(PunctuatorType::Semicolon)) = toks.peek() {
-                toks.next();
+            if let Some(&Token::Punctuator(PunctuatorType::Semicolon)) = data.toks.peek() {
+                data.toks.next();
                 return Some(
                     GlobalStatement::Function {
                         prototype,
@@ -75,10 +75,10 @@ pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<GlobalStat
                 )
             }
 
-            return Some(
+            Some(
                 GlobalStatement::Function {
                     prototype,
-                    body: Some(parse_body(toks))
+                    body: Some(parse_body(data))
                 }
             )
         },
@@ -87,12 +87,12 @@ pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<GlobalStat
     }
 }
 
-pub(crate) fn parse_global_stmt(toks: &mut TokenIter) -> Option<GlobalStatement> {
-    match toks.peek()? {
-        Token::Keyword(KeywordType::Struct) => parse_struct_definition(toks),
-        Token::Keyword(KeywordType::Enum) => parse_enum_definition(toks),
-        Token::Keyword(KeywordType::Union) => parse_union_definition(toks),
+pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
+    match data.toks.peek()? {
+        Token::Keyword(KeywordType::Struct) => parse_struct_definition(data),
+        Token::Keyword(KeywordType::Enum) => parse_enum_definition(data),
+        Token::Keyword(KeywordType::Union) => parse_union_definition(data),
 
-        _ => parse_global_expression(toks)
+        _ => parse_global_expression(data)
     }
 }

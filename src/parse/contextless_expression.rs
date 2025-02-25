@@ -86,24 +86,6 @@ pub(crate) fn contextualize_rvalue(expr: ContextlessExpression) -> Option<Expres
         ),
 
         ContextlessExpression::BinaryOperation {
-            op: OperatorType::Access,
-            left, right
-        } => {
-            let ContextlessExpression::Identifier(field_name) = *right else {
-                log_error!("Expected identifier for struct field access, found: {:#?}", *right);
-            };
-
-            Some(
-                Expression::Value(
-                    ValueExpression::StructFieldValue {
-                        struct_: Box::new(contextualize_rvalue(*left)?),
-                        field_name
-                    }
-                )
-            )
-        },
-
-        ContextlessExpression::BinaryOperation {
             op, left, right
         } => {
             Some(
