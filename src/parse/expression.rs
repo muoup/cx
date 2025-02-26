@@ -2,7 +2,7 @@ use crate::assert_token_matches;
 use crate::log_error;
 use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::ast::{ControlExpression, Expression, FunctionParameter, LiteralExpression, ValueExpression, ValueType, VarInitialization};
+use crate::parse::ast::{ControlExpression, Expression, FunctionParameter, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, detangle_initialization, ContextlessExpression};
 use crate::parse::parser::{parse_body, ParserData, TokenIter};
 use std::fmt::Debug;
@@ -102,8 +102,8 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
 
             expr_stack.push(
                 ContextlessExpression::UnambiguousExpression(
-                    Expression::Value(
-                        ValueExpression::Assignment {
+                    Expression::RValue(
+                        RValueExpression::Assignment {
                             operator,
 
                             left: Box::new(contextualize_lvalue(data, left)?),
@@ -169,7 +169,7 @@ pub(crate) fn parse_expression(data: &mut ParserData) -> Option<ContextlessExpre
     compress_stack(&mut expr_stack, &mut op_stack);
 
     if expr_stack.is_empty() {
-        return Some(ContextlessExpression::UnambiguousExpression(Expression::NOP));
+        return Some(ContextlessExpression::UnambiguousExpression(Expression::Unit));
     }
 
     assert_eq!(expr_stack.len(), 1);

@@ -121,7 +121,8 @@ pub enum IntegerCastType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ValueExpression {
+pub enum RValueExpression {
+    Identifier(String),
     DirectFunctionCall {
         name: String,
         args: Vec<Expression>
@@ -187,46 +188,20 @@ pub enum ControlExpression {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum UnverifiedExpression {
+pub enum LValueExpression {
     Identifier(String),
 
-    CompoundExpression {
-        prefix: Box<Expression>,
-        suffix: Box<Expression>
-    },
-
-    Cast {
-        expr: Box<Expression>,
-        type_: String
-    },
-
-    FunctionCall {
-        name: Box<Expression>,
-        args: Vec<Expression>
-    },
-
-    UnaryOperation {
-        operator: OperatorType,
-        operand: Box<Expression>
-    },
-
-    BinaryOperation {
-        operator: OperatorType,
-        left: Box<Expression>,
-        right: Box<Expression>
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LValueExpression {
     Initialization(VarInitialization),
+
     Variable {
         name: String,
         _type: ValueType
     },
+
     DereferencedPointer {
         pointer: Box<Expression>,
     },
+
     StructField {
         struct_: Box<Expression>,
         field_name: String,
@@ -239,11 +214,9 @@ pub enum LValueExpression {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(LiteralExpression),
-    Value(ValueExpression),
     Control(ControlExpression),
+    RValue(RValueExpression),
     LValue(LValueExpression),
-    Identifier(String),
 
-    NOP,
     Unit,
 }

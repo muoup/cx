@@ -1,18 +1,27 @@
-use crate::parse::ast::{Expression, GlobalStatement, AST};
-use crate::parse::parser::VarTable;
-use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
+use cranelift::codegen::verifier::verify_context;
+use crate::log_error;
+use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction};
+use crate::parse::ast::{GlobalStatement, AST};
+use crate::parse::verify::context::{FnMap, TypeMap, VerifyContext};
 use crate::parse::verify::typeless_declarations::gen_declarations;
 use crate::parse::verify::verify_expression::verify_expression;
 use crate::parse::verify::verify_type::{verify_fn_prototype, verify_type};
+use crate::util::ScopedMap;
 
 pub mod context;
+pub mod bytecode;
+
 mod typeless_declarations;
 mod verify_expression;
 mod verify_type;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
-    pub funcs: Vec<(FunctionPrototype, Vec<Expression>)>,
+    pub fn_map: FnMap,
+    pub type_map: TypeMap,
+
+    pub global_strs: Vec<String>,
+    pub fn_defs: Vec<VerifiedFunction>
 }
 
 pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
@@ -43,26 +52,30 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
         fn_map.insert(_key, prototype?);
     }
 
-    let mut context = VerifyContext {
+    let mut verify_context = VerifyContext {
         type_map,
         fn_map,
+        var_map: ScopedMap::new(),
 
-        variable_table: VarTable::new(),
         current_return_type: None,
-        merge_stack: vec![],
+        merge_stack: Vec::new()
     };
 
-    let verified_funcs = function_bodies.into_iter()
-        .map(|(name, mut body)| {
-            for statement in body.iter_mut() {
-                let _ = verify_expression(&mut context, statement)?;
-            }
+    let mut builder = BytecodeBuilder::new();
 
-            Some((context.fn_map.get(&name).cloned()?, body))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    for (name, body) in function_bodies {
+        let Some(prototype) = verify_context.get_function(name.as_str()).cloned() else {
+            log_error!("Function {} not found", name);
+        };
 
-    Some(VerifiedAST {
-        funcs: verified_funcs
-    })
+        builder.new_function(prototype);
+
+        for stmt in body.iter() {
+            verify_expression(&mut verify_context, &mut builder, stmt)?;
+        }
+
+        builder.finish_function();
+    }
+
+    builder.finish(verify_context.fn_map, verify_context.type_map)
 }

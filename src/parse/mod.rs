@@ -12,8 +12,6 @@ mod global_scope;
 mod macros;
 mod contextless_expression;
 
-
-
 pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
     let mut parser_data = ParserData {
         visibility: VisibilityMode::Package,

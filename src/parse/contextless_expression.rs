@@ -1,7 +1,7 @@
 use std::task::Context;
 use crate::lex::token::OperatorType;
 use crate::log_error;
-use crate::parse::ast::{Expression, FunctionParameter, LValueExpression, ValueExpression, ValueType, VarInitialization};
+use crate::parse::ast::{Expression, FunctionParameter, LValueExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::expression::{parse_lvalue, parse_rvalue};
 use crate::parse::parser::ParserData;
 
@@ -34,7 +34,7 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
     match expr {
         // Case 1 - Non-declarative lvalue (i.e. variable_reference)
         ContextlessExpression::Identifier(name) =>
-            Some(Expression::Identifier(name)),
+            Some(Expression::LValue(LValueExpression::Identifier(name))),
 
         ContextlessExpression::UnaryOperation {
             op: OperatorType::Multiply, operand
@@ -50,8 +50,8 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
             op: OperatorType::Access,
             left, right
         } => Some(
-            Expression::Value(
-                ValueExpression::BinaryOperation {
+            Expression::RValue(
+                RValueExpression::BinaryOperation {
                     operator: OperatorType::Access,
                     left: Box::new(contextualize_rvalue(data, *left)?),
                     right: Box::new(contextualize_rvalue(data, *right)?)
@@ -73,14 +73,14 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
 pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpression) -> Option<Expression> {
     match expr {
         ContextlessExpression::Identifier(name) =>
-            Some(Expression::Identifier(name)),
+            Some(Expression::RValue(RValueExpression::Identifier(name))),
 
         ContextlessExpression::BinaryOperation {
             op, left, right
         } => {
             Some(
-                Expression::Value(
-                    ValueExpression::BinaryOperation {
+                Expression::RValue(
+                    RValueExpression::BinaryOperation {
                         operator: op,
                         left: Box::new(contextualize_rvalue(data, *left)?),
                         right: Box::new(contextualize_rvalue(data, *right)?)
@@ -93,8 +93,8 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
             op: OperatorType::Multiply,
             operand
         } => Some(
-            Expression::Value(
-                ValueExpression::UnaryOperation {
+            Expression::RValue(
+                RValueExpression::UnaryOperation {
                     operator: OperatorType::Multiply,
                     operand: Some(Box::new(contextualize_rvalue(data, *operand)?))
                 }
@@ -109,8 +109,8 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
             };
 
             Some(
-                Expression::Value(
-                    ValueExpression::DirectFunctionCall {
+                Expression::RValue(
+                    RValueExpression::DirectFunctionCall {
                         name,
                         args: args.iter()
                             .map(|expr| contextualize_rvalue(data, expr.clone()))

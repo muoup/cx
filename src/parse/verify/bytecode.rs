@@ -1,0 +1,221 @@
+use crate::lex::token::OperatorType;
+use crate::parse::ast::ValueType;
+use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap};
+use crate::parse::verify::VerifiedAST;
+
+pub type ElementID = u32;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ValueID {
+    block_id: ElementID,
+    value_id: ElementID
+}
+
+#[derive(Debug, Clone)]
+pub struct VirtualValue {
+    pub type_: ValueType
+}
+
+#[derive(Debug)]
+pub struct VerifiedFunction {
+    pub name: String,
+    pub blocks: Vec<FunctionBlock>
+}
+
+#[derive(Debug)]
+pub struct FunctionBlock {
+    pub name: String,
+    pub body: Vec<BlockInstruction>
+}
+
+#[derive(Debug)]
+pub(crate) struct BytecodeBuilder {
+    global_strings: Vec<String>,
+    functions: Vec<VerifiedFunction>,
+
+    function_context: Option<BytecodeFunctionContext>,
+}
+
+#[derive(Debug)]
+pub(crate) struct BytecodeFunctionContext {
+    fn_name: String,
+    current_function: ElementID,
+    current_block: ElementID,
+    value_counter: ElementID,
+
+    blocks: Vec<FunctionBlock>
+}
+
+impl BytecodeBuilder {
+    pub(crate) fn new() -> Self {
+        BytecodeBuilder {
+            global_strings: Vec::new(),
+            functions: Vec::new(),
+
+            function_context: None
+        }
+    }
+
+    pub(crate) fn new_function(&mut self, prototype: FunctionPrototype) {
+        self.function_context = Some(BytecodeFunctionContext {
+            fn_name: prototype.name.clone(),
+            current_function: 0,
+            current_block: 0,
+            value_counter: 0,
+            blocks: Vec::new()
+        });
+    }
+
+    pub(crate) fn finish_function(&mut self) {
+        let context = self.function_context.take().unwrap();
+
+        self.functions.push(VerifiedFunction {
+            name: context.fn_name,
+            blocks: context.blocks
+        });
+    }
+
+    fn fun_mut(&mut self) -> &mut BytecodeFunctionContext {
+        self.function_context.as_mut()
+            .expect("Attempted to access function context with no current function selected")
+    }
+
+    fn fun(&self) -> &BytecodeFunctionContext {
+        self.function_context.as_ref()
+            .expect("Attempted to access function context with no current function selected")
+    }
+
+    pub(crate) fn add_instruction(
+        &mut self,
+        instruction: VirtualInstruction,
+        value_type: ValueType
+    ) -> Option<ValueID> {
+        let context = self.fun_mut();
+
+        context.value_counter += 1;
+
+        let virtual_value = VirtualValue {
+            type_: value_type
+        };
+
+        context.blocks[context.current_block as usize].body.push(BlockInstruction {
+            instruction,
+            value: virtual_value.clone()
+        });
+
+        Some(
+            ValueID {
+                block_id: context.current_block,
+                value_id: context.value_counter
+            }
+        )
+    }
+
+    pub(crate) fn get_variable(&self, value_id: ValueID) -> &VirtualValue {
+        &self.fun()
+            .blocks[value_id.block_id as usize]
+            .body.get(value_id.value_id as usize)
+            .unwrap()
+            .value
+    }
+
+    pub(crate) fn set_current_block(&mut self, block: ElementID) {
+        self.fun_mut().current_block = block;
+    }
+
+    pub(crate) fn create_global_string(&mut self, string: String) -> u32 {
+        self.global_strings.push(string.clone());
+        self.global_strings.len() as u32 - 1
+    }
+
+    pub(crate) fn create_block(&mut self, name: String) -> ElementID {
+        let context = self.fun_mut();
+
+        context.blocks.push(FunctionBlock {
+            name,
+            body: Vec::new()
+        });
+
+        (context.blocks.len() - 1) as ElementID
+    }
+
+    pub(crate) fn finish(self, fn_map: FnMap, type_map: TypeMap) -> Option<VerifiedAST> {
+        Some(
+            VerifiedAST {
+                fn_map,
+                type_map,
+                global_strs: self.global_strings,
+                fn_defs: self.functions
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct BlockInstruction {
+    pub instruction: VirtualInstruction,
+    pub value: VirtualValue
+}
+
+#[derive(Debug)]
+pub enum VirtualInstruction {
+    Allocate {
+        type_: ValueType
+    },
+
+    Load {
+        value: VirtualValue,
+        offset: i32,
+    },
+
+    Store {
+        identifier: String,
+        value: VirtualValue
+    },
+
+    Assign {
+        target: VirtualValue,
+        value: VirtualValue
+    },
+
+    IntegerBinOp {
+        op: OperatorType,
+        left: VirtualValue,
+        right: VirtualValue
+    },
+
+    FloatBinOp {
+        op: OperatorType,
+        left: VirtualValue,
+        right: VirtualValue
+    },
+
+    Literal {
+        bytes: [u8; 8],
+    },
+
+    StringLiteral {
+        str_id: ElementID
+    },
+
+    Call {
+        function: String,
+        args: Vec<VirtualValue>
+    },
+
+    Branch {
+        condition: VirtualValue,
+        true_block: ElementID,
+        false_block: ElementID
+    },
+
+    Jump {
+        target: ElementID
+    },
+
+    Return {
+        value: Option<VirtualValue>
+    },
+
+    NOP
+}
