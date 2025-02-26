@@ -28,10 +28,8 @@ pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut Bytec
 pub(crate) fn verify_literal(context: &mut VerifyContext, builder: &mut BytecodeBuilder, literal: &LiteralExpression) -> Option<ValueID> {
     match literal {
         LiteralExpression::IntLiteral { val, bytes } => {
-            let as_bytes = unsafe { std::mem::transmute::<i64, [u8; 8]>(*val) };
-
             builder.add_instruction(
-                VirtualInstruction::Literal { bytes: as_bytes },
+                VirtualInstruction::Literal { val: *val as u64 },
                 ValueType::Integer { bytes: *bytes, signed: true }
             )
         },
@@ -40,7 +38,7 @@ pub(crate) fn verify_literal(context: &mut VerifyContext, builder: &mut Bytecode
             let as_bytes = unsafe { std::mem::transmute::<f64, [u8; 8]>(*val) };
 
             builder.add_instruction(
-                VirtualInstruction::Literal { bytes: as_bytes },
+                VirtualInstruction::Literal { val: u64::from_le_bytes(as_bytes) },
                 ValueType::Float { bytes: *bytes }
             )
         },
@@ -58,6 +56,19 @@ pub(crate) fn verify_literal(context: &mut VerifyContext, builder: &mut Bytecode
 
 pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeBuilder, rvalue: &RValueExpression) -> Option<ValueID> {
     match rvalue {
+        RValueExpression::DirectFunctionCall {
+            name, args
+        } => {
+            let args = args.iter()
+                .map(|arg| verify_expression(context, builder, arg))
+                .collect::<Option<Vec<_>>>()?;
+
+            builder.add_instruction(
+                VirtualInstruction::DirectCall { function: name.clone(), args },
+                ValueType::Unit
+            )
+        },
+
         _ => unimplemented!("{:?}", rvalue)
     }
 }
@@ -70,6 +81,18 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
 
 pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut BytecodeBuilder, control: &ControlExpression) -> Option<ValueID> {
     match control {
+        ControlExpression::Return(expr) => {
+            let value = match expr {
+                Some(expr) => Some(verify_expression(context, builder, expr)?),
+                None => None
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::Return { value },
+                ValueType::Unit
+            )
+        },
+
         _ => unimplemented!("{:?}", control)
     }
 }

@@ -166,7 +166,7 @@ pub enum RValueExpression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ControlExpression {
-    Return(Box<Expression>),
+    Return(Option<Box<Expression>>),
     Continue, Break,
     If {
         condition: Box<Expression>,

@@ -292,14 +292,12 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             Some (
                 Expression::Control(
                     ControlExpression::Return(
-                        Box::new(
-                            if data.toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
-                                data.toks.next();
-                                Expression::Unit
-                            } else {
-                                parse_rvalue(data)?
-                            }
-                        )
+                        if data.toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
+                            data.toks.next();
+                            None
+                        } else {
+                            Some(Box::new(parse_rvalue(data)?))
+                        }
                     )
                 )
             ),

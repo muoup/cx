@@ -64,6 +64,11 @@ impl BytecodeBuilder {
             value_counter: 0,
             blocks: Vec::new()
         });
+
+        let entry_block = self.create_block("entry".to_string());
+        self.set_current_block(
+            entry_block
+        )
     }
 
     pub(crate) fn finish_function(&mut self) {
@@ -170,41 +175,41 @@ pub enum VirtualInstruction {
 
     Store {
         identifier: String,
-        value: VirtualValue
+        value: ValueID
     },
 
     Assign {
-        target: VirtualValue,
-        value: VirtualValue
+        target: ValueID,
+        value: ValueID
     },
 
     IntegerBinOp {
         op: OperatorType,
-        left: VirtualValue,
-        right: VirtualValue
+        left: ValueID,
+        right: ValueID
     },
 
     FloatBinOp {
         op: OperatorType,
-        left: VirtualValue,
-        right: VirtualValue
+        left: ValueID,
+        right: ValueID
     },
 
     Literal {
-        bytes: [u8; 8],
+        val: u64
     },
 
     StringLiteral {
         str_id: ElementID
     },
 
-    Call {
+    DirectCall {
         function: String,
-        args: Vec<VirtualValue>
+        args: Vec<ValueID>
     },
 
     Branch {
-        condition: VirtualValue,
+        condition: ValueID,
         true_block: ElementID,
         false_block: ElementID
     },
@@ -214,7 +219,7 @@ pub enum VirtualInstruction {
     },
 
     Return {
-        value: Option<VirtualValue>
+        value: Option<ValueID>
     },
 
     NOP
