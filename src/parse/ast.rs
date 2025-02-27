@@ -198,10 +198,7 @@ pub enum LValueExpression {
 
     StructField {
         struct_: Box<Expression>,
-        field_name: String,
-
-        field_type: ValueType,
-        field_offset: usize
+        field_name: String
     }
 }
 

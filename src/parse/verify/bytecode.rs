@@ -179,6 +179,13 @@ pub enum VirtualInstruction {
         type_: ValueType
     },
 
+    StructAccess {
+        struct_: ValueID,
+        type_: ValueType,
+        field_index: usize,
+        field_offset: usize
+    },
+
     Store {
         memory: ValueID,
         value: ValueID

@@ -49,15 +49,22 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
         ContextlessExpression::BinaryOperation {
             op: OperatorType::Access,
             left, right
-        } => Some(
-            Expression::RValue(
-                RValueExpression::BinaryOperation {
-                    operator: OperatorType::Access,
-                    left: Box::new(contextualize_rvalue(data, *left)?),
-                    right: Box::new(contextualize_rvalue(data, *right)?)
-                }
+        } => {
+            let left = contextualize_lvalue(data, *left)?;
+            let ContextlessExpression::Identifier(field_type) = right.as_ref() else {
+                log_error!("Invalid Struct Field: {:#?}", right);
+            };
+            let field_type = field_type.clone();
+
+            Some(
+                Expression::LValue(
+                    LValueExpression::StructField {
+                        struct_: Box::new(left),
+                        field_name: field_type
+                    }
+                )
             )
-        ),
+        },
 
         ContextlessExpression::UnambiguousExpression(expr) => Some(expr),
 
@@ -76,18 +83,36 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
             Some(Expression::RValue(RValueExpression::Identifier(name))),
 
         ContextlessExpression::BinaryOperation {
-            op, left, right
+            op: OperatorType::Access,
+            left, right
         } => {
+            let left = contextualize_lvalue(data, *left)?;
+            let ContextlessExpression::Identifier(field_type) = right.as_ref() else {
+                log_error!("Invalid Struct Field: {:#?}", right);
+            };
+            let field_type = field_type.clone();
+
             Some(
                 Expression::RValue(
-                    RValueExpression::BinaryOperation {
-                        operator: op,
-                        left: Box::new(contextualize_rvalue(data, *left)?),
-                        right: Box::new(contextualize_rvalue(data, *right)?)
+                    RValueExpression::StructFieldValue {
+                        struct_: Box::new(left),
+                        field_name: field_type
                     }
                 )
             )
         },
+
+        ContextlessExpression::BinaryOperation {
+            op, left, right
+        } => Some(
+            Expression::RValue(
+                RValueExpression::BinaryOperation {
+                    operator: op,
+                    left: Box::new(contextualize_rvalue(data, *left)?),
+                    right: Box::new(contextualize_rvalue(data, *right)?)
+                }
+            )
+        ),
 
         ContextlessExpression::UnaryOperation {
             op: OperatorType::Multiply,

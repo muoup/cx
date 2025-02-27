@@ -1,8 +1,9 @@
 use cranelift::codegen::ir;
 use crate::log_error;
-use crate::parse::ast::{ControlExpression, Expression, LValueExpression, LiteralExpression, RValueExpression, ValueType};
+use crate::parse::ast::{ControlExpression, Expression, LValueExpression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
 use crate::parse::verify::context::VerifyContext;
+use crate::parse::verify::verify_type::get_instrinic_type;
 
 pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                                 expression: &Expression) -> Option<ValueID> {
@@ -135,12 +136,141 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             )
         },
 
+        RValueExpression::Assignment {
+            operator, left, right
+        } => {
+            let left = verify_expression(context, builder, left)?;
+            let right = verify_expression(context, builder, right)?;
+
+            let right = match operator {
+                Some(op) => {
+                    let left_type = builder.get_type(left)?.clone();
+                    let loaded_left = builder.add_instruction(
+                        VirtualInstruction::Load {
+                            value: left,
+                            type_: left_type.clone(),
+                        },
+                        left_type.clone()
+                    )?;
+
+                    builder.add_instruction(
+                        VirtualInstruction::IntegerBinOp {
+                            op: op.clone(),
+                            left: loaded_left,
+                            right
+                        },
+                        left_type
+                    )?
+                },
+                None => right
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::Assign {
+                    target: left,
+                    value: right
+                },
+                builder.get_type(right)?.clone()
+            )
+        },
+
+        RValueExpression::StructFieldValue {
+            struct_, field_name
+        } => {
+            let struct_ = verify_expression(context, builder, struct_)?;
+            let struct_type = builder.get_type(struct_)?;
+            let intrin_type = get_instrinic_type(&context.type_map, struct_type)?.clone();
+
+            let ValueType::Structured { fields } = intrin_type else {
+                log_error!("Cannot access field of non-structured type!")
+            };
+
+            let mut size_counter = 0usize;
+
+            for (i, field) in fields.iter().enumerate() {
+                if &field.name == field_name {
+                    let field_id = builder.add_instruction(
+                        VirtualInstruction::StructAccess {
+                            struct_,
+                            type_: field.type_.clone(),
+                            field_index: i,
+                            field_offset: size_counter,
+                        },
+                        field.type_.clone()
+                    )?;
+
+                    return builder.add_instruction(
+                        VirtualInstruction::Load {
+                            value: field_id,
+                            type_: field.type_.clone()
+                        },
+                        field.type_.clone()
+                    )
+                }
+            }
+
+            log_error!("Unknown field {} in struct", field_name)
+        },
+
         _ => unimplemented!("{:?}", rvalue)
     }
 }
 
 pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeBuilder, lvalue: &LValueExpression) -> Option<ValueID> {
     match lvalue {
+        LValueExpression::Initialization(
+            VarInitialization { name, type_ }
+        ) => {
+            let alloc = builder.add_instruction(
+                VirtualInstruction::Allocate {
+                    type_: type_.clone()
+                },
+                type_.clone()
+            )?;
+
+            context.insert_variable(name.clone(), alloc);
+
+            Some(alloc)
+        },
+
+        LValueExpression::Identifier(name) => {
+            let Some(var) = context.get_variable(name) else {
+                log_error!("Variable not found: {}", name)
+            };
+
+            Some(var.clone())
+        }
+
+        LValueExpression::StructField {
+            struct_, field_name
+        } => {
+            let struct_ = verify_expression(context, builder, struct_)?;
+            let struct_type = builder.get_type(struct_)?;
+            let intrin_type = get_instrinic_type(&context.type_map, struct_type)?;
+
+            let ValueType::Structured { fields } = intrin_type else {
+                log_error!("Cannot access field of non-structured type!")
+            };
+
+            let mut size_counter = 0usize;
+
+            for (i, field) in fields.iter().enumerate() {
+                if &field.name == field_name {
+                    return builder.add_instruction(
+                        VirtualInstruction::StructAccess {
+                            struct_,
+                            type_: field.type_.clone(),
+                            field_index: i,
+                            field_offset: size_counter,
+                        },
+                        field.type_.clone()
+                    )
+                }
+            }
+
+            log_error!("Unknown field {} in struct", field_name)
+        },
+
         _ => unimplemented!("{:?}", lvalue)
     }
 }
