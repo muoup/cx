@@ -58,18 +58,25 @@ pub(crate) fn parse_lvals(data: &mut ParserData, splitter: Token, terminator: To
     parse_list(data, splitter, terminator, parse_lvalue)
 }
 
-fn compress_stack(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
-    while let Some(op) = op_stack.pop() {
-        let right = expr_stack.pop()?;
-        let left = expr_stack.pop()?;
+fn consume_expr(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+    let right = expr_stack.pop()?;
+    let left = expr_stack.pop()?;
+    let op = op_stack.pop()?;
 
-        expr_stack.push(
-            ContextlessExpression::BinaryOperation {
-                op,
-                left: Box::new(left),
-                right: Box::new(right)
-            }
-        );
+    expr_stack.push(
+        ContextlessExpression::BinaryOperation {
+            op,
+            left: Box::new(left),
+            right: Box::new(right)
+        }
+    );
+
+    Some(())
+}
+
+fn compress_stack(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
+    while !op_stack.is_empty() {
+        consume_expr(expr_stack, op_stack)?;
     }
 
     Some(())
@@ -87,7 +94,9 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
             let curr_precedence = op.precedence();
 
             if curr_precedence < prev_precedence {
-                compress_stack(expr_stack, op_stack);
+                compress_stack(expr_stack, op_stack)?;
+            } else if curr_precedence == prev_precedence {
+                consume_expr(expr_stack, op_stack)?;
             }
 
             op_stack.push(op);
