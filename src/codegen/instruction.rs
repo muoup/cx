@@ -1,5 +1,7 @@
+use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
-use cranelift::prelude::{Block, InstBuilder, Value};
+use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataId, Module};
 use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
@@ -9,6 +11,26 @@ use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<Value> {
     match &instruction.instruction {
+        VirtualInstruction::Allocate {
+            size
+        } => {
+            let slot = context.builder.create_sized_stack_slot(
+                StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    StackSize::from(*size as u32),
+                    0u8
+                )
+            );
+
+            Some(
+                context.builder.ins().stack_addr(
+                    context.pointer_type,
+                    slot,
+                    0
+                )
+            )
+        }
+
         VirtualInstruction::Literal {
             val
         } => Some(context.builder.ins().iconst(ir::Type::int(32)?, *val as i64)),
@@ -74,15 +96,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let val = context.variable_table.get(value).cloned().unwrap();
             let cranelift_type = get_cranelift_type(type_, context.type_map);
 
-            context.builder.ins()
-                .load(
-                    cranelift_type,
-                    ir::MemFlags::new(),
-                    val,
-                    0
-                );
-
-            Some(val)
+            Some(
+                context.builder.ins()
+                    .load(
+                        cranelift_type,
+                        ir::MemFlags::new(),
+                        val,
+                        0
+                    )
+            )
         },
 
         VirtualInstruction::IntegerBinOp {
@@ -128,6 +150,27 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             Some(Value::from_u32(0))
         },
+
+        VirtualInstruction::StructAccess {
+            struct_, type_, field_offset, field_index
+        } => {
+            let ptr = context.variable_table.get(struct_)?.clone();
+
+            Some(context.builder.ins().iadd_imm(ptr, *field_offset as i64))
+        },
+
+        VirtualInstruction::Assign {
+            target, value
+        } => {
+            let target = context.variable_table.get(target)?;
+            let value = context.variable_table.get(value)?;
+
+            context.builder.ins().store(MemFlags::new(), value.clone(), target.clone(), 0);
+
+            Some(
+                Value::from_u32(0)
+            )
+        }
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }

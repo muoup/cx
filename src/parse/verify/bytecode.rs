@@ -171,7 +171,7 @@ pub enum VirtualInstruction {
     },
 
     Allocate {
-        type_: ValueType
+        size: usize
     },
 
     Load {

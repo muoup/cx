@@ -3,7 +3,7 @@ use crate::log_error;
 use crate::parse::ast::{ControlExpression, Expression, LValueExpression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
 use crate::parse::verify::context::VerifyContext;
-use crate::parse::verify::verify_type::get_instrinic_type;
+use crate::parse::verify::verify_type::{get_instrinic_type, get_type_size};
 
 pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                                 expression: &Expression) -> Option<ValueID> {
@@ -221,9 +221,10 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
         LValueExpression::Initialization(
             VarInitialization { name, type_ }
         ) => {
+            let size = get_type_size(&context.type_map, type_)?;
             let alloc = builder.add_instruction(
                 VirtualInstruction::Allocate {
-                    type_: type_.clone()
+                    size
                 },
                 type_.clone()
             )?;
