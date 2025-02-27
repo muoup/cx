@@ -2,7 +2,7 @@ use crate::assert_token_matches;
 use crate::log_error;
 use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
+use crate::parse::ast::{ControlExpression, Expression, FunctionParameter, LiteralExpression, ValueExpression, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, detangle_initialization, ContextlessExpression};
 use crate::parse::parser::{parse_body, ParserData, TokenIter};
 use std::fmt::Debug;
@@ -58,25 +58,18 @@ pub(crate) fn parse_lvals(data: &mut ParserData, splitter: Token, terminator: To
     parse_list(data, splitter, terminator, parse_lvalue)
 }
 
-fn consume_expr(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
-    let right = expr_stack.pop()?;
-    let left = expr_stack.pop()?;
-    let op = op_stack.pop()?;
-
-    expr_stack.push(
-        ContextlessExpression::BinaryOperation {
-            op,
-            left: Box::new(left),
-            right: Box::new(right)
-        }
-    );
-
-    Some(())
-}
-
 fn compress_stack(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<OperatorType>) -> Option<()> {
-    while !op_stack.is_empty() {
-        consume_expr(expr_stack, op_stack)?;
+    while let Some(op) = op_stack.pop() {
+        let right = expr_stack.pop()?;
+        let left = expr_stack.pop()?;
+
+        expr_stack.push(
+            ContextlessExpression::BinaryOperation {
+                op,
+                left: Box::new(left),
+                right: Box::new(right)
+            }
+        );
     }
 
     Some(())
@@ -94,9 +87,7 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
             let curr_precedence = op.precedence();
 
             if curr_precedence < prev_precedence {
-                compress_stack(expr_stack, op_stack)?;
-            } else if curr_precedence == prev_precedence {
-                consume_expr(expr_stack, op_stack)?;
+                compress_stack(expr_stack, op_stack);
             }
 
             op_stack.push(op);
@@ -111,8 +102,8 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
 
             expr_stack.push(
                 ContextlessExpression::UnambiguousExpression(
-                    Expression::RValue(
-                        RValueExpression::Assignment {
+                    Expression::Value(
+                        ValueExpression::Assignment {
                             operator,
 
                             left: Box::new(contextualize_lvalue(data, left)?),
@@ -127,11 +118,6 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
 
         _ => {
             let top_expr = expr_stack.pop()?;
-
-            if matches!(top_expr, ContextlessExpression::UnambiguousExpression(_)) {
-                expr_stack.push(top_expr);
-                return None;
-            }
 
             if let Some(expr) = parse_expression(data) {
                 expr_stack.push(
@@ -183,7 +169,7 @@ pub(crate) fn parse_expression(data: &mut ParserData) -> Option<ContextlessExpre
     compress_stack(&mut expr_stack, &mut op_stack);
 
     if expr_stack.is_empty() {
-        return Some(ContextlessExpression::UnambiguousExpression(Expression::Unit));
+        return Some(ContextlessExpression::UnambiguousExpression(Expression::NOP));
     }
 
     assert_eq!(expr_stack.len(), 1);
@@ -306,12 +292,14 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             Some (
                 Expression::Control(
                     ControlExpression::Return(
-                        if data.toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
-                            data.toks.next();
-                            None
-                        } else {
-                            Some(Box::new(parse_rvalue(data)?))
-                        }
+                        Box::new(
+                            if data.toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
+                                data.toks.next();
+                                Expression::Unit
+                            } else {
+                                parse_rvalue(data)?
+                            }
+                        )
                     )
                 )
             ),

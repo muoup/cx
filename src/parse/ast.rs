@@ -36,6 +36,12 @@ pub struct StructDefinition {
     pub fields: Vec<(String, ValueType)>
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionParameter {
+    pub name: String,
+    pub type_: ValueType
+}
+
 #[derive(Debug)]
 pub enum FirstPassGlobals {
     Struct {
@@ -115,8 +121,7 @@ pub enum IntegerCastType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum RValueExpression {
-    Identifier(String),
+pub enum ValueExpression {
     DirectFunctionCall {
         name: String,
         args: Vec<Expression>
@@ -160,7 +165,7 @@ pub enum RValueExpression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ControlExpression {
-    Return(Option<Box<Expression>>),
+    Return(Box<Expression>),
     Continue, Break,
     If {
         condition: Box<Expression>,
@@ -182,32 +187,63 @@ pub enum ControlExpression {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum LValueExpression {
+pub enum UnverifiedExpression {
     Identifier(String),
 
-    Initialization(VarInitialization),
+    CompoundExpression {
+        prefix: Box<Expression>,
+        suffix: Box<Expression>
+    },
 
+    Cast {
+        expr: Box<Expression>,
+        type_: String
+    },
+
+    FunctionCall {
+        name: Box<Expression>,
+        args: Vec<Expression>
+    },
+
+    UnaryOperation {
+        operator: OperatorType,
+        operand: Box<Expression>
+    },
+
+    BinaryOperation {
+        operator: OperatorType,
+        left: Box<Expression>,
+        right: Box<Expression>
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LValueExpression {
+    Initialization(VarInitialization),
     Variable {
         name: String,
         _type: ValueType
     },
-
     DereferencedPointer {
         pointer: Box<Expression>,
     },
-
     StructField {
         struct_: Box<Expression>,
-        field_name: String
+        field_name: String,
+
+        field_type: ValueType,
+        field_offset: usize
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(LiteralExpression),
+    Value(ValueExpression),
     Control(ControlExpression),
-    RValue(RValueExpression),
     LValue(LValueExpression),
+    Identifier(String),
 
+    NOP,
     Unit,
 }

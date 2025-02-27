@@ -94,34 +94,3 @@ pub(crate) fn same_type(type_map: &TypeMap, t1: &ValueType, t2: &ValueType) -> b
         _ => false,
     }
 }
-
-pub(crate) fn get_instrinic_type<'a>(type_map: &'a TypeMap, type_: &'a ValueType) -> Option<&'a ValueType> {
-    match type_ {
-        ValueType::Identifier(name)
-            => type_map.get(name),
-
-        _ => Some(type_)
-    }
-}
-
-pub(crate) fn get_type_size(type_map: &TypeMap, type_: &ValueType) -> Option<usize> {
-    match type_ {
-        ValueType::Float { bytes } => Some(*bytes as usize),
-        ValueType::Integer { bytes, .. } => Some(*bytes as usize),
-
-        ValueType::Array { _type, size }
-            => Some(get_type_size(type_map, _type)? * size),
-
-        ValueType::Structured { fields } =>
-            fields.iter()
-                .map(|field| get_type_size(type_map, &field.type_))
-                .sum(),
-
-        ValueType::Unit => Some(0),
-        ValueType::PointerTo(_) => Some(8),
-        ValueType::Identifier(name) =>
-            type_map.get(name)
-                .map(|_type| get_type_size(type_map, _type))
-                .flatten()
-    }
-}

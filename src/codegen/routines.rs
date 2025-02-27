@@ -1,18 +1,17 @@
+use crate::codegen::codegen::FunctionState;
 use crate::codegen::value_type::get_cranelift_type;
-use crate::codegen::{FunctionState, GlobalState, VariableTable};
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::GlobalValue;
 use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, Module};
-use cranelift_object::ObjectModule;
 
-pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Option<Value> {
+pub(crate) fn stack_alloca(context: &mut FunctionState, type_: ValueType) -> Option<Value> {
     match type_ {
         ValueType::Structured { fields } => {
             let field_values = fields.iter()
-                .map(|init| stack_alloca(context, &init.type_))
+                .map(|(_, type_)| stack_alloca(context, type_.clone()))
                 .collect::<Vec<_>>();
 
             Some(field_values[0]?.to_owned())
@@ -20,16 +19,13 @@ pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Op
 
         _ => allocate_variable(
             &mut context.builder,
-            &mut context.variable_table,
-            "alloca",
-            get_cranelift_type(type_, context.type_map),
+            get_cranelift_type(&type_),
             None
         )
     }
 }
 
-pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &mut VariableTable,
-                                name: &str, type_: ir::Type, initial_value: Option<ir::Value>) -> Option<Value> {
+pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, type_: ir::Type, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, type_.bytes(), 1);
     let stack_slot = builder.create_sized_stack_slot(stack_slot_data);
     let stack_pointer = builder.ins().stack_addr(type_, stack_slot, 0);
@@ -55,23 +51,26 @@ pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs
             OperatorType::LessEqual => builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, lhs, rhs),
             OperatorType::Greater => builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, lhs, rhs),
             OperatorType::GreaterEqual => builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, lhs, rhs),
-            _ => panic!("Unimplemented operator {:?}", op)
+            _ => panic!("Unimplemented operator {:#?}", op)
         }
     )
 }
 
-pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> GlobalValue {
-    let id = object_module.declare_anonymous_data(
+pub(crate) fn string_literal(context: &mut FunctionState, str: &str) -> GlobalValue {
+    let id = context.object_module.declare_anonymous_data(
         false,
         false
     ).unwrap();
 
     let mut data = DataDescription::new();
-    let mut str_data = str.to_owned().into_bytes();
+    let mut str_data = str.as_bytes().to_vec();
     str_data.push('\0' as u8);
 
     data.define(str_data.into_boxed_slice());
 
-    object_module.define_data(id, &data).unwrap();
-    object_module.declare_data_in_data(id, &mut data)
+    context.object_module.define_data(id, &data).unwrap();
+    context.object_module.declare_data_in_func(
+        id,
+        context.builder.func
+    )
 }
