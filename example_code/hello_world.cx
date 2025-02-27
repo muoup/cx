@@ -1,6 +1,6 @@
 int puts(char* str);
 
-int main() {
+i64 main() {
     puts("Hello, World!");
     return 0;
 }

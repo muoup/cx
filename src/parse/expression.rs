@@ -2,7 +2,7 @@ use crate::assert_token_matches;
 use crate::log_error;
 use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::ast::{ControlExpression, Expression, FunctionParameter, LiteralExpression, RValueExpression, ValueType, VarInitialization};
+use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, detangle_initialization, ContextlessExpression};
 use crate::parse::parser::{parse_body, ParserData, TokenIter};
 use std::fmt::Debug;

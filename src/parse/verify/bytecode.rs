@@ -5,10 +5,10 @@ use crate::parse::verify::VerifiedAST;
 
 pub type ElementID = u32;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ValueID {
-    block_id: ElementID,
-    value_id: ElementID
+    pub block_id: ElementID,
+    pub value_id: ElementID
 }
 
 #[derive(Debug, Clone)]
@@ -111,7 +111,7 @@ impl BytecodeBuilder {
         Some(
             ValueID {
                 block_id: context.current_block,
-                value_id: context.value_counter
+                value_id: context.value_counter - 1
             }
         )
     }

@@ -36,12 +36,6 @@ pub struct StructDefinition {
     pub fields: Vec<(String, ValueType)>
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionParameter {
-    pub name: String,
-    pub type_: ValueType
-}
-
 #[derive(Debug)]
 pub enum FirstPassGlobals {
     Struct {

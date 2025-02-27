@@ -1,7 +1,7 @@
 use std::task::Context;
 use crate::lex::token::OperatorType;
 use crate::log_error;
-use crate::parse::ast::{Expression, FunctionParameter, LValueExpression, RValueExpression, ValueType, VarInitialization};
+use crate::parse::ast::{Expression, LValueExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::expression::{parse_lvalue, parse_rvalue};
 use crate::parse::parser::ParserData;
 

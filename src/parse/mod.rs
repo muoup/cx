@@ -24,7 +24,5 @@ pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
     let ast = parser::parse_ast(&mut parser_data)?;
     let verified_ast = verify::verify_ast(ast)?;
 
-    println!("{:#?}", verified_ast);
-
     Some(verified_ast)
 }
