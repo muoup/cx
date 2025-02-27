@@ -1,4 +1,5 @@
 use crate::lex::token::Token;
+use crate::log_error;
 use crate::parse::parser::{ParserData, TokenIter, VarTable, VisibilityMode};
 use crate::parse::verify::VerifiedAST;
 
@@ -21,8 +22,12 @@ pub fn parse_ast(toks: &[Token]) -> Option<VerifiedAST> {
         },
     };
 
-    let ast = parser::parse_ast(&mut parser_data)?;
-    let verified_ast = verify::verify_ast(ast)?;
+    let Some(ast) = parser::parse_ast(&mut parser_data) else {
+        log_error!("Failed to parse AST");
+    };
+    let Some(verified_ast) = verify::verify_ast(ast) else {
+        log_error!("Failed to verify AST");
+    };
 
     Some(verified_ast)
 }

@@ -31,4 +31,12 @@ impl VerifyContext {
     pub(crate) fn get_type(&self, name: &str) -> Option<&ValueType> {
         self.type_map.get(name)
     }
+
+    pub(crate) fn get_variable(&self, name: &str) -> Option<&ValueID> {
+        self.var_map.get(name)
+    }
+
+    pub(crate) fn insert_variable(&mut self, name: String, id: ValueID) {
+        self.var_map.insert(name, id);
+    }
 }

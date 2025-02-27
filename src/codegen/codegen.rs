@@ -1,10 +1,8 @@
-use std::iter;
-use std::process::id;
 use crate::codegen::instruction::codegen_instruction;
-use crate::codegen::value_type::get_cranelift_abi_type;
+use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
 use crate::parse::ast::{ValueType, VarInitialization};
-use crate::parse::verify::bytecode::{ValueID, VerifiedFunction};
+use crate::parse::verify::bytecode::{ValueID, VerifiedFunction, VirtualInstruction};
 use crate::parse::verify::context::FunctionPrototype;
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{EntityRef, FunctionBuilder, FunctionBuilderContext, Signature};
@@ -58,7 +56,10 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         type_map: &global_state.type_map,
         fn_map: &global_state.fn_map,
 
+        fn_params: Vec::new(),
+
         builder,
+        function_prototype: &bc_func.prototype,
         variable_table: var_table,
         global_strs: &global_state.global_strs,
         pointer_type,
@@ -66,9 +67,19 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         current_block_exited: false
     };
 
+
     for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
         let block = context.builder.create_block();
         context.builder.switch_to_block(block);
+
+        if block_id == 0 {
+            for (arg_id, arg) in bc_func.prototype.args.iter().enumerate() {
+                let cranelift_type = get_cranelift_type(&arg.type_, context.type_map);
+                let arg = context.builder.append_block_param(block, cranelift_type);
+
+                context.fn_params.push(arg);
+            }
+        }
 
         for (value_id, instr) in fn_block.body.iter().enumerate() {
             let val = codegen_instruction(&mut context, &instr)?;
@@ -78,6 +89,21 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
             };
 
             context.variable_table.insert(id, val);
+
+            match instr.instruction {
+                VirtualInstruction::Return { .. } |
+                VirtualInstruction::Branch { .. } => {
+                    if value_id + 1 < fn_block.body.len() {
+                        println!("Redundant instructions after terminator in block {}", block_id);
+
+                        for instr in fn_block.body.iter().skip(value_id + 1) {
+                            println!("{:?}", instr);
+                        }
+                    }
+                    break;
+                },
+                _ => {}
+            }
         }
     }
 

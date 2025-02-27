@@ -1,6 +1,8 @@
+use std::iter;
+use std::process::id;
 use cranelift::codegen::verifier::verify_context;
 use crate::log_error;
-use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction};
+use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualInstruction};
 use crate::parse::ast::{GlobalStatement, AST};
 use crate::parse::verify::context::{FnMap, TypeMap, VerifyContext};
 use crate::parse::verify::typeless_declarations::gen_declarations;
@@ -68,7 +70,20 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
             log_error!("Function {} not found", name);
         };
 
-        builder.new_function(prototype);
+        builder.new_function(prototype.clone());
+
+        for (i, arg) in prototype.args.iter().enumerate() {
+            let value = builder.add_instruction(
+                VirtualInstruction::FunctionParameter {
+                    param_index: i as u32,
+                    name: arg.name.clone(),
+                    type_: arg.type_.clone()
+                },
+                arg.type_.clone()
+            )?;
+
+            verify_context.insert_variable(arg.name.clone(), value);
+        }
 
         for stmt in body.iter() {
             verify_expression(&mut verify_context, &mut builder, stmt)?;

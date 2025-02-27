@@ -10,7 +10,7 @@ pub(crate) fn gen_fn_decls(ast: &AST) -> Option<FnMap> {
 
     for statement in &ast.statements {
         let GlobalStatement::Function {
-            prototype, body
+            prototype, ..
         } = statement else {
             continue;
         };

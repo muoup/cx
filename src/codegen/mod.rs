@@ -8,7 +8,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};
 use crate::codegen::routines::string_literal;
 use crate::parse::verify::bytecode::ValueID;
-use crate::parse::verify::context::{FnMap, TypeMap};
+use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap};
 use crate::parse::verify::VerifiedAST;
 
 mod codegen;
@@ -28,6 +28,10 @@ pub(crate) struct FunctionState<'a> {
     pub(crate) fn_map: &'a FnMap,
 
     pub(crate) builder: FunctionBuilder<'a>,
+
+    pub(crate) fn_params: Vec<Value>,
+
+    pub(crate) function_prototype: &'a FunctionPrototype,
     pub(crate) variable_table: VariableTable,
 
     pub(crate) pointer_type: ir::Type,
@@ -83,9 +87,9 @@ pub fn ast_codegen(ast: &VerifiedAST, output: &str) -> Option<()> {
     }
 
     for func in &ast.fn_defs {
-        let func_id = global_state.function_ids.get(&func.name).cloned().unwrap();
-        let func_sig = global_state.function_sigs.remove(&func.name).unwrap_or_else(|| {
-            panic!("Function signature redefine: {}", func.name);
+        let func_id = global_state.function_ids.get(&func.prototype.name).cloned().unwrap();
+        let func_sig = global_state.function_sigs.remove(&func.prototype.name).unwrap_or_else(|| {
+            panic!("Function signature redefine: {}", func.prototype.name);
         });
 
         codegen_function(&mut global_state, func_id, func_sig, func)?;

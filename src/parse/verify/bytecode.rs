@@ -18,13 +18,12 @@ pub struct VirtualValue {
 
 #[derive(Debug)]
 pub struct VerifiedFunction {
-    pub name: String,
+    pub prototype: FunctionPrototype,
     pub blocks: Vec<FunctionBlock>
 }
 
 #[derive(Debug)]
 pub struct FunctionBlock {
-    pub name: String,
     pub body: Vec<BlockInstruction>
 }
 
@@ -38,10 +37,9 @@ pub(crate) struct BytecodeBuilder {
 
 #[derive(Debug)]
 pub(crate) struct BytecodeFunctionContext {
-    fn_name: String,
+    fn_prototype: FunctionPrototype,
     current_function: ElementID,
     current_block: ElementID,
-    value_counter: ElementID,
 
     blocks: Vec<FunctionBlock>
 }
@@ -58,14 +56,13 @@ impl BytecodeBuilder {
 
     pub(crate) fn new_function(&mut self, prototype: FunctionPrototype) {
         self.function_context = Some(BytecodeFunctionContext {
-            fn_name: prototype.name.clone(),
+            fn_prototype: prototype,
             current_function: 0,
             current_block: 0,
-            value_counter: 0,
             blocks: Vec::new()
         });
 
-        let entry_block = self.create_block("entry".to_string());
+        let entry_block = self.create_block();
         self.set_current_block(
             entry_block
         )
@@ -75,7 +72,7 @@ impl BytecodeBuilder {
         let context = self.function_context.take().unwrap();
 
         self.functions.push(VerifiedFunction {
-            name: context.fn_name,
+            prototype: context.fn_prototype,
             blocks: context.blocks
         });
     }
@@ -97,13 +94,13 @@ impl BytecodeBuilder {
     ) -> Option<ValueID> {
         let context = self.fun_mut();
 
-        context.value_counter += 1;
-
         let virtual_value = VirtualValue {
             type_: value_type
         };
 
-        context.blocks[context.current_block as usize].body.push(BlockInstruction {
+        let body = &mut context.blocks[context.current_block as usize].body;
+
+        body.push(BlockInstruction {
             instruction,
             value: virtual_value.clone()
         });
@@ -111,17 +108,21 @@ impl BytecodeBuilder {
         Some(
             ValueID {
                 block_id: context.current_block,
-                value_id: context.value_counter - 1
+                value_id: (body.len() - 1) as ElementID,
             }
         )
     }
 
-    pub(crate) fn get_variable(&self, value_id: ValueID) -> &VirtualValue {
-        &self.fun()
+    pub(crate) fn get_variable(&self, value_id: ValueID) -> Option<&VirtualValue> {
+        self.fun()
             .blocks[value_id.block_id as usize]
             .body.get(value_id.value_id as usize)
-            .unwrap()
-            .value
+            .map(|v| &v.value)
+    }
+
+    pub(crate) fn get_type(&self, value_id: ValueID) -> Option<&ValueType> {
+        self.get_variable(value_id)
+            .map(|v| &v.type_)
     }
 
     pub(crate) fn set_current_block(&mut self, block: ElementID) {
@@ -133,11 +134,10 @@ impl BytecodeBuilder {
         self.global_strings.len() as u32 - 1
     }
 
-    pub(crate) fn create_block(&mut self, name: String) -> ElementID {
+    pub(crate) fn create_block(&mut self) -> ElementID {
         let context = self.fun_mut();
 
         context.blocks.push(FunctionBlock {
-            name,
             body: Vec::new()
         });
 
@@ -164,17 +164,23 @@ pub struct BlockInstruction {
 
 #[derive(Debug)]
 pub enum VirtualInstruction {
+    FunctionParameter {
+        name: String,
+        type_: ValueType,
+        param_index: u32
+    },
+
     Allocate {
         type_: ValueType
     },
 
     Load {
-        value: VirtualValue,
-        offset: i32,
+        value: ValueID,
+        type_: ValueType
     },
 
     Store {
-        identifier: String,
+        memory: ValueID,
         value: ValueID
     },
 
