@@ -2,5 +2,6 @@ int puts(char* str);
 
 i64 main() {
     puts("Hello, World!");
+    puts("This is a CX program!");
     return 0;
 }

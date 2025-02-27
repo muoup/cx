@@ -119,6 +119,11 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
         _ => {
             let top_expr = expr_stack.pop()?;
 
+            if matches!(top_expr, ContextlessExpression::UnambiguousExpression(_)) {
+                expr_stack.push(top_expr);
+                return None;
+            }
+
             if let Some(expr) = parse_expression(data) {
                 expr_stack.push(
                     ContextlessExpression::CompoundExpression {

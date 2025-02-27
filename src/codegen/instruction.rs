@@ -27,9 +27,11 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let func_id = context.function_ids.get(function).cloned().unwrap();
             let func_ref = context.object_module.declare_func_in_func(func_id, &mut context.builder.func);
 
-            let args = args.iter().map(|arg| {
-                context.variable_table.get(&arg).cloned().unwrap()
-            }).collect::<Vec<Value>>();
+            let args = args.iter()
+                .map(|arg| {
+                    context.variable_table.get(&arg).cloned().unwrap()
+                })
+                .collect::<Vec<Value>>();
 
             let inst = context.builder.ins().call(func_ref, args.as_slice());
 

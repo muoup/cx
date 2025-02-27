@@ -120,8 +120,6 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
             )
         },
 
-        ContextlessExpression::UnambiguousExpression(expr) => Some(expr),
-
         _ => contextualize_lvalue(data, expr)
     }
 }
