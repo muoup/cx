@@ -2,13 +2,13 @@ int putchar(int c);
 
 int fib(int n) {
     if (n < 2) {
-        return fib(n - 1) + fib(n - 2);
+        return n;
     }
 
-    return n;
+    return fib(n - 1) + fib(n - 2);
 }
 
 int main() {
-    putchar('0' + fib(5));
+    putchar('0' + fib(6));
     return 0;
 }
