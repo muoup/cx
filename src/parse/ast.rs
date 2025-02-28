@@ -148,14 +148,9 @@ pub enum RValueExpression {
         expr: Box<Expression>,
         type_: ValueType
     },
-    StructFieldValue {
-        struct_: Box<Expression>,
-        field_name: String
-    },
-    VariableReference {
-        name: String,
-        _type: ValueType
-    },
+    LoadedLValue {
+        lvalue: Box<Expression>
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -2,7 +2,7 @@ use cranelift::codegen::ir;
 use crate::parse::ast::{ValueType};
 use crate::parse::verify::context::TypeMap;
 
-pub(crate) fn get_cranelift_abi_type(val_type: &ValueType, type_map: &TypeMap) -> ir::AbiParam {
+pub(crate) fn get_cranelift_abi_type(type_map: &TypeMap, val_type: &ValueType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type, type_map))
 }
 
@@ -25,7 +25,7 @@ pub(crate) fn get_cranelift_type(val_type: &ValueType, type_map: &TypeMap) -> ir
             }
         },
         ValueType::PointerTo(_) | ValueType::Array { .. } | ValueType::Structured { .. } => ir::types::I64,
-        ValueType::Unit => ir::types::INVALID,
+        ValueType::Unit => panic!("Unit type has no representation"),
         ValueType::Identifier(_type) => {
             let type_ = type_map.get(_type).unwrap();
             get_cranelift_type(type_, type_map)

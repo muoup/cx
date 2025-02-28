@@ -9,6 +9,9 @@ use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
 use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
 
+/**
+ *  May or may not return a valid, panics if error occurs
+ */
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<Value> {
     match &instruction.instruction {
         VirtualInstruction::Allocate {
@@ -64,7 +67,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             context.builder.inst_results(inst)
                 .first()
                 .cloned()
-                .or_else(|| Some(Value::from_u32(0)))
+                .or_else(|| None)
         }
 
         VirtualInstruction::Return { value } => {
@@ -78,11 +81,13 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     context.builder.ins().return_(&[])
                 },
             };
-            Some(Value::from_u32(0))
+
+            None
         },
 
-        VirtualInstruction::FunctionParameter { type_, name, param_index } => {
+        VirtualInstruction::FunctionParameter { name, param_index } => {
             let value = context.fn_params.get(*param_index as usize).cloned().unwrap();
+            let type_ = &instruction.value.type_;
             let crane_type = get_cranelift_type(type_, context.type_map);
 
             allocate_variable(
@@ -92,8 +97,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
-        VirtualInstruction::Load { value, type_ } => {
+        VirtualInstruction::Load { value } => {
             let val = context.variable_table.get(value).cloned().unwrap();
+            let type_ = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(type_, context.type_map);
 
             Some(
@@ -118,7 +124,13 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 OperatorType::Subtract => context.builder.ins().isub(left, right),
                 OperatorType::Multiply => context.builder.ins().imul(left, right),
                 OperatorType::Divide => context.builder.ins().udiv(left, right),
+
                 OperatorType::Less => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
+                OperatorType::Greater => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
+                OperatorType::LessEqual => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
+                OperatorType::GreaterEqual => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
+                OperatorType::Equal => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
+                OperatorType::NotEqual => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
 
                 _ => unimplemented!("Operator not implemented: {:?}", op)
             };
@@ -144,7 +156,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Jump {
             target
         } => {
-            let target = Block::from_u32(*target as u32);
+            let target = Block::from_u32(*target + 1);
 
             context.builder.ins().jump(target, &[]);
 
@@ -152,9 +164,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
 
         VirtualInstruction::StructAccess {
-            struct_, type_, field_offset, field_index
+            struct_, field_offset, ..
         } => {
-            let ptr = context.variable_table.get(struct_)?.clone();
+            let ptr = context.variable_table.get(struct_).unwrap().clone();
+            let _type = &instruction.value.type_;
 
             Some(context.builder.ins().iadd_imm(ptr, *field_offset as i64))
         },
@@ -162,8 +175,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Assign {
             target, value
         } => {
-            let target = context.variable_table.get(target)?;
-            let value = context.variable_table.get(value)?;
+            let target = context.variable_table.get(target).unwrap();
+            let value = context.variable_table.get(value).unwrap();
 
             context.builder.ins().store(MemFlags::new(), value.clone(), target.clone(), 0);
 
