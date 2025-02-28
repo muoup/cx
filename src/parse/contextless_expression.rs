@@ -143,7 +143,9 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
             )
         },
 
-        _ => contextualize_lvalue(data, expr)
+        ContextlessExpression::UnambiguousExpression(expr) => Some(expr),
+
+        _ => log_error!("Invalid rvalue expression: {:#?}", expr)
     }
 }
 
