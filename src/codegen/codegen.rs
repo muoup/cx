@@ -50,6 +50,8 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
 
     let mut context = FunctionState {
         object_module: &mut global_state.object_module,
+        target_frontend_config: &global_state.target_frontend_config,
+
         function_ids: &global_state.function_ids,
 
         type_map: &global_state.type_map,

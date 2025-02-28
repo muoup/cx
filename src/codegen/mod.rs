@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::Fact::Def;
 use cranelift::codegen::ir::{Function, GlobalValue};
+use cranelift::codegen::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, FunctionBuilder, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -20,6 +21,7 @@ pub(crate) type VariableTable = HashMap<ValueID, Value>;
 
 pub(crate) struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
+    pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
     pub(crate) function_ids: &'a HashMap<String, FuncId>,
     pub(crate) global_strs: &'a Vec<GlobalValue>,
@@ -42,6 +44,7 @@ pub(crate) struct FunctionState<'a> {
 pub(crate) struct GlobalState<'a> {
     pub(crate) context: Context,
     pub(crate) object_module: ObjectModule,
+    pub(crate) target_frontend_config: TargetFrontendConfig,
 
     pub(crate) fn_map: &'a FnMap,
     pub(crate) type_map: &'a TypeMap,
@@ -72,6 +75,7 @@ pub fn ast_codegen(ast: &VerifiedAST, output: &str) -> Option<()> {
         type_map: &ast.type_map,
 
         context: Context::new(),
+        target_frontend_config: isa.frontend_config(),
         global_strs: Vec::new(),
         function_ids: HashMap::new(),
         function_sigs: &mut HashMap::new(),
@@ -96,7 +100,8 @@ pub fn ast_codegen(ast: &VerifiedAST, output: &str) -> Option<()> {
     }
 
     let obj = global_state.object_module.finish();
-    std::fs::write("test.o", obj.emit().unwrap()).expect("Failed to write object file");
+    std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
+    println!("Successfully generated object file to {}", output);
 
     Some(())
 }

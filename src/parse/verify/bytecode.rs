@@ -1,7 +1,8 @@
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
-use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap};
+use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
 use crate::parse::verify::VerifiedAST;
+use crate::parse::verify::verify_type::get_intrinsic_type;
 
 pub type ElementID = u32;
 
@@ -89,20 +90,19 @@ impl BytecodeBuilder {
 
     pub(crate) fn add_instruction(
         &mut self,
+        verify_context: &VerifyContext,
         instruction: VirtualInstruction,
         value_type: ValueType
     ) -> Option<ValueID> {
         let context = self.fun_mut();
 
-        let virtual_value = VirtualValue {
-            type_: value_type
-        };
-
         let body = &mut context.blocks[context.current_block as usize].body;
 
         body.push(BlockInstruction {
             instruction,
-            value: virtual_value.clone()
+            value: VirtualValue {
+                type_: get_intrinsic_type(&verify_context.type_map, &value_type)?.clone()
+            }
         });
 
         Some(

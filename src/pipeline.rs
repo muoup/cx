@@ -54,4 +54,20 @@ impl CompilerPipeline {
 
         self
     }
+
+    pub(crate) fn link(mut self) -> Self {
+        let output = std::process::Command::new("gcc")
+            .arg(self.output.as_str())
+            .output()
+            .expect("Linker failed to start");
+
+        if !output.status.success() {
+            println!("Failed to link object file");
+            println!("{}", String::from_utf8_lossy(&output.stderr));
+        }
+
+        std::fs::remove_file(self.output.as_str()).unwrap();
+
+        self
+    }
 }

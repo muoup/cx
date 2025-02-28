@@ -12,10 +12,10 @@ use crate::util::ScopedMap;
 
 pub mod context;
 pub mod bytecode;
+pub mod verify_type;
 
 mod typeless_declarations;
 mod verify_expression;
-mod verify_type;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
@@ -74,6 +74,7 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
 
         for (i, arg) in prototype.args.iter().enumerate() {
             let value = builder.add_instruction(
+                &verify_context,
                 VirtualInstruction::FunctionParameter {
                     param_index: i as u32,
                     name: arg.name.clone()

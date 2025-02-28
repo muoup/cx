@@ -1,0 +1,20 @@
+int putchar(int c);
+
+struct Test {
+    int a;
+    int b;
+}
+
+void struct_parameter(Test t) {
+    putchar(t.a + '0');
+    return;
+}
+
+int main() {
+    Test t;
+    t.a = 5;
+    t.b = 5;
+
+    struct_parameter(t);
+    return 0;
+}

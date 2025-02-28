@@ -1,13 +1,16 @@
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::codegen::isa::TargetFrontendConfig;
 use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataId, Module};
 use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
 use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
+use crate::parse::ast::ValueType;
 use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
+use crate::parse::verify::verify_type::get_type_size;
 
 /**
  *  May or may not return a valid, panics if error occurs
@@ -58,7 +61,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             let args = args.iter()
                 .map(|arg| {
-                    context.variable_table.get(&arg).cloned().unwrap()
+                    context.variable_table.get(arg).cloned().unwrap()
                 })
                 .collect::<Vec<Value>>();
 
@@ -85,16 +88,28 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             None
         },
 
-        VirtualInstruction::FunctionParameter { name, param_index } => {
-            let value = context.fn_params.get(*param_index as usize).cloned().unwrap();
+        VirtualInstruction::FunctionParameter { param_index, .. } => {
+            let parameter_ptr = context.fn_params.get(*param_index as usize).cloned().unwrap();
             let type_ = &instruction.value.type_;
-            let crane_type = get_cranelift_type(type_, context.type_map);
+            let type_size = get_type_size(context.type_map, type_)? as u32;
 
-            allocate_variable(
-                &mut context.builder, &mut context.variable_table,
-                name.as_str(), crane_type,
-                Some(value)
-            )
+            let value_ptr = allocate_variable(context, type_size, None)?;
+
+            if matches!(type_, ValueType::Structured { .. }) {
+                let size_literal = context.builder.ins().iconst(
+                    context.pointer_type,
+                    type_size as i64
+                );
+
+                context.builder.call_memcpy(
+                    context.target_frontend_config.clone(),
+                    value_ptr,
+                    parameter_ptr,
+                    size_literal
+                );
+            }
+
+            Some(value_ptr)
         },
 
         VirtualInstruction::Load { value } => {

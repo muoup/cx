@@ -1,5 +1,11 @@
 use std::collections::HashMap;
 
+pub enum MaybeResult<Result, Consumed, Error> {
+    Consumed(Result),
+    Unconsumed(Consumed),
+    Error(Error)
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ScopedMap<T> {
     data: HashMap<String, T>,
@@ -10,7 +16,7 @@ impl<T> ScopedMap<T> {
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
-            overwrites: Vec::new()
+            overwrites: vec![Vec::new()]
         }
     }
 

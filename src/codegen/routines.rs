@@ -1,12 +1,15 @@
+use cranelift::codegen::gimli::ReaderOffset;
 use crate::codegen::value_type::get_cranelift_type;
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::GlobalValue;
+use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, Module};
 use cranelift_object::ObjectModule;
+use crate::parse::verify::verify_type::get_type_size;
 
 pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Option<Value> {
     match type_ {
@@ -19,23 +22,24 @@ pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Op
         },
 
         _ => allocate_variable(
-            &mut context.builder,
-            &mut context.variable_table,
-            "alloca",
-            get_cranelift_type(type_, context.type_map),
+            context,
+            get_type_size(&context.type_map, type_)? as u32,
             None
         )
     }
 }
 
-pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &mut VariableTable,
-                                name: &str, type_: ir::Type, initial_value: Option<ir::Value>) -> Option<Value> {
-    let stack_slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, type_.bytes(), 1);
-    let stack_slot = builder.create_sized_stack_slot(stack_slot_data);
-    let stack_pointer = builder.ins().stack_addr(type_, stack_slot, 0);
+pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<ir::Value>) -> Option<Value> {
+    let stack_slot_data = StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        StackSize::from_u32(bytes),
+        1
+    );
+    let stack_slot = context.builder.create_sized_stack_slot(stack_slot_data);
+    let stack_pointer = context.builder.ins().stack_addr(context.pointer_type, stack_slot, 0);
 
     if let Some(initial_value) = initial_value {
-        builder.ins().stack_store(initial_value, stack_slot, 0);
+        context.builder.ins().stack_store(initial_value, stack_slot, 0);
     }
 
     Some(stack_pointer)

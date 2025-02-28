@@ -4,6 +4,7 @@ use crate::log_error;
 use crate::parse::ast::{Expression, LValueExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::expression::{parse_lvalue, parse_rvalue};
 use crate::parse::parser::ParserData;
+use crate::util::MaybeResult;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ContextlessExpression {
@@ -77,10 +78,10 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
     }
 }
 
-pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpression) -> Option<Expression> {
+pub(crate) fn maybe_contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpression) -> MaybeResult<Expression, ContextlessExpression, ()> {
     match expr {
         ContextlessExpression::Identifier(name) =>
-            Some(
+            MaybeResult::Consumed(
                 Expression::RValue(
                     RValueExpression::LoadedLValue {
                         lvalue: Box::new(Expression::LValue(LValueExpression::Identifier(name)))
@@ -91,10 +92,14 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
         ContextlessExpression::BinaryOperation {
             op: OperatorType::Access, ..
         } => {
-            Some(
+            let Some(lvalue) = contextualize_lvalue(data, expr) else {
+                return MaybeResult::Error(());
+            };
+
+            MaybeResult::Consumed(
                 Expression::RValue(
                     RValueExpression::LoadedLValue {
-                        lvalue: Box::new(contextualize_lvalue(data, expr)?)
+                        lvalue: Box::new(lvalue)
                     }
                 )
             )
@@ -102,27 +107,42 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
 
         ContextlessExpression::BinaryOperation {
             op, left, right
-        } => Some(
-            Expression::RValue(
-                RValueExpression::BinaryOperation {
-                    operator: op,
-                    left: Box::new(contextualize_rvalue(data, *left)?),
-                    right: Box::new(contextualize_rvalue(data, *right)?)
-                }
+        } => {
+            let Some(left) = contextualize_rvalue(data, *left) else {
+                return MaybeResult::Error(());
+            };
+            let Some(right) = contextualize_rvalue(data, *right) else {
+                return MaybeResult::Error(());
+            };
+
+            MaybeResult::Consumed(
+                Expression::RValue(
+                    RValueExpression::BinaryOperation {
+                        operator: op,
+                        left: Box::new(left),
+                        right: Box::new(right)
+                    }
+                )
             )
-        ),
+        },
 
         ContextlessExpression::UnaryOperation {
             op: OperatorType::Multiply,
             operand
-        } => Some(
-            Expression::RValue(
-                RValueExpression::UnaryOperation {
-                    operator: OperatorType::Multiply,
-                    operand: Some(Box::new(contextualize_rvalue(data, *operand)?))
-                }
+        } => {
+            let Some(operand) = contextualize_rvalue(data, *operand) else {
+                return MaybeResult::Error(());
+            };
+
+            MaybeResult::Consumed(
+                Expression::RValue(
+                    RValueExpression::UnaryOperation {
+                        operator: OperatorType::Multiply,
+                        operand: Some(Box::new(operand))
+                    }
+                )
             )
-        ),
+        },
 
         ContextlessExpression::FunctionCall {
             reference, args
@@ -130,22 +150,36 @@ pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpre
             let ContextlessExpression::Identifier(name) = *reference else {
                 unimplemented!("Function call with non-identifier reference: {:#?}", reference);
             };
+            let Some(args) = args.iter()
+                .map(|expr| contextualize_rvalue(data, expr.clone()))
+                .collect::<Option<Vec<_>>>() else {
+                return MaybeResult::Error(());
+            };
 
-            Some(
+            MaybeResult::Consumed(
                 Expression::RValue(
                     RValueExpression::DirectFunctionCall {
-                        name,
-                        args: args.iter()
-                            .map(|expr| contextualize_rvalue(data, expr.clone()))
-                            .collect::<Option<Vec<_>>>()?
+                        name, args
                     }
                 )
             )
         },
 
-        ContextlessExpression::UnambiguousExpression(expr) => Some(expr),
+        ContextlessExpression::UnambiguousExpression(expr) => MaybeResult::Consumed(expr),
 
-        _ => log_error!("Invalid rvalue expression: {:#?}", expr)
+        expr => MaybeResult::Unconsumed(expr)
+    }
+}
+
+pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpression) -> Option<Expression> {
+    match maybe_contextualize_rvalue(data, expr) {
+        MaybeResult::Consumed(expr) => Some(expr),
+        MaybeResult::Unconsumed(expr) => {
+            log_error!("Invalid rvalue: {:#?}", expr);
+        },
+        MaybeResult::Error(err) => {
+            log_error!("Error contextualizing rvalue: {:#?}", err);
+        }
     }
 }
 

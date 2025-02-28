@@ -1,9 +1,10 @@
 use crate::log_error;
 use crate::parse::ast::{ValueType, VarInitialization};
+use crate::parse::verify::bytecode::VirtualValue;
 use crate::parse::verify::context::{FunctionPrototype, TypeMap, VerifyContext};
 
 pub(crate) fn verify_fn_prototype(type_map: &TypeMap, mut prototype: FunctionPrototype) -> Option<FunctionPrototype> {
-    prototype.return_type = get_instrinic_type(type_map, &prototype.return_type)?.clone();
+    prototype.return_type = get_intrinsic_type(type_map, &prototype.return_type)?.clone();
     prototype.args = prototype.args
         .into_iter()
         .map(|arg| {
@@ -95,7 +96,7 @@ pub(crate) fn same_type(type_map: &TypeMap, t1: &ValueType, t2: &ValueType) -> b
     }
 }
 
-pub(crate) fn get_instrinic_type<'a>(type_map: &'a TypeMap, type_: &'a ValueType) -> Option<&'a ValueType> {
+pub(crate) fn get_intrinsic_type<'a>(type_map: &'a TypeMap, type_: &'a ValueType) -> Option<&'a ValueType> {
     match type_ {
         ValueType::Identifier(name)
             => type_map.get(name),
@@ -104,7 +105,7 @@ pub(crate) fn get_instrinic_type<'a>(type_map: &'a TypeMap, type_: &'a ValueType
     }
 }
 
-pub(crate) fn get_type_size(type_map: &TypeMap, type_: &ValueType) -> Option<usize> {
+pub fn get_type_size(type_map: &TypeMap, type_: &ValueType) -> Option<usize> {
     match type_ {
         ValueType::Float { bytes } => Some(*bytes as usize),
         ValueType::Integer { bytes, .. } => Some(*bytes as usize),

@@ -14,9 +14,13 @@ fn main() {
         return;
     };
 
-    pipeline::CompilerPipeline::new(file_name.clone(), "test.o".to_string())
+    let mut output = file_name.split('.').next().unwrap().to_string();
+    output.push_str(".o");
+
+    pipeline::CompilerPipeline::new(file_name.clone(), output)
         .preprocess()
         .lex()
         .parse()
-        .codegen();
+        .codegen()
+        .link();
 }
