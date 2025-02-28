@@ -133,7 +133,7 @@ fn parse_operator(data: &mut ParserData, expr_stack: &mut Vec<ContextlessExpress
                 return None;
             }
 
-            if let Some(expr) = parse_expression(data) {
+            if let Some(expr) = parse_expression_value(data) {
                 expr_stack.push(
                     ContextlessExpression::CompoundExpression {
                         left: Box::new(top_expr),
@@ -171,9 +171,7 @@ pub(crate) fn parse_expression(data: &mut ParserData) -> Option<ContextlessExpre
     let mut op_stack = Vec::new();
 
     loop {
-        let expr = parse_expression_value(data)?;
-        let suffixed = parse_expression_suffix(expr, data)?;
-        expr_stack.push(suffixed);
+        expr_stack.push(parse_expression_value(data)?);
 
         let Some(_) = parse_operator(data, &mut expr_stack, &mut op_stack) else {
             break
@@ -227,7 +225,7 @@ fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -
 
 
 fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression> {
-    match data.toks.next()? {
+    let expr = match data.toks.next()? {
         Token::Keyword(_) => {
             data.toks.back();
             Some(
@@ -292,7 +290,9 @@ fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression
             data.toks.back();
             None
         }
-    }
+    }?;
+
+    parse_expression_suffix(expr, data)
 }
 
 

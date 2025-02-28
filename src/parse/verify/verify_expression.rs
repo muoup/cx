@@ -129,8 +129,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
 
             builder.add_instruction(
                 VirtualInstruction::Load {
-                    value: *id,
-                    type_: var_type.clone()
+                    value: *id
                 },
                 var_type
             )
@@ -147,8 +146,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                     let left_type = builder.get_type(left)?.clone();
                     let loaded_left = builder.add_instruction(
                         VirtualInstruction::Load {
-                            value: left,
-                            type_: left_type.clone(),
+                            value: left
                         },
                         left_type.clone()
                     )?;
@@ -174,43 +172,21 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             )
         },
 
-        RValueExpression::StructFieldValue {
-            struct_, field_name
+        RValueExpression::LoadedLValue {
+            lvalue
         } => {
-            let struct_ = verify_expression(context, builder, struct_)?;
-            let struct_type = builder.get_type(struct_)?;
-            let intrin_type = get_instrinic_type(&context.type_map, struct_type)?.clone();
+            let lvalue = verify_expression(context, builder, lvalue)?;
 
-            let ValueType::Structured { fields } = intrin_type else {
-                log_error!("Cannot access field of non-structured type!")
-            };
+            let lvalue_type = builder.get_type(lvalue)?.clone();
+            let loaded = builder.add_instruction(
+                VirtualInstruction::Load {
+                    value: lvalue
+                },
+                lvalue_type
+            )?;
 
-            let mut size_counter = 0usize;
-
-            for (i, field) in fields.iter().enumerate() {
-                if &field.name == field_name {
-                    let field_id = builder.add_instruction(
-                        VirtualInstruction::StructAccess {
-                            struct_,
-                            type_: field.type_.clone(),
-                            field_index: i,
-                            field_offset: size_counter,
-                        },
-                        field.type_.clone()
-                    )?;
-
-                    return builder.add_instruction(
-                        VirtualInstruction::Load {
-                            value: field_id,
-                            type_: field.type_.clone()
-                        },
-                        field.type_.clone()
-                    )
-                }
-            }
-
-            log_error!("Unknown field {} in struct", field_name)
-        },
+            Some(loaded)
+        }
 
         _ => unimplemented!("{:?}", rvalue)
     }
@@ -260,7 +236,6 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                     return builder.add_instruction(
                         VirtualInstruction::StructAccess {
                             struct_,
-                            type_: field.type_.clone(),
                             field_index: i,
                             field_offset: size_counter,
                         },
@@ -336,6 +311,102 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
             Some(branch_id)
         }
 
+        ControlExpression::ForLoop {
+            init, condition, increment, body
+        } => {
+            let init_block = builder.create_block();
+            let condition_block = builder.create_block();
+            let body_block = builder.create_block();
+            let increment_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: init_block },
+                ValueType::Unit
+            );
+
+            builder.set_current_block(init_block);
+            verify_expression(context, builder, init)?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block },
+                ValueType::Unit
+            );
+
+            builder.set_current_block(condition_block);
+            let condition = verify_expression(context, builder, condition)?;
+            let branch = VirtualInstruction::Branch {
+                condition,
+                true_block: body_block,
+                false_block: merge_block
+            };
+            let branch_id = builder.add_instruction(
+                branch,
+                ValueType::Unit
+            )?;
+
+            builder.set_current_block(body_block);
+            body.iter()
+                .map(|expr| verify_expression(context, builder, expr))
+                .collect::<Option<Vec<_>>>()?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: increment_block },
+                ValueType::Unit
+            );
+
+            builder.set_current_block(increment_block);
+            verify_expression(context, builder, increment)?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block },
+                ValueType::Unit
+            );
+
+            builder.set_current_block(merge_block);
+            Some(branch_id)
+        },
+
+        ControlExpression::Loop {
+            condition, body, evaluate_condition_first
+        } => {
+            let body_block = builder.create_block();
+            let condition_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            let target = if *evaluate_condition_first {
+                condition_block
+            } else {
+                body_block
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::Jump { target },
+                ValueType::Unit
+            );
+
+            builder.set_current_block(condition_block);
+            let condition = verify_expression(context, builder, condition)?;
+            let branch = VirtualInstruction::Branch {
+                condition,
+                true_block: body_block,
+                false_block: merge_block
+            };
+            let branch_id = builder.add_instruction(
+                branch,
+                ValueType::Unit
+            )?;
+
+            builder.set_current_block(body_block);
+            body.iter()
+                .map(|expr| verify_expression(context, builder, expr))
+                .collect::<Option<Vec<_>>>()?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block },
+                ValueType::Unit
+            );
+
+            builder.set_current_block(merge_block);
+            Some(branch_id)
+        }
+
         _ => unimplemented!("{:?}", control)
     }
 }
@@ -344,6 +415,10 @@ pub(crate) fn coerce_bin_op(context: &mut VerifyContext, builder: &mut BytecodeB
                             left_id: ValueID, right_id: ValueID,
                             left_type: ValueType, right_type: ValueType) -> Option<(ValueID, ValueID, ValueType)> {
     match (&left_type, &right_type) {
+        (ValueType::Identifier(name1), ValueType::Identifier(name2))
+        if name1 == name2
+            => Some((left_id, right_id, left_type)),
+
         (ValueType::Integer { bytes: lbytes, signed: lsigned },
          ValueType::Integer { bytes: rbytes, signed: rsigned }) => {
             assert_eq!(lbytes, rbytes);

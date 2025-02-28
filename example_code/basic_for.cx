@@ -1,4 +1,4 @@
-#include <stdio.h>
+int putchar(int c);
 
 int for_loop(int n) {
     // Test Comment

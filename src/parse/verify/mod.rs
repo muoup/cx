@@ -76,8 +76,7 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
             let value = builder.add_instruction(
                 VirtualInstruction::FunctionParameter {
                     param_index: i as u32,
-                    name: arg.name.clone(),
-                    type_: arg.type_.clone()
+                    name: arg.name.clone()
                 },
                 arg.type_.clone()
             )?;

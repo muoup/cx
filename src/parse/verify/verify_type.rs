@@ -3,7 +3,7 @@ use crate::parse::ast::{ValueType, VarInitialization};
 use crate::parse::verify::context::{FunctionPrototype, TypeMap, VerifyContext};
 
 pub(crate) fn verify_fn_prototype(type_map: &TypeMap, mut prototype: FunctionPrototype) -> Option<FunctionPrototype> {
-    prototype.return_type = verify_type(type_map, prototype.return_type.clone())?;
+    prototype.return_type = get_instrinic_type(type_map, &prototype.return_type)?.clone();
     prototype.args = prototype.args
         .into_iter()
         .map(|arg| {

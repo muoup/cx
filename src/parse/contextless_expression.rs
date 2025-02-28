@@ -80,23 +80,21 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
 pub(crate) fn contextualize_rvalue(data: &mut ParserData, expr: ContextlessExpression) -> Option<Expression> {
     match expr {
         ContextlessExpression::Identifier(name) =>
-            Some(Expression::RValue(RValueExpression::Identifier(name))),
-
-        ContextlessExpression::BinaryOperation {
-            op: OperatorType::Access,
-            left, right
-        } => {
-            let left = contextualize_lvalue(data, *left)?;
-            let ContextlessExpression::Identifier(field_type) = right.as_ref() else {
-                log_error!("Invalid Struct Field: {:#?}", right);
-            };
-            let field_type = field_type.clone();
-
             Some(
                 Expression::RValue(
-                    RValueExpression::StructFieldValue {
-                        struct_: Box::new(left),
-                        field_name: field_type
+                    RValueExpression::LoadedLValue {
+                        lvalue: Box::new(Expression::LValue(LValueExpression::Identifier(name)))
+                    }
+                )
+            ),
+
+        ContextlessExpression::BinaryOperation {
+            op: OperatorType::Access, ..
+        } => {
+            Some(
+                Expression::RValue(
+                    RValueExpression::LoadedLValue {
+                        lvalue: Box::new(contextualize_lvalue(data, expr)?)
                     }
                 )
             )

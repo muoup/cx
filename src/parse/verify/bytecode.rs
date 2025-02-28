@@ -166,7 +166,6 @@ pub struct BlockInstruction {
 pub enum VirtualInstruction {
     FunctionParameter {
         name: String,
-        type_: ValueType,
         param_index: u32
     },
 
@@ -176,12 +175,10 @@ pub enum VirtualInstruction {
 
     Load {
         value: ValueID,
-        type_: ValueType
     },
 
     StructAccess {
         struct_: ValueID,
-        type_: ValueType,
         field_index: usize,
         field_offset: usize
     },
