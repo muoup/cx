@@ -73,13 +73,12 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         current_block_exited: false
     };
 
-
     for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
         let block = context.builder.create_block();
         context.builder.switch_to_block(block);
 
         if block_id == 0 {
-            for (_, arg) in bc_func.prototype.args.iter().enumerate() {
+            for arg in bc_func.prototype.args.iter() {
                 let cranelift_type = get_cranelift_type(&arg.type_, context.type_map);
                 let arg = context.builder.append_block_param(block, cranelift_type);
 
