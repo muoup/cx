@@ -3,7 +3,7 @@ use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::Fact::Def;
 use cranelift::codegen::ir::{Function, GlobalValue};
 use cranelift::codegen::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, FunctionBuilder, Value};
+use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};

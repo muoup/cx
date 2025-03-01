@@ -165,7 +165,6 @@ pub struct BlockInstruction {
 #[derive(Debug)]
 pub enum VirtualInstruction {
     FunctionParameter {
-        name: String,
         param_index: u32
     },
 

@@ -3,6 +3,8 @@ int putchar(int c);
 struct Test {
     int a;
     int b;
+    int c;
+    int d;
 }
 
 void struct_parameter(Test t) {
@@ -10,10 +12,15 @@ void struct_parameter(Test t) {
     return;
 }
 
-int main() {
+Test struct_return() {
     Test t;
     t.a = 5;
     t.b = 5;
+    return t;
+}
+
+int main() {
+    Test t = struct_return();
 
     struct_parameter(t);
     return 0;

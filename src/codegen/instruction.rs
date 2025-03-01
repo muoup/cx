@@ -10,7 +10,7 @@ use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
 use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
-use crate::parse::verify::verify_type::get_type_size;
+use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
 
 /**
  *  May or may not return a valid, panics if error occurs
@@ -90,26 +90,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::FunctionParameter { param_index, .. } => {
             let parameter_ptr = context.fn_params.get(*param_index as usize).cloned().unwrap();
-            let type_ = &instruction.value.type_;
-            let type_size = get_type_size(context.type_map, type_)? as u32;
 
-            let value_ptr = allocate_variable(context, type_size, None)?;
-
-            if matches!(type_, ValueType::Structured { .. }) {
-                let size_literal = context.builder.ins().iconst(
-                    context.pointer_type,
-                    type_size as i64
-                );
-
-                context.builder.call_memcpy(
-                    context.target_frontend_config.clone(),
-                    value_ptr,
-                    parameter_ptr,
-                    size_literal
-                );
-            }
-
-            Some(value_ptr)
+            Some(parameter_ptr)
         },
 
         VirtualInstruction::Load { value } => {
@@ -121,7 +103,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 context.builder.ins()
                     .load(
                         cranelift_type,
-                        ir::MemFlags::new(),
+                        MemFlags::new(),
                         val,
                         0
                     )
@@ -187,13 +169,27 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(context.builder.ins().iadd_imm(ptr, *field_offset as i64))
         },
 
-        VirtualInstruction::Assign {
-            target, value
+        VirtualInstruction::Store {
+            memory, value
         } => {
-            let target = context.variable_table.get(target).unwrap();
+            let target = context.variable_table.get(memory).unwrap();
             let value = context.variable_table.get(value).unwrap();
 
-            context.builder.ins().store(MemFlags::new(), value.clone(), target.clone(), 0);
+            let type_ = get_intrinsic_type(context.type_map, &instruction.value.type_)?;
+
+            if matches!(type_, &ValueType::Structured { .. }) {
+                let size = get_type_size(context.type_map, type_).unwrap() as u64;
+                let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
+
+                context.builder.call_memcpy(
+                    context.target_frontend_config.clone(),
+                    target.clone(),
+                    value.clone(),
+                    size_literal
+                )
+            } else {
+                context.builder.ins().store(MemFlags::new(), value.clone(), target.clone(), 0);
+            }
 
             Some(
                 Value::from_u32(0)

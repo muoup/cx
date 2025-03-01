@@ -1,4 +1,5 @@
 use std::process::id;
+use cranelift::codegen::ir;
 use crate::codegen::instruction::codegen_instruction;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
@@ -20,6 +21,10 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &F
 
     match &prototype.return_type {
         ValueType::Unit => {},
+        ValueType::Structured { .. } => {
+            let _type = global_state.object_module.target_config().pointer_type();
+            sig.returns.push(ir::AbiParam::new(_type));
+        }
         _ => sig.returns.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type))
     }
 
@@ -83,15 +88,15 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         }
 
         for (value_id, instr) in fn_block.body.iter().enumerate() {
-            codegen_instruction(&mut context, &instr).map(
-                |val| context.variable_table.insert(
+            if let Some(val) = codegen_instruction(&mut context, &instr) {
+                context.variable_table.insert(
                     ValueID {
                         block_id: block_id as u32,
                         value_id: value_id as u32
                     },
                     val
-                )
-            );
+                );
+            }
 
             match instr.instruction {
                 VirtualInstruction::Return { .. } |

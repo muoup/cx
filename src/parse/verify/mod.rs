@@ -3,11 +3,11 @@ use std::process::id;
 use cranelift::codegen::verifier::verify_context;
 use crate::log_error;
 use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualInstruction};
-use crate::parse::ast::{GlobalStatement, AST};
+use crate::parse::ast::{GlobalStatement, ValueType, AST};
 use crate::parse::verify::context::{FnMap, TypeMap, VerifyContext};
 use crate::parse::verify::typeless_declarations::gen_declarations;
 use crate::parse::verify::verify_expression::verify_expression;
-use crate::parse::verify::verify_type::{verify_fn_prototype, verify_type};
+use crate::parse::verify::verify_type::{get_type_size, verify_fn_prototype, verify_type};
 use crate::util::ScopedMap;
 
 pub mod context;
@@ -16,6 +16,7 @@ pub mod verify_type;
 
 mod typeless_declarations;
 mod verify_expression;
+mod special_exprs;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
@@ -71,18 +72,44 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
         };
 
         builder.new_function(prototype.clone());
+        verify_context.current_return_type = match prototype.return_type {
+            ValueType::Unit => None,
+            _ => Some(prototype.return_type.clone())
+        };
 
-        for (i, arg) in prototype.args.iter().enumerate() {
-            let value = builder.add_instruction(
+        let mut iter = prototype.args.iter();
+
+        for (i, arg) in iter.enumerate() {
+            if arg.name.starts_with("__hidden") {
+                continue;
+            }
+
+            let memory = builder.add_instruction(
                 &verify_context,
-                VirtualInstruction::FunctionParameter {
-                    param_index: i as u32,
-                    name: arg.name.clone()
+                VirtualInstruction::Allocate {
+                    size: get_type_size(&verify_context.type_map, &arg.type_)?
                 },
                 arg.type_.clone()
             )?;
 
-            verify_context.insert_variable(arg.name.clone(), value);
+            let value = builder.add_instruction(
+                &verify_context,
+                VirtualInstruction::FunctionParameter {
+                    param_index: i as u32,
+                },
+                arg.type_.clone()
+            )?;
+
+            builder.add_instruction(
+                &verify_context,
+                VirtualInstruction::Store {
+                    value,
+                    memory
+                },
+                arg.type_.clone()
+            )?;
+
+            verify_context.insert_variable(arg.name.clone(), memory);
         }
 
         for stmt in body.iter() {

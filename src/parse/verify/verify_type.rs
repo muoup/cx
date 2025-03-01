@@ -1,3 +1,4 @@
+use std::env::args;
 use crate::log_error;
 use crate::parse::ast::{ValueType, VarInitialization};
 use crate::parse::verify::bytecode::VirtualValue;
@@ -5,13 +6,24 @@ use crate::parse::verify::context::{FunctionPrototype, TypeMap, VerifyContext};
 
 pub(crate) fn verify_fn_prototype(type_map: &TypeMap, mut prototype: FunctionPrototype) -> Option<FunctionPrototype> {
     prototype.return_type = get_intrinsic_type(type_map, &prototype.return_type)?.clone();
-    prototype.args = prototype.args
-        .into_iter()
-        .map(|arg| {
+
+    let mut args = Vec::new();
+
+    if matches!(prototype.return_type, ValueType::Structured { .. }) {
+        args.push(VarInitialization {
+            name: "__hidden_struct_pointer".to_string(),
+            type_: prototype.return_type.clone()
+        });
+    }
+
+    prototype.args = {
+        for arg in prototype.args.into_iter() {
             let type_ = verify_type(type_map, arg.type_.clone())?;
-            Some(VarInitialization { name: arg.name, type_ })
-        })
-        .collect::<Option<Vec<VarInitialization>>>()?;
+            args.push(VarInitialization { name: arg.name.clone(), type_ });
+        }
+
+        args
+    };
 
     Some(prototype)
 }

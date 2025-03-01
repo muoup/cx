@@ -3,6 +3,7 @@ use crate::log_error;
 use crate::parse::ast::{ControlExpression, Expression, LValueExpression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
 use crate::parse::verify::context::VerifyContext;
+use crate::parse::verify::special_exprs::{struct_assignment, struct_return};
 use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
 
 pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
@@ -149,6 +150,11 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             operator, left, right
         } => {
             let left = verify_expression(context, builder, left)?;
+
+            if matches!(builder.get_type(left)?, ValueType::Structured { .. }) {
+                return struct_assignment(context, builder, left, right.as_ref());
+            }
+
             let right = verify_expression(context, builder, right)?;
 
             let right = match operator {
@@ -177,8 +183,8 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
 
             builder.add_instruction(
                 context,
-                VirtualInstruction::Assign {
-                    target: left,
+                VirtualInstruction::Store {
+                    memory: left,
                     value: right
                 },
                 builder.get_type(right)?.clone()
@@ -277,7 +283,15 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
     match control {
         ControlExpression::Return(expr) => {
             let value = match expr {
-                Some(expr) => Some(verify_expression(context, builder, expr)?),
+                Some(expr) => {
+                    let expr = verify_expression(context, builder, expr)?;
+
+                    if matches!(builder.get_type(expr)?, ValueType::Structured { .. }) {
+                        return struct_return(context, builder, expr);
+                    }
+
+                    Some(expr)
+                },
                 None => None
             };
 
