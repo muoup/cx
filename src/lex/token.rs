@@ -11,7 +11,7 @@ pub enum OperatorType {
 
     ArrayIndex,
 
-    Access, PointerAccess, AddressOf, Dereference,
+    Access, PointerAccess, AddressOf, /* Dereference = Multiply */
     ScopeRes
 }
 

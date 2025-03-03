@@ -1,0 +1,25 @@
+int *pointer_return(int x);
+int putchar(int c);
+int puts(char* c);
+
+struct Test {
+    int i1;
+    int i2;
+}
+
+struct Test2 {
+    Test t;
+    int i3;
+}
+
+int main() {
+    Test x;
+    x.i1 = 1;
+
+    Test2 y;
+    y.t.i2 = 2;
+
+    putchar('0' + x.i1 + y.t.i2);
+    puts("");
+    return 0;
+}

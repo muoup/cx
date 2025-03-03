@@ -1,10 +1,12 @@
 use cranelift::codegen::ir;
 use crate::parse::ast::{ValueType};
-pub(crate) fn get_cranelift_abi_type(val_type: &ValueType) -> ir::AbiParam {
-    ir::AbiParam::new(get_cranelift_type(val_type))
+use crate::parse::verify::context::TypeMap;
+
+pub(crate) fn get_cranelift_abi_type(type_map: &TypeMap, val_type: &ValueType) -> ir::AbiParam {
+    ir::AbiParam::new(get_cranelift_type(val_type, type_map))
 }
 
-pub(crate) fn get_cranelift_type(val_type: &ValueType) -> ir::Type {
+pub(crate) fn get_cranelift_type(val_type: &ValueType, type_map: &TypeMap) -> ir::Type {
     match val_type {
         ValueType::Integer { bytes, .. } => {
             match bytes {
@@ -23,7 +25,11 @@ pub(crate) fn get_cranelift_type(val_type: &ValueType) -> ir::Type {
             }
         },
         ValueType::PointerTo(_) | ValueType::Array { .. } | ValueType::Structured { .. } => ir::types::I64,
-        ValueType::Unit => ir::types::INVALID,
+        ValueType::Unit => panic!("Unit type has no representation"),
+        ValueType::Identifier(_type) => {
+            let type_ = type_map.get(_type).unwrap();
+            get_cranelift_type(type_, type_map)
+        },
 
         _ => panic!("Unverified type: {:#?}", val_type),
     }

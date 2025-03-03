@@ -1,101 +1,98 @@
-use log::warn;
-use crate::assert_token_matches;
+use crate::{assert_token_matches, log_error};
 use crate::lex::token::{KeywordType, PunctuatorType, Token};
-use crate::parse::ast::{Expression, GlobalStatement, UnverifiedExpression, UnverifiedGlobalStatement, ValueExpression, ValueType};
-use crate::parse::expression::{parse_expression, parse_expressions, parse_identifier};
-use crate::parse::parser::{parse_body, TokenIter};
+use crate::parse::ast::{GlobalStatement, UnverifiedGlobalStatement, ValueType, VarInitialization};
+use crate::parse::contextless_expression::{coalesce_type, detangle_initialization, detangle_typed_expr, ContextlessExpression};
+use crate::parse::expression::{parse_expression, parse_initialization, parse_list};
+use crate::parse::parser::{parse_body, ParserData, TokenIter};
+use crate::parse::verify::context::FunctionPrototype;
 
-pub(crate) fn parse_struct_definition(toks: &mut TokenIter) -> Option<UnverifiedGlobalStatement> {
-    assert_token_matches!(toks, Token::Keyword(KeywordType::Struct));
-    assert_token_matches!(toks, Token::Identifier(name));
+pub(crate) fn parse_struct_definition(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Struct));
+    assert_token_matches!(data, Token::Identifier(name));
     let name = name.clone();
-    assert_token_matches!(toks, Token::Punctuator(PunctuatorType::OpenBrace));
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
-    let mut fields = parse_expressions(
-        toks,
+    let mut fields = parse_list(
+        data,
         Token::Punctuator(PunctuatorType::Semicolon),
         Token::Punctuator(PunctuatorType::CloseBrace),
+        parse_initialization
     )?;
 
-    assert_token_matches!(toks, Token::Punctuator(PunctuatorType::CloseBrace));
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
 
     Some(
-        UnverifiedGlobalStatement::StructDeclaration {
-            name: name.clone(),
-            field_declarations: fields
+        GlobalStatement::TypeDeclaration {
+            name: Some(name.clone()),
+            type_: ValueType::Structured { fields }
         }
     )
 }
 
-pub(crate) fn parse_enum_definition(toks: &mut TokenIter) -> Option<UnverifiedGlobalStatement> {
-    assert_token_matches!(toks, Token::Keyword(KeywordType::Enum));
+pub(crate) fn parse_enum_definition(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Enum));
 
     unimplemented!("parse_enum_definition")
 }
 
-pub(crate) fn parse_union_definition(toks: &mut TokenIter) -> Option<UnverifiedGlobalStatement> {
-    assert_token_matches!(toks, Token::Keyword(KeywordType::Union));
+pub(crate) fn parse_union_definition(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Union));
 
     unimplemented!("parse_union_definition")
 }
 
-pub(crate) fn parse_global_expression(toks: &mut TokenIter) -> Option<UnverifiedGlobalStatement> {
-    let expr = parse_expression(toks)?;
-    let Expression::Unverified(
-        UnverifiedExpression::CompoundExpression {
-            prefix: type_, suffix, ..
-        }
-    ) = expr else {
-        println!("Global Expressions must be declarative, found: {:?}", expr);
-        return None;
+pub(crate) fn parse_global_expression(data: &mut ParserData) -> Option<GlobalStatement> {
+    let expr = parse_expression(data)?;
+    let Some((type_, expr)) = detangle_typed_expr(expr) else {
+        log_error!("Global-scope expression must be declarative");
     };
 
-    match *suffix {
-        Expression::Unverified(
-            UnverifiedExpression::FunctionCall { name, args }
-        ) => {
-            let body = match toks.peek()? {
-                Token::Punctuator(PunctuatorType::Semicolon) => {
-                    toks.next();
-                    None
-                }
+    match expr {
+        ContextlessExpression::FunctionCall {
+            reference, args
+        } => {
+            let (type_, body) = coalesce_type(type_, *reference)?;
 
-                _ => Some(parse_body(toks))
+            let ContextlessExpression::Identifier(name) = body else {
+                log_error!("Expected identifier for function call, found: {:#?}", body);
             };
 
+            let prototype = FunctionPrototype {
+                return_type: type_,
+                name,
+                args: args.iter()
+                    .map(|expr| detangle_initialization(expr.clone()))
+                    .collect::<Option<Vec<_>>>()?
+            };
+
+            if let Some(&Token::Punctuator(PunctuatorType::Semicolon)) = data.toks.peek() {
+                data.toks.next();
+                return Some(
+                    GlobalStatement::Function {
+                        prototype,
+                        body: None
+                    }
+                )
+            }
+
             Some(
-                UnverifiedGlobalStatement::Function {
-                    return_type: *type_,
-                    name_header: *name,
-                    params: args,
-                    body,
+                GlobalStatement::Function {
+                    prototype,
+                    body: Some(parse_body(data))
                 }
             )
         },
-        Expression::Value(
-            ValueExpression::Assignment { left, right, operator }
-        ) => {
-            assert_eq!(operator, None);
-            assert_token_matches!(toks, Token::Punctuator(PunctuatorType::Semicolon));
 
-            Some(
-                UnverifiedGlobalStatement::GlobalVariable {
-                    left: *left,
-                    value: Some(*right)
-                }
-            )
-        },
-
-        tok => unimplemented!("parse_global_expression: {:?}", tok)
+        tok => unimplemented!("parse_global_expression: {:#?}", tok)
     }
 }
 
-pub(crate) fn parse_global_stmt(toks: &mut TokenIter) -> Option<UnverifiedGlobalStatement> {
-    match toks.peek()? {
-        Token::Keyword(KeywordType::Struct) => parse_struct_definition(toks),
-        Token::Keyword(KeywordType::Enum) => parse_enum_definition(toks),
-        Token::Keyword(KeywordType::Union) => parse_union_definition(toks),
+pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
+    match data.toks.peek()? {
+        Token::Keyword(KeywordType::Struct) => parse_struct_definition(data),
+        Token::Keyword(KeywordType::Enum) => parse_enum_definition(data),
+        Token::Keyword(KeywordType::Union) => parse_union_definition(data),
 
-        _ => parse_global_expression(toks)
+        _ => parse_global_expression(data)
     }
 }

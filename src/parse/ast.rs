@@ -4,46 +4,65 @@ use std::rc::Rc;
 use crate::parse::verify::context::FunctionPrototype;
 
 #[derive(Debug)]
-pub struct UnverifiedAST {
-    pub statements: Vec<UnverifiedGlobalStatement>
+pub struct AST {
+    pub statements: Vec<GlobalStatement>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarInitialization {
+    pub name: String,
+    pub type_: ValueType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueType {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
-    Structured { fields: Rc<[(String, ValueType)]> },
+    Structured { fields: Vec<VarInitialization> },
     Unit,
 
-    PointerTo(Rc<ValueType>),
+    PointerTo(Box<ValueType>),
     Array {
         size: usize,
-        type_: Rc<ValueType>
+        _type: Box<ValueType>
     },
 
-    Unverified(String)
+    Identifier(String)
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
     pub name: Option<String>,
     pub fields: Vec<(String, ValueType)>
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionParameter {
-    pub name: String,
-    pub type_: ValueType
+#[derive(Debug)]
+pub enum FirstPassGlobals {
+    Struct {
+        name: String,
+        fields: Vec<(String, ValueType)>
+    }
+}
+
+#[derive(Debug)]
+pub enum SecondPassGlobals {
+    Function {
+        prototype: Rc<FunctionPrototype>,
+        body: Option<Vec<Expression>>
+    },
+}
+
+#[derive(Debug)]
+pub enum ThirdPassGlobals {
+    GlobalExpression(Expression)
 }
 
 #[derive(Debug)]
 pub enum GlobalStatement {
     Function {
-        prototype: Rc<FunctionPrototype>,
+        prototype: FunctionPrototype,
         body: Option<Vec<Expression>>
     },
-
-    // Both typedef and non-typedef declarations will be squeezed into this variant
-    // C++ allows implicit typedef, so why shouldn't we?
     TypeDeclaration {
         name: Option<String>,
         type_: ValueType,
@@ -58,7 +77,7 @@ pub enum GlobalStatement {
 #[derive(Debug)]
 pub enum UnverifiedGlobalStatement {
     Function {
-        return_type: Expression,
+        return_type: ValueType,
         name_header: Expression,
         params: Vec<Expression>,
         body: Option<Vec<Expression>>
@@ -75,7 +94,7 @@ pub enum UnverifiedGlobalStatement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LiteralExpression {
     IntLiteral {
         val: i64,
@@ -88,15 +107,16 @@ pub enum LiteralExpression {
     StringLiteral(String)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IntegerCastType {
     IReduce,
     SignExtend,
     ZeroExtend
 }
 
-#[derive(Debug, Clone)]
-pub enum ValueExpression {
+#[derive(Debug, Clone, PartialEq)]
+pub enum RValueExpression {
+    Identifier(String),
     DirectFunctionCall {
         name: String,
         args: Vec<Expression>
@@ -128,20 +148,14 @@ pub enum ValueExpression {
         expr: Box<Expression>,
         type_: ValueType
     },
-    StructFieldReference {
-        struct_: Box<Expression>,
-        field_offset: usize,
-        field_type: ValueType
-    },
-    VariableReference {
-        name: String,
-        lval_type: ValueType
-    },
+    LoadedLValue {
+        lvalue: Box<Expression>
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ControlExpression {
-    Return(Box<Expression>),
+    Return(Option<Box<Expression>>),
     Continue, Break,
     If {
         condition: Box<Expression>,
@@ -162,62 +176,33 @@ pub enum ControlExpression {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum UnverifiedExpression {
+#[derive(Debug, Clone, PartialEq)]
+pub enum LValueExpression {
     Identifier(String),
 
-    CompoundExpression {
-        prefix: Box<Expression>,
-        suffix: Box<Expression>
-    },
+    Initialization(VarInitialization),
 
-    Cast {
-        expr: Box<Expression>,
-        type_: String
-    },
-
-    FunctionCall {
-        name: Box<Expression>,
-        args: Vec<Expression>
-    },
-
-    UnaryOperation {
-        operator: OperatorType,
-        operand: Box<Expression>
-    },
-
-    BinaryOperation {
-        operator: OperatorType,
-        left: Box<Expression>,
-        right: Box<Expression>
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum LValueExpression {
-    Alloca {
+    Variable {
         name: String,
-        type_: ValueType,
+        _type: ValueType
     },
-    Value {
-        name: String,
-    },
+
     DereferencedPointer {
         pointer: Box<Expression>,
+    },
+
+    StructField {
+        struct_: Box<Expression>,
+        field_name: String
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(LiteralExpression),
-    Value(ValueExpression),
     Control(ControlExpression),
+    RValue(RValueExpression),
     LValue(LValueExpression),
 
-    // Any expression that should be eliminated by the type checker,
-    // if the codegen phase encounters this, behavior is undefined (likely a panic)
-    Unverified(UnverifiedExpression),
-
-    NOP,
     Unit,
 }

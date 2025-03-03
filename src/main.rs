@@ -4,6 +4,8 @@ mod lex;
 mod parse;
 mod preprocessor;
 mod codegen;
+mod pipeline;
+mod util;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -12,11 +14,13 @@ fn main() {
         return;
     };
 
-    let source = std::fs::read_to_string(file_name).unwrap();
-    let preprocessed = preprocessor::preprocess(&source);
-    let mut lexer = lex::generate_tokens(preprocessed.as_str());
+    let mut output = file_name.split('.').next().unwrap().to_string();
+    output.push_str(".o");
 
-    if let Some(ast) = parse::parse_ast(&mut lexer) {
-        codegen::codegen::ast_codegen(&ast);
-    }
+    pipeline::CompilerPipeline::new(file_name.clone(), output)
+        .preprocess()
+        .lex()
+        .parse()
+        .codegen()
+        .link();
 }

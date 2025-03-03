@@ -1,42 +1,45 @@
-use std::clone;
+use cranelift::codegen::gimli::ReaderOffset;
+use crate::codegen::value_type::get_cranelift_type;
+use crate::codegen::{FunctionState, GlobalState, VariableTable};
+use crate::lex::token::OperatorType;
+use crate::parse::ast::ValueType;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::GlobalValue;
-use cranelift::prelude::{FunctionBuilder, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
+use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, Module};
-use crate::codegen::codegen::FunctionState;
-use crate::codegen::scope::VariableTable;
-use crate::codegen::value_type::get_cranelift_type;
-use crate::lex::token::OperatorType;
-use crate::parse::ast::{ValueType};
+use cranelift_object::ObjectModule;
+use crate::parse::verify::verify_type::get_type_size;
 
-pub(crate) fn stack_alloca(context: &mut FunctionState, type_: ValueType) -> Option<Value> {
+pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Option<Value> {
     match type_ {
         ValueType::Structured { fields } => {
             let field_values = fields.iter()
-                .map(|(_, type_)| stack_alloca(context, type_.clone()))
+                .map(|init| stack_alloca(context, &init.type_))
                 .collect::<Vec<_>>();
 
             Some(field_values[0]?.to_owned())
         },
 
         _ => allocate_variable(
-            &mut context.builder,
-            &mut context.variable_table,
-            "alloca",
-            get_cranelift_type(&type_),
+            context,
+            get_type_size(&context.type_map, type_)? as u32,
             None
         )
     }
 }
 
-pub(crate) fn allocate_variable(builder: &mut FunctionBuilder, variable_table: &mut VariableTable,
-                                name: &str, type_: ir::Type, initial_value: Option<ir::Value>) -> Option<Value> {
-    let stack_slot_data = StackSlotData::new(StackSlotKind::ExplicitSlot, type_.bytes(), 1);
-    let stack_slot = builder.create_sized_stack_slot(stack_slot_data);
-    let stack_pointer = builder.ins().stack_addr(type_, stack_slot, 0);
+pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<ir::Value>) -> Option<Value> {
+    let stack_slot_data = StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        StackSize::from_u32(bytes),
+        1
+    );
+    let stack_slot = context.builder.create_sized_stack_slot(stack_slot_data);
+    let stack_pointer = context.builder.ins().stack_addr(context.pointer_type, stack_slot, 0);
 
     if let Some(initial_value) = initial_value {
-        builder.ins().stack_store(initial_value, stack_slot, 0);
+        context.builder.ins().stack_store(initial_value, stack_slot, 0);
     }
 
     Some(stack_pointer)
@@ -61,21 +64,18 @@ pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs
     )
 }
 
-pub(crate) fn string_literal(context: &mut FunctionState, str: &str) -> GlobalValue {
-    let id = context.object_module.declare_anonymous_data(
+pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> GlobalValue {
+    let id = object_module.declare_anonymous_data(
         false,
         false
     ).unwrap();
 
     let mut data = DataDescription::new();
-    let mut str_data = str.as_bytes().to_vec();
+    let mut str_data = str.to_owned().into_bytes();
     str_data.push('\0' as u8);
 
     data.define(str_data.into_boxed_slice());
 
-    context.object_module.define_data(id, &data).unwrap();
-    context.object_module.declare_data_in_func(
-        id,
-        context.builder.func
-    )
+    object_module.define_data(id, &data).unwrap();
+    object_module.declare_data_in_data(id, &mut data)
 }

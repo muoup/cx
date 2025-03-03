@@ -1,10 +1,22 @@
 #[macro_export]
+macro_rules! log_error {
+    ($($arg:tt)*) => {
+        // If in debug mode, panic on error
+        if cfg!(debug_assertions) {
+            panic!($($arg)*);
+        } else {
+            eprintln!($($arg)*);
+            return None;
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! assert_token_matches {
-    ($toks:ident, $pattern:pat) => {
-        let $pattern = $toks.next()? else {
-            $toks.back();
-            println!("Expected token to match pattern: {:?}", stringify!($pattern));
-            println!("Found: {:?}", $toks.peek());
+    ($data:ident, $pattern:pat) => {
+        let $pattern = $data.toks.next()? else {
+            $data.toks.back();
+            log_error!("Expected token to match pattern: {:#?}\n Found: {:#?}", stringify!($pattern), $data.toks.peek());
             return None;
         };
     }
@@ -13,8 +25,8 @@ macro_rules! assert_token_matches {
 #[macro_export]
 macro_rules! try_token_matches {
     ($toks:ident, $pattern:pat) => {
-        let $pattern = $toks.next()? else {
-            $toks.back();
+        let $pattern = $data.toks.next()? else {
+            $data.toks.back();
             return None;
         };
     }
