@@ -3,9 +3,17 @@
 public:
 
 void println(string str) {
-   puts(str.c_str());
+    puts(str.c_str());
+}
+
+void print(string str) {
+    printf("%s", str.c_str());
+}
+
+void printc(char c) {
+    putchar(c);
 }
 
 private:
 
-int puts(char* str);
+void printf(char* format, char* arg);
