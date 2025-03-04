@@ -1,6 +1,6 @@
-#include <stdio.h>
+import std::io;
 
 int main() {
-    puts("Hello, World!");
+    println("Hello, World!");
     return 0;
 }
