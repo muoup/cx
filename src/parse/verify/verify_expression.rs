@@ -129,18 +129,18 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
         },
 
         RValueExpression::Identifier(name) => {
-            let Some(id) = context.get_variable(name.as_str()) else {
-                log_error!("Variable {} not found", name);
+            let Some(id) = context.get_value(builder, name.as_str()) else {
+                log_error!("Value {} not found", name);
             };
 
-            let Some(var_type) = builder.get_type(*id).cloned() else {
+            let Some(var_type) = builder.get_type(id).cloned() else {
                 log_error!("Variable {} not found in builder.get_type(*id)", name);
             };
 
             builder.add_instruction(
                 context,
                 VirtualInstruction::Load {
-                    value: *id
+                    value: id
                 },
                 var_type
             )
@@ -238,7 +238,7 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
         },
 
         LValueExpression::Identifier(name) => {
-            let Some(var) = context.get_variable(name) else {
+            let Some(var) = context.get_value(builder, name) else {
                 log_error!("Variable not found: {}", name)
             };
 

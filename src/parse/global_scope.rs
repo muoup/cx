@@ -1,5 +1,5 @@
-use crate::{assert_token_matches, log_error};
-use crate::lex::token::{KeywordType, PunctuatorType, Token};
+use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
+use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::ast::{GlobalStatement, UnverifiedGlobalStatement, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{coalesce_type, detangle_initialization, detangle_typed_expr, ContextlessExpression};
 use crate::parse::expression::{parse_expression, parse_initialization, parse_list};
@@ -31,8 +31,39 @@ pub(crate) fn parse_struct_definition(data: &mut ParserData) -> Option<GlobalSta
 
 pub(crate) fn parse_enum_definition(data: &mut ParserData) -> Option<GlobalStatement> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Enum));
+    let Some(Token::Identifier(name)) = data.toks.next().cloned() else {
+        log_error!("Expected identifier for enum name");
+    };
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
-    unimplemented!("parse_enum_definition")
+    let mut counter = 0i32;
+    let mut fields = Vec::new();
+
+    loop {
+        assert_token_matches!(data, Token::Identifier(name));
+        let name = name.clone();
+
+        if try_consume_token!(data, Token::Assignment(None)) {
+            assert_token_matches!(data, Token::IntLiteral(value));
+            let value = value.clone();
+
+            fields.push((name, value as i32));
+            counter = value as i32 + 1;
+        } else {
+            fields.push((name, counter));
+            counter += 1;
+        }
+
+        if !try_consume_token!(data, Token::Punctuator(PunctuatorType::Comma)) {
+            break;
+        }
+    }
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
+    try_consume_token!(data, Token::Punctuator(PunctuatorType::Semicolon));
+
+    Some(
+        GlobalStatement::Enum { name, fields }
+    )
 }
 
 pub(crate) fn parse_union_definition(data: &mut ParserData) -> Option<GlobalStatement> {

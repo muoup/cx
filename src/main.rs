@@ -21,6 +21,6 @@ fn main() {
         .preprocess()
         .lex()
         .parse()
-        .codegen()
-        .link();
+        .codegen();
+        // .link();
 }

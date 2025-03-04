@@ -1,8 +1,8 @@
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
-use crate::parse::verify::context::{FnMap, TypeMap};
+use crate::parse::verify::context::{ConstMap, FnMap, TypeMap};
 
-pub(crate) fn gen_declarations(ast: &AST) -> Option<(TypeMap, FnMap)> {
-    Some((gen_type_decls(ast)?, gen_fn_decls(ast)?))
+pub(crate) fn gen_declarations(ast: &AST) -> Option<(TypeMap, FnMap, ConstMap)> {
+    Some((gen_type_decls(ast)?, gen_fn_decls(ast)?, gen_const_decls(ast)?))
 }
 
 pub(crate) fn gen_fn_decls(ast: &AST) -> Option<FnMap> {
@@ -29,6 +29,13 @@ pub(crate) fn gen_type_decls(ast: &AST) -> Option<TypeMap> {
     let mut map = base_type_defs();
 
     for statement in &ast.statements {
+        if let GlobalStatement::Enum { name, .. } = statement {
+            map.insert(
+                name.clone(),
+                ValueType::Integer { bytes: 4, signed: false }.into()
+            );
+        }
+
         let GlobalStatement::TypeDeclaration { name, type_, .. } = statement else {
             continue;
         };
@@ -41,6 +48,25 @@ pub(crate) fn gen_type_decls(ast: &AST) -> Option<TypeMap> {
             name.clone(),
             type_.clone()
         );
+    }
+
+    Some(map)
+}
+
+pub(crate) fn gen_const_decls(ast: &AST) -> Option<ConstMap> {
+    let mut map = ConstMap::new();
+
+    for statement in &ast.statements {
+        let GlobalStatement::Enum { name, fields } = statement else {
+            continue;
+        };
+
+        for (field_name, field_value) in fields {
+            map.insert(
+                field_name.clone(),
+                field_value.clone()
+            );
+        }
     }
 
     Some(map)

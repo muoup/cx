@@ -28,7 +28,7 @@ pub struct VerifiedAST {
 }
 
 pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
-    let (mut type_map, mut fn_map) = gen_declarations(&ast)?;
+    let (mut type_map, mut fn_map, mut constants_map) = gen_declarations(&ast)?;
     let function_bodies = ast.statements.into_iter()
         .filter_map(|stmt| {
             let GlobalStatement::Function { prototype, body } = stmt else {
@@ -58,6 +58,7 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
     let mut verify_context = VerifyContext {
         type_map,
         fn_map,
+        constants_map,
         var_map: ScopedMap::new(),
 
         current_return_type: None,

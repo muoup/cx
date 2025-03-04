@@ -63,6 +63,10 @@ pub enum GlobalStatement {
         prototype: FunctionPrototype,
         body: Option<Vec<Expression>>
     },
+    Enum {
+        name: String,
+        fields: Vec<(String, i32)>
+    },
     TypeDeclaration {
         name: Option<String>,
         type_: ValueType,

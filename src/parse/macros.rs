@@ -33,6 +33,18 @@ macro_rules! try_token_matches {
 }
 
 #[macro_export]
+macro_rules! try_consume_token {
+    ($data:ident, $pattern:pat) => {
+        if let Some($pattern) = $data.toks.peek() {
+            $data.toks.next();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! try_routine {
     ($iter:ident, $routine:expr) => {
         let iter_save = $iter.clone();
