@@ -176,6 +176,10 @@ pub enum VirtualInstruction {
         value: ValueID,
     },
 
+    Immediate {
+        value: i32
+    },
+
     StructAccess {
         struct_: ValueID,
         field_index: usize,
