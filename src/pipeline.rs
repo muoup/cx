@@ -3,6 +3,8 @@ use crate::lex::token::Token;
 use crate::parse::verify::VerifiedAST;
 use crate::{lex, log_error, parse, preprocessor};
 use crate::codegen::ast_codegen;
+use crate::parse::ast_interface::emit_interface;
+use crate::parse::verify;
 
 #[derive(Default, Debug)]
 pub(crate) struct CompilerPipeline {
@@ -40,7 +42,15 @@ impl CompilerPipeline {
     }
 
     pub(crate) fn parse(mut self) -> Self {
-        self.ast = parse::parse_ast(&mut self.lexer);
+        let Some(ast) = parse::parse_ast(&mut self.lexer) else {
+            println!("Failed to parse AST");
+            return self
+        };
+
+        let change_extension = self.source_dir.replace(".cx", ".hx");
+        emit_interface(&ast, change_extension.as_str());
+
+        self.ast = verify::verify_ast(ast);
         self
     }
 

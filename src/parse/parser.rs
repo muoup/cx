@@ -9,7 +9,7 @@ use crate::util::{MaybeResult, ScopedMap};
 
 pub(crate) type VarTable = ScopedMap<ValueType>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum VisibilityMode {
     Package,
     Public,
@@ -50,15 +50,20 @@ impl<'a> TokenIter<'_> {
 
 pub(crate) fn parse_ast(data: &mut ParserData) -> Option<AST> {
     let mut ast = AST {
-        statements: Vec::new()
+        statements: Vec::new(),
+        public_interface: Vec::new()
     };
 
     while data.toks.peek() != None {
-        let stmt = parse_global_stmt(data)?;
-
-        // println!("{:#?}", stmt);
+        let Some(stmt) = parse_global_stmt(data) else {
+            log_error!("Failed to parse global statement: {:#?}", data.toks.peek());
+        };
 
         ast.statements.push(stmt);
+
+        if data.visibility == VisibilityMode::Public {
+            ast.public_interface.push(ast.statements.len() - 1);
+        }
     }
 
     Some(ast)

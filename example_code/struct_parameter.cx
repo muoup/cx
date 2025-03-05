@@ -1,3 +1,5 @@
+public:
+
 int putchar(int c);
 
 struct Test {

@@ -1,11 +1,13 @@
 use crate::lex::token::OperatorType;
 use std::fmt::Debug;
 use std::rc::Rc;
+use crate::parse::parser::VisibilityMode;
 use crate::parse::verify::context::FunctionPrototype;
 
 #[derive(Debug)]
 pub struct AST {
-    pub statements: Vec<GlobalStatement>
+    pub statements: Vec<GlobalStatement>,
+    pub public_interface: Vec<usize>
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,7 +51,6 @@ pub enum GlobalStatement {
         type_: ValueType,
         value: Option<Expression>
     },
-
     Import {
         path: String
     }
