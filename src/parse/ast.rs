@@ -30,33 +30,6 @@ pub enum ValueType {
     Identifier(String)
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct StructDefinition {
-    pub name: Option<String>,
-    pub fields: Vec<(String, ValueType)>
-}
-
-#[derive(Debug)]
-pub enum FirstPassGlobals {
-    Struct {
-        name: String,
-        fields: Vec<(String, ValueType)>
-    }
-}
-
-#[derive(Debug)]
-pub enum SecondPassGlobals {
-    Function {
-        prototype: Rc<FunctionPrototype>,
-        body: Option<Vec<Expression>>
-    },
-}
-
-#[derive(Debug)]
-pub enum ThirdPassGlobals {
-    GlobalExpression(Expression)
-}
-
 #[derive(Debug)]
 pub enum GlobalStatement {
     Function {
@@ -75,26 +48,10 @@ pub enum GlobalStatement {
         name: String,
         type_: ValueType,
         value: Option<Expression>
-    }
-}
-
-#[derive(Debug)]
-pub enum UnverifiedGlobalStatement {
-    Function {
-        return_type: ValueType,
-        name_header: Expression,
-        params: Vec<Expression>,
-        body: Option<Vec<Expression>>
     },
 
-    StructDeclaration {
-        name: String,
-        field_declarations: Vec<Expression>,
-    },
-
-    GlobalVariable {
-        left: Expression,
-        value: Option<Expression>
+    Import {
+        path: String
     }
 }
 

@@ -39,7 +39,10 @@ pub enum KeywordType {
     Static, Extern, Const, Register,
     Volatile, Inline, Restrict,
 
-    Sizeof
+    Sizeof,
+
+    // CX Specific
+    Import,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
