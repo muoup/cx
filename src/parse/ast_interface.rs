@@ -1,9 +1,15 @@
-use std::fs::File;
 use std::io::Write;
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
 
 pub fn emit_interface(ast: &AST, output_path: &str) -> Option<()> {
-    let mut file = File::create(output_path).ok()?;
+    let directory = output_path.rfind('/')
+        .map(|index| &output_path[..index])
+        .or(Some(""))?;
+
+    std::fs::create_dir_all(directory)
+        .expect("Failed to create output directory");
+    let mut file = std::fs::File::create(output_path)
+        .expect("Failed to create output file");
 
     for index in ast.public_interface.iter() {
         let stmt = &ast.statements[*index];
