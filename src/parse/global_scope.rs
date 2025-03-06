@@ -9,6 +9,7 @@ use crate::parse::verify::context::FunctionPrototype;
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
     match data.toks.peek()? {
         Token::Specifier(_) => parse_specifier(data),
+
         Token::Keyword(KeywordType::Struct) => parse_struct_definition(data),
         Token::Keyword(KeywordType::Enum) => parse_enum_definition(data),
         Token::Keyword(KeywordType::Union) => parse_union_definition(data),
@@ -22,6 +23,14 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<GlobalStatement> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Import));
 
     let mut str = String::new();
+
+    if let Some(Token::Identifier(name)) = data.toks.peek() {
+        if name.as_str() == "std" {
+            str.push_str("lib/std/");
+            data.toks.next();
+            assert_token_matches!(data, Token::Operator(OperatorType::ScopeRes));
+        }
+    }
 
     loop {
         let Some(Token::Identifier(name)) = data.toks.next().cloned() else {

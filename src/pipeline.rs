@@ -1,12 +1,14 @@
+use std::fs::File;
 use crate::codegen::ast_codegen;
 use crate::lex::token::Token;
 use crate::parse::ast_interface::emit_interface;
 use crate::parse::verify;
 use crate::parse::verify::VerifiedAST;
 use crate::{lex, parse, preprocessor};
+use crate::parse::ast::AST;
 
 #[derive(Default, Debug)]
-pub(crate) struct CompilerPipeline {
+pub struct CompilerPipeline {
     source_dir: String,
     file_name: String,
 
@@ -21,7 +23,7 @@ pub(crate) struct CompilerPipeline {
 }
 
 impl CompilerPipeline {
-    pub(crate) fn new(source: String, output: String) -> Self {
+    pub fn new(source: String, output: String) -> Self {
         let extensionless = source.replace(".cx", "");
         let (path, file) = extensionless.rfind('/')
             .map(|index| (&extensionless[..index], &extensionless[index..]))
@@ -42,18 +44,32 @@ impl CompilerPipeline {
         }
     }
 
-    pub(crate) fn preprocess(mut self) -> Self {
+    pub fn source_file(&self) -> Option<File> {
+        File::open(self.source_dir.as_str()).ok()
+    }
+
+    pub fn find_previous_header(&self) -> Option<File> {
+        let previous = format!("{}/{}.hx", self.internal_dir, self.file_name);
+        File::open(previous).ok()
+    }
+
+    pub fn find_previous_object(&self) -> Option<File> {
+        let previous = format!("{}/{}.o", self.internal_dir, self.file_name);
+        File::open(previous).ok()
+    }
+
+    pub fn preprocess(mut self) -> Self {
         self.file_contents = std::fs::read_to_string(self.source_dir.as_str()).unwrap();
         self.preprocessed = preprocessor::preprocess(self.file_contents.as_str());
         self
     }
 
-    pub(crate) fn lex(mut self) -> Self {
+    pub fn lex(mut self) -> Self {
         self.lexer = lex::generate_tokens(self.preprocessed.as_str());
         self
     }
 
-    pub(crate) fn parse(mut self) -> Self {
+    pub fn parse(mut self) -> Self {
         let Some(ast) = parse::parse_ast(&mut self.lexer) else {
             println!("Failed to parse AST");
             return self
@@ -66,7 +82,16 @@ impl CompilerPipeline {
         self
     }
 
-    pub(crate) fn codegen(mut self) -> Self {
+    pub fn parse_interface(&mut self) -> Option<AST> {
+        let ast = parse::parse_ast(&mut self.lexer)?;
+
+        std::fs::create_dir_all(self.internal_dir.as_str()).unwrap();
+        emit_interface(&ast, format!("{}/{}.hx", self.internal_dir, self.file_name).as_str()).unwrap();
+
+        Some(ast)
+    }
+
+    pub fn codegen(mut self) -> Self {
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
 
         if let Some(ast) = &self.ast {
@@ -79,7 +104,7 @@ impl CompilerPipeline {
         self
     }
 
-    pub(crate) fn link(mut self) -> Self {
+    pub fn link(mut self) -> Self {
         let output = std::process::Command::new("gcc")
             .arg("-o")
             .arg(self.output.as_str())

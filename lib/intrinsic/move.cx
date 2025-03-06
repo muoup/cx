@@ -7,7 +7,6 @@ public:
  *  or memcpy'd to a new location which is then responsible for running
  *  the destructor.
  */
-[instrinsic, not_constructable]
 struct moved<T> {
     T value;
 }

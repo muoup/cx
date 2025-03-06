@@ -5,7 +5,8 @@ use crate::log_error;
 use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualInstruction};
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
 use crate::parse::verify::context::{FnMap, TypeMap, VerifyContext};
-use crate::parse::verify::typeless_declarations::gen_declarations;
+use crate::parse::verify::import_module::{import_file};
+use crate::parse::verify::typeless_declarations::{gen_const_decls, gen_fn_decls, gen_imports, gen_type_decls};
 use crate::parse::verify::verify_expression::verify_expression;
 use crate::parse::verify::verify_type::{get_type_size, verify_fn_prototype, verify_type};
 use crate::util::ScopedMap;
@@ -17,6 +18,7 @@ pub mod verify_type;
 mod typeless_declarations;
 mod verify_expression;
 mod special_exprs;
+mod import_module;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
@@ -27,8 +29,17 @@ pub struct VerifiedAST {
     pub fn_defs: Vec<VerifiedFunction>
 }
 
-pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
-    let (mut type_map, mut fn_map, mut constants_map) = gen_declarations(&ast)?;
+pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
+    for file in gen_imports(&ast)?.iter() {
+        let Some(_) = import_file(&mut ast, file.as_str()) else {
+            log_error!("Failed to import file {}", file);
+        };
+    }
+
+    let mut type_map = gen_type_decls(&ast)?;
+    let mut fn_map = gen_fn_decls(&ast)?;
+    let mut constants_map = gen_const_decls(&ast)?;
+
     let function_bodies = ast.statements.into_iter()
         .filter_map(|stmt| {
             let GlobalStatement::Function { prototype, body } = stmt else {
@@ -115,6 +126,15 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
 
         for stmt in body.iter() {
             verify_expression(&mut verify_context, &mut builder, stmt)?;
+        }
+
+        // Add implicit return to void functions
+        if verify_context.current_return_type.is_none() {
+            builder.add_instruction(
+                &verify_context,
+                VirtualInstruction::Return { value: None },
+                ValueType::Unit
+            );
         }
 
         builder.finish_function();

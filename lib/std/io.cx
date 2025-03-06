@@ -2,15 +2,15 @@
 
 public:
 
-void println(string str) {
-    puts(str.c_str());
+void println(char* str) {
+    puts(str);
 }
 
-void print(string str) {
-    printf("%s", str.c_str());
+void print(char* str) {
+    printf("%s", str);
 }
 
-void printc(char c) {
+void printc(int c) {
     putchar(c);
 }
 

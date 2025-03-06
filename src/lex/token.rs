@@ -114,6 +114,8 @@ impl Token {
             "const" => Token::Specifier(SpecifierType::Const),
             "thread_local" => Token::Specifier(SpecifierType::ThreadLocal),
 
+            "import" => Token::Keyword(KeywordType::Import),
+
             _ => Token::Identifier(str),
         }
     }
