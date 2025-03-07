@@ -1,7 +1,7 @@
 public:
 
-enum optional<T> {
-    Some(T),
+enum union optional<T> {
+    Some: T,
     None
 }
 
@@ -16,7 +16,7 @@ bool optional<T>::is_some(this) {
 
 optional<U> optional::map<U>(this, U (*func)()) {
     if Some(T value) = opt {
-        return Some(func(value));
+        return func(value);
     }
 
     return None;

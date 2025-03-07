@@ -1,6 +1,6 @@
-public:
-
 import std::optional;
+
+public:
 
 struct vector<T> {
     T* data;
@@ -37,7 +37,7 @@ void vector<T>::push(this, T object) {
 
 optional<T*> vector<T>::at(this, usize index) {
     if (index >= this->length) {
-        return null;
+        return None;
     }
 
     return &this->data[index];
