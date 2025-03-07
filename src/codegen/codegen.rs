@@ -1,4 +1,3 @@
-use std::process::id;
 use cranelift::codegen::ir;
 use crate::codegen::instruction::codegen_instruction;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
