@@ -1,3 +1,4 @@
+use crate::log_error;
 use crate::parse::ast::AST;
 use crate::pipeline::CompilerPipeline;
 
@@ -14,7 +15,9 @@ fn get_interface(file: &str) -> Option<AST> {
 
     let file_pipeline = CompilerPipeline::new(file.clone(), String::new());
 
-    let source = file_pipeline.source_file()?;
+    let Some(source) = file_pipeline.source_file() else {
+        log_error!("File not found: {}", file);
+    };
     let header = file_pipeline.find_previous_header();
     let object = file_pipeline.find_previous_object();
 
@@ -35,11 +38,11 @@ fn get_interface(file: &str) -> Option<AST> {
         }
     }
 
-    let object = file_pipeline
+    file_pipeline
+        .preprocess()
         .lex()
         .parse()
-        .codegen()
-        .find_previous_object()?;
+        .codegen();
 
     CompilerPipeline::new(file.to_string(), String::new())
         .preprocess()

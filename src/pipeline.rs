@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::process::Command;
 use crate::codegen::ast_codegen;
 use crate::lex::token::Token;
 use crate::parse::ast_interface::emit_interface;
@@ -26,7 +27,7 @@ impl CompilerPipeline {
     pub fn new(source: String, output: String) -> Self {
         let extensionless = source.replace(".cx", "");
         let (path, file) = extensionless.rfind('/')
-            .map(|index| (&extensionless[..index], &extensionless[index..]))
+            .map(|index| (&extensionless[..index], &extensionless[index + 1..]))
             .unwrap_or(("", &extensionless));
 
         let internal = format!(".internal/{}", path);
@@ -62,6 +63,10 @@ impl CompilerPipeline {
         self.file_contents = std::fs::read_to_string(self.source_dir.as_str()).unwrap();
         self.preprocessed = preprocessor::preprocess(self.file_contents.as_str());
         self
+    }
+
+    pub fn take_ast(self) -> Option<VerifiedAST> {
+        self.ast
     }
 
     pub fn lex(mut self) -> Self {
@@ -104,20 +109,35 @@ impl CompilerPipeline {
         self
     }
 
-    pub fn link(mut self) -> Self {
-        let output = std::process::Command::new("gcc")
-            .arg("-o")
-            .arg(self.output.as_str())
-            .arg(format!("{}/{}.o", self.internal_dir, self.file_name).as_str())
+    pub fn link(self) -> Self {
+        let mut imports = self.ast
+            .as_ref()
+            .unwrap()
+            .imports
+            .iter()
+            .map(|import|
+                if import.starts_with("std") {
+                    format!(".internal/lib/{}.o", import)
+                } else {
+                    format!(".internal/{}.o", import)
+                }
+            )
+            .collect::<Vec<_>>();
+
+        imports.push(format!("{}/{}.o", self.internal_dir, self.file_name));
+
+        let mut cmd = Command::new("gcc");
+        cmd
+            .args(&["-o", self.output.as_str()])
+            .args(imports);
+
+        println!("{:?}", cmd);
+
+        cmd
             .output()
-            .expect("Linker failed to start");
+            .expect("Failed to link object files");
 
-        if !output.status.success() {
-            println!("Failed to link object file");
-            println!("{}", String::from_utf8_lossy(&output.stderr));
-        }
-
-        std::fs::remove_file(self.output.as_str()).unwrap();
+        println!("Linked object files");
 
         self
     }

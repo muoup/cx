@@ -14,13 +14,10 @@ fn main() {
         return;
     };
 
-    let mut output = file_name.split('.').next().unwrap().to_string();
-    output.push_str(".o");
-
-    pipeline::CompilerPipeline::new(file_name.clone(), output)
+    pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
         .preprocess()
         .lex()
         .parse()
-        .codegen();
-        // .link();
+        .codegen()
+        .link();
 }

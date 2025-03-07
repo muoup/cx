@@ -29,7 +29,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &F
     }
 
     let id = global_state.object_module
-        .declare_function(prototype.name.as_str(), Linkage::Export, &sig)
+        .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)
         .unwrap();
 
     global_state.function_ids.insert(prototype.name.clone(), id);

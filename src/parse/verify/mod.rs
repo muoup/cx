@@ -26,11 +26,15 @@ pub struct VerifiedAST {
     pub type_map: TypeMap,
 
     pub global_strs: Vec<String>,
-    pub fn_defs: Vec<VerifiedFunction>
+    pub fn_defs: Vec<VerifiedFunction>,
+
+    pub imports: Vec<String>
 }
 
 pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
-    for file in gen_imports(&ast)?.iter() {
+    let imports = gen_imports(&ast)?;
+
+    for file in imports.iter() {
         let Some(_) = import_file(&mut ast, file.as_str()) else {
             log_error!("Failed to import file {}", file);
         };
@@ -73,7 +77,7 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
         var_map: ScopedMap::new(),
 
         current_return_type: None,
-        merge_stack: Vec::new()
+        merge_stack: Vec::new(),
     };
 
     let mut builder = BytecodeBuilder::new();
@@ -130,15 +134,20 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
 
         // Add implicit return to void functions
         if verify_context.current_return_type.is_none() {
-            builder.add_instruction(
-                &verify_context,
-                VirtualInstruction::Return { value: None },
-                ValueType::Unit
-            );
+            let last_instruction = builder.last_instruction()
+                .map(|instr| &instr.instruction);
+
+            if !matches!(last_instruction, Some(VirtualInstruction::Return { .. })) {
+                builder.add_instruction(
+                    &verify_context,
+                    VirtualInstruction::Return { value: None },
+                    ValueType::Unit
+                );
+            }
         }
 
         builder.finish_function();
     }
 
-    builder.finish(verify_context.fn_map, verify_context.type_map)
+    builder.finish(verify_context.fn_map, verify_context.type_map, imports)
 }
