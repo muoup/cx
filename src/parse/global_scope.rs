@@ -1,10 +1,74 @@
 use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
-use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::ast::{GlobalStatement, UnverifiedGlobalStatement, ValueType, VarInitialization};
+use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
+use crate::parse::ast::{GlobalStatement, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{coalesce_type, detangle_initialization, detangle_typed_expr, ContextlessExpression};
 use crate::parse::expression::{parse_expression, parse_initialization, parse_list};
-use crate::parse::parser::{parse_body, ParserData, TokenIter};
+use crate::parse::parser::{parse_body, ParserData, TokenIter, VisibilityMode};
 use crate::parse::verify::context::FunctionPrototype;
+
+pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
+    match data.toks.peek()? {
+        Token::Specifier(_) => parse_specifier(data),
+
+        Token::Keyword(KeywordType::Struct) => parse_struct_definition(data),
+        Token::Keyword(KeywordType::Enum) => parse_enum_definition(data),
+        Token::Keyword(KeywordType::Union) => parse_union_definition(data),
+        Token::Keyword(KeywordType::Import) => parse_import(data),
+
+        _ => parse_global_expression(data)
+    }
+}
+
+pub(crate) fn parse_import(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Import));
+
+    let mut str = String::new();
+
+    if let Some(Token::Identifier(name)) = data.toks.peek() {
+        if name.as_str() == "std" {
+            str.push_str("lib/std/");
+            data.toks.next();
+            assert_token_matches!(data, Token::Operator(OperatorType::ScopeRes));
+        }
+    }
+
+    loop {
+        let Some(Token::Identifier(name)) = data.toks.next().cloned() else {
+            log_error!("Expected identifier for import path");
+        };
+        str.push_str(name.as_str());
+
+        if try_consume_token!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
+            break;
+        }
+
+        try_token_matches!(data, Token::Operator(OperatorType::Divide));
+        str.push('/');
+    }
+
+    Some(
+        GlobalStatement::Import { path: str }
+    )
+}
+
+pub(crate) fn parse_specifier(data: &mut ParserData) -> Option<GlobalStatement> {
+    assert_token_matches!(data, Token::Specifier(specifier));
+
+    match specifier {
+        SpecifierType::Public => {
+            data.visibility = VisibilityMode::Public;
+            try_consume_token!(data, Token::Punctuator(PunctuatorType::Colon));
+            parse_global_stmt(data)
+        },
+        SpecifierType::Private => {
+            data.visibility = VisibilityMode::Private;
+            try_consume_token!(data, Token::Punctuator(PunctuatorType::Colon));
+            parse_global_stmt(data)
+        },
+
+        _ => unimplemented!("parse_specifier: {:#?}", specifier)
+    }
+}
 
 pub(crate) fn parse_struct_definition(data: &mut ParserData) -> Option<GlobalStatement> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Struct));
@@ -115,15 +179,5 @@ pub(crate) fn parse_global_expression(data: &mut ParserData) -> Option<GlobalSta
         },
 
         tok => unimplemented!("parse_global_expression: {:#?}", tok)
-    }
-}
-
-pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
-    match data.toks.peek()? {
-        Token::Keyword(KeywordType::Struct) => parse_struct_definition(data),
-        Token::Keyword(KeywordType::Enum) => parse_enum_definition(data),
-        Token::Keyword(KeywordType::Union) => parse_union_definition(data),
-
-        _ => parse_global_expression(data)
     }
 }

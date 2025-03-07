@@ -1,7 +1,6 @@
-int puts(char* str);
+import std::io;
 
 int main() {
-    puts("Hello, World!");
-    puts("This is a CX program!");
+    println("Hello, World!");
     return 0;
 }

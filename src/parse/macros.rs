@@ -24,11 +24,11 @@ macro_rules! assert_token_matches {
 
 #[macro_export]
 macro_rules! try_token_matches {
-    ($toks:ident, $pattern:pat) => {
-        let $pattern = $data.toks.next()? else {
-            $data.toks.back();
+    ($data:ident, $pattern:pat) => {
+        let Some($pattern) = $data.toks.peek() else {
             return None;
         };
+        $data.toks.next();
     }
 }
 

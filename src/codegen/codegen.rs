@@ -1,4 +1,3 @@
-use std::process::id;
 use cranelift::codegen::ir;
 use crate::codegen::instruction::codegen_instruction;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
@@ -29,7 +28,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &F
     }
 
     let id = global_state.object_module
-        .declare_function(prototype.name.as_str(), Linkage::Export, &sig)
+        .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)
         .unwrap();
 
     global_state.function_ids.insert(prototype.name.clone(), id);

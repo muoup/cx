@@ -1,0 +1,19 @@
+#include <stdio.h>
+
+public:
+
+void println(char* str) {
+    puts(str);
+}
+
+void print(char* str) {
+    printf("%s", str);
+}
+
+void printc(int c) {
+    putchar(c);
+}
+
+private:
+
+void printf(char* format, char* arg);

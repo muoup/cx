@@ -144,13 +144,22 @@ impl BytecodeBuilder {
         (context.blocks.len() - 1) as ElementID
     }
 
-    pub(crate) fn finish(self, fn_map: FnMap, type_map: TypeMap) -> Option<VerifiedAST> {
+    pub(crate) fn last_instruction(&self) -> Option<&BlockInstruction> {
+        let context = self.fun();
+
+        let block = context.blocks.get(context.current_block as usize)?;
+        block.body.last()
+    }
+
+    pub(crate) fn finish(self, fn_map: FnMap, type_map: TypeMap, imports: Vec<String>) -> Option<VerifiedAST> {
         Some(
             VerifiedAST {
                 fn_map,
                 type_map,
+                imports,
+
                 global_strs: self.global_strings,
-                fn_defs: self.functions
+                fn_defs: self.functions,
             }
         )
     }

@@ -39,7 +39,10 @@ pub enum KeywordType {
     Static, Extern, Const, Register,
     Volatile, Inline, Restrict,
 
-    Sizeof
+    Sizeof,
+
+    // CX Specific
+    Import,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -49,11 +52,20 @@ pub enum IntrinsicType {
     Unsigned, Signed,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum SpecifierType {
+    Const, Volatile, Restrict,
+    Inline, Extern, Static,
+    Public, Private,
+    ThreadLocal
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Assignment(Option<OperatorType>),
     Operator(OperatorType),
 
+    Specifier(SpecifierType),
     Keyword(KeywordType),
     Intrinsic(IntrinsicType),
     Punctuator(PunctuatorType),
@@ -89,14 +101,21 @@ impl Token {
             "auto" => Token::Intrinsic(IntrinsicType::Auto),
             "unsigned" => Token::Intrinsic(IntrinsicType::Unsigned),
             "signed" => Token::Intrinsic(IntrinsicType::Signed),
-            "static" => Token::Keyword(KeywordType::Static),
-            "extern" => Token::Keyword(KeywordType::Extern),
-            "const" => Token::Keyword(KeywordType::Const),
             "register" => Token::Keyword(KeywordType::Register),
-            "volatile" => Token::Keyword(KeywordType::Volatile),
-            "inline" => Token::Keyword(KeywordType::Inline),
-            "restrict" => Token::Keyword(KeywordType::Restrict),
             "sizeof" => Token::Keyword(KeywordType::Sizeof),
+
+            "public" => Token::Specifier(SpecifierType::Public),
+            "private" => Token::Specifier(SpecifierType::Private),
+            "volatile" => Token::Specifier(SpecifierType::Volatile),
+            "inline" => Token::Specifier(SpecifierType::Inline),
+            "extern" => Token::Specifier(SpecifierType::Extern),
+            "static" => Token::Specifier(SpecifierType::Static),
+            "restrict" => Token::Specifier(SpecifierType::Restrict),
+            "const" => Token::Specifier(SpecifierType::Const),
+            "thread_local" => Token::Specifier(SpecifierType::ThreadLocal),
+
+            "import" => Token::Keyword(KeywordType::Import),
+
             _ => Token::Identifier(str),
         }
     }

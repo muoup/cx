@@ -5,7 +5,8 @@ use crate::log_error;
 use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualInstruction};
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
 use crate::parse::verify::context::{FnMap, TypeMap, VerifyContext};
-use crate::parse::verify::typeless_declarations::gen_declarations;
+use crate::parse::verify::import_module::{import_file};
+use crate::parse::verify::typeless_declarations::{gen_const_decls, gen_fn_decls, gen_imports, gen_type_decls};
 use crate::parse::verify::verify_expression::verify_expression;
 use crate::parse::verify::verify_type::{get_type_size, verify_fn_prototype, verify_type};
 use crate::util::ScopedMap;
@@ -17,6 +18,7 @@ pub mod verify_type;
 mod typeless_declarations;
 mod verify_expression;
 mod special_exprs;
+mod import_module;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
@@ -24,11 +26,24 @@ pub struct VerifiedAST {
     pub type_map: TypeMap,
 
     pub global_strs: Vec<String>,
-    pub fn_defs: Vec<VerifiedFunction>
+    pub fn_defs: Vec<VerifiedFunction>,
+
+    pub imports: Vec<String>
 }
 
-pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
-    let (mut type_map, mut fn_map, mut constants_map) = gen_declarations(&ast)?;
+pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
+    let imports = gen_imports(&ast)?;
+
+    for file in imports.iter() {
+        let Some(_) = import_file(&mut ast, file.as_str()) else {
+            log_error!("Failed to import file {}", file);
+        };
+    }
+
+    let mut type_map = gen_type_decls(&ast)?;
+    let mut fn_map = gen_fn_decls(&ast)?;
+    let mut constants_map = gen_const_decls(&ast)?;
+
     let function_bodies = ast.statements.into_iter()
         .filter_map(|stmt| {
             let GlobalStatement::Function { prototype, body } = stmt else {
@@ -62,7 +77,7 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
         var_map: ScopedMap::new(),
 
         current_return_type: None,
-        merge_stack: Vec::new()
+        merge_stack: Vec::new(),
     };
 
     let mut builder = BytecodeBuilder::new();
@@ -117,8 +132,22 @@ pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
             verify_expression(&mut verify_context, &mut builder, stmt)?;
         }
 
+        // Add implicit return to void functions
+        if verify_context.current_return_type.is_none() {
+            let last_instruction = builder.last_instruction()
+                .map(|instr| &instr.instruction);
+
+            if !matches!(last_instruction, Some(VirtualInstruction::Return { .. })) {
+                builder.add_instruction(
+                    &verify_context,
+                    VirtualInstruction::Return { value: None },
+                    ValueType::Unit
+                );
+            }
+        }
+
         builder.finish_function();
     }
 
-    builder.finish(verify_context.fn_map, verify_context.type_map)
+    builder.finish(verify_context.fn_map, verify_context.type_map, imports)
 }
