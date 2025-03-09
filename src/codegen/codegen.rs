@@ -117,8 +117,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     context.builder.seal_all_blocks();
     context.builder.finalize();
 
-    // println!("{:?}", func);
-
     let GlobalState { object_module, context, .. } = global_state;
 
     context.func = func;

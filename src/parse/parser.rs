@@ -1,6 +1,5 @@
-use crate::lex::token::PunctuatorType::{CloseBrace, OpenBrace, Semicolon};
-use crate::lex::token::Token;
-use crate::log_error;
+use crate::lex::token::{PunctuatorType, Token};
+use crate::{assert_token_matches, log_error};
 use crate::parse::ast::{Expression, ValueType, AST};
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, maybe_contextualize_rvalue};
 use crate::parse::expression::{parse_expression, parse_list, parse_rvals, parse_rvalue};
@@ -69,46 +68,51 @@ pub(crate) fn parse_ast(data: &mut ParserData) -> Option<AST> {
     Some(ast)
 }
 
+pub(crate) fn parse_body_expr(data: &mut ParserData) -> Option<Expression> {
+    let first = data.toks.peek().cloned();
+
+    let Some(expr) = parse_expression(data) else {
+        log_error!("Failed to parse expression: {:#?}", first?);
+    };
+
+    match maybe_contextualize_rvalue(data, expr) {
+        MaybeResult::Consumed(expr)
+            => Some(expr),
+        MaybeResult::Unconsumed(expr)
+            => {
+                let Some(lval) = contextualize_lvalue(data, expr) else {
+                    log_error!("Body expression failed to parse ending at: {:#?}", data.toks.peek());
+                };
+
+                assert_token_matches!(data, Token::Punctuator(Semicolon));
+
+                Some(lval)
+            },
+        MaybeResult::Error(err)
+            => log_error!("Error parsing body: {:#?}", err)
+    }
+}
+
 pub(crate) fn parse_body(data: &mut ParserData) -> Vec<Expression> {
-    if data.toks.peek() == Some(&&Token::Punctuator(OpenBrace)) {
-        data.toks.next();
+    match data.toks.peek() {
+        Some(&Token::Punctuator(PunctuatorType::Semicolon)) => {
+            data.toks.next();
+            vec![]
+        },
+        Some(&Token::Punctuator(PunctuatorType::OpenBrace)) => {
+            data.toks.next();
 
-        fn parser(data: &mut ParserData) -> Option<Expression> {
-            let Some(expr) = parse_expression(data) else {
-                println!("Failed to parse expression");
-                println!("{:#?}", data.toks.peek());
-                return None;
-            };
+            let body = parse_list(
+                data,
+                Token::Punctuator(PunctuatorType::Semicolon), Token::Punctuator(PunctuatorType::CloseBrace),
+                parse_body_expr
+            ).unwrap();
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseBrace)));
 
-            match maybe_contextualize_rvalue(data, expr) {
-                MaybeResult::Consumed(expr)
-                    => Some(expr),
-                MaybeResult::Unconsumed(expr)
-                    => {
-                        let lval = contextualize_lvalue(data, expr);
-
-                        if lval.is_none() {
-                            log_error!("Body expression failed to parse ending at: {:#?}", data.toks.peek());
-                        };
-
-                        lval
-                    },
-                MaybeResult::Error(err)
-                    => log_error!("Error parsing body: {:#?}", err)
-            }
+            body
+        },
+        _ => {
+            vec![parse_body_expr(data).unwrap()]
         }
-
-        let body = parse_list(
-            data,
-            Token::Punctuator(Semicolon), Token::Punctuator(CloseBrace),
-            parser
-        ).unwrap();
-        assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseBrace)));
-
-        body
-    } else {
-        let body = vec![parse_rvalue(data).unwrap()];
-
-        body
     }
 }

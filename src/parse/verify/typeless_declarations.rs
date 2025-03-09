@@ -1,20 +1,35 @@
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
 use crate::parse::verify::context::{ConstMap, FnMap, TypeMap};
+use crate::parse::verify::name_mangling::member_function_mangle;
 
 pub(crate) fn gen_fn_decls(ast: &AST) -> Option<FnMap> {
     let mut map = FnMap::new();
 
     for statement in &ast.statements {
-        let GlobalStatement::Function {
-            prototype, ..
-        } = statement else {
-            continue;
-        };
+        match statement {
+            GlobalStatement::Function {
+                prototype, ..
+            } => {
+                map.insert(
+                    prototype.name.clone(),
+                    prototype.clone()
+                );
+            }
 
-        map.insert(
-            prototype.name.clone(),
-            prototype.clone()
-        );
+            GlobalStatement::MemberFunction {
+                struct_parent, prototype, ..
+            } => {
+                let mut prototype = prototype.clone();
+                prototype.name = member_function_mangle(struct_parent, &prototype.name);
+
+                map.insert(
+                    prototype.name.clone(),
+                    prototype
+                );
+            },
+
+            _ => continue,
+        }
     }
 
     Some(map)

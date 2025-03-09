@@ -1,15 +1,16 @@
-use cranelift::codegen::gimli::ReaderOffset;
-use crate::codegen::value_type::get_cranelift_type;
-use crate::codegen::{FunctionState, GlobalState, VariableTable};
+use std::process::id;
+use crate::codegen::FunctionState;
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
-use cranelift::codegen::ir;
-use cranelift::codegen::ir::GlobalValue;
-use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
-use cranelift_module::{DataDescription, Module};
-use cranelift_object::ObjectModule;
 use crate::parse::verify::verify_type::get_type_size;
+use cranelift::codegen::gimli::ReaderOffset;
+use cranelift::codegen::ir;
+use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::codegen::ir::GlobalValue;
+use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
+use cranelift_module::{DataDescription, DataId, Module};
+use cranelift_object::object::SymbolScope::Linkage;
+use cranelift_object::ObjectModule;
 
 pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Option<Value> {
     match type_ {
@@ -64,18 +65,20 @@ pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs
     )
 }
 
-pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> GlobalValue {
+pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> DataId {
     let id = object_module.declare_anonymous_data(
         false,
         false
     ).unwrap();
 
-    let mut data = DataDescription::new();
     let mut str_data = str.to_owned().into_bytes();
     str_data.push('\0' as u8);
 
+    let mut data = DataDescription::new();
     data.define(str_data.into_boxed_slice());
 
     object_module.define_data(id, &data).unwrap();
-    object_module.declare_data_in_data(id, &mut data)
+    object_module.declare_data_in_data(id, &mut data);
+
+    id
 }

@@ -24,7 +24,7 @@ pub fn emit_interface(ast: &AST, output_path: &str) -> Option<()> {
 
 pub(crate) fn global_stmt_as_str(global_statement: &GlobalStatement) -> Option<String> {
     match global_statement {
-        GlobalStatement::Function { prototype, body } => {
+        GlobalStatement::Function { prototype, .. } => {
             let mut header = initialization_as_name(
                 &prototype.return_type,
                 prototype.name.clone()
@@ -47,6 +47,31 @@ pub(crate) fn global_stmt_as_str(global_statement: &GlobalStatement) -> Option<S
 
             Some(header)
         },
+
+        GlobalStatement::MemberFunction {
+            struct_parent, prototype, ..
+        } => {
+            let mut header = initialization_as_name(
+                &prototype.return_type,
+                String::new()
+            )?;
+
+            header.push_str(&format!("{}::{}", struct_parent, prototype.name));
+            header.push_str("(this");
+
+            for arg in prototype.args.iter() {
+                header.push_str(", ");
+                header.push_str(&initialization_as_name(
+                    &arg.type_,
+                    arg.name.clone()
+                )?);
+            }
+
+            header.push_str(");\n");
+
+            Some(header)
+        },
+
         GlobalStatement::TypeDeclaration {
             name: Some(name),
             type_,
@@ -63,7 +88,7 @@ pub(crate) fn initialization_as_name(value_type: &ValueType, name: String) -> Op
     match value_type {
         ValueType::Identifier(type_name) => Some(format!("{} {}", type_name, name)),
         ValueType::PointerTo(inner) => {
-            initialization_as_name(inner.as_ref(), format!("(*{})", name))
+            initialization_as_name(inner.as_ref(), format!("*{}", name))
         },
         ValueType::Array { size, _type } => {
             initialization_as_name(_type.as_ref(), format!("{}[{}]", name, size))
