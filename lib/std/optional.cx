@@ -1,29 +1,24 @@
 public:
 
-enum optional<T> {
+enum union optional<T> {
     Some(T),
     None
 }
 
 bool optional<T>::is_some(this) {
-    switch opt {
-        case Some(T value):
-            return true;
-        case None:
-            return false;
-    }
+    return *this is Some;
 }
 
-optional<U> optional::map<U>(this, U (*func)()) {
-    if Some(T value) = opt {
-        return Some(func(value));
+optional<U> optional::map<T, U>(this, optional<U> (*func)(T value)) {
+    if opt is Some(T value) {
+        return func(value);
     }
 
     return None;
 }
 
 T optional::or_else<T>(this, T otherwise) {
-    if Some(T value) = opt {
+    if opt is Some(T value) {
         return value;
     }
 
