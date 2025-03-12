@@ -15,8 +15,18 @@ void strong* strong_realloc(void* ptr, u64 size) {
 }
 
 T strong* new<T, Args...>(Args... args) {
-    T strong* ptr = allocate(sizeof(T));
-    __construct<T>(ptr, args);
+    T strong* ptr = strong_alloc(sizeof(T));
+
+    *ptr = T::new(args...);
 
     return allocate(sizeof(T));
+}
+
+T strong* cnew<T, Args...>(u64 size, Args... args) {
+    T strong* ptr = strong_alloc(sizeof(T) * size);
+
+    for (u64 i = 0; i < size; i++)
+        ptr[i] = T::new(args...);
+
+    return ptr;
 }

@@ -1,9 +1,10 @@
 import std::optional;
+import std::memory;
 
 public:
 
 struct vector<T> {
-    T strong* data;
+    T strong[length]* data;
     u64 length;
     u64 capacity;
 }
