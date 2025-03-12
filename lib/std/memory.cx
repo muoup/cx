@@ -7,17 +7,16 @@ void* malloc(u64 size);
 void free(void* ptr);
 
 void strong* strong_alloc(u64 size) {
-    return malloc(size);
+    return __assert_strong(malloc(size));
 }
 
-void strong_free(void strong* ptr) {
-    free(ptr);
+void strong* strong_realloc(void* ptr, u64 size) {
+    return __assert_strong(realloc(size));
 }
 
-T strong* new<T>() {
+T strong* new<T, Args...>(Args... args) {
+    T strong* ptr = allocate(sizeof(T));
+    __construct<T>(ptr, args);
+
     return allocate(sizeof(T));
-}
-
-T strong* cnew<T>(u64 size) {
-    return allocate(sizeof(T) * size);
 }

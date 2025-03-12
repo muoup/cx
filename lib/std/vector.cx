@@ -3,7 +3,7 @@ import std::optional;
 public:
 
 struct vector<T> {
-    T* data;
+    T strong* data;
     u64 length;
     u64 capacity;
 }

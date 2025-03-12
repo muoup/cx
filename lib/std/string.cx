@@ -21,11 +21,11 @@ u64 strcpy(char* dest, char* src) {
 // String class implementation
 
 struct string {
-    char* data;
+    char strong* data;
     u64 length;
 }
 
-string string::new(char* s) {
+string string::from(char* s) {
     u64 length = strlen(s);
     char* data = malloc(length + 1);
 
@@ -37,7 +37,7 @@ string string::new(char* s) {
     };
 }
 
-string string::take(char* s) {
+string string::take(char strong* s) {
     return string {
         .data = s,
         .length = strlen(s)
