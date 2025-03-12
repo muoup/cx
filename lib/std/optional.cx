@@ -1,17 +1,27 @@
+import std::memory;
+
 public:
 
 enum union optional<T> {
-    Some(T),
-    None
+    None,
+    Some(T)
 }
 
 bool optional<T>::is_some(this) {
     return *this is Some;
 }
 
-optional<U> optional::map<T, U>(this, optional<U> (*func)(T value)) {
+optional<U> optional<T>::map<U>(this, optional<U> (*func)(T value)) {
     if opt is Some(T value) {
         return func(value);
+    }
+
+    return None;
+}
+
+void optional<T>::and_then(this, void (*func)(T value)) {
+    if opt is Some(T value) {
+        func(value);
     }
 
     return None;
@@ -23,4 +33,13 @@ T optional::or_else<T>(this, T otherwise) {
     }
 
     return otherwise;
+}
+
+optional<T> optional<T>::take(this) {
+    if opt is Some(T value) {
+        *this = None;
+        return Some(move value);
+    }
+
+    return None;
 }

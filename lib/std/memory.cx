@@ -1,0 +1,23 @@
+// TODO: unsafe intrinsic case from void* to void strong* and back
+
+public:
+
+// External functions, will be linked by gcc to the libc implementation
+void* malloc(u64 size);
+void free(void* ptr);
+
+void strong* strong_alloc(u64 size) {
+    return malloc(size);
+}
+
+void strong_free(void strong* ptr) {
+    free(ptr);
+}
+
+T strong* new<T>() {
+    return allocate(sizeof(T));
+}
+
+T strong* cnew<T>(u64 size) {
+    return allocate(sizeof(T) * size);
+}
