@@ -1,4 +1,5 @@
 use std::clone;
+use std::env::args;
 use cranelift::codegen::ir;
 use crate::lex::token::OperatorType;
 use crate::log_error;
@@ -76,12 +77,9 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
 
             let args = args.iter()
                 .enumerate()
-                .map(|(i, arg)| {
-                    let expr = verify_expression(context, builder, arg)?;
-                    let expr_type = builder.get_type(expr)?.clone();
-
-                    coerce_type(context, builder, expr, expr_type, function.args[i].type_.clone())
-                })
+                .map(|(i, arg)|
+                    coercive_verify_expression(context, builder, arg, &function.args[i].type_)
+                )
                 .collect::<Option<Vec<_>>>()?;
 
             builder.add_instruction(
@@ -114,7 +112,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                     let arg = verify_expression(context, builder, arg)?;
                     let expected_type = func.args[i + 1].type_.clone();
 
-                    coerce_type(context, builder, arg, builder.get_type(arg)?.clone(), expected_type)
+                    coerce_type(context, builder, arg, &builder.get_type(arg)?.clone(), &expected_type)
                 })
                 .collect::<Option<Vec<_>>>()?;
 
@@ -143,18 +141,12 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             operator, left, right
         } => {
             let left = verify_expression(context, builder, left)?;
-            let right = verify_expression(context, builder, right)?;
-
-            let Some(left_type) = builder.get_type(left) else {
+            let Some(left_type) = builder.get_type(left).cloned() else {
                 log_error!("Type not found for {:?}", left);
             };
-            let Some(right_type) = builder.get_type(right) else {
-                log_error!("Type not found for {:?}", right);
-            };
+            let right = coercive_verify_expression(context, builder, right, &left_type)?;
 
-            let (left, right, result_type) = coerce_bin_op(context, builder, left, right, left_type.clone(), right_type.clone())?;
-
-            match result_type {
+            match get_intrinsic_type(&context.type_map, &left_type)? {
                 ValueType::Integer { .. } => {
                     builder.add_instruction(
                         context,
@@ -163,7 +155,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                             left,
                             right
                         },
-                        result_type
+                        left_type
                     )
                 },
 
@@ -175,7 +167,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                             left,
                             right
                         },
-                        result_type
+                        left_type
                     )
                 },
 
@@ -187,11 +179,11 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                             left,
                             right
                         },
-                        result_type
+                        left_type
                     )
                 }
 
-                _ => unimplemented!("{:?}", result_type)
+                _ => unimplemented!("{:?}", left_type)
             }
         },
 
@@ -249,17 +241,8 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             operator, left, right
         } => {
             let left = verify_expression(context, builder, left)?;
-
-            if matches!(get_intrinsic_type(&context.type_map, builder.get_type(left)?)?, ValueType::Structured { .. }) {
-                return struct_assignment(context, builder, left, right.as_ref());
-            }
-
-            let right = verify_expression(context, builder, right)?;
-
-            let left_type = builder.get_type(left).unwrap().clone();
-            let right_type = builder.get_type(right).unwrap().clone();
-
-            let (left, right, _) = coerce_bin_op(context, builder, left, right, left_type, right_type)?;
+            let left_type = builder.get_type(left)?.clone();
+            let right = coercive_verify_expression(context, builder, right, &left_type)?;
 
             let right = match operator {
                 Some(op) => {
@@ -303,7 +286,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
 
             // Structures cannot be loaded; where they would be (i.e. parameters)
             // must be handled as a special case
-            if matches!(lvalue_type, ValueType::Structured { .. }) {
+            if matches!(get_intrinsic_type(&context.type_map, &lvalue_type)?, ValueType::Structured { .. }) {
                 return Some(lvalue);
             }
 
@@ -316,7 +299,9 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             )?;
 
             Some(loaded)
-        }
+        },
+
+        RValueExpression::StructuredInitializer { .. } => log_error!("StructuredInitializer used in unsupported context"),
 
         _ => unimplemented!("{:?}", rvalue)
     }
@@ -402,7 +387,9 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
         ControlExpression::Return(expr) => {
             let value = match expr {
                 Some(expr) => {
-                    let expr = verify_expression(context, builder, expr)?;
+                    let return_type = context.current_return_type.clone()?;
+
+                    let expr = coercive_verify_expression(context, builder, expr, &return_type)?;
 
                     if matches!(builder.get_type(expr)?, ValueType::Structured { .. }) {
                         return struct_return(context, builder, expr);
@@ -586,78 +573,83 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
     }
 }
 
-pub(crate) fn coerce_bin_op(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
-                            left_id: ValueID, right_id: ValueID,
-                            left_type: ValueType, right_type: ValueType) -> Option<(ValueID, ValueID, ValueType)> {
-    if left_type == right_type {
-        return Some((left_id, right_id, left_type));
-    }
+pub(crate) fn coercive_verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
+                                         expression: &Expression, type_: &ValueType) -> Option<ValueID> {
+    match type_ {
+        ValueType::Structured { fields: struct_fields } => {
+            match expression {
+                Expression::RValue(RValueExpression::DirectFunctionCall { name, .. }) => {
+                    let return_type = context.get_function(name.as_str())?.return_type.clone();
 
-    match (&left_type, &right_type) {
-        (ValueType::Identifier(name1), ValueType::Identifier(name2))
-        if name1 == name2
-            => Some((left_id, right_id, left_type)),
+                    if return_type != *type_ {
+                        log_error!("Cannot coerce function call into structured type: {:?}", expression);
+                    }
 
-        (ValueType::Integer { bytes: lbytes, signed: lsigned },
-         ValueType::Integer { bytes: rbytes, signed: rsigned }) => {
-            assert_eq!(lbytes, rbytes);
-            assert_eq!(lsigned, rsigned);
-
-            Some((left_id, right_id, left_type))
-        },
-
-        (ValueType::Float { bytes: lbytes },
-         ValueType::Float { bytes: rbytes }) => {
-            assert_eq!(lbytes, rbytes);
-
-            Some((left_id, right_id, left_type))
-        },
-
-        (ValueType::Identifier(name), _) => {
-            let left = context.get_type(name.as_str())?;
-
-            coerce_bin_op(context, builder, left_id, right_id, left.clone(), right_type)
-        },
-
-        (_, ValueType::Identifier(name)) => {
-            let right = context.get_type(name.as_str())?;
-
-            coerce_bin_op(context, builder, left_id, right_id, left_type, right.clone())
-        },
-
-        // 64-bit Integer to Pointer
-        (ValueType::PointerTo(_), ValueType::Integer { bytes: 8, .. }) => {
-            Some((left_id, right_id, left_type))
-        }
-
-        // Non-64-bit Integer to Pointer
-        (ValueType::PointerTo(_), ValueType::Integer { .. }) => {
-            let r_type = builder.add_instruction(
-                context,
-                VirtualInstruction::ZExtend {
-                    value: right_id,
+                    verify_expression(context, builder, expression)
                 },
-                left_type.clone()
-            )?;
 
-            Some((left_id, r_type, left_type))
+                Expression::RValue(RValueExpression::StructuredInitializer { fields: init_fields }) => {
+                    let temp_storage = builder.add_instruction(
+                        context,
+                        VirtualInstruction::Allocate {
+                            size: get_type_size(&context.type_map, type_)?
+                        },
+                        type_.clone()
+                    )?;
+
+                    for (field, expr) in init_fields.iter() {
+                        let Some(field) = field.as_ref() else {
+                            log_error!("Anonymous structured initializer not yet supported: {:?}", expression);
+                        };
+
+                        let field_index = struct_field_index(struct_fields, field)?;
+                        let field_offset = struct_field_offset(context, builder, struct_fields, field)?;
+
+                        let expr = coercive_verify_expression(context, builder, expr, &struct_fields[field_index].type_)?;
+
+                        let field_addr = builder.add_instruction(
+                            context,
+                            VirtualInstruction::StructAccess {
+                                struct_: temp_storage,
+                                field_index,
+                                field_offset
+                            },
+                            struct_fields[field_index].type_.clone()
+                        )?;
+
+                        builder.add_instruction(
+                            context,
+                            VirtualInstruction::Store {
+                                memory: field_addr,
+                                value: expr
+                            },
+                            ValueType::Unit
+                        );
+                    };
+
+                    Some(temp_storage)
+                },
+
+                _ => log_error!("Cannot coerce expression into structured type: {:?}", expression)
+            }
         },
 
-        (ValueType::PointerTo(_), ValueType::PointerTo(_)) => {
-            Some((left_id, right_id, left_type))
-        },
+        other => {
+            let id = verify_expression(context, builder, expression)?;
+            let expr_type = builder.get_type(id).cloned()?;
 
-        _ => unimplemented!("{:?} {:?}", left_type, right_type)
+            coerce_type(context, builder, id, &expr_type, other)
+        }
     }
 }
 
 pub(crate) fn coerce_type(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
-                          expr_id: ValueID, expr_type: ValueType, goal_type: ValueType) -> Option<ValueID> {
+                          expr_id: ValueID, expr_type: &ValueType, goal_type: &ValueType) -> Option<ValueID> {
     if expr_type == goal_type {
         return Some(expr_id);
     }
 
-    match (&expr_type, &goal_type) {
+    match (expr_type, goal_type) {
         (ValueType::Integer { bytes: lbytes, signed: _ },
          ValueType::Integer { bytes: rbytes, signed: _ }) => {
             if lbytes < rbytes {
@@ -678,13 +670,13 @@ pub(crate) fn coerce_type(context: &mut VerifyContext, builder: &mut BytecodeBui
         (ValueType::Identifier(name), _) => {
             let expr_type = context.get_type(name.as_str())?.clone();
 
-            coerce_type(context, builder, expr_id, expr_type, goal_type)
+            coerce_type(context, builder, expr_id, &expr_type, goal_type)
         },
 
         (_, ValueType::Identifier(name)) => {
             let goal_type = context.get_type(name.as_str())?.clone();
 
-            coerce_type(context, builder, expr_id, expr_type, goal_type)
+            coerce_type(context, builder, expr_id, expr_type, &goal_type)
         },
 
         (ValueType::PointerTo(_), ValueType::PointerTo(_)) => {

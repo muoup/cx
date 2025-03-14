@@ -389,19 +389,19 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             )
         },
         KeywordType::For => {
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(OpenParen)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::OpenParen)));
             let Some(init) = parse_body_expr(data) else {
                 log_error!("Failed to parse loop initialization");
             };
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(Semicolon)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::Semicolon)));
             let Some(condition) = parse_body_expr(data) else {
                 log_error!("Failed to parse loop condition");
             };
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(Semicolon)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::Semicolon)));
             let Some(increment) = parse_body_expr(data) else {
                 log_error!("Failed to parse loop increment");
             };
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseParen)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseParen)));
             let body = parse_body(data);
 
             Some(

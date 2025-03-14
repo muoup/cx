@@ -72,8 +72,6 @@ impl BytecodeBuilder {
     pub(crate) fn finish_function(&mut self) {
         let context = self.function_context.take().unwrap();
 
-        println!("Finished function: {:#?}", context.fn_prototype.name);
-
         self.functions.push(VerifiedFunction {
             prototype: context.fn_prototype,
             blocks: context.blocks
