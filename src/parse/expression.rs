@@ -190,7 +190,7 @@ pub(crate) fn parse_expression(data: &mut ParserData) -> Option<ContextlessExpre
 
 fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -> Option<ContextlessExpression> {
     let expr = match data.toks.peek()? {
-        Token::Punctuator(OpenParen) => {
+        Token::Punctuator(PunctuatorType::OpenParen) => {
             data.toks.next();
             let mut args = parse_list(
                 data,
@@ -198,7 +198,7 @@ fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -
                 Token::Punctuator(PunctuatorType::CloseParen),
                 parse_expression
             )?;
-            assert_token_matches!(data, Token::Punctuator(CloseParen));
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
 
             ContextlessExpression::FunctionCall {
                 reference: Box::new(expr),
@@ -282,11 +282,6 @@ fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression
                 )
             )
         },
-        Token::Punctuator(OpenParen) => {
-            let expr = parse_expression(data)?;
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseParen)));
-            Some(expr)
-        },
         _ => {
             data.toks.back();
             None
@@ -358,7 +353,10 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
         KeywordType::For => {
             assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::OpenParen)));
 
-            let mut exprs = parse_rvals(data, Token::Punctuator(PunctuatorType::Semicolon), Token::Punctuator(CloseParen))?;
+            let mut exprs = parse_rvals(
+                data,
+                Token::Punctuator(PunctuatorType::Semicolon), Token::Punctuator(PunctuatorType::CloseParen)
+            )?;
             assert_eq!(exprs.len(), 3);
 
             let increment = exprs.pop().unwrap();
@@ -402,10 +400,10 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
 fn parse_structured_initializer(data: &mut ParserData) -> Option<ContextlessExpression> {
     let mut init_stmts = Vec::new();
 
-    while !matches!(data.toks.peek(), Token::Punctuator(PunctuatorType::CloseBrace)) {
+    loop {
         let mut name = None;
 
-        if matches!(data.toks.peek(), Token::Operator(OperatorType::Access)) {
+        if matches!(data.toks.peek()?, Token::Operator(OperatorType::Access)) {
             data.toks.next();
 
             let Some(Token::Identifier(field_name)) = data.toks.next() else {
@@ -421,6 +419,10 @@ fn parse_structured_initializer(data: &mut ParserData) -> Option<ContextlessExpr
             name,
             parse_rvalue(data)?
         ));
+
+        if matches!(data.toks.peek()?, Token::Punctuator(PunctuatorType::CloseBrace)) {
+            break;
+        }
 
         assert_token_matches!(data, Token::Punctuator(PunctuatorType::Comma));
     }

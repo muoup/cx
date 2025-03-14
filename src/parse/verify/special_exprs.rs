@@ -3,7 +3,7 @@ use crate::parse::ast::{Expression, RValueExpression, ValueType};
 use crate::parse::verify::bytecode::{BlockInstruction, BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::verify::context::VerifyContext;
 use crate::parse::verify::verify_expression::{verify_expression, verify_rvalue};
-use crate::parse::verify::verify_type::{same_type, struct_field_index};
+use crate::parse::verify::verify_type::{same_type, struct_field_index, struct_field_offset};
 
 pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut BytecodeBuilder, struct_pointer: ValueID, rval: &Expression) -> Option<ValueID> {
     match rval {
@@ -41,19 +41,46 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
             }
         ) => {
             let Some(ValueType::Structured { fields: struct_fields })
-                = builder.get_type(struct_pointer) else {
+                = builder.get_type(struct_pointer).cloned() else {
                 log_error!("Invalid left-hand side of struct assignment: {:?}", struct_pointer);
             };
 
-            for (field_name, field_val) in fields {
+            for (field_name, field_val) in fields.iter() {
                 if field_name.is_none() {
                     unimplemented!("Anonymous struct initializer: {:?}", rval);
                 }
 
                 let field_name = field_name.as_ref().unwrap();
-                let struct_index = struct_field_index(&context.type_map, struct_fields, field_name)?;
-                let struct_type = builder.get_type(struct_pointer)?.clone();
+                let struct_index = struct_field_index(&struct_fields, field_name)?;
+                let struct_offset = struct_field_offset(context, builder, &struct_fields, field_name)?;
+                let struct_type = builder.get_type(struct_pointer).unwrap().clone();
+
+                let field_val = verify_expression(context, builder, field_val)?;
+                let field_addr = builder.add_instruction(
+                    context,
+                    VirtualInstruction::StructAccess {
+                        struct_: struct_pointer,
+                        field_index: struct_index,
+                        field_offset: struct_offset,
+                    },
+                    struct_type
+                )?;
+
+                builder.add_instruction(
+                    context,
+                    VirtualInstruction::Store {
+                        memory: field_addr,
+                        value: field_val,
+                    },
+                    ValueType::Unit
+                );
             }
+
+            builder.add_instruction(
+                context,
+                VirtualInstruction::NOP,
+                ValueType::Unit
+            )
         },
 
         _ => log_error!("Cannot assign struct to expression: {:?}", rval)

@@ -84,6 +84,11 @@ impl CompilerPipeline {
         emit_interface(&ast, format!("{}/{}.hx", self.internal_dir, self.file_name).as_str()).unwrap();
 
         self.ast = verify::verify_ast(ast);
+
+        if self.ast.is_none() {
+            println!("Failed to verify AST");
+        }
+
         self
     }
 

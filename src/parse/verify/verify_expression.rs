@@ -151,7 +151,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
         } => {
             let left = verify_expression(context, builder, left)?;
 
-            if matches!(builder.get_type(left)?, ValueType::Structured { .. }) {
+            if matches!(get_intrinsic_type(&context.type_map, builder.get_type(left)?)?, ValueType::Structured { .. }) {
                 return struct_assignment(context, builder, left, right.as_ref());
             }
 
@@ -252,12 +252,12 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             let struct_type = builder.get_type(struct_)?;
             let intrin_type = get_intrinsic_type(&context.type_map, struct_type)?;
 
-            let ValueType::Structured { fields } = intrin_type else {
+            let ValueType::Structured { fields } = intrin_type.clone() else {
                 log_error!("Cannot access field of non-structured type!")
             };
 
-            let index = struct_field_index(fields, field_name.as_str())?;
-            let offset = struct_field_offset(context, builder, fields, field_name.as_str())?;
+            let index = struct_field_index(&fields, field_name.as_str())?;
+            let offset = struct_field_offset(context, builder, &fields, field_name.as_str())?;
 
             builder.add_instruction(
                 context,
@@ -266,6 +266,7 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                     field_index: index,
                     field_offset: offset,
                 },
+                fields[index].type_.clone()
             )
         },
 

@@ -19,7 +19,6 @@ mod typeless_declarations;
 mod verify_expression;
 mod special_exprs;
 mod import_module;
-mod routines;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
@@ -130,7 +129,9 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
         }
 
         for stmt in body.iter() {
-            verify_expression(&mut verify_context, &mut builder, stmt)?;
+            let Some(_) = verify_expression(&mut verify_context, &mut builder, stmt) else {
+                log_error!("Failed to verify expression: {:?}", stmt);
+            };
         }
 
         // Add implicit return to void functions

@@ -2,6 +2,7 @@ use crate::lex::token::PunctuatorType::{CloseBrace, OpenBrace, Semicolon};
 use crate::lex::token::Token;
 use crate::log_error;
 use crate::parse::ast::{Expression, ValueType, AST};
+use crate::parse::ast::GlobalStatement::HandledInternally;
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, maybe_contextualize_rvalue};
 use crate::parse::expression::{parse_expression, parse_list, parse_rvals, parse_rvalue};
 use crate::parse::global_scope::parse_global_stmt;
@@ -58,6 +59,10 @@ pub(crate) fn parse_ast(data: &mut ParserData) -> Option<AST> {
         let Some(stmt) = parse_global_stmt(data) else {
             log_error!("Failed to parse global statement: {:#?}", data.toks.peek());
         };
+
+        if matches!(stmt, HandledInternally) {
+            continue;
+        }
 
         ast.statements.push(stmt);
 

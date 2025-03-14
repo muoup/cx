@@ -150,7 +150,7 @@ pub(crate) fn struct_field_index(fields: &Vec<VarInitialization>, field_name: &s
 
 pub(crate) fn struct_field_offset(context: &VerifyContext, builder: &mut BytecodeBuilder,
                                   fields: &Vec<VarInitialization>, field_name: &str) -> Option<usize> {
-    let field_index = struct_field_index(fields, field_name)?
+    let field_index = struct_field_index(fields, field_name)?;
 
     fields[0.. field_index]
         .iter()

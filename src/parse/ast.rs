@@ -53,7 +53,8 @@ pub enum GlobalStatement {
     },
     Import {
         path: String
-    }
+    },
+    HandledInternally
 }
 
 #[derive(Debug, Clone, PartialEq)]

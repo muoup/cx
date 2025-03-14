@@ -194,7 +194,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(
                 Value::from_u32(0)
             )
-        }
+        },
+
+        VirtualInstruction::NOP => Some(Value::from_u32(0)),
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }
