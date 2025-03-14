@@ -38,6 +38,11 @@ pub enum GlobalStatement {
         prototype: FunctionPrototype,
         body: Option<Vec<Expression>>
     },
+    MemberFunction {
+        struct_parent: String,
+        prototype: FunctionPrototype,
+        body: Option<Vec<Expression>>
+    },
     Enum {
         name: String,
         fields: Vec<(String, i32)>
@@ -79,6 +84,11 @@ pub enum IntegerCastType {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RValueExpression {
     Identifier(String),
+    MemberFunctionCall {
+        struct_parent: Box<Expression>,
+        name: String,
+        args: Vec<Expression>
+    },
     DirectFunctionCall {
         name: String,
         args: Vec<Expression>

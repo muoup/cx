@@ -1,8 +1,11 @@
+use std::clone;
 use cranelift::codegen::ir;
+use crate::lex::token::OperatorType;
 use crate::log_error;
 use crate::parse::ast::{ControlExpression, Expression, LValueExpression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
 use crate::parse::verify::context::VerifyContext;
+use crate::parse::verify::name_mangling::member_function_mangle;
 use crate::parse::verify::special_exprs::{struct_assignment, struct_return};
 use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
 
@@ -67,15 +70,19 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
         RValueExpression::DirectFunctionCall {
             name, args
         } => {
-            let args = args.iter()
-                .map(|arg| {
-                    verify_expression(context, builder, arg)
-                })
-                .collect::<Option<Vec<_>>>()?;
-
-            let Some(function) = context.get_function(name.as_str()) else {
+            let Some(function) = context.get_function(name.as_str()).cloned() else {
                 log_error!("Function {} not found", name);
             };
+
+            let args = args.iter()
+                .enumerate()
+                .map(|(i, arg)| {
+                    let expr = verify_expression(context, builder, arg)?;
+                    let expr_type = builder.get_type(expr)?.clone();
+
+                    coerce_type(context, builder, expr, expr_type, function.args[i].type_.clone())
+                })
+                .collect::<Option<Vec<_>>>()?;
 
             builder.add_instruction(
                 context,
@@ -83,6 +90,54 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                 function.return_type.clone()
             )
         },
+
+        RValueExpression::MemberFunctionCall {
+            struct_parent, name, args
+        } => {
+            let struct_parent = verify_expression(context, builder, struct_parent)?;
+            let ValueType::Identifier(struct_type) = builder.get_type(struct_parent)? else {
+                log_error!("Expected identifier, found {:?}", struct_parent);
+            };
+            let mangled_name = member_function_mangle(struct_type.as_str(), name.as_str());
+
+            let Some(func) = context.get_function(mangled_name.as_str()).cloned() else {
+                log_error!("Function {} not found", name);
+            };
+
+            if func.args.len() != args.len() + 1 {
+                log_error!("Expected {} arguments, found {}", func.args.len() - 1, args.len());
+            }
+
+            let mut args = args.iter()
+                .enumerate()
+                .map(|(i, arg)| {
+                    let arg = verify_expression(context, builder, arg)?;
+                    let expected_type = func.args[i + 1].type_.clone();
+
+                    coerce_type(context, builder, arg, builder.get_type(arg)?.clone(), expected_type)
+                })
+                .collect::<Option<Vec<_>>>()?;
+
+            args.insert(0, struct_parent);
+
+            let struct_type = builder.get_type(struct_parent)?;
+
+            let ValueType::Identifier(struct_name) = struct_type else {
+                log_error!("Expected identifier, found {:?}", struct_type);
+            };
+
+            let fn_name = member_function_mangle(struct_name.as_str(), name.as_str());
+
+            let Some(member_) = context.get_function(fn_name.as_str()) else {
+                log_error!("Function {} not found", fn_name);
+            };
+
+            builder.add_instruction(
+                context,
+                VirtualInstruction::DirectCall { function: fn_name, args },
+                member_.return_type.clone()
+            )
+        }
 
         RValueExpression::BinaryOperation {
             operator, left, right
@@ -124,7 +179,51 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                     )
                 },
 
+                ValueType::PointerTo { .. } => {
+                    builder.add_instruction(
+                        context,
+                        VirtualInstruction::IntegerBinOp {
+                            op: *operator,
+                            left,
+                            right
+                        },
+                        result_type
+                    )
+                }
+
                 _ => unimplemented!("{:?}", result_type)
+            }
+        },
+
+        RValueExpression::UnaryOperation {
+            operator, operand
+        } => {
+            match operator {
+                OperatorType::Multiply => {
+                    let Some(operand) = operand else {
+                        log_error!("Anonymous unary operations not allowed in expression bodies")
+                    };
+
+                    let operand = verify_expression(context, builder, operand.as_ref())?;
+
+                    let type_ = match builder.get_type(operand)? {
+                        ValueType::PointerTo(inner) => {
+                            inner.as_ref()
+                        },
+
+                        _ => unimplemented!()
+                    };
+
+                    builder.add_instruction(
+                        context,
+                        VirtualInstruction::Load {
+                            value: operand
+                        },
+                        type_.clone()
+                    )
+                },
+
+                _ => unimplemented!("{:?}", operator)
             }
         },
 
@@ -156,6 +255,11 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             }
 
             let right = verify_expression(context, builder, right)?;
+
+            let left_type = builder.get_type(left).unwrap().clone();
+            let right_type = builder.get_type(right).unwrap().clone();
+
+            let (left, right, _) = coerce_bin_op(context, builder, left, right, left_type, right_type)?;
 
             let right = match operator {
                 Some(op) => {
@@ -237,6 +341,25 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             Some(alloc)
         },
 
+        LValueExpression::DereferencedPointer {
+            pointer
+        } => {
+            let pointer = verify_expression(context, builder, pointer)?;
+            let pointer_type = builder.get_type(pointer)?;
+
+            let ValueType::PointerTo(inner) = pointer_type else {
+                log_error!("Cannot dereference non-pointer type")
+            };
+
+            builder.add_instruction(
+                context,
+                VirtualInstruction::Load {
+                    value: pointer
+                },
+                inner.as_ref().clone()
+            )
+        }
+
         LValueExpression::Identifier(name) => {
             let Some(var) = context.get_value(builder, name) else {
                 log_error!("Variable not found: {}", name)
@@ -303,8 +426,6 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
         },
 
         ControlExpression::If { condition, then, else_ } => {
-            context.var_map.push_scope();
-
             let condition = verify_expression(context, builder, condition)?;
 
             let then_block = builder.create_block();
@@ -356,8 +477,6 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
             }
 
             builder.set_current_block(merge_block);
-
-            context.var_map.pop_scope();
             Some(branch_id)
         }
 
@@ -376,6 +495,7 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
                 ValueType::Unit
             );
 
+            context.var_map.push_scope();
             builder.set_current_block(init_block);
             verify_expression(context, builder, init)?;
             builder.add_instruction(
@@ -416,6 +536,8 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
             );
 
             builder.set_current_block(merge_block);
+            context.var_map.pop_scope();
+
             Some(branch_id)
         },
 
@@ -472,6 +594,10 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
 pub(crate) fn coerce_bin_op(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                             left_id: ValueID, right_id: ValueID,
                             left_type: ValueType, right_type: ValueType) -> Option<(ValueID, ValueID, ValueType)> {
+    if left_type == right_type {
+        return Some((left_id, right_id, left_type));
+    }
+
     match (&left_type, &right_type) {
         (ValueType::Identifier(name1), ValueType::Identifier(name2))
         if name1 == name2
@@ -504,6 +630,72 @@ pub(crate) fn coerce_bin_op(context: &mut VerifyContext, builder: &mut BytecodeB
             coerce_bin_op(context, builder, left_id, right_id, left_type, right.clone())
         },
 
+        // 64-bit Integer to Pointer
+        (ValueType::PointerTo(_), ValueType::Integer { bytes: 8, .. }) => {
+            Some((left_id, right_id, left_type))
+        }
+
+        // Non-64-bit Integer to Pointer
+        (ValueType::PointerTo(_), ValueType::Integer { .. }) => {
+            let r_type = builder.add_instruction(
+                context,
+                VirtualInstruction::ZExtend {
+                    value: right_id,
+                },
+                left_type.clone()
+            )?;
+
+            Some((left_id, r_type, left_type))
+        },
+
+        (ValueType::PointerTo(_), ValueType::PointerTo(_)) => {
+            Some((left_id, right_id, left_type))
+        },
+
         _ => unimplemented!("{:?} {:?}", left_type, right_type)
+    }
+}
+
+pub(crate) fn coerce_type(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
+                          expr_id: ValueID, expr_type: ValueType, goal_type: ValueType) -> Option<ValueID> {
+    if expr_type == goal_type {
+        return Some(expr_id);
+    }
+
+    match (&expr_type, &goal_type) {
+        (ValueType::Integer { bytes: lbytes, signed: _ },
+         ValueType::Integer { bytes: rbytes, signed: _ }) => {
+            if lbytes < rbytes {
+                let new_type = builder.add_instruction(
+                    context,
+                    VirtualInstruction::ZExtend {
+                        value: expr_id,
+                    },
+                    goal_type.clone()
+                )?;
+
+                Some(new_type)
+            } else {
+                Some(expr_id)
+            }
+        },
+
+        (ValueType::Identifier(name), _) => {
+            let expr_type = context.get_type(name.as_str())?.clone();
+
+            coerce_type(context, builder, expr_id, expr_type, goal_type)
+        },
+
+        (_, ValueType::Identifier(name)) => {
+            let goal_type = context.get_type(name.as_str())?.clone();
+
+            coerce_type(context, builder, expr_id, expr_type, goal_type)
+        },
+
+        (ValueType::PointerTo(_), ValueType::PointerTo(_)) => {
+            Some(expr_id)
+        },
+
+        _ => unimplemented!("coerce_type: {:?} to {:?}", expr_type, goal_type)
     }
 }

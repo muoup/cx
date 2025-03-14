@@ -30,7 +30,7 @@ fn get_interface(file: &str) -> Option<AST> {
             // The file has not been modified since the last compilation, so we can use the
             // previously generated interface
             if header_modified > source_modified || object_modified > source_modified {
-                return CompilerPipeline::new(file.to_string(), String::new())
+                return CompilerPipeline::new(file_pipeline.header_path(), String::new())
                     .preprocess()
                     .lex()
                     .parse_interface();
@@ -38,13 +38,13 @@ fn get_interface(file: &str) -> Option<AST> {
         }
     }
 
-    file_pipeline
+    let header = file_pipeline
         .preprocess()
         .lex()
         .parse()
         .codegen();
 
-    CompilerPipeline::new(file.to_string(), String::new())
+    CompilerPipeline::new(header.header_path(), String::new())
         .preprocess()
         .lex()
         .parse_interface()

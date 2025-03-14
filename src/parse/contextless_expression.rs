@@ -1,3 +1,5 @@
+use std::env::args;
+use std::{clone, iter};
 use std::task::Context;
 use crate::lex::token::OperatorType;
 use crate::log_error;
@@ -50,18 +52,15 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
         ContextlessExpression::BinaryOperation {
             op: OperatorType::Access,
             left, right
-        } => {
+        } if matches!(right.as_ref(), ContextlessExpression::Identifier(_)) => {
             let left = contextualize_lvalue(data, *left)?;
-            let ContextlessExpression::Identifier(field_type) = right.as_ref() else {
-                log_error!("Invalid Struct Field: {:#?}", right);
-            };
-            let field_type = field_type.clone();
+            let ContextlessExpression::Identifier(field_name) = *right else { unreachable!(); };
 
             Some(
                 Expression::LValue(
                     LValueExpression::StructField {
                         struct_: Box::new(left),
-                        field_name: field_type
+                        field_name
                     }
                 )
             )
@@ -88,6 +87,58 @@ pub(crate) fn maybe_contextualize_rvalue(data: &mut ParserData, expr: Contextles
                     }
                 )
             ),
+
+        ContextlessExpression::FunctionCall {
+            reference, args
+        } => {
+            let ContextlessExpression::Identifier(name) = *reference else {
+                unimplemented!("Function call with non-identifier reference: {:#?}", reference);
+            };
+            let Some(args) = args.iter()
+                .map(|expr| contextualize_rvalue(data, expr.clone()))
+                .collect::<Option<Vec<_>>>() else {
+                return MaybeResult::Error(());
+            };
+
+            MaybeResult::Consumed(
+                Expression::RValue(
+                    RValueExpression::DirectFunctionCall {
+                        name, args
+                    }
+                )
+            )
+        },
+
+        ContextlessExpression::BinaryOperation {
+            op: OperatorType::Access,
+            left, right
+        } if matches!(right.as_ref(), ContextlessExpression::FunctionCall { .. }) => {
+            let ContextlessExpression::FunctionCall { reference, args } = *right else {
+                unreachable!();
+            };
+            let ContextlessExpression::Identifier(fn_name) = *reference else {
+                panic!("Expected identifier for member function call, found: {:#?}", reference);
+            };
+            let Some(struct_) = contextualize_rvalue(data, *left) else {
+                println!("Failed to contextualize struct for member function call");
+                return MaybeResult::Error(());
+            };
+            let Some(args) = args.iter()
+                .map(|expr| contextualize_rvalue(data, expr.clone()))
+                .collect::<Option<Vec<_>>>() else {
+                return MaybeResult::Error(());
+            };
+
+            MaybeResult::Consumed(
+                Expression::RValue(
+                    RValueExpression::MemberFunctionCall {
+                        struct_parent: Box::new(struct_),
+                        name: fn_name,
+                        args
+                    }
+                )
+            )
+        }
 
         ContextlessExpression::BinaryOperation {
             op: OperatorType::Access, ..
@@ -139,27 +190,6 @@ pub(crate) fn maybe_contextualize_rvalue(data: &mut ParserData, expr: Contextles
                     RValueExpression::UnaryOperation {
                         operator: OperatorType::Multiply,
                         operand: Some(Box::new(operand))
-                    }
-                )
-            )
-        },
-
-        ContextlessExpression::FunctionCall {
-            reference, args
-        } => {
-            let ContextlessExpression::Identifier(name) = *reference else {
-                unimplemented!("Function call with non-identifier reference: {:#?}", reference);
-            };
-            let Some(args) = args.iter()
-                .map(|expr| contextualize_rvalue(data, expr.clone()))
-                .collect::<Option<Vec<_>>>() else {
-                return MaybeResult::Error(());
-            };
-
-            MaybeResult::Consumed(
-                Expression::RValue(
-                    RValueExpression::DirectFunctionCall {
-                        name, args
                     }
                 )
             )

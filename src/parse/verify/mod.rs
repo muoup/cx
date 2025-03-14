@@ -6,6 +6,7 @@ use crate::parse::verify::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualI
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
 use crate::parse::verify::context::{FnMap, TypeMap, VerifyContext};
 use crate::parse::verify::import_module::{import_file};
+use crate::parse::verify::name_mangling::member_function_mangle;
 use crate::parse::verify::typeless_declarations::{gen_const_decls, gen_fn_decls, gen_imports, gen_type_decls};
 use crate::parse::verify::verify_expression::verify_expression;
 use crate::parse::verify::verify_type::{get_type_size, verify_fn_prototype, verify_type};
@@ -19,6 +20,7 @@ mod typeless_declarations;
 mod verify_expression;
 mod special_exprs;
 mod import_module;
+mod name_mangling;
 
 #[derive(Debug)]
 pub struct VerifiedAST {
@@ -46,13 +48,19 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
 
     let function_bodies = ast.statements.into_iter()
         .filter_map(|stmt| {
-            let GlobalStatement::Function { prototype, body } = stmt else {
-                return None;
-            };
+            match stmt {
+                GlobalStatement::Function { prototype, body } =>
+                    Some((prototype.name, body?)),
 
-            Some((prototype.name, body?))
+                GlobalStatement::MemberFunction { struct_parent, prototype, body } =>
+                    Some((member_function_mangle(&struct_parent, &prototype.name), body?)),
+
+                _ => None
+            }
         })
         .collect::<Vec<_>>();
+
+    println!("{:#?}", function_bodies);
 
     let type_map_iter = type_map.iter()
         .map(|(key, _type)| (key, verify_type(&type_map, _type.clone())));
@@ -87,6 +95,7 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
             log_error!("Function {} not found", name);
         };
 
+        verify_context.var_map.push_scope();
         builder.new_function(prototype.clone());
         verify_context.current_return_type = match prototype.return_type {
             ValueType::Unit => None,
@@ -132,20 +141,22 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
             verify_expression(&mut verify_context, &mut builder, stmt)?;
         }
 
-        // Add implicit return to void functions
-        if verify_context.current_return_type.is_none() {
-            let last_instruction = builder.last_instruction()
-                .map(|instr| &instr.instruction);
+        let last_instruction = builder.last_instruction()
+            .map(|instr| &instr.instruction);
 
-            if !matches!(last_instruction, Some(VirtualInstruction::Return { .. })) {
-                builder.add_instruction(
-                    &verify_context,
-                    VirtualInstruction::Return { value: None },
-                    ValueType::Unit
-                );
+        if !matches!(last_instruction, Some(VirtualInstruction::Return { .. })) {
+            if verify_context.current_return_type.is_some() {
+                log_error!("Function {} does not have a return value", name);
             }
+
+            builder.add_instruction(
+                &verify_context,
+                VirtualInstruction::Return { value: None },
+                ValueType::Unit
+            );
         }
 
+        verify_context.var_map.pop_scope();
         builder.finish_function();
     }
 
