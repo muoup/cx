@@ -3,7 +3,7 @@ use crate::parse::ast::{Expression, RValueExpression, ValueType};
 use crate::parse::verify::bytecode::{BlockInstruction, BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::verify::context::VerifyContext;
 use crate::parse::verify::verify_expression::{verify_expression, verify_rvalue};
-use crate::parse::verify::verify_type::same_type;
+use crate::parse::verify::verify_type::{same_type, struct_field_index};
 
 pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut BytecodeBuilder, struct_pointer: ValueID, rval: &Expression) -> Option<ValueID> {
     match rval {
@@ -33,6 +33,27 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
                 },
                 fn_ret_type
             )
+        },
+
+        Expression::RValue(
+            RValueExpression::StructuredInitializer {
+                fields
+            }
+        ) => {
+            let Some(ValueType::Structured { fields: struct_fields })
+                = builder.get_type(struct_pointer) else {
+                log_error!("Invalid left-hand side of struct assignment: {:?}", struct_pointer);
+            };
+
+            for (field_name, field_val) in fields {
+                if field_name.is_none() {
+                    unimplemented!("Anonymous struct initializer: {:?}", rval);
+                }
+
+                let field_name = field_name.as_ref().unwrap();
+                let struct_index = struct_field_index(&context.type_map, struct_fields, field_name)?;
+                let struct_type = builder.get_type(struct_pointer)?.clone();
+            }
         },
 
         _ => log_error!("Cannot assign struct to expression: {:?}", rval)

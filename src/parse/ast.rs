@@ -112,6 +112,9 @@ pub enum RValueExpression {
     },
     LoadedLValue {
         lvalue: Box<Expression>
+    },
+    StructuredInitializer {
+        fields: Vec<(Option<String>, Expression)>
     }
 }
 

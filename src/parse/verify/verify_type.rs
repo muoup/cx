@@ -1,7 +1,8 @@
 use std::env::args;
+use log::log;
 use crate::log_error;
 use crate::parse::ast::{ValueType, VarInitialization};
-use crate::parse::verify::bytecode::VirtualValue;
+use crate::parse::verify::bytecode::{BytecodeBuilder, VirtualValue};
 use crate::parse::verify::context::{FunctionPrototype, TypeMap, VerifyContext};
 
 pub(crate) fn verify_fn_prototype(type_map: &TypeMap, mut prototype: FunctionPrototype) -> Option<FunctionPrototype> {
@@ -137,4 +138,22 @@ pub fn get_type_size(type_map: &TypeMap, type_: &ValueType) -> Option<usize> {
                 .map(|_type| get_type_size(type_map, _type))
                 .flatten()
     }
+}
+
+pub(crate) fn struct_field_index(fields: &Vec<VarInitialization>, field_name: &str) -> Option<usize> {
+    fields.iter()
+        .position(|field| field.name == field_name)
+        .or_else(|| {
+            log_error!("Field {} not found in struct", field_name);
+        })
+}
+
+pub(crate) fn struct_field_offset(context: &VerifyContext, builder: &mut BytecodeBuilder,
+                                  fields: &Vec<VarInitialization>, field_name: &str) -> Option<usize> {
+    let field_index = struct_field_index(fields, field_name)?
+
+    fields[0.. field_index]
+        .iter()
+        .map(|field| get_type_size(&context.type_map, &field.type_))
+        .sum::<Option<usize>>()
 }

@@ -4,7 +4,7 @@ use crate::parse::ast::{ControlExpression, Expression, LValueExpression, Literal
 use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
 use crate::parse::verify::context::VerifyContext;
 use crate::parse::verify::special_exprs::{struct_assignment, struct_return};
-use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
+use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size, struct_field_index, struct_field_offset};
 
 pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                                 expression: &Expression) -> Option<ValueID> {
@@ -256,23 +256,17 @@ pub(crate) fn verify_lvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                 log_error!("Cannot access field of non-structured type!")
             };
 
-            let mut size_counter = 0usize;
+            let index = struct_field_index(fields, field_name.as_str())?;
+            let offset = struct_field_offset(context, builder, fields, field_name.as_str())?;
 
-            for (i, field) in fields.iter().enumerate() {
-                if &field.name == field_name {
-                    return builder.add_instruction(
-                        context,
-                        VirtualInstruction::StructAccess {
-                            struct_,
-                            field_index: i,
-                            field_offset: size_counter,
-                        },
-                        field.type_.clone()
-                    )
-                }
-            }
-
-            log_error!("Unknown field {} in struct", field_name)
+            builder.add_instruction(
+                context,
+                VirtualInstruction::StructAccess {
+                    struct_,
+                    field_index: index,
+                    field_offset: offset,
+                },
+            )
         },
 
         _ => unimplemented!("{:?}", lvalue)

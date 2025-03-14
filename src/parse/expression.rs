@@ -1,6 +1,5 @@
 use crate::assert_token_matches;
 use crate::log_error;
-use crate::lex::token::PunctuatorType::{CloseParen, OpenParen, Semicolon};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, detangle_initialization, ContextlessExpression};
@@ -195,7 +194,8 @@ fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -
             data.toks.next();
             let mut args = parse_list(
                 data,
-                Token::Punctuator(PunctuatorType::Comma), Token::Punctuator(CloseParen),
+                Token::Punctuator(PunctuatorType::Comma),
+                Token::Punctuator(PunctuatorType::CloseParen),
                 parse_expression
             )?;
             assert_token_matches!(data, Token::Punctuator(CloseParen));
@@ -243,11 +243,12 @@ fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression
         Token::Identifier(name) => Some(
             ContextlessExpression::Identifier(name.clone())
         ),
-        Token::Punctuator(OpenParen) => {
+        Token::Punctuator(PunctuatorType::OpenParen) => {
             let expr = parse_expression(data)?;
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseParen)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseParen)));
             Some(expr)
         },
+        Token::Punctuator(PunctuatorType::OpenBrace) => parse_structured_initializer(data),
         Token::Operator(op) => Some(
             ContextlessExpression::UnaryOperation {
                 op: *op,
@@ -283,7 +284,7 @@ fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression
         },
         Token::Punctuator(OpenParen) => {
             let expr = parse_expression(data)?;
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseParen)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseParen)));
             Some(expr)
         },
         _ => {
@@ -306,7 +307,7 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             Some (
                 Expression::Control(
                     ControlExpression::Return(
-                        if data.toks.peek() == Some(&&Token::Punctuator(Semicolon)) {
+                        if data.toks.peek() == Some(&&Token::Punctuator(PunctuatorType::Semicolon)) {
                             data.toks.next();
                             None
                         } else {
@@ -355,15 +356,15 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             )
         },
         KeywordType::For => {
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(OpenParen)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::OpenParen)));
 
-            let mut exprs = parse_rvals(data, Token::Punctuator(Semicolon), Token::Punctuator(CloseParen))?;
+            let mut exprs = parse_rvals(data, Token::Punctuator(PunctuatorType::Semicolon), Token::Punctuator(CloseParen))?;
             assert_eq!(exprs.len(), 3);
 
             let increment = exprs.pop().unwrap();
             let condition = exprs.pop().unwrap();
             let init = exprs.pop().unwrap();
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseParen)));
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseParen)));
 
             let body = parse_body(data);
 
@@ -396,4 +397,43 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
 
         _ => None,
     }
+}
+
+fn parse_structured_initializer(data: &mut ParserData) -> Option<ContextlessExpression> {
+    let mut init_stmts = Vec::new();
+
+    while !matches!(data.toks.peek(), Token::Punctuator(PunctuatorType::CloseBrace)) {
+        let mut name = None;
+
+        if matches!(data.toks.peek(), Token::Operator(OperatorType::Access)) {
+            data.toks.next();
+
+            let Some(Token::Identifier(field_name)) = data.toks.next() else {
+                log_error!("Expected field name after '.'");
+            };
+
+            name = Some(field_name.clone());
+
+            assert_token_matches!(data, Token::Assignment(None));
+        }
+
+        init_stmts.push((
+            name,
+            parse_rvalue(data)?
+        ));
+
+        assert_token_matches!(data, Token::Punctuator(PunctuatorType::Comma));
+    }
+
+    data.toks.next();
+
+    Some(
+        ContextlessExpression::UnambiguousExpression (
+            Expression::RValue (
+                RValueExpression::StructuredInitializer {
+                    fields: init_stmts
+                }
+            )
+        )
+    )
 }

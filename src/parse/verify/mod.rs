@@ -19,6 +19,7 @@ mod typeless_declarations;
 mod verify_expression;
 mod special_exprs;
 mod import_module;
+mod routines;
 
 #[derive(Debug)]
 pub struct VerifiedAST {

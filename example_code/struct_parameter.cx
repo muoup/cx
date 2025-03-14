@@ -15,9 +15,7 @@ void struct_parameter(Test t) {
 }
 
 Test struct_return() {
-    Test t;
-    t.a = 5;
-    t.b = 5;
+    Test t = {1, 2, 3, 4};
     return t;
 }
 
