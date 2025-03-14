@@ -3,7 +3,7 @@ use crate::log_error;
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::ast::{ControlExpression, Expression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
 use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, detangle_initialization, ContextlessExpression};
-use crate::parse::parser::{parse_body, ParserData, TokenIter};
+use crate::parse::parser::{parse_body, parse_body_expr, ParserData, TokenIter};
 use std::fmt::Debug;
 
 /**
@@ -62,13 +62,51 @@ fn consume_expr(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<
     let left = expr_stack.pop()?;
     let op = op_stack.pop()?;
 
-    expr_stack.push(
-        ContextlessExpression::BinaryOperation {
-            op,
-            left: Box::new(left),
-            right: Box::new(right)
+    match op {
+        OperatorType::ScopeRes if matches!(left, ContextlessExpression::CompoundExpression { .. }) => {
+            let ContextlessExpression::CompoundExpression { left: left_left, right: left_right } = left else {
+                unreachable!();
+            };
+
+            expr_stack.push(
+                ContextlessExpression::CompoundExpression {
+                    left: left_left,
+                    right: Box::new(
+                        ContextlessExpression::BinaryOperation {
+                            op,
+                            left: left_right,
+                            right: Box::new(right)
+                        }
+                    )
+                }
+            );
+        },
+
+        OperatorType::PointerAccess => {
+            expr_stack.push(
+                ContextlessExpression::BinaryOperation {
+                    op: OperatorType::Access,
+                    left: Box::new(
+                        ContextlessExpression::UnaryOperation {
+                            op: OperatorType::Multiply,
+                            operand: Box::new(left)
+                        }
+                    ),
+                    right: Box::new(right)
+                }
+            );
+        },
+
+        _ => {
+            expr_stack.push(
+                ContextlessExpression::BinaryOperation {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right)
+                }
+            );
         }
-    );
+    };
 
     Some(())
 }
@@ -351,19 +389,19 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
             )
         },
         KeywordType::For => {
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::OpenParen)));
-
-            let mut exprs = parse_rvals(
-                data,
-                Token::Punctuator(PunctuatorType::Semicolon), Token::Punctuator(PunctuatorType::CloseParen)
-            )?;
-            assert_eq!(exprs.len(), 3);
-
-            let increment = exprs.pop().unwrap();
-            let condition = exprs.pop().unwrap();
-            let init = exprs.pop().unwrap();
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseParen)));
-
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(OpenParen)));
+            let Some(init) = parse_body_expr(data) else {
+                log_error!("Failed to parse loop initialization");
+            };
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(Semicolon)));
+            let Some(condition) = parse_body_expr(data) else {
+                log_error!("Failed to parse loop condition");
+            };
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(Semicolon)));
+            let Some(increment) = parse_body_expr(data) else {
+                log_error!("Failed to parse loop increment");
+            };
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(CloseParen)));
             let body = parse_body(data);
 
             Some(
@@ -371,7 +409,8 @@ fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
                     ControlExpression::ForLoop {
                         init: Box::new(init),
                         increment: Box::new(increment),
-                        condition: Box::new(condition), body
+                        condition: Box::new(condition),
+                        body
                     }
                 )
             )

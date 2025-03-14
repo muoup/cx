@@ -72,6 +72,8 @@ impl BytecodeBuilder {
     pub(crate) fn finish_function(&mut self) {
         let context = self.function_context.take().unwrap();
 
+        println!("Finished function: {:#?}", context.fn_prototype.name);
+
         self.functions.push(VerifiedFunction {
             prototype: context.fn_prototype,
             blocks: context.blocks
@@ -101,7 +103,7 @@ impl BytecodeBuilder {
         body.push(BlockInstruction {
             instruction,
             value: VirtualValue {
-                type_: get_intrinsic_type(&verify_context.type_map, &value_type)?.clone()
+                type_: value_type
             }
         });
 
@@ -203,6 +205,14 @@ pub enum VirtualInstruction {
     Assign {
         target: ValueID,
         value: ValueID
+    },
+
+    ZExtend {
+        value: ValueID,
+    },
+
+    SExtend {
+        value: ValueID,
     },
 
     IntegerBinOp {

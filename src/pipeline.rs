@@ -49,14 +49,20 @@ impl CompilerPipeline {
         File::open(self.source_dir.as_str()).ok()
     }
 
+    pub fn header_path(&self) -> String {
+        format!("{}/{}.hx", self.internal_dir, self.file_name)
+    }
+
     pub fn find_previous_header(&self) -> Option<File> {
-        let previous = format!("{}/{}.hx", self.internal_dir, self.file_name);
-        File::open(previous).ok()
+        File::open(self.header_path()).ok()
+    }
+
+    pub fn object_path(&self) -> String {
+        format!("{}/{}.o", self.internal_dir, self.file_name)
     }
 
     pub fn find_previous_object(&self) -> Option<File> {
-        let previous = format!("{}/{}.o", self.internal_dir, self.file_name);
-        File::open(previous).ok()
+        File::open(self.object_path()).ok()
     }
 
     pub fn preprocess(mut self) -> Self {

@@ -42,15 +42,13 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => Some(context.builder.ins().iconst(ir::Type::int(32)?, *val as i64)),
 
         VirtualInstruction::StringLiteral { str_id } => {
-            let pointer_type = context.pointer_type;
-            let global_val = context.global_strs.get(*str_id as usize).cloned().unwrap();
+            let global_id = context.global_strs.get(*str_id as usize).cloned().unwrap();
+            let global_val = context.object_module.declare_data_in_func(global_id, &mut context.builder.func);
 
-            context.object_module.declare_data_in_func(
-                DataId::from_u32(global_val.as_u32()),
-                &mut context.builder.func
-            );
-
-            Some(context.builder.ins().global_value(pointer_type, global_val))
+            Some(
+                context.builder.ins()
+                    .global_value(context.pointer_type, global_val)
+            )
         },
 
         VirtualInstruction::DirectCall {
@@ -193,6 +191,18 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             Some(
                 Value::from_u32(0)
+            )
+        },
+
+        VirtualInstruction::ZExtend {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            let _type = &instruction.value.type_;
+            let cranelift_type = get_cranelift_type(_type, context.type_map);
+
+            Some(
+                context.builder.ins().uextend(cranelift_type, val)
             )
         },
 

@@ -1,0 +1,26 @@
+import std::io;
+
+struct Point {
+    int x;
+    int y;
+}
+
+void Point::set(this, int x, int y) {
+    this->x = x;
+    this->y = y;
+}
+
+void Point::print(this) {
+    print("(");
+    print_int(this->x);
+    print(", ");
+    print_int(this->y);
+    println(")");
+}
+
+int main() {
+    Point p;
+    p.set(3, 4);
+    p.print();
+    return 0;
+}
