@@ -8,6 +8,7 @@ use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
 use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
+use crate::log_error;
 use crate::parse::ast::ValueType;
 use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
 use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
@@ -54,14 +55,23 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::DirectCall {
             function, args
         } => {
+            let return_type = context.fn_map.get(function).unwrap().return_type.clone();
+
             let func_id = context.function_ids.get(function).cloned().unwrap();
             let func_ref = context.object_module.declare_func_in_func(func_id, &mut context.builder.func);
 
-            let args = args.iter()
+            let mut args = args.iter()
                 .map(|arg| {
                     context.variable_table.get(arg).cloned().unwrap()
                 })
                 .collect::<Vec<Value>>();
+
+            if matches!(return_type, ValueType::Structured { .. }) {
+                let type_size = get_type_size(context.type_map, &return_type).unwrap() as u64;
+                let temp_storage = allocate_variable(context, type_size as u32, None).unwrap();
+
+                args.insert(0, temp_storage);
+            }
 
             let inst = context.builder.ins().call(func_ref, args.as_slice());
 
@@ -204,7 +214,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(
                 context.builder.ins().uextend(cranelift_type, val)
             )
-        }
+        },
+
+        VirtualInstruction::NOP => Some(Value::from_u32(0)),
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }

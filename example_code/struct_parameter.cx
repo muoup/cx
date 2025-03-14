@@ -11,14 +11,19 @@ struct Test {
 
 void struct_parameter(Test t) {
     putchar(t.a + '0');
+    putchar(t.b + '0');
+    putchar(t.c + '0');
+    putchar(t.d + '0');
     return;
 }
 
 Test struct_return() {
-    Test t;
-    t.a = 5;
-    t.b = 5;
-    return t;
+    return {
+        .a = 1,
+        .b = 2,
+        .c = 3,
+        .d = 4
+    };
 }
 
 int main() {

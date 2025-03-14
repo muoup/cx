@@ -58,7 +58,8 @@ pub enum GlobalStatement {
     },
     Import {
         path: String
-    }
+    },
+    HandledInternally
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,6 +123,9 @@ pub enum RValueExpression {
     },
     LoadedLValue {
         lvalue: Box<Expression>
+    },
+    StructuredInitializer {
+        fields: Vec<(Option<String>, Expression)>
     }
 }
 

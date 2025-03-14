@@ -1,8 +1,8 @@
-use std::env::args;
 use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::ast::{GlobalStatement, ValueType, VarInitialization};
-use crate::parse::contextless_expression::{coalesce_type, contextualize_rvalue, detangle_initialization, detangle_typed_expr, ContextlessExpression};
+use crate::parse::ast::GlobalStatement::HandledInternally;
+use crate::parse::contextless_expression::{coalesce_type, detangle_initialization, detangle_typed_expr, ContextlessExpression};
 use crate::parse::expression::{parse_expression, parse_initialization, parse_list};
 use crate::parse::parser::{parse_body, ParserData, TokenIter, VisibilityMode};
 use crate::parse::verify::context::FunctionPrototype;
@@ -59,12 +59,12 @@ pub(crate) fn parse_specifier(data: &mut ParserData) -> Option<GlobalStatement> 
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
             try_consume_token!(data, Token::Punctuator(PunctuatorType::Colon));
-            parse_global_stmt(data)
+            Some(HandledInternally)
         },
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
             try_consume_token!(data, Token::Punctuator(PunctuatorType::Colon));
-            parse_global_stmt(data)
+            Some(HandledInternally)
         },
 
         _ => unimplemented!("parse_specifier: {:#?}", specifier)
