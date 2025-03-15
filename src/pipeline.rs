@@ -142,8 +142,6 @@ impl CompilerPipeline {
             .args(&["-o", self.output.as_str()])
             .args(imports);
 
-        println!("{:?}", cmd);
-
         cmd
             .output()
             .expect("Failed to link object files");

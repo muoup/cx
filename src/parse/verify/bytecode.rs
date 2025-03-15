@@ -197,7 +197,8 @@ pub enum VirtualInstruction {
 
     Store {
         memory: ValueID,
-        value: ValueID
+        value: ValueID,
+        type_: ValueType
     },
 
     Assign {

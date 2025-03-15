@@ -2,16 +2,20 @@ public:
 
 int putchar(int c);
 
-struct Test {
+struct Inner {
     int a;
     int b;
+}
+
+struct Test {
+    Inner inner;
     int c;
     int d;
 }
 
 void struct_parameter(Test t) {
-    putchar(t.a + '0');
-    putchar(t.b + '0');
+    putchar(t.inner.a + '0');
+    putchar(t.inner.b + '0');
     putchar(t.c + '0');
     putchar(t.d + '0');
     return;
@@ -19,8 +23,10 @@ void struct_parameter(Test t) {
 
 Test struct_return() {
     return {
-        .a = 1,
-        .b = 2,
+        .inner = {
+            .a = 1,
+            .b = 2
+        },
         .c = 3,
         .d = 4
     };

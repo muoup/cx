@@ -178,12 +178,12 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
 
         VirtualInstruction::Store {
-            memory, value
+            memory, value, type_
         } => {
             let target = context.variable_table.get(memory).unwrap();
             let value = context.variable_table.get(value).unwrap();
 
-            let type_ = get_intrinsic_type(context.type_map, &instruction.value.type_)?;
+            let type_ = get_intrinsic_type(context.type_map, type_)?;
 
             if matches!(type_, &ValueType::Structured { .. }) {
                 let size = get_type_size(context.type_map, type_).unwrap() as u64;

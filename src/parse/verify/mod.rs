@@ -60,8 +60,6 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
         })
         .collect::<Vec<_>>();
 
-    println!("{:#?}", function_bodies);
-
     let type_map_iter = type_map.iter()
         .map(|(key, _type)| (key, verify_type(&type_map, _type.clone())));
     let mut type_map = TypeMap::new();
@@ -129,9 +127,10 @@ pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
                 &verify_context,
                 VirtualInstruction::Store {
                     value,
-                    memory
+                    memory,
+                    type_: arg.type_.clone()
                 },
-                arg.type_.clone()
+                ValueType::Unit
             )?;
 
             verify_context.insert_variable(arg.name.clone(), memory);

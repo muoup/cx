@@ -2,7 +2,7 @@ use crate::log_error;
 use crate::parse::ast::{Expression, RValueExpression, ValueType};
 use crate::parse::verify::bytecode::{BlockInstruction, BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::verify::context::VerifyContext;
-use crate::parse::verify::verify_expression::{verify_expression, verify_rvalue};
+use crate::parse::verify::verify_expression::{coercive_verify_expression, verify_expression, verify_rvalue};
 use crate::parse::verify::verify_type::{same_type, struct_field_index, struct_field_offset};
 
 pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut BytecodeBuilder, struct_pointer: ValueID, rval: &Expression) -> Option<ValueID> {
@@ -10,20 +10,18 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
         Expression::RValue(
             RValueExpression::DirectFunctionCall { name, args }
         ) => {
-            let fn_ret_type = context.get_function(name)?.return_type.clone();
+            let fn_sig = context.fn_map.get(name.as_str())?.clone();
 
-            if !same_type(&context.type_map, builder.get_type(struct_pointer)?, &fn_ret_type) {
+            if !same_type(&context.type_map, builder.get_type(struct_pointer)?, &fn_sig.return_type) {
                 log_error!("Function call has wrong return type: {:?}", rval);
             }
 
-            // Store hidden pointer to struct in first argument
-            let mut call_args = Vec::new();
-            call_args.push(struct_pointer);
-
-            for arg in args {
-                let arg = verify_expression(context, builder, arg)?;
-                call_args.push(arg);
-            }
+            let call_args = args.iter()
+                .zip(&fn_sig.args)
+                .map(|(arg, expected_type)|
+                    coercive_verify_expression(context, builder, arg, &expected_type.type_)
+                )
+                .collect::<Option<Vec<_>>>()?;
 
             builder.add_instruction(
                 context,
@@ -31,7 +29,7 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
                     function: name.clone(),
                     args: call_args
                 },
-                fn_ret_type
+                fn_sig.return_type.clone()
             )
         },
 
@@ -53,9 +51,8 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
                 let field_name = field_name.as_ref().unwrap();
                 let struct_index = struct_field_index(&struct_fields, field_name)?;
                 let struct_offset = struct_field_offset(context, builder, &struct_fields, field_name)?;
-                let struct_type = builder.get_type(struct_pointer).unwrap().clone();
 
-                let field_val = verify_expression(context, builder, field_val)?;
+                let field_val = coercive_verify_expression(context, builder, field_val, &struct_fields[struct_index].type_)?;
                 let field_addr = builder.add_instruction(
                     context,
                     VirtualInstruction::StructAccess {
@@ -63,7 +60,7 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
                         field_index: struct_index,
                         field_offset: struct_offset,
                     },
-                    struct_type
+                    struct_fields[struct_index].type_.clone()
                 )?;
 
                 builder.add_instruction(
@@ -71,16 +68,13 @@ pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut Bytec
                     VirtualInstruction::Store {
                         memory: field_addr,
                         value: field_val,
+                        type_: struct_fields[struct_index].type_.clone()
                     },
                     ValueType::Unit
                 );
             }
 
-            builder.add_instruction(
-                context,
-                VirtualInstruction::NOP,
-                ValueType::Unit
-            )
+            Some(struct_pointer)
         },
 
         _ => log_error!("Cannot assign struct to expression: {:?}", rval)
@@ -96,15 +90,14 @@ pub(crate) fn struct_return(context: &mut VerifyContext, builder: &mut BytecodeB
         ValueType::PointerTo(Box::new(ValueType::Unit))
     )?;
 
-    let struct_type = builder.get_type(struct_pointer)?.clone();
-
     builder.add_instruction(
         context,
         VirtualInstruction::Store {
             value: struct_pointer,
-            memory: dest
+            memory: dest,
+            type_: builder.get_type(struct_pointer)?.clone()
         },
-        struct_type
+        ValueType::Unit
     );
 
     builder.add_instruction(
