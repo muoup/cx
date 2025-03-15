@@ -91,7 +91,7 @@ pub(crate) fn same_type(type_map: &TypeMap, t1: &ValueType, t2: &ValueType) -> b
          ValueType::Structured { fields: t2_fields }) => {
             t1_fields.iter().zip(t2_fields.iter())
                 .all(|(f1, f2)|
-                    f1.name == f2.name && same_type(type_map, &f1.type_, &f2.type_))
+                    same_type(type_map, &f1.type_, &f2.type_))
         },
 
         (ValueType::Integer { bytes: t1_bytes, signed: t1_signed },

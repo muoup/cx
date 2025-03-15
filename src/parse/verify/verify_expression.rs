@@ -8,7 +8,7 @@ use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstructio
 use crate::parse::verify::context::VerifyContext;
 use crate::parse::verify::name_mangling::member_function_mangle;
 use crate::parse::verify::special_exprs::{struct_assignment, struct_return};
-use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size, struct_field_index, struct_field_offset};
+use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size, same_type, struct_field_index, struct_field_offset};
 
 pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                                 expression: &Expression) -> Option<ValueID> {
@@ -272,9 +272,10 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                 context,
                 VirtualInstruction::Store {
                     memory: left,
-                    value: right
+                    value: right,
+                    type_: left_type
                 },
-                builder.get_type(right)?.clone()
+                ValueType::Unit
             )
         },
 
@@ -575,14 +576,14 @@ pub(crate) fn verify_control(context: &mut VerifyContext, builder: &mut Bytecode
 
 pub(crate) fn coercive_verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                                          expression: &Expression, type_: &ValueType) -> Option<ValueID> {
-    match type_ {
+    match &get_intrinsic_type(&context.type_map, type_)?.clone() {
         ValueType::Structured { fields: struct_fields } => {
             match expression {
                 Expression::RValue(RValueExpression::DirectFunctionCall { name, .. }) => {
                     let return_type = context.get_function(name.as_str())?.return_type.clone();
 
-                    if return_type != *type_ {
-                        log_error!("Cannot coerce function call into structured type: {:?}", expression);
+                    if !same_type(&context.type_map, &return_type, type_) {
+                        log_error!("Cannot coerce function call of return type {:?} into structured type: {:?}", return_type, type_);
                     }
 
                     verify_expression(context, builder, expression)
@@ -621,7 +622,8 @@ pub(crate) fn coercive_verify_expression(context: &mut VerifyContext, builder: &
                             context,
                             VirtualInstruction::Store {
                                 memory: field_addr,
-                                value: expr
+                                value: expr,
+                                type_: struct_fields[field_index].type_.clone()
                             },
                             ValueType::Unit
                         );
@@ -630,7 +632,15 @@ pub(crate) fn coercive_verify_expression(context: &mut VerifyContext, builder: &
                     Some(temp_storage)
                 },
 
-                _ => log_error!("Cannot coerce expression into structured type: {:?}", expression)
+                _ => {
+                    let expr = verify_expression(context, builder, expression)?;
+
+                    if same_type(&context.type_map, builder.get_type(expr)?, type_) {
+                        return Some(expr);
+                    }
+
+                    log_error!("Cannot coerce expression of type {:?} into structured type: {:?}", builder.get_type(expr)?.clone(), type_);
+                }
             }
         },
 
@@ -645,7 +655,7 @@ pub(crate) fn coercive_verify_expression(context: &mut VerifyContext, builder: &
 
 pub(crate) fn coerce_type(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                           expr_id: ValueID, expr_type: &ValueType, goal_type: &ValueType) -> Option<ValueID> {
-    if expr_type == goal_type {
+    if same_type(&context.type_map, expr_type, goal_type) {
         return Some(expr_id);
     }
 
