@@ -1,0 +1,32 @@
+#include <stdio.h>
+
+public:
+
+struct file {
+    FILE* handle;
+}
+
+file open_file(string path, string mode) {
+    return file {
+        .handle = fopen(path.c_str(), mode.c_str())
+    };
+}
+
+void close_file(file f) {
+    fclose(f.handle);
+}
+
+void write_file(file f, string data) {
+    fputs(data.c_str(), f.handle);
+}
+
+string read_file(file f) {
+    char* result = "";
+
+    char buffer[1024];
+    while (fgets(buffer, 1024, f.handle) != null) {
+        result += buffer;
+    }
+
+    return result;
+}

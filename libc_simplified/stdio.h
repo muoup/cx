@@ -1,6 +1,8 @@
+typedef void FILE;
+
 void* fopen(char *filename, char *mode);
-int fclose(void *stream);
-void clearerr(void *stream);
+int fclose(FILE *stream);
+void clearerr(FILE *stream);
 
 int feof(void *stream);
 int ferror(void *stream);

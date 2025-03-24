@@ -43,3 +43,37 @@ optional<T> vector<T>::at(this, u64 index) {
 
     return this->data[index];
 }
+
+void vector<T>::sort(this) where T is Ordered {
+    this.__internal_sort(0, this->length - 1);
+}
+
+private:
+
+void vector<T>::__internal_sort(this, u64 left, u64 right)
+    where T is Ordered {
+    if (left >= right) {
+        return;
+    }
+
+    u64 pivot = this.__partition(left, right);
+
+    this.__internal__sort(left, pivot - 1);
+    this.__internal__sort(pivot + 1, right);
+}
+
+void vector<T>::__internal_partition(this, u64 left, u64 right)
+    where T is Ordered {
+
+    T pivot = this->data[right];
+    u64 i = left - 1;
+
+    for (u64 j = left; j < right; j++) {
+        if (this->data[j] < pivot) {
+            i++;
+            T temp = this->data[i];
+            this->data[i] = this->data[j];
+            this->data[j] = temp;
+        }
+    }
+}
