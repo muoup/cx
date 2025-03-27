@@ -40,7 +40,7 @@ pub(crate) fn contextualize_lvalue(data: &mut ParserData, expr: ContextlessExpre
             Some(Expression::LValue(LValueExpression::Identifier(name))),
 
         ContextlessExpression::UnaryOperation {
-            op: OperatorType::Multiply, operand
+            op: OperatorType::Asterisk, operand
         } => Some(
             Expression::LValue(
                 LValueExpression::DereferencedPointer {
@@ -178,7 +178,7 @@ pub(crate) fn maybe_contextualize_rvalue(data: &mut ParserData, expr: Contextles
         },
 
         ContextlessExpression::UnaryOperation {
-            op: OperatorType::Multiply,
+            op: OperatorType::Asterisk,
             operand
         } => {
             let Some(operand) = contextualize_rvalue(data, *operand) else {
@@ -188,7 +188,7 @@ pub(crate) fn maybe_contextualize_rvalue(data: &mut ParserData, expr: Contextles
             MaybeResult::Consumed(
                 Expression::RValue(
                     RValueExpression::UnaryOperation {
-                        operator: OperatorType::Multiply,
+                        operator: OperatorType::Asterisk,
                         operand: Some(Box::new(operand))
                     }
                 )
@@ -229,12 +229,12 @@ pub(crate) fn detangle_initialization(expr: ContextlessExpression) -> Option<Var
 pub(crate) fn detangle_typed_expr(expr: ContextlessExpression) -> Option<(ValueType, ContextlessExpression)> {
     let (left, right) = match expr {
         ContextlessExpression::BinaryOperation {
-            op: OperatorType::Multiply,
+            op: OperatorType::Asterisk,
             left, right
         } => (
             left,
             ContextlessExpression::UnaryOperation {
-                op: OperatorType::Multiply,
+                op: OperatorType::Asterisk,
                 operand: right
             }
         ),
@@ -261,7 +261,7 @@ pub(crate) fn detangle_typed_expr(expr: ContextlessExpression) -> Option<(ValueT
 pub(crate) fn coalesce_type(left: ValueType, right: ContextlessExpression) -> Option<(ValueType, ContextlessExpression)> {
     match right {
         ContextlessExpression::UnaryOperation {
-            op: OperatorType::Multiply,
+            op: OperatorType::Asterisk,
             operand
         } => coalesce_type(ValueType::PointerTo(Box::new(left)), *operand),
 

@@ -2,9 +2,9 @@ use crate::{assert_token_matches, log_error, try_consume_token, try_token_matche
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::ast::{GlobalStatement, ValueType, VarInitialization};
 use crate::parse::ast::GlobalStatement::HandledInternally;
-use crate::parse::contextless_expression::{coalesce_type, detangle_initialization, detangle_typed_expr, ContextlessExpression};
-use crate::parse::expression::{parse_expression, parse_initialization, parse_list};
-use crate::parse::parser::{parse_body, ParserData, TokenIter, VisibilityMode};
+use crate::parse::contextless_expression::{coalesce_type, contextualize_rvalue, detangle_initialization, detangle_typed_expr, ContextlessExpression};
+use crate::parse::expression::{parse_expression, parse_expression_value, parse_initialization, parse_list};
+use crate::parse::parser::{parse_body, parse_type_expr, ParserData, TokenIter, VisibilityMode};
 use crate::parse::verify::context::FunctionPrototype;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
@@ -43,7 +43,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<GlobalStatement> {
             break;
         }
 
-        try_token_matches!(data, Token::Operator(OperatorType::Divide));
+        try_token_matches!(data, Token::Operator(OperatorType::Slash));
         str.push('/');
     }
 
@@ -77,7 +77,7 @@ pub(crate) fn parse_struct_definition(data: &mut ParserData) -> Option<GlobalSta
     let name = name.clone();
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
-    let mut fields = parse_list(
+    let fields = parse_list(
         data,
         Token::Punctuator(PunctuatorType::Semicolon),
         Token::Punctuator(PunctuatorType::CloseBrace),
@@ -138,84 +138,38 @@ pub(crate) fn parse_union_definition(data: &mut ParserData) -> Option<GlobalStat
 }
 
 pub(crate) fn parse_global_expression(data: &mut ParserData) -> Option<GlobalStatement> {
-    let expr = parse_expression(data)?;
-    let Some((type_, expr)) = detangle_typed_expr(expr) else {
-        log_error!("Global-scope expression must be declarative");
-    };
+    let (_type, expr) = parse_type_expr(data)?;
 
     match expr {
         ContextlessExpression::FunctionCall {
-            reference, args
+            reference,
+            args
         } => {
-            let (return_type, header) = coalesce_type(type_, *reference)?;
-
-            let body = Some(parse_body(data)).filter(
-                |body| !body.is_empty()
-            );
-
-            let ContextlessExpression::Identifier(name) = header else {
-                log_error!("Expected identifier for function name");
+            let body = parse_body(data);
+            let ContextlessExpression::Identifier(name) = *reference else {
+                log_error!("Expected identifier for function call reference: {:#?}", reference);
             };
+
+            let args = args.into_iter()
+                .map(|expr| detangle_initialization(expr))
+                .collect::<Option<Vec<_>>>()?;
 
             Some(
                 GlobalStatement::Function {
                     prototype: FunctionPrototype {
-                        name, return_type,
-                        args: args.into_iter()
-                            .map(|expr| detangle_initialization(expr.clone()))
-                            .collect::<Option<Vec<_>>>()?
+                        name,
+                        args,
+                        return_type: _type,
                     },
-                    body
+                    body: if body.is_empty() {
+                        None
+                    } else {
+                        Some(body)
+                    }
                 }
             )
         },
 
-        ContextlessExpression::BinaryOperation {
-            op: OperatorType::ScopeRes,
-            left, right
-        } => {
-            let ContextlessExpression::Identifier(struct_name) = *left else {
-                log_error!("Expected identifier for struct name");
-            };
-            let ContextlessExpression::FunctionCall {
-                reference, args
-            } = *right else {
-                log_error!("Expected function call for member function");
-            };
-
-            let (return_type, header) = coalesce_type(type_, *reference)?;
-
-            let ContextlessExpression::Identifier(fn_name) = header else {
-                log_error!("Expected identifier for member function name");
-            };
-
-            let mut args = args.into_iter()
-                .skip(1)
-                .map(|expr| detangle_initialization(expr.clone()))
-                .collect::<Option<Vec<_>>>()?;
-
-            args.insert(0, VarInitialization {
-                name: "this".to_string(),
-                type_: ValueType::PointerTo(Box::new(ValueType::Identifier(struct_name.clone())))
-            });
-
-            let body = Some(parse_body(data)).filter(
-                |body| !body.is_empty()
-            );
-
-            Some(
-                GlobalStatement::MemberFunction {
-                    struct_parent: struct_name,
-                    prototype: FunctionPrototype {
-                        name: fn_name,
-                        return_type,
-                        args
-                    },
-                    body
-                }
-            )
-        },
-
-        tok => unimplemented!("parse_global_expression: {:#?}", tok)
+        _ => unimplemented!("parse_global_expression: {:?} {:#?}", _type, expr)
     }
 }

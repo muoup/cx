@@ -10,8 +10,9 @@ use crate::parse::verify::VerifiedAST;
 pub mod ast;
 pub mod verify;
 pub mod ast_interface;
+pub mod unverified;
 
-mod parser;
+pub(crate) mod parser;
 mod expression;
 mod global_scope;
 mod macros;

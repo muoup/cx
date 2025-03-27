@@ -1,10 +1,14 @@
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Add, Subtract, Multiply, Divide, Modulo,
+    Plus,
+    Minus,
+    Asterisk,
+    Slash, Modulo,
 
     NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
 
-    LAnd, LOr, LNot, BitAnd, BitOr, BitXor, BitNot,
+    LAnd, LOr, LNot, BitAnd, BitOr, BitXor,
+    BNot,
     LShift, RShift,
 
     Increment, Decrement,
@@ -128,11 +132,11 @@ impl OperatorType {
             OperatorType::LOr => 3,
             OperatorType::Equal | OperatorType::NotEqual => 4,
             OperatorType::Less | OperatorType::LessEqual | OperatorType::Greater | OperatorType::GreaterEqual => 5,
-            OperatorType::Add | OperatorType::Subtract => 6,
-            OperatorType::Multiply | OperatorType::Divide | OperatorType::Modulo => 7,
+            OperatorType::Plus | OperatorType::Minus => 6,
+            OperatorType::Asterisk | OperatorType::Slash | OperatorType::Modulo => 7,
             OperatorType::LShift | OperatorType::RShift => 8,
             OperatorType::BitAnd | OperatorType::BitXor | OperatorType::BitOr => 9,
-            OperatorType::LNot | OperatorType::BitNot | OperatorType::Less | OperatorType::Greater => 10,
+            OperatorType::LNot | OperatorType::BNot | OperatorType::Less | OperatorType::Greater => 10,
             OperatorType::BitAnd | OperatorType::BitOr | OperatorType::BitXor => 11,
 
             _ => 100

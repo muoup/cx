@@ -191,7 +191,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
             operator, operand
         } => {
             match operator {
-                OperatorType::Multiply => {
+                OperatorType::Asterisk => {
                     let Some(operand) = operand else {
                         log_error!("Anonymous unary operations not allowed in expression bodies")
                     };
@@ -213,7 +213,7 @@ pub(crate) fn verify_rvalue(context: &mut VerifyContext, builder: &mut BytecodeB
                         },
                         type_.clone()
                     )
-                },
+                }
 
                 _ => unimplemented!("{:?}", operator)
             }

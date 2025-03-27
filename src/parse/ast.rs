@@ -28,6 +28,10 @@ pub enum ValueType {
         size: usize,
         _type: Box<ValueType>
     },
+    Opaque {
+        name: String,
+        size: usize
+    },
 
     Identifier(String)
 }
@@ -37,6 +41,11 @@ pub enum GlobalStatement {
     Function {
         prototype: FunctionPrototype,
         body: Option<Vec<Expression>>
+    },
+    TemplatedFunction {
+        prototype: FunctionPrototype,
+        templated_types: Vec<String>,
+        body: Vec<Expression>
     },
     MemberFunction {
         struct_parent: String,

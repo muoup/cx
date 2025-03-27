@@ -49,10 +49,10 @@ pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial
 pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs: Value, rhs: Value) -> Option<Value> {
     Some(
         match op {
-            OperatorType::Add => builder.ins().iadd(lhs, rhs),
-            OperatorType::Subtract => builder.ins().isub(lhs, rhs),
-            OperatorType::Multiply => builder.ins().imul(lhs, rhs),
-            OperatorType::Divide => builder.ins().sdiv(lhs, rhs),
+            OperatorType::Plus => builder.ins().iadd(lhs, rhs),
+            OperatorType::Minus => builder.ins().isub(lhs, rhs),
+            OperatorType::Asterisk => builder.ins().imul(lhs, rhs),
+            OperatorType::Slash => builder.ins().sdiv(lhs, rhs),
             OperatorType::Modulo => builder.ins().srem(lhs, rhs),
             OperatorType::Equal => builder.ins().icmp(ir::condcodes::IntCC::Equal, lhs, rhs),
             OperatorType::NotEqual => builder.ins().icmp(ir::condcodes::IntCC::NotEqual, lhs, rhs),

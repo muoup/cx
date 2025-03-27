@@ -72,6 +72,12 @@ pub(crate) fn global_stmt_as_str(global_statement: &GlobalStatement) -> Option<S
             Some(header)
         },
 
+        GlobalStatement::TemplatedFunction {
+            ..
+        } => {
+            Some("// templated functions unimplemented".to_string())
+        },
+
         GlobalStatement::TypeDeclaration {
             name: Some(name),
             type_,

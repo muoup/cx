@@ -14,10 +14,22 @@ fn main() {
         return;
     };
 
-    pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
-        .preprocess()
-        .lex()
-        .parse()
-        .codegen()
-        .link();
+    let content = std::fs::read_to_string(file_name)
+        .expect("Failed to read file");
+    let mut parser_data = parse::parser::ParserData {
+        visibility: parse::parser::VisibilityMode::Package,
+        toks: parse::parser::TokenIter {
+            slice: &lex::generate_tokens(&content),
+            index: 0
+        },
+    };
+
+    let uv = parse::unverified::generate_unverified(&mut parser_data);
+
+    // pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
+    //     .preprocess()
+    //     .lex()
+    //     .parse()
+    //     .codegen()
+    //     .link();
 }

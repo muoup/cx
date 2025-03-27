@@ -1,9 +1,9 @@
-use crate::lex::token::{PunctuatorType, Token};
+use crate::lex::token::{OperatorType, PunctuatorType, Token};
 use crate::{assert_token_matches, log_error};
 use crate::parse::ast::{Expression, ValueType, AST};
 use crate::parse::ast::GlobalStatement::HandledInternally;
-use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, maybe_contextualize_rvalue};
-use crate::parse::expression::{parse_expression, parse_list, parse_rvals, parse_rvalue};
+use crate::parse::contextless_expression::{contextualize_lvalue, contextualize_rvalue, maybe_contextualize_rvalue, ContextlessExpression};
+use crate::parse::expression::{parse_expression, parse_expression_value, parse_identifier, parse_list, parse_rvals, parse_rvalue};
 use crate::parse::global_scope::parse_global_stmt;
 use crate::util::{MaybeResult, ScopedMap};
 
@@ -120,4 +120,27 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Vec<Expression> {
             vec![parse_body_expr(data).unwrap()]
         }
     }
+}
+
+pub(crate) fn parse_type_expr(data: &mut ParserData) -> Option<(ValueType, ContextlessExpression)>{
+    let type_name = parse_identifier(data)?;
+    let value = parse_expression_value(data)?;
+
+    fn detangle(value_type: ValueType, expr: ContextlessExpression) -> Option<(ValueType, ContextlessExpression)> {
+        match expr {
+            ContextlessExpression::UnaryOperation {
+                op: OperatorType::Asterisk,
+                operand
+            } => detangle(ValueType::PointerTo(Box::new(value_type)), *operand),
+
+            ContextlessExpression::BinaryOperation {
+                op: OperatorType::ArrayIndex,
+                left, ..
+            } => detangle(ValueType::PointerTo(Box::new(value_type)), *left),
+
+            _ => Some((value_type, expr))
+        }
+    };
+
+    detangle(ValueType::Identifier(type_name), value)
 }

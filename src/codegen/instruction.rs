@@ -125,10 +125,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let right = context.variable_table.get(right).cloned().unwrap();
 
             let inst = match op {
-                OperatorType::Add => context.builder.ins().iadd(left, right),
-                OperatorType::Subtract => context.builder.ins().isub(left, right),
-                OperatorType::Multiply => context.builder.ins().imul(left, right),
-                OperatorType::Divide => context.builder.ins().udiv(left, right),
+                OperatorType::Plus => context.builder.ins().iadd(left, right),
+                OperatorType::Minus => context.builder.ins().isub(left, right),
+                OperatorType::Asterisk => context.builder.ins().imul(left, right),
+                OperatorType::Slash => context.builder.ins().udiv(left, right),
 
                 OperatorType::Less => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
                 OperatorType::Greater => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),

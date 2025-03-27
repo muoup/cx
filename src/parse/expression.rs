@@ -12,15 +12,27 @@ use std::fmt::Debug;
  *  like "unsigned int" or "long long". This function will handle those cases.
  */
 pub fn parse_identifier(data: &mut ParserData) -> Option<String> {
-    let mut accumulator = String::new();
+    match data.toks.peek()? {
+        Token::Identifier(name) => {
+            let name = name.clone();
+            data.toks.next();
 
-    while let Some(Token::Intrinsic(name)) = data.toks.peek() {
-        accumulator.push_str(format!("{:?} ", name).to_lowercase().as_str());
-        data.toks.next();
+            Some(name)
+        }
+        Token::Intrinsic(_) => {
+            let mut accumulator = String::new();
+
+            while let Some(Token::Intrinsic(keyword)) = data.toks.peek() {
+                accumulator.push_str(format!("{:?} ", keyword).to_lowercase().as_str());
+                data.toks.next();
+            }
+
+            accumulator.pop();
+            Some(accumulator)
+        },
+
+        _ => None
     }
-
-    accumulator.pop(); // Remove trailing space
-    Some(accumulator)
 }
 
 pub(crate) fn parse_list<T>(data: &mut ParserData, splitter: Token, terminator: Token, parser: fn(&mut ParserData) -> Option<T>)
@@ -88,7 +100,7 @@ fn consume_expr(expr_stack: &mut Vec<ContextlessExpression>, op_stack: &mut Vec<
                     op: OperatorType::Access,
                     left: Box::new(
                         ContextlessExpression::UnaryOperation {
-                            op: OperatorType::Multiply,
+                            op: OperatorType::Asterisk,
                             operand: Box::new(left)
                         }
                     ),
@@ -226,43 +238,7 @@ pub(crate) fn parse_expression(data: &mut ParserData) -> Option<ContextlessExpre
     expr_stack.pop()
 }
 
-fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -> Option<ContextlessExpression> {
-    let expr = match data.toks.peek()? {
-        Token::Punctuator(PunctuatorType::OpenParen) => {
-            data.toks.next();
-            let mut args = parse_list(
-                data,
-                Token::Punctuator(PunctuatorType::Comma),
-                Token::Punctuator(PunctuatorType::CloseParen),
-                parse_expression
-            )?;
-            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
-
-            ContextlessExpression::FunctionCall {
-                reference: Box::new(expr),
-                args
-            }
-        },
-        Token::Punctuator(PunctuatorType::OpenBracket) => {
-            data.toks.next();
-            let index = parse_expression(data)?;
-            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseBracket)));
-
-            ContextlessExpression::BinaryOperation {
-                op: OperatorType::ArrayIndex,
-                left: Box::new(expr),
-                right: Box::new(index)
-            }
-        }
-
-        _ => return Some(expr),
-    };
-
-    parse_expression_suffix(expr, data)
-}
-
-
-fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression> {
+pub(crate) fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression> {
     let expr = match data.toks.next()? {
         Token::Keyword(_) => {
             data.toks.back();
@@ -329,6 +305,40 @@ fn parse_expression_value(data: &mut ParserData) -> Option<ContextlessExpression
     parse_expression_suffix(expr, data)
 }
 
+fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -> Option<ContextlessExpression> {
+    let expr = match data.toks.peek()? {
+        Token::Punctuator(PunctuatorType::OpenParen) => {
+            data.toks.next();
+            let mut args = parse_list(
+                data,
+                Token::Punctuator(PunctuatorType::Comma),
+                Token::Punctuator(PunctuatorType::CloseParen),
+                parse_expression
+            )?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+
+            ContextlessExpression::FunctionCall {
+                reference: Box::new(expr),
+                args
+            }
+        },
+        Token::Punctuator(PunctuatorType::OpenBracket) => {
+            data.toks.next();
+            let index = parse_expression(data)?;
+            assert_eq!(data.toks.next(), Some(&Token::Punctuator(PunctuatorType::CloseBracket)));
+
+            ContextlessExpression::BinaryOperation {
+                op: OperatorType::ArrayIndex,
+                left: Box::new(expr),
+                right: Box::new(index)
+            }
+        },
+
+        _ => return Some(expr),
+    };
+
+    parse_expression_suffix(expr, data)
+}
 
 fn parse_keyword_expression(data: &mut ParserData) -> Option<Expression> {
     let Some(Token::Keyword(keyword)) = data.toks.next() else {

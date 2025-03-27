@@ -63,6 +63,8 @@ pub(crate) fn verify_type(type_map: &TypeMap, val_type: ValueType) -> Option<Val
         ValueType::Unit
         | ValueType::Float { .. }
         | ValueType::Integer { .. } => Some(val_type),
+
+        _ => unimplemented!("verify_type: {:#?}", val_type)
     }
 }
 
@@ -133,6 +135,7 @@ pub fn get_type_size(type_map: &TypeMap, type_: &ValueType) -> Option<usize> {
 
         ValueType::Unit => Some(0),
         ValueType::PointerTo(_) => Some(8),
+        ValueType::Opaque { size, .. } => Some(*size),
         ValueType::Identifier(name) =>
             type_map.get(name)
                 .map(|_type| get_type_size(type_map, _type))

@@ -169,8 +169,8 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
     }
 
     match iter.next()? {
-        '*' => try_assignment(iter, OperatorType::Multiply),
-        '/' => try_assignment(iter, OperatorType::Divide),
+        '*' => try_assignment(iter, OperatorType::Asterisk),
+        '/' => try_assignment(iter, OperatorType::Slash),
         '%' => try_assignment(iter, OperatorType::Modulo),
 
         '+' => match iter.peek() {
@@ -178,7 +178,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                 iter.next();
                 Some(Token::Operator(OperatorType::Increment))
             },
-            _ => try_assignment(iter, OperatorType::Add)
+            _ => try_assignment(iter, OperatorType::Plus)
         }
         '-' => match iter.peek() {
             Some('>') => {
@@ -189,7 +189,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                 iter.next();
                 Some(Token::Operator(OperatorType::Decrement))
             },
-            _ => try_assignment(iter, OperatorType::Subtract)
+            _ => try_assignment(iter, OperatorType::Minus)
         },
         '.' => Some(Token::Operator(OperatorType::Access)),
 
@@ -209,7 +209,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         },
         '^' => Some(Token::Operator(OperatorType::BitXor)),
         '!' => Some(Token::Operator(OperatorType::LNot)),
-        '~' => Some(Token::Operator(OperatorType::BitNot)),
+        '~' => Some(Token::Operator(OperatorType::BNot)),
 
         ':' => {
             if Some(':') == iter.peek() {
