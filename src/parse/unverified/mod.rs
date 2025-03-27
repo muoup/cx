@@ -75,6 +75,28 @@ pub enum UVExpr {
         right: Box<UVExpr>,
     },
 
+    If {
+        condition: Box<UVExpr>,
+        then_branch: Vec<UVExpr>,
+        else_branch: Option<Vec<UVExpr>>
+    },
+
+    While {
+        condition: Box<UVExpr>,
+        body: Box<UVExpr>
+    },
+
+    For {
+        init: Option<Box<UVExpr>>,
+        condition: Option<Box<UVExpr>>,
+        increment: Option<Box<UVExpr>>,
+        body: Box<UVExpr>
+    },
+
+    Return {
+        value: Option<Box<UVExpr>>
+    },
+
     Complex {
         operator_stack: Vec<UVBinOp>,
         expression_stack: Vec<UVExpr>

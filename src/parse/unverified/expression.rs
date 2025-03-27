@@ -1,13 +1,23 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::{assert_token_matches, log_error};
+use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
 use crate::parse::expression::parse_identifier;
-use crate::parse::parser::ParserData;
+use crate::parse::parser::{ParserData};
 use crate::parse::unverified::{UVBinOp, UVExpr, UVUnOp};
+use crate::parse::unverified::global_scope::parse_body;
 use crate::parse::unverified::operators::{tok_to_binop, tok_to_unop};
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
+
+    if let Some(Token::Keyword(keyword)) = data.toks.peek() {
+        let keyword = keyword.clone();
+        data.toks.next();
+
+        if let Some(expr) = parse_keyword_val(data, keyword) {
+            return Some(expr);
+        }
+    }
 
     let Some(expr) = parse_expr_val(data) else {
         return None
@@ -70,13 +80,8 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
         Token::FloatLiteral(value) => Some(UVExpr::FloatLiteral(value.clone())),
         Token::StringLiteral(value) => Some(UVExpr::StringLiteral(value.clone())),
 
-        Token::Keyword(KeywordType::Return) => {
-            let Some(expr) = parse_expr(data) else {
-                return None
-            };
-
-            Some(UVExpr::Identifier("return".to_string())) // Placeholder for return statement
-        }
+        Token::Keyword(keyword) =>
+            log_error!("Statement Expressioning not supported: {:#?}", keyword),
 
         _ => {
             data.toks.back();
@@ -110,5 +115,39 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
                 return Some(acc)
             }
         }
+    }
+}
+
+pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> Option<UVExpr> {
+    match keyword {
+        KeywordType::Return => {
+            let val = parse_expr(data);
+
+            Some(
+                UVExpr::Return {
+                    value: val.map(|v| Box::new(v))
+                }
+            )
+        },
+        KeywordType::If => {
+            let expr = parse_expr_val(data)?;
+            let then_body = parse_body(data)?;
+            let else_body =
+                if try_consume_token!(data, Token::Keyword(KeywordType::Else)) {
+                    parse_body(data)
+                } else {
+                    None
+                };
+
+            Some(
+                UVExpr::If {
+                    condition: Box::new(expr),
+                    then_branch: then_body,
+                    else_branch: else_body
+                }
+            )
+        },
+
+        _ => log_error!("Unsupported keyword: {:#?}", keyword)
     }
 }
