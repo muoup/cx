@@ -23,7 +23,7 @@ mod import_module;
 mod name_mangling;
 
 #[derive(Debug)]
-pub struct VerifiedAST {
+pub struct ProgramBytecode {
     pub fn_map: FnMap,
     pub type_map: TypeMap,
 
@@ -33,7 +33,7 @@ pub struct VerifiedAST {
     pub imports: Vec<String>
 }
 
-pub fn verify_ast(mut ast: AST) -> Option<VerifiedAST> {
+pub fn verify_ast(mut ast: AST) -> Option<ProgramBytecode> {
     let imports = gen_imports(&ast)?;
 
     for file in imports.iter() {

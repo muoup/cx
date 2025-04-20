@@ -1,8 +1,7 @@
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
 use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
-use crate::parse::verify::VerifiedAST;
-use crate::parse::verify::verify_type::get_intrinsic_type;
+use crate::parse::verify::ProgramBytecode;
 
 pub type ElementID = u32;
 
@@ -151,9 +150,9 @@ impl BytecodeBuilder {
         block.body.last()
     }
 
-    pub(crate) fn finish(self, fn_map: FnMap, type_map: TypeMap, imports: Vec<String>) -> Option<VerifiedAST> {
+    pub(crate) fn finish(self, fn_map: FnMap, type_map: TypeMap, imports: Vec<String>) -> Option<ProgramBytecode> {
         Some(
-            VerifiedAST {
+            ProgramBytecode {
                 fn_map,
                 type_map,
                 imports,

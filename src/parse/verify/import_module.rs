@@ -33,7 +33,8 @@ fn get_interface(file: &str) -> Option<AST> {
                 return CompilerPipeline::new(file_pipeline.header_path(), String::new())
                     .preprocess()
                     .lex()
-                    .parse_interface();
+                    .generate_interface()
+                    .take_ast();
             }
         }
     }
@@ -47,5 +48,6 @@ fn get_interface(file: &str) -> Option<AST> {
     CompilerPipeline::new(header.header_path(), String::new())
         .preprocess()
         .lex()
-        .parse_interface()
+        .generate_interface()
+        .take_ast()
 }

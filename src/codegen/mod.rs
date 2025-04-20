@@ -12,7 +12,7 @@ use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};
 use crate::codegen::routines::string_literal;
 use crate::parse::verify::bytecode::ValueID;
 use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap};
-use crate::parse::verify::VerifiedAST;
+use crate::parse::verify::ProgramBytecode;
 
 mod codegen;
 mod value_type;
@@ -57,7 +57,7 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) function_sigs: &'a mut HashMap<String, ir::Signature>,
 }
 
-pub fn ast_codegen(ast: &VerifiedAST, output: &str) -> Option<()> {
+pub fn ast_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
