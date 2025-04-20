@@ -5,7 +5,7 @@ use crate::parse::ast::GlobalStatement::HandledInternally;
 use crate::parse::contextless_expression::{coalesce_type, contextualize_rvalue, detangle_initialization, detangle_typed_expr, ContextlessExpression};
 use crate::parse::expression::{parse_expression, parse_expression_value, parse_initialization, parse_list};
 use crate::parse::parser::{parse_body, parse_type_expr, ParserData, TokenIter, VisibilityMode};
-use crate::parse::verify::context::FunctionPrototype;
+use crate::parse::pass_verified::context::FunctionPrototype;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<GlobalStatement> {
     match data.toks.peek()? {

@@ -4,11 +4,11 @@ use cranelift::codegen::ir;
 use crate::lex::token::OperatorType;
 use crate::log_error;
 use crate::parse::ast::{ControlExpression, Expression, LValueExpression, LiteralExpression, RValueExpression, ValueType, VarInitialization};
-use crate::parse::verify::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
-use crate::parse::verify::context::VerifyContext;
-use crate::parse::verify::name_mangling::member_function_mangle;
-use crate::parse::verify::special_exprs::{struct_assignment, struct_return};
-use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size, same_type, struct_field_index, struct_field_offset};
+use crate::parse::pass_verified::bytecode::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
+use crate::parse::pass_verified::context::VerifyContext;
+use crate::parse::pass_verified::name_mangling::member_function_mangle;
+use crate::parse::pass_verified::special_exprs::{struct_assignment, struct_return};
+use crate::parse::pass_verified::verify_type::{get_intrinsic_type, get_type_size, same_type, struct_field_index, struct_field_offset};
 
 pub(crate) fn verify_expression(context: &mut VerifyContext, builder: &mut BytecodeBuilder,
                                 expression: &Expression) -> Option<ValueID> {

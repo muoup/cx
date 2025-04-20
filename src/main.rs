@@ -24,7 +24,13 @@ fn main() {
         },
     };
 
-    let uv = parse::unverified::generate_unverified(&mut parser_data);
+    let uv = parse::pass_unverified::generate_unverified(&mut parser_data).unwrap();
+
+    // Print contents to .internal/f-dump.data
+    let dump_path = ".internal/compiler-dump.data";
+    std::fs::create_dir_all(".internal").expect("Failed to create .internal directory");
+    std::fs::write(dump_path, format!("{}", uv))
+        .expect(format!("Failed to write to {}", dump_path).as_str());
 
     // pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
     //     .preprocess()

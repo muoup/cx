@@ -1,6 +1,6 @@
 use crate::parse::ast::{GlobalStatement, ValueType, AST};
-use crate::parse::verify::context::{ConstMap, FnMap, TypeMap};
-use crate::parse::verify::name_mangling::member_function_mangle;
+use crate::parse::pass_verified::context::{ConstMap, FnMap, TypeMap};
+use crate::parse::pass_verified::name_mangling::member_function_mangle;
 
 pub(crate) fn gen_fn_decls(ast: &AST) -> Option<FnMap> {
     let mut map = FnMap::new();

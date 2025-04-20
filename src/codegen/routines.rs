@@ -2,7 +2,7 @@ use std::process::id;
 use crate::codegen::FunctionState;
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
-use crate::parse::verify::verify_type::get_type_size;
+use crate::parse::pass_verified::verify_type::get_type_size;
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;

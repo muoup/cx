@@ -1,6 +1,6 @@
 use cranelift::codegen::ir;
 use crate::parse::ast::{ValueType};
-use crate::parse::verify::context::TypeMap;
+use crate::parse::pass_verified::context::TypeMap;
 
 pub(crate) fn get_cranelift_abi_type(type_map: &TypeMap, val_type: &ValueType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type, type_map))

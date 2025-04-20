@@ -10,8 +10,8 @@ use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
 use crate::log_error;
 use crate::parse::ast::ValueType;
-use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
-use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
+use crate::parse::pass_verified::bytecode::{BlockInstruction, VirtualInstruction};
+use crate::parse::pass_verified::verify_type::{get_intrinsic_type, get_type_size};
 
 /**
  *  May or may not return a valid, panics if error occurs

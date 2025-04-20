@@ -1,14 +1,43 @@
-use crate::lex::token::{KeywordType, PunctuatorType, Token};
+use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::{assert_token_matches, log_error, try_consume_token};
 use crate::parse::expression::parse_identifier;
 use crate::parse::parser::ParserData;
-use crate::parse::unverified::{UVExpr, UVGlobalStmt};
-use crate::parse::unverified::expression::parse_expr;
+use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt};
+use crate::parse::pass_unverified::expression::{parse_expr, requires_semicolon};
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<UVGlobalStmt> {
-    match data.toks.peek()? {
-        _ => parse_global_expr(data)
+    match data.toks.next()
+        .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!") {
+        Token::Keyword(KeywordType::Import) => parse_import(data),
+        _ => {
+            data.toks.back();
+            parse_global_expr(data)
+        }
     }
+}
+
+pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
+    let mut import_path = String::new();
+
+    loop {
+        let Some(tok) = data.toks.next() else {
+            eprintln!("PARSER ERROR: Reached end of token stream when parsing import!");
+            return None;
+        };
+
+        match tok {
+            Token::Punctuator(PunctuatorType::Semicolon) => break,
+            Token::Operator(OperatorType::ScopeRes) => import_path.push('/'),
+            Token::Identifier(ident) => import_path.push_str(&ident),
+
+            _ => {
+                eprintln!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
+                return None;
+            }
+        }
+    };
+
+    Some(UVGlobalStmt::Import(import_path))
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
@@ -43,24 +72,27 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
     )
 }
 
-pub(crate) fn parse_body(data: &mut ParserData) -> Option<Vec<UVExpr>> {
+pub(crate) fn parse_body(data: &mut ParserData) -> Option<UVExpr> {
     if try_consume_token!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
         let mut body = Vec::new();
 
         while !try_consume_token!(data, Token::Punctuator(PunctuatorType::CloseBrace)) {
             if let Some(stmt) = parse_expr(data) {
+                if requires_semicolon(&stmt) {
+                    assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+                }
+
                 body.push(stmt);
-                assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
             } else {
                 log_error!("Failed to parse statement in body: {:#?}", data.toks.peek());
             }
         }
 
-        Some(body)
+        Some(UVExpr::ExprChain(body))
     } else {
         let body = parse_expr(data)?;
         assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
-        Some(vec![body])
+        Some(body)
     }
 }

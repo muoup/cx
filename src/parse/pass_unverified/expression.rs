@@ -2,9 +2,19 @@ use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
 use crate::parse::expression::parse_identifier;
 use crate::parse::parser::{ParserData};
-use crate::parse::unverified::{UVBinOp, UVExpr, UVUnOp};
-use crate::parse::unverified::global_scope::parse_body;
-use crate::parse::unverified::operators::{tok_to_binop, tok_to_unop};
+use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
+use crate::parse::pass_unverified::global_scope::parse_body;
+use crate::parse::pass_unverified::operators::{tok_to_binop, tok_to_unop};
+
+pub(crate) fn requires_semicolon(expr: &UVExpr) -> bool {
+    match expr {
+        UVExpr::If { .. } => false,
+        UVExpr::While { .. } => false,
+        UVExpr::For { .. } => false,
+
+        _ => true
+    }
+}
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
     let mut op_stack = Vec::new();
@@ -83,6 +93,14 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
         Token::Keyword(keyword) =>
             log_error!("Statement Expressioning not supported: {:#?}", keyword),
 
+        Token::Punctuator(PunctuatorType::OpenParen) => {
+            let expr = parse_expr(data)?;
+
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+
+            Some(UVExpr::Parenthesized(Some(Box::new(expr))))
+        },
+
         _ => {
             data.toks.back();
 
@@ -142,8 +160,19 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             Some(
                 UVExpr::If {
                     condition: Box::new(expr),
-                    then_branch: then_body,
-                    else_branch: else_body
+                    then_branch: Box::new(then_body),
+                    else_branch: else_body.map(|b| Box::new(b))
+                }
+            )
+        },
+        KeywordType::While => {
+            let expr = parse_expr_val(data)?;
+            let body = parse_body(data)?;
+
+            Some(
+                UVExpr::While {
+                    condition: Box::new(expr),
+                    body: Box::new(body)
                 }
             )
         },

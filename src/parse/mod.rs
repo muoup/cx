@@ -4,13 +4,13 @@ use crate::log_error;
 use crate::parse::ast::AST;
 use crate::parse::ast_interface::emit_interface;
 use crate::parse::parser::{ParserData, TokenIter, VarTable, VisibilityMode};
-use crate::parse::verify::ProgramBytecode;
+use crate::parse::pass_verified::ProgramBytecode;
 
 // pub mod verify;
 pub mod ast;
-pub mod verify;
+pub mod pass_verified;
 pub mod ast_interface;
-pub mod unverified;
+pub mod pass_unverified;
 
 pub(crate) mod parser;
 mod expression;
@@ -31,5 +31,5 @@ pub fn parse_ast(toks: &[Token]) -> Option<AST> {
 }
 
 pub fn verify_ast(ast: AST) -> Option<ProgramBytecode> {
-    verify::verify_ast(ast)
+    pass_verified::verify_ast(ast)
 }

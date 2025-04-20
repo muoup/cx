@@ -1,23 +1,39 @@
 use crate::parse::ast::ValueType;
 use crate::parse::parser::ParserData;
-use crate::parse::unverified::expression::parse_expr;
-use crate::parse::unverified::global_scope::parse_global_expr;
-use crate::parse::verify::context::FunctionPrototype;
+use crate::parse::pass_unverified::expression::parse_expr;
+use crate::parse::pass_unverified::global_scope::{parse_global_expr, parse_global_stmt};
+use crate::parse::pass_verified::context::FunctionPrototype;
 
 mod expression;
 mod global_scope;
 mod operators;
+mod format;
 
-pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVGlobalStmt> {
-    let ast = parse_global_expr(parser_data)?;
+pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
+    let mut stmts = Vec::new();
 
-    println!("Parsed global statement: {:#?}", ast);
+    while parser_data.toks.has_next() {
+        stmts.push(
+            parse_global_stmt(parser_data)?
+        );
+    }
 
-    Some(ast)
+    Some(
+        UVAST {
+            stmts
+        }
+    )
+}
+
+#[derive(Debug)]
+pub struct UVAST {
+    stmts: Vec<UVGlobalStmt>
 }
 
 #[derive(Debug)]
 pub enum UVGlobalStmt {
+    Import(String),
+
     TypeDeclaration {
         name: Option<String>,
         type_: ValueType
@@ -29,7 +45,7 @@ pub enum UVGlobalStmt {
 
     BodiedExpression {
         header: UVExpr,
-        body: Vec<UVExpr>
+        body: UVExpr
     },
 
     HandledInternally
@@ -77,8 +93,8 @@ pub enum UVExpr {
 
     If {
         condition: Box<UVExpr>,
-        then_branch: Vec<UVExpr>,
-        else_branch: Option<Vec<UVExpr>>
+        then_branch: Box<UVExpr>,
+        else_branch: Option<Box<UVExpr>>
     },
 
     While {
@@ -100,5 +116,7 @@ pub enum UVExpr {
     Complex {
         operator_stack: Vec<UVBinOp>,
         expression_stack: Vec<UVExpr>
-    }
+    },
+
+    ExprChain(Vec<UVExpr>),
 }

@@ -1,4 +1,4 @@
-#include <stdio.h>
+import std::io;
 
 void while_loop(int n) {
     while (n > 0) {
