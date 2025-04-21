@@ -27,6 +27,7 @@ pub(crate) fn tok_to_binop(op: Token) -> Option<UVBinOp> {
                 OperatorType::Greater       => UVBinOp::Greater,
                 OperatorType::LessEqual     => UVBinOp::LessEqual,
                 OperatorType::GreaterEqual  => UVBinOp::GreaterEqual,
+                OperatorType::Access        => UVBinOp::Access,
 
                 _ => return None
             },

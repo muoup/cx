@@ -1,14 +1,12 @@
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::isa::TargetFrontendConfig;
 use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataId, Module};
 use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
 use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
-use crate::log_error;
 use crate::parse::ast::ValueType;
 use crate::parse::pass_verified::bytecode::{BlockInstruction, VirtualInstruction};
 use crate::parse::pass_verified::verify_type::{get_intrinsic_type, get_type_size};

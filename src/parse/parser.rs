@@ -89,7 +89,7 @@ pub(crate) fn parse_body_expr(data: &mut ParserData) -> Option<Expression> {
                     log_error!("Body expression failed to parse ending at: {:#?}", data.toks.peek());
                 };
 
-                assert_token_matches!(data, Token::Punctuator(Semicolon));
+                assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
                 Some(lval)
             },

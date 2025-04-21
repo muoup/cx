@@ -1,5 +1,6 @@
+use std::clone;
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::{assert_token_matches, log_error, tok_next, try_token_matches};
+use crate::{assert_token_matches, log_error, try_next, try_token_matches};
 use crate::parse::expression::parse_identifier;
 use crate::parse::parser::{ParserData};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
@@ -35,7 +36,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
 
     expr_stack.push(expr);
 
-    while !matches!(data.toks.peek(), None) {
+    while data.toks.has_next() {
         if let Some(binop) = tok_to_binop(data.toks.peek().cloned()?) {
             op_stack.push(binop);
             data.toks.next(); // consume the operator token
@@ -48,6 +49,8 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
                         left: Box::new(lhs),
                         right: Box::new(rhs),
                     });
+
+                    continue;
                 }
             }
 
@@ -89,6 +92,8 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
         Token::IntLiteral(value) => Some(UVExpr::IntLiteral(value.clone())),
         Token::FloatLiteral(value) => Some(UVExpr::FloatLiteral(value.clone())),
         Token::StringLiteral(value) => Some(UVExpr::StringLiteral(value.clone())),
+
+        Token::Punctuator(PunctuatorType::OpenBrace) => parse_struct_initializer(data),
 
         Token::Keyword(keyword) =>
             log_error!("Statement Expressioning not supported: {:#?}", keyword),
@@ -151,7 +156,7 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             let expr = parse_expr_val(data)?;
             let then_body = parse_body(data)?;
             let else_body =
-                if tok_next!(data, Token::Keyword(KeywordType::Else)) {
+                if try_next!(data, Token::Keyword(KeywordType::Else)) {
                     parse_body(data)
                 } else {
                     None
@@ -179,4 +184,40 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
 
         _ => log_error!("Unsupported keyword: {:#?}", keyword)
     }
+}
+
+pub(crate) fn parse_struct_initializer(data: &mut ParserData) -> Option<UVExpr> {
+    let mut assignments = Vec::new();
+
+    loop {
+        if !matches!(data.toks.peek(), Some(Token::Operator(OperatorType::Access))) {
+            break;
+        }
+
+        data.toks.next();
+
+        let Token::Identifier(field_name) = data.toks.next()? else {
+            log_error!("Expected field name in structured initializer");
+        };
+
+        let field_name = field_name.clone();
+
+        assert_token_matches!(data, Token::Assignment(None));
+
+        let field_value = parse_expr(data)?;
+
+        assignments.push((field_name, Box::new(field_value)));
+
+        if !matches!(data.toks.peek(), Some(Token::Punctuator(PunctuatorType::Comma))) {
+            break;
+        }
+
+        data.toks.next();
+    }
+
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
+
+    Some(
+        UVExpr::StructuredInitializer { assignments }
+    )
 }

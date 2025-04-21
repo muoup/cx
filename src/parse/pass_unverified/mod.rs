@@ -1,8 +1,13 @@
+use std::cmp::min;
+use log::error;
+use crate::log_error;
 use crate::parse::ast::ValueType;
+use crate::parse::macros::error_pointer;
 use crate::parse::parser::ParserData;
 use crate::parse::pass_unverified::expression::parse_expr;
 use crate::parse::pass_unverified::global_scope::{parse_global_expr, parse_global_stmt};
 use crate::parse::pass_verified::context::FunctionPrototype;
+use crate::util::dump_all;
 
 mod expression;
 mod global_scope;
@@ -14,9 +19,16 @@ pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
     let mut stmts = Vec::new();
 
     while parser_data.toks.has_next() {
-        stmts.push(
-            parse_global_stmt(parser_data)?
-        );
+        let starting_token = parser_data.toks.peek().unwrap().clone();
+
+        let Some(stmt) = parse_global_stmt(parser_data) else {
+            eprintln!("PARSER ERROR: Unverified parsing failed, dumping correctly parsed expressions.");
+            eprintln!("{}", error_pointer(parser_data));
+            dump_all(stmts);
+            return None;
+        };
+
+        stmts.push(stmt);
     }
 
     Some(
@@ -36,7 +48,7 @@ pub enum UVGlobalStmt {
     Import(String),
 
     TypeDeclaration {
-        name: Option<String>,
+        name: String,
         type_: ValueType
     },
 
@@ -71,6 +83,8 @@ pub enum UVBinOp {
 
     LAnd, LOr, BitAnd, BitOr, BitXor,
     LShift, RShift,
+
+    Access,
 
     Assignment(Option<Box<UVBinOp>>) // for compound assignment (+=, etc)
 }
@@ -117,6 +131,10 @@ pub enum UVExpr {
     Complex {
         operator_stack: Vec<UVBinOp>,
         expression_stack: Vec<UVExpr>
+    },
+
+    StructuredInitializer {
+        assignments: Vec<(String, Box<UVExpr>)>,
     },
 
     ExprChain(Vec<UVExpr>),

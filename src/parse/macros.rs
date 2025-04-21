@@ -1,12 +1,45 @@
+use crate::parse::parser::ParserData;
+
+pub fn error_pointer(parser_data: &ParserData) -> String {
+    let previous_tokens = parser_data.toks.index.min(2);
+    let next_tokens = (parser_data.toks.slice.len() - parser_data.toks.index).min(2);
+
+    let mut error_tokens = String::new();
+
+    for tok in &parser_data.toks.slice[parser_data.toks.index - previous_tokens.. parser_data.toks.index] {
+        error_tokens.push_str(&format!("{:?} ", tok));
+    }
+
+    let mut error_pointer = String::new();
+
+    for _ in 0..error_tokens.len() {
+        error_pointer.push_str(" ");
+    }
+
+    error_pointer.push_str("^ ");
+
+    for tok in &parser_data.toks.slice[parser_data.toks.index..parser_data.toks.index + next_tokens] {
+        error_tokens.push_str(&format!("{:?} ", tok));
+    }
+
+    error_tokens.push('\n');
+    error_tokens.push_str(&error_pointer);
+
+    error_tokens
+}
+
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {
-        // If in debug mode, panic on error
-        if cfg!(debug_assertions) {
+        {
             eprintln!("Error in file {} at line {}: ", file!(), line!());
-            panic!($($arg)*);
-        } else {
             eprintln!($($arg)*);
+
+            // If in debug mode, panic on error
+            if cfg!(debug_assertions) {
+                panic!()
+            }
+
             return None;
         }
     }
@@ -17,6 +50,7 @@ macro_rules! assert_token_matches {
     ($data:ident, $pattern:pat) => {
         let $pattern = $data.toks.next()? else {
             $data.toks.back();
+            eprintln!("{}", crate::parse::macros::error_pointer($data));
             log_error!("Expected token to match pattern: {:#?}\n Found: {:#?}", stringify!($pattern), $data.toks.peek());
             return None;
         };
@@ -34,7 +68,7 @@ macro_rules! try_token_matches {
 }
 
 #[macro_export]
-macro_rules! tok_next {
+macro_rules! try_next {
     ($data:ident, $pattern:pat) => {
         if let Some($pattern) = $data.toks.peek() {
             $data.toks.next();

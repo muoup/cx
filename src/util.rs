@@ -53,3 +53,24 @@ impl<T> ScopedMap<T> {
         self.data.get(name)
     }
 }
+
+pub fn dump_data(data: impl std::fmt::Display) {
+    let dump_path = ".internal/compiler-dump.data";
+    std::fs::create_dir_all(".internal").expect("Failed to create .internal directory");
+    std::fs::write(dump_path, format!("{}", data))
+        .expect(format!("Failed to write to {}", dump_path).as_str());
+}
+
+pub fn dump_all(data: Vec<impl std::fmt::Display>) {
+    let dump_path = ".internal/compiler-dump.data";
+    std::fs::create_dir_all(".internal").expect("Failed to create .internal directory");
+
+    let data = data
+        .into_iter()
+        .map(|d| format!("{}\n", d))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    std::fs::write(dump_path, data)
+        .expect(format!("Failed to write to {}", dump_path).as_str());
+}

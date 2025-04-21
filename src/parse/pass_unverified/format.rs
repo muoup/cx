@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
+use crate::parse::ast_interface::initialization_as_name;
 use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVAST};
 use crate::parse::pass_unverified::expression::requires_semicolon;
 
@@ -44,7 +45,7 @@ macro_rules! fwriteln {
 impl Display for UVAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.stmts {
-            fwriteln!(f, "{}", stmt)?;
+            fwriteln!(f, "{}\n", stmt)?;
         }
 
         Ok(())
@@ -64,7 +65,13 @@ impl Display for UVGlobalStmt {
                 fwriteln!(f, "}}")
             },
             UVGlobalStmt::SingleExpression { expression } => {
-                fwrite!(f, "{}", expression)
+                fwrite!(f, "{};", expression)
+            },
+            UVGlobalStmt::HandledInternally => Ok(()),
+            UVGlobalStmt::TypeDeclaration { name, type_ } => {
+                let type_name = initialization_as_name(type_, name.clone()).unwrap();
+
+                fwrite!(f, "{};", type_name)
             },
 
             _ => fwrite!(f, "{:?}", self),
@@ -167,7 +174,20 @@ impl Display for UVExpr {
                 }
 
                 Ok(())
-            }
+            },
+            UVExpr::StructuredInitializer { assignments } => {
+                fwrite!(f, "{{")?;
+
+                for (i, (name, expr)) in assignments.iter().enumerate() {
+                    fwrite!(f, ".{} = {}", name, expr)?;
+
+                    if i != assignments.len() - 1 {
+                        fwrite!(f, ", ")?;
+                    }
+                }
+
+                fwrite!(f, "}}")
+            },
         }
     }
 }

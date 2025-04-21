@@ -12,7 +12,7 @@ pub mod pass_unverified;
 pub(crate) mod parser;
 mod expression;
 mod global_scope;
-mod macros;
+pub mod macros;
 mod contextless_expression;
 
 pub fn parse_ast(toks: &[Token]) -> Option<AST> {

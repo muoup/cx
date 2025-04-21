@@ -1,17 +1,23 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
-use crate::{assert_token_matches, log_error, tok_next};
+use crate::{assert_token_matches, log_error, try_next};
 use crate::parse::ast::{GlobalStatement, ValueType};
 use crate::parse::ast::GlobalStatement::HandledInternally;
 use crate::parse::expression::parse_identifier;
 use crate::parse::parser::{ParserData, VisibilityMode};
 use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt};
 use crate::parse::pass_unverified::expression::{parse_expr, requires_semicolon};
+use crate::parse::pass_unverified::typing::parse_plain_typedef;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<UVGlobalStmt> {
     match data.toks.peek()
         .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!") {
 
         Token::Keyword(KeywordType::Import) => parse_import(data),
+
+        Token::Keyword(KeywordType::Struct) |
+        Token::Keyword(KeywordType::Enum) |
+        Token::Keyword(KeywordType::Union) => parse_plain_typedef(data),
+
         Token::Specifier(_) => parse_specifier(data),
 
         _ => parse_global_expr(data)
@@ -24,12 +30,12 @@ pub(crate) fn parse_specifier(data: &mut ParserData) -> Option<UVGlobalStmt> {
     match specifier {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
-            tok_next!(data, Token::Punctuator(PunctuatorType::Colon));
+            try_next!(data, Token::Punctuator(PunctuatorType::Colon));
             Some(UVGlobalStmt::HandledInternally)
         },
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
-            tok_next!(data, Token::Punctuator(PunctuatorType::Colon));
+            try_next!(data, Token::Punctuator(PunctuatorType::Colon));
             Some(UVGlobalStmt::HandledInternally)
         },
 
@@ -44,7 +50,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
 
     loop {
         let Some(tok) = data.toks.next() else {
-            eprintln!("PARSER ERROR: Reached end of token stream when parsing import!");
+            log_error!("PARSER ERROR: Reached end of token stream when parsing import!");
             return None;
         };
 
@@ -54,7 +60,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
             Token::Identifier(ident) => import_path.push_str(&ident),
 
             _ => {
-                eprintln!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
+                log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
                 return None;
             }
         }
@@ -72,7 +78,7 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
         log_error!("Failed to parse expression for global statement: {:#?}", data.toks.peek());
     };
 
-    if tok_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
+    if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
         return Some(UVGlobalStmt::SingleExpression {
             expression: UVExpr::Compound {
                 left: Box::new(UVExpr::Identifier(identifier)),
@@ -96,10 +102,10 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<UVExpr> {
-    if tok_next!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
+    if try_next!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
         let mut body = Vec::new();
 
-        while !tok_next!(data, Token::Punctuator(PunctuatorType::CloseBrace)) {
+        while !try_next!(data, Token::Punctuator(PunctuatorType::CloseBrace)) {
             if let Some(stmt) = parse_expr(data) {
                 if requires_semicolon(&stmt) {
                     assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
