@@ -1,4 +1,4 @@
-use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
+use crate::{assert_token_matches, log_error, tok_next, try_token_matches};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::ast::{GlobalStatement, ValueType, VarInitialization};
 use crate::parse::ast::GlobalStatement::HandledInternally;
@@ -39,7 +39,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<GlobalStatement> {
         };
         str.push_str(name.as_str());
 
-        if try_consume_token!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
+        if tok_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
             break;
         }
 
@@ -58,12 +58,12 @@ pub(crate) fn parse_specifier(data: &mut ParserData) -> Option<GlobalStatement> 
     match specifier {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
-            try_consume_token!(data, Token::Punctuator(PunctuatorType::Colon));
+            tok_next!(data, Token::Punctuator(PunctuatorType::Colon));
             Some(HandledInternally)
         },
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
-            try_consume_token!(data, Token::Punctuator(PunctuatorType::Colon));
+            tok_next!(data, Token::Punctuator(PunctuatorType::Colon));
             Some(HandledInternally)
         },
 
@@ -108,7 +108,7 @@ pub(crate) fn parse_enum_definition(data: &mut ParserData) -> Option<GlobalState
         assert_token_matches!(data, Token::Identifier(name));
         let name = name.clone();
 
-        if try_consume_token!(data, Token::Assignment(None)) {
+        if tok_next!(data, Token::Assignment(None)) {
             assert_token_matches!(data, Token::IntLiteral(value));
             let value = value.clone();
 
@@ -119,12 +119,12 @@ pub(crate) fn parse_enum_definition(data: &mut ParserData) -> Option<GlobalState
             counter += 1;
         }
 
-        if !try_consume_token!(data, Token::Punctuator(PunctuatorType::Comma)) {
+        if !tok_next!(data, Token::Punctuator(PunctuatorType::Comma)) {
             break;
         }
     }
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
-    try_consume_token!(data, Token::Punctuator(PunctuatorType::Semicolon));
+    tok_next!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
     Some(
         GlobalStatement::Enum { name, fields }

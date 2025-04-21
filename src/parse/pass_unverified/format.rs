@@ -1,11 +1,52 @@
 use std::fmt::{Display, Formatter};
+use std::sync::Mutex;
 use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVAST};
+use crate::parse::pass_unverified::expression::requires_semicolon;
+
+fn STATIC_IDENT() -> &'static Mutex<usize> {
+    static STATIC_IDENT: Mutex<usize> = Mutex::new(0);
+    &STATIC_IDENT
+}
+
+fn indent() {
+    let mut static_ident = STATIC_IDENT().lock().unwrap();
+    *static_ident += 1;
+}
+
+fn dedent() {
+    let mut static_ident = STATIC_IDENT().lock().unwrap();
+    if *static_ident > 0 {
+        *static_ident -= 1;
+    }
+}
+
+macro_rules! fwrite {
+    ($f:expr, $($args:tt),+) => {
+        write!($f, $($args),*)
+    };
+}
+
+macro_rules! fwriteln {
+    ($f:expr, $($args:tt),+) => {
+        {
+            let val = writeln!($f, $($args),*);
+
+            let static_ident = STATIC_IDENT().lock().unwrap();
+            for _ in 0..*static_ident {
+                fwrite!($f, "\t");
+            }
+
+            val
+        }
+    };
+}
 
 impl Display for UVAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.stmts {
-            writeln!(f, "{}", stmt)?;
+            fwriteln!(f, "{}", stmt)?;
         }
+
         Ok(())
     }
 }
@@ -13,17 +54,20 @@ impl Display for UVAST {
 impl Display for UVGlobalStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            UVGlobalStmt::Import(path) => writeln!(f, "import \"{}\";", path),
+            UVGlobalStmt::Import(path) => fwriteln!(f, "import \"{}\";", path),
             UVGlobalStmt::BodiedExpression { header, body } => {
-                writeln!(f, "{} {{", header)?;
-                write!(f, "\t{}", body)?;
-                writeln!(f, "}}")
+                indent();
+                fwriteln!(f, "{} {{", header)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "");
+                fwriteln!(f, "}}")
             },
             UVGlobalStmt::SingleExpression { expression } => {
-                write!(f, "{}", expression)
+                fwrite!(f, "{}", expression)
             },
 
-            _ => write!(f, "{:?}", self),
+            _ => fwrite!(f, "{:?}", self),
         }
     }
 }
@@ -31,62 +75,71 @@ impl Display for UVGlobalStmt {
 impl Display for UVExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            UVExpr::Identifier(id) => write!(f, "{}", id),
-            UVExpr::Compound { left, right } => write!(f, "{} {}", left, right),
+            UVExpr::Identifier(id) => fwrite!(f, "{}", id),
+            UVExpr::Compound { left, right } => fwrite!(f, "{} {}", left, right),
 
-            UVExpr::IntLiteral(i) => write!(f, "{}", i),
-            UVExpr::FloatLiteral(flt) => write!(f, "{}", flt),
-            UVExpr::StringLiteral(s) => write!(f, "\"{}\"", s),
+            UVExpr::IntLiteral(i) => fwrite!(f, "{}", i),
+            UVExpr::FloatLiteral(flt) => fwrite!(f, "{}", flt),
+            UVExpr::StringLiteral(s) => fwrite!(f, "\"{}\"", s),
 
             UVExpr::Return { value } => {
                 if let Some(value) = value {
-                    write!(f, "return {}", value)
+                    fwrite!(f, "return {}", value)
                 } else {
-                    write!(f, "return")
+                    fwrite!(f, "return")
                 }
             }
 
             UVExpr::UnOp { operator, operand } => writeln!(f, "(`{:?}` {})", operator, operand),
             UVExpr::Parenthesized(expr) => {
                 if let Some(expr) = expr {
-                    write!(f, "({})", expr)
+                    fwrite!(f, "({})", expr)
                 } else {
-                    write!(f, "()")
+                    fwrite!(f, "()")
                 }
             }
             UVExpr::If { condition, then_branch, else_branch } => {
-                writeln!(f, "if {} {{\n", condition)?;
-                writeln!(f, "\t{}", then_branch)?;
+                fwriteln!(f, "if {} {{\n", condition)?;
+                indent();
+                fwriteln!(f, "{}", then_branch)?;
+                dedent();
 
                 if let Some(else_branch) = else_branch {
-                    writeln!(f, "}} else {{\n")?;
-                    writeln!(f, "\t{}", else_branch)?;
-                    write!(f, "}}")
+                    fwriteln!(f, "}} else {{\n")?;
+                    indent();
+                    fwriteln!(f, "\t{}", else_branch)?;
+                    dedent();
+                    fwrite!(f, "}}")
                 } else {
-                    write!(f, "")
+                    fwrite!(f, "")
                 }?;
 
-                writeln!(f, "}}")
+                fwriteln!(f, "}}")
             }
             UVExpr::While { condition, body } => {
-                writeln!(f, "while {} {{", condition)?;
-                write!(f, "    {}", body)?;
-                write!(f, "}}")
+                indent();
+                fwriteln!(f, "while {} {{", condition)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "");
+                fwrite!(f, "}}")
             }
             UVExpr::For { init, condition, increment, body } => {
-                write!(f, "for (")?;
+                fwrite!(f, "for (")?;
                 if let Some(init) = init {
-                    write!(f, "{}; ", init)?;
+                    fwrite!(f, "{}; ", init)?;
                 }
                 if let Some(condition) = condition {
-                    write!(f, "{}; ", condition)?;
+                    fwrite!(f, "{}; ", condition)?;
                 }
                 if let Some(increment) = increment {
-                    write!(f, "{}", increment)?;
+                    fwrite!(f, "{}", increment)?;
                 }
-                write!(f, ") {{\n")?;
-                writeln!(f, "\t{}", body)?;
-                write!(f, "}}")
+                fwrite!(f, ") {{\n")?;
+                indent();
+                fwriteln!(f, "\t{}", body)?;
+                dedent();
+                fwrite!(f, "}}")
             },
             UVExpr::Complex { operator_stack, expression_stack } => {
                 let op_str = operator_stack.iter()
@@ -98,11 +151,19 @@ impl Display for UVExpr {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                write!(f, "`{}` | `{}`", op_str, expr_str)
+                fwrite!(f, "`{}` | `{}`", op_str, expr_str)
             },
             UVExpr::ExprChain(list) => {
-                for expr in list {
-                    writeln!(f, "{};", expr)?;
+                for (i, expr) in list.iter().enumerate() {
+                    fwrite!(f, "{}", expr)?;
+
+                    if requires_semicolon(expr) {
+                        fwrite!(f, ";")?;
+                    }
+
+                    if i != list.len() - 1 {
+                        fwriteln!(f, "")?;
+                    }
                 }
 
                 Ok(())

@@ -1,5 +1,5 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::{assert_token_matches, log_error, try_consume_token, try_token_matches};
+use crate::{assert_token_matches, log_error, tok_next, try_token_matches};
 use crate::parse::expression::parse_identifier;
 use crate::parse::parser::{ParserData};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
@@ -151,7 +151,7 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             let expr = parse_expr_val(data)?;
             let then_body = parse_body(data)?;
             let else_body =
-                if try_consume_token!(data, Token::Keyword(KeywordType::Else)) {
+                if tok_next!(data, Token::Keyword(KeywordType::Else)) {
                     parse_body(data)
                 } else {
                     None

@@ -8,6 +8,7 @@ mod expression;
 mod global_scope;
 mod operators;
 mod format;
+mod typing;
 
 pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
     let mut stmts = Vec::new();

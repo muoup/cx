@@ -1,8 +1,5 @@
-use std::{alloc, mem};
 use crate::lex::token::Token;
-use crate::log_error;
 use crate::parse::ast::AST;
-use crate::parse::ast_interface::emit_interface;
 use crate::parse::parser::{ParserData, TokenIter, VarTable, VisibilityMode};
 use crate::parse::pass_verified::ProgramBytecode;
 

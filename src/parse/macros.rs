@@ -34,7 +34,7 @@ macro_rules! try_token_matches {
 }
 
 #[macro_export]
-macro_rules! try_consume_token {
+macro_rules! tok_next {
     ($data:ident, $pattern:pat) => {
         if let Some($pattern) = $data.toks.peek() {
             $data.toks.next();
