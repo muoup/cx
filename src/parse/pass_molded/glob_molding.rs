@@ -3,9 +3,10 @@
 use std::any::Any;
 use crate::log_error;
 use crate::parse::expression::parse_expression;
-use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVAST};
+use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVGlobalStmt, UVAST};
 use crate::parse::pass_molded::{CXExpr, CXGlobalStmt, CXParameter, CXAST};
-use crate::parse::pass_molded::expr_molding::{mold_expression, split_initialization};
+use crate::parse::pass_molded::expr_molding::{mold_expression, mold_type, split_initialization};
+use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
 
 pub(crate) fn mold_globals(ast: &UVAST, cx_ast: &mut CXAST) -> Option<()> {
     for stmt in &ast.stmts {
@@ -70,34 +71,72 @@ pub(crate) fn mold_global_bodied(header: &UVExpr, body: &UVExpr) -> Option<CXGlo
 }
 
 pub(crate) fn mold_parameters(expr: &UVExpr) -> Option<Vec<CXParameter>> {
-    if let UVExpr::Compound { .. } = expr {
-        return Some(vec![mold_param(expr)?]);
-    }
-
-    let UVExpr::Complex { .. } = expr else {
-        log_error!("Failed to parse parameters: {}", expr);
-    };
-
-    todo!()
+    mold_delimited(expr, &UVBinOp::Comma)?
+        .iter()
+        .map(mold_param)
+        .collect::<Option<Vec<_>>>()
 }
 
-pub(crate) fn mold_param(expr: &UVExpr) -> Option<CXParameter> {
-    let Some((left, right)) = split_initialization(expr) else {
-        log_error!("Failed to split initialization: {}", expr);
-    };
+pub(crate) fn mold_param(expr: &PseudoUVExpr) -> Option<CXParameter> {
+    match expr {
+        PseudoUVExpr::ID(expr) => {
+            let Some((type_, name)) = split_initialization(expr) else {
+                log_error!("Failed to split initialization: {}", expr);
+            };
 
-    let UVExpr::Identifier(ident) = right else {
-        log_error!("Failed to parse parameter name: {}", expr);
-    };
+            let UVExpr::Identifier(name) = name.as_ref() else {
+                log_error!("Failed to parse function name: {}", expr);
+            };
 
-    Some(
-        CXParameter {
-            name: Some(ident.clone()),
-            type_: left,
+            Some(CXParameter {
+                name: Some(name.clone()),
+                type_,
+            })
+        },
+
+        PseudoUVExpr::BinOp { left, right, op: UVBinOp::Multiply } => {
+            let PseudoUVExpr::ID(left) = *left.as_ref() else {
+                log_error!("Failed to parse function name: {}", left);
+            };
+
+            let PseudoUVExpr::ID(right) = *right.as_ref() else {
+                log_error!("Failed to parse function name: {}", right);
+            };
+
+            todo!()
         }
-    )
+    }
 }
 
 pub(crate) fn mold_global_single(expression: &UVExpr) -> Option<CXGlobalStmt> {
-    todo!()
+    match expression {
+        UVExpr::Compound { .. } => {
+            let Some((type_, fn_call)) = split_initialization(expression) else {
+                log_error!("Failed to split initialization: {}", expression);
+            };
+
+            let UVExpr::Compound { left, right } = fn_call else {
+                log_error!("Failed to parse function: {}", expression);
+            };
+
+            let UVExpr::Identifier(name) = left.as_ref() else {
+                log_error!("Failed to parse function name: {}", expression);
+            };
+
+            let UVExpr::Parenthesized(expr) = right.as_ref() else {
+                log_error!("Failed to parse function parameters: {}", expression);
+            };
+
+            let params = match expr {
+                None => vec![],
+                Some(expr) => {
+                    mold_parameters(expr.as_ref())?
+                }
+            }
+
+            todo!()
+        },
+
+        _ => log_error!("Failed to parse single expression: {}", expression)
+    };
 }

@@ -148,7 +148,7 @@ impl Display for UVExpr {
                 dedent();
                 fwrite!(f, "}}")
             },
-            UVExpr::Complex { operator_stack, expression_stack } => {
+            UVExpr::Complex { op_stack: operator_stack, expr_stack: expression_stack } => {
                 let op_str = operator_stack.iter()
                     .map(|op| format!("{:?}", op))
                     .collect::<Vec<_>>()

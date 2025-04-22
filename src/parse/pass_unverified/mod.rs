@@ -75,7 +75,7 @@ pub enum UVUnOp {
     UnaryAccess
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum UVBinOp {
     Add,
     Subtract, Multiply, Divide, Modulus,
@@ -132,8 +132,8 @@ pub enum UVExpr {
     },
 
     Complex {
-        operator_stack: Vec<UVBinOp>,
-        expression_stack: Vec<UVExpr>
+        op_stack: Vec<UVBinOp>,
+        expr_stack: Vec<UVExpr>
     },
 
     ExprChain(Vec<UVExpr>),

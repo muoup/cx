@@ -1,5 +1,6 @@
 mod glob_molding;
 mod expr_molding;
+mod pattern_molding;
 
 use crate::parse::ast::ValueType;
 use crate::parse::pass_molded::glob_molding::mold_globals;

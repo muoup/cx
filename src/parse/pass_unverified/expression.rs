@@ -70,8 +70,8 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
         Some(expr_stack.pop().unwrap())
     } else {
         Some(UVExpr::Complex {
-            operator_stack: op_stack,
-            expression_stack: expr_stack
+            op_stack: op_stack,
+            expr_stack: expr_stack
         })
     }
 }

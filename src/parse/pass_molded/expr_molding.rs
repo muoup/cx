@@ -12,7 +12,7 @@ pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(ValueType, &UVExpr)
             ))
         },
 
-        UVExpr::Complex { expression_stack, operator_stack } => {
+        UVExpr::Complex { expr_stack: expression_stack, op_stack: operator_stack } => {
             if operator_stack.len() != 1 || expression_stack.len() != 2 {
                 log_error!("Error parsing {} as initialization header.", expr)
             }
@@ -113,5 +113,11 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
 }
 
 pub(crate) fn mold_type(expr: &UVExpr) -> Option<ValueType> {
-    todo!()
+    match expr {
+        UVExpr::Identifier(ident) => {
+            Some(ValueType::Identifier(ident.clone()))
+        },
+
+        _ => log_error!("Unknown type: {}", expr)
+    }
 }
