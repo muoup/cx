@@ -13,6 +13,8 @@ pub enum OperatorType {
 
     Increment, Decrement,
 
+    Comma,
+
     ArrayIndex,
 
     Access, PointerAccess, AddressOf, /* Dereference = Multiply */
@@ -24,7 +26,7 @@ pub enum PunctuatorType {
     OpenParen, CloseParen,
     OpenBracket, CloseBracket,
     OpenBrace, CloseBrace,
-    Comma, Semicolon,
+    Semicolon,
     Colon, Period,
     QuestionMark
 }

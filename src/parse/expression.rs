@@ -311,7 +311,7 @@ fn parse_expression_suffix(expr: ContextlessExpression, data: &mut ParserData) -
             data.toks.next();
             let mut args = parse_list(
                 data,
-                Token::Punctuator(PunctuatorType::Comma),
+                Token::Operator(OperatorType::Comma),
                 Token::Punctuator(PunctuatorType::CloseParen),
                 parse_expression
             )?;
@@ -473,7 +473,7 @@ fn parse_structured_initializer(data: &mut ParserData) -> Option<ContextlessExpr
             break;
         }
 
-        assert_token_matches!(data, Token::Punctuator(PunctuatorType::Comma));
+        assert_token_matches!(data, Token::Operator(OperatorType::Comma));
     }
 
     data.toks.next();

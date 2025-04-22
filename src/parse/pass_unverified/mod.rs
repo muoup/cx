@@ -6,7 +6,7 @@ use crate::parse::macros::error_pointer;
 use crate::parse::parser::ParserData;
 use crate::parse::pass_unverified::expression::parse_expr;
 use crate::parse::pass_unverified::global_scope::{parse_global_expr, parse_global_stmt};
-use crate::parse::pass_verified::context::FunctionPrototype;
+use crate::parse::pass_bytecode::context::FunctionPrototype;
 use crate::util::dump_all;
 
 mod expression;
@@ -40,7 +40,7 @@ pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
 
 #[derive(Debug)]
 pub struct UVAST {
-    stmts: Vec<UVGlobalStmt>
+    pub stmts: Vec<UVGlobalStmt>
 }
 
 #[derive(Debug)]
@@ -71,7 +71,8 @@ pub enum UVUnOp {
     BNot,
     LNot,
     ArrayIndex,
-    MethodAccess
+    MethodAccess,
+    UnaryAccess
 }
 
 #[derive(Debug)]
@@ -83,6 +84,8 @@ pub enum UVBinOp {
 
     LAnd, LOr, BitAnd, BitOr, BitXor,
     LShift, RShift,
+
+    Comma,
 
     Access,
 
@@ -133,9 +136,7 @@ pub enum UVExpr {
         expression_stack: Vec<UVExpr>
     },
 
-    StructuredInitializer {
-        assignments: Vec<(String, Box<UVExpr>)>,
-    },
-
     ExprChain(Vec<UVExpr>),
+
+    Braced(Box<UVExpr>)
 }

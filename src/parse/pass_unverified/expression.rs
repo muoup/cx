@@ -58,7 +58,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
         }
 
         let Some(expr) = parse_expr_val(data) else {
-            log_error!("Failed to parse expression value after operator: {:#?}", data.toks.peek());
+            log_error!("Failed to parse expression value after operator: {:#?}", op_stack.last());
         };
 
         expr_stack.push(expr);
@@ -92,8 +92,17 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
         Token::IntLiteral(value) => Some(UVExpr::IntLiteral(value.clone())),
         Token::FloatLiteral(value) => Some(UVExpr::FloatLiteral(value.clone())),
         Token::StringLiteral(value) => Some(UVExpr::StringLiteral(value.clone())),
+        Token::Intrinsic(_) => {
+            data.toks.back();
 
-        Token::Punctuator(PunctuatorType::OpenBrace) => parse_struct_initializer(data),
+            Some(
+                UVExpr::Identifier(
+                    parse_identifier(data)?
+                )
+            )
+        }
+
+        Token::Punctuator(PunctuatorType::OpenBrace) => parse_braced_expr(data),
 
         Token::Keyword(keyword) =>
             log_error!("Statement Expressioning not supported: {:#?}", keyword),
@@ -186,38 +195,12 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
     }
 }
 
-pub(crate) fn parse_struct_initializer(data: &mut ParserData) -> Option<UVExpr> {
-    let mut assignments = Vec::new();
-
-    loop {
-        if !matches!(data.toks.peek(), Some(Token::Operator(OperatorType::Access))) {
-            break;
-        }
-
-        data.toks.next();
-
-        let Token::Identifier(field_name) = data.toks.next()? else {
-            log_error!("Expected field name in structured initializer");
-        };
-
-        let field_name = field_name.clone();
-
-        assert_token_matches!(data, Token::Assignment(None));
-
-        let field_value = parse_expr(data)?;
-
-        assignments.push((field_name, Box::new(field_value)));
-
-        if !matches!(data.toks.peek(), Some(Token::Punctuator(PunctuatorType::Comma))) {
-            break;
-        }
-
-        data.toks.next();
-    }
+pub(crate) fn parse_braced_expr(data: &mut ParserData) -> Option<UVExpr> {
+    let expr = parse_expr(data)?;
 
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
 
     Some(
-        UVExpr::StructuredInitializer { assignments }
+        UVExpr::Braced(Box::new(expr))
     )
 }

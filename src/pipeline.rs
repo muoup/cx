@@ -4,8 +4,8 @@ use std::process::{exit, Command};
 use crate::codegen::ast_codegen;
 use crate::lex::token::Token;
 use crate::parse::ast_interface::emit_interface;
-use crate::parse::pass_verified;
-use crate::parse::pass_verified::ProgramBytecode;
+use crate::parse::pass_bytecode;
+use crate::parse::pass_bytecode::ProgramBytecode;
 use crate::{lex, parse, preprocessor};
 use crate::parse::ast::AST;
 
@@ -131,7 +131,7 @@ impl CompilerPipeline {
         };
 
         let lazy_verify = || {
-            pass_verified::verify_ast(lazy_get_ast()).unwrap_or_else(|| {
+            pass_bytecode::verify_ast(lazy_get_ast()).unwrap_or_else(|| {
                 println!("ERROR: Failed to verify AST");
                 exit(1);
             })

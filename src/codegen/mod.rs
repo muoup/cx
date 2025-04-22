@@ -10,9 +10,9 @@ use cranelift_module::{DataDescription, DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};
 use crate::codegen::routines::string_literal;
-use crate::parse::pass_verified::bytecode::ValueID;
-use crate::parse::pass_verified::context::{FnMap, FunctionPrototype, TypeMap};
-use crate::parse::pass_verified::ProgramBytecode;
+use crate::parse::pass_bytecode::bytecode::ValueID;
+use crate::parse::pass_bytecode::context::{FnMap, FunctionPrototype, TypeMap};
+use crate::parse::pass_bytecode::ProgramBytecode;
 
 mod codegen;
 mod value_type;

@@ -2,7 +2,7 @@ use crate::lex::token::OperatorType;
 use std::fmt::Debug;
 use std::rc::Rc;
 use crate::parse::parser::VisibilityMode;
-use crate::parse::pass_verified::context::FunctionPrototype;
+use crate::parse::pass_bytecode::context::FunctionPrototype;
 
 #[derive(Debug)]
 pub struct AST {

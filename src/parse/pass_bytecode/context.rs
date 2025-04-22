@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use crate::parse::ast::{VarInitialization, ValueType};
-use crate::parse::pass_verified::bytecode::{BytecodeBuilder, ElementID, ValueID, VirtualInstruction};
+use crate::parse::pass_bytecode::bytecode::{BytecodeBuilder, ElementID, ValueID, VirtualInstruction};
 use crate::util::ScopedMap;
 
 pub(crate) type TypeMap = HashMap<String, ValueType>;

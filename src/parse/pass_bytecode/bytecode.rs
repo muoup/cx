@@ -1,7 +1,7 @@
 use crate::lex::token::OperatorType;
 use crate::parse::ast::ValueType;
-use crate::parse::pass_verified::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
-use crate::parse::pass_verified::ProgramBytecode;
+use crate::parse::pass_bytecode::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
+use crate::parse::pass_bytecode::ProgramBytecode;
 
 pub type ElementID = u32;
 

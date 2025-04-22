@@ -269,7 +269,7 @@ fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
         ']' => Some(Token::Punctuator(PunctuatorType::CloseBracket)),
         '{' => Some(Token::Punctuator(PunctuatorType::OpenBrace)),
         '}' => Some(Token::Punctuator(PunctuatorType::CloseBrace)),
-        ',' => Some(Token::Punctuator(PunctuatorType::Comma)),
+        ',' => Some(Token::Operator(OperatorType::Comma)),
         ';' => Some(Token::Punctuator(PunctuatorType::Semicolon)),
         ':' => Some(Token::Punctuator(PunctuatorType::Colon)),
         '.' => Some(Token::Punctuator(PunctuatorType::Period)),

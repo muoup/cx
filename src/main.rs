@@ -1,4 +1,6 @@
 use std::env;
+use crate::parse::{pass_molded, pass_unverified};
+use crate::util::dump_data;
 
 mod lex;
 mod parse;
@@ -24,13 +26,17 @@ fn main() {
         },
     };
 
-    let uv = parse::pass_unverified::generate_unverified(&mut parser_data).unwrap();
+    std::fs::write(".internal/compiler-dump.data", "")
+        .expect("Failed to clear dump file");
 
-    // Print contents to .internal/f-dump.data
-    let dump_path = ".internal/compiler-dump.data";
-    std::fs::create_dir_all(".internal").expect("Failed to create .internal directory");
-    std::fs::write(dump_path, format!("{}", uv))
-        .expect(format!("Failed to write to {}", dump_path).as_str());
+    let uv = pass_unverified::generate_unverified(&mut parser_data).unwrap();
+    dump_data(&uv);
+
+    println!("{:#?}", uv);
+
+    let molded = pass_molded::mold_ast(&uv).unwrap();
+    dump_data(&molded);
+
 
     // pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
     //     .preprocess()

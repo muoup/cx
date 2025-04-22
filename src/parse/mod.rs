@@ -1,13 +1,15 @@
 use crate::lex::token::Token;
 use crate::parse::ast::AST;
 use crate::parse::parser::{ParserData, TokenIter, VarTable, VisibilityMode};
-use crate::parse::pass_verified::ProgramBytecode;
+use crate::parse::pass_bytecode::ProgramBytecode;
 
 // pub mod verify;
 pub mod ast;
-pub mod pass_verified;
 pub mod ast_interface;
+
+pub mod pass_bytecode;
 pub mod pass_unverified;
+pub mod pass_molded;
 
 pub(crate) mod parser;
 mod expression;
@@ -28,5 +30,5 @@ pub fn parse_ast(toks: &[Token]) -> Option<AST> {
 }
 
 pub fn verify_ast(ast: AST) -> Option<ProgramBytecode> {
-    pass_verified::verify_ast(ast)
+    pass_bytecode::verify_ast(ast)
 }
