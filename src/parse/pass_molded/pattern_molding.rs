@@ -1,6 +1,9 @@
 use crate::log_error;
+use crate::parse::pass_molded::{CXBinOp, CXExpr};
+use crate::parse::pass_molded::expr_molding::{mold_expr_stack, mold_expression, mold_pseudo_expr};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr};
 
+#[derive(Debug, Clone)]
 pub(crate) enum PseudoUVExpr<'a> {
     ID(&'a UVExpr),
     BinOp {
@@ -10,8 +13,9 @@ pub(crate) enum PseudoUVExpr<'a> {
     }
 }
 
-pub(crate) fn mold_delimited<'a>(expr: &'a UVExpr, delimited: &'a UVBinOp) -> Option<Vec<PseudoUVExpr<'a>>> {
+pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVBinOp) -> Option<Vec<PseudoUVExpr>> {
     match expr {
+        // If there is no operators, we can assume there is only one expression
         UVExpr::Compound { .. } => {
             Some(vec![PseudoUVExpr::ID(expr)])
         },
@@ -26,38 +30,48 @@ pub(crate) fn mold_delimited<'a>(expr: &'a UVExpr, delimited: &'a UVBinOp) -> Op
 
             let mut exprs = Vec::new();
 
-            while op_iter.len() > 0 {
+            // TODO: This is the wrong heuristic, fix this
+            while expr_iter.len() > 0 {
                 let next_delim =
                     op_iter
-                        .position(|op| op == delimited)
-                        .unwrap_or(op_iter.len() - 1);
+                        .clone()
+                        .position(|op| *op == delimited)
+                        .unwrap_or(op_iter.len());
 
                 let exprs_vec =
-                    expr_iter.by_ref().take(next_delim + 1)
+                    expr_iter.by_ref()
+                        .take(next_delim + 1)
                         .collect::<Vec<_>>();
                 let ops_vec =
-                    op_iter.by_ref().take(next_delim)
+                    op_iter.by_ref()
+                        .take(next_delim) // Grab up to the next delimiter
                         .collect::<Vec<_>>();
+                op_iter.next(); // Skip the delimiter
 
-                let expr = mold_expr_stack(
+                if exprs_vec.is_empty() {
+                    log_error!("Extraneous operator in expression stack: {}", expr);
+                }
+
+                let Some(molded_expr) = mold_expr_stack(
                     exprs_vec.as_slice(),
                     ops_vec.as_slice()
-                );
+                ) else {
+                    log_error!("Error molding expression sub-stack: {:?} | {:?}", exprs_vec, ops_vec);
+                };
 
-                exprs.push(expr);
+                exprs.push(molded_expr);
             }
 
-            if expr_iter.len() > 0 {
-                log_error!("Error parsing expression stack: {}", expr);
+            if expr_iter.len() == 1 {
+                let last_expr = expr_iter.next().unwrap();
+                exprs.push(PseudoUVExpr::ID(last_expr));
+            } else if expr_iter.len() > 1 {
+                log_error!("Extraneous expressions in stack: {}", expr);
             }
 
-            None
+            Some(exprs)
         },
 
-        _ => log_error!("Error parsing expression stack: {}", expr)
+        _ => Some(vec![PseudoUVExpr::ID(expr)])
     }
-}
-
-pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> Option<PseudoUVExpr<'a>> {
-    todo!()
 }

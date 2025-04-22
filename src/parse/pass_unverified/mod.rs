@@ -64,7 +64,7 @@ pub enum UVGlobalStmt {
     HandledInternally
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UVUnOp {
     Dereference,
     Negative,
@@ -75,7 +75,7 @@ pub enum UVUnOp {
     UnaryAccess
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UVBinOp {
     Add,
     Subtract, Multiply, Divide, Modulus,

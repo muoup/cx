@@ -1,47 +1,10 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
+use crate::{fwrite, fwriteln};
 use crate::parse::ast_interface::initialization_as_name;
+use crate::parse::format::{dedent, indent};
 use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVAST};
 use crate::parse::pass_unverified::expression::requires_semicolon;
-
-fn static_ident() -> &'static Mutex<usize> {
-    static STATIC_IDENT: Mutex<usize> = Mutex::new(0);
-    &STATIC_IDENT
-}
-
-fn indent() {
-    let mut static_ident = static_ident().lock().unwrap();
-    *static_ident += 1;
-}
-
-fn dedent() {
-    let mut static_ident = static_ident().lock().unwrap();
-    if *static_ident > 0 {
-        *static_ident -= 1;
-    }
-}
-
-macro_rules! fwrite {
-    ($f:expr, $($args:tt),+) => {
-        write!($f, $($args),*)
-    };
-}
-
-macro_rules! fwriteln {
-    ($f:expr, $($args:tt),+) => {
-        {
-            let val = writeln!($f, $($args),*);
-
-            let static_ident = static_ident().lock().unwrap();
-            for _ in 0..*static_ident {
-                fwrite!($f, "\t");
-            }
-
-            val
-        }
-    };
-}
-
 impl Display for UVAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.stmts {
@@ -112,9 +75,9 @@ impl Display for UVExpr {
                 dedent();
 
                 if let Some(else_branch) = else_branch {
-                    fwriteln!(f, "}} else {{\n")?;
                     indent();
-                    fwriteln!(f, "\t{}", else_branch)?;
+                    fwriteln!(f, "}} else {{\n")?;
+                    fwriteln!(f, "{}", else_branch)?;
                     dedent();
                     fwrite!(f, "}}")
                 } else {
@@ -177,8 +140,8 @@ impl Display for UVExpr {
             },
 
             UVExpr::Braced(expr) => {
-                fwriteln!(f, "{{")?;
                 indent();
+                fwriteln!(f, "{{")?;
                 fwrite!(f, "{}", expr)?;
                 dedent();
                 fwriteln!(f, "}}")

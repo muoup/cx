@@ -1,6 +1,8 @@
 mod glob_molding;
 mod expr_molding;
 mod pattern_molding;
+mod operators;
+mod format;
 
 use crate::parse::ast::ValueType;
 use crate::parse::pass_molded::glob_molding::mold_globals;
@@ -35,12 +37,6 @@ pub struct CXAST<'a> {
 
     pub type_map: TypeMap,
     pub function_map: FunctionMap,
-}
-
-impl Display for CXAST<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#?}", self)
-    }
 }
 
 #[derive(Debug)]
@@ -88,7 +84,11 @@ pub enum CXBinOp {
     LAnd, LOr, BitAnd, BitOr, BitXor,
     LShift, RShift,
 
-    Access
+    Comma,
+
+    Access,
+
+    Assignment(Option<Box<CXBinOp>>), // for compound assignment (+=, etc)
 }
 
 #[derive(Debug)]
@@ -105,7 +105,6 @@ pub enum CXExpr {
     },
     StringLiteral {
         val: String,
-        bytes: u8,
     },
 
     If {
@@ -124,6 +123,10 @@ pub enum CXExpr {
         body: Box<CXExpr>
     },
 
+    VarInitialization {
+        type_: ValueType,
+        name: String,
+    },
     Assignment {
         lhs: Box<CXExpr>,
         rhs: Box<CXExpr>,
@@ -136,7 +139,14 @@ pub enum CXExpr {
     },
     UnOp {
         operand: Box<CXExpr>,
-        op: CXUnOp
+        operator: CXUnOp
+    },
+
+    StructAccess {
+        expr: Box<CXExpr>,
+        offset: usize,
+        field: String,
+        field_index: usize,
     },
 
     FunctionCall {

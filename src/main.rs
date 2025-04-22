@@ -32,8 +32,6 @@ fn main() {
     let uv = pass_unverified::generate_unverified(&mut parser_data).unwrap();
     dump_data(&uv);
 
-    println!("{:#?}", uv);
-
     let molded = pass_molded::mold_ast(&uv).unwrap();
     dump_data(&molded);
 

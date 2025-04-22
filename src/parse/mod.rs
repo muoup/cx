@@ -1,6 +1,6 @@
 use crate::lex::token::Token;
 use crate::parse::ast::AST;
-use crate::parse::parser::{ParserData, TokenIter, VarTable, VisibilityMode};
+use crate::parse::parser::{ParserData, TokenIter, VisibilityMode};
 use crate::parse::pass_bytecode::ProgramBytecode;
 
 // pub mod verify;
@@ -16,6 +16,7 @@ mod expression;
 mod global_scope;
 pub mod macros;
 mod contextless_expression;
+mod format;
 
 pub fn parse_ast(toks: &[Token]) -> Option<AST> {
     let mut parser_data = ParserData {

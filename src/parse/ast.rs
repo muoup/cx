@@ -1,6 +1,7 @@
 use crate::lex::token::OperatorType;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
+use crate::fwrite;
 use crate::parse::parser::VisibilityMode;
 use crate::parse::pass_bytecode::context::FunctionPrototype;
 
