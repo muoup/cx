@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use crate::{fwrite, fwriteln};
 use crate::parse::format::{dedent, indent};
-use crate::parse::pass_molded::{CXExpr, CXGlobalStmt, CXParameter, CXAST};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXGlobalStmt, CXParameter, CXAST};
 
 impl Display for CXAST<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -49,22 +49,48 @@ impl Display for CXExpr {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                write!(f, "{}({})", callee.as_ref(), arg_strs)
+                fwrite!(f, "{}({})", callee.as_ref(), arg_strs)
             },
 
-            CXExpr::Identifier(ident) => write!(f, "{}", ident),
+            CXExpr::Identifier(ident) => fwrite!(f, "{}", ident),
+            CXExpr::VarReference(ident) => fwrite!(f, "{}", ident),
+            CXExpr::VarInitialization { type_, name } => {
+                fwrite!(f, "{}: {:?}", name, type_)
+            },
 
-            CXExpr::IntLiteral { val, .. } => write!(f, "{}", val),
-            CXExpr::FloatLiteral { val, .. } => write!(f, "{}", val),
-            CXExpr::StringLiteral { val, .. } => write!(f, "\"{}\"", val),
+            CXExpr::VarDeclaration { name, type_, initializer } => {
+                fwrite!(f, "let {}: {:?}", name, type_)?;
+
+                if let Some(initializer) = initializer {
+                    fwrite!(f, " = {}", initializer)?;
+                }
+
+                Ok(())
+            },
+
+            CXExpr::IntLiteral { val, .. } => fwrite!(f, "{}", val),
+            CXExpr::FloatLiteral { val, .. } => fwrite!(f, "{}", val),
+            CXExpr::StringLiteral { val, .. } => fwrite!(f, "\"{}\"", val),
 
             CXExpr::Return { value } => {
-                write!(f, "return")?;
+                fwrite!(f, "return")?;
                 if let Some(value) = value {
-                    write!(f, " {}", value)?;
+                    fwrite!(f, " {}", value)?;
                 }
                 Ok(())
             },
+
+            CXExpr::BinOp { lhs, rhs, op } => {
+                fwrite!(f, "({}) {} ({})", lhs, op, rhs)
+            },
+
+            CXExpr::Assignment { lhs, rhs, op } => {
+                if let Some(op) = op {
+                    fwrite!(f, "{} {}= {}", lhs, op, rhs)
+                } else {
+                    fwrite!(f, "{} = {}", lhs, rhs)
+                }
+            }
 
             _ => fwrite!(f, "{:?}", self)
         }
@@ -77,6 +103,23 @@ impl Display for CXParameter {
             write!(f, "{}: {:?}", name, self.type_)
         } else {
             write!(f, "{:?}", self.type_)
+        }
+    }
+}
+
+impl Display for CXBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CXBinOp::Add => fwrite!(f, "+"),
+            CXBinOp::Subtract => fwrite!(f, "-"),
+            CXBinOp::Multiply => fwrite!(f, "*"),
+            CXBinOp::Divide => fwrite!(f, "/"),
+            CXBinOp::Equal => fwrite!(f, "=="),
+            CXBinOp::NotEqual => fwrite!(f, "!="),
+
+            CXBinOp::Access => fwrite!(f, "."),
+
+            _ => todo!(),
         }
     }
 }

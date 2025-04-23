@@ -51,7 +51,7 @@ macro_rules! try_boxed_mold {
 pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
     match expr {
         UVExpr::Identifier(ident) =>
-            Some(CXExpr::Identifier(ident.clone())),
+            Some(CXExpr::VarReference(ident.clone())),
 
         UVExpr::ExprChain(exprs) => {
             let exprs = exprs.iter()
@@ -152,6 +152,26 @@ pub(crate) fn mold_type(expr: &UVExpr) -> Option<ValueType> {
 }
 
 pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> Option<PseudoUVExpr<'a>> {
+    fn collapse_stack<'a>(
+        cx_expr_stack: &mut Vec<PseudoUVExpr<'a>>,
+        bin_op_stack: &mut Vec<&'a UVBinOp>
+    ) -> Option<PseudoUVExpr<'a>> {
+        let mut collapsee = cx_expr_stack.pop().unwrap();
+
+        while !cx_expr_stack.is_empty() {
+            let op = bin_op_stack.pop().unwrap();
+            let collapser = cx_expr_stack.pop().unwrap();
+
+            collapsee = PseudoUVExpr::BinOp {
+                left: Box::new(collapser),
+                right: Box::new(collapsee),
+                op: op.clone()
+            };
+        }
+
+        Some(collapsee)
+    }
+
     let mut cx_expr_stack = vec![PseudoUVExpr::ID(&exprs[0])];
     let mut bin_op_stack : Vec<&UVBinOp> = Vec::new();
 
@@ -166,20 +186,12 @@ pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> 
         let op_precedence = binop_precedence(op);
 
         if op_precedence < previous_precedence {
-            let mut collapsee = cx_expr_stack.pop().unwrap();
+            let collapsed = collapse_stack(
+                &mut cx_expr_stack,
+                &mut bin_op_stack
+            )?;
 
-            while cx_expr_stack.is_empty() {
-                let op = bin_op_stack.pop().unwrap();
-                let rhs = cx_expr_stack.pop().unwrap();
-
-                collapsee = PseudoUVExpr::BinOp {
-                    left: Box::new(collapsee),
-                    right: Box::new(rhs),
-                    op: op.clone()
-                };
-            }
-
-            previous_precedence = 0;
+            cx_expr_stack.push(collapsed);
         }
 
         bin_op_stack.push(op);
@@ -187,19 +199,51 @@ pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> 
         previous_precedence = op_precedence;
     }
 
-    cx_expr_stack.pop()
+    collapse_stack(
+        &mut cx_expr_stack,
+        &mut bin_op_stack
+    )
 }
 
 pub(crate) fn mold_pseudo_expr(expr: &PseudoUVExpr) -> Option<CXExpr> {
     match expr {
         PseudoUVExpr::ID(expr) => mold_expression(expr),
 
+        PseudoUVExpr::BinOp { left, right, op: UVBinOp::Assignment(op) } =>
+            mold_pseudo_assn(left, right, op.as_deref()),
         PseudoUVExpr::BinOp { left, right, op } => {
             let left = mold_pseudo_expr(left)?;
             let right = mold_pseudo_expr(right)?;
 
             mold_binop(left, right, op)
         }
+    }
+}
+
+pub(crate) fn mold_pseudo_assn(left: &PseudoUVExpr, right: &PseudoUVExpr,
+                               additional_op: Option<&UVBinOp>) -> Option<CXExpr> {
+    match left {
+        PseudoUVExpr::ID(UVExpr::Compound { left, right }) => {
+            let Some(type_) = mold_type(left.as_ref()) else {
+                log_error!("Failed to mold type for assignment: {}", left);
+            };
+            let UVExpr::Identifier(name) = right.as_ref() else {
+                log_error!("Failed to mold name for assignment: {}", left);
+            };
+            let Some(rhs) = mold_expression(right) else {
+                log_error!("Failed to mold right side of assignment: {}", left);
+            };
+
+            Some(
+                CXExpr::VarDeclaration {
+                    type_,
+                    name: name.clone(),
+                    initializer: Some(Box::new(rhs)),
+                }
+            )
+        },
+
+        _ => todo!()
     }
 }
 

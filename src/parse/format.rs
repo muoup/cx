@@ -19,7 +19,7 @@ pub fn dedent() {
 
 #[macro_export]
 macro_rules! fwrite {
-    ($f:expr, $($args:tt),+) => {
+    ($f:expr, $($args:expr),+) => {
         write!($f, $($args),*)
     };
 }

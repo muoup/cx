@@ -47,7 +47,9 @@ pub(crate) fn uv_cx_binop(op: UVBinOp) -> CXBinOp {
         UVBinOp::Divide     => CXBinOp::Divide,
         UVBinOp::Modulus    => CXBinOp::Modulus,
 
-        _ => todo!()
+        UVBinOp::Access     => CXBinOp::Access,
+
+        _ => todo!("uv_cx_binop: {:?}", op)
     }
 }
 

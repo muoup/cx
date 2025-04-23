@@ -92,8 +92,14 @@ pub enum CXBinOp {
 }
 
 #[derive(Debug)]
+pub enum CXLValue {
+
+}
+
+#[derive(Debug)]
 pub enum CXExpr {
     Identifier(String),
+    VarReference(String),
 
     IntLiteral {
         val: i64,
@@ -126,6 +132,11 @@ pub enum CXExpr {
     VarInitialization {
         type_: ValueType,
         name: String,
+    },
+    VarDeclaration {
+        type_: ValueType,
+        name: String,
+        initializer: Option<Box<CXExpr>>
     },
     Assignment {
         lhs: Box<CXExpr>,
