@@ -3,25 +3,28 @@ use crate::parse::interface_serializer::emit_types;
 use crate::parse::value_type::ValueType;
 use crate::parse::pass_molded::{CXGlobalStmt, CXParameter, FunctionMap, TypeMap, CXAST};
 use crate::parse::pass_typecheck::checker::{type_check_traverse};
-use crate::parse::pass_typecheck::symbol_table::SymbolTable;
+use crate::parse::pass_typecheck::intrinsic_types::add_internal_types;
+use crate::util::ScopedMap;
 
-mod symbol_table;
 mod checker;
 mod type_utils;
+mod intrinsic_types;
 
 pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option<()> {
-    let mut type_environment = TypeEnvironment {
-        type_map: &ast.type_map,
-        fn_map: &ast.function_map,
-        symbol_table: &mut SymbolTable::new(),
-        return_type: ValueType::Unit,
-    };
-
     emit_types(
         &file_information.file_name,
         &file_information.file_path,
         ast.type_map.iter(),
     ).ok()?;
+
+    add_internal_types(&mut ast.type_map);
+
+    let mut type_environment = TypeEnvironment {
+        type_map: &ast.type_map,
+        fn_map: &ast.function_map,
+        symbol_table: ScopedMap::new(),
+        return_type: ValueType::Unit,
+    };
 
     // TODO: Global Variables
 
@@ -49,7 +52,7 @@ pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option
 pub(crate) struct TypeEnvironment<'a> {
     type_map: &'a TypeMap,
     fn_map: &'a FunctionMap,
-    symbol_table: &'a mut SymbolTable,
+    symbol_table: ScopedMap<ValueType>,
 
     return_type: ValueType,
 }

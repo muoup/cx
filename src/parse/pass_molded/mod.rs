@@ -76,7 +76,7 @@ pub enum CXUnOp {
     InitializerIndex
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CXBinOp {
     Add, Subtract, Multiply, Divide, Modulus,
     Less, Greater, LessEqual, GreaterEqual,
@@ -87,9 +87,7 @@ pub enum CXBinOp {
 
     Comma,
 
-    Access,
-
-    Assignment(Option<Box<CXBinOp>>), // for compound assignment (+=, etc)
+    Access
 }
 
 #[derive(Debug)]

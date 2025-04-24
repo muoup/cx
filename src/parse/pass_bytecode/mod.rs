@@ -1,70 +1,76 @@
-use std::iter;
-use std::process::id;
-use cranelift::codegen::verifier::verify_context;
-use crate::log_error;
-use crate::parse::pass_bytecode::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualInstruction};
-use crate::parse::pass_bytecode::context::{FnMap, TypeMap, VerifyContext};
-use crate::parse::pass_bytecode::import_module::import_file;
-use crate::parse::pass_bytecode::name_mangling::member_function_mangle;
-use crate::parse::pass_bytecode::typeless_declarations::{gen_const_decls, gen_fn_decls, gen_imports, gen_type_decls};
-use crate::parse::pass_bytecode::verify_expression::verify_expression;
-use crate::parse::pass_bytecode::verify_type::{get_type_size, verify_fn_prototype, verify_type};
+use std::fmt::{Display, Formatter};
+use crate::parse::pass_bytecode::builder::{BytecodeBuilder, BytecodeFunction, BytecodeFunctionPrototype, BytecodeParameter, VirtualInstruction};
+use crate::parse::pass_bytecode::instruction_gen::generate_instruction;
+use crate::parse::pass_bytecode::typing::get_type_size;
+use crate::parse::pass_molded::{CXExpr, CXGlobalStmt, FunctionMap, TypeMap, CXAST};
 use crate::parse::value_type::ValueType;
-use crate::util::ScopedMap;
 
-pub mod context;
-pub mod bytecode;
-pub mod verify_type;
+pub mod builder;
+pub mod typing;
 
-mod typeless_declarations;
-mod verify_expression;
-mod special_exprs;
 mod name_mangling;
+mod instruction_gen;
 
 #[derive(Debug)]
 pub struct ProgramBytecode {
-    pub fn_map: FnMap,
+    pub fn_map: FunctionMap,
     pub type_map: TypeMap,
 
     pub global_strs: Vec<String>,
-    pub fn_defs: Vec<VerifiedFunction>,
-
-    pub imports: Vec<String>
+    pub fn_defs: Vec<BytecodeFunction>,
 }
 
-pub fn gen_bytecode(mut ast: &CXAST) -> Option<ProgramBytecode> {
-    let imports = gen_imports(&ast)?;
-    let mut builder = BytecodeBuilder::new();
+impl Display for ProgramBytecode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for func in self.fn_defs.iter() {
+            writeln!(f, "{:#?}", func)?;
+        }
 
-    for (name, body) in function_bodies {
-        let Some(prototype) = verify_context.get_function(name.as_str()).cloned() else {
-            log_error!("Function {} not found", name);
+        Ok(())
+    }
+}
+
+pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
+    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map);
+
+    for stmt in ast.global_stmts.iter() {
+        let CXGlobalStmt::FunctionDefinition {
+            name, parameters,
+            return_type, body
+        } = stmt else {
+            continue;
         };
 
-        verify_context.var_map.push_scope();
-        builder.new_function(prototype.clone());
-        verify_context.current_return_type = match prototype.return_type {
-            ValueType::Unit => None,
-            _ => Some(prototype.return_type.clone())
+        builder.symbol_table.push_scope();
+        let prototype = BytecodeFunctionPrototype {
+            name: name.clone(),
+            return_type: return_type.clone(),
+            args: parameters.iter()
+                .map(|param| BytecodeParameter {
+                    name: param.name.clone(),
+                    type_: param.type_.clone()
+                })
+                .collect()
         };
 
-        let mut iter = prototype.args.iter();
+        builder.new_function(prototype);
 
-        for (i, arg) in iter.enumerate() {
-            if arg.name.starts_with("__hidden") {
+        for (i, arg) in parameters.iter().enumerate() {
+            if match &arg.name {
+                Some(name) => name.starts_with("__hidden"),
+                None => false
+            } {
                 continue;
             }
 
             let memory = builder.add_instruction(
-                &verify_context,
                 VirtualInstruction::Allocate {
-                    size: get_type_size(&verify_context.type_map, &arg.type_)?
+                    size: get_type_size(&builder.type_map, &arg.type_)?
                 },
                 arg.type_.clone()
             )?;
 
             let value = builder.add_instruction(
-                &verify_context,
                 VirtualInstruction::FunctionParameter {
                     param_index: i as u32,
                 },
@@ -72,7 +78,6 @@ pub fn gen_bytecode(mut ast: &CXAST) -> Option<ProgramBytecode> {
             )?;
 
             builder.add_instruction(
-                &verify_context,
                 VirtualInstruction::Store {
                     value,
                     memory,
@@ -81,26 +86,16 @@ pub fn gen_bytecode(mut ast: &CXAST) -> Option<ProgramBytecode> {
                 ValueType::Unit
             )?;
 
-            verify_context.insert_variable(arg.name.clone(), memory);
+            if let Some(name) = &arg.name {
+                builder.symbol_table.insert(name.clone(), memory);
+            }
         }
 
-        for stmt in body.iter() {
-            let Some(_) = verify_expression(&mut verify_context, &mut builder, stmt) else {
-                log_error!("Failed to verify expression: {:?}", stmt);
-            };
-        }
+        generate_instruction(&mut builder, body)?;
 
-        let last_instruction = builder.last_instruction()
-            .map(|instr| &instr.instruction);
-
-        verify_context.var_map.pop_scope();
+        builder.symbol_table.pop_scope();
         builder.finish_function();
     }
 
-    builder.finish(verify_context.fn_map, verify_context.type_map, imports)
+    builder.finish()
 }
-
-fn gen_fn_bytecode(
-    builder: &mut BytecodeBuilder,
-    func: &,
-)

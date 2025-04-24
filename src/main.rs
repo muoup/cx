@@ -1,5 +1,5 @@
 use std::env;
-use crate::parse::{pass_molded, pass_typecheck, pass_unverified, FileInformation};
+use crate::parse::{pass_bytecode, pass_molded, pass_typecheck, pass_unverified, FileInformation};
 use crate::parse::parser::{ParserData, TokenIter, VisibilityMode};
 use crate::util::dump_data;
 
@@ -44,6 +44,9 @@ fn main() {
 
     pass_typecheck::type_check(&file_information, &mut molded).unwrap();
     dump_data(&molded);
+
+    let program_bytecode = pass_bytecode::gen_bytecode(molded).unwrap();
+    dump_data(&program_bytecode);
 
     // pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
     //     .preprocess()

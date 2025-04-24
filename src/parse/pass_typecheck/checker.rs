@@ -46,7 +46,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         },
 
         CXExpr::VarReference(name) => {
-            env.symbol_table.get_symbol(name).cloned()
+            env.symbol_table.get(name).cloned()
         },
 
         CXExpr::IntLiteral { bytes, .. } => {
