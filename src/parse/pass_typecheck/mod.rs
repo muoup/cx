@@ -1,18 +1,27 @@
-use crate::parse::ast::ValueType;
+use crate::parse::FileInformation;
+use crate::parse::interface_serializer::emit_types;
+use crate::parse::value_type::ValueType;
 use crate::parse::pass_molded::{CXGlobalStmt, CXParameter, FunctionMap, TypeMap, CXAST};
 use crate::parse::pass_typecheck::checker::{type_check_traverse};
 use crate::parse::pass_typecheck::symbol_table::SymbolTable;
 
 mod symbol_table;
 mod checker;
+mod type_utils;
 
-pub fn type_check(ast: &mut CXAST) -> Option<()> {
+pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option<()> {
     let mut type_environment = TypeEnvironment {
         type_map: &ast.type_map,
         fn_map: &ast.function_map,
         symbol_table: &mut SymbolTable::new(),
         return_type: ValueType::Unit,
     };
+
+    emit_types(
+        &file_information.file_name,
+        &file_information.file_path,
+        ast.type_map.iter(),
+    ).ok()?;
 
     // TODO: Global Variables
 

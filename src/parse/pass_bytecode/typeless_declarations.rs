@@ -1,6 +1,7 @@
-use crate::parse::ast::{GlobalStatement, ValueType, AST};
+use crate::parse::ast::{GlobalStatement, AST};
 use crate::parse::pass_bytecode::context::{ConstMap, FnMap, TypeMap};
 use crate::parse::pass_bytecode::name_mangling::member_function_mangle;
+use crate::parse::value_type::ValueType;
 
 pub(crate) fn gen_fn_decls(ast: &AST) -> Option<FnMap> {
     let mut map = FnMap::new();

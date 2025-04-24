@@ -1,7 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::sync::Mutex;
 use crate::{fwrite, fwriteln};
-use crate::parse::ast_interface::initialization_as_name;
 use crate::parse::format::{dedent, indent};
 use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVAST};
 use crate::parse::pass_unverified::expression::requires_semicolon;
@@ -32,9 +30,7 @@ impl Display for UVGlobalStmt {
             },
             UVGlobalStmt::HandledInternally => Ok(()),
             UVGlobalStmt::TypeDeclaration { name, type_ } => {
-                let type_name = initialization_as_name(type_, name.clone()).unwrap();
-
-                fwrite!(f, "{};", type_name)
+                fwrite!(f, "type {} = {};", name, type_)
             },
 
             _ => fwrite!(f, "{:?}", self),

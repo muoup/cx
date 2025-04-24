@@ -1,6 +1,7 @@
 use crate::log_error;
-use crate::parse::ast::ValueType;
+use crate::parse::value_type::ValueType;
 use crate::parse::pass_molded::CXExpr;
+use crate::parse::pass_typecheck::type_utils::type_matches;
 use crate::parse::pass_typecheck::TypeEnvironment;
 
 pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<ValueType> {
@@ -62,7 +63,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
             if let Some(value) = value {
                 let value_type = type_check_traverse(env, value)?;
                 implicit_cast(value, &value_type, env.return_type.clone())?;
-            } else if env.return_type != ValueType::Unit {
+            } else if !type_matches(env, &env.return_type, &ValueType::Unit)? {
                 log_error!("TYPE ERROR: Function with empty return in non-void context");
             }
 

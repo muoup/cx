@@ -1,7 +1,7 @@
 use crate::lex::token::OperatorType;
 use crate::log_error;
-use crate::parse::ast::ValueType;
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXAST};
+use crate::parse::value_type::ValueType;
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp, CXInitIndex, CXAST};
 use crate::parse::pass_molded::operators::{binop_precedence, mold_binop, mold_unop, uv_cx_binop, uv_cx_unop};
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr};
@@ -136,6 +136,14 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
 
             mold_expression(expr)
         },
+
+        UVExpr::Braced(expr) => mold_initializer(expr),
+        UVExpr::UnOp { operator, operand } => Some(
+            CXExpr::UnOp {
+                operator: uv_cx_unop(operator.clone()),
+                operand: Box::new(mold_expression(operand)?)
+            }
+        ),
 
         _ => Some(CXExpr::Identifier(format!("TODO: {:#?}", expr)))
     }
@@ -283,4 +291,36 @@ pub(crate) fn mold_compound_expr(left: &UVExpr, right: &UVExpr) -> Option<CXExpr
 
         (_, _) => todo!("mold_compound_expr(`{}`, `{}`)", left, right)
     }
+}
+
+pub(crate) fn mold_initializer(inside: &UVExpr) -> Option<CXExpr> {
+    let delimited = mold_delimited(inside, UVBinOp::Comma)?;
+
+    let indices = delimited.iter()
+        .map(|pseudo| {
+            match mold_pseudo_expr(pseudo)? {
+                CXExpr::Assignment { lhs, rhs, op: Option::None } => {
+                    let CXExpr::UnOp {
+                        operator: CXUnOp::InitializerIndex,
+                        ref operand
+                    } = *lhs else {
+                        log_error!("Failed to mold initializer index: {:?}", pseudo);
+                    };
+                    let CXExpr::VarReference(name) = operand.as_ref() else {
+                        log_error!("Failed to mold initializer index: {:?}", pseudo);
+                    };
+
+                    Some(CXInitIndex::Named(name.clone(), rhs))
+                },
+
+                expr => Some(CXInitIndex::Unnamed(Box::new(expr)))
+            }
+        })
+        .collect::<Option<Vec<_>>>();
+
+    Some(
+        CXExpr::InitializerList {
+            indices: indices?
+        }
+    )
 }

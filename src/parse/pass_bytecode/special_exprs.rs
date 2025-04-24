@@ -1,9 +1,10 @@
 use crate::log_error;
-use crate::parse::ast::{Expression, RValueExpression, ValueType};
+use crate::parse::ast::{Expression, RValueExpression};
 use crate::parse::pass_bytecode::bytecode::{BlockInstruction, BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::pass_bytecode::context::VerifyContext;
 use crate::parse::pass_bytecode::verify_expression::{coercive_verify_expression, verify_expression, verify_rvalue};
 use crate::parse::pass_bytecode::verify_type::{same_type, struct_field_index, struct_field_offset};
+use crate::parse::value_type::ValueType;
 
 pub(crate) fn struct_assignment(context: &mut VerifyContext, builder: &mut BytecodeBuilder, struct_pointer: ValueID, rval: &Expression) -> Option<ValueID> {
     match rval {

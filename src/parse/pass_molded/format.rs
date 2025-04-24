@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use crate::{fwrite, fwriteln};
 use crate::parse::format::{dedent, indent};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXGlobalStmt, CXParameter, CXAST};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXGlobalStmt, CXInitIndex, CXParameter, CXAST};
 
 impl Display for CXAST<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -92,6 +92,21 @@ impl Display for CXExpr {
                 fwrite!(f, "{}<{}>", expr, to_type)
             },
 
+            CXExpr::InitializerList { indices } => {
+                indent();
+                fwriteln!(f, "{{")?;
+                for (i, index) in indices.iter().enumerate() {
+                    fwrite!(f, "{}", index)?;
+                    if i != indices.len() - 1 {
+                        fwrite!(f, ", ")?;
+                    } else {
+                        dedent();
+                    }
+                    fwriteln!(f, "")?;
+                }
+                fwrite!(f, "}}")
+            }
+
             _ => fwrite!(f, "{:?}", self)
         }
     }
@@ -120,6 +135,19 @@ impl Display for CXBinOp {
             CXBinOp::Access => fwrite!(f, "."),
 
             _ => todo!(),
+        }
+    }
+}
+
+impl Display for CXInitIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CXInitIndex::Unnamed(index) => {
+                fwrite!(f, "{}", index)
+            },
+            CXInitIndex::Named(name, index) => {
+                fwrite!(f, ".{} = {}", name, index.as_ref())
+            },
         }
     }
 }

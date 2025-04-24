@@ -2,12 +2,13 @@ use cranelift::codegen::ir;
 use crate::codegen::instruction::codegen_instruction;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
-use crate::parse::ast::{ValueType, VarInitialization};
+use crate::parse::ast::VarInitialization;
 use crate::parse::pass_bytecode::bytecode::{ValueID, VerifiedFunction, VirtualInstruction};
 use crate::parse::pass_bytecode::context::FunctionPrototype;
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{EntityRef, FunctionBuilder, FunctionBuilderContext, InstBuilder, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
+use crate::parse::value_type::ValueType;
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &FunctionPrototype) -> Option<()> {
     let mut sig = Signature::new(

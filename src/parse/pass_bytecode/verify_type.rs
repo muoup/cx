@@ -1,9 +1,10 @@
 use std::env::args;
 use log::log;
 use crate::log_error;
-use crate::parse::ast::{ValueType, VarInitialization};
+use crate::parse::ast::VarInitialization;
 use crate::parse::pass_bytecode::bytecode::{BytecodeBuilder, VirtualValue};
 use crate::parse::pass_bytecode::context::{FunctionPrototype, TypeMap, VerifyContext};
+use crate::parse::value_type::ValueType;
 
 pub(crate) fn verify_fn_prototype(type_map: &TypeMap, mut prototype: FunctionPrototype) -> Option<FunctionPrototype> {
     prototype.return_type = get_intrinsic_type(type_map, &prototype.return_type)?.clone();

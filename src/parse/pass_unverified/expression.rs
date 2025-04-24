@@ -1,7 +1,6 @@
 use std::clone;
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::{assert_token_matches, log_error, try_next, try_token_matches};
-use crate::parse::expression::parse_identifier;
 use crate::parse::parser::{ParserData};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
 use crate::parse::pass_unverified::global_scope::parse_body;
@@ -203,4 +202,26 @@ pub(crate) fn parse_braced_expr(data: &mut ParserData) -> Option<UVExpr> {
     Some(
         UVExpr::Braced(Box::new(expr))
     )
+}
+
+pub(crate) fn parse_identifier(data: &mut ParserData) -> Option<String> {
+    if let Some(Token::Identifier(name)) = data.toks.next() {
+        return Some(name.clone());
+    }
+
+    data.toks.back();
+
+    let mut ss = String::new();
+
+    while let Some(Token::Intrinsic(intrinsic)) = data.toks.next() {
+        ss.push_str(format!("{:?}", intrinsic).to_lowercase().as_str());
+    }
+
+    data.toks.back();
+
+    if ss.is_empty() {
+        None
+    } else {
+        Some(ss)
+    }
 }

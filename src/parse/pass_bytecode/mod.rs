@@ -3,13 +3,13 @@ use std::process::id;
 use cranelift::codegen::verifier::verify_context;
 use crate::log_error;
 use crate::parse::pass_bytecode::bytecode::{BytecodeBuilder, VerifiedFunction, VirtualInstruction};
-use crate::parse::ast::{GlobalStatement, ValueType, AST};
 use crate::parse::pass_bytecode::context::{FnMap, TypeMap, VerifyContext};
-use crate::parse::pass_bytecode::import_module::{import_file};
+use crate::parse::pass_bytecode::import_module::import_file;
 use crate::parse::pass_bytecode::name_mangling::member_function_mangle;
 use crate::parse::pass_bytecode::typeless_declarations::{gen_const_decls, gen_fn_decls, gen_imports, gen_type_decls};
 use crate::parse::pass_bytecode::verify_expression::verify_expression;
 use crate::parse::pass_bytecode::verify_type::{get_type_size, verify_fn_prototype, verify_type};
+use crate::parse::value_type::ValueType;
 use crate::util::ScopedMap;
 
 pub mod context;

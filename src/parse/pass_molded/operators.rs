@@ -59,6 +59,7 @@ pub(crate) fn uv_cx_unop(op: UVUnOp) -> CXUnOp {
         UVUnOp::BNot            => CXUnOp::BNot,
         UVUnOp::LNot            => CXUnOp::LNot,
         UVUnOp::Negative        => CXUnOp::Negative,
+        UVUnOp::UnaryAccess     => CXUnOp::InitializerIndex,
 
         _ => todo!()
     }

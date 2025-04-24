@@ -1,12 +1,7 @@
-use std::cmp::min;
-use log::error;
-use crate::log_error;
-use crate::parse::ast::ValueType;
 use crate::parse::macros::error_pointer;
 use crate::parse::parser::ParserData;
-use crate::parse::pass_unverified::expression::parse_expr;
-use crate::parse::pass_unverified::global_scope::{parse_global_expr, parse_global_stmt};
-use crate::parse::pass_bytecode::context::FunctionPrototype;
+use crate::parse::pass_unverified::global_scope::parse_global_stmt;
+use crate::parse::value_type::ValueType;
 use crate::util::dump_all;
 
 mod expression;

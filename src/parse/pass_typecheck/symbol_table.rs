@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::parse::ast::ValueType;
+use crate::parse::value_type::ValueType;
 
 pub struct SymbolTable {
     data: HashMap<String, ValueType>,

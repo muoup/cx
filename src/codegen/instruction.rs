@@ -7,7 +7,7 @@ use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
 use crate::codegen::value_type::get_cranelift_type;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::ValueType;
+use crate::parse::value_type::ValueType;
 use crate::parse::pass_bytecode::bytecode::{BlockInstruction, VirtualInstruction};
 use crate::parse::pass_bytecode::verify_type::{get_intrinsic_type, get_type_size};
 

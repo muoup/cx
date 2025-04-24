@@ -2,10 +2,10 @@ use std::clone;
 use log::warn;
 use crate::{assert_token_matches, log_error, try_next, try_token_matches};
 use crate::lex::token::{KeywordType, PunctuatorType, Token};
-use crate::parse::ast::{ValueType, VarInitialization};
-use crate::parse::expression::{parse_identifier, parse_initialization};
 use crate::parse::parser::ParserData;
+use crate::parse::pass_unverified::expression::parse_identifier;
 use crate::parse::pass_unverified::UVGlobalStmt;
+use crate::parse::value_type::ValueType;
 
 pub(crate) struct TypeRecord {
     pub(crate) name: Option<String>,
@@ -85,10 +85,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
             log_error!("PARSER ERROR: Invalid identifier in struct definition starting with: {:#?}", name_start_token);
         };
 
-        fields.push(VarInitialization {
-            name: name.clone(),
-            type_: type_.type_,
-        });
+        fields.push((name.clone(), type_.type_));
 
         assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
     }

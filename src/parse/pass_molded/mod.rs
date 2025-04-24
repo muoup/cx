@@ -4,9 +4,9 @@ mod pattern_molding;
 mod operators;
 mod format;
 
-use crate::parse::ast::ValueType;
+use crate::parse::value_type::ValueType;
 use crate::parse::pass_molded::glob_molding::mold_globals;
-use crate::parse::pass_unverified::UVAST;
+use crate::parse::pass_unverified::{UVExpr, UVAST};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
@@ -72,7 +72,8 @@ pub enum CXGlobalStmt {
 pub enum CXUnOp {
     Dereference, Negative,
     BNot, LNot,
-    ArrayIndex, MethodAccess
+    ArrayIndex,
+    InitializerIndex
 }
 
 #[derive(Debug)]
@@ -92,8 +93,9 @@ pub enum CXBinOp {
 }
 
 #[derive(Debug)]
-pub enum CXLValue {
-
+pub enum CXInitIndex {
+    Named(String, Box<CXExpr>),
+    Unnamed(Box<CXExpr>)
 }
 
 #[derive(Debug)]
@@ -172,5 +174,9 @@ pub enum CXExpr {
     ImplicitCast {
         expr: Box<CXExpr>,
         to_type: ValueType
+    },
+
+    InitializerList {
+        indices: Vec<CXInitIndex>,
     }
 }

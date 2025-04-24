@@ -1,5 +1,5 @@
 use crate::lex::token::OperatorType;
-use crate::parse::ast::ValueType;
+use crate::parse::value_type::ValueType;
 use crate::parse::pass_bytecode::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
 use crate::parse::pass_bytecode::ProgramBytecode;
 

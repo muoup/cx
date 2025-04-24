@@ -1,7 +1,7 @@
 use std::process::id;
 use crate::codegen::FunctionState;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::ValueType;
+use crate::parse::value_type::ValueType;
 use crate::parse::pass_bytecode::verify_type::get_type_size;
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
