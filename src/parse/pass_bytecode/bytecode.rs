@@ -17,7 +17,7 @@ pub struct VirtualValue {
 }
 
 #[derive(Debug)]
-pub struct VerifiedFunction {
+pub struct BytecodeFunction {
     pub prototype: FunctionPrototype,
     pub blocks: Vec<FunctionBlock>
 }
@@ -30,7 +30,7 @@ pub struct FunctionBlock {
 #[derive(Debug)]
 pub(crate) struct BytecodeBuilder {
     global_strings: Vec<String>,
-    functions: Vec<VerifiedFunction>,
+    functions: Vec<BytecodeFunction>,
 
     function_context: Option<BytecodeFunctionContext>,
 }
@@ -71,7 +71,7 @@ impl BytecodeBuilder {
     pub(crate) fn finish_function(&mut self) {
         let context = self.function_context.take().unwrap();
 
-        self.functions.push(VerifiedFunction {
+        self.functions.push(BytecodeFunction {
             prototype: context.fn_prototype,
             blocks: context.blocks
         });

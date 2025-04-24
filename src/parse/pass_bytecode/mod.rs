@@ -19,7 +19,6 @@ pub mod verify_type;
 mod typeless_declarations;
 mod verify_expression;
 mod special_exprs;
-mod import_module;
 mod name_mangling;
 
 #[derive(Debug)]
@@ -33,59 +32,8 @@ pub struct ProgramBytecode {
     pub imports: Vec<String>
 }
 
-pub fn verify_ast(mut ast: AST) -> Option<ProgramBytecode> {
+pub fn gen_bytecode(mut ast: &CXAST) -> Option<ProgramBytecode> {
     let imports = gen_imports(&ast)?;
-
-    for file in imports.iter() {
-        let Some(_) = import_file(&mut ast, file.as_str()) else {
-            log_error!("Failed to import file {}", file);
-        };
-    }
-
-    let mut type_map = gen_type_decls(&ast)?;
-    let mut fn_map = gen_fn_decls(&ast)?;
-    let mut constants_map = gen_const_decls(&ast)?;
-
-    let function_bodies = ast.statements.into_iter()
-        .filter_map(|stmt| {
-            match stmt {
-                GlobalStatement::Function { prototype, body } =>
-                    Some((prototype.name, body?)),
-
-                GlobalStatement::MemberFunction { struct_parent, prototype, body } =>
-                    Some((member_function_mangle(&struct_parent, &prototype.name), body?)),
-
-                _ => None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let type_map_iter = type_map.iter()
-        .map(|(key, _type)| (key, verify_type(&type_map, _type.clone())));
-    let mut type_map = TypeMap::new();
-
-    for (_key, _type) in type_map_iter {
-        type_map.insert(_key.clone(), _type?);
-    }
-
-    let fn_map_iter = fn_map.into_iter()
-        .map(|(key, prototype)| (key, verify_fn_prototype(&type_map, prototype)));
-    let mut fn_map = FnMap::new();
-
-    for (_key, prototype) in fn_map_iter {
-        fn_map.insert(_key, prototype?);
-    }
-
-    let mut verify_context = VerifyContext {
-        type_map,
-        fn_map,
-        constants_map,
-        var_map: ScopedMap::new(),
-
-        current_return_type: None,
-        merge_stack: Vec::new(),
-    };
-
     let mut builder = BytecodeBuilder::new();
 
     for (name, body) in function_bodies {
@@ -145,21 +93,14 @@ pub fn verify_ast(mut ast: AST) -> Option<ProgramBytecode> {
         let last_instruction = builder.last_instruction()
             .map(|instr| &instr.instruction);
 
-        if !matches!(last_instruction, Some(VirtualInstruction::Return { .. })) {
-            if verify_context.current_return_type.is_some() {
-                log_error!("Function {} does not have a return value", name);
-            }
-
-            builder.add_instruction(
-                &verify_context,
-                VirtualInstruction::Return { value: None },
-                ValueType::Unit
-            );
-        }
-
         verify_context.var_map.pop_scope();
         builder.finish_function();
     }
 
     builder.finish(verify_context.fn_map, verify_context.type_map, imports)
 }
+
+fn gen_fn_bytecode(
+    builder: &mut BytecodeBuilder,
+    func: &,
+)
