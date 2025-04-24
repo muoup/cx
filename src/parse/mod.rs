@@ -10,6 +10,7 @@ pub mod ast_interface;
 pub mod pass_bytecode;
 pub mod pass_unverified;
 pub mod pass_molded;
+pub mod pass_typecheck;
 
 pub(crate) mod parser;
 mod expression;

@@ -129,10 +129,6 @@ pub enum CXExpr {
         body: Box<CXExpr>
     },
 
-    VarInitialization {
-        type_: ValueType,
-        name: String,
-    },
     VarDeclaration {
         type_: ValueType,
         name: String,
@@ -171,5 +167,10 @@ pub enum CXExpr {
 
     Return {
         value: Option<Box<CXExpr>>
+    },
+
+    ImplicitCast {
+        expr: Box<CXExpr>,
+        to_type: ValueType
     }
 }

@@ -2,7 +2,7 @@ use crate::lex::token::OperatorType;
 use crate::log_error;
 use crate::parse::ast::ValueType;
 use crate::parse::pass_molded::{CXBinOp, CXExpr, CXAST};
-use crate::parse::pass_molded::operators::{binop_precedence, mold_binop, mold_unop, uv_cx_unop};
+use crate::parse::pass_molded::operators::{binop_precedence, mold_binop, mold_unop, uv_cx_binop, uv_cx_unop};
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr};
 
@@ -185,7 +185,7 @@ pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> 
         };
         let op_precedence = binop_precedence(op);
 
-        if op_precedence < previous_precedence {
+        if op_precedence > previous_precedence {
             let collapsed = collapse_stack(
                 &mut cx_expr_stack,
                 &mut bin_op_stack
@@ -220,9 +220,9 @@ pub(crate) fn mold_pseudo_expr(expr: &PseudoUVExpr) -> Option<CXExpr> {
     }
 }
 
-pub(crate) fn mold_pseudo_assn(left: &PseudoUVExpr, right: &PseudoUVExpr,
+pub(crate) fn mold_pseudo_assn(lhs: &PseudoUVExpr, rhs: &PseudoUVExpr,
                                additional_op: Option<&UVBinOp>) -> Option<CXExpr> {
-    match left {
+    match lhs {
         PseudoUVExpr::ID(UVExpr::Compound { left, right }) => {
             let Some(type_) = mold_type(left.as_ref()) else {
                 log_error!("Failed to mold type for assignment: {}", left);
@@ -230,7 +230,7 @@ pub(crate) fn mold_pseudo_assn(left: &PseudoUVExpr, right: &PseudoUVExpr,
             let UVExpr::Identifier(name) = right.as_ref() else {
                 log_error!("Failed to mold name for assignment: {}", left);
             };
-            let Some(rhs) = mold_expression(right) else {
+            let Some(rhs) = mold_pseudo_expr(rhs) else {
                 log_error!("Failed to mold right side of assignment: {}", left);
             };
 
@@ -243,7 +243,11 @@ pub(crate) fn mold_pseudo_assn(left: &PseudoUVExpr, right: &PseudoUVExpr,
             )
         },
 
-        _ => todo!()
+        _ => mold_binop(
+            mold_pseudo_expr(lhs)?,
+            mold_pseudo_expr(rhs)?,
+            &UVBinOp::Assignment(additional_op.map(|op| Box::new(op.clone())))
+        )
     }
 }
 
@@ -251,9 +255,10 @@ pub(crate) fn mold_compound_expr(left: &UVExpr, right: &UVExpr) -> Option<CXExpr
     match (left, right) {
         (_, UVExpr::Identifier(ident)) => {
             Some(
-                CXExpr::VarInitialization{
+                CXExpr::VarDeclaration {
                     type_: mold_type(left)?,
                     name: ident.clone(),
+                    initializer: None,
                 }
             )
         },

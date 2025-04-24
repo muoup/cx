@@ -1,5 +1,5 @@
 use std::env;
-use crate::parse::{pass_molded, pass_unverified};
+use crate::parse::{pass_molded, pass_typecheck, pass_unverified};
 use crate::util::dump_data;
 
 mod lex;
@@ -32,9 +32,11 @@ fn main() {
     let uv = pass_unverified::generate_unverified(&mut parser_data).unwrap();
     dump_data(&uv);
 
-    let molded = pass_molded::mold_ast(&uv).unwrap();
+    let mut molded = pass_molded::mold_ast(&uv).unwrap();
     dump_data(&molded);
 
+    pass_typecheck::type_check(&mut molded).unwrap();
+    dump_data(&molded);
 
     // pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
     //     .preprocess()

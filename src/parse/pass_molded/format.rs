@@ -54,12 +54,8 @@ impl Display for CXExpr {
 
             CXExpr::Identifier(ident) => fwrite!(f, "{}", ident),
             CXExpr::VarReference(ident) => fwrite!(f, "{}", ident),
-            CXExpr::VarInitialization { type_, name } => {
-                fwrite!(f, "{}: {:?}", name, type_)
-            },
-
             CXExpr::VarDeclaration { name, type_, initializer } => {
-                fwrite!(f, "let {}: {:?}", name, type_)?;
+                fwrite!(f, "let {}: {}", name, type_)?;
 
                 if let Some(initializer) = initializer {
                     fwrite!(f, " = {}", initializer)?;
@@ -81,7 +77,7 @@ impl Display for CXExpr {
             },
 
             CXExpr::BinOp { lhs, rhs, op } => {
-                fwrite!(f, "({}) {} ({})", lhs, op, rhs)
+                fwrite!(f, "({} {} {})", lhs, op, rhs)
             },
 
             CXExpr::Assignment { lhs, rhs, op } => {
@@ -90,7 +86,11 @@ impl Display for CXExpr {
                 } else {
                     fwrite!(f, "{} = {}", lhs, rhs)
                 }
-            }
+            },
+
+            CXExpr::ImplicitCast { expr, to_type } => {
+                fwrite!(f, "{}<{}>", expr, to_type)
+            },
 
             _ => fwrite!(f, "{:?}", self)
         }
