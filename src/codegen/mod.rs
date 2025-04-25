@@ -1,18 +1,15 @@
-use std::collections::HashMap;
-use std::iter;
-use std::process::id;
-use cranelift::codegen::{ir, Context};
-use cranelift::codegen::ir::Fact::Def;
-use cranelift::codegen::ir::{Function, GlobalValue};
-use cranelift::codegen::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
-use cranelift_module::{DataDescription, DataId, FuncId, Module};
-use cranelift_object::{ObjectBuilder, ObjectModule};
 use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};
 use crate::codegen::routines::string_literal;
-use crate::parse::pass_bytecode::bytecode::ValueID;
-use crate::parse::pass_bytecode::context::{FnMap, FunctionPrototype, TypeMap};
+use crate::parse::pass_bytecode::builder::{BytecodeFunctionPrototype, ValueID};
 use crate::parse::pass_bytecode::ProgramBytecode;
+use crate::parse::pass_molded::{FunctionMap, TypeMap};
+use cranelift::codegen::isa::TargetFrontendConfig;
+use cranelift::codegen::{ir, Context};
+use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
+use cranelift_module::{DataId, FuncId, Module};
+use cranelift_object::{ObjectBuilder, ObjectModule};
+use std::collections::HashMap;
+use crate::log_error;
 
 mod codegen;
 mod value_type;
@@ -29,13 +26,13 @@ pub(crate) struct FunctionState<'a> {
     pub(crate) global_strs: &'a Vec<DataId>,
 
     pub(crate) type_map: &'a TypeMap,
-    pub(crate) fn_map: &'a FnMap,
+    pub(crate) fn_map: &'a FunctionMap,
 
     pub(crate) builder: FunctionBuilder<'a>,
 
     pub(crate) fn_params: Vec<Value>,
 
-    pub(crate) function_prototype: &'a FunctionPrototype,
+    pub(crate) function_prototype: &'a BytecodeFunctionPrototype,
     pub(crate) variable_table: VariableTable,
 
     pub(crate) pointer_type: ir::Type,
@@ -48,7 +45,7 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) object_module: ObjectModule,
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
-    pub(crate) fn_map: &'a FnMap,
+    pub(crate) fn_map: &'a FunctionMap,
     pub(crate) type_map: &'a TypeMap,
 
     pub(crate) global_strs: Vec<DataId>,
@@ -63,8 +60,6 @@ pub fn ast_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
 
     let native_builder = cranelift_native::builder().unwrap();
     let isa = native_builder.finish(flags).unwrap();
-
-    let mut data_description = DataDescription::new();
 
     let mut global_state = GlobalState {
         object_module: ObjectModule::new(
@@ -98,7 +93,12 @@ pub fn ast_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     }
 
     for func in &ast.fn_defs {
-        let func_id = global_state.function_ids.get(&func.prototype.name).cloned().unwrap();
+        let Some(func_id) = global_state.function_ids.get(&func.prototype.name).cloned() else {
+            log_error!(
+                "Function not found in function map: {}",
+                func.prototype.name
+            );
+        };
         let func_sig = global_state.function_sigs.remove(&func.prototype.name).unwrap_or_else(|| {
             panic!("Function signature redefine: {}", func.prototype.name);
         });

@@ -5,11 +5,11 @@ use crate::lex::token::{KeywordType, PunctuatorType, Token};
 use crate::parse::parser::ParserData;
 use crate::parse::pass_unverified::expression::parse_identifier;
 use crate::parse::pass_unverified::UVGlobalStmt;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 
 pub(crate) struct TypeRecord {
     pub(crate) name: Option<String>,
-    pub(crate) type_: ValueType,
+    pub(crate) type_: CXValType,
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<UVGlobalStmt> {
@@ -56,7 +56,7 @@ pub(crate) fn parse_type(data: &mut ParserData) -> Option<TypeRecord> {
         Token::Intrinsic(_) => Some(
             TypeRecord {
                 name: None,
-                type_: ValueType::Identifier(parse_identifier(data)?),
+                type_: CXValType::Identifier(parse_identifier(data)?),
             }
         ),
 
@@ -95,7 +95,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
     Some(
         TypeRecord {
             name,
-            type_: ValueType::Structured { fields }
+            type_: CXValType::Structured { fields }
         }
     )
 }

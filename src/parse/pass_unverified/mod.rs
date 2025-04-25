@@ -1,7 +1,7 @@
 use crate::parse::macros::error_pointer;
 use crate::parse::parser::ParserData;
 use crate::parse::pass_unverified::global_scope::parse_global_stmt;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 use crate::util::dump_all;
 
 mod expression;
@@ -14,8 +14,6 @@ pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
     let mut stmts = Vec::new();
 
     while parser_data.toks.has_next() {
-        let starting_token = parser_data.toks.peek().unwrap().clone();
-
         let Some(stmt) = parse_global_stmt(parser_data) else {
             eprintln!("PARSER ERROR: Unverified parsing failed, dumping correctly parsed expressions.");
             eprintln!("{}", error_pointer(parser_data));
@@ -44,7 +42,7 @@ pub enum UVGlobalStmt {
 
     TypeDeclaration {
         name: String,
-        type_: ValueType
+        type_: CXValType
     },
 
     SingleExpression {

@@ -4,13 +4,13 @@ mod pattern_molding;
 mod operators;
 mod format;
 
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::glob_molding::mold_globals;
 use crate::parse::pass_unverified::{UVExpr, UVAST};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
-pub type TypeMap = HashMap<String, ValueType>;
+pub type TypeMap = HashMap<String, CXValType>;
 pub type FunctionMap = HashMap<String, CXFunctionPrototype>;
 
 pub fn mold_ast(ast: &UVAST) -> Option<CXAST> {
@@ -39,16 +39,16 @@ pub struct CXAST<'a> {
     pub function_map: FunctionMap,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CXParameter {
     pub name: Option<String>,
-    pub type_: ValueType,
+    pub type_: CXValType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CXFunctionPrototype {
     pub name: String,
-    pub return_type: ValueType,
+    pub return_type: CXValType,
     pub parameters: Vec<CXParameter>,
 }
 
@@ -56,15 +56,17 @@ pub struct CXFunctionPrototype {
 pub enum CXGlobalStmt {
     GlobalVariable {
         name: String,
-        type_: ValueType,
+        type_: CXValType,
         initializer: Option<CXExpr>
     },
 
     FunctionDefinition {
-        name: String,
-        return_type: ValueType,
-        parameters: Vec<CXParameter>,
-        body: CXExpr
+        prototype: CXFunctionPrototype,
+        body: CXExpr,
+    },
+
+    FunctionForward {
+        prototype: CXFunctionPrototype,
     }
 }
 
@@ -130,7 +132,7 @@ pub enum CXExpr {
     },
 
     VarDeclaration {
-        type_: ValueType,
+        type_: CXValType,
         name: String,
         initializer: Option<Box<CXExpr>>
     },
@@ -156,9 +158,14 @@ pub enum CXExpr {
         field_index: usize,
     },
 
-    FunctionCall {
+    IndirectFunctionCall {
         callee: Box<CXExpr>,
         args: Vec<CXExpr>
+    },
+
+    DirectFunctionCall {
+        name: String,
+        args: Vec<CXExpr>,
     },
 
     Block {
@@ -171,7 +178,8 @@ pub enum CXExpr {
 
     ImplicitCast {
         expr: Box<CXExpr>,
-        to_type: ValueType
+        from_type: CXValType,
+        to_type: CXValType
     },
 
     InitializerList {

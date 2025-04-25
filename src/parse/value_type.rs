@@ -1,16 +1,16 @@
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ValueType {
+pub enum CXValType {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
-    Structured { fields: Vec<(String, ValueType)> },
+    Structured { fields: Vec<(String, CXValType)> },
     Unit,
 
-    PointerTo(Box<ValueType>),
+    PointerTo(Box<CXValType>),
     Array {
         size: usize,
-        _type: Box<ValueType>
+        _type: Box<CXValType>
     },
     Opaque {
         name: String,
@@ -20,36 +20,36 @@ pub enum ValueType {
     Identifier(String)
 }
 
-impl Display for ValueType {
+impl Display for CXValType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValueType::Integer { bytes, signed } => {
+            CXValType::Integer { bytes, signed } => {
                 let signed_str = if *signed { "i" } else { "u" };
                 let signed_bytes = *bytes * 8;
                 write!(f, "{}i{}", signed_str, signed_bytes)
             },
-            ValueType::Float { bytes } => {
+            CXValType::Float { bytes } => {
                 let float_bytes = *bytes * 8;
                 write!(f, "f{}", float_bytes)
             },
-            ValueType::Structured { fields } => {
+            CXValType::Structured { fields } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{}: {}", name, type_))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "struct {{ {} }}", field_strs)
             },
-            ValueType::Unit => write!(f, "()"),
-            ValueType::PointerTo(inner) => {
+            CXValType::Unit => write!(f, "()"),
+            CXValType::PointerTo(inner) => {
                 write!(f, "*{}", inner)
             },
-            ValueType::Array { size, _type } => {
+            CXValType::Array { size, _type } => {
                 write!(f, "[{}; {}]", size, _type)
             },
-            ValueType::Opaque { name, size } => {
+            CXValType::Opaque { name, size } => {
                 write!(f, "OP_{}(\"{}\")", size, name)
             },
-            ValueType::Identifier(name) => {
+            CXValType::Identifier(name) => {
                 write!(f, "{}", name)
             }
         }

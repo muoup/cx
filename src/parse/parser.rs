@@ -1,8 +1,8 @@
 use crate::lex::token::Token;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 use crate::util::ScopedMap;
 
-pub(crate) type VarTable = ScopedMap<ValueType>;
+pub(crate) type VarTable = ScopedMap<CXValType>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum VisibilityMode {

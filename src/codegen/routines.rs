@@ -1,22 +1,20 @@
-use std::process::id;
 use crate::codegen::FunctionState;
 use crate::lex::token::OperatorType;
-use crate::parse::value_type::ValueType;
-use crate::parse::pass_bytecode::verify_type::get_type_size;
-use cranelift::codegen::gimli::ReaderOffset;
+use crate::parse::pass_bytecode::typing::get_type_size;
+use cranelift::codegen::gimli::{ReaderOffset, ValueType};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::ir::GlobalValue;
 use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, DataId, Module};
-use cranelift_object::object::SymbolScope::Linkage;
 use cranelift_object::ObjectModule;
+use crate::parse::parser;
+use crate::parse::value_type::CXValType;
 
-pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Option<Value> {
+pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &CXValType) -> Option<Value> {
     match type_ {
-        ValueType::Structured { fields } => {
+        CXValType::Structured { fields } => {
             let field_values = fields.iter()
-                .map(|init| stack_alloca(context, &init.type_))
+                .map(|(_, type_)| stack_alloca(context, type_))
                 .collect::<Vec<_>>();
 
             Some(field_values[0]?.to_owned())
@@ -30,7 +28,7 @@ pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Op
     }
 }
 
-pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<ir::Value>) -> Option<Value> {
+pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         StackSize::from_u32(bytes),

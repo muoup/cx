@@ -1,10 +1,10 @@
 use std::io::Write;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 
 pub fn emit_types<'a>(
     file_path: &str,
     file_name: &str,
-    types: impl Iterator<Item = (&'a String, &'a ValueType)>,
+    types: impl Iterator<Item = (&'a String, &'a CXValType)>,
 ) -> std::fmt::Result {
     let with_changed_extension = file_name
         .split('.')
@@ -26,7 +26,7 @@ pub fn emit_types<'a>(
 fn emit_type(
     file: &mut std::fs::File,
     name: &str,
-    type_: &ValueType,
+    type_: &CXValType,
 ) -> std::fmt::Result {
     write!(file, "{}: {}\n", name, type_).unwrap();
 

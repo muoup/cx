@@ -1,4 +1,6 @@
+void puts(char* str);
+
 int main() {
-    println("Hello, World!");
+    puts("Hello, World!");
     return 0;
 }

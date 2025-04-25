@@ -1,8 +1,8 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
-use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size};
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting};
 use crate::parse::pass_molded::CXExpr;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 
 pub(crate) fn generate_instruction(
     builder: &mut BytecodeBuilder,
@@ -20,7 +20,7 @@ pub(crate) fn generate_instruction(
                     value: rhs,
                     type_: assn_type
                 },
-                ValueType::Unit
+                CXValType::Unit
             )
         },
         CXExpr::VarDeclaration { name, type_, initializer } => {
@@ -45,7 +45,7 @@ pub(crate) fn generate_instruction(
                         value,
                         type_: type_.clone()
                     },
-                    ValueType::Unit
+                    CXValType::Unit
                 )?;
             }
 
@@ -57,8 +57,8 @@ pub(crate) fn generate_instruction(
             let lhs_type = builder.get_type(lhs)?.clone();
 
             match get_intrinsic_type(&builder.type_map, &lhs_type)? {
-                ValueType::Integer { .. } |
-                ValueType::PointerTo { .. } => {
+                CXValType::Integer { .. } |
+                CXValType::PointerTo { .. } => {
                     builder.add_instruction(
                         VirtualInstruction::IntegerBinOp {
                             left: lhs,
@@ -68,7 +68,7 @@ pub(crate) fn generate_instruction(
                         lhs_type
                     )
                 },
-                ValueType::Float { .. } => {
+                CXValType::Float { .. } => {
                     builder.add_instruction(
                         VirtualInstruction::FloatBinOp {
                             left: lhs,
@@ -89,21 +89,19 @@ pub(crate) fn generate_instruction(
 
             Some(ValueID::NULL)
         },
-        CXExpr::ImplicitCast { expr, to_type} => {
-            let inner = generate_instruction(builder, expr.as_ref())?;
+        CXExpr::ImplicitCast { expr, from_type, to_type} => {
+            let mut inner = generate_instruction(builder, expr.as_ref())?;
 
-            match expr.as_ref() {
-                CXExpr::VarReference(_) => {
-                    builder.add_instruction(
-                        VirtualInstruction::Load {
-                            value: inner.clone(),
-                        },
-                        to_type.clone()
-                    )
-                },
-
-                _ => Some(inner)
+            if matches!(expr.as_ref(), CXExpr::VarReference(_)) {
+                inner = builder.add_instruction(
+                    VirtualInstruction::Load {
+                        value: inner.clone(),
+                    },
+                    to_type.clone()
+                )?;
             }
+
+            implicit_casting(builder, inner, &from_type, &to_type)
         },
 
         CXExpr::IntLiteral { val, bytes } => {
@@ -111,7 +109,7 @@ pub(crate) fn generate_instruction(
                 VirtualInstruction::Immediate {
                     value: *val as i32
                 },
-                ValueType::Integer {
+                CXValType::Integer {
                     bytes: *bytes,
                     signed: true
                 }
@@ -134,7 +132,32 @@ pub(crate) fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Return { value },
-                ValueType::Unit
+                CXValType::Unit
+            )
+        },
+
+        CXExpr::DirectFunctionCall { name, args } => {
+            let arg_ids = args.iter()
+                .map(|arg| generate_instruction(builder, arg))
+                .collect::<Option<Vec<_>>>()?;
+
+            builder.add_instruction(
+                VirtualInstruction::DirectCall {
+                    function: name.clone(),
+                    args: arg_ids
+                },
+                CXValType::Unit
+            )
+        },
+
+        CXExpr::StringLiteral { val, .. } => {
+            let string_id = builder.create_global_string(val.clone());
+
+            builder.add_instruction(
+                VirtualInstruction::StringLiteral {
+                    str_id: string_id,
+                },
+                CXValType::PointerTo(Box::new(CXValType::Identifier("char".to_string())))
             )
         },
 

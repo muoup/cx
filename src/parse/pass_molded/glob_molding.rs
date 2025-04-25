@@ -7,6 +7,7 @@ use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVGlobalStmt, UVAST};
 use crate::parse::pass_molded::{CXExpr, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use crate::parse::pass_molded::expr_molding::{mold_expression, mold_type, split_initialization};
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
+use crate::parse::value_type::CXValType;
 
 pub(crate) fn mold_globals(ast: &UVAST, cx_ast: &mut CXAST) -> Option<()> {
     for stmt in &ast.stmts {
@@ -22,7 +23,9 @@ pub(crate) fn mold_globals(ast: &UVAST, cx_ast: &mut CXAST) -> Option<()> {
             },
 
             UVGlobalStmt::SingleExpression { expression} =>
-                mold_global_single(expression, cx_ast)?,
+                cx_ast.global_stmts.push(
+                    mold_global_single(expression)?
+                ),
 
             UVGlobalStmt::Import(import) =>
                 cx_ast.imports.push(import.clone()),
@@ -46,24 +49,27 @@ pub(crate) fn mold_global_bodied(header: &UVExpr, body: &UVExpr) -> Option<CXGlo
 
     Some(
         CXGlobalStmt::FunctionDefinition {
-            name: prototype.name,
-            return_type: prototype.return_type,
-            parameters: prototype.parameters,
-            body
+            prototype, body
         }
     )
 }
 
-pub(crate) fn mold_global_single(expression: &UVExpr, cx_ast: &mut CXAST) -> Option<()> {
+pub(crate) fn mold_global_single(expression: &UVExpr) -> Option<CXGlobalStmt> {
     match expression {
         UVExpr::Compound { .. } => {
             let Some(header) = mold_function_header(expression) else {
                 log_error!("Failed to mold function header: {}", expression);
             };
 
-            cx_ast.function_map.insert(header.name.clone(), header);
-
-            Some(())
+            Some(
+                CXGlobalStmt::FunctionForward {
+                    prototype: CXFunctionPrototype {
+                        name: header.name,
+                        return_type: header.return_type,
+                        parameters: header.parameters
+                    }
+                }
+            )
         },
 
         _ => log_error!("Failed to parse single expression: {}", expression)
@@ -140,14 +146,19 @@ pub(crate) fn mold_param(expr: &PseudoUVExpr) -> Option<CXParameter> {
                 log_error!("Failed to parse function name: {:?}", left);
             };
 
-            let PseudoUVExpr::ID(right) = *right.as_ref() else {
+            let PseudoUVExpr::ID(UVExpr::Identifier(right)) = *right.as_ref() else {
                 log_error!("Failed to parse function name: {:?}", right);
             };
 
-            todo!()
+            Some(
+                CXParameter {
+                    name: Some(right.clone()),
+                    type_: CXValType::PointerTo(Box::new(mold_type(left)?))
+                }
+            )
         },
 
         PseudoUVExpr::BinOp { .. } =>
-            log_error!("Failed to parse function name: {:?}", expr),
+            log_error!("Failed to parse parameter name: {:?}", expr),
     }
 }

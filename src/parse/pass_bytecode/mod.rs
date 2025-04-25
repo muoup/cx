@@ -3,7 +3,7 @@ use crate::parse::pass_bytecode::builder::{BytecodeBuilder, BytecodeFunction, By
 use crate::parse::pass_bytecode::instruction_gen::generate_instruction;
 use crate::parse::pass_bytecode::typing::get_type_size;
 use crate::parse::pass_molded::{CXExpr, CXGlobalStmt, FunctionMap, TypeMap, CXAST};
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 
 pub mod builder;
 pub mod typing;
@@ -35,27 +35,26 @@ pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
 
     for stmt in ast.global_stmts.iter() {
         let CXGlobalStmt::FunctionDefinition {
-            name, parameters,
-            return_type, body
+            prototype, body
         } = stmt else {
             continue;
         };
 
         builder.symbol_table.push_scope();
-        let prototype = BytecodeFunctionPrototype {
-            name: name.clone(),
-            return_type: return_type.clone(),
-            args: parameters.iter()
-                .map(|param| BytecodeParameter {
-                    name: param.name.clone(),
-                    type_: param.type_.clone()
-                })
-                .collect()
-        };
+        builder.new_function(
+            BytecodeFunctionPrototype {
+                name: prototype.name.clone(),
+                return_type: prototype.return_type.clone(),
+                args: prototype.parameters.iter()
+                    .map(|param| BytecodeParameter {
+                        name: param.name.clone(),
+                        type_: param.type_.clone()
+                    })
+                    .collect()
+            }
+        );
 
-        builder.new_function(prototype);
-
-        for (i, arg) in parameters.iter().enumerate() {
+        for (i, arg) in prototype.parameters.iter().enumerate() {
             if match &arg.name {
                 Some(name) => name.starts_with("__hidden"),
                 None => false
@@ -83,7 +82,7 @@ pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
                     memory,
                     type_: arg.type_.clone()
                 },
-                ValueType::Unit
+                CXValType::Unit
             )?;
 
             if let Some(name) = &arg.name {

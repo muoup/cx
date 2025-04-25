@@ -1,5 +1,5 @@
 use crate::lex::token::OperatorType;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 use crate::parse::pass_bytecode::ProgramBytecode;
 use crate::parse::pass_molded::{CXBinOp, FunctionMap, TypeMap};
 use crate::util::ScopedMap;
@@ -21,19 +21,19 @@ impl ValueID {
 
 #[derive(Debug, Clone)]
 pub struct VirtualValue {
-    pub type_: ValueType
+    pub type_: CXValType
 }
 
 #[derive(Debug)]
 pub struct BytecodeParameter {
     pub name: Option<String>,
-    pub type_: ValueType
+    pub type_: CXValType
 }
 
 #[derive(Debug)]
 pub struct BytecodeFunctionPrototype {
     pub name: String,
-    pub return_type: ValueType,
+    pub return_type: CXValType,
     pub args: Vec<BytecodeParameter>
 }
 
@@ -128,7 +128,7 @@ impl BytecodeBuilder {
     pub(crate) fn add_instruction(
         &mut self,
         instruction: VirtualInstruction,
-        value_type: ValueType
+        value_type: CXValType
     ) -> Option<ValueID> {
         let context = self.fun_mut();
         let current_block = context.current_block;
@@ -157,7 +157,7 @@ impl BytecodeBuilder {
             .map(|v| &v.value)
     }
 
-    pub(crate) fn get_type(&self, value_id: ValueID) -> Option<&ValueType> {
+    pub(crate) fn get_type(&self, value_id: ValueID) -> Option<&CXValType> {
         self.get_variable(value_id)
             .map(|v| &v.type_)
     }
@@ -234,7 +234,7 @@ pub enum VirtualInstruction {
     Store {
         memory: ValueID,
         value: ValueID,
-        type_: ValueType
+        type_: CXValType
     },
 
     Assign {
@@ -248,6 +248,10 @@ pub enum VirtualInstruction {
 
     SExtend {
         value: ValueID,
+    },
+
+    Trunc {
+        value: ValueID
     },
 
     IntegerBinOp {

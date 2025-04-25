@@ -1,12 +1,12 @@
 use crate::lex::token::OperatorType;
 use crate::log_error;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp, CXInitIndex, CXAST};
 use crate::parse::pass_molded::operators::{binop_precedence, mold_binop, mold_unop, uv_cx_binop, uv_cx_unop};
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr};
 
-pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(ValueType, &UVExpr)> {
+pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(CXValType, &UVExpr)> {
     match expr {
         UVExpr::Compound { left, right } => {
             Some((
@@ -26,7 +26,7 @@ pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(ValueType, &UVExpr)
                     let rhs = &expression_stack[2];
 
                     Some((
-                        ValueType::PointerTo(Box::new(mold_type(lhs)?)),
+                        CXValType::PointerTo(Box::new(mold_type(lhs)?)),
                         rhs
                     ))
                 },
@@ -149,10 +149,10 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
     }
 }
 
-pub(crate) fn mold_type(expr: &UVExpr) -> Option<ValueType> {
+pub(crate) fn mold_type(expr: &UVExpr) -> Option<CXValType> {
     match expr {
         UVExpr::Identifier(ident) => {
-            Some(ValueType::Identifier(ident.clone()))
+            Some(CXValType::Identifier(ident.clone()))
         },
 
         _ => log_error!("Unknown type: {}", expr)
@@ -281,12 +281,23 @@ pub(crate) fn mold_compound_expr(left: &UVExpr, right: &UVExpr) -> Option<CXExpr
                     .map(|uv_expr| mold_pseudo_expr(uv_expr))
                     .collect::<Option<Vec<_>>>()?;
 
-            Some(
-                CXExpr::FunctionCall {
-                    callee: Box::new(mold_expression(left)?),
-                    args
-                }
-            )
+            match left {
+                UVExpr::Identifier(ident) =>
+                    Some(
+                        CXExpr::DirectFunctionCall {
+                            name: ident.clone(),
+                            args
+                        }
+                    ),
+
+                _ =>
+                    Some(
+                        CXExpr::IndirectFunctionCall {
+                            callee: Box::new(mold_expression(left)?),
+                            args
+                        }
+                    )
+            }
         },
 
         (_, _) => todo!("mold_compound_expr(`{}`, `{}`)", left, right)

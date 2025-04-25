@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use crate::{fwrite, fwriteln};
 use crate::parse::format::{dedent, indent};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXGlobalStmt, CXInitIndex, CXParameter, CXAST};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXAST};
 
 impl Display for CXAST<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -19,15 +19,28 @@ impl Display for CXGlobalStmt {
             CXGlobalStmt::GlobalVariable { name, type_, .. } => {
                 writeln!(f, "{}: {:?}", name, type_)
             },
-            CXGlobalStmt::FunctionDefinition { name, return_type, parameters, body } => {
-                writeln!(f, "fn {}({}) -> {:?} {{", name, parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "), return_type)?;
+            CXGlobalStmt::FunctionDefinition { prototype, body } => {
+                writeln!(f, "{} {{", prototype)?;
                 indent();
                 write!(f, "\t{}", body)?;
                 dedent();
                 writeln!(f, "")?;
                 writeln!(f, "}}")
             },
+            CXGlobalStmt::FunctionForward { prototype } => {
+                writeln!(f, "{};", prototype)
+            },
         }
+    }
+}
+
+impl Display for CXFunctionPrototype {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "fn {}({}) -> {:?}",
+                 self.name,
+                 self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
+                 self.return_type
+        )
     }
 }
 
@@ -43,7 +56,7 @@ impl Display for CXExpr {
                 Ok(())
             },
 
-            CXExpr::FunctionCall { callee, args, .. } => {
+            CXExpr::IndirectFunctionCall { callee, args, .. } => {
                 let arg_strs = args.iter()
                     .map(|arg| format!("{}", arg))
                     .collect::<Vec<_>>()
@@ -88,7 +101,7 @@ impl Display for CXExpr {
                 }
             },
 
-            CXExpr::ImplicitCast { expr, to_type } => {
+            CXExpr::ImplicitCast { expr, to_type, .. } => {
                 fwrite!(f, "{}<{}>", expr, to_type)
             },
 

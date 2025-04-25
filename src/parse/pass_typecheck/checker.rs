@@ -1,24 +1,24 @@
 use crate::log_error;
-use crate::parse::value_type::ValueType;
+use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::CXExpr;
 use crate::parse::pass_typecheck::type_utils::type_matches;
 use crate::parse::pass_typecheck::TypeEnvironment;
 
-pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<ValueType> {
+pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXValType> {
     match expr {
         CXExpr::Block { exprs } => {
             for expr in exprs {
                 type_check_traverse(env, expr)?;
             }
 
-            Some(ValueType::Unit)
+            Some(CXValType::Unit)
         },
 
         CXExpr::Assignment { lhs, rhs, .. } => {
             let lhs_type = type_check_traverse(env, lhs)?;
             let rhs_type = type_check_traverse(env, rhs)?;
 
-            implicit_cast(rhs.as_mut(), &rhs_type, lhs_type.clone())?;
+            implicit_cast(rhs.as_mut(), rhs_type.clone(), lhs_type.clone())?;
 
             Some(lhs_type)
         },
@@ -26,8 +26,8 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
             let lhs_type = type_check_traverse(env, lhs)?;
             let rhs_type = type_check_traverse(env, rhs)?;
 
-            implicit_cast(lhs, &lhs_type, lhs_type.clone())?;
-            implicit_cast(rhs, &rhs_type, lhs_type.clone())?;
+            implicit_cast(lhs, lhs_type.clone(), lhs_type.clone())?;
+            implicit_cast(rhs, rhs_type.clone(), lhs_type.clone())?;
 
             Some(lhs_type)
         },
@@ -35,14 +35,14 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         CXExpr::VarDeclaration { name, type_, initializer } => {
             if let Some(initializer) = initializer {
                 let initializer_type = type_check_traverse(env, initializer)?;
-                implicit_cast(initializer, &initializer_type, type_.clone())?;
+                implicit_cast(initializer, initializer_type, type_.clone())?;
 
                 env.symbol_table.insert(name.clone(), type_.clone());
 
                 return Some(type_.clone());
             }
 
-            Some(ValueType::Unit)
+            Some(CXValType::Unit)
         },
 
         CXExpr::VarReference(name) => {
@@ -50,32 +50,32 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         },
 
         CXExpr::IntLiteral { bytes, .. } => {
-            Some(ValueType::Integer { bytes: *bytes, signed: true })
+            Some(CXValType::Integer { bytes: *bytes, signed: true })
         },
         CXExpr::FloatLiteral { bytes, .. } => {
-            Some(ValueType::Float { bytes: *bytes })
+            Some(CXValType::Float { bytes: *bytes })
         },
         CXExpr::StringLiteral { .. } => {
-            Some(ValueType::PointerTo(Box::new(ValueType::Identifier("char".to_string()))))
+            Some(CXValType::PointerTo(Box::new(CXValType::Identifier("char".to_string()))))
         },
 
         CXExpr::Return { value } => {
             if let Some(value) = value {
                 let value_type = type_check_traverse(env, value)?;
-                implicit_cast(value, &value_type, env.return_type.clone())?;
-            } else if !type_matches(env, &env.return_type, &ValueType::Unit)? {
+                implicit_cast(value, value_type, env.return_type.clone())?;
+            } else if !type_matches(env, &env.return_type, &CXValType::Unit)? {
                 log_error!("TYPE ERROR: Function with empty return in non-void context");
             }
 
-            Some(ValueType::Unit)
+            Some(CXValType::Unit)
         },
 
-        _ => Some(ValueType::Unit)
+        _ => Some(CXValType::Unit)
     }
 }
 
-pub(crate) fn implicit_cast(expr: &mut CXExpr, from_type: &ValueType, to_type: ValueType) -> Option<()> {
-    if !matches!(expr, CXExpr::VarReference(_)) && from_type == &to_type {
+pub(crate) fn implicit_cast(expr: &mut CXExpr, from_type: CXValType, to_type: CXValType) -> Option<()> {
+    if !matches!(expr, CXExpr::VarReference(_)) && from_type == to_type {
         return Some(());
     }
 
@@ -84,6 +84,7 @@ pub(crate) fn implicit_cast(expr: &mut CXExpr, from_type: &ValueType, to_type: V
         let old_expr = std::ptr::read(expr);
         let implicit_cast = CXExpr::ImplicitCast {
             expr: Box::new(old_expr),
+            from_type,
             to_type,
         };
 

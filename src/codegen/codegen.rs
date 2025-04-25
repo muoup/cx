@@ -1,25 +1,27 @@
-use cranelift::codegen::gimli::ValueType;
-use cranelift::codegen::ir;
 use crate::codegen::instruction::codegen_instruction;
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
+use crate::parse::pass_bytecode::builder::{BytecodeFunction, BytecodeFunctionPrototype, BytecodeParameter, ValueID, VirtualInstruction};
+use crate::parse::value_type::CXValType;
+use cranelift::codegen::ir;
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{EntityRef, FunctionBuilder, FunctionBuilderContext, InstBuilder, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
-use crate::parse::pass_bytecode::builder::{ValueID, VirtualInstruction};
+use crate::parse::pass_bytecode::typing::get_intrinsic_type;
+use crate::parse::pass_molded::{CXFunctionPrototype, CXParameter};
 
-pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &FunctionPrototype) -> Option<()> {
+pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &CXFunctionPrototype) -> Option<()> {
     let mut sig = Signature::new(
         global_state.object_module.target_config().default_call_conv
     );
 
-    for VarInitialization { type_, .. } in prototype.args.iter() {
+    for CXParameter { type_, .. } in prototype.parameters.iter() {
         sig.params.push(get_cranelift_abi_type(global_state.type_map, type_));
     }
 
-    match &prototype.return_type {
-        ValueType::Unit => {},
-        ValueType::Structured { .. } => {
+    match get_intrinsic_type(&global_state.type_map, &prototype.return_type)? {
+        CXValType::Unit => {},
+        CXValType::Structured { .. } => {
             let _type = global_state.object_module.target_config().pointer_type();
             sig.returns.push(ir::AbiParam::new(_type));
         }
@@ -36,7 +38,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &F
     Some(())
 }
 
-pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &VerifiedFunction) -> Option<()> {
+pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &BytecodeFunction) -> Option<()> {
     let mut func = Function::with_name_signature(
         UserFuncName::user(0, func_id.as_u32()),
         func_sig

@@ -1,12 +1,14 @@
 use std::env;
+use crate::codegen::ast_codegen;
 use crate::parse::{pass_bytecode, pass_molded, pass_typecheck, pass_unverified, FileInformation};
 use crate::parse::parser::{ParserData, TokenIter, VisibilityMode};
 use crate::util::dump_data;
 
-mod lex;
-mod parse;
-mod preprocessor;
-mod util;
+pub mod lex;
+pub mod parse;
+pub mod preprocessor;
+pub mod util;
+pub mod codegen;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -47,6 +49,8 @@ fn main() {
 
     let program_bytecode = pass_bytecode::gen_bytecode(molded).unwrap();
     dump_data(&program_bytecode);
+
+    ast_codegen(&program_bytecode, "a.o").unwrap();
 
     // pipeline::CompilerPipeline::new(file_name.clone(), "a.exe".to_string())
     //     .preprocess()

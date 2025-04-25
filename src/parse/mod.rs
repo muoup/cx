@@ -5,9 +5,11 @@ pub mod pass_unverified;
 pub mod pass_molded;
 pub mod pass_typecheck;
 
+
+pub mod value_type;
+
 mod macros;
 mod format;
-mod value_type;
 mod interface_serializer;
 
 pub struct FileInformation {
