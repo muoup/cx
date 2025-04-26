@@ -10,7 +10,7 @@ pub(crate) enum PseudoUVExpr<'a> {
         left: Box<PseudoUVExpr<'a>>,
         right: Box<PseudoUVExpr<'a>>,
         op: UVBinOp
-    }
+    },
 }
 
 pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVBinOp) -> Option<Vec<PseudoUVExpr>> {

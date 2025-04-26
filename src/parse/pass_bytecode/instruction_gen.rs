@@ -2,7 +2,7 @@ use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting};
 use crate::parse::pass_molded::CXExpr;
-use crate::parse::value_type::CXValType;
+use crate::parse::value_type::{is_structure, CXValType};
 
 pub(crate) fn generate_instruction(
     builder: &mut BytecodeBuilder,
@@ -52,17 +52,17 @@ pub(crate) fn generate_instruction(
             Some(memory)
         },
         CXExpr::BinOp { lhs, rhs, op } => {
-            let lhs = generate_instruction(builder, lhs.as_ref())?;
-            let rhs = generate_instruction(builder, rhs.as_ref())?;
-            let lhs_type = builder.get_type(lhs)?.clone();
+            let left_id = generate_instruction(builder, lhs.as_ref())?;
+            let right_id = generate_instruction(builder, rhs.as_ref())?;
+            let lhs_type = builder.get_type(left_id)?.clone();
 
             match get_intrinsic_type(&builder.type_map, &lhs_type)? {
                 CXValType::Integer { .. } |
                 CXValType::PointerTo { .. } => {
                     builder.add_instruction(
                         VirtualInstruction::IntegerBinOp {
-                            left: lhs,
-                            right: rhs,
+                            left: left_id,
+                            right: right_id,
                             op: op.clone()
                         },
                         lhs_type
@@ -71,20 +71,25 @@ pub(crate) fn generate_instruction(
                 CXValType::Float { .. } => {
                     builder.add_instruction(
                         VirtualInstruction::FloatBinOp {
-                            left: lhs,
-                            right: rhs,
+                            left: left_id,
+                            right: right_id,
                             op: op.clone(),
                         },
                         lhs_type
                     )
                 },
 
-                _ => panic!("Invalid arguments for binop not caught by type checker: {lhs:?} {rhs:?} {op:?}")
+                _type =>
+                    panic!("Invalid arguments with type for binop not caught by type checker: {_type} \'{lhs}\' \'{rhs}\' {op:?} ")
             }
         },
-        CXExpr::Block { exprs } => {
+        CXExpr::Block { exprs, value } => {
             for expr in exprs {
                 generate_instruction(builder, expr)?;
+            }
+
+            if let Some(value) = value {
+                return generate_instruction(builder, value.as_ref());
             }
 
             Some(ValueID::NULL)
@@ -92,13 +97,20 @@ pub(crate) fn generate_instruction(
         CXExpr::ImplicitCast { expr, from_type, to_type} => {
             let mut inner = generate_instruction(builder, expr.as_ref())?;
 
-            if matches!(expr.as_ref(), CXExpr::VarReference(_)) {
-                inner = builder.add_instruction(
-                    VirtualInstruction::Load {
-                        value: inner.clone(),
-                    },
-                    to_type.clone()
-                )?;
+            match expr.as_ref() {
+                CXExpr::VarReference(_) |
+                CXExpr::StructAccess { .. }
+                    if !is_structure(&builder.type_map, to_type) => {
+
+                    inner = builder.add_instruction(
+                        VirtualInstruction::Load {
+                            value: inner.clone(),
+                        },
+                        to_type.clone()
+                    )?;
+                },
+
+                _ => ()
             }
 
             implicit_casting(builder, inner, &from_type, &to_type)
@@ -158,6 +170,19 @@ pub(crate) fn generate_instruction(
                     str_id: string_id,
                 },
                 CXValType::PointerTo(Box::new(CXValType::Identifier("char".to_string())))
+            )
+        },
+
+        CXExpr::StructAccess { expr, field_type, field_offset, field_index, .. } => {
+            let struct_ref = generate_instruction(builder, expr.as_ref())?;
+
+            builder.add_instruction(
+                VirtualInstruction::StructAccess {
+                    struct_: struct_ref,
+                    field_offset: *field_offset,
+                    field_index: *field_index,
+                },
+                field_type.clone()
             )
         },
 

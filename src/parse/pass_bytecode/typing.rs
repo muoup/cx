@@ -106,6 +106,10 @@ pub(crate) fn implicit_casting(
 ) -> Option<ValueID> {
     match (get_intrinsic_type(&builder.type_map, from_type).cloned()?,
            get_intrinsic_type(&builder.type_map, to_type).cloned()?) {
+        (x, y) if x == y => {
+            Some(value)
+        }
+
         (CXValType::Integer { bytes: lb, .. }, CXValType::Integer { bytes: rb, .. })
             if lb > rb => {
 

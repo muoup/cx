@@ -1,3 +1,4 @@
+use std::clone;
 use crate::lex::token::OperatorType;
 use crate::log_error;
 use crate::parse::value_type::CXValType;
@@ -58,7 +59,7 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
                 .map(|expr| mold_expression(expr))
                 .collect::<Option<Vec<_>>>()?;
 
-            Some(CXExpr::Block { exprs })
+            Some(CXExpr::Block { exprs, value: None })
         }
 
         UVExpr::Return { value } => {
@@ -145,7 +146,7 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
             }
         ),
 
-        _ => Some(CXExpr::Identifier(format!("TODO: {:#?}", expr)))
+        _ => Some(CXExpr::VarReference(format!("TODO: {:#?}", expr)))
     }
 }
 
@@ -164,20 +165,24 @@ pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> 
         cx_expr_stack: &mut Vec<PseudoUVExpr<'a>>,
         bin_op_stack: &mut Vec<&'a UVBinOp>
     ) -> Option<PseudoUVExpr<'a>> {
-        let mut collapsee = cx_expr_stack.pop().unwrap();
+        let mut old_expr_stack = std::mem::replace(cx_expr_stack, vec![]);
+        let mut old_op_stack = std::mem::replace(bin_op_stack, vec![]);
 
-        while !cx_expr_stack.is_empty() {
-            let op = bin_op_stack.pop().unwrap();
-            let collapser = cx_expr_stack.pop().unwrap();
+        // At some point this can be redone to replace the first element with a None
+        // and just iter skip the first element, but for now we just pop it
+        let l_expr = old_expr_stack.remove(0);
+        let end = old_expr_stack
+            .into_iter()
+            .zip(old_op_stack.into_iter())
+            .fold(l_expr, |acc, (expr, op)| {
+                PseudoUVExpr::BinOp {
+                    left: Box::new(acc),
+                    right: Box::new(expr),
+                    op: op.clone()
+                }
+            });
 
-            collapsee = PseudoUVExpr::BinOp {
-                left: Box::new(collapser),
-                right: Box::new(collapsee),
-                op: op.clone()
-            };
-        }
-
-        Some(collapsee)
+        Some(end)
     }
 
     let mut cx_expr_stack = vec![PseudoUVExpr::ID(&exprs[0])];

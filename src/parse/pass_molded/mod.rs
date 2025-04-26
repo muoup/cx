@@ -100,7 +100,8 @@ pub enum CXInitIndex {
 
 #[derive(Debug)]
 pub enum CXExpr {
-    Identifier(String),
+    Taken,
+
     VarReference(String),
 
     IntLiteral {
@@ -153,8 +154,10 @@ pub enum CXExpr {
 
     StructAccess {
         expr: Box<CXExpr>,
-        offset: usize,
         field: String,
+        field_type: CXValType,
+
+        field_offset: usize,
         field_index: usize,
     },
 
@@ -169,7 +172,8 @@ pub enum CXExpr {
     },
 
     Block {
-        exprs: Vec<CXExpr>
+        exprs: Vec<CXExpr>,
+        value: Option<Box<CXExpr>>
     },
 
     Return {

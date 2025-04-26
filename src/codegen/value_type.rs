@@ -1,5 +1,5 @@
 use cranelift::codegen::ir;
-use crate::parse::{parser, value_type};
+use crate::parse::pass_bytecode::typing::get_intrinsic_type;
 use crate::parse::pass_molded::TypeMap;
 use crate::parse::value_type::CXValType;
 

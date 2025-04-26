@@ -20,12 +20,9 @@ impl Display for CXGlobalStmt {
                 writeln!(f, "{}: {:?}", name, type_)
             },
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
-                writeln!(f, "{} {{", prototype)?;
-                indent();
-                write!(f, "\t{}", body)?;
-                dedent();
-                writeln!(f, "")?;
-                writeln!(f, "}}")
+                write!(f, "{}", prototype)?;
+                write!(f, "{}", body)?;
+                Ok(())
             },
             CXGlobalStmt::FunctionForward { prototype } => {
                 writeln!(f, "{};", prototype)
@@ -37,9 +34,9 @@ impl Display for CXGlobalStmt {
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "fn {}({}) -> {:?}",
-                 self.name,
-                 self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
-                 self.return_type
+             self.name,
+             self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
+             self.return_type
         )
     }
 }
@@ -47,12 +44,17 @@ impl Display for CXFunctionPrototype {
 impl Display for CXExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXExpr::Block { exprs } => {
+            CXExpr::Block { exprs, .. } => {
+                indent();
+                fwriteln!(f, "{{")?;
                 for stmt in exprs.iter().take(exprs.len() - 1) {
                     fwriteln!(f, "{};", stmt)?;
                 }
-                let last_stmt = exprs.last().unwrap();
-                fwrite!(f, "{};", last_stmt);
+                dedent();
+                if let Some(last_stmt) = exprs.last() {
+                    fwriteln!(f, "{}", last_stmt)?;
+                }
+                fwrite!(f, "}}")?;
                 Ok(())
             },
 
@@ -64,8 +66,15 @@ impl Display for CXExpr {
 
                 fwrite!(f, "{}({})", callee.as_ref(), arg_strs)
             },
+            CXExpr::DirectFunctionCall { name, args } => {
+                let arg_strs = args.iter()
+                    .map(|arg| format!("{}", arg))
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            CXExpr::Identifier(ident) => fwrite!(f, "{}", ident),
+                fwrite!(f, "{}({})", name, arg_strs)
+            },
+
             CXExpr::VarReference(ident) => fwrite!(f, "{}", ident),
             CXExpr::VarDeclaration { name, type_, initializer } => {
                 fwrite!(f, "let {}: {}", name, type_)?;
@@ -118,7 +127,11 @@ impl Display for CXExpr {
                     fwriteln!(f, "")?;
                 }
                 fwrite!(f, "}}")
-            }
+            },
+
+            CXExpr::StructAccess { expr, field, field_index, field_offset, .. } => {
+                fwrite!(f, "({}.{}{{{}, {}}})", expr, field, field_index, field_offset)
+            },
 
             _ => fwrite!(f, "{:?}", self)
         }

@@ -55,13 +55,6 @@ pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         );
 
         for (i, arg) in prototype.parameters.iter().enumerate() {
-            if match &arg.name {
-                Some(name) => name.starts_with("__hidden"),
-                None => false
-            } {
-                continue;
-            }
-
             let memory = builder.add_instruction(
                 VirtualInstruction::Allocate {
                     size: get_type_size(&builder.type_map, &arg.type_)?

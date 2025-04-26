@@ -1,3 +1,4 @@
+use std::process::id;
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
@@ -5,13 +6,13 @@ use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotK
 use cranelift_module::Module;
 use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
-use crate::codegen::value_type::get_cranelift_type;
+use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::log_error;
 use crate::parse::parser;
-use crate::parse::pass_bytecode::builder::{BlockInstruction, VirtualInstruction};
-use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size};
-use crate::parse::pass_molded::CXBinOp;
-use crate::parse::value_type::CXValType;
+use crate::parse::pass_bytecode::builder::{BlockInstruction, ValueID, VirtualInstruction};
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, TypeMap};
+use crate::parse::value_type::{is_structure, CXValType};
 
 /**
  *  May or may not return a valid, panics if error occurs
@@ -62,39 +63,39 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 log_error!("Function not found in function ids: {:?}", function);
             };
 
-            let return_type = prototype.return_type.clone();
             let func_ref = context.object_module.declare_func_in_func(func_id, &mut context.builder.func);
-
-            let mut args = args.iter()
-                .map(|arg| {
-                    context.variable_table.get(arg).cloned().unwrap()
-                })
-                .collect::<Vec<Value>>();
-
-            if matches!(return_type, CXValType::Structured { .. }) {
-                let type_size = get_type_size(context.type_map, &return_type).unwrap() as u64;
-                let temp_storage = allocate_variable(context, type_size as u32, None).unwrap();
-
-                args.insert(0, temp_storage);
-            }
+            let mut args = generate_params(context, prototype, args)?;
 
             let inst = context.builder.ins().call(func_ref, args.as_slice());
-
             context.builder.inst_results(inst)
                 .first()
                 .cloned()
-                .or_else(|| None)
         }
 
         VirtualInstruction::Return { value } => {
             match value {
                 Some(value) => {
-                    let val = context.variable_table.get(&value).cloned().unwrap();
+                    let return_value = context.variable_table.get(value).cloned().unwrap();
 
-                    context.builder.ins().return_(&[val])
+                    if is_structure(context.type_map, &context.function_prototype.return_type) {
+                        let size = get_type_size(context.type_map, &context.function_prototype.return_type).unwrap() as u64;
+                        let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
+                        let callee_buffer = Value::from_u32(0);
+
+                        context.builder.call_memcpy(
+                            context.target_frontend_config.clone(),
+                            callee_buffer,
+                            return_value,
+                            size_literal
+                        );
+
+                        context.builder.ins().return_(&[callee_buffer]);
+                    } else {
+                        context.builder.ins().return_(&[return_value]);
+                    }
                 },
                 None => {
-                    context.builder.ins().return_(&[])
+                    context.builder.ins().return_(&[]);
                 },
             };
 
@@ -190,7 +191,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             let type_ = get_intrinsic_type(context.type_map, type_)?;
 
-            if matches!(type_, CXValType::Structured { .. }) {
+            if is_structure(context.type_map, type_) {
                 let size = get_type_size(context.type_map, type_).unwrap() as u64;
                 let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
 
@@ -260,4 +261,30 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }
+}
+
+fn generate_params(
+    context: &mut FunctionState,
+    prototype: &CXFunctionPrototype,
+    params: &[ValueID]
+) -> Option<Vec<Value>> {
+    let mut args = Vec::new();
+
+    if is_structure(context.type_map, &prototype.return_type) {
+        let temp_buffer = allocate_variable(
+            context,
+            get_type_size(context.type_map, &prototype.return_type)? as u32,
+            None
+        )?;
+
+        args.push(temp_buffer);
+    }
+
+    for param in params.iter() {
+        args.push(
+            context.variable_table.get(param).cloned().unwrap()
+        );
+    }
+
+    Some(args)
 }

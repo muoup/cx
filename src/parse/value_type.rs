@@ -1,4 +1,6 @@
 use std::fmt::{Display, Formatter};
+use crate::parse::pass_bytecode::typing::get_intrinsic_type;
+use crate::parse::pass_molded::TypeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CXValType {
@@ -54,4 +56,8 @@ impl Display for CXValType {
             }
         }
     }
+}
+
+pub fn is_structure(type_map: &TypeMap, val_type: &CXValType) -> bool {
+    matches!(get_intrinsic_type(type_map, val_type), Some(CXValType::Structured { .. }))
 }

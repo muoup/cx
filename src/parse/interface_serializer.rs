@@ -13,8 +13,11 @@ pub fn emit_types<'a>(
         .to_string()
         + ".cx_type";
 
+    std::fs::create_dir_all(".internal/".to_string() + file_path)
+        .expect("Failed to create directory");
     let file_path = ".internal/".to_string() + file_path + "/" + with_changed_extension.as_str();
-    let mut file = std::fs::File::create(file_path).expect("Failed to create file");
+    let mut file = std::fs::File::create(file_path)
+        .expect("Failed to create file");
 
     for (type_name, type_) in types {
         emit_type(&mut file, type_name, type_)?;
