@@ -1,22 +1,20 @@
-use std::process::id;
 use crate::codegen::FunctionState;
 use crate::lex::token::OperatorType;
-use crate::parse::ast::ValueType;
-use crate::parse::verify::verify_type::get_type_size;
-use cranelift::codegen::gimli::ReaderOffset;
+use crate::parse::pass_bytecode::typing::get_type_size;
+use cranelift::codegen::gimli::{ReaderOffset, ValueType};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::ir::GlobalValue;
 use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, DataId, Module};
-use cranelift_object::object::SymbolScope::Linkage;
 use cranelift_object::ObjectModule;
+use crate::parse::parser;
+use crate::parse::value_type::CXValType;
 
-pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Option<Value> {
+pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &CXValType) -> Option<Value> {
     match type_ {
-        ValueType::Structured { fields } => {
+        CXValType::Structured { fields } => {
             let field_values = fields.iter()
-                .map(|init| stack_alloca(context, &init.type_))
+                .map(|(_, type_)| stack_alloca(context, type_))
                 .collect::<Vec<_>>();
 
             Some(field_values[0]?.to_owned())
@@ -30,7 +28,7 @@ pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &ValueType) -> Op
     }
 }
 
-pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<ir::Value>) -> Option<Value> {
+pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(
         StackSlotKind::ExplicitSlot,
         StackSize::from_u32(bytes),
@@ -49,10 +47,10 @@ pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial
 pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs: Value, rhs: Value) -> Option<Value> {
     Some(
         match op {
-            OperatorType::Add => builder.ins().iadd(lhs, rhs),
-            OperatorType::Subtract => builder.ins().isub(lhs, rhs),
-            OperatorType::Multiply => builder.ins().imul(lhs, rhs),
-            OperatorType::Divide => builder.ins().sdiv(lhs, rhs),
+            OperatorType::Plus => builder.ins().iadd(lhs, rhs),
+            OperatorType::Minus => builder.ins().isub(lhs, rhs),
+            OperatorType::Asterisk => builder.ins().imul(lhs, rhs),
+            OperatorType::Slash => builder.ins().sdiv(lhs, rhs),
             OperatorType::Modulo => builder.ins().srem(lhs, rhs),
             OperatorType::Equal => builder.ins().icmp(ir::condcodes::IntCC::Equal, lhs, rhs),
             OperatorType::NotEqual => builder.ins().icmp(ir::condcodes::IntCC::NotEqual, lhs, rhs),

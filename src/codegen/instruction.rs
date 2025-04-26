@@ -1,17 +1,18 @@
+use std::process::id;
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::isa::TargetFrontendConfig;
 use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
-use cranelift_module::{DataId, Module};
+use cranelift_module::Module;
 use crate::codegen::FunctionState;
 use crate::codegen::routines::allocate_variable;
-use crate::codegen::value_type::get_cranelift_type;
-use crate::lex::token::OperatorType;
+use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::log_error;
-use crate::parse::ast::ValueType;
-use crate::parse::verify::bytecode::{BlockInstruction, VirtualInstruction};
-use crate::parse::verify::verify_type::{get_intrinsic_type, get_type_size};
+use crate::parse::parser;
+use crate::parse::pass_bytecode::builder::{BlockInstruction, ValueID, VirtualInstruction};
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, TypeMap};
+use crate::parse::value_type::{is_structure, CXValType};
 
 /**
  *  May or may not return a valid, panics if error occurs
@@ -55,41 +56,46 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::DirectCall {
             function, args
         } => {
-            let return_type = context.fn_map.get(function).unwrap().return_type.clone();
+            let Some(prototype) = context.fn_map.get(function) else {
+                log_error!("Function not found: {:?}", function);
+            };
+            let Some(func_id) = context.function_ids.get(function).cloned() else {
+                log_error!("Function not found in function ids: {:?}", function);
+            };
 
-            let func_id = context.function_ids.get(function).cloned().unwrap();
             let func_ref = context.object_module.declare_func_in_func(func_id, &mut context.builder.func);
-
-            let mut args = args.iter()
-                .map(|arg| {
-                    context.variable_table.get(arg).cloned().unwrap()
-                })
-                .collect::<Vec<Value>>();
-
-            if matches!(return_type, ValueType::Structured { .. }) {
-                let type_size = get_type_size(context.type_map, &return_type).unwrap() as u64;
-                let temp_storage = allocate_variable(context, type_size as u32, None).unwrap();
-
-                args.insert(0, temp_storage);
-            }
+            let mut args = generate_params(context, prototype, args)?;
 
             let inst = context.builder.ins().call(func_ref, args.as_slice());
-
             context.builder.inst_results(inst)
                 .first()
                 .cloned()
-                .or_else(|| None)
         }
 
         VirtualInstruction::Return { value } => {
             match value {
                 Some(value) => {
-                    let val = context.variable_table.get(&value).cloned().unwrap();
+                    let return_value = context.variable_table.get(value).cloned().unwrap();
 
-                    context.builder.ins().return_(&[val])
+                    if is_structure(context.type_map, &context.function_prototype.return_type) {
+                        let size = get_type_size(context.type_map, &context.function_prototype.return_type).unwrap() as u64;
+                        let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
+                        let callee_buffer = Value::from_u32(0);
+
+                        context.builder.call_memcpy(
+                            context.target_frontend_config.clone(),
+                            callee_buffer,
+                            return_value,
+                            size_literal
+                        );
+
+                        context.builder.ins().return_(&[callee_buffer]);
+                    } else {
+                        context.builder.ins().return_(&[return_value]);
+                    }
                 },
                 None => {
-                    context.builder.ins().return_(&[])
+                    context.builder.ins().return_(&[]);
                 },
             };
 
@@ -125,17 +131,17 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let right = context.variable_table.get(right).cloned().unwrap();
 
             let inst = match op {
-                OperatorType::Add => context.builder.ins().iadd(left, right),
-                OperatorType::Subtract => context.builder.ins().isub(left, right),
-                OperatorType::Multiply => context.builder.ins().imul(left, right),
-                OperatorType::Divide => context.builder.ins().udiv(left, right),
+                CXBinOp::Add                => context.builder.ins().iadd(left, right),
+                CXBinOp::Subtract           => context.builder.ins().isub(left, right),
+                CXBinOp::Multiply           => context.builder.ins().imul(left, right),
+                CXBinOp::Divide             => context.builder.ins().udiv(left, right),
 
-                OperatorType::Less => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
-                OperatorType::Greater => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
-                OperatorType::LessEqual => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
-                OperatorType::GreaterEqual => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
-                OperatorType::Equal => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
-                OperatorType::NotEqual => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
+                CXBinOp::Less          => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
+                CXBinOp::Greater       => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
+                CXBinOp::LessEqual     => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
+                CXBinOp::GreaterEqual  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
+                CXBinOp::Equal         => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
+                CXBinOp::NotEqual      => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
 
                 _ => unimplemented!("Operator not implemented: {:?}", op)
             };
@@ -185,7 +191,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             let type_ = get_intrinsic_type(context.type_map, type_)?;
 
-            if matches!(type_, &ValueType::Structured { .. }) {
+            if is_structure(context.type_map, type_) {
                 let size = get_type_size(context.type_map, type_).unwrap() as u64;
                 let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
 
@@ -216,8 +222,69 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
+        VirtualInstruction::SExtend {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            let _type = &instruction.value.type_;
+            let cranelift_type = get_cranelift_type(_type, context.type_map);
+
+            Some(
+                context.builder.ins().sextend(cranelift_type, val)
+            )
+        }
+
+        VirtualInstruction::Trunc {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            let _type = &instruction.value.type_;
+            let cranelift_type = get_cranelift_type(_type, context.type_map);
+
+            Some(
+                context.builder.ins().ireduce(cranelift_type, val)
+            )
+        }
+
         VirtualInstruction::NOP => Some(Value::from_u32(0)),
+
+        VirtualInstruction::Immediate {
+            value
+        } => {
+            let _type = &instruction.value.type_;
+            let cranelift_type = get_cranelift_type(_type, context.type_map);
+
+            Some(
+                context.builder.ins().iconst(cranelift_type, *value as i64)
+            )
+        }
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }
+}
+
+fn generate_params(
+    context: &mut FunctionState,
+    prototype: &CXFunctionPrototype,
+    params: &[ValueID]
+) -> Option<Vec<Value>> {
+    let mut args = Vec::new();
+
+    if is_structure(context.type_map, &prototype.return_type) {
+        let temp_buffer = allocate_variable(
+            context,
+            get_type_size(context.type_map, &prototype.return_type)? as u32,
+            None
+        )?;
+
+        args.push(temp_buffer);
+    }
+
+    for param in params.iter() {
+        args.push(
+            context.variable_table.get(param).cloned().unwrap()
+        );
+    }
+
+    Some(args)
 }

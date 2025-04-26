@@ -1,30 +1,29 @@
-use cranelift::codegen::ir;
-use crate::codegen::instruction::codegen_instruction;
+use crate::codegen::instruction::{codegen_instruction};
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
-use crate::parse::ast::{ValueType, VarInitialization};
-use crate::parse::verify::bytecode::{ValueID, VerifiedFunction, VirtualInstruction};
-use crate::parse::verify::context::FunctionPrototype;
+use crate::parse::pass_bytecode::builder::{BytecodeFunction, ValueID, VirtualInstruction};
+use crate::parse::value_type::{is_structure, CXValType};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{EntityRef, FunctionBuilder, FunctionBuilderContext, InstBuilder, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
+use crate::parse::pass_bytecode::typing::get_intrinsic_type;
+use crate::parse::pass_molded::{CXFunctionPrototype, CXParameter};
 
-pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &FunctionPrototype) -> Option<()> {
+pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &CXFunctionPrototype) -> Option<()> {
     let mut sig = Signature::new(
         global_state.object_module.target_config().default_call_conv
     );
 
-    for VarInitialization { type_, .. } in prototype.args.iter() {
+    for CXParameter { type_, .. } in prototype.parameters.iter() {
         sig.params.push(get_cranelift_abi_type(global_state.type_map, type_));
     }
 
-    match &prototype.return_type {
-        ValueType::Unit => {},
-        ValueType::Structured { .. } => {
-            let _type = global_state.object_module.target_config().pointer_type();
-            sig.returns.push(ir::AbiParam::new(_type));
+    if !matches!(get_intrinsic_type(&global_state.type_map, &prototype.return_type)?, CXValType::Unit) {
+        sig.returns.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
+
+        if is_structure(global_state.type_map, &prototype.return_type) {
+            sig.params.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
         }
-        _ => sig.returns.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type))
     }
 
     let id = global_state.object_module
@@ -37,7 +36,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &F
     Some(())
 }
 
-pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &VerifiedFunction) -> Option<()> {
+pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &BytecodeFunction) -> Option<()> {
     let mut func = Function::with_name_signature(
         UserFuncName::user(0, func_id.as_u32()),
         func_sig
@@ -77,6 +76,10 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         context.builder.switch_to_block(block);
 
         if block_id == 0 {
+            if is_structure(context.type_map, &bc_func.prototype.return_type) {
+                context.builder.append_block_param(block, context.pointer_type);
+            }
+
             for arg in bc_func.prototype.args.iter() {
                 let cranelift_type = get_cranelift_type(&arg.type_, context.type_map);
                 let arg = context.builder.append_block_param(block, cranelift_type);
@@ -124,7 +127,9 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     context.func = func;
     object_module
         .define_function(func_id, context)
-        .expect("Failed to define function");
+        .unwrap_or_else(|err| {
+            panic!("Failed to define function: {err:#?}");
+        });
 
     object_module.clear_context(context);
 

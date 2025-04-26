@@ -1,8 +1,8 @@
 use crate::lex::token::OperatorType;
-use crate::parse::ast::ValueType;
-use crate::parse::verify::context::{FnMap, FunctionPrototype, TypeMap, VerifyContext};
-use crate::parse::verify::VerifiedAST;
-use crate::parse::verify::verify_type::get_intrinsic_type;
+use crate::parse::value_type::CXValType;
+use crate::parse::pass_bytecode::ProgramBytecode;
+use crate::parse::pass_molded::{CXBinOp, FunctionMap, TypeMap};
+use crate::util::ScopedMap;
 
 pub type ElementID = u32;
 
@@ -12,14 +12,34 @@ pub struct ValueID {
     pub value_id: ElementID
 }
 
+impl ValueID {
+    pub const NULL: Self = ValueID {
+        block_id: u32::MAX,
+        value_id: u32::MAX
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct VirtualValue {
-    pub type_: ValueType
+    pub type_: CXValType
 }
 
 #[derive(Debug)]
-pub struct VerifiedFunction {
-    pub prototype: FunctionPrototype,
+pub struct BytecodeParameter {
+    pub name: Option<String>,
+    pub type_: CXValType
+}
+
+#[derive(Debug)]
+pub struct BytecodeFunctionPrototype {
+    pub name: String,
+    pub return_type: CXValType,
+    pub args: Vec<BytecodeParameter>
+}
+
+#[derive(Debug)]
+pub struct BytecodeFunction {
+    pub prototype: BytecodeFunctionPrototype,
     pub blocks: Vec<FunctionBlock>
 }
 
@@ -31,37 +51,52 @@ pub struct FunctionBlock {
 #[derive(Debug)]
 pub(crate) struct BytecodeBuilder {
     global_strings: Vec<String>,
-    functions: Vec<VerifiedFunction>,
+    functions: Vec<BytecodeFunction>,
+
+    pub type_map: TypeMap,
+    pub fn_map: FunctionMap,
+
+    pub current_block: u16,
+    pub current_instruction: u16,
+
+    pub symbol_table: ScopedMap<ValueID>,
 
     function_context: Option<BytecodeFunctionContext>,
 }
 
 #[derive(Debug)]
 pub(crate) struct BytecodeFunctionContext {
-    fn_prototype: FunctionPrototype,
-    current_function: ElementID,
+    prototype: BytecodeFunctionPrototype,
     current_block: ElementID,
 
     blocks: Vec<FunctionBlock>
 }
 
 impl BytecodeBuilder {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(type_map: TypeMap, fn_map: FunctionMap) -> Self {
         BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
+
+            type_map,
+            fn_map,
+
+            symbol_table: ScopedMap::new(),
+            current_block: 0,
+            current_instruction: 0,
 
             function_context: None
         }
     }
 
-    pub(crate) fn new_function(&mut self, prototype: FunctionPrototype) {
-        self.function_context = Some(BytecodeFunctionContext {
-            fn_prototype: prototype,
-            current_function: 0,
-            current_block: 0,
-            blocks: Vec::new()
-        });
+    pub(crate) fn new_function(&mut self, fn_prototype: BytecodeFunctionPrototype) {
+        self.function_context = Some(
+            BytecodeFunctionContext {
+                prototype: fn_prototype,
+                current_block: 0,
+                blocks: Vec::new()
+            }
+        );
 
         let entry_block = self.create_block();
         self.set_current_block(
@@ -72,10 +107,12 @@ impl BytecodeBuilder {
     pub(crate) fn finish_function(&mut self) {
         let context = self.function_context.take().unwrap();
 
-        self.functions.push(VerifiedFunction {
-            prototype: context.fn_prototype,
-            blocks: context.blocks
-        });
+        self.functions.push(
+            BytecodeFunction {
+                prototype: context.prototype,
+                blocks: context.blocks
+            }
+        );
     }
 
     fn fun_mut(&mut self) -> &mut BytecodeFunctionContext {
@@ -90,13 +127,13 @@ impl BytecodeBuilder {
 
     pub(crate) fn add_instruction(
         &mut self,
-        verify_context: &VerifyContext,
         instruction: VirtualInstruction,
-        value_type: ValueType
+        value_type: CXValType
     ) -> Option<ValueID> {
         let context = self.fun_mut();
+        let current_block = context.current_block;
 
-        let body = &mut context.blocks[context.current_block as usize].body;
+        let body = &mut context.blocks[current_block as usize].body;
 
         body.push(BlockInstruction {
             instruction,
@@ -120,7 +157,7 @@ impl BytecodeBuilder {
             .map(|v| &v.value)
     }
 
-    pub(crate) fn get_type(&self, value_id: ValueID) -> Option<&ValueType> {
+    pub(crate) fn get_type(&self, value_id: ValueID) -> Option<&CXValType> {
         self.get_variable(value_id)
             .map(|v| &v.type_)
     }
@@ -147,16 +184,15 @@ impl BytecodeBuilder {
     pub(crate) fn last_instruction(&self) -> Option<&BlockInstruction> {
         let context = self.fun();
 
-        let block = context.blocks.get(context.current_block as usize)?;
+        let block = context.blocks.get(self.current_block as usize)?;
         block.body.last()
     }
 
-    pub(crate) fn finish(self, fn_map: FnMap, type_map: TypeMap, imports: Vec<String>) -> Option<VerifiedAST> {
+    pub(crate) fn finish(self) -> Option<ProgramBytecode> {
         Some(
-            VerifiedAST {
-                fn_map,
-                type_map,
-                imports,
+            ProgramBytecode {
+                fn_map: self.fn_map,
+                type_map: self.type_map,
 
                 global_strs: self.global_strings,
                 fn_defs: self.functions,
@@ -198,7 +234,7 @@ pub enum VirtualInstruction {
     Store {
         memory: ValueID,
         value: ValueID,
-        type_: ValueType
+        type_: CXValType
     },
 
     Assign {
@@ -214,14 +250,18 @@ pub enum VirtualInstruction {
         value: ValueID,
     },
 
+    Trunc {
+        value: ValueID
+    },
+
     IntegerBinOp {
-        op: OperatorType,
+        op: CXBinOp,
         left: ValueID,
         right: ValueID
     },
 
     FloatBinOp {
-        op: OperatorType,
+        op: CXBinOp,
         left: ValueID,
         right: ValueID
     },

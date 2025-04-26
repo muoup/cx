@@ -1,34 +1,18 @@
-use std::{alloc, mem};
-use crate::lex::token::Token;
-use crate::log_error;
-use crate::parse::ast::AST;
-use crate::parse::ast_interface::emit_interface;
-use crate::parse::parser::{ParserData, TokenIter, VarTable, VisibilityMode};
-use crate::parse::verify::VerifiedAST;
+pub mod parser;
 
-// pub mod verify;
-pub mod ast;
-pub mod verify;
-pub mod ast_interface;
+pub mod pass_bytecode;
+pub mod pass_unverified;
+pub mod pass_molded;
+pub mod pass_typecheck;
 
-mod parser;
-mod expression;
-mod global_scope;
+
+pub mod value_type;
+
 mod macros;
-mod contextless_expression;
+mod format;
+mod interface_serializer;
 
-pub fn parse_ast(toks: &[Token]) -> Option<AST> {
-    let mut parser_data = ParserData {
-        visibility: VisibilityMode::Package,
-        toks: TokenIter {
-            slice: toks,
-            index: 0
-        },
-    };
-
-    parser::parse_ast(&mut parser_data)
-}
-
-pub fn verify_ast(ast: AST) -> Option<VerifiedAST> {
-    verify::verify_ast(ast)
+pub struct FileInformation {
+    pub file_name: String,
+    pub file_path: String,
 }

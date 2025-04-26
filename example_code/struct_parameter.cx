@@ -13,11 +13,13 @@ struct Test {
     int d;
 }
 
-void struct_parameter(Test t) {
+void struct_parameter(Test t, int c) {
     putchar(t.inner.a + '0');
     putchar(t.inner.b + '0');
     putchar(t.c + '0');
     putchar(t.d + '0');
+    putchar(c + '0');
+    putchar('\n');
     return;
 }
 
@@ -35,6 +37,6 @@ Test struct_return() {
 int main() {
     Test t = struct_return();
 
-    struct_parameter(t);
+    struct_parameter(t, 1);
     return 0;
 }

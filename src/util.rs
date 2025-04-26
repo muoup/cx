@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::sync::Mutex;
 
 pub enum MaybeResult<Result, Consumed, Error> {
     Consumed(Result),
@@ -52,4 +55,33 @@ impl<T> ScopedMap<T> {
     pub fn get(&self, name: &str) -> Option<&T> {
         self.data.get(name)
     }
+}
+
+pub fn dump_data(data: &impl std::fmt::Display) {
+    dump_write(&format!("{}\n", data));
+    dump_write("\n\n\n//////////////\n\n\n\n");
+}
+
+pub fn dump_all(data: Vec<impl std::fmt::Display>) {
+    let data = data
+        .into_iter()
+        .map(|d| format!("{}\n", d))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    dump_write(&data);
+}
+
+fn dump_write(str: &str) {
+    const DUMP_PATH: &str = ".internal/compiler-dump.data";
+    let mut dump_file =
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(DUMP_PATH)
+            .expect("Failed to open dump file");
+
+    dump_file
+        .write_all(str.as_bytes())
+        .expect("Failed to write to dump file");
 }
