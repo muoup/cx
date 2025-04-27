@@ -1,0 +1,9 @@
+[package]
+name = "cx-lsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cx-compiler = { path = "../cx-compiler" }
+tower-lsp = "0.20.0"
+tokio = { version = "1.0", features = ["full"] }
