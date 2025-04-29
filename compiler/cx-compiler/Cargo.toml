@@ -1,0 +1,11 @@
+[package]
+name = "cx-compiler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cranelift = "0.119.0"
+cranelift-module = "0.119.0"
+cranelift-native = "0.119.0"
+cranelift-object = "0.119.0"
+log = "0.4.25"
