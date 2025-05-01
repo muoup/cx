@@ -3,7 +3,7 @@ use crate::log_error;
 use crate::mangling::member_function_mangle;
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, struct_field_offset};
 use crate::parse::value_type::CXValType;
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXInitIndex};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXInitIndex, CXUnOp};
 use crate::parse::pass_typecheck::type_utils::{struct_access, type_matches};
 use crate::parse::pass_typecheck::TypeEnvironment;
 
@@ -27,11 +27,45 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
 
             Some(lhs_type)
         },
+
+        CXExpr::UnOp { operator, operand } => {
+            match operator {
+                CXUnOp::AddressOf => {
+                    let CXExpr::VarReference(_) = operand.as_ref() else {
+                        log_error!("TYPE ERROR: AddressOf operator can only be applied to variables");
+                    };
+
+                    let mut operand_type = type_check_traverse(env, operand.as_mut())?;
+
+                    Some(CXValType::PointerTo(Box::new(operand_type.clone())))
+                },
+
+                _ => todo!("type_check_traverse: {expr}")
+            }
+        },
+
         CXExpr::BinOp { lhs, rhs, op: CXBinOp::Access } => {
-            let lhs_type = type_check_traverse(env, lhs.as_mut())?;
+            let mut lhs_type = type_check_traverse(env, lhs.as_mut())?;
 
             match rhs.as_mut() {
                 CXExpr::VarReference(name) => {
+                    // Auto dereference pointers
+                    if matches!(lhs_type, CXValType::PointerTo(_)) {
+                        let lhs_temp = std::mem::replace(lhs, Box::new(CXExpr::Taken));
+                        *lhs = Box::new(
+                            CXExpr::UnOp {
+                                operand: lhs_temp,
+                                operator: CXUnOp::Dereference
+                            }
+                        );
+
+                        let CXValType::PointerTo(inner_type) = lhs_type else {
+                            unreachable!()
+                        };
+
+                        lhs_type = *inner_type;
+                    };
+
                     let Some(record) = struct_access(env, &lhs_type, name) else {
                         log_error!("TYPE ERROR: Unknown field {name} of structured type {lhs_type}");
                     };
@@ -62,9 +96,15 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
                         name.as_str()
                     );
 
+                    let lhs_taken = std::mem::replace(lhs, Box::new(CXExpr::Taken));
+                    let mut member_args = vec![
+                        CXExpr::UnOp { operator: CXUnOp::AddressOf, operand: lhs_taken }
+                    ];
+                    member_args.extend(std::mem::take(args));
+
                     *expr = CXExpr::DirectFunctionCall {
                         name: mangled_name,
-                        args: std::mem::take(args)
+                        args: member_args
                     };
 
                     type_check_traverse(env, expr)
@@ -83,9 +123,10 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         },
 
         CXExpr::VarDeclaration { name, type_, initializer } => {
+            env.symbol_table.insert(name.clone(), type_.clone());
+
             if let Some(initializer) = initializer {
                 implicit_coerce(env, initializer, type_.clone())?;
-                env.symbol_table.insert(name.clone(), type_.clone());
                 return Some(type_.clone());
             }
 
@@ -93,7 +134,11 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         },
 
         CXExpr::VarReference(name) => {
-            env.symbol_table.get(name).cloned()
+            let Some(record) = env.symbol_table.get(name) else {
+                log_error!("TYPE ERROR: Unknown variable {name}");
+            };
+
+            Some(record.clone())
         },
 
         CXExpr::IntLiteral { bytes, .. } => {
@@ -123,7 +168,8 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
                 log_error!("TYPE ERROR: Function {name} expected {} arguments, got {}", function_type.parameters.len(), args.len());
             }
 
-            for (arg, proto_param) in args.iter_mut().zip(function_type.parameters.iter()) {
+            for (arg, proto_param) in
+                args.iter_mut().zip(function_type.parameters.iter()) {
                 implicit_coerce(env, arg, proto_param.type_.clone())?;
             }
 

@@ -1,8 +1,7 @@
-use std::clone;
-use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::{assert_token_matches, log_error, try_next, try_token_matches};
+use crate::lex::token::{KeywordType, PunctuatorType, Token};
+use crate::{assert_token_matches, log_error, try_next};
 use crate::parse::parser::{ParserData};
-use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
+use crate::parse::pass_unverified::{UVExpr};
 use crate::parse::pass_unverified::global_scope::parse_body;
 use crate::parse::pass_unverified::operators::{tok_to_binop, tok_to_unop};
 

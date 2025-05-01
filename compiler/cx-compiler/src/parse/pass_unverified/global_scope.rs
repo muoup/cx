@@ -4,7 +4,6 @@ use crate::parse::parser::{ParserData, VisibilityMode};
 use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt};
 use crate::parse::pass_unverified::expression::{parse_expr, parse_identifier, requires_semicolon};
 use crate::parse::pass_unverified::typing::parse_plain_typedef;
-use crate::parse::value_type::CXValType;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<UVGlobalStmt> {
     match data.toks.peek()

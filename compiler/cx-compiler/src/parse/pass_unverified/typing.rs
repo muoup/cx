@@ -1,6 +1,5 @@
-use std::clone;
 use log::warn;
-use crate::{assert_token_matches, log_error, try_next, try_token_matches};
+use crate::{assert_token_matches, log_error, try_next};
 use crate::lex::token::{KeywordType, PunctuatorType, Token};
 use crate::parse::parser::ParserData;
 use crate::parse::pass_unverified::expression::parse_identifier;

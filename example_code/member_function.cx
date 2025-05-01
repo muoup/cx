@@ -1,4 +1,4 @@
-import std::io;
+void putchar(int str);
 
 struct Point {
     int x;
@@ -8,14 +8,13 @@ struct Point {
 void Point::set(this, int x, int y) {
     this->x = x;
     this->y = y;
+    return;
 }
 
 void Point::print(this) {
-    print("(");
-    print_int(this->x);
-    print(", ");
-    print_int(this->y);
-    println(")");
+    putchar(this->x + '0');
+    putchar(this->y + '0');
+    return;
 }
 
 int main() {

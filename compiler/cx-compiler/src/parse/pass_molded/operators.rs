@@ -4,7 +4,6 @@ use crate::parse::pass_molded::expr_molding::mold_expression;
 use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
 
 pub(crate) fn mold_binop(left: CXExpr, right: CXExpr, op: &UVBinOp) -> Option<CXExpr> {
-
     match op {
         UVBinOp::Assignment(op) => {
             let op = op
@@ -60,6 +59,7 @@ pub(crate) fn uv_cx_unop(op: UVUnOp) -> CXUnOp {
         UVUnOp::LNot            => CXUnOp::LNot,
         UVUnOp::Negative        => CXUnOp::Negative,
         UVUnOp::UnaryAccess     => CXUnOp::InitializerIndex,
+        UVUnOp::AddressOf       => CXUnOp::AddressOf,
 
         _ => todo!()
     }
@@ -68,6 +68,8 @@ pub(crate) fn uv_cx_unop(op: UVUnOp) -> CXUnOp {
 pub(crate) fn binop_precedence(op: &UVBinOp) -> u8 {
     match op {
         // TODO: Proper operator precedence
+        UVBinOp::ScopeRes => 0,
+
         UVBinOp::Add | UVBinOp::Subtract => 1,
         UVBinOp::Multiply | UVBinOp::Divide | UVBinOp::Modulus => 2,
 

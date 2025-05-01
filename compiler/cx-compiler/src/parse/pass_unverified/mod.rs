@@ -59,7 +59,7 @@ pub enum UVGlobalStmt {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum UVUnOp {
-    Dereference,
+    Dereference, AddressOf,
     Negative,
     BNot,
     LNot,

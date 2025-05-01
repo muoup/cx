@@ -7,12 +7,12 @@ use crate::parse::pass_molded::operators::{binop_precedence, mold_binop, mold_un
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
 use crate::parse::pass_unverified::{UVBinOp, UVExpr};
 
-pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(CXValType, &UVExpr)> {
+pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(CXValType, Option<&UVExpr>)> {
     match expr {
         UVExpr::Compound { left, right } => {
             Some((
                 mold_type(left.as_ref())?,
-                right.as_ref()
+                Some(right.as_ref())
             ))
         },
 
@@ -28,7 +28,7 @@ pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(CXValType, &UVExpr)
 
                     Some((
                         CXValType::PointerTo(Box::new(mold_type(lhs)?)),
-                        rhs
+                        Some(rhs)
                     ))
                 },
 
@@ -36,7 +36,13 @@ pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(CXValType, &UVExpr)
             }
         },
 
-        _ => log_error!("Error converting expression {} to an initialization", expr)
+        _ => {
+            let Some(type_) = mold_type(expr) else {
+                log_error!("Failed to mold type for initialization: {}", expr);
+            };
+
+            Some((type_, None))
+        }
     }
 }
 
@@ -159,7 +165,7 @@ pub(crate) fn mold_expr_stack<'a>(exprs: &'a [UVExpr], ops: &'a [UVBinOp]) -> Op
         bin_op_stack: &mut Vec<&'a UVBinOp>
     ) -> Option<PseudoUVExpr<'a>> {
         let mut old_expr_stack = std::mem::replace(cx_expr_stack, vec![]);
-        let mut old_op_stack = std::mem::replace(bin_op_stack, vec![]);
+        let old_op_stack = std::mem::replace(bin_op_stack, vec![]);
 
         // At some point this can be redone to replace the first element with a None
         // and just iter skip the first element, but for now we just pop it

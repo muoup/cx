@@ -25,25 +25,22 @@ pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVBinOp) -> Option<Vec<Ps
                 return Some(vec![PseudoUVExpr::ID(expr)]);
             }
 
-            let mut op_iter = 0usize;
-            let mut expr_iter = 0usize;
 
+            let mut iter = 0usize;
             let mut exprs = Vec::new();
 
-            // TODO: This is the wrong heuristic, fix this
-            while expr_iter != expr_stack.len() {
+            while iter != expr_stack.len() {
                 let next_delim =
                     op_stack
                         .iter()
-                        .skip(op_iter)
+                        .skip(iter)
                         .position(|op| *op == delimited)
-                        .unwrap_or(op_stack.len());
+                        .unwrap_or(op_stack.len() - iter);
 
-                let exprs_slice = &expr_stack[expr_iter..next_delim + 1];
-                let ops_slice = &op_stack[op_iter..next_delim];
+                let exprs_slice = &expr_stack[iter .. iter + next_delim + 1];
+                let ops_slice = &op_stack[iter .. iter + next_delim];
 
-                op_iter = next_delim + 1;
-                expr_iter = next_delim + 1;
+                iter += next_delim + 1;
 
                 if exprs_slice.is_empty() {
                     log_error!("Extraneous operator in expression stack: {}", expr);
@@ -59,9 +56,9 @@ pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVBinOp) -> Option<Vec<Ps
                 exprs.push(molded_expr);
             }
 
-            if expr_stack.len() - expr_iter == 1 {
-                exprs.push(PseudoUVExpr::ID(&expr_stack[expr_iter]));
-            } else if expr_stack.len() - expr_iter > 1 {
+            if expr_stack.len() - iter == 1 {
+                exprs.push(PseudoUVExpr::ID(&expr_stack[iter]));
+            } else if expr_stack.len() - iter > 1 {
                 log_error!("Extraneous expressions in stack: {}", expr);
             }
 

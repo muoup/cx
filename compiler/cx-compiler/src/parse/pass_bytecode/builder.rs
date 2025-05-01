@@ -1,7 +1,6 @@
-use crate::lex::token::OperatorType;
-use crate::parse::value_type::CXValType;
 use crate::parse::pass_bytecode::ProgramBytecode;
 use crate::parse::pass_molded::{CXBinOp, FunctionMap, TypeMap};
+use crate::parse::value_type::CXValType;
 use crate::util::ScopedMap;
 
 pub type ElementID = u32;
@@ -235,6 +234,10 @@ pub enum VirtualInstruction {
         memory: ValueID,
         value: ValueID,
         type_: CXValType
+    },
+
+    AddressOf {
+        value: ValueID
     },
 
     Assign {

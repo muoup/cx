@@ -9,6 +9,7 @@ pub(crate) fn tok_to_unop(op: OperatorType) -> Option<UVUnOp> {
             OperatorType::LNot      => UVUnOp::LNot,
             OperatorType::BNot      => UVUnOp::BNot,
             OperatorType::Access    => UVUnOp::UnaryAccess,
+            OperatorType::AddressOf => UVUnOp::AddressOf,
 
             _ => return None
         }
@@ -29,6 +30,7 @@ pub(crate) fn tok_to_binop(op: Token) -> Option<UVBinOp> {
                 OperatorType::LessEqual     => UVBinOp::LessEqual,
                 OperatorType::GreaterEqual  => UVBinOp::GreaterEqual,
                 OperatorType::Access        => UVBinOp::Access,
+                OperatorType::PointerAccess => UVBinOp::Access,
                 OperatorType::Comma         => UVBinOp::Comma,
                 OperatorType::ScopeRes      => UVBinOp::ScopeRes,
 

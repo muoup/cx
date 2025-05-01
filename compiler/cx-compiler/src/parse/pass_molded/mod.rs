@@ -72,7 +72,8 @@ pub enum CXGlobalStmt {
 
 #[derive(Debug)]
 pub enum CXUnOp {
-    Dereference, Negative,
+    Dereference, AddressOf,
+    Negative,
     BNot, LNot,
     ArrayIndex,
     InitializerIndex

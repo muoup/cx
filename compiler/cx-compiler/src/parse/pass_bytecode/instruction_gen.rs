@@ -1,7 +1,7 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting};
-use crate::parse::pass_molded::CXExpr;
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp};
 use crate::parse::value_type::{is_structure, CXValType};
 
 pub(crate) fn generate_instruction(
@@ -51,6 +51,7 @@ pub(crate) fn generate_instruction(
 
             Some(memory)
         },
+
         CXExpr::BinOp { lhs, rhs, op } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let right_id = generate_instruction(builder, rhs.as_ref())?;
@@ -184,6 +185,29 @@ pub(crate) fn generate_instruction(
                 },
                 field_type.clone()
             )
+        },
+
+        CXExpr::UnOp { operator, operand } => {
+            match operator {
+                CXUnOp::Dereference => {
+                    let value = generate_instruction(builder, operand.as_ref())?;
+
+                    builder.add_instruction(
+                        VirtualInstruction::Load { value },
+                        builder.get_type(value)?.clone()
+                    )
+                },
+                CXUnOp::AddressOf => {
+                    let value = generate_instruction(builder, operand.as_ref())?;
+
+                    builder.add_instruction(
+                        VirtualInstruction::AddressOf { value },
+                        CXValType::PointerTo(Box::new(builder.get_type(value)?.clone()))
+                    )
+                },
+
+                _ => todo!("generate_instruction for {:?}", operator)
+            }
         },
 
         _ => todo!("generate_instruction for {:?}", expr)

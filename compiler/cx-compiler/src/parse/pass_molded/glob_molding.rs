@@ -78,100 +78,133 @@ pub(crate) fn mold_global_single(expression: &UVExpr) -> Option<CXGlobalStmt> {
 }
 
 pub(crate) fn mold_function_header(expr: &UVExpr) -> Option<CXFunctionPrototype> {
-    let Some((type_, fn_call)) = split_initialization(expr) else {
+    let Some((type_, Some(fn_call))) = split_initialization(expr) else {
         log_error!("Failed to split initialization: {}", expr);
     };
 
-    let UVExpr::Compound { left, right } = fn_call else {
-        log_error!("Failed to parse function: {}", expr);
-    };
-
-    let UVExpr::Parenthesized(param_expr) = right.as_ref() else {
-        log_error!("Failed to parse function parameters: {}", expr);
-    };
-
-    let mut params = match param_expr {
-        None => vec![],
-        Some(expr) => {
-            let Some(expr) = mold_parameters(expr.as_ref()) else {
-                log_error!("Failed to parse function parameters: {}", expr);
-            };
-
-            expr
-        }
-    };
-
-    match left.as_ref() {
-        UVExpr::Identifier(name) => {
-            Some(
-                CXFunctionPrototype {
-                    name: name.clone(),
-                    return_type: type_,
-                    parameters: params,
-                }
-            )
-        },
+    match fn_call {
+        UVExpr::Compound { left, right }
+            => mold_function(type_, left.as_ref(), right.as_ref()),
         UVExpr::Complex { expr_stack, op_stack}
-            => match mold_expr_stack(expr_stack.as_slice(), op_stack.as_slice())? {
-                PseudoUVExpr::BinOp { left, right, op: UVBinOp::ScopeRes } => {
-                    let PseudoUVExpr::ID(UVExpr::Identifier(class_name)) = left.as_ref() else {
-                        log_error!("Failed to parse class name: {:?}", left);
-                    };
-                    let PseudoUVExpr::ID(UVExpr::Identifier(method_name)) = right.as_ref() else {
-                        log_error!("Failed to parse method name: {:?}", right);
-                    };
+            => mold_member_function(type_, expr_stack, op_stack),
 
-                    let name = member_function_mangle(
-                        class_name,
-                        method_name
-                    );
-
-                    let Some(first_param) = params.first_mut() else {
-                        log_error!("Missing \"this\" parameter in struct method, found empty param set");
-                    };
-
-                    let CXParameter { name: None, type_: class_type } = first_param else {
-                        log_error!("Missing \"this\" parameter in struct method, found: {}", expr);
-                    };
-
-                    let CXValType::Identifier(ref mut class_name) = class_type else {
-                        log_error!("Missing \"this\" parameter in struct method, found: {}", expr);
-                    };
-
-                    if class_name != "this" {
-                        log_error!("Expected \"this\" parameter in struct method, found: {}", expr);
-                    }
-
-                    *first_param = CXParameter {
-                        name: Some("this".to_string()),
-                        type_: CXValType::Identifier(class_name.clone())
-                    };
-
-                    Some(
-                        CXFunctionPrototype {
-                            name,
-                            return_type: type_,
-                            parameters: params,
-                        }
-                    )
-                },
-
-                _ => log_error!("Failed to parse function name: {}", left),
-            },
-
-        _ => log_error!("Failed to parse function name: {}", left),
+        _ => log_error!("Failed to parse function name: {} {}", type_, fn_call),
     }
 }
 
-pub(crate) fn mold_parameters(expr: &UVExpr) -> Option<Vec<CXParameter>> {
-    let Some(delimited) = mold_delimited(expr, UVBinOp::Comma) else {
-        log_error!("Failed to mold parameters: {}", expr);
+fn mold_function(type_: CXValType, name: &UVExpr, parenthesized: &UVExpr) -> Option<CXFunctionPrototype> {
+    let UVExpr::Identifier(name) = name else {
+        log_error!("Failed to parse function name: {:?}", name);
     };
 
-    delimited
-        .iter()
-        .map(mold_param)
-        .collect::<Option<Vec<_>>>()
+    let UVExpr::Parenthesized(parenthesized) = parenthesized else {
+        log_error!("Failed to parse function name: {:?}", name);
+    };
+
+    let param_expr =
+        match parenthesized {
+            Some(expr) => Some(expr.as_ref()),
+            None => None,
+        };
+    let Some(params) = mold_parameters(param_expr) else {
+        log_error!("Failed to parse function parameters: {:?}", parenthesized);
+    };
+
+    Some(
+        CXFunctionPrototype {
+            name: name.clone(),
+            return_type: type_,
+            parameters: params,
+        }
+    )
+}
+
+fn mold_member_function(type_: CXValType, expr_stack: &Vec<UVExpr>, op_stack: &Vec<UVBinOp>) -> Option<CXFunctionPrototype> {
+    let molded_expr_stack = mold_expr_stack(expr_stack, op_stack)?;
+
+    let PseudoUVExpr::BinOp {
+        left, right,
+        op: UVBinOp::ScopeRes
+    } = molded_expr_stack else  {
+        log_error!("Failed to parse function name: {:?}", molded_expr_stack)
+    };
+
+    let PseudoUVExpr::ID(UVExpr::Identifier(class_name)) = left.as_ref() else {
+        log_error!("Failed to parse class name: {:?}", left);
+    };
+
+    let (fn_name, paren) = {
+        let PseudoUVExpr::ID(UVExpr::Compound { left, right }) = right.as_ref() else {
+            log_error!("Failed to parse function name: {:?}", right);
+        };
+
+        let UVExpr::Identifier(fn_name) = left.as_ref() else {
+            log_error!("Failed to parse function name: {:?}", left);
+        };
+
+        let UVExpr::Parenthesized(paren) = right.as_ref() else {
+            log_error!("Failed to parse function name: {:?}", right);
+        };
+
+        (fn_name.as_str(), paren)
+    };
+
+    let name = member_function_mangle(
+        class_name,
+        fn_name
+    );
+
+    let mut params = mold_parameters(
+        match paren {
+            Some(expr) => Some(expr.as_ref()),
+            None => None,
+        }
+    )?;
+
+    let Some(first_param) = params.first_mut() else {
+        log_error!("Missing \"this\" parameter in struct method, found empty param set");
+    };
+
+    let CXParameter { name: None, type_: ref this } = first_param else {
+        log_error!("Missing \"this\" parameter in struct method, found")
+    };
+
+    let CXValType::Identifier(ref this) = this else {
+        log_error!("Missing \"this\" parameter in struct method")
+    };
+
+    if this != "this" {
+        log_error!("Expected \"this\" parameter in struct method")
+    }
+
+    *first_param = CXParameter {
+        name: Some("this".to_string()),
+        type_: CXValType::PointerTo(Box::new(CXValType::Identifier(class_name.clone())))
+    };
+
+    Some(
+        CXFunctionPrototype {
+            name,
+            return_type: type_,
+            parameters: params,
+        }
+    )
+}
+
+pub(crate) fn mold_parameters(expr: Option<&UVExpr>) -> Option<Vec<CXParameter>> {
+    match expr {
+        None => Some(vec![]),
+        Some(expr) => {
+            let Some(delimited) = mold_delimited(expr, UVBinOp::Comma) else {
+                log_error!("Failed to mold parameters: {}", expr);
+            };
+
+            delimited
+                .iter()
+                .map(mold_param)
+                .collect::<Option<Vec<_>>>()
+        }
+    }
 }
 
 pub(crate) fn mold_param(expr: &PseudoUVExpr) -> Option<CXParameter> {
@@ -181,14 +214,14 @@ pub(crate) fn mold_param(expr: &PseudoUVExpr) -> Option<CXParameter> {
                 log_error!("Failed to split initialization: {}", expr);
             };
 
-            let UVExpr::Identifier(name) = name else {
-                log_error!("Failed to parse function name: {}", expr);
-            };
+            match name {
+                Some(UVExpr::Identifier(name)) =>
+                    Some(CXParameter { type_, name: Some(name.clone()) }),
 
-            Some(CXParameter {
-                name: Some(name.clone()),
-                type_,
-            })
+                None => Some(CXParameter { type_, name: None }),
+
+                _ => log_error!("Failed to parse function parameter: {}", expr),
+            }
         },
 
         PseudoUVExpr::BinOp { left, right, op: UVBinOp::Multiply } => {

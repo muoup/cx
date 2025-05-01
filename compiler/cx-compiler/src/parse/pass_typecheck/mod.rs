@@ -1,3 +1,4 @@
+use crate::log_error;
 use crate::parse::FileInformation;
 use crate::parse::interface_serializer::emit_types;
 use crate::parse::value_type::CXValType;
@@ -45,7 +46,8 @@ pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option
             }
         }
 
-        type_check_traverse(&mut type_environment, body);
+        type_check_traverse(&mut type_environment, body)?;
+
         type_environment.symbol_table.pop_scope();
     }
 

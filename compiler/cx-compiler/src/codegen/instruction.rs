@@ -210,6 +210,13 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
+        VirtualInstruction::AddressOf {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            Some(val)
+        },
+
         VirtualInstruction::ZExtend {
             value
         } => {
