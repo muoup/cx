@@ -114,14 +114,7 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
 
         UVExpr::Compound { left, right } => mold_compound_expr(left, right),
         UVExpr::Complex { expr_stack, op_stack } => {
-            let borrowed_exprs = expr_stack.iter()
-                .by_ref()
-                .collect::<Vec<_>>();
-            let borrowed_ops = op_stack.iter()
-                .by_ref()
-                .collect::<Vec<_>>();
-
-            let pseudo = mold_expr_stack(borrowed_exprs.as_slice(), borrowed_ops.as_slice())?;
+            let pseudo = mold_expr_stack(expr_stack.as_slice(), op_stack.as_slice())?;
 
             mold_pseudo_expr(&pseudo)
         },
@@ -160,7 +153,7 @@ pub(crate) fn mold_type(expr: &UVExpr) -> Option<CXValType> {
     }
 }
 
-pub(crate) fn mold_expr_stack<'a>(exprs: &[&'a UVExpr], ops: &[&'a UVBinOp]) -> Option<PseudoUVExpr<'a>> {
+pub(crate) fn mold_expr_stack<'a>(exprs: &'a [UVExpr], ops: &'a [UVBinOp]) -> Option<PseudoUVExpr<'a>> {
     fn collapse_stack<'a>(
         cx_expr_stack: &mut Vec<PseudoUVExpr<'a>>,
         bin_op_stack: &mut Vec<&'a UVBinOp>

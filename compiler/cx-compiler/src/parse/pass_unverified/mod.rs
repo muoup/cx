@@ -78,6 +78,8 @@ pub enum UVBinOp {
     LAnd, LOr, BitAnd, BitOr, BitXor,
     LShift, RShift,
 
+    ScopeRes,
+
     Comma,
 
     Access,

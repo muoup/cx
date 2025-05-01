@@ -25,47 +25,43 @@ pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVBinOp) -> Option<Vec<Ps
                 return Some(vec![PseudoUVExpr::ID(expr)]);
             }
 
-            let mut op_iter = op_stack.iter();
-            let mut expr_iter = expr_stack.iter();
+            let mut op_iter = 0usize;
+            let mut expr_iter = 0usize;
 
             let mut exprs = Vec::new();
 
             // TODO: This is the wrong heuristic, fix this
-            while expr_iter.len() > 0 {
+            while expr_iter != expr_stack.len() {
                 let next_delim =
-                    op_iter
-                        .clone()
+                    op_stack
+                        .iter()
+                        .skip(op_iter)
                         .position(|op| *op == delimited)
-                        .unwrap_or(op_iter.len());
+                        .unwrap_or(op_stack.len());
 
-                let exprs_vec =
-                    expr_iter.by_ref()
-                        .take(next_delim + 1)
-                        .collect::<Vec<_>>();
-                let ops_vec =
-                    op_iter.by_ref()
-                        .take(next_delim) // Grab up to the next delimiter
-                        .collect::<Vec<_>>();
-                op_iter.next(); // Skip the delimiter
+                let exprs_slice = &expr_stack[expr_iter..next_delim + 1];
+                let ops_slice = &op_stack[op_iter..next_delim];
 
-                if exprs_vec.is_empty() {
+                op_iter = next_delim + 1;
+                expr_iter = next_delim + 1;
+
+                if exprs_slice.is_empty() {
                     log_error!("Extraneous operator in expression stack: {}", expr);
                 }
 
                 let Some(molded_expr) = mold_expr_stack(
-                    exprs_vec.as_slice(),
-                    ops_vec.as_slice()
+                    exprs_slice,
+                    ops_slice
                 ) else {
-                    log_error!("Error molding expression sub-stack: {:?} | {:?}", exprs_vec, ops_vec);
+                    log_error!("Error molding expression sub-stack: {:?} | {:?}", exprs_slice, ops_slice);
                 };
 
                 exprs.push(molded_expr);
             }
 
-            if expr_iter.len() == 1 {
-                let last_expr = expr_iter.next().unwrap();
-                exprs.push(PseudoUVExpr::ID(last_expr));
-            } else if expr_iter.len() > 1 {
+            if expr_stack.len() - expr_iter == 1 {
+                exprs.push(PseudoUVExpr::ID(&expr_stack[expr_iter]));
+            } else if expr_stack.len() - expr_iter > 1 {
                 log_error!("Extraneous expressions in stack: {}", expr);
             }
 

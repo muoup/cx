@@ -9,6 +9,7 @@ pub mod parse;
 pub mod preprocessor;
 pub mod util;
 pub mod codegen;
+pub mod mangling;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();

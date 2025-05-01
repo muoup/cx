@@ -1,5 +1,6 @@
 use std::env::args;
 use crate::log_error;
+use crate::mangling::member_function_mangle;
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, struct_field_offset};
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::{CXBinOp, CXExpr, CXInitIndex};
@@ -28,28 +29,49 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         },
         CXExpr::BinOp { lhs, rhs, op: CXBinOp::Access } => {
             let lhs_type = type_check_traverse(env, lhs.as_mut())?;
-            let CXExpr::VarReference(name) = rhs.as_mut() else {
-                log_error!("TYPE ERROR: Invalid access token {rhs}");
-            };
 
-            let Some(record) = struct_access(env, &lhs_type, name) else {
-                log_error!("TYPE ERROR: Unknown field {name} of structured type {lhs_type}");
-            };
+            match rhs.as_mut() {
+                CXExpr::VarReference(name) => {
+                    let Some(record) = struct_access(env, &lhs_type, name) else {
+                        log_error!("TYPE ERROR: Unknown field {name} of structured type {lhs_type}");
+                    };
 
-            let CXExpr::BinOp { lhs, .. } = std::mem::replace(expr, CXExpr::VarReference("".to_string())) else {
-                unreachable!()
-            };
+                    let CXExpr::BinOp { lhs, .. } = std::mem::replace(expr, CXExpr::VarReference("".to_string())) else {
+                        unreachable!()
+                    };
 
-            *expr = CXExpr::StructAccess {
-                expr: lhs,
-                field: record.field_name,
-                field_type: record.field_type.clone(),
+                    *expr = CXExpr::StructAccess {
+                        expr: lhs,
+                        field: record.field_name,
+                        field_type: record.field_type.clone(),
 
-                field_offset: record.field_offset,
-                field_index: record.field_index,
-            };
+                        field_offset: record.field_offset,
+                        field_index: record.field_index,
+                    };
 
-            Some(record.field_type)
+                    Some(record.field_type)
+                },
+
+                CXExpr::DirectFunctionCall { name, args } => {
+                    let CXValType::Identifier(struct_name) = lhs_type else {
+                        log_error!("TYPE ERROR: Cannot access function {name} on non-structured type {lhs_type}");
+                    };
+
+                    let mangled_name = member_function_mangle(
+                        struct_name.as_str(),
+                        name.as_str()
+                    );
+
+                    *expr = CXExpr::DirectFunctionCall {
+                        name: mangled_name,
+                        args: std::mem::take(args)
+                    };
+
+                    type_check_traverse(env, expr)
+                },
+
+                _ => log_error!("TYPE ERROR: Cannot access field {rhs:?} of structured type {lhs_type}")
+            }
         },
         CXExpr::BinOp { lhs, rhs, .. } => {
             let lhs_type = type_check_traverse(env, lhs)?;

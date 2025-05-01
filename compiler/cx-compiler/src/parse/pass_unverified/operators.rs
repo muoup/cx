@@ -30,6 +30,7 @@ pub(crate) fn tok_to_binop(op: Token) -> Option<UVBinOp> {
                 OperatorType::GreaterEqual  => UVBinOp::GreaterEqual,
                 OperatorType::Access        => UVBinOp::Access,
                 OperatorType::Comma         => UVBinOp::Comma,
+                OperatorType::ScopeRes      => UVBinOp::ScopeRes,
 
                 _ => return None
             },
