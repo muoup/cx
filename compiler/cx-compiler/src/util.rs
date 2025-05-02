@@ -59,7 +59,6 @@ impl<T> ScopedMap<T> {
 
 pub fn dump_data(data: &impl std::fmt::Display) {
     dump_write(&format!("{}\n", data));
-    dump_write("\n\n\n//////////////\n\n\n\n");
 }
 
 pub fn dump_all(data: Vec<impl std::fmt::Display>) {
@@ -70,6 +69,8 @@ pub fn dump_all(data: Vec<impl std::fmt::Display>) {
         .join("\n");
 
     dump_write(&data);
+
+    dump_write("\n\n\n//////////////\n\n\n\n");
 }
 
 fn dump_write(str: &str) {

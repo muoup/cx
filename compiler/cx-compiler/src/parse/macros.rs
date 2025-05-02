@@ -7,7 +7,7 @@ pub fn error_pointer(toks: &TokenIter) -> String {
     let mut error_tokens = String::new();
 
     for tok in &toks.slice[toks.index - previous_tokens.. toks.index] {
-        error_tokens.push_str(&format!("{:?} ", tok));
+        error_tokens.push_str(&format!("{} ", tok));
     }
 
     let mut error_pointer = String::new();
@@ -19,7 +19,7 @@ pub fn error_pointer(toks: &TokenIter) -> String {
     error_pointer.push_str("^ ");
 
     for tok in &toks.slice[toks.index..toks.index + next_tokens] {
-        error_tokens.push_str(&format!("{:?} ", tok));
+        error_tokens.push_str(&format!("{} ", tok));
     }
 
     error_tokens.push('\n');
@@ -41,6 +41,16 @@ macro_rules! log_error {
             }
 
             return None;
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! point_log_error {
+    ($data:ident, $($arg:tt)*) => {
+        {
+            eprintln!("{}", crate::parse::macros::error_pointer(&$data.toks));
+            log_error!($($arg)*);
         }
     }
 }

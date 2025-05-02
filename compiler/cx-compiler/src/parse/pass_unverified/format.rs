@@ -17,21 +17,37 @@ impl Display for UVGlobalStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             UVGlobalStmt::Import(path) => fwriteln!(f, "import \"{}\";", path),
-            UVGlobalStmt::BodiedExpression { header, body } => {
-                indent();
-                fwriteln!(f, "{} {{", header)?;
-                fwrite!(f, "{}", body)?;
-                dedent();
-                fwriteln!(f, "");
-                fwriteln!(f, "}}")
-            },
-            UVGlobalStmt::SingleExpression { expression } => {
-                fwrite!(f, "{};", expression)
-            },
             UVGlobalStmt::HandledInternally => Ok(()),
             UVGlobalStmt::TypeDeclaration { name, type_ } => {
                 fwrite!(f, "type {} = {};", name, type_)
             },
+            UVGlobalStmt::Function {
+                name,
+                params,
+                return_type,
+                body
+            } => {
+                fwrite!(f, "fn {}(", name)?;
+
+                for (i, param) in params.iter().enumerate() {
+                    fwrite!(f, "{}", param)?;
+
+                    if i != params.len() - 1 {
+                        fwrite!(f, ", ")?;
+                    }
+                }
+
+                indent();
+                fwriteln!(f, ") -> {}", return_type)?;
+
+                if let Some(body) = body {
+                    fwrite!(f, "{}", body)?;
+                }
+
+                dedent();
+
+                Ok(())
+            }
 
             _ => fwrite!(f, "{:?}", self),
         }

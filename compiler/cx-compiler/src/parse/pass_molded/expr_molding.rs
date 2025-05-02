@@ -5,7 +5,7 @@ use crate::parse::pass_molded::operators::{op_precedence, tok_cx_binop, tok_cx_u
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp, CXInitIndex, CXAST};
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
-use crate::parse::pass_unverified::{UVExpr, UVOp};
+use crate::parse::pass_unverified::{UVExpr, UVIdent, UVOp};
 
 pub(crate) fn split_initialization(expr: &UVExpr) -> Option<(CXValType, Option<&UVExpr>)> {
     match expr {
@@ -58,7 +58,7 @@ macro_rules! try_boxed_mold {
 pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
     match expr {
         UVExpr::Identifier(ident) =>
-            Some(CXExpr::VarReference(ident.clone())),
+            Some(CXExpr::VarReference(assert_standard_ident(ident)?)),
 
         UVExpr::ExprChain(exprs) => {
             let exprs = exprs.iter()
@@ -120,9 +120,15 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
 
         UVExpr::Compound { left, right } => mold_compound_expr(left, right),
         UVExpr::Complex { expr_stack, op_stack } => {
-            let pseudo = mold_expr_stack(expr_stack.as_slice(), op_stack.as_slice())?;
+            let Some(pseudo) = mold_expr_stack(expr_stack.as_slice(), op_stack.as_slice()) else {
+                log_error!("Failed to mold complex expression: {:?}", expr);
+            };
 
-            mold_pseudo_expr(&pseudo)
+            let Some(expr) = mold_pseudo_expr(&pseudo) else {
+                log_error!("Failed to mold pseudo expr: {:?}", pseudo);
+            };
+
+            Some(expr)
         },
 
         UVExpr::IntLiteral(i) => Some(CXExpr::IntLiteral { val: *i, bytes: 8 }),
@@ -146,7 +152,7 @@ pub(crate) fn mold_expression(expr: &UVExpr) -> Option<CXExpr> {
 pub(crate) fn mold_type(expr: &UVExpr) -> Option<CXValType> {
     match expr {
         UVExpr::Identifier(ident) => {
-            Some(CXValType::Identifier(ident.clone()))
+            Some(CXValType::Identifier(assert_standard_ident(ident)?))
         },
 
         _ => log_error!("Unknown type: {}", expr)
@@ -171,26 +177,26 @@ pub(crate) fn mold_expr_stack<'a>(exprs: &'a [UVExpr], ops: &'a [UVOp]) -> Optio
             },
 
             UVOp::BinOp(op) => {
-                let left = expr_stack.pop()
+                let right = expr_stack.pop()
                     .expect("Expression stack should not be empty when collapsing binary operation");
 
                 Some(
                     PseudoUVExpr::BinOp {
-                        left: Box::new(left),
-                        right: Box::new(expr),
+                        left: Box::new(expr),
+                        right: Box::new(right),
                         op
                     }
                 )
             },
 
             UVOp::Assignment(additional_op) => {
-                let left = expr_stack.pop()
+                let right = expr_stack.pop()
                     .expect("Expression stack should not be empty when collapsing assignment operation");
 
                 Some(
                     PseudoUVExpr::Assignment {
-                        left: Box::new(left),
-                        right: Box::new(expr),
+                        left: Box::new(expr),
+                        right: Box::new(right),
                         op: additional_op
                     }
                 )
@@ -267,14 +273,21 @@ pub(crate) fn mold_pseudo_expr(expr: &PseudoUVExpr) -> Option<CXExpr> {
         PseudoUVExpr::Assignment { left, right, op } =>
             mold_pseudo_assn(left, right, op.clone()),
         PseudoUVExpr::BinOp { left, right, op } => {
-            let left = mold_pseudo_expr(left)?;
-            let right = mold_pseudo_expr(right)?;
+            let Some(left) = mold_pseudo_expr(left) else {
+                log_error!("Failed to mold left side of binary operation: {:?}", left);
+            };
+            let Some(right) = mold_pseudo_expr(right) else {
+                log_error!("Failed to mold right side of binary operation: {:?}", right);
+            };
+            let Some(op) = tok_cx_binop(op.clone()) else {
+                log_error!("Failed to mold binary operation: {:?}", op);
+            };
 
             Some(
                 CXExpr::BinOp {
                     lhs: Box::new(left),
                     rhs: Box::new(right),
-                    op:  tok_cx_binop(op.clone())?
+                    op
                 }
             )
         }
@@ -298,16 +311,29 @@ pub(crate) fn mold_pseudo_assn(lhs: &PseudoUVExpr, rhs: &PseudoUVExpr,
             Some(
                 CXExpr::VarDeclaration {
                     type_,
-                    name: name.clone(),
+                    name: assert_standard_ident(name)?,
                     initializer: Some(Box::new(rhs)),
                 }
             )
         },
 
         _ => {
-            let lhs = mold_pseudo_expr(lhs)?;
-            let rhs = mold_pseudo_expr(rhs)?;
-            let op = additional_op.map(|op| tok_cx_binop(op.clone()))?;
+            let Some(lhs) = mold_pseudo_expr(lhs) else {
+                log_error!("Failed to mold left side of assignment: {:?}", lhs);
+            };
+            let Some(rhs) = mold_pseudo_expr(rhs) else {
+                log_error!("Failed to mold right side of assignment: {:?}", rhs);
+            };
+            let op = match additional_op {
+                Some(op) => {
+                    let Some(op) = tok_cx_binop(op.clone()) else {
+                        log_error!("Failed to mold assignment operator: {:?}", op);
+                    };
+
+                    Some(op)
+                },
+                None => None
+            };
 
             Some(
                 CXExpr::Assignment {
@@ -326,7 +352,7 @@ pub(crate) fn mold_compound_expr(left: &UVExpr, right: &UVExpr) -> Option<CXExpr
             Some(
                 CXExpr::VarDeclaration {
                     type_: mold_type(left)?,
-                    name: ident.clone(),
+                    name: assert_standard_ident(ident)?,
                     initializer: None,
                 }
             )
@@ -346,7 +372,7 @@ pub(crate) fn mold_compound_expr(left: &UVExpr, right: &UVExpr) -> Option<CXExpr
                 UVExpr::Identifier(ident) =>
                     Some(
                         CXExpr::DirectFunctionCall {
-                            name: ident.clone(),
+                            name: assert_standard_ident(ident)?,
                             args
                         }
                     ),
@@ -395,4 +421,12 @@ pub(crate) fn mold_initializer(inside: &UVExpr) -> Option<CXExpr> {
             indices: indices?
         }
     )
+}
+
+fn assert_standard_ident(ident: &UVIdent) -> Option<String> {
+    match ident {
+        UVIdent::Identifier(name) => Some(name.clone()),
+        UVIdent::ScopedIdentifier(_) =>
+            log_error!("Scoped identifier in unsupported context"),
+    }
 }

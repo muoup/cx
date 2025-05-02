@@ -92,8 +92,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
                     };
 
                     let mangled_name = namespace_mangle(
-                        struct_name.as_str(),
-                        name.as_str()
+                        &vec![&struct_name, name]
                     );
 
                     let lhs_taken = std::mem::replace(lhs, Box::new(CXExpr::Taken));

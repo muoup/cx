@@ -43,6 +43,8 @@ pub(crate) fn tok_cx_binop(op: OperatorType) -> Option<CXBinOp> {
             OperatorType::LessEqual     => CXBinOp::LessEqual,
             OperatorType::GreaterEqual  => CXBinOp::GreaterEqual,
 
+            OperatorType::Access        => CXBinOp::Access,
+
             _ => log_error!("tok_cx_binop: Unhandled operator type {:?}", op),
         }
     )

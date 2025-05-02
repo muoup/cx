@@ -1,3 +1,28 @@
+#[derive(Debug, PartialEq)]
+pub struct TokenData {
+    pub line_number: u32,
+    pub start: u16,
+    pub end: u16,
+
+    pub data: Token,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Token {
+    Assignment(Option<OperatorType>),
+    Operator(OperatorType),
+
+    Specifier(SpecifierType),
+    Keyword(KeywordType),
+    Intrinsic(IntrinsicType),
+    Punctuator(PunctuatorType),
+
+    Identifier(String),
+    StringLiteral(String),
+    IntLiteral(i64),
+    FloatLiteral(f64),
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
     Plus, Minus,
@@ -63,22 +88,6 @@ pub enum SpecifierType {
     Inline, Extern, Static,
     Public, Private,
     ThreadLocal
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Token {
-    Assignment(Option<OperatorType>),
-    Operator(OperatorType),
-
-    Specifier(SpecifierType),
-    Keyword(KeywordType),
-    Intrinsic(IntrinsicType),
-    Punctuator(PunctuatorType),
-
-    Identifier(String),
-    StringLiteral(String),
-    IntLiteral(i64),
-    FloatLiteral(f64),
 }
 
 impl Token {

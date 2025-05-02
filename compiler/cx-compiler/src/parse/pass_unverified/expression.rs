@@ -1,10 +1,12 @@
+use std::clone;
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::{assert_token_matches, log_error, try_next};
+use crate::{assert_token_matches, log_error, point_log_error, try_next};
 use crate::mangling::namespace_mangle;
 use crate::parse::macros::error_pointer;
 use crate::parse::parser::{ParserData};
-use crate::parse::pass_unverified::{UVExpr, UVOp};
+use crate::parse::pass_unverified::{UVExpr, UVIdent, UVOp};
 use crate::parse::pass_unverified::global_scope::parse_body;
+use crate::parse::pass_unverified::typing::parse_intrinisic;
 
 pub(crate) fn requires_semicolon(expr: &UVExpr) -> bool {
     match expr {
@@ -31,34 +33,38 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
 
     parse_expr_index(data, &mut expr_stack, &mut op_stack)?;
 
-    while data.toks.has_next() {
-        if let Some(Token::Operator(op)) = data.toks.peek() {
-            op_stack.push(UVOp::BinOp(op.clone()));
-            data.toks.next(); // consume the operator token
+    loop {
+        match data.toks.next() {
+            Some(Token::Operator(op)) => {
+                op_stack.push(UVOp::BinOp(op.clone()));
 
-            let Some(()) = parse_expr_index(data, &mut expr_stack, &mut op_stack) else {
-                log_error!("Failed to parse expression index after operator: {:#?}", data.toks.peek());
-            };
-        } else if let Some(Token::Assignment(op)) = data.toks.peek() {
-            op_stack.push(UVOp::Assignment(op.clone()));
-            data.toks.next(); // consume the assignment token
+                let Some(()) = parse_expr_index(data, &mut expr_stack, &mut op_stack) else {
+                    log_error!("Failed to parse expression index after operator: {:#?}", data.toks.peek());
+                };
+            }
 
-            let Some(()) = parse_expr_index(data, &mut expr_stack, &mut op_stack) else {
-                log_error!("Failed to parse expression index after assignment: {:#?}", data.toks.peek());
-            };
-        } else {
-            let Some(()) = parse_expr_index(data, &mut expr_stack, &mut op_stack) else {
-                break;
-            };
-            let r_expr = expr_stack.pop()?;
-            let l_expr = expr_stack.pop()?;
+            Some(Token::Assignment(op)) => {
+                op_stack.push(UVOp::Assignment(op.clone()));
 
-            expr_stack.push(
-                UVExpr::Compound {
-                    left: Box::new(r_expr),
-                    right: Box::new(l_expr)
-                }
-            )
+                let Some(()) = parse_expr_index(data, &mut expr_stack, &mut op_stack) else {
+                    log_error!("Failed to parse expression index after assignment: {:#?}", data.toks.peek());
+                };
+            },
+
+            _ => {
+                let Some(()) = parse_expr_index(data.back(), &mut expr_stack, &mut op_stack) else {
+                    break;
+                };
+                let r_expr = expr_stack.pop()?;
+                let l_expr = expr_stack.pop()?;
+
+                expr_stack.push(
+                    UVExpr::Compound {
+                        left: Box::new(r_expr),
+                        right: Box::new(l_expr)
+                    }
+                )
+            }
         }
     }
 
@@ -73,40 +79,29 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
 
 fn parse_expr_index(data: &mut ParserData, expr_stack: &mut Vec<UVExpr>, op_stack: &mut Vec<UVOp>)
                     -> Option<()> {
-    while let Some(Token::Operator(op)) = data.toks.peek() {
+    while let Some(Token::Operator(op)) = data.toks.next() {
         op_stack.push(UVOp::UnOpPre(op.clone()));
-        data.toks.next(); // consume the operator token
     }
 
-    let Some(expr) = parse_expr_val(data) else {
-        return None;
-    };
-
-    expr_stack.push(expr);
+    expr_stack.push(parse_expr_val(data.back())?);
 
     Some(())
 }
 
 pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
     let mut acc = match data.toks.next()? {
-        Token::Identifier(name) => Some(UVExpr::Identifier(name.clone())),
         Token::IntLiteral(value) => Some(UVExpr::IntLiteral(value.clone())),
         Token::FloatLiteral(value) => Some(UVExpr::FloatLiteral(value.clone())),
         Token::StringLiteral(value) => Some(UVExpr::StringLiteral(value.clone())),
-        Token::Intrinsic(_) => {
-            data.toks.back();
 
-            Some(
-                UVExpr::Identifier(
-                    parse_identifier(data)?
-                )
-            )
-        }
+        Token::Intrinsic(_) => Some(
+            UVExpr::Identifier(UVIdent::Identifier(parse_intrinisic(data.back())?))
+        ),
+        Token::Identifier(_) => Some(
+            UVExpr::Identifier(parse_identifier(data.back())?)
+        ),
 
         Token::Punctuator(PunctuatorType::OpenBrace) => parse_braced_expr(data),
-
-        Token::Keyword(keyword) =>
-            log_error!("Statement Expressioning not supported: {:#?}", keyword),
 
         Token::Punctuator(PunctuatorType::OpenParen) => {
             let expr = parse_expr(data)?;
@@ -118,13 +113,8 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<UVExpr> {
 
         _ => {
             data.toks.back();
-
-            let Some(ident) = parse_identifier(data) else {
-                return None
-            };
-
-            Some(UVExpr::Identifier(ident))
-        },
+            return None;
+        }
     }?;
 
     loop {
@@ -206,41 +196,34 @@ pub(crate) fn parse_braced_expr(data: &mut ParserData) -> Option<UVExpr> {
     )
 }
 
-pub(crate) fn parse_identifier(data: &mut ParserData) -> Option<String> {
-    if let Some(Token::Identifier(name)) = data.toks.next().cloned() {
-        if let Some(Token::Operator(OperatorType::ScopeRes)) = data.toks.peek() {
-            data.toks.next();
-            let Token::Identifier(scoped_name) = data.toks.next()? else {
-                log_error!("PARSER ERROR: Expected identifier after scope resolution operator! Found token: {:?}", {
-                    data.toks.back();
-                    data.toks.peek()
-                });
-            };
+pub(crate) fn parse_name(data: &mut ParserData) -> Option<String> {
+    let Some(Token::Identifier(name)) = data.toks.next() else {
+        log_error!("PARSER ERROR: Expected identifier for name found: {:#?}", data.toks.peek());
+    };
 
-            return Some(
-                namespace_mangle(
-                    name.as_str(),
-                    scoped_name.as_str()
-                )
-            )
-        }
+    Some(name.clone())
+}
 
-        return Some(name);
+pub(crate) fn parse_identifier(data: &mut ParserData) -> Option<UVIdent> {
+    let Some(Token::Identifier(name)) = data.toks.next().cloned() else {
+        point_log_error!(data, "PARSER ERROR: Expected identifier, found: {:#?}", data.toks.prev());
+    };
+
+    let Some(Token::Operator(OperatorType::ScopeRes)) = data.toks.peek() else {
+        return Some(UVIdent::Identifier(name));
+    };
+
+    let mut names = vec![name];
+
+    while let Some(Token::Operator(OperatorType::ScopeRes)) = data.toks.peek() {
+        data.toks.next(); // consume the scope resolution operator
+
+        let Some(Token::Identifier(name)) = data.toks.next().cloned() else {
+            log_error!("PARSER ERROR: Expected identifier after scope resolution operator");
+        };
+
+        names.push(name);
     }
 
-    data.toks.back();
-
-    let mut ss = String::new();
-
-    while let Some(Token::Intrinsic(intrinsic)) = data.toks.next() {
-        ss.push_str(format!("{:?}", intrinsic).to_lowercase().as_str());
-    }
-
-    data.toks.back();
-
-    if ss.is_empty() {
-        None
-    } else {
-        Some(ss)
-    }
+    Some(UVIdent::ScopedIdentifier(names))
 }

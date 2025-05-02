@@ -64,7 +64,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             };
 
             let func_ref = context.object_module.declare_func_in_func(func_id, &mut context.builder.func);
-            let mut args = generate_params(context, prototype, args)?;
+            let args = generate_params(context, prototype, args)?;
 
             let inst = context.builder.ins().call(func_ref, args.as_slice());
             context.builder.inst_results(inst)

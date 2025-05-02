@@ -1,7 +1,8 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::{assert_token_matches, log_error, try_next};
 use crate::parse::parser::{ParserData, VisibilityMode};
-use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt};
+use crate::parse::pass_molded::CXParameter;
+use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVIdent};
 use crate::parse::pass_unverified::expression::{parse_expr, parse_identifier, requires_semicolon};
 use crate::parse::pass_unverified::typing::{parse_initializer, parse_plain_typedef, parse_type};
 use crate::parse::value_type::CXValType;
@@ -66,8 +67,12 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
-    let Some((name, val_type)) = parse_initializer(data) else {
+    let Some((name, return_type)) = parse_initializer(data) else {
         log_error!("PARSER ERROR: Failed to parse initializer in global expression!");
+    };
+
+    let Some(name) = name else {
+        log_error!("PARSER ERROR: Identifier expected, found none!");
     };
 
     match data.toks.peek() {
@@ -79,7 +84,7 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
             if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
                 return Some(UVGlobalStmt::Function {
                     name,
-                    return_type: val_type,
+                    return_type,
                     params,
                     body: None
                 });
@@ -89,7 +94,7 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
 
             Some(UVGlobalStmt::Function {
                 name,
-                return_type: val_type,
+                return_type,
                 params,
                 body
             })
@@ -102,14 +107,21 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
     }
 }
 
-pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<(String, CXValType)>> {
+pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
 
     let mut params = Vec::new();
 
     while !try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
         if let Some((name, type_)) = parse_initializer(data) {
-            params.push((name, type_));
+            let name = match name {
+                None => None,
+                Some(UVIdent::Identifier(name)) => Some(name),
+
+                _ => log_error!("Unknown identifier for parameter name, found: {:#?}", name)
+            };
+
+            params.push(CXParameter { name, type_ });
         } else {
             log_error!("Failed to parse parameter in function call: {:#?}", data.toks.peek());
         }
