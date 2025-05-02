@@ -129,10 +129,6 @@ impl Display for CXExpr {
                 fwrite!(f, "}}")
             },
 
-            CXExpr::StructAccess { expr, field, field_index, field_offset, .. } => {
-                fwrite!(f, "({}.{}{{{}, {}}})", expr, field, field_index, field_offset)
-            },
-
             CXExpr::UnOp { operator, operand } => {
                 match operator {
                     CXUnOp::Negative => fwrite!(f, "-{}", operand),

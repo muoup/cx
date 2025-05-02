@@ -8,8 +8,9 @@ use crate::parse::pass_typecheck::intrinsic_types::add_internal_types;
 use crate::parse::pass_typecheck::mappings::parse_fn_mappings;
 use crate::util::ScopedMap;
 
+pub mod type_utils;
+
 mod checker;
-mod type_utils;
 mod intrinsic_types;
 mod mappings;
 

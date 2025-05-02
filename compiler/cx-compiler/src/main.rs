@@ -48,6 +48,7 @@ fn main() {
     dump_data(&molded);
 
     pass_typecheck::type_check(&file_information, &mut molded).unwrap();
+    dump_data(&molded);
 
     let program_bytecode = pass_bytecode::gen_bytecode(molded).unwrap();
     dump_data(&program_bytecode);

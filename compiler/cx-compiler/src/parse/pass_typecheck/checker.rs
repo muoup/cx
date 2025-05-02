@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::env::args;
 use crate::log_error;
 use crate::mangling::namespace_mangle;
@@ -39,6 +40,14 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
 
                     Some(CXValType::PointerTo(Box::new(operand_type.clone())))
                 },
+                CXUnOp::Dereference => {
+                    let operand_type = type_check_traverse(env, operand.as_mut())?;
+                    let CXValType::PointerTo(deref) = get_intrinsic_type(env.type_map, &operand_type).cloned()? else {
+                        log_error!("TYPE ERROR: Dereference operator can only be applied to pointers");
+                    };
+
+                    Some(*deref)
+                },
 
                 _ => todo!("type_check_traverse: {expr}")
             }
@@ -66,21 +75,8 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
                         lhs_type = *inner_type;
                     };
 
-                    let Some(record) = struct_access(env, &lhs_type, name) else {
+                    let Some(record) = struct_access(env.type_map, &lhs_type, name) else {
                         log_error!("TYPE ERROR: Unknown field {name} of structured type {lhs_type}");
-                    };
-
-                    let CXExpr::BinOp { lhs, .. } = std::mem::replace(expr, CXExpr::VarReference("".to_string())) else {
-                        unreachable!()
-                    };
-
-                    *expr = CXExpr::StructAccess {
-                        expr: lhs,
-                        field: record.field_name,
-                        field_type: record.field_type.clone(),
-
-                        field_offset: record.field_offset,
-                        field_index: record.field_index,
                     };
 
                     Some(record.field_type)
@@ -134,7 +130,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
 
         CXExpr::VarReference(name) => {
             let Some(record) = env.symbol_table.get(name) else {
-                log_error!("TYPE ERROR: Unknown variable {name}");
+                log_error!("TYPE ERROR: Unknown variable {name}\n Variables: {:?}", env.symbol_table);
             };
 
             Some(record.clone())
@@ -177,11 +173,6 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
 
         CXExpr::InitializerList { indices } =>
             log_error!("Bare initializer list {indices:?} found in expression context"),
-
-        // Generated only internally so types must be valid
-        CXExpr::StructAccess { field_type, .. } => {
-            Some(field_type.clone())
-        },
 
         _ => todo!("type_check_traverse: {expr}")
     }
@@ -268,7 +259,7 @@ fn coerce_struct_initializer(
         };
 
         let Some(record) = struct_access(
-            env,
+            env.type_map,
             &CXValType::Structured { fields: type_indices.clone().to_vec() },
             &field_name
         ) else {
@@ -277,21 +268,25 @@ fn coerce_struct_initializer(
 
         println!(".{} = {}", field_name, assn_to);
 
-        let mut assign = CXExpr::Assignment {
-            lhs: Box::new(CXExpr::StructAccess {
-                expr: Box::new(CXExpr::VarReference(internal_struct_name.clone())),
-                field: record.field_name,
-                field_type: record.field_type.clone(),
-                field_offset: record.field_offset,
-                field_index: record.field_index,
-            }),
-            rhs: Box::new(*assn_to),
+        let access = CXExpr::BinOp {
+            lhs: Box::new(
+                CXExpr::VarReference(internal_struct_name.clone())
+            ),
+            rhs: Box::new(
+                CXExpr::VarReference(field_name.clone())
+            ),
+            op: CXBinOp::Access
+        };
+
+        let mut assignment = CXExpr::Assignment {
+            lhs: Box::new(access),
+            rhs: assn_to,
             op: None
         };
 
-        type_check_traverse(env, &mut assign)?;
+        type_check_traverse(env, &mut assignment)?;
 
-        exprs.push(assign)
+        exprs.push(assignment)
     }
 
     Some(

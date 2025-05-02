@@ -153,15 +153,6 @@ pub enum CXExpr {
         operator: CXUnOp
     },
 
-    StructAccess {
-        expr: Box<CXExpr>,
-        field: String,
-        field_type: CXValType,
-
-        field_offset: usize,
-        field_index: usize,
-    },
-
     IndirectFunctionCall {
         callee: Box<CXExpr>,
         args: Vec<CXExpr>

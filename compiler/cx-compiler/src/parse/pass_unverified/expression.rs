@@ -55,8 +55,8 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<UVExpr> {
                 let Some(()) = parse_expr_index(data.back(), &mut expr_stack, &mut op_stack) else {
                     break;
                 };
-                let r_expr = expr_stack.pop()?;
                 let l_expr = expr_stack.pop()?;
+                let r_expr = expr_stack.pop()?;
 
                 expr_stack.push(
                     UVExpr::Compound {
