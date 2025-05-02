@@ -1,13 +1,3 @@
-[package]
-name = "compiler_frontend"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-cranelift = "0.116.1"
-cranelift-module = "0.116.1"
-cranelift-native = "0.116.1"
-cranelift-object = "0.116.1"
-log = "0.4.25"
+[workspace]
+resolver = "2"
+members = [ "compiler/cx-compiler", "compiler/cx-lsp" ]
