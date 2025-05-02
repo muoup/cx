@@ -48,7 +48,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     let block = builder.create_block();
     builder.switch_to_block(block);
 
-    let mut var_table = VariableTable::new();
+    let var_table = VariableTable::new();
     let pointer_type = global_state.object_module.target_config().pointer_type();
 
     let mut context = FunctionState {

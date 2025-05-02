@@ -23,11 +23,18 @@ pub(crate) struct TokenIter<'a> {
     pub(crate) index: usize,
 }
 
+impl<'a> ParserData<'a> {
+    pub fn back(&mut self) -> &mut Self {
+        self.toks.back();
+        self
+    }
+}
+
 impl<'a> TokenIter<'_> {
     pub(crate) fn next(&mut self) -> Option<&Token> {
-        let next = self.slice.get(self.index);
+        let next = self.slice.get(self.index)?;
         self.index += 1;
-        next
+        Some(next)
     }
 
     pub(crate) fn peek(&self) -> Option<&Token> {
@@ -36,6 +43,13 @@ impl<'a> TokenIter<'_> {
 
     pub(crate) fn back(&mut self) {
         self.index -= 1;
+    }
+
+    pub(crate) fn prev(&self) -> Option<&Token> {
+        if self.index == 0 {
+            return None;
+        }
+        self.slice.get(self.index - 1)
     }
 
     pub(crate) fn has_next(&self) -> bool {

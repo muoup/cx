@@ -1,13 +1,13 @@
-use crate::parse::parser::ParserData;
+use crate::parse::parser::TokenIter;
 
-pub fn error_pointer(parser_data: &ParserData) -> String {
-    let previous_tokens = parser_data.toks.index.min(2);
-    let next_tokens = (parser_data.toks.slice.len() - parser_data.toks.index).min(2);
+pub fn error_pointer(toks: &TokenIter) -> String {
+    let previous_tokens = toks.index.min(2);
+    let next_tokens = (toks.slice.len() - toks.index).min(2);
 
     let mut error_tokens = String::new();
 
-    for tok in &parser_data.toks.slice[parser_data.toks.index - previous_tokens.. parser_data.toks.index] {
-        error_tokens.push_str(&format!("{:?} ", tok));
+    for tok in &toks.slice[toks.index - previous_tokens.. toks.index] {
+        error_tokens.push_str(&format!("{} ", tok));
     }
 
     let mut error_pointer = String::new();
@@ -18,8 +18,8 @@ pub fn error_pointer(parser_data: &ParserData) -> String {
 
     error_pointer.push_str("^ ");
 
-    for tok in &parser_data.toks.slice[parser_data.toks.index..parser_data.toks.index + next_tokens] {
-        error_tokens.push_str(&format!("{:?} ", tok));
+    for tok in &toks.slice[toks.index..toks.index + next_tokens] {
+        error_tokens.push_str(&format!("{} ", tok));
     }
 
     error_tokens.push('\n');
@@ -46,11 +46,21 @@ macro_rules! log_error {
 }
 
 #[macro_export]
+macro_rules! point_log_error {
+    ($data:ident, $($arg:tt)*) => {
+        {
+            eprintln!("{}", crate::parse::macros::error_pointer(&$data.toks));
+            log_error!($($arg)*);
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! assert_token_matches {
     ($data:ident, $pattern:pat) => {
         let $pattern = $data.toks.next()? else {
             $data.toks.back();
-            eprintln!("{}", crate::parse::macros::error_pointer($data));
+            eprintln!("{}", crate::parse::macros::error_pointer(&($data).toks));
             log_error!("Expected token to match pattern: {:#?}\n Found: {:#?}", stringify!($pattern), $data.toks.peek());
             return None;
         };

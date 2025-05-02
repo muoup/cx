@@ -2,13 +2,14 @@ use std::env;
 use crate::codegen::ast_codegen;
 use crate::parse::{pass_bytecode, pass_molded, pass_typecheck, pass_unverified, FileInformation};
 use crate::parse::parser::{ParserData, TokenIter, VisibilityMode};
-use crate::util::dump_data;
+use crate::util::{dump_all, dump_data};
 
 pub mod lex;
 pub mod parse;
 pub mod preprocessor;
 pub mod util;
 pub mod codegen;
+mod mangling;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -18,7 +19,7 @@ fn main() {
     };
 
     let content = std::fs::read_to_string(file_name)
-        .expect("Failed to read file");
+        .expect(format!("Failed to read file: {:?}", std::fs::canonicalize(file_name).unwrap()).as_str());
     let mut parser_data = ParserData {
         visibility: VisibilityMode::Package,
         toks: TokenIter {
@@ -27,6 +28,8 @@ fn main() {
         },
     };
 
+    std::fs::create_dir_all(".internal")
+        .expect("Failed to create internal directory");
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
 

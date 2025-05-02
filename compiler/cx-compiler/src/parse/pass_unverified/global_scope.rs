@@ -1,9 +1,10 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::{assert_token_matches, log_error, try_next};
 use crate::parse::parser::{ParserData, VisibilityMode};
-use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt};
+use crate::parse::pass_molded::CXParameter;
+use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVIdent};
 use crate::parse::pass_unverified::expression::{parse_expr, parse_identifier, requires_semicolon};
-use crate::parse::pass_unverified::typing::parse_plain_typedef;
+use crate::parse::pass_unverified::typing::{parse_initializer, parse_plain_typedef, parse_type};
 use crate::parse::value_type::CXValType;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<UVGlobalStmt> {
@@ -66,35 +67,72 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
-    let Some(identifier) = parse_identifier(data) else {
-        log_error!("Could not parse global expression starting with {:#?}", data.toks.peek());
+    let Some((name, return_type)) = parse_initializer(data) else {
+        log_error!("PARSER ERROR: Failed to parse initializer in global expression!");
     };
 
-    let Some(expr) = parse_expr(data) else {
-        log_error!("Failed to parse expression for global statement: {:#?}", data.toks.peek());
+    let Some(name) = name else {
+        log_error!("PARSER ERROR: Identifier expected, found none!");
     };
 
-    if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
-        return Some(UVGlobalStmt::SingleExpression {
-            expression: UVExpr::Compound {
-                left: Box::new(UVExpr::Identifier(identifier)),
-                right: Box::new(expr)
+    match data.toks.peek() {
+        Some(Token::Punctuator(PunctuatorType::OpenParen)) => {
+            let Some(params) = parse_params(data) else {
+                log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
+            };
+
+            if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
+                return Some(UVGlobalStmt::Function {
+                    name,
+                    return_type,
+                    params,
+                    body: None
+                });
             }
-        });
+
+            let body = parse_body(data);
+
+            Some(UVGlobalStmt::Function {
+                name,
+                return_type,
+                params,
+                body
+            })
+        },
+
+        Some(Token::Punctuator(PunctuatorType::Semicolon))
+        | Some(Token::Assignment(_)) => todo!("Global variables"),
+
+        _ => log_error!("PARSER ERROR: Expected a function declaration or variable assignment after initializer! Found token: {:?}", data.toks.peek()),
+    }
+}
+
+pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
+    assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
+
+    let mut params = Vec::new();
+
+    while !try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
+        if let Some((name, type_)) = parse_initializer(data) {
+            let name = match name {
+                None => None,
+                Some(UVIdent::Identifier(name)) => Some(name),
+
+                _ => log_error!("Unknown identifier for parameter name, found: {:#?}", name)
+            };
+
+            params.push(CXParameter { name, type_ });
+        } else {
+            log_error!("Failed to parse parameter in function call: {:#?}", data.toks.peek());
+        }
+
+        if !try_next!(data, Token::Operator(OperatorType::Comma)) {
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+            break;
+        }
     }
 
-    let body = parse_body(data)?;
-
-    Some(
-        UVGlobalStmt::BodiedExpression {
-            header:
-                UVExpr::Compound {
-                    left: Box::new(UVExpr::Identifier(identifier)),
-                    right: Box::new(expr)
-                },
-            body
-        }
-    )
+    Some(params)
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<UVExpr> {

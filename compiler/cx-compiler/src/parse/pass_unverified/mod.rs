@@ -1,12 +1,14 @@
+use std::fmt::Display;
+use crate::lex::token::OperatorType;
 use crate::parse::macros::error_pointer;
 use crate::parse::parser::ParserData;
+use crate::parse::pass_molded::CXParameter;
 use crate::parse::pass_unverified::global_scope::parse_global_stmt;
 use crate::parse::value_type::CXValType;
-use crate::util::dump_all;
+use crate::util::{dump_all, dump_data};
 
 mod expression;
 mod global_scope;
-mod operators;
 mod format;
 mod typing;
 
@@ -15,11 +17,11 @@ pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
 
     while parser_data.toks.has_next() {
         let Some(stmt) = parse_global_stmt(parser_data) else {
-            eprintln!("PARSER ERROR: Unverified parsing failed, dumping correctly parsed expressions.");
-            eprintln!("{}", error_pointer(parser_data));
-            dump_all(stmts);
             return None;
         };
+
+        dump_data(&stmt);
+        dump_data(&"\n".to_string());
 
         stmts.push(stmt);
     }
@@ -45,58 +47,31 @@ pub enum UVGlobalStmt {
         type_: CXValType
     },
 
-    SingleExpression {
-        expression: UVExpr
-    },
-
-    BodiedExpression {
-        header: UVExpr,
-        body: UVExpr
+    Function {
+        name: UVIdent,
+        params: Vec<CXParameter>,
+        return_type: CXValType,
+        body: Option<UVExpr>
     },
 
     HandledInternally
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum UVUnOp {
-    Dereference,
-    Negative,
-    BNot,
-    LNot,
-    ArrayIndex,
-    MethodAccess,
-    UnaryAccess
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum UVBinOp {
-    Add,
-    Subtract, Multiply, Divide, Modulus,
-    Less, Greater, LessEqual, GreaterEqual,
-    Equal, NotEqual,
-
-    LAnd, LOr, BitAnd, BitOr, BitXor,
-    LShift, RShift,
-
-    Comma,
-
-    Access,
-
-    Assignment(Option<Box<UVBinOp>>) // for compound assignment (+=, etc)
+pub enum UVOp {
+    Assignment(Option<OperatorType>),
+    BinOp(OperatorType),
+    UnOpPre(OperatorType),
+    UnOpPost(OperatorType),
 }
 
 #[derive(Debug)]
 pub enum UVExpr {
-    Identifier(String),
+    Identifier(UVIdent),
     IntLiteral(i64),
     FloatLiteral(f64),
     StringLiteral(String),
 
-    UnOp {                      // prefix and suffix operators
-        operator: UVUnOp,
-        operand: Box<UVExpr>
-    },
-    Parenthesized(Option<Box<UVExpr>>), // (expr)
     Compound {                  // expr1 expr2 (int x, x(a,b,c) x[1], etc)
         left: Box<UVExpr>,
         right: Box<UVExpr>,
@@ -125,11 +100,27 @@ pub enum UVExpr {
     },
 
     Complex {
-        op_stack: Vec<UVBinOp>,
+        op_stack: Vec<UVOp>,
         expr_stack: Vec<UVExpr>
     },
 
     ExprChain(Vec<UVExpr>),
 
+    Parenthesized(Option<Box<UVExpr>>),
     Braced(Box<UVExpr>)
+}
+
+#[derive(Debug)]
+pub enum UVIdent {
+    Identifier(String),
+    ScopedIdentifier(Vec<String>),
+}
+
+impl Display for UVIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UVIdent::Identifier(name) => write!(f, "{}", name),
+            UVIdent::ScopedIdentifier(names) => write!(f, "{}", names.join("::")),
+        }
+    }
 }

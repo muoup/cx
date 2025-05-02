@@ -1,5 +1,6 @@
 use crate::log_error;
-use crate::parse::pass_bytecode::typing::{get_type_size, struct_field_offset};
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
+use crate::parse::pass_molded::TypeMap;
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_typecheck::TypeEnvironment;
 
@@ -34,11 +35,11 @@ pub struct StructAccessRecord {
 }
 
 pub fn struct_access(
-    env: &TypeEnvironment,
+    type_map: &TypeMap,
     type_: &CXValType,
     field: &str
 ) -> Option<StructAccessRecord> {
-    let CXValType::Structured { fields } = get_intrinsic_val(env, type_).cloned()? else {
+    let CXValType::Structured { fields } = get_intrinsic_type(type_map, type_)? else {
         log_error!("Cannot access field {field} of non-structured type {type_}");
     };
 
@@ -56,7 +57,7 @@ pub fn struct_access(
             );
         }
 
-        offset += get_type_size(env.type_map, ty)?;
+        offset += get_type_size(type_map, ty)?;
     }
 
     None

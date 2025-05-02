@@ -1,7 +1,5 @@
-use std::env::args;
-use log::log;
 use crate::log_error;
-use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction, VirtualValue};
+use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::pass_molded::TypeMap;
 use crate::parse::value_type::CXValType;
 

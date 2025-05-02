@@ -300,7 +300,6 @@ dependencies = [
 name = "cx-lsp"
 version = "0.1.0"
 dependencies = [
- "cx-compiler",
  "tokio",
  "tower-lsp",
 ]

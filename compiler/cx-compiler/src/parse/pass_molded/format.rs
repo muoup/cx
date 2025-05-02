@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use crate::{fwrite, fwriteln};
 use crate::parse::format::{dedent, indent};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXAST};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
 
 impl Display for CXAST<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -129,9 +129,17 @@ impl Display for CXExpr {
                 fwrite!(f, "}}")
             },
 
-            CXExpr::StructAccess { expr, field, field_index, field_offset, .. } => {
-                fwrite!(f, "({}.{}{{{}, {}}})", expr, field, field_index, field_offset)
-            },
+            CXExpr::UnOp { operator, operand } => {
+                match operator {
+                    CXUnOp::Negative => fwrite!(f, "-{}", operand),
+                    CXUnOp::LNot => fwrite!(f, "!{}", operand),
+                    CXUnOp::BNot => fwrite!(f, "~{}", operand),
+                    CXUnOp::InitializerIndex => fwrite!(f, ".{}", operand),
+                    CXUnOp::Dereference => fwrite!(f, "*{}", operand),
+                    CXUnOp::ArrayIndex => fwrite!(f, "{}[]", operand),
+                    CXUnOp::AddressOf => fwrite!(f, "&{}", operand),
+                }
+            }
 
             _ => fwrite!(f, "{:?}", self)
         }

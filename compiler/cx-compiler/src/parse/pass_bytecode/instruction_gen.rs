@@ -1,7 +1,8 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
-use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting};
-use crate::parse::pass_molded::CXExpr;
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting, struct_field_offset};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp};
+use crate::parse::pass_typecheck::type_utils::struct_access;
 use crate::parse::value_type::{is_structure, CXValType};
 
 pub(crate) fn generate_instruction(
@@ -51,6 +52,27 @@ pub(crate) fn generate_instruction(
 
             Some(memory)
         },
+
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::Access } => {
+            let left_id = generate_instruction(builder, lhs.as_ref())?;
+            let ltype = builder.get_type(left_id)?.clone();
+
+            let CXExpr::VarReference(field_name) = rhs.as_ref() else {
+                log_error!("Invalid field access: {rhs}");
+            };
+
+            let struct_access = struct_access(&builder.type_map, &ltype, field_name)?;
+
+            builder.add_instruction(
+                VirtualInstruction::StructAccess {
+                    struct_: left_id,
+                    field_offset: struct_access.field_offset,
+                    field_index: struct_access.field_index
+                },
+                struct_access.field_type.clone()
+            )
+        },
+
         CXExpr::BinOp { lhs, rhs, op } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let right_id = generate_instruction(builder, rhs.as_ref())?;
@@ -99,7 +121,7 @@ pub(crate) fn generate_instruction(
 
             match expr.as_ref() {
                 CXExpr::VarReference(_) |
-                CXExpr::StructAccess { .. }
+                CXExpr::BinOp { op: CXBinOp::Access, .. }
                     if !is_structure(&builder.type_map, to_type) => {
 
                     inner = builder.add_instruction(
@@ -173,17 +195,30 @@ pub(crate) fn generate_instruction(
             )
         },
 
-        CXExpr::StructAccess { expr, field_type, field_offset, field_index, .. } => {
-            let struct_ref = generate_instruction(builder, expr.as_ref())?;
+        CXExpr::UnOp { operator, operand } => {
+            match operator {
+                CXUnOp::Dereference => {
+                    let value = generate_instruction(builder, operand.as_ref())?;
+                    let CXValType::PointerTo(inner_type) = builder.get_type(value)?.clone() else {
+                        log_error!("Dereference operator applied to non-pointer type");
+                    };
 
-            builder.add_instruction(
-                VirtualInstruction::StructAccess {
-                    struct_: struct_ref,
-                    field_offset: *field_offset,
-                    field_index: *field_index,
+                    builder.add_instruction(
+                        VirtualInstruction::Load { value },
+                        *inner_type
+                    )
                 },
-                field_type.clone()
-            )
+                CXUnOp::AddressOf => {
+                    let value = generate_instruction(builder, operand.as_ref())?;
+
+                    builder.add_instruction(
+                        VirtualInstruction::AddressOf { value },
+                        CXValType::PointerTo(Box::new(builder.get_type(value)?.clone()))
+                    )
+                },
+
+                _ => todo!("generate_instruction for {:?}", operator)
+            }
         },
 
         _ => todo!("generate_instruction for {:?}", expr)

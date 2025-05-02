@@ -35,7 +35,7 @@ void vector<T>::push(this, T object) {
     this->data = realloc(this->data, this->capacity * sizeof(T));
 }
 
-optional<T*> vector<T>::at(this, usize index) {
+T* vector<T>::at(this, usize index) -> @optional(none = NULL) {
     if (index >= this->length) {
         return None;
     }

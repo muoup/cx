@@ -1,3 +1,4 @@
+use crate::log_error;
 use crate::parse::FileInformation;
 use crate::parse::interface_serializer::emit_types;
 use crate::parse::value_type::CXValType;
@@ -7,8 +8,9 @@ use crate::parse::pass_typecheck::intrinsic_types::add_internal_types;
 use crate::parse::pass_typecheck::mappings::parse_fn_mappings;
 use crate::util::ScopedMap;
 
+pub mod type_utils;
+
 mod checker;
-mod type_utils;
 mod intrinsic_types;
 mod mappings;
 
@@ -45,7 +47,8 @@ pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option
             }
         }
 
-        type_check_traverse(&mut type_environment, body);
+        type_check_traverse(&mut type_environment, body)?;
+
         type_environment.symbol_table.pop_scope();
     }
 
