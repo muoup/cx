@@ -2,9 +2,10 @@
 
 use std::any::Any;
 use std::clone;
+use crate::lex::token::OperatorType;
 use crate::log_error;
-use crate::mangling::member_function_mangle;
-use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVGlobalStmt, UVAST};
+use crate::mangling::namespace_mangle;
+use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVOp, UVAST};
 use crate::parse::pass_molded::{CXExpr, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use crate::parse::pass_molded::expr_molding::{mold_expr_stack, mold_expression, mold_type, split_initialization};
 use crate::parse::pass_molded::pattern_molding::{mold_delimited, PseudoUVExpr};
@@ -32,6 +33,8 @@ pub(crate) fn mold_globals(ast: &UVAST, cx_ast: &mut CXAST) -> Option<()> {
                 cx_ast.imports.push(import.clone()),
 
             UVGlobalStmt::HandledInternally => (),
+
+            _ => todo!()
         }
     }
 
@@ -119,12 +122,12 @@ fn mold_function(type_: CXValType, name: &UVExpr, parenthesized: &UVExpr) -> Opt
     )
 }
 
-fn mold_member_function(type_: CXValType, expr_stack: &Vec<UVExpr>, op_stack: &Vec<UVBinOp>) -> Option<CXFunctionPrototype> {
+fn mold_member_function(type_: CXValType, expr_stack: &Vec<UVExpr>, op_stack: &Vec<UVOp>) -> Option<CXFunctionPrototype> {
     let molded_expr_stack = mold_expr_stack(expr_stack, op_stack)?;
 
     let PseudoUVExpr::BinOp {
         left, right,
-        op: UVBinOp::ScopeRes
+        op: OperatorType::ScopeRes
     } = molded_expr_stack else  {
         log_error!("Failed to parse function name: {:?}", molded_expr_stack)
     };
@@ -149,7 +152,7 @@ fn mold_member_function(type_: CXValType, expr_stack: &Vec<UVExpr>, op_stack: &V
         (fn_name.as_str(), paren)
     };
 
-    let name = member_function_mangle(
+    let name = namespace_mangle(
         class_name,
         fn_name
     );
@@ -195,7 +198,7 @@ pub(crate) fn mold_parameters(expr: Option<&UVExpr>) -> Option<Vec<CXParameter>>
     match expr {
         None => Some(vec![]),
         Some(expr) => {
-            let Some(delimited) = mold_delimited(expr, UVBinOp::Comma) else {
+            let Some(delimited) = mold_delimited(expr, UVOp::BinOp(OperatorType::Comma)) else {
                 log_error!("Failed to mold parameters: {}", expr);
             };
 
@@ -224,7 +227,7 @@ pub(crate) fn mold_param(expr: &PseudoUVExpr) -> Option<CXParameter> {
             }
         },
 
-        PseudoUVExpr::BinOp { left, right, op: UVBinOp::Multiply } => {
+        PseudoUVExpr::BinOp { left, right, op: OperatorType::Asterisk } => {
             let PseudoUVExpr::ID(left) = *left.as_ref() else {
                 log_error!("Failed to parse function name: {:?}", left);
             };
@@ -241,7 +244,6 @@ pub(crate) fn mold_param(expr: &PseudoUVExpr) -> Option<CXParameter> {
             )
         },
 
-        PseudoUVExpr::BinOp { .. } =>
-            log_error!("Failed to parse parameter name: {:?}", expr),
+        _ => log_error!("Failed to parse parameter name: {:?}", expr),
     }
 }

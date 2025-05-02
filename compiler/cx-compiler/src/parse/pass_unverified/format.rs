@@ -56,7 +56,6 @@ impl Display for UVExpr {
                 }
             }
 
-            UVExpr::UnOp { operator, operand } => writeln!(f, "(`{:?}` {})", operator, operand),
             UVExpr::Parenthesized(expr) => {
                 if let Some(expr) = expr {
                     fwrite!(f, "({})", expr)

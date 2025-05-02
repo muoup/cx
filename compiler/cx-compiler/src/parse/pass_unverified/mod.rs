@@ -1,3 +1,4 @@
+use crate::lex::token::OperatorType;
 use crate::parse::macros::error_pointer;
 use crate::parse::parser::ParserData;
 use crate::parse::pass_unverified::global_scope::parse_global_stmt;
@@ -6,7 +7,6 @@ use crate::util::dump_all;
 
 mod expression;
 mod global_scope;
-mod operators;
 mod format;
 mod typing;
 
@@ -16,7 +16,7 @@ pub fn generate_unverified(parser_data: &mut ParserData) -> Option<UVAST> {
     while parser_data.toks.has_next() {
         let Some(stmt) = parse_global_stmt(parser_data) else {
             eprintln!("PARSER ERROR: Unverified parsing failed, dumping correctly parsed expressions.");
-            eprintln!("{}", error_pointer(parser_data));
+            eprintln!("{}", error_pointer(&parser_data.toks));
             dump_all(stmts);
             return None;
         };
@@ -54,37 +54,22 @@ pub enum UVGlobalStmt {
         body: UVExpr
     },
 
+    Function {
+        name: String,
+        params: Vec<(String, CXValType)>,
+        return_type: CXValType,
+        body: Option<UVExpr>
+    },
+
     HandledInternally
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum UVUnOp {
-    Dereference, AddressOf,
-    Negative,
-    BNot,
-    LNot,
-    ArrayIndex,
-    MethodAccess,
-    UnaryAccess
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum UVBinOp {
-    Add,
-    Subtract, Multiply, Divide, Modulus,
-    Less, Greater, LessEqual, GreaterEqual,
-    Equal, NotEqual,
-
-    LAnd, LOr, BitAnd, BitOr, BitXor,
-    LShift, RShift,
-
-    ScopeRes,
-
-    Comma,
-
-    Access,
-
-    Assignment(Option<Box<UVBinOp>>) // for compound assignment (+=, etc)
+pub enum UVOp {
+    Assignment(Option<OperatorType>),
+    BinOp(OperatorType),
+    UnOpPre(OperatorType),
+    UnOpPost(OperatorType),
 }
 
 #[derive(Debug)]
@@ -94,11 +79,6 @@ pub enum UVExpr {
     FloatLiteral(f64),
     StringLiteral(String),
 
-    UnOp {                      // prefix and suffix operators
-        operator: UVUnOp,
-        operand: Box<UVExpr>
-    },
-    Parenthesized(Option<Box<UVExpr>>), // (expr)
     Compound {                  // expr1 expr2 (int x, x(a,b,c) x[1], etc)
         left: Box<UVExpr>,
         right: Box<UVExpr>,
@@ -127,11 +107,12 @@ pub enum UVExpr {
     },
 
     Complex {
-        op_stack: Vec<UVBinOp>,
+        op_stack: Vec<UVOp>,
         expr_stack: Vec<UVExpr>
     },
 
     ExprChain(Vec<UVExpr>),
 
+    Parenthesized(Option<Box<UVExpr>>),
     Braced(Box<UVExpr>)
 }

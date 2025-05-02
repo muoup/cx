@@ -1,19 +1,29 @@
+use crate::lex::token::OperatorType;
 use crate::log_error;
-use crate::parse::pass_molded::{CXBinOp, CXExpr};
+use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp};
 use crate::parse::pass_molded::expr_molding::{mold_expr_stack, mold_expression, mold_pseudo_expr};
-use crate::parse::pass_unverified::{UVBinOp, UVExpr};
+use crate::parse::pass_unverified::{UVExpr, UVOp};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PseudoUVExpr<'a> {
     ID(&'a UVExpr),
+    UnOp {
+        expr: Box<PseudoUVExpr<'a>>,
+        op: CXUnOp
+    },
     BinOp {
         left: Box<PseudoUVExpr<'a>>,
         right: Box<PseudoUVExpr<'a>>,
-        op: UVBinOp
+        op: OperatorType
+    },
+    Assignment {
+        left: Box<PseudoUVExpr<'a>>,
+        right: Box<PseudoUVExpr<'a>>,
+        op: Option<OperatorType>
     },
 }
 
-pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVBinOp) -> Option<Vec<PseudoUVExpr>> {
+pub(crate) fn mold_delimited(expr: &UVExpr, delimited: UVOp) -> Option<Vec<PseudoUVExpr>> {
     match expr {
         // If there is no operators, we can assume there is only one expression
         UVExpr::Compound { .. } => {

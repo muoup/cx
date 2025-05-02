@@ -1,4 +1,4 @@
-pub(crate) fn member_function_mangle(
+pub(crate) fn namespace_mangle(
     class_name: &str,
     function_name: &str,
 ) -> String {

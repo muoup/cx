@@ -1,6 +1,6 @@
 use std::env::args;
 use crate::log_error;
-use crate::mangling::member_function_mangle;
+use crate::mangling::namespace_mangle;
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, struct_field_offset};
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::{CXBinOp, CXExpr, CXInitIndex, CXUnOp};
@@ -91,7 +91,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
                         log_error!("TYPE ERROR: Cannot access function {name} on non-structured type {lhs_type}");
                     };
 
-                    let mangled_name = member_function_mangle(
+                    let mangled_name = namespace_mangle(
                         struct_name.as_str(),
                         name.as_str()
                     );

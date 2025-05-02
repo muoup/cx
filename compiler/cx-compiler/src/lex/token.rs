@@ -1,14 +1,13 @@
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Plus,
-    Minus,
-    Asterisk,
-    Slash, Modulo,
+    Plus, Minus,
+    Asterisk, Slash,
+    Percent,
 
     NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
 
-    LAnd, LOr, LNot, BitAnd, BitOr, BitXor,
-    BNot,
+    LAnd, LOr, LNot,
+    BAnd, BOr, BXor, BNot,
     LShift, RShift,
 
     Increment, Decrement,
@@ -17,7 +16,7 @@ pub enum OperatorType {
 
     ArrayIndex,
 
-    Access, PointerAccess, AddressOf, /* Dereference = Multiply */
+    Access,
     ScopeRes
 }
 
@@ -123,25 +122,6 @@ impl Token {
             "import" => Token::Keyword(KeywordType::Import),
 
             _ => Token::Identifier(str),
-        }
-    }
-}
-
-impl OperatorType {
-    pub(crate) fn precedence(&self) -> i32 {
-        match self {
-            OperatorType::LAnd => 2,
-            OperatorType::LOr => 3,
-            OperatorType::Equal | OperatorType::NotEqual => 4,
-            OperatorType::Less | OperatorType::LessEqual | OperatorType::Greater | OperatorType::GreaterEqual => 5,
-            OperatorType::Plus | OperatorType::Minus => 6,
-            OperatorType::Asterisk | OperatorType::Slash | OperatorType::Modulo => 7,
-            OperatorType::LShift | OperatorType::RShift => 8,
-            OperatorType::BitAnd | OperatorType::BitXor | OperatorType::BitOr => 9,
-            OperatorType::LNot | OperatorType::BNot | OperatorType::Less | OperatorType::Greater => 10,
-            OperatorType::BitAnd | OperatorType::BitOr | OperatorType::BitXor => 11,
-
-            _ => 100
         }
     }
 }

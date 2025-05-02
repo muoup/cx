@@ -51,7 +51,7 @@ pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs
             OperatorType::Minus => builder.ins().isub(lhs, rhs),
             OperatorType::Asterisk => builder.ins().imul(lhs, rhs),
             OperatorType::Slash => builder.ins().sdiv(lhs, rhs),
-            OperatorType::Modulo => builder.ins().srem(lhs, rhs),
+            OperatorType::Percent => builder.ins().srem(lhs, rhs),
             OperatorType::Equal => builder.ins().icmp(ir::condcodes::IntCC::Equal, lhs, rhs),
             OperatorType::NotEqual => builder.ins().icmp(ir::condcodes::IntCC::NotEqual, lhs, rhs),
             OperatorType::Less => builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, lhs, rhs),

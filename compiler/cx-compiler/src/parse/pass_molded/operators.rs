@@ -1,82 +1,65 @@
-use std::clone;
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp};
-use crate::parse::pass_molded::expr_molding::mold_expression;
-use crate::parse::pass_unverified::{UVBinOp, UVExpr, UVUnOp};
+use crate::lex::token::OperatorType;
+use crate::log_error;
+use crate::parse::pass_molded::{CXBinOp, CXUnOp};
+use crate::parse::pass_unverified::UVOp;
 
-pub(crate) fn mold_binop(left: CXExpr, right: CXExpr, op: &UVBinOp) -> Option<CXExpr> {
-    match op {
-        UVBinOp::Assignment(op) => {
-            let op = op
-                .as_ref()
-                .map(|op| uv_cx_binop(op.as_ref().clone()));
-
-            Some(
-                CXExpr::Assignment {
-                    lhs: Box::new(left),
-                    rhs: Box::new(right),
-                    op
-                }
-            )
-        },
-
-        _ => Some(
-            CXExpr::BinOp {
-                lhs: Box::new(left),
-                rhs: Box::new(right),
-                op: uv_cx_binop(op.clone())
-            }
-        )
-    }
-}
-
-pub(crate) fn mold_unop(operand: &UVExpr, operator: &UVUnOp) -> Option<CXExpr> {
+pub(crate) fn op_precedence(op: UVOp) -> Option<u8> {
     Some(
-        CXExpr::UnOp {
-            operand: Box::new(mold_expression(operand)?),
-            operator: uv_cx_unop(operator.clone())
+        match op {
+            UVOp::UnOpPost(OperatorType::Plus) => 2,
+            UVOp::UnOpPost(OperatorType::Minus) => 2,
+            UVOp::UnOpPre(OperatorType::LNot) => 2,
+            UVOp::UnOpPre(OperatorType::BNot) => 2,
+            UVOp::UnOpPre(OperatorType::Asterisk) => 2,
+            UVOp::UnOpPre(OperatorType::BAnd) => 2,
+            UVOp::BinOp(OperatorType::ScopeRes) => 2,
+            UVOp::BinOp(OperatorType::Access) => 2,
+
+            UVOp::BinOp(OperatorType::Asterisk) => 3,
+            UVOp::BinOp(OperatorType::Slash) => 3,
+            UVOp::BinOp(OperatorType::Percent) => 3,
+
+            UVOp::BinOp(OperatorType::Plus) => 4,
+            UVOp::BinOp(OperatorType::Minus) => 4,
+
+            UVOp::Assignment(_) => 14,
+
+            _ => log_error!("get_precedence: Unhandled operator precedence for {:?}", op),
         }
     )
 }
 
-pub(crate) fn uv_cx_binop(op: UVBinOp) -> CXBinOp {
-    match op {
-        UVBinOp::Add        => CXBinOp::Add,
-        UVBinOp::Subtract   => CXBinOp::Subtract,
-        UVBinOp::Multiply   => CXBinOp::Multiply,
-        UVBinOp::Divide     => CXBinOp::Divide,
-        UVBinOp::Modulus    => CXBinOp::Modulus,
+pub(crate) fn tok_cx_binop(op: OperatorType) -> Option<CXBinOp> {
+    Some(
+        match op {
+            OperatorType::Plus          => CXBinOp::Add,
+            OperatorType::Minus         => CXBinOp::Subtract,
+            OperatorType::Asterisk      => CXBinOp::Multiply,
+            OperatorType::Slash         => CXBinOp::Divide,
+            OperatorType::Percent       => CXBinOp::Modulus,
 
-        UVBinOp::Access     => CXBinOp::Access,
+            OperatorType::Less          => CXBinOp::Less,
+            OperatorType::Greater       => CXBinOp::Greater,
+            OperatorType::LessEqual     => CXBinOp::LessEqual,
+            OperatorType::GreaterEqual  => CXBinOp::GreaterEqual,
 
-        _ => todo!("uv_cx_binop: {:?}", op)
-    }
+            _ => log_error!("tok_cx_binop: Unhandled operator type {:?}", op),
+        }
+    )
 }
 
-pub(crate) fn uv_cx_unop(op: UVUnOp) -> CXUnOp {
-    match op {
-        UVUnOp::Dereference     => CXUnOp::Dereference,
-        UVUnOp::BNot            => CXUnOp::BNot,
-        UVUnOp::LNot            => CXUnOp::LNot,
-        UVUnOp::Negative        => CXUnOp::Negative,
-        UVUnOp::UnaryAccess     => CXUnOp::InitializerIndex,
-        UVUnOp::AddressOf       => CXUnOp::AddressOf,
+pub(crate) fn tok_cx_unop(op: OperatorType) -> Option<CXUnOp> {
+    Some(
+        match op {
+            OperatorType::Asterisk      => CXUnOp::Dereference,
+            OperatorType::BAnd          => CXUnOp::AddressOf,
+            OperatorType::Minus         => CXUnOp::Negative,
+            OperatorType::BNot          => CXUnOp::BNot,
+            OperatorType::LNot          => CXUnOp::LNot,
+            OperatorType::Access        => CXUnOp::ArrayIndex,
+            OperatorType::ScopeRes      => CXUnOp::InitializerIndex,
 
-        _ => todo!()
-    }
-}
-
-pub(crate) fn binop_precedence(op: &UVBinOp) -> u8 {
-    match op {
-        // TODO: Proper operator precedence
-        UVBinOp::ScopeRes => 0,
-
-        UVBinOp::Add | UVBinOp::Subtract => 1,
-        UVBinOp::Multiply | UVBinOp::Divide | UVBinOp::Modulus => 2,
-
-        UVBinOp::Access => 8,
-        UVBinOp::Assignment(_) => 9,
-        UVBinOp::Comma => 10,
-
-        _ => todo!("binop_precedence({:?})", op)
-    }
+            _ => log_error!("tok_cx_unop: Unhandled operator type {:?}", op),
+        }
+    )
 }

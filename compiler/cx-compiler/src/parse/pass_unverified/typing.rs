@@ -98,3 +98,10 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
         }
     )
 }
+
+pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(String, CXValType)> {
+    let _type = parse_identifier(data);
+    let name = parse_identifier(data)?;
+
+    Some((name, CXValType::Identifier(_type?)))
+}

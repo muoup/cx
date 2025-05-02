@@ -6,9 +6,9 @@ mod format;
 
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_molded::glob_molding::mold_globals;
-use crate::parse::pass_unverified::{UVExpr, UVAST};
+use crate::parse::pass_unverified::UVAST;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 
 pub type TypeMap = HashMap<String, CXValType>;
 pub type FunctionMap = HashMap<String, CXFunctionPrototype>;
@@ -70,7 +70,7 @@ pub enum CXGlobalStmt {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
@@ -79,7 +79,7 @@ pub enum CXUnOp {
     InitializerIndex
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum CXBinOp {
     Add, Subtract, Multiply, Divide, Modulus,
     Less, Greater, LessEqual, GreaterEqual,
