@@ -1,7 +1,8 @@
 use std::env;
 use crate::codegen::ast_codegen;
-use crate::parse::{pass_bytecode, pass_molded, pass_typecheck, pass_unverified, FileInformation};
+use crate::parse::{pass_bytecode, pass_ast, pass_typecheck, FileInformation};
 use crate::parse::parser::{ParserData, TokenIter, VisibilityMode};
+use crate::parse::pass_ast::parse_ast;
 use crate::util::{dump_all, dump_data};
 
 pub mod lex;
@@ -41,16 +42,13 @@ fn main() {
         file_path: file_path.to_string(),
     };
 
-    let uv = pass_unverified::generate_unverified(&mut parser_data).unwrap();
-    dump_data(&uv);
+    let mut ast = parse_ast(parser_data).unwrap();
+    dump_data(&ast);
 
-    let mut molded = pass_molded::mold_ast(&uv).unwrap();
-    dump_data(&molded);
+    pass_typecheck::type_check(&file_information, &mut ast).unwrap();
+    dump_data(&ast);
 
-    pass_typecheck::type_check(&file_information, &mut molded).unwrap();
-    dump_data(&molded);
-
-    let program_bytecode = pass_bytecode::gen_bytecode(molded).unwrap();
+    let program_bytecode = pass_bytecode::gen_bytecode(ast).unwrap();
     dump_data(&program_bytecode);
 
     ast_codegen(&program_bytecode, "a.o").unwrap();

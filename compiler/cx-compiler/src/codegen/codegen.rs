@@ -7,7 +7,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{EntityRef, FunctionBuilder, FunctionBuilderContext, InstBuilder, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use crate::parse::pass_bytecode::typing::get_intrinsic_type;
-use crate::parse::pass_molded::{CXFunctionPrototype, CXParameter};
+use crate::parse::pass_ast::{CXFunctionPrototype, CXParameter};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &CXFunctionPrototype) -> Option<()> {
     let mut sig = Signature::new(
@@ -30,8 +30,8 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &C
         .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)
         .unwrap();
 
-    global_state.function_ids.insert(prototype.name.clone(), id);
-    global_state.function_sigs.insert(prototype.name.clone(), sig);
+    global_state.function_ids.insert(prototype.name.to_owned(), id);
+    global_state.function_sigs.insert(prototype.name.to_owned(), sig);
 
     Some(())
 }

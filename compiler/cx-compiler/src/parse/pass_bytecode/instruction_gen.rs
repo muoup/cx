@@ -1,7 +1,8 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting, struct_field_offset};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXUnOp};
+use crate::parse::pass_ast::{CXBinOp, CXExpr, CXUnOp};
+use crate::parse::pass_ast::identifier::CXIdent;
 use crate::parse::pass_typecheck::type_utils::struct_access;
 use crate::parse::value_type::{is_structure, CXValType};
 
@@ -10,7 +11,7 @@ pub(crate) fn generate_instruction(
     expr: &CXExpr
 ) -> Option<ValueID> {
     match expr {
-        CXExpr::Assignment { lhs, rhs, op: _ } => {
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
             let lhs = generate_instruction(builder, lhs.as_ref())?;
             let rhs = generate_instruction(builder, rhs.as_ref())?;
             let assn_type = builder.get_type(lhs)?.clone();
@@ -24,7 +25,7 @@ pub(crate) fn generate_instruction(
                 CXValType::Unit
             )
         },
-        CXExpr::VarDeclaration { name, type_, initializer } => {
+        CXExpr::VarDeclaration { name, type_ } => {
             let Some(type_size) = get_type_size(&builder.type_map, type_) else {
                 log_error!("Invalid type for variable declaration: {type_}");
             };
@@ -36,19 +37,7 @@ pub(crate) fn generate_instruction(
                 type_.clone()
             )?;
 
-            builder.symbol_table.insert(name.clone(), memory);
-
-            if let Some(initializer) = initializer {
-                let value = generate_instruction(builder, initializer)?;
-                builder.add_instruction(
-                    VirtualInstruction::Store {
-                        memory,
-                        value,
-                        type_: type_.clone()
-                    },
-                    CXValType::Unit
-                )?;
-            }
+            builder.symbol_table.insert(name.to_owned(), memory);
 
             Some(memory)
         },
@@ -57,11 +46,11 @@ pub(crate) fn generate_instruction(
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let ltype = builder.get_type(left_id)?.clone();
 
-            let CXExpr::VarReference(field_name) = rhs.as_ref() else {
+            let CXExpr::Identifier(field_name) = rhs.as_ref() else {
                 log_error!("Invalid field access: {rhs}");
             };
 
-            let struct_access = struct_access(&builder.type_map, &ltype, field_name)?;
+            let struct_access = struct_access(&builder.type_map, &ltype, field_name.as_str())?;
 
             builder.add_instruction(
                 VirtualInstruction::StructAccess {
@@ -120,7 +109,7 @@ pub(crate) fn generate_instruction(
             let mut inner = generate_instruction(builder, expr.as_ref())?;
 
             match expr.as_ref() {
-                CXExpr::VarReference(_) |
+                CXExpr::Identifier(_) |
                 CXExpr::BinOp { op: CXBinOp::Access, .. }
                     if !is_structure(&builder.type_map, to_type) => {
 
@@ -150,8 +139,8 @@ pub(crate) fn generate_instruction(
             )
         },
 
-        CXExpr::VarReference(val) => {
-            if let Some(id) = builder.symbol_table.get(val) {
+        CXExpr::Identifier(val) => {
+            if let Some(id) = builder.symbol_table.get(val.as_str()) {
                 Some(id.clone())
             } else {
                 log_error!("Variable not found in symbol table: {val}")
@@ -177,7 +166,7 @@ pub(crate) fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::DirectCall {
-                    function: name.clone(),
+                    function: name.to_owned(),
                     args: arg_ids
                 },
                 CXValType::Unit
@@ -191,7 +180,7 @@ pub(crate) fn generate_instruction(
                 VirtualInstruction::StringLiteral {
                     str_id: string_id,
                 },
-                CXValType::PointerTo(Box::new(CXValType::Identifier("char".to_string())))
+                CXValType::PointerTo(Box::new(CXValType::Identifier(CXIdent::from("char"))))
             )
         },
 

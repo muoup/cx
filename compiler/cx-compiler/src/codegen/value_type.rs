@@ -1,6 +1,6 @@
 use cranelift::codegen::ir;
 use crate::parse::pass_bytecode::typing::get_intrinsic_type;
-use crate::parse::pass_molded::TypeMap;
+use crate::parse::pass_ast::TypeMap;
 use crate::parse::value_type::CXValType;
 
 pub(crate) fn get_cranelift_abi_type(type_map: &TypeMap, val_type: &CXValType) -> ir::AbiParam {
@@ -31,7 +31,7 @@ pub(crate) fn get_cranelift_type(val_type: &CXValType, type_map: &TypeMap) -> ir
 
         CXValType::Unit => panic!("Unit type has no representation"),
         CXValType::Identifier(_type) => {
-            let Some(type_) = type_map.get(_type) else {
+            let Some(type_) = type_map.get(_type.as_str()) else {
                 panic!("Typechecking allowed invalid type {:#?}", _type);
             };
             get_cranelift_type(type_, type_map)

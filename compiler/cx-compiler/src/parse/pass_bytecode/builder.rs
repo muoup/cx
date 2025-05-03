@@ -1,5 +1,5 @@
 use crate::parse::pass_bytecode::ProgramBytecode;
-use crate::parse::pass_molded::{CXBinOp, FunctionMap, TypeMap};
+use crate::parse::pass_ast::{CXBinOp, FunctionMap, TypeMap};
 use crate::parse::value_type::CXValType;
 use crate::util::ScopedMap;
 

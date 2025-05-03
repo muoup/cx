@@ -1,4 +1,4 @@
-use crate::parse::pass_molded::TypeMap;
+use crate::parse::pass_ast::TypeMap;
 use crate::parse::value_type::CXValType;
 
 pub(crate) fn add_internal_types(type_map: &mut TypeMap) {

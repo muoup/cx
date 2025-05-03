@@ -1,6 +1,6 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
-use crate::parse::pass_molded::TypeMap;
+use crate::parse::pass_ast::TypeMap;
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_typecheck::TypeEnvironment;
 
@@ -18,7 +18,7 @@ pub fn get_intrinsic_val<'a>(
 ) -> Option<&'a CXValType> {
     match val {
         CXValType::Identifier(ident) => {
-            let type_ = env.type_map.get(ident)?;
+            let type_ = env.type_map.get(ident.as_str())?;
 
             get_intrinsic_val(env, type_)
         },

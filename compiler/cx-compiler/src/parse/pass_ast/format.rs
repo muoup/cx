@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use crate::{fwrite, fwriteln};
 use crate::parse::format::{dedent, indent};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
+use crate::parse::pass_ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
 
 impl Display for CXAST<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -34,9 +34,9 @@ impl Display for CXGlobalStmt {
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "fn {}({}) -> {:?}",
-             self.name,
-             self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
-             self.return_type
+                 self.name,
+                 self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
+                 self.return_type
         )
     }
 }
@@ -75,13 +75,9 @@ impl Display for CXExpr {
                 fwrite!(f, "{}({})", name, arg_strs)
             },
 
-            CXExpr::VarReference(ident) => fwrite!(f, "{}", ident),
-            CXExpr::VarDeclaration { name, type_, initializer } => {
+            CXExpr::Identifier(ident) => fwrite!(f, "{}", ident),
+            CXExpr::VarDeclaration { name, type_ } => {
                 fwrite!(f, "let {}: {}", name, type_)?;
-
-                if let Some(initializer) = initializer {
-                    fwrite!(f, " = {}", initializer)?;
-                }
 
                 Ok(())
             },
@@ -100,14 +96,6 @@ impl Display for CXExpr {
 
             CXExpr::BinOp { lhs, rhs, op } => {
                 fwrite!(f, "({} {} {})", lhs, op, rhs)
-            },
-
-            CXExpr::Assignment { lhs, rhs, op } => {
-                if let Some(op) = op {
-                    fwrite!(f, "{} {}= {}", lhs, op, rhs)
-                } else {
-                    fwrite!(f, "{} = {}", lhs, rhs)
-                }
             },
 
             CXExpr::ImplicitCast { expr, to_type, .. } => {
@@ -168,7 +156,7 @@ impl Display for CXBinOp {
 
             CXBinOp::Access => fwrite!(f, "."),
 
-            _ => todo!(),
+            _ => fwrite!(f, "{:?}", self)
         }
     }
 }

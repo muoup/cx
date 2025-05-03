@@ -1,48 +1,48 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::{assert_token_matches, log_error, try_next};
 use crate::parse::parser::{ParserData, VisibilityMode};
-use crate::parse::pass_molded::CXParameter;
-use crate::parse::pass_unverified::{UVExpr, UVGlobalStmt, UVIdent};
-use crate::parse::pass_unverified::expression::{parse_expr, parse_identifier, requires_semicolon};
-use crate::parse::pass_unverified::typing::{parse_initializer, parse_plain_typedef, parse_type};
+use crate::parse::pass_ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
+use crate::parse::pass_ast::expression::{parse_expr, requires_semicolon};
+use crate::parse::pass_ast::identifier::{CXIdent, CXTypedIdent};
+use crate::parse::pass_ast::typing::{parse_initializer, parse_plain_typedef, parse_type};
 use crate::parse::value_type::CXValType;
 
-pub(crate) fn parse_global_stmt(data: &mut ParserData) -> Option<UVGlobalStmt> {
+pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     match data.toks.peek()
         .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!") {
 
-        Token::Keyword(KeywordType::Import) => parse_import(data),
+        Token::Keyword(KeywordType::Import) => parse_import(data, ast),
 
         Token::Keyword(KeywordType::Struct) |
         Token::Keyword(KeywordType::Enum) |
-        Token::Keyword(KeywordType::Union) => parse_plain_typedef(data),
+        Token::Keyword(KeywordType::Union) => parse_plain_typedef(data, ast),
 
-        Token::Specifier(_) => parse_specifier(data),
+        Token::Specifier(_) => parse_specifier(data, ast),
 
-        _ => parse_global_expr(data)
+        _ => parse_global_expr(data, ast)
     }
 }
 
-pub(crate) fn parse_specifier(data: &mut ParserData) -> Option<UVGlobalStmt> {
+pub(crate) fn parse_specifier(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     assert_token_matches!(data, Token::Specifier(specifier));
 
     match specifier {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
             try_next!(data, Token::Punctuator(PunctuatorType::Colon));
-            Some(UVGlobalStmt::HandledInternally)
         },
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
             try_next!(data, Token::Punctuator(PunctuatorType::Colon));
-            Some(UVGlobalStmt::HandledInternally)
         },
 
         _ => unimplemented!("parse_specifier: {:#?}", specifier)
-    }
+    };
+
+    Some(())
 }
 
-pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
+pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Import));
 
     let mut import_path = String::new();
@@ -63,10 +63,26 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<UVGlobalStmt> {
         }
     };
 
-    Some(UVGlobalStmt::Import(import_path))
+    ast.imports.push(import_path);
+    Some(())
 }
 
-pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
+fn handle_member_this(class_name: &str, params: &mut Vec<CXParameter>) {
+    let Some(first_param) = params.first_mut() else {
+        return;
+    };
+
+    let CXValType::Identifier(ident) = &first_param.type_ else {
+        return;
+    };
+
+    if matches!(ident.as_str(), "this") {
+        first_param.type_ = CXValType::PointerTo(Box::new(CXValType::Identifier(CXIdent::from(class_name))));
+        first_param.name = Some(CXIdent::from("this"));
+    }
+}
+
+pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     let Some((name, return_type)) = parse_initializer(data) else {
         log_error!("PARSER ERROR: Failed to parse initializer in global expression!");
     };
@@ -77,33 +93,38 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> Option<UVGlobalStmt> {
 
     match data.toks.peek() {
         Some(Token::Punctuator(PunctuatorType::OpenParen)) => {
-            let Some(params) = parse_params(data) else {
+            let Some(mut params) = parse_params(data) else {
                 log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
             };
 
+            let name = match name {
+                CXTypedIdent::Namespace(ident) => {
+                    handle_member_this(ident.as_str(), &mut params);
+                    ident
+                },
+                CXTypedIdent::Standard(ident) => ident,
+                CXTypedIdent::Intrinsic(_) =>
+                    log_error!("PARSER ERROR: Expected function name, found intrinsic!")
+            };
+
+            let prototype = CXFunctionPrototype {
+                return_type, name, parameters: params
+            };
+
             if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
-                return Some(UVGlobalStmt::Function {
-                    name,
-                    return_type,
-                    params,
-                    body: None
-                });
+                ast.global_stmts.push(CXGlobalStmt::FunctionForward { prototype });
+            } else {
+                let body = parse_body(data)?;
+                ast.global_stmts.push(CXGlobalStmt::FunctionDefinition { prototype, body })
             }
 
-            let body = parse_body(data);
-
-            Some(UVGlobalStmt::Function {
-                name,
-                return_type,
-                params,
-                body
-            })
+            Some(())
         },
 
         Some(Token::Punctuator(PunctuatorType::Semicolon))
         | Some(Token::Assignment(_)) => todo!("Global variables"),
 
-        _ => log_error!("PARSER ERROR: Expected a function declaration or variable assignment after initializer! Found token: {:?}", data.toks.peek()),
+        _ => log_error!("PARSER ERROR: Expected a function declaration or variable assignment after initializer {:?} {:?}! Found token: {:?}", return_type, name, data.toks.peek()),
     }
 }
 
@@ -114,20 +135,14 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
 
     while !try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
         if let Some((name, type_)) = parse_initializer(data) {
-            let name = match name {
-                None => None,
-                Some(UVIdent::Identifier(name)) => Some(name),
-
-                _ => log_error!("Unknown identifier for parameter name, found: {:#?}", name)
-            };
+            let name = name.map(|name| name.assert_standard());
 
             params.push(CXParameter { name, type_ });
         } else {
             log_error!("Failed to parse parameter in function call: {:#?}", data.toks.peek());
         }
 
-        if !try_next!(data, Token::Operator(OperatorType::Comma)) {
-            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+        if !try_next!(data, Token::Operator(OperatorType::Comma)) { assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
             break;
         }
     }
@@ -135,23 +150,40 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
     Some(params)
 }
 
-pub(crate) fn parse_body(data: &mut ParserData) -> Option<UVExpr> {
+pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
     if try_next!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
         let mut body = Vec::new();
 
         while !try_next!(data, Token::Punctuator(PunctuatorType::CloseBrace)) {
+            let start_tok = data.toks.index;
+
             if let Some(stmt) = parse_expr(data) {
                 if requires_semicolon(&stmt) {
                     assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
                 }
 
+                println!("Parsed statement: {:#?}", stmt);
+
                 body.push(stmt);
             } else {
+                let end_tok = data.toks.index;
+
+                for i in start_tok..end_tok {
+                    println!("Token: {:#?}", data.toks.slice[i]);
+                }
+
                 log_error!("Failed to parse statement in body: {:#?}", data.toks.peek());
             }
         }
 
-        Some(UVExpr::ExprChain(body))
+        println!("Finished block");
+
+        Some (
+            CXExpr::Block {
+                exprs: body,
+                value: None
+            }
+        )
     } else {
         let body = parse_expr(data)?;
         assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));

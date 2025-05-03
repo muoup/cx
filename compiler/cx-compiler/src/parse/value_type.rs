@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
+use crate::parse::pass_ast::identifier::CXIdent;
 use crate::parse::pass_bytecode::typing::get_intrinsic_type;
-use crate::parse::pass_molded::TypeMap;
+use crate::parse::pass_ast::TypeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CXValType {
@@ -19,7 +20,7 @@ pub enum CXValType {
         size: usize
     },
 
-    Identifier(String)
+    Identifier(CXIdent)
 }
 
 impl Display for CXValType {

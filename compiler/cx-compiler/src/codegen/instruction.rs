@@ -11,7 +11,7 @@ use crate::log_error;
 use crate::parse::parser;
 use crate::parse::pass_bytecode::builder::{BlockInstruction, ValueID, VirtualInstruction};
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, TypeMap};
+use crate::parse::pass_ast::{CXBinOp, CXExpr, CXFunctionPrototype, TypeMap};
 use crate::parse::value_type::{is_structure, CXValType};
 
 /**

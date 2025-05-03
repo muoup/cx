@@ -2,7 +2,7 @@ use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};
 use crate::codegen::routines::string_literal;
 use crate::parse::pass_bytecode::builder::{BytecodeFunctionPrototype, ValueID};
 use crate::parse::pass_bytecode::ProgramBytecode;
-use crate::parse::pass_molded::{FunctionMap, TypeMap};
+use crate::parse::pass_ast::{FunctionMap, TypeMap};
 use cranelift::codegen::isa::TargetFrontendConfig;
 use cranelift::codegen::{ir, Context};
 use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
