@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::env::args;
-use crate::log_error;
+use crate::{log_error, type_matches};
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, struct_field_offset};
 use crate::parse::value_type::{is_structure, CXValType};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXInitIndex, CXUnOp};
@@ -124,6 +124,23 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
             Some(CXValType::PointerTo(Box::new(CXValType::Identifier(CXIdent::from("char")))))
         },
 
+        CXExpr::If { condition, then_branch, else_branch } => {
+            let condition_type = type_check_traverse(env, condition)?;
+            if !type_matches!(env, &condition_type, &CXValType::Integer) {
+                log_error!("TYPE ERROR: If condition must be of type bool, found: {condition_type}");
+            }
+
+            let then_type = type_check_traverse(env, then_branch)?;
+            if let Some(else_branch) = else_branch {
+                let else_type = type_check_traverse(env, else_branch)?;
+                if !type_matches!(env, &then_type, &else_type) {
+                    log_error!("TYPE ERROR: If branches must have the same type, found: {then_type} and {else_type}");
+                }
+            }
+
+            Some(CXValType::Unit)
+        },
+
         CXExpr::Return { value } => {
             if let Some(value) = value {
                 implicit_coerce(env, value, env.return_type.clone())?;
@@ -136,6 +153,21 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
 
         CXExpr::InitializerList { indices } =>
             log_error!("Bare initializer list {indices:?} found in expression context"),
+
+        CXExpr::ImplicitCast { to_type, .. } => Some(to_type.clone()),
+
+        CXExpr::For { init, condition, increment, body } => {
+            type_check_traverse(env, init)?;
+            let condition_type = type_check_traverse(env, condition)?;
+            type_check_traverse(env, increment)?;
+            type_check_traverse(env, body)?;
+
+            if !type_matches!(env, &condition_type, &CXValType::Integer { .. }) {
+                log_error!("TYPE ERROR: For loop condition must have condition type, found: {condition_type}");
+            }
+
+            Some(CXValType::Unit)
+        },
 
         _ => todo!("type_check_traverse: {expr}")
     }

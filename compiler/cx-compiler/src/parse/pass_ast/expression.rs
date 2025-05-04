@@ -34,7 +34,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     let mut expr_stack = Vec::new();
 
     let Some(expr) = parse_expr_val(data) else {
-        return None;
+        return Some(CXExpr::Unit);
     };
 
     expr_stack.push(expr);
@@ -200,11 +200,15 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
 pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> Option<CXExpr> {
     match keyword {
         KeywordType::Return => {
-            let val = parse_expr(data);
+            let val = parse_expr(data)?;
+
+            if matches!(val, CXExpr::Unit) {
+                return Some(CXExpr::Return { value: None });
+            }
 
             Some(
                 CXExpr::Return {
-                    value: val.map(|v| Box::new(v))
+                    value: Some(Box::new(val))
                 }
             )
         },
@@ -233,6 +237,29 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             Some(
                 CXExpr::While {
                     condition: Box::new(expr),
+                    body: Box::new(body)
+                }
+            )
+        },
+        KeywordType::For => {
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
+
+            let init = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+
+            let condition = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+
+            let increment = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+
+            let body = parse_body(data)?;
+
+            Some(
+                CXExpr::For {
+                    init: Box::new(init),
+                    condition: Box::new(condition),
+                    increment: Box::new(increment),
                     body: Box::new(body)
                 }
             )

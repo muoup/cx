@@ -4,6 +4,7 @@ use crate::parse::pass_bytecode::typing::get_type_size;
 use crate::parse::pass_ast::{CXGlobalStmt, FunctionMap, TypeMap, CXAST};
 use crate::parse::value_type::CXValType;
 use std::fmt::{Display, Formatter};
+use crate::{log_error, type_matches};
 
 pub mod builder;
 pub mod typing;
@@ -87,6 +88,30 @@ pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         }
 
         generate_instruction(&mut builder, body)?;
+
+        if !matches!(builder.last_instruction(), Some(instr) if matches!(instr.instruction, VirtualInstruction::Return { .. })) {
+            if prototype.name.as_str() == "main" {
+                let zero_literal = builder.add_instruction(
+                    VirtualInstruction::Literal {
+                        val: 0
+                    },
+                    CXValType::Integer { bytes: 4, signed: true }
+                )?;
+                builder.add_instruction(
+                    VirtualInstruction::Return {
+                        value: Some(zero_literal)
+                    },
+                    CXValType::Unit
+                )?;
+            }
+
+            builder.add_instruction(
+                VirtualInstruction::Return {
+                    value: None
+                },
+                CXValType::Unit
+            )?;
+        }
 
         builder.symbol_table.pop_scope();
         builder.finish_function();

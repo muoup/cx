@@ -162,6 +162,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 CXBinOp::Subtract           => context.builder.ins().isub(left, right),
                 CXBinOp::Multiply           => context.builder.ins().imul(left, right),
                 CXBinOp::Divide             => context.builder.ins().udiv(left, right),
+                CXBinOp::Modulus            => context.builder.ins().urem(left, right),
 
                 CXBinOp::Less          => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
                 CXBinOp::Greater       => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
@@ -169,6 +170,13 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 CXBinOp::GreaterEqual  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
                 CXBinOp::Equal         => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
                 CXBinOp::NotEqual      => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
+
+                CXBinOp::LAnd          => {
+                    let left = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, left, 0);
+                    let right = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, right, 0);
+
+                    context.builder.ins().band(left, right)
+                }
 
                 _ => unimplemented!("Operator not implemented: {:?}", op)
             };

@@ -8,6 +8,13 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
+        CXBinOp::LShift | CXBinOp::RShift => 6,
+        CXBinOp::Less | CXBinOp::Greater | CXBinOp::LessEqual | CXBinOp::GreaterEqual => 7,
+        CXBinOp::Equal | CXBinOp::NotEqual => 8,
+
+        CXBinOp::LAnd => 9,
+        CXBinOp::LOr => 10,
+
         CXBinOp::Assign(_) => 14,
 
         CXBinOp::Comma => 15,
@@ -48,6 +55,16 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
 
             OperatorType::Access            => CXBinOp::Access,
             OperatorType::Comma             => CXBinOp::Comma,
+
+            OperatorType::Equal             => CXBinOp::Equal,
+            OperatorType::NotEqual          => CXBinOp::NotEqual,
+            OperatorType::Less              => CXBinOp::Less,
+            OperatorType::Greater           => CXBinOp::Greater,
+            OperatorType::LessEqual         => CXBinOp::LessEqual,
+            OperatorType::GreaterEqual      => CXBinOp::GreaterEqual,
+
+            OperatorType::Ampersand         => CXBinOp::LAnd,
+            OperatorType::LOr               => CXBinOp::LOr,
 
             _ => todo!("op_to_binop: {op:?}")
         }

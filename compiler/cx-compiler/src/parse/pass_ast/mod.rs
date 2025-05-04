@@ -137,9 +137,9 @@ pub enum CXExpr {
         body: Box<CXExpr>
     },
     For {
-        init: Option<Box<CXExpr>>,
-        condition: Option<Box<CXExpr>>,
-        increment: Option<Box<CXExpr>>,
+        init: Box<CXExpr>,
+        condition: Box<CXExpr>,
+        increment: Box<CXExpr>,
         body: Box<CXExpr>
     },
 

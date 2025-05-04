@@ -227,6 +227,125 @@ pub(crate) fn generate_instruction(
             }
         },
 
+        CXExpr::If { condition, then_branch, else_branch } => {
+            let condition = generate_instruction(builder, condition.as_ref())?;
+
+            let then_block = builder.create_block();
+            let else_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.add_instruction(
+                VirtualInstruction::Branch {
+                    condition,
+                    true_block: then_block.clone(),
+                    false_block:
+                        match else_branch {
+                            Some(_) => else_block.clone(),
+                            None => merge_block.clone()
+                        }
+                },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(then_block);
+            generate_instruction(builder, then_branch.as_ref());
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: merge_block.clone() },
+                CXValType::Unit
+            );
+
+            if let Some(else_branch) = else_branch {
+                builder.set_current_block(else_block);
+                generate_instruction(builder, else_branch.as_ref());
+                builder.add_instruction(
+                    VirtualInstruction::Jump { target: merge_block.clone() },
+                    CXValType::Unit
+                );
+            }
+
+            builder.set_current_block(merge_block);
+
+            Some(ValueID::NULL)
+        },
+
+        CXExpr::While { condition, body } => {
+            let condition_block = builder.create_block();
+            let body_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block.clone() },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(condition_block);
+            let condition_value = generate_instruction(builder, condition.as_ref())?;
+
+            builder.add_instruction(
+                VirtualInstruction::Branch {
+                    condition: condition_value,
+                    true_block: body_block.clone(),
+                    false_block: merge_block.clone()
+                },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(body_block);
+            generate_instruction(builder, body.as_ref());
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block.clone() },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(merge_block);
+
+            Some(ValueID::NULL)
+        },
+
+        CXExpr::For { init, condition, increment, body } => {
+            let init_block = builder.create_block();
+            let condition_block = builder.create_block();
+            let body_block = builder.create_block();
+            let increment_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            generate_instruction(builder, init.as_ref())?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block.clone() },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(condition_block);
+            let condition_value = generate_instruction(builder, condition.as_ref())?;
+
+            builder.add_instruction(
+                VirtualInstruction::Branch {
+                    condition: condition_value,
+                    true_block: body_block.clone(),
+                    false_block: merge_block.clone()
+                },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(body_block);
+            generate_instruction(builder, body.as_ref())?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: increment_block.clone() },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(increment_block);
+            generate_instruction(builder, increment.as_ref())?;
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: condition_block.clone() },
+                CXValType::Unit
+            );
+
+            builder.set_current_block(merge_block);
+
+            Some(ValueID::NULL)
+        },
+
         _ => todo!("generate_instruction for {:?}", expr)
     }
 }

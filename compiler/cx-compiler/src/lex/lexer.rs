@@ -240,7 +240,14 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             _ => Some(Token::Operator(OperatorType::BAnd))
         },
         '^' => Some(Token::Operator(OperatorType::BXor)),
-        '!' => Some(Token::Operator(OperatorType::LNot)),
+        '!' => {
+            if Some('=') == iter.peek() {
+                iter.next();
+                Some(Token::Operator(OperatorType::NotEqual))
+            } else {
+                Some(Token::Operator(OperatorType::LNot))
+            }
+        },
         '~' => Some(Token::Operator(OperatorType::BNot)),
 
         ':' => {

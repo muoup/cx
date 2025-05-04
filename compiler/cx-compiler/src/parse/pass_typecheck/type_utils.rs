@@ -13,6 +13,17 @@ pub fn type_matches(
     Some(get_intrinsic_val(env, lhs)? == get_intrinsic_val(env, rhs)?)
 }
 
+#[macro_export]
+macro_rules! type_matches {
+    ($env:expr, $lhs:expr, $rhs:pat) => {
+        {
+            use crate::parse::pass_typecheck::type_utils::get_intrinsic_val;
+
+            matches!(get_intrinsic_val($env, $lhs)?, rhs)
+        }
+    };
+}
+
 pub fn get_intrinsic_val<'a>(
     env: &'a TypeEnvironment,
     val: &'a CXValType
