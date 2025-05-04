@@ -80,11 +80,19 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::FunctionReference {
             name
         } => {
+            if let Some(func_ref) = context.local_defined_functions.get(name) {
+                return Some(
+                    Value::from_u32(func_ref.as_u32())
+                );
+            }
+
             let func_id = context.function_ids.get(name).unwrap();
             let func_ref = context.object_module.declare_func_in_func(
                 *func_id,
                 &mut context.builder.func
             );
+
+            context.local_defined_functions.insert(name.clone(), func_ref);
 
             Some(
                 Value::from_u32(func_ref.as_u32())

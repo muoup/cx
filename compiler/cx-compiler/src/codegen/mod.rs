@@ -9,6 +9,7 @@ use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use cranelift::codegen::ir::FuncRef;
 use crate::log_error;
 
 mod codegen;
@@ -29,6 +30,7 @@ pub(crate) struct FunctionState<'a> {
     pub(crate) fn_map: &'a FunctionMap,
 
     pub(crate) builder: FunctionBuilder<'a>,
+    pub(crate) local_defined_functions: HashMap<String, FuncRef>,
 
     pub(crate) fn_params: Vec<Value>,
 

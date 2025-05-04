@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::codegen::instruction::{codegen_instruction};
 use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::codegen::{FunctionState, GlobalState, VariableTable};
@@ -60,6 +61,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         type_map: &global_state.type_map,
         fn_map: &global_state.fn_map,
 
+        local_defined_functions: HashMap::new(),
         fn_params: Vec::new(),
 
         builder,
