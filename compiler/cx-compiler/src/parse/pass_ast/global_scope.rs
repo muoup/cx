@@ -1,5 +1,6 @@
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::{assert_token_matches, log_error, try_next};
+use crate::mangling::namespace_mangle;
 use crate::parse::parser::{ParserData, VisibilityMode};
 use crate::parse::pass_ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use crate::parse::pass_ast::expression::{parse_expr, requires_semicolon};
@@ -97,16 +98,6 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
                 log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
             };
 
-            let name = match name {
-                CXTypedIdent::Namespace(ident) => {
-                    handle_member_this(ident.as_str(), &mut params);
-                    ident
-                },
-                CXTypedIdent::Standard(ident) => ident,
-                CXTypedIdent::Intrinsic(_) =>
-                    log_error!("PARSER ERROR: Expected function name, found intrinsic!")
-            };
-
             let prototype = CXFunctionPrototype {
                 return_type, name, parameters: params
             };
@@ -135,7 +126,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
 
     while !try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
         if let Some((name, type_)) = parse_initializer(data) {
-            let name = name.map(|name| name.assert_standard());
+            let name = name.map(|name| name);
 
             params.push(CXParameter { name, type_ });
         } else {
@@ -155,28 +146,22 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         let mut body = Vec::new();
 
         while !try_next!(data, Token::Punctuator(PunctuatorType::CloseBrace)) {
-            let start_tok = data.toks.index;
+            let start_index = data.toks.index;
 
             if let Some(stmt) = parse_expr(data) {
                 if requires_semicolon(&stmt) {
                     assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
                 }
 
-                println!("Parsed statement: {:#?}", stmt);
-
                 body.push(stmt);
             } else {
-                let end_tok = data.toks.index;
-
-                for i in start_tok..end_tok {
-                    println!("Token: {:#?}", data.toks.slice[i]);
+                for i in start_index.. data.toks.index {
+                    eprintln!("Token: {:#?}", data.toks.slice[i]);
                 }
 
                 log_error!("Failed to parse statement in body: {:#?}", data.toks.peek());
             }
         }
-
-        println!("Finished block");
 
         Some (
             CXExpr::Block {

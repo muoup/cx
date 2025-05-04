@@ -57,6 +57,8 @@ pub(crate) fn get_intrinsic_type<'a>(type_map: &'a TypeMap, type_: &'a CXValType
 
 pub fn get_type_size(type_map: &TypeMap, type_: &CXValType) -> Option<usize> {
     match type_ {
+        CXValType::Unit => Some(0),
+
         CXValType::Float { bytes } => Some(*bytes as usize),
         CXValType::Integer { bytes, .. } => Some(*bytes as usize),
 
@@ -68,8 +70,8 @@ pub fn get_type_size(type_map: &TypeMap, type_: &CXValType) -> Option<usize> {
                 .map(|field| get_type_size(type_map, &field.1))
                 .sum(),
 
-        CXValType::Unit => Some(0),
-        CXValType::PointerTo(_) => Some(8),
+        CXValType::PointerTo(_)
+        | CXValType::Function { .. } => Some(8),
         CXValType::Opaque { size, .. } => Some(*size),
         CXValType::Identifier(name) =>
             type_map.get(name.as_str())

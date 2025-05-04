@@ -19,44 +19,12 @@ pub enum CXValType {
         name: String,
         size: usize
     },
+    Function {
+        return_type: Box<CXValType>,
+        args: Vec<CXValType>
+    },
 
     Identifier(CXIdent)
-}
-
-impl Display for CXValType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CXValType::Integer { bytes, signed } => {
-                let signed_str = if *signed { "i" } else { "u" };
-                let signed_bytes = *bytes * 8;
-                write!(f, "{}i{}", signed_str, signed_bytes)
-            },
-            CXValType::Float { bytes } => {
-                let float_bytes = *bytes * 8;
-                write!(f, "f{}", float_bytes)
-            },
-            CXValType::Structured { fields } => {
-                let field_strs = fields.iter()
-                    .map(|(name, type_)| format!("{}: {}", name, type_))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "struct {{ {} }}", field_strs)
-            },
-            CXValType::Unit => write!(f, "()"),
-            CXValType::PointerTo(inner) => {
-                write!(f, "*{}", inner)
-            },
-            CXValType::Array { size, _type } => {
-                write!(f, "[{}; {}]", size, _type)
-            },
-            CXValType::Opaque { name, size } => {
-                write!(f, "OP_{}(\"{}\")", size, name)
-            },
-            CXValType::Identifier(name) => {
-                write!(f, "{}", name)
-            }
-        }
-    }
 }
 
 pub fn is_structure(type_map: &TypeMap, val_type: &CXValType) -> bool {

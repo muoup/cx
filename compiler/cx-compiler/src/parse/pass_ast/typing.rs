@@ -96,7 +96,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
     )
 }
 
-fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXTypedIdent>, CXValType)> {
+fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXIdent>, CXValType)> {
     let Some(next_tok) = data.toks.peek() else {
         log_error!("PARSER ERROR: Expected type modifier token, found EOF!");
     };
@@ -107,7 +107,7 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
             parse_typemod_name(data, CXValType::PointerTo(Box::new(acc_type)))
         },
 
-        Token::Identifier(_) => Some((Some(parse_identifier(data)?), acc_type)),
+        Token::Identifier(_) => Some((Some(parse_std_ident(data)?), acc_type)),
 
         _ => Some((None, acc_type))
     }
@@ -122,7 +122,7 @@ fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
     }
 }
 
-pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<CXTypedIdent>, CXValType)> {
+pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<CXIdent>, CXValType)> {
     let type_base = parse_type_base(data)?;
 
     parse_typemod_name(data, type_base)

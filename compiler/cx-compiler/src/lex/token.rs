@@ -9,6 +9,8 @@ pub struct TokenData {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
+    Ignore,
+
     Assignment(Option<OperatorType>),
     Operator(OperatorType),
 

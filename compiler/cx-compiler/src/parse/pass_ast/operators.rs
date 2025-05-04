@@ -8,7 +8,7 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
-        CXBinOp::Assign(_) => 10,
+        CXBinOp::Assign(_) => 14,
 
         CXBinOp::Comma => 15,
 
@@ -62,8 +62,8 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
                 let punc = punc.clone();
                 data.toks.back();
                 match punc {
-                    PunctuatorType::OpenParen   => CXBinOp::MethodCall,
                     PunctuatorType::OpenBrace   => CXBinOp::ArrayIndex,
+                    PunctuatorType::OpenParen   => CXBinOp::MethodCall,
 
                     _ => return None
                 }
@@ -85,8 +85,39 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
     )
 }
 
+pub(crate) fn comma_separated_owned(expr: CXExpr) -> Vec<CXExpr> {
+    let CXExpr::BinOp { lhs, rhs, op: CXBinOp::Comma } = expr else {
+        return vec![expr];
+    };
 
-fn comma_separated(expr: &CXExpr) -> Vec<&CXExpr> {
+    let mut lresults = comma_separated_owned(*lhs);
+    let rresults = comma_separated_owned(*rhs);
+
+    lresults.extend(rresults);
+    lresults
+}
+
+pub(crate) fn comma_separated_mut(expr: &mut CXExpr) -> Vec<&mut CXExpr> {
+    if matches!(expr, CXExpr::Unit) {
+        return vec![];
+    }
+
+    let CXExpr::BinOp { lhs, rhs, op: CXBinOp::Comma } = expr else {
+        return vec![expr];
+    };
+
+    let mut lresults = comma_separated_mut(lhs.as_mut());
+    let rresults = comma_separated_mut(rhs.as_mut());
+
+    lresults.extend(rresults);
+    lresults
+}
+
+pub(crate) fn comma_separated(expr: &CXExpr) -> Vec<&CXExpr> {
+    if matches!(expr, CXExpr::Unit) {
+        return vec![];
+    }
+
     let CXExpr::BinOp { lhs, rhs, op: CXBinOp::Comma } = expr else {
         return vec![expr];
     };

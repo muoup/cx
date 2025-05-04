@@ -157,16 +157,6 @@ pub enum CXExpr {
         operator: CXUnOp
     },
 
-    IndirectFunctionCall {
-        callee: Box<CXExpr>,
-        args: Vec<CXExpr>
-    },
-
-    DirectFunctionCall {
-        name: CXIdent,
-        args: Vec<CXExpr>,
-    },
-
     Block {
         exprs: Vec<CXExpr>,
         value: Option<Box<CXExpr>>

@@ -23,6 +23,12 @@ impl CXIdent {
             data: str.to_string()
         }
     }
+
+    pub fn from_owned(str: String) -> Self {
+        CXIdent {
+            data: str
+        }
+    }
 }
 
 impl Display for CXIdent {
@@ -34,7 +40,7 @@ impl Display for CXIdent {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum CXTypedIdent {
     Intrinsic(CXIdent),
-    Namespace(CXIdent),
+    Namespace(Vec<CXIdent>),
     Standard(CXIdent)
 }
 
@@ -62,7 +68,7 @@ pub(crate) fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
     };
     data.toks.next();
 
-    let mut idents = vec![ident];
+    let mut idents = vec![CXIdent::from_owned(ident)];
 
     while let Some(Token::Operator(OperatorType::ScopeRes)) = data.toks.next() {
         let Token::Identifier(ident) = data.toks.peek().cloned()? else {
@@ -70,7 +76,7 @@ pub(crate) fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
         };
         data.toks.next();
 
-        idents.push(ident);
+        idents.push(CXIdent::from_owned(ident));
     }
 
     data.toks.back();
@@ -79,16 +85,12 @@ pub(crate) fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
         1 => Some(
             CXTypedIdent::Standard(
                 CXIdent {
-                    data: idents.remove(0)
+                    data: idents.remove(0).to_string()
                 }
             )
         ),
         _ => Some(
-            CXTypedIdent::Namespace(
-                CXIdent {
-                    data: namespace_mangle( & idents)
-                }
-            )
+            CXTypedIdent::Namespace(idents)
         )
     }
 }
@@ -114,9 +116,12 @@ pub(crate) fn parse_intrinsic(data: &mut ParserData) -> Option<CXIdent> {
 
 pub(crate) fn parse_namespace_ident(data: &mut ParserData) -> Option<CXIdent> {
     match parse_identifier(data)? {
-        CXTypedIdent::Namespace(ident) |
+        CXTypedIdent::Namespace(ident) => Some(
+            CXIdent {
+                data: namespace_mangle(&ident)
+            }
+        ),
         CXTypedIdent::Standard(ident) => Some(ident),
-
         CXTypedIdent::Intrinsic(_) =>
             log_error!("PARSER ERROR: Expected namespace identifier, found intrinsic!")
     }

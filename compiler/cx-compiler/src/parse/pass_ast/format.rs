@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 use crate::{fwrite, fwriteln};
 use crate::parse::format::{dedent, indent};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
+use crate::parse::value_type::CXValType;
 
 impl Display for CXAST<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -17,7 +18,7 @@ impl Display for CXGlobalStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXGlobalStmt::GlobalVariable { name, type_, .. } => {
-                writeln!(f, "{}: {:?}", name, type_)
+                writeln!(f, "{}: {}", name, type_)
             },
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
                 write!(f, "{}", prototype)?;
@@ -33,7 +34,7 @@ impl Display for CXGlobalStmt {
 
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "fn {}({}) -> {:?}",
+        writeln!(f, "fn {}({}) -> {}",
                  self.name,
                  self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
                  self.return_type
@@ -58,28 +59,15 @@ impl Display for CXExpr {
                 Ok(())
             },
 
-            CXExpr::IndirectFunctionCall { callee, args, .. } => {
-                let arg_strs = args.iter()
-                    .map(|arg| format!("{}", arg))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                fwrite!(f, "{}({})", callee.as_ref(), arg_strs)
-            },
-            CXExpr::DirectFunctionCall { name, args } => {
-                let arg_strs = args.iter()
-                    .map(|arg| format!("{}", arg))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                fwrite!(f, "{}({})", name, arg_strs)
-            },
-
             CXExpr::Identifier(ident) => fwrite!(f, "{}", ident),
             CXExpr::VarDeclaration { name, type_ } => {
                 fwrite!(f, "let {}: {}", name, type_)?;
 
                 Ok(())
+            },
+
+            CXExpr::Identifier(ident) => {
+                fwrite!(f, "{}", ident)
             },
 
             CXExpr::IntLiteral { val, .. } => fwrite!(f, "{}", val),
@@ -92,6 +80,10 @@ impl Display for CXExpr {
                     fwrite!(f, " {}", value)?;
                 }
                 Ok(())
+            },
+
+            CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
+                fwrite!(f, "{}({})", lhs, rhs)
             },
 
             CXExpr::BinOp { lhs, rhs, op } => {
@@ -134,12 +126,56 @@ impl Display for CXExpr {
     }
 }
 
+impl Display for CXValType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CXValType::Integer { bytes, signed } => {
+                let signed_str = if *signed { "i" } else { "u" };
+                let signed_bytes = *bytes * 8;
+                write!(f, "{}i{}", signed_str, signed_bytes)
+            },
+            CXValType::Float { bytes } => {
+                let float_bytes = *bytes * 8;
+                write!(f, "f{}", float_bytes)
+            },
+            CXValType::Structured { fields } => {
+                let field_strs = fields.iter()
+                    .map(|(name, type_)| format!("{}: {}", name, type_))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "struct {{ {} }}", field_strs)
+            },
+            CXValType::Unit => write!(f, "()"),
+            CXValType::PointerTo(inner) => {
+                write!(f, "*{}", inner)
+            },
+            CXValType::Array { size, _type } => {
+                write!(f, "[{}; {}]", size, _type)
+            },
+            CXValType::Opaque { name, size } => {
+                write!(f, "OPAQUE_{}(\"{}\")", size, name)
+            },
+            CXValType::Identifier(name) => {
+                write!(f, "{}", name)
+            },
+            CXValType::Function { return_type, args } => {
+                let arg_strs = args.iter()
+                    .map(|type_| format!("{}", type_))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "fn({}) -> {}", arg_strs, return_type)
+            }
+        }
+    }
+}
+
+
 impl Display for CXParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.name {
-            write!(f, "{}: {:?}", name, self.type_)
+            write!(f, "{}: {}", name, self.type_)
         } else {
-            write!(f, "{:?}", self.type_)
+            write!(f, "{}", self.type_)
         }
     }
 }
@@ -155,6 +191,14 @@ impl Display for CXBinOp {
             CXBinOp::NotEqual => fwrite!(f, "!="),
 
             CXBinOp::Access => fwrite!(f, "."),
+
+            CXBinOp::Assign(add) => {
+                if let Some(add) = add {
+                    fwrite!(f, "{}=", add)
+                } else {
+                    fwrite!(f, "=")
+                }
+            }
 
             _ => fwrite!(f, "{:?}", self)
         }

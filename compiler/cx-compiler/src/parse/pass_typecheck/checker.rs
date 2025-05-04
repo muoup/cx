@@ -1,12 +1,13 @@
 use std::any::Any;
 use std::env::args;
 use crate::log_error;
-use crate::mangling::namespace_mangle;
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, struct_field_offset};
-use crate::parse::value_type::CXValType;
+use crate::parse::value_type::{is_structure, CXValType};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXInitIndex, CXUnOp};
 use crate::parse::pass_ast::identifier::CXIdent;
-use crate::parse::pass_typecheck::type_utils::{struct_access, type_matches};
+use crate::parse::pass_ast::operators::{comma_separated, comma_separated_mut};
+use crate::parse::pass_typecheck::struct_typechecking::access_struct;
+use crate::parse::pass_typecheck::type_utils::{prototype_to_type, struct_field_access, type_matches};
 use crate::parse::pass_typecheck::TypeEnvironment;
 
 pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXValType> {
@@ -54,62 +55,27 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
             }
         },
 
-        CXExpr::BinOp { lhs, rhs, op: CXBinOp::Access } => {
-            let mut lhs_type = type_check_traverse(env, lhs.as_mut())?;
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::Access } =>
+            access_struct(env, lhs.as_mut(), rhs.as_mut()),
 
-            match rhs.as_mut() {
-                CXExpr::Identifier(name) => {
-                    // Auto dereference pointers
-                    if matches!(lhs_type, CXValType::PointerTo(_)) {
-                        let lhs_temp = std::mem::replace(lhs, Box::new(CXExpr::Taken));
-                        *lhs = Box::new(
-                            CXExpr::UnOp {
-                                operand: lhs_temp,
-                                operator: CXUnOp::Dereference
-                            }
-                        );
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
+            let lhs_type = type_check_traverse(env, lhs)?;
+            let CXValType::Function { return_type, args } = lhs_type else {
+                log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
+            };
 
-                        let CXValType::PointerTo(inner_type) = lhs_type else {
-                            unreachable!()
-                        };
-
-                        lhs_type = *inner_type;
-                    };
-
-                    let Some(record) = struct_access(env.type_map, &lhs_type, name.as_str()) else {
-                        let as_intrinsic = format!("{:?}", get_intrinsic_type(env.type_map, &lhs_type));
-                        log_error!("TYPE ERROR: Unknown field {name} of structured type {lhs_type}, type: {as_intrinsic}");
-                    };
-
-                    Some(record.field_type)
-                },
-
-                CXExpr::DirectFunctionCall { name, args } => {
-                    let CXValType::Identifier(struct_name) = lhs_type else {
-                        log_error!("TYPE ERROR: Cannot access function {name} on non-structured type {lhs_type}");
-                    };
-
-                    let mangled_name = namespace_mangle(
-                        &vec![&struct_name, name]
-                    );
-
-                    let lhs_taken = std::mem::replace(lhs, Box::new(CXExpr::Taken));
-                    let mut member_args = vec![
-                        CXExpr::UnOp { operator: CXUnOp::AddressOf, operand: lhs_taken }
-                    ];
-                    member_args.extend(std::mem::take(args));
-
-                    *expr = CXExpr::DirectFunctionCall {
-                        name: CXIdent::from(mangled_name.as_str()),
-                        args: member_args
-                    };
-
-                    type_check_traverse(env, expr)
-                },
-
-                _ => log_error!("TYPE ERROR: Cannot access field {rhs:?} of structured type {lhs_type}")
+            for (arg, expected_type) in
+                comma_separated_mut(rhs)
+                .into_iter()
+                .zip(args.iter())
+            {
+                implicit_coerce(env, arg, expected_type.clone())?;
             }
-        },
+
+
+            Some(*return_type)
+        }
+
         CXExpr::BinOp { lhs, rhs, .. } => {
             let lhs_type = type_check_traverse(env, lhs)?;
 
@@ -126,11 +92,26 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         },
 
         CXExpr::Identifier(name) => {
-            let Some(record) = env.symbol_table.get(name.as_str()) else {
-                log_error!("TYPE ERROR: Unknown variable {name}\n Variables: {:?}", env.symbol_table);
+            if let Some(record) = env.symbol_table.get(name.as_str()) {
+                return Some(record.clone());
             };
 
-            Some(record.clone())
+            if let Some(func) = env.fn_map.get(name.as_str()) {
+                let return_type = func.return_type.clone();
+                let args = func.parameters.iter()
+                    .cloned()
+                    .map(|param| param.type_)
+                    .collect::<Vec<_>>();
+
+                return Some(
+                    CXValType::Function {
+                        return_type: Box::new(return_type),
+                        args: args.into(),
+                    }
+                );
+            };
+
+            log_error!("TYPE ERROR: Unknown identifier {name}");
         },
 
         CXExpr::IntLiteral { bytes, .. } => {
@@ -151,21 +132,6 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
             }
 
             Some(CXValType::Unit)
-        },
-
-        CXExpr::DirectFunctionCall { name, args } => {
-            let function_type = env.fn_map.get(name.as_str())?.clone();
-
-            if function_type.parameters.len() != args.len() {
-                log_error!("TYPE ERROR: Function {name} expected {} arguments, got {}", function_type.parameters.len(), args.len());
-            }
-
-            for (arg, proto_param) in
-                args.iter_mut().zip(function_type.parameters.iter()) {
-                implicit_coerce(env, arg, proto_param.type_.clone())?;
-            }
-
-            Some(function_type.return_type.clone())
         },
 
         CXExpr::InitializerList { indices } =>
@@ -254,7 +220,7 @@ fn coerce_struct_initializer(
             }
         };
 
-        let Some(record) = struct_access(
+        let Some(record) = struct_field_access(
             env.type_map,
             &CXValType::Structured { fields: type_indices.clone().to_vec() },
             field_name.as_str()

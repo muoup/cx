@@ -3,7 +3,8 @@ use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInst
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting, struct_field_offset};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXUnOp};
 use crate::parse::pass_ast::identifier::CXIdent;
-use crate::parse::pass_typecheck::type_utils::struct_access;
+use crate::parse::pass_ast::operators::comma_separated;
+use crate::parse::pass_typecheck::type_utils::{prototype_to_type, struct_field_access};
 use crate::parse::value_type::{is_structure, CXValType};
 
 pub(crate) fn generate_instruction(
@@ -50,7 +51,7 @@ pub(crate) fn generate_instruction(
                 log_error!("Invalid field access: {rhs}");
             };
 
-            let struct_access = struct_access(&builder.type_map, &ltype, field_name.as_str())?;
+            let struct_access = struct_field_access(&builder.type_map, &ltype, field_name.as_str())?;
 
             builder.add_instruction(
                 VirtualInstruction::StructAccess {
@@ -59,6 +60,29 @@ pub(crate) fn generate_instruction(
                     field_index: struct_access.field_index
                 },
                 struct_access.field_type.clone()
+            )
+        },
+
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
+            let left_id = generate_instruction(builder, lhs.as_ref())?;
+            let rhs = comma_separated(rhs.as_ref());
+
+            let mut args = vec![];
+            for arg in rhs {
+                let arg_id = generate_instruction(builder, arg)?;
+                args.push(arg_id);
+            }
+
+            let CXValType::Function { return_type, .. } = builder.get_type(left_id)? else {
+                log_error!("Invalid method call: {lhs}");
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::MethodCall {
+                    func: left_id,
+                    args
+                },
+                return_type.as_ref().clone()
             )
         },
 
@@ -142,8 +166,15 @@ pub(crate) fn generate_instruction(
         CXExpr::Identifier(val) => {
             if let Some(id) = builder.symbol_table.get(val.as_str()) {
                 Some(id.clone())
+            } else if let Some(func) = builder.fn_map.get(val.as_str()) {
+                builder.add_instruction(
+                    VirtualInstruction::FunctionReference {
+                        name: val.to_owned()
+                    },
+                    prototype_to_type(func)?
+                )
             } else {
-                log_error!("Variable not found in symbol table: {val}")
+                log_error!("Unknown identifier {val}")
             }
         },
 
@@ -155,20 +186,6 @@ pub(crate) fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Return { value },
-                CXValType::Unit
-            )
-        },
-
-        CXExpr::DirectFunctionCall { name, args } => {
-            let arg_ids = args.iter()
-                .map(|arg| generate_instruction(builder, arg))
-                .collect::<Option<Vec<_>>>()?;
-
-            builder.add_instruction(
-                VirtualInstruction::DirectCall {
-                    function: name.to_owned(),
-                    args: arg_ids
-                },
                 CXValType::Unit
             )
         },

@@ -13,6 +13,7 @@ pub mod type_utils;
 mod checker;
 mod intrinsic_types;
 mod mappings;
+mod struct_typechecking;
 
 pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option<()> {
     emit_types(

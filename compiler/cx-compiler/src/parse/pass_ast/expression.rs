@@ -1,13 +1,13 @@
 use std::clone;
+use std::collections::VecDeque;
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::{assert_token_matches, log_error, point_log_error, try_next, try_token_matches};
-use crate::mangling::namespace_mangle;
 use crate::parse::macros::error_pointer;
 use crate::parse::parser::{ParserData};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXUnOp};
 use crate::parse::pass_ast::global_scope::parse_body;
 use crate::parse::pass_ast::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
-use crate::parse::pass_ast::operators::{binop_prec, parse_binop, parse_pre_unop};
+use crate::parse::pass_ast::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_pre_unop};
 use crate::parse::value_type::CXValType;
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
@@ -40,44 +40,21 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     expr_stack.push(expr);
 
     loop {
-        let Some(op) = parse_binop(data) else {
-            if matches!(expr_stack.last(), Some(CXExpr::Identifier(_))) {
-                let CXExpr::Identifier(val_type) = expr_stack.pop().unwrap() else {
-                    log_error!("PARSER ERROR: Expected identifier for initialization type, found {:?}", expr_stack.last());
-                };
+        if let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {
+            continue;
+        }
 
-                let Some(val) = parse_expr_val(data) else {
-                    expr_stack.push(CXExpr::Identifier(val_type));
-                    break;
-                };
+        if let Some(val) = parse_expr_val(data) {
+            let lhs = expr_stack.pop().unwrap();
+            let Some(compound) = form_compound_expr(lhs, val) else {
+                log_error!("PARSER ERROR: Failed to form compound expression: {:#?}", data.toks.peek());
+            };
 
-                let CXExpr::Identifier(val_name) = val else {
-                    log_error!("PARSER ERROR: Expected identifier for initialization name, found {:?}", val);
-                };
-
-                expr_stack.push(
-                    CXExpr::VarDeclaration {
-                        name: val_name,
-                        type_: CXValType::Identifier(val_type)
-                    }
-                );
-
-                continue;
-            }
-
-            break;
+            expr_stack.push(compound);
+            continue;
         };
 
-        let op_prec = binop_prec(op.clone());
-
-        compress_stack(&mut expr_stack, &mut op_stack, op_prec)?;
-
-        let Some(expr) = parse_expr_val(data) else {
-            log_error!("Failed to parse expression value after operator: {:#?}", data.toks.peek());
-        };
-
-        op_stack.push(op);
-        expr_stack.push(expr);
+        break;
     }
 
     compress_stack(&mut expr_stack, &mut op_stack, 100)?;
@@ -93,48 +70,76 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     Some(expr)
 }
 
+pub(crate) fn form_compound_expr(lhs: CXExpr, rhs: CXExpr) -> Option<CXExpr> {
+    match (lhs, rhs) {
+        (CXExpr::Identifier(lident), CXExpr::Identifier(rident)) => {
+            Some(
+                CXExpr::VarDeclaration {
+                    type_: CXValType::Identifier(lident),
+                    name: rident
+                }
+            )
+        }
+
+        (lhs, rhs) => log_error!("Invalid compound expression: {:?} {:?}", lhs, rhs)
+    }
+}
+
+pub(crate) fn parse_expr_op_concat(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CXBinOp>) -> Option<()> {
+    let Some(op) = parse_binop(data) else {
+        return None;
+    };
+
+    match op {
+        // TODO: Handle LValue assignment
+
+        _ => {
+            let op_prec = binop_prec(op.clone());
+
+            let Some(next_val) = parse_expr_val(data) else {
+                log_error!("PARSER ERROR: Failed to parse expression value after operator: {:#?}", data.toks.peek());
+            };
+
+            expr_stack.push(next_val);
+            op_stack.push(op);
+
+            if op_stack.len() > 1 {
+                compress_stack(expr_stack, op_stack, op_prec)?;
+            }
+        }
+    }
+
+    Some(())
+}
+
 pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CXBinOp>, rprec: u8) -> Option<()> {
     if op_stack.is_empty() {
         return Some(());
     }
 
-    let stop = op_stack.iter()
-        .rposition(|e| binop_prec(e.clone()) >= rprec)
-        .map(|e| op_stack.len() - e - 1)
-        .unwrap_or(0);
-
-    if op_stack.len() == stop {
-        return Some(());
-    }
-
-    let mut exprs = Vec::new();
     let mut ops = Vec::new();
+    let mut exprs = Vec::new();
 
-    exprs.push(expr_stack.pop().unwrap());
+    while let Some(op2) = op_stack.pop() {
+        let op_prec = binop_prec(op2.clone());
 
-    for _ in 0 .. (op_stack.len() - stop) {
+        if op_prec > rprec {
+            op_stack.push(op2);
+            break;
+        }
+
+        ops.push(op2);
         exprs.push(expr_stack.pop().unwrap());
-        ops.push(op_stack.pop().unwrap());
     }
 
-    exprs.reverse();
-    ops.reverse();
+    let mut acc = expr_stack.pop().unwrap();
 
-    let mut acc = exprs.pop().unwrap();
-
-    while !exprs.is_empty() {
-        let Some(op) = ops.pop() else {
-            log_error!("PARSER ERROR: Operator stack is empty when trying to pop operator");
-        };
-        let Some(left) = exprs.pop() else {
-            log_error!("PARSER ERROR: Expression stack is empty when trying to pop left operand");
-        };
-
-        let temp_acc = std::mem::replace(&mut acc, CXExpr::Taken);
+    while let Some(op) = ops.pop() {
+        let rhs = exprs.pop().unwrap();
 
         acc = CXExpr::BinOp {
-            lhs: Box::new(left),
-            rhs: Box::new(temp_acc),
+            lhs: Box::new(acc),
+            rhs: Box::new(rhs),
             op
         };
     }

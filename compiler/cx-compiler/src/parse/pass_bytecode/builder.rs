@@ -278,8 +278,17 @@ pub enum VirtualInstruction {
     },
 
     DirectCall {
-        function: String,
+        reference: ValueID,
         args: Vec<ValueID>
+    },
+
+    MethodCall {
+        func: ValueID,
+        args: Vec<ValueID>
+    },
+
+    FunctionReference {
+        name: String
     },
 
     Branch {
