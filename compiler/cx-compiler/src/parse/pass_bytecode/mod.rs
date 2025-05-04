@@ -1,13 +1,12 @@
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, BytecodeFunction, BytecodeFunctionPrototype, BytecodeParameter, VirtualInstruction};
 use crate::parse::pass_bytecode::instruction_gen::generate_instruction;
 use crate::parse::pass_bytecode::typing::get_type_size;
-use crate::parse::pass_molded::{CXGlobalStmt, FunctionMap, TypeMap, CXAST};
+use crate::parse::pass_ast::{CXGlobalStmt, FunctionMap, TypeMap, CXAST};
 use crate::parse::value_type::CXValType;
 use std::fmt::{Display, Formatter};
 
 pub mod builder;
 pub mod typing;
-
 mod name_mangling;
 mod instruction_gen;
 
@@ -43,11 +42,15 @@ pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         builder.symbol_table.push_scope();
         builder.new_function(
             BytecodeFunctionPrototype {
-                name: prototype.name.clone(),
+                name: prototype.name.to_owned(),
                 return_type: prototype.return_type.clone(),
                 args: prototype.parameters.iter()
                     .map(|param| BytecodeParameter {
-                        name: param.name.clone(),
+                        name: if let Some(name) = &param.name {
+                            Some(name.to_string())
+                        } else {
+                            None
+                        },
                         type_: param.type_.clone()
                     })
                     .collect()
@@ -79,7 +82,7 @@ pub fn gen_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
             )?;
 
             if let Some(name) = &arg.name {
-                builder.symbol_table.insert(name.clone(), memory);
+                builder.symbol_table.insert(name.to_owned(), memory);
             }
         }
 

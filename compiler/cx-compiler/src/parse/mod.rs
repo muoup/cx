@@ -1,10 +1,8 @@
 pub mod parser;
 
 pub mod pass_bytecode;
-pub mod pass_unverified;
-pub mod pass_molded;
+pub mod pass_ast;
 pub mod pass_typecheck;
-
 
 pub mod value_type;
 

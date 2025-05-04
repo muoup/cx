@@ -1,6 +1,7 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
-use crate::parse::pass_molded::TypeMap;
+use crate::parse::pass_ast::{CXFunctionPrototype, TypeMap};
+use crate::parse::pass_typecheck::struct_typechecking::StructAccessRecord;
 use crate::parse::value_type::CXValType;
 use crate::parse::pass_typecheck::TypeEnvironment;
 
@@ -18,7 +19,7 @@ pub fn get_intrinsic_val<'a>(
 ) -> Option<&'a CXValType> {
     match val {
         CXValType::Identifier(ident) => {
-            let type_ = env.type_map.get(ident)?;
+            let type_ = env.type_map.get(ident.as_str())?;
 
             get_intrinsic_val(env, type_)
         },
@@ -27,14 +28,7 @@ pub fn get_intrinsic_val<'a>(
     }
 }
 
-pub struct StructAccessRecord {
-    pub field_type: CXValType,
-    pub field_offset: usize,
-    pub field_index: usize,
-    pub field_name: String
-}
-
-pub fn struct_access(
+pub fn struct_field_access(
     type_map: &TypeMap,
     type_: &CXValType,
     field: &str
@@ -61,4 +55,17 @@ pub fn struct_access(
     }
 
     None
+}
+
+pub fn prototype_to_type(prototype: &CXFunctionPrototype) -> Option<CXValType> {
+    let return_type = prototype.return_type.clone();
+    let args = prototype.parameters.iter()
+        .cloned()
+        .map(|param| param.type_)
+        .collect::<Vec<_>>();
+
+    Some(CXValType::Function {
+        return_type: Box::new(return_type),
+        args
+    })
 }

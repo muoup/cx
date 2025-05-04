@@ -2,13 +2,14 @@ use crate::codegen::codegen::{codegen_fn_prototype, codegen_function};
 use crate::codegen::routines::string_literal;
 use crate::parse::pass_bytecode::builder::{BytecodeFunctionPrototype, ValueID};
 use crate::parse::pass_bytecode::ProgramBytecode;
-use crate::parse::pass_molded::{FunctionMap, TypeMap};
+use crate::parse::pass_ast::{FunctionMap, TypeMap};
 use cranelift::codegen::isa::TargetFrontendConfig;
 use cranelift::codegen::{ir, Context};
 use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use cranelift::codegen::ir::FuncRef;
 use crate::log_error;
 
 mod codegen;
@@ -29,6 +30,7 @@ pub(crate) struct FunctionState<'a> {
     pub(crate) fn_map: &'a FunctionMap,
 
     pub(crate) builder: FunctionBuilder<'a>,
+    pub(crate) local_defined_functions: HashMap<String, FuncRef>,
 
     pub(crate) fn_params: Vec<Value>,
 

@@ -10,6 +10,14 @@ pub(crate) struct Lexer<'a> {
     pub tokens: Vec<Token>,
 }
 
+impl Lexer<'_> {
+    pub(crate) fn add_token(&mut self, token: Token) {
+        if !matches!(token, Token::Ignore) {
+            self.tokens.push(token);
+        }
+    }
+}
+
 struct CharIter<'a> {
     source: &'a str,
     current_iter: usize,
@@ -66,7 +74,8 @@ impl Lexer<'_> {
             if let Some(operator) = operator_lex(&mut self.iter)
                 .or_else(|| punctuator_lex(&mut self.iter)) {
                 self.consume(previous_lex);
-                self.tokens.push(operator);
+
+                self.add_token(operator);
                 self.last_consume = self.iter.current_iter;
             } else if Some(true) == self.iter.peek().map(|c| c.is_whitespace()) {
                 self.consume(previous_lex);
@@ -91,7 +100,7 @@ impl Lexer<'_> {
         self.last_consume = self.iter.current_iter;
 
         if str.chars().any(|c| !c.is_whitespace()) {
-            self.tokens.push(Token::from_str(str));
+            self.add_token(Token::from_str(str));
         }
     }
 
@@ -170,7 +179,30 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
 
     match iter.next()? {
         '*' => try_assignment(iter, OperatorType::Asterisk),
-        '/' => try_assignment(iter, OperatorType::Slash),
+        '/' => {
+            match iter.peek() {
+                Some('/') => {
+                    iter.next();
+                    while let Some(c) = iter.next() {
+                        if c == '\n' {
+                            break;
+                        }
+                    }
+                    Some(Token::Ignore)
+                },
+                Some('*') => {
+                    iter.next();
+                    while let Some(c) = iter.next() {
+                        if c == '*' && iter.peek() == Some('/') {
+                            iter.next();
+                            break;
+                        }
+                    }
+                    Some(Token::Ignore)
+                },
+                _ => try_assignment(iter, OperatorType::Slash)
+            }
+        },
         '%' => try_assignment(iter, OperatorType::Percent),
 
         '+' => match iter.peek() {
@@ -203,7 +235,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::LAnd))
+                Some(Token::Operator(OperatorType::Ampersand))
             },
             _ => Some(Token::Operator(OperatorType::BAnd))
         },

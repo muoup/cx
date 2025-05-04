@@ -1,18 +1,16 @@
-use std::process::id;
+use crate::codegen::routines::allocate_variable;
+use crate::codegen::value_type::get_cranelift_type;
+use crate::codegen::FunctionState;
+use crate::parse::pass_ast::CXBinOp;
+use crate::parse::pass_bytecode::builder::{BlockInstruction, BytecodeFunctionPrototype, ValueID, VirtualInstruction};
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size};
+use crate::parse::value_type::is_structure;
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
-use crate::codegen::FunctionState;
-use crate::codegen::routines::allocate_variable;
-use crate::codegen::value_type::{get_cranelift_abi_type, get_cranelift_type};
-use crate::log_error;
-use crate::parse::parser;
-use crate::parse::pass_bytecode::builder::{BlockInstruction, ValueID, VirtualInstruction};
-use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, struct_field_offset};
-use crate::parse::pass_molded::{CXBinOp, CXExpr, CXFunctionPrototype, TypeMap};
-use crate::parse::value_type::{is_structure, CXValType};
 
 /**
  *  May or may not return a valid, panics if error occurs
@@ -53,23 +51,52 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
-        VirtualInstruction::DirectCall {
-            function, args
+        VirtualInstruction::MethodCall {
+            func, args
         } => {
-            let Some(prototype) = context.fn_map.get(function) else {
-                log_error!("Function not found: {:?}", function);
-            };
-            let Some(func_id) = context.function_ids.get(function).cloned() else {
-                log_error!("Function not found in function ids: {:?}", function);
-            };
+            let val = context.variable_table.get(func).cloned().unwrap();
+            let mut params = args.iter()
+                .map(|arg| context.variable_table.get(arg).cloned().unwrap())
+                .collect::<Vec<_>>();
 
-            let func_ref = context.object_module.declare_func_in_func(func_id, &mut context.builder.func);
-            let args = generate_params(context, prototype, args)?;
+            if is_structure(context.type_map, &instruction.value.type_) {
+                let type_size = get_type_size(context.type_map, &context.function_prototype.return_type)?;
 
-            let inst = context.builder.ins().call(func_ref, args.as_slice());
-            context.builder.inst_results(inst)
-                .first()
-                .cloned()
+                let temp_buffer = allocate_variable(context, type_size as u32, None)?;
+
+                params.insert(0, temp_buffer);
+            }
+
+            let inst = context.builder.ins().call(
+                FuncRef::from_u32(val.as_u32()),
+                params.as_slice()
+            );
+
+            let returns = context.builder.inst_results(inst);
+
+            returns.first().cloned().or(Some(Value::from_u32(0)))
+        }
+
+        VirtualInstruction::FunctionReference {
+            name
+        } => {
+            if let Some(func_ref) = context.local_defined_functions.get(name) {
+                return Some(
+                    Value::from_u32(func_ref.as_u32())
+                );
+            }
+
+            let func_id = context.function_ids.get(name).unwrap();
+            let func_ref = context.object_module.declare_func_in_func(
+                *func_id,
+                &mut context.builder.func
+            );
+
+            context.local_defined_functions.insert(name.clone(), func_ref);
+
+            Some(
+                Value::from_u32(func_ref.as_u32())
+            )
         }
 
         VirtualInstruction::Return { value } => {
@@ -272,7 +299,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
 fn generate_params(
     context: &mut FunctionState,
-    prototype: &CXFunctionPrototype,
+    prototype: &BytecodeFunctionPrototype,
     params: &[ValueID]
 ) -> Option<Vec<Value>> {
     let mut args = Vec::new();

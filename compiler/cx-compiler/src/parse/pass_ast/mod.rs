@@ -1,19 +1,24 @@
-mod glob_molding;
-mod expr_molding;
-mod pattern_molding;
-mod operators;
-mod format;
 
 use crate::parse::value_type::CXValType;
-use crate::parse::pass_molded::glob_molding::mold_globals;
-use crate::parse::pass_unverified::UVAST;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::ops::{Add, BitAnd, BitOr, BitXor};
+use cranelift::prelude::Block;
+use crate::parse::parser::ParserData;
+use crate::parse::pass_ast::global_scope::parse_global_stmt;
+use crate::parse::pass_ast::identifier::CXIdent;
+
+pub mod expression;
+pub mod global_scope;
+pub mod typing;
+pub mod operators;
+pub mod identifier;
+pub mod format;
 
 pub type TypeMap = HashMap<String, CXValType>;
 pub type FunctionMap = HashMap<String, CXFunctionPrototype>;
 
-pub fn mold_ast(ast: &UVAST) -> Option<CXAST> {
+pub fn parse_ast(mut data: ParserData) -> Option<CXAST> {
     let mut cx_ast = CXAST {
         imports: Vec::new(),
         global_stmts: Vec::new(),
@@ -23,7 +28,9 @@ pub fn mold_ast(ast: &UVAST) -> Option<CXAST> {
         function_map: HashMap::new()
     };
 
-    mold_globals(ast, &mut cx_ast)?;
+    while data.toks.has_next() {
+        parse_global_stmt(&mut data, &mut cx_ast);
+    }
 
     Some(cx_ast)
 }
@@ -41,13 +48,13 @@ pub struct CXAST<'a> {
 
 #[derive(Debug, Clone)]
 pub struct CXParameter {
-    pub name: Option<String>,
+    pub name: Option<CXIdent>,
     pub type_: CXValType,
 }
 
 #[derive(Debug, Clone)]
 pub struct CXFunctionPrototype {
-    pub name: String,
+    pub name: CXIdent,
     pub return_type: CXValType,
     pub parameters: Vec<CXParameter>,
 }
@@ -55,7 +62,7 @@ pub struct CXFunctionPrototype {
 #[derive(Debug)]
 pub enum CXGlobalStmt {
     GlobalVariable {
-        name: String,
+        name: CXIdent,
         type_: CXValType,
         initializer: Option<CXExpr>
     },
@@ -76,10 +83,10 @@ pub enum CXUnOp {
     Negative,
     BNot, LNot,
     ArrayIndex,
-    InitializerIndex
+    InitializerIndex,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum CXBinOp {
     Add, Subtract, Multiply, Divide, Modulus,
     Less, Greater, LessEqual, GreaterEqual,
@@ -90,20 +97,23 @@ pub enum CXBinOp {
 
     Comma,
 
-    Access
+    Assign(Option<Box<CXBinOp>>),
+
+    Access, MethodCall, ArrayIndex
 }
 
 #[derive(Debug)]
 pub enum CXInitIndex {
-    Named(String, Box<CXExpr>),
+    Named(CXIdent, Box<CXExpr>),
     Unnamed(Box<CXExpr>)
 }
 
 #[derive(Debug)]
 pub enum CXExpr {
     Taken,
+    Unit,
 
-    VarReference(String),
+    Identifier(CXIdent),
 
     IntLiteral {
         val: i64,
@@ -135,13 +145,7 @@ pub enum CXExpr {
 
     VarDeclaration {
         type_: CXValType,
-        name: String,
-        initializer: Option<Box<CXExpr>>
-    },
-    Assignment {
-        lhs: Box<CXExpr>,
-        rhs: Box<CXExpr>,
-        op: Option<CXBinOp>
+        name: CXIdent
     },
     BinOp {
         lhs: Box<CXExpr>,
@@ -151,16 +155,6 @@ pub enum CXExpr {
     UnOp {
         operand: Box<CXExpr>,
         operator: CXUnOp
-    },
-
-    IndirectFunctionCall {
-        callee: Box<CXExpr>,
-        args: Vec<CXExpr>
-    },
-
-    DirectFunctionCall {
-        name: String,
-        args: Vec<CXExpr>,
     },
 
     Block {

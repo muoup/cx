@@ -2,7 +2,7 @@ use crate::log_error;
 use crate::parse::FileInformation;
 use crate::parse::interface_serializer::emit_types;
 use crate::parse::value_type::CXValType;
-use crate::parse::pass_molded::{CXGlobalStmt, CXParameter, FunctionMap, TypeMap, CXAST};
+use crate::parse::pass_ast::{CXGlobalStmt, CXParameter, FunctionMap, TypeMap, CXAST};
 use crate::parse::pass_typecheck::checker::{type_check_traverse};
 use crate::parse::pass_typecheck::intrinsic_types::add_internal_types;
 use crate::parse::pass_typecheck::mappings::parse_fn_mappings;
@@ -13,6 +13,7 @@ pub mod type_utils;
 mod checker;
 mod intrinsic_types;
 mod mappings;
+mod struct_typechecking;
 
 pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option<()> {
     emit_types(
@@ -43,7 +44,7 @@ pub fn type_check(file_information: &FileInformation, ast: &mut CXAST) -> Option
 
         for CXParameter { type_, name } in prototype.parameters.iter() {
             if let Some(name) = name {
-                type_environment.symbol_table.insert(name.clone(), type_.clone());
+                type_environment.symbol_table.insert(name.to_owned(), type_.clone());
             }
         }
 

@@ -2,8 +2,9 @@ use log::warn;
 use crate::{assert_token_matches, log_error, try_next};
 use crate::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::parser::ParserData;
-use crate::parse::pass_unverified::expression::{parse_identifier, parse_name};
-use crate::parse::pass_unverified::{UVGlobalStmt, UVIdent};
+use crate::parse::pass_ast::CXAST;
+use crate::parse::pass_ast::expression::parse_name;
+use crate::parse::pass_ast::identifier::{parse_identifier, parse_intrinsic, parse_std_ident, CXIdent, CXTypedIdent};
 use crate::parse::value_type::CXValType;
 
 pub(crate) struct TypeRecord {
@@ -11,21 +12,17 @@ pub(crate) struct TypeRecord {
     pub(crate) type_: CXValType,
 }
 
-pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<UVGlobalStmt> {
+pub(crate) fn parse_typedef(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     let type_ = parse_type(data)?;
     let name = parse_name(data)?;
 
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
-    Some(
-        UVGlobalStmt::TypeDeclaration {
-            name,
-            type_: type_.type_
-        }
-    )
+    ast.type_map.insert(name, type_.type_);
+    Some(())
 }
 
-pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<UVGlobalStmt> {
+pub(crate) fn parse_plain_typedef(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     let Some(type_record) = parse_type(data) else {
         log_error!("PARSER ERROR: Invalid type declaration in plain typedef!");
     };
@@ -34,15 +31,15 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<UVGlobalStmt>
     let Some(name) = type_record.name else {
         warn!("PARSER WARNING: Plain type declaration with no name is effective no-op!");
 
-        return Some(UVGlobalStmt::HandledInternally);
+        return Some(())
     };
 
-    Some(
-        UVGlobalStmt::TypeDeclaration {
-            name,
-            type_: type_record.type_
-        }
-    )
+    ast.type_map.insert(
+        name.clone(),
+        type_record.type_.clone()
+    );
+
+    Some(())
 }
 
 pub(crate) fn parse_type(data: &mut ParserData) -> Option<TypeRecord> {
@@ -99,7 +96,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
     )
 }
 
-fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<UVIdent>, CXValType)> {
+fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXIdent>, CXValType)> {
     let Some(next_tok) = data.toks.peek() else {
         log_error!("PARSER ERROR: Expected type modifier token, found EOF!");
     };
@@ -110,38 +107,22 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
             parse_typemod_name(data, CXValType::PointerTo(Box::new(acc_type)))
         },
 
-        Token::Identifier(_) => Some((Some(parse_identifier(data)?), acc_type)),
+        Token::Identifier(_) => Some((Some(parse_std_ident(data)?), acc_type)),
 
         _ => Some((None, acc_type))
     }
 }
 
 fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
-    match data.toks.next()? {
-        Token::Identifier(name) =>
-            Some(CXValType::Identifier(name.clone())),
-        Token::Intrinsic(_) => {
-            data.toks.back();
-            Some(CXValType::Identifier(parse_intrinisic(data)?))
-        }
+    match data.toks.peek()? {
+        Token::Identifier(_) => Some(CXValType::Identifier(parse_std_ident(data)?)),
+        Token::Intrinsic(_) => Some(CXValType::Identifier(parse_intrinsic(data)?)),
 
         _ => log_error!("Unknown base to type initializer: {:#?}", data.toks.peek()),
     }
 }
 
-pub(crate) fn parse_intrinisic(data: &mut ParserData) -> Option<String> {
-    let mut name = String::new();
-
-    while let Some(Token::Intrinsic(intrinsic)) = data.toks.next() {
-        name.push_str(format!("{:?}", intrinsic).to_lowercase().as_str());
-    }
-
-    data.toks.back();
-
-    Some(name)
-}
-
-pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<UVIdent>, CXValType)> {
+pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<CXIdent>, CXValType)> {
     let type_base = parse_type_base(data)?;
 
     parse_typemod_name(data, type_base)

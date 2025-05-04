@@ -1,6 +1,6 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
-use crate::parse::pass_molded::TypeMap;
+use crate::parse::pass_ast::TypeMap;
 use crate::parse::value_type::CXValType;
 
 pub(crate) fn same_type(type_map: &TypeMap, t1: &CXValType, t2: &CXValType) -> bool {
@@ -49,7 +49,7 @@ pub(crate) fn same_type(type_map: &TypeMap, t1: &CXValType, t2: &CXValType) -> b
 pub(crate) fn get_intrinsic_type<'a>(type_map: &'a TypeMap, type_: &'a CXValType) -> Option<&'a CXValType> {
     match type_ {
         CXValType::Identifier(name)
-            => type_map.get(name),
+            => type_map.get(name.as_str()),
 
         _ => Some(type_)
     }
@@ -57,6 +57,8 @@ pub(crate) fn get_intrinsic_type<'a>(type_map: &'a TypeMap, type_: &'a CXValType
 
 pub fn get_type_size(type_map: &TypeMap, type_: &CXValType) -> Option<usize> {
     match type_ {
+        CXValType::Unit => Some(0),
+
         CXValType::Float { bytes } => Some(*bytes as usize),
         CXValType::Integer { bytes, .. } => Some(*bytes as usize),
 
@@ -68,11 +70,11 @@ pub fn get_type_size(type_map: &TypeMap, type_: &CXValType) -> Option<usize> {
                 .map(|field| get_type_size(type_map, &field.1))
                 .sum(),
 
-        CXValType::Unit => Some(0),
-        CXValType::PointerTo(_) => Some(8),
+        CXValType::PointerTo(_)
+        | CXValType::Function { .. } => Some(8),
         CXValType::Opaque { size, .. } => Some(*size),
         CXValType::Identifier(name) =>
-            type_map.get(name)
+            type_map.get(name.as_str())
                 .map(|_type| get_type_size(type_map, _type))
                 .flatten()
     }
