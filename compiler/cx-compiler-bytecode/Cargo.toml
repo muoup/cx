@@ -1,0 +1,10 @@
+[package]
+name = "cx-compiler-bytecode"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+cx-compiler-ast = { path = "../cx-compiler-ast" }
+cx-data-ast = { path = "../cx-data-ast" }
+cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-util = { path = "../cx-util" }
