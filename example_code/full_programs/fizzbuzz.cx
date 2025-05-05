@@ -1,5 +1,6 @@
 void printf(char* c);
 void putchar(char c);
+void itoa(int n, char* buffer, int base);
 
 void fizzbuzz(int n) {
     if (n % 3 == 0) {
@@ -8,6 +9,13 @@ void fizzbuzz(int n) {
 
     if (n % 5 == 0) {
         printf("Buzz");
+    }
+
+    if (n % 3 != 0 && n % 5 != 0) {
+        char buffer[16];
+        itoa(n, buffer, 10);
+
+        printf(buffer);
     }
 
     putchar('\n');

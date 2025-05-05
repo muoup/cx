@@ -81,6 +81,31 @@ pub(crate) fn form_compound_expr(lhs: CXExpr, rhs: CXExpr) -> Option<CXExpr> {
             )
         }
 
+        (CXExpr::Identifier(lident), CXExpr::BinOp { lhs: CXExpr::Identifier(ident), rhs: index, op: CXBinOp::ArrayIndex }) => {
+            let _type = match *index {
+                CXExpr::Unit => {
+                    CXValType::PointerTo(
+                        Box::new(CXValType::Identifier(lident))
+                    )
+                },
+                CXExpr::IntLiteral => {
+                    CXValType::PointerTo(
+                        Box::new(CXValType::Identifier(lident))
+                    )
+                },
+                _ => {
+                    log_error!("PARSER ERROR: Invalid array size declaration: {:#?}", index)
+                }
+            };
+
+            Some (
+                CXExpr::VarDeclaration {
+                    type_: _type,
+                    name: ident
+                }
+            )
+        },
+
         (lhs, rhs) => log_error!("Invalid compound expression: {:?} {:?}", lhs, rhs)
     }
 }
@@ -178,6 +203,16 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
 
             expr
+        },
+        Token::Punctuator(PunctuatorType::OpenBracket) => {
+            if try_next!(data, Token::Punctuator(PunctuatorType::CloseBracket)) {
+                return Some(CXExpr::Unit);
+            }
+
+            let index = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBracket));
+
+            index
         },
 
         _ => {
