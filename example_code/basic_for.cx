@@ -1,9 +1,9 @@
-import std::io;
+void putchar(int c);
 
 int for_loop(int n) {
     // Test Comment
-    for (int i = n; i > 0; i -= 1) {
-        printc('0' + i);
+    for (int i = n; i > 0; i--) {
+        putchar('0' + i);
     }
     return 0;
 }

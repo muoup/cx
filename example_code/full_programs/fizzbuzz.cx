@@ -11,13 +11,6 @@ void fizzbuzz(int n) {
         printf("Buzz");
     }
 
-    if (n % 3 != 0 && n % 5 != 0) {
-        char buffer[16];
-        itoa(n, buffer, 10);
-
-        printf(buffer);
-    }
-
     putchar('\n');
 }
 

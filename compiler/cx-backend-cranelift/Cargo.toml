@@ -1,0 +1,14 @@
+[package]
+name = "cx-backend-cranelift"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cx-util = { path = "../cx-util" }
+cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-data-ast = { path = "../cx-data-ast" }
+
+cranelift = "0.119.0"
+cranelift-module = "0.119.0"
+cranelift-native = "0.119.0"
+cranelift-object = "0.119.0"
