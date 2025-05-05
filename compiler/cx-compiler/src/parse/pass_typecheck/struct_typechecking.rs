@@ -36,7 +36,7 @@ pub(crate) fn access_struct(
         log_error!("TYPE ERROR: Invalid struct accessor {accessor} for type {lhs_type}");
     };
 
-    Some(field_type)
+    Some(CXValType::MemoryReference(Box::new(field_type)))
 }
 
 pub struct StructAccessRecord {

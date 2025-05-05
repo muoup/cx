@@ -84,6 +84,9 @@ pub enum CXUnOp {
     BNot, LNot,
     ArrayIndex,
     InitializerIndex,
+
+    PreIncrement,
+    PostIncrement,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +173,11 @@ pub enum CXExpr {
         expr: Box<CXExpr>,
         from_type: CXValType,
         to_type: CXValType
+    },
+
+    ImplicitLoad {
+        expr: Box<CXExpr>,
+        loaded_type: CXValType
     },
 
     InitializerList {

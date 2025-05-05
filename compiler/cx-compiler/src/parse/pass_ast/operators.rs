@@ -29,6 +29,27 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
             Token::Operator(op) => match op {
                 OperatorType::Ampersand     => CXUnOp::AddressOf,
                 OperatorType::Asterisk      => CXUnOp::Dereference,
+                OperatorType::Increment     => CXUnOp::PreIncrement,
+
+                _ => {
+                    data.toks.back();
+                    return None;
+                }
+            },
+
+            _ => {
+                data.toks.back();
+                return None;
+            }
+        }
+    )
+}
+
+pub(crate) fn parse_post_unop(data: &mut ParserData) -> Option<CXUnOp> {
+    Some(
+        match data.toks.next()? {
+            Token::Operator(op) => match op {
+                OperatorType::Increment     => CXUnOp::PostIncrement,
 
                 _ => {
                     data.toks.back();

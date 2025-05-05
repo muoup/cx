@@ -91,7 +91,11 @@ impl Display for CXExpr {
             },
 
             CXExpr::ImplicitCast { expr, to_type, .. } => {
-                fwrite!(f, "{}<{}>", expr, to_type)
+                fwrite!(f, "{}#to({})", expr, to_type)
+            },
+
+            CXExpr::ImplicitLoad { expr, loaded_type  } => {
+                fwrite!(f, "{}#load({})", expr, loaded_type)
             },
 
             CXExpr::InitializerList { indices } => {
@@ -118,8 +122,32 @@ impl Display for CXExpr {
                     CXUnOp::Dereference => fwrite!(f, "*{}", operand),
                     CXUnOp::ArrayIndex => fwrite!(f, "{}[]", operand),
                     CXUnOp::AddressOf => fwrite!(f, "&{}", operand),
+                    CXUnOp::PreIncrement => fwrite!(f, "++{}", operand),
+                    CXUnOp::PostIncrement => fwrite!(f, "{}++", operand),
                 }
-            }
+            },
+
+            CXExpr::If { condition, then_branch, else_branch } => {
+                fwrite!(f, "if {} {{", condition)?;
+                indent();
+                fwriteln!(f, "{}", then_branch)?;
+                dedent();
+                if let Some(else_branch) = else_branch {
+                    fwrite!(f, "}} else {{")?;
+                    indent();
+                    fwriteln!(f, "{}", else_branch)?;
+                    dedent();
+                }
+                fwrite!(f, "}}")
+            },
+
+            CXExpr::For { init, condition, increment, body } => {
+                fwrite!(f, "for ({}; {}; {})", init, condition, increment)?;
+                indent();
+                fwriteln!(f, "{}", body)?;
+                dedent();
+                Ok(())
+            },
 
             _ => fwrite!(f, "{:?}", self)
         }
@@ -164,7 +192,10 @@ impl Display for CXValType {
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "fn({}) -> {}", arg_strs, return_type)
-            }
+            },
+            CXValType::MemoryReference(inner) => {
+                write!(f, "mem({})", inner)
+            },
         }
     }
 }
@@ -183,14 +214,16 @@ impl Display for CXParameter {
 impl Display for CXBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXBinOp::Add => fwrite!(f, "+"),
-            CXBinOp::Subtract => fwrite!(f, "-"),
-            CXBinOp::Multiply => fwrite!(f, "*"),
-            CXBinOp::Divide => fwrite!(f, "/"),
-            CXBinOp::Equal => fwrite!(f, "=="),
-            CXBinOp::NotEqual => fwrite!(f, "!="),
+            CXBinOp::Add        => fwrite!(f, "+"),
+            CXBinOp::Subtract   => fwrite!(f, "-"),
+            CXBinOp::Multiply   => fwrite!(f, "*"),
+            CXBinOp::Divide     => fwrite!(f, "/"),
+            CXBinOp::Modulus    => fwrite!(f, "%"),
 
-            CXBinOp::Access => fwrite!(f, "."),
+            CXBinOp::Equal      => fwrite!(f, "=="),
+            CXBinOp::NotEqual   => fwrite!(f, "!="),
+
+            CXBinOp::Access     => fwrite!(f, "."),
 
             CXBinOp::Assign(add) => {
                 if let Some(add) = add {

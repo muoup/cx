@@ -7,7 +7,7 @@ use crate::parse::parser::{ParserData};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXUnOp};
 use crate::parse::pass_ast::global_scope::parse_body;
 use crate::parse::pass_ast::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
-use crate::parse::pass_ast::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_pre_unop};
+use crate::parse::pass_ast::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop};
 use crate::parse::value_type::CXValType;
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
@@ -185,6 +185,10 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
             return None
         }
     };
+
+    while let Some(op) = parse_post_unop(data) {
+        unop_stack.push(op);
+    }
 
     for op in unop_stack.into_iter().rev() {
         let temp_acc = std::mem::replace(&mut acc, CXExpr::Taken);

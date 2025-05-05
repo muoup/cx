@@ -24,13 +24,6 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
             Some(CXValType::Unit)
         },
 
-        CXExpr::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
-            let lhs_type = type_check_traverse(env, lhs)?;
-            implicit_coerce(env, rhs.as_mut(), lhs_type.clone())?;
-
-            Some(lhs_type)
-        },
-
         CXExpr::UnOp { operator, operand } => {
             match operator {
                 CXUnOp::AddressOf => {
@@ -48,18 +41,43 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
                         log_error!("TYPE ERROR: Dereference operator can only be applied to pointers");
                     };
 
-                    Some(*deref)
+                    Some(CXValType::MemoryReference(deref))
+                },
+                CXUnOp::PostIncrement |
+                CXUnOp::PreIncrement => {
+                    let operand_type = type_check_traverse(env, operand.as_mut())?;
+
+                    let CXValType::MemoryReference(inner) = operand_type else {
+                        log_error!("TYPE ERROR: Increment operator can only be applied to memory references, found: {operand}");
+                    };
+
+                    let CXValType::Integer { .. } = get_intrinsic_type(env.type_map, &inner).cloned()? else {
+                        log_error!("TYPE ERROR: Increment operator can only be applied to integers, found: {inner}");
+                    };
+
+                    Some(*inner)
                 },
 
                 _ => todo!("type_check_traverse: {expr}")
             }
         },
 
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
+            let lhs_type = type_check_traverse(env, lhs)?;
+            let CXValType::MemoryReference(lhs_type) = lhs_type else {
+                log_error!("TYPE ERROR: Assignment operator can only be applied to memory references, found: {lhs_type}");
+            };
+
+            implicit_coerce(env, rhs, lhs_type.as_ref().clone())?;
+
+            Some(*lhs_type)
+        },
+
         CXExpr::BinOp { lhs, rhs, op: CXBinOp::Access } =>
             access_struct(env, lhs.as_mut(), rhs.as_mut()),
 
         CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
-            let lhs_type = type_check_traverse(env, lhs)?;
+            let lhs_type = coerce_value(env, lhs)?;
             let CXValType::Function { return_type, args } = lhs_type else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
@@ -77,9 +95,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         }
 
         CXExpr::BinOp { lhs, rhs, .. } => {
-            let lhs_type = type_check_traverse(env, lhs)?;
-
-            implicit_coerce(env, lhs, lhs_type.clone())?;
+            let lhs_type = coerce_value(env, lhs)?;
             implicit_coerce(env, rhs, lhs_type.clone())?;
 
             Some(lhs_type)
@@ -88,12 +104,12 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
         CXExpr::VarDeclaration { name, type_ } => {
             env.symbol_table.insert(name.to_owned(), type_.clone());
 
-            Some(type_.clone())
+            Some(CXValType::MemoryReference(Box::new(type_.clone())))
         },
 
         CXExpr::Identifier(name) => {
             if let Some(record) = env.symbol_table.get(name.as_str()) {
-                return Some(record.clone());
+                return Some(CXValType::MemoryReference(Box::new(record.clone())));
             };
 
             if let Some(func) = env.fn_map.get(name.as_str()) {
@@ -192,7 +208,7 @@ pub(crate) fn implicit_coerce(
         return Some(());
     }
 
-    let from_type = type_check_traverse(env, expr)?;
+    let from_type = coerce_value(env, expr)?;
 
     unsafe {
         // this feels like something that should be safe with the borrow checker, not my problem
@@ -208,6 +224,25 @@ pub(crate) fn implicit_coerce(
     }
 
     Some(())
+}
+
+fn coerce_value(
+    env: &mut TypeEnvironment,
+    expr: &mut CXExpr,
+) -> Option<CXValType> {
+    let expr_type = type_check_traverse(env, expr)?;
+
+    let CXValType::MemoryReference(inner) = expr_type else {
+        return Some(expr_type);
+    };
+
+    let expr_temp = std::mem::replace(expr, CXExpr::Taken);
+    *expr = CXExpr::ImplicitLoad {
+        expr: Box::new(expr_temp),
+        loaded_type: inner.as_ref().clone()
+    };
+
+    Some(*inner)
 }
 
 fn coerce_struct_initializer(

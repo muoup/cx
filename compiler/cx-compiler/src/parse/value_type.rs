@@ -11,6 +11,7 @@ pub enum CXValType {
     Unit,
 
     PointerTo(Box<CXValType>),
+    MemoryReference(Box<CXValType>),
     Array {
         size: usize,
         _type: Box<CXValType>

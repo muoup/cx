@@ -61,6 +61,8 @@ pub fn get_type_size(type_map: &TypeMap, type_: &CXValType) -> Option<usize> {
 
         CXValType::Float { bytes } => Some(*bytes as usize),
         CXValType::Integer { bytes, .. } => Some(*bytes as usize),
+        CXValType::MemoryReference(inner) =>
+            get_type_size(type_map, inner.as_ref()),
 
         CXValType::Array { _type, size }
             => Some(get_type_size(type_map, _type)? * size),
@@ -98,7 +100,7 @@ pub(crate) fn struct_field_offset(builder: &mut BytecodeBuilder, fields: &[(Stri
         .sum::<Option<usize>>()
 }
 
-pub(crate) fn implicit_casting(
+pub(crate) fn implicit_cast(
     builder: &mut BytecodeBuilder,
     value: ValueID,
     from_type: &CXValType,

@@ -1,6 +1,6 @@
 use crate::log_error;
 use crate::parse::pass_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
-use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_casting, struct_field_offset};
+use crate::parse::pass_bytecode::typing::{get_intrinsic_type, get_type_size, implicit_cast, struct_field_offset};
 use crate::parse::pass_ast::{CXBinOp, CXExpr, CXUnOp};
 use crate::parse::pass_ast::identifier::CXIdent;
 use crate::parse::pass_ast::operators::comma_separated;
@@ -130,25 +130,19 @@ pub(crate) fn generate_instruction(
             Some(ValueID::NULL)
         },
         CXExpr::ImplicitCast { expr, from_type, to_type} => {
-            let mut inner = generate_instruction(builder, expr.as_ref())?;
+            let inner = generate_instruction(builder, expr.as_ref())?;
 
-            match expr.as_ref() {
-                CXExpr::Identifier(_) |
-                CXExpr::BinOp { op: CXBinOp::Access, .. }
-                    if !is_structure(&builder.type_map, to_type) => {
+            implicit_cast(builder, inner, &from_type, &to_type)
+        },
+        CXExpr::ImplicitLoad { expr, loaded_type } => {
+            let inner = generate_instruction(builder, expr.as_ref())?;
 
-                    inner = builder.add_instruction(
-                        VirtualInstruction::Load {
-                            value: inner.clone(),
-                        },
-                        to_type.clone()
-                    )?;
+            builder.add_instruction(
+                VirtualInstruction::Load {
+                    value: inner
                 },
-
-                _ => ()
-            }
-
-            implicit_casting(builder, inner, &from_type, &to_type)
+                loaded_type.clone()
+            )
         },
 
         CXExpr::IntLiteral { val, bytes } => {
@@ -204,15 +198,7 @@ pub(crate) fn generate_instruction(
         CXExpr::UnOp { operator, operand } => {
             match operator {
                 CXUnOp::Dereference => {
-                    let value = generate_instruction(builder, operand.as_ref())?;
-                    let CXValType::PointerTo(inner_type) = builder.get_type(value)?.clone() else {
-                        log_error!("Dereference operator applied to non-pointer type");
-                    };
-
-                    builder.add_instruction(
-                        VirtualInstruction::Load { value },
-                        *inner_type
-                    )
+                    generate_instruction(builder, operand.as_ref())
                 },
                 CXUnOp::AddressOf => {
                     let value = generate_instruction(builder, operand.as_ref())?;
@@ -221,6 +207,79 @@ pub(crate) fn generate_instruction(
                         VirtualInstruction::AddressOf { value },
                         CXValType::PointerTo(Box::new(builder.get_type(value)?.clone()))
                     )
+                },
+                CXUnOp::PreIncrement => {
+                    let value = generate_instruction(builder, operand.as_ref())?;
+                    let val_type = builder.get_type(value)?.clone();
+                    let value = builder.add_instruction(
+                        VirtualInstruction::Load {
+                            value: value.clone()
+                        },
+                        val_type.clone()
+                    )?;
+
+                    let one = builder.add_instruction(
+                        VirtualInstruction::Immediate {
+                            value: 1
+                        },
+                        val_type.clone()
+                    )?;
+
+                    let incremented = builder.add_instruction(
+                        VirtualInstruction::IntegerBinOp {
+                            left: value,
+                            right: one,
+                            op: CXBinOp::Add
+                        },
+                        val_type.clone()
+                    )?;
+
+                    builder.add_instruction(
+                        VirtualInstruction::Store {
+                            memory: value,
+                            value: incremented.clone(),
+                            type_: val_type
+                        },
+                        CXValType::Unit
+                    )?;
+
+                    Some(incremented)
+                },
+                CXUnOp::PostIncrement => {
+                    let value = generate_instruction(builder, operand.as_ref())?;
+                    let val_type = builder.get_type(value)?.clone();
+                    let loaded_val = builder.add_instruction(
+                        VirtualInstruction::Load {
+                            value: value.clone()
+                        },
+                        val_type.clone()
+                    )?;
+
+                    let one = builder.add_instruction(
+                        VirtualInstruction::Immediate {
+                            value: 1
+                        },
+                        val_type.clone()
+                    )?;
+
+                    builder.add_instruction(
+                        VirtualInstruction::IntegerBinOp {
+                            left: loaded_val,
+                            right: one,
+                            op: CXBinOp::Add
+                        },
+                        val_type.clone()
+                    )?;
+                    builder.add_instruction(
+                        VirtualInstruction::Store {
+                            memory: value,
+                            value: loaded_val.clone(),
+                            type_: val_type
+                        },
+                        CXValType::Unit
+                    )?;
+
+                    Some(loaded_val)
                 },
 
                 _ => todo!("generate_instruction for {:?}", operator)
