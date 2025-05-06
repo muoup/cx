@@ -353,6 +353,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-data-typechecking"
+version = "0.1.0"
+dependencies = [
+ "cx-data-ast",
+]
+
+[[package]]
 name = "cx-lsp"
 version = "0.0.0"
 dependencies = [

@@ -6,4 +6,4 @@ members = [
     "compiler/cx-compiler-bytecode",
     "compiler/cx-backend-cranelift",
     "compiler/cx-lsp"
-, "compiler/cx-data-ast", "compiler/cx", "compiler/cx-util", "compiler/cx-compiler-typechecker"]
+, "compiler/cx-data-ast", "compiler/cx", "compiler/cx-util", "compiler/cx-compiler-typechecker", "compiler/cx-data-typechecker"]
