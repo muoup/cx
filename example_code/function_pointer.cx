@@ -1,0 +1,25 @@
+void printf(char* str, int n);
+
+typedef int(*operation)(int, int);
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int subtract(int a, int b) {
+    return a - b;
+}
+
+int main() {
+    int x = 2;
+    int y = 2;
+
+    operation op = add;
+    int(*op2)(int, int) = subtract;
+
+    int temp = op(x, y);
+    printf("Result of addition: %d\n", temp);
+
+    temp = op2(x, y);
+    printf("Result of subtraction: %d\n", temp);
+}
