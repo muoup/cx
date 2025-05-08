@@ -7,6 +7,7 @@ use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::CXValType;
 use crate::parse::typing::{parse_initializer, parse_plain_typedef, parse_type};
 use cx_util::log_error;
+use crate::parse::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     match data.toks.peek()
@@ -14,9 +15,10 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
 
         Token::Keyword(KeywordType::Import) => parse_import(data, ast),
 
+        Token::Keyword(KeywordType::Typedef) |
         Token::Keyword(KeywordType::Struct) |
         Token::Keyword(KeywordType::Enum) |
-        Token::Keyword(KeywordType::Union) => parse_plain_typedef(data, ast),
+        Token::Keyword(KeywordType::Union) => goto_statement_end(data),
 
         Token::Specifier(_) => parse_specifier(data, ast),
 

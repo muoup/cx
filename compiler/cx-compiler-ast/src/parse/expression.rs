@@ -10,6 +10,7 @@ use cx_data_ast::{assert_token_matches, try_next};
 use crate::parse::lvalues::reformat_lvalue;
 use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop};
 use cx_util::log_error;
+use crate::parse::typing::{is_type_decl, parse_initializer};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr {
@@ -44,16 +45,6 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
         if let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {
             continue;
         }
-
-        if let Some(val) = parse_expr_val(data) {
-            let lhs = expr_stack.pop().unwrap();
-            let Some(compound) = form_compound_expr(lhs, val) else {
-                log_error!("PARSER ERROR: Failed to form compound expression: {:#?}", data.toks.peek());
-            };
-
-            expr_stack.push(compound);
-            continue;
-        };
 
         break;
     }
@@ -179,6 +170,16 @@ pub(crate) fn compress_lvalue(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<C
 
 pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
     let mut unop_stack = Vec::new();
+
+    if is_type_decl(data) {
+        let Some((Some(name), type_)) = parse_initializer(data) else {
+            log_error!("PARSER ERROR: Failed to parse type declaration");
+        };
+
+        return Some(
+            CXExpr::VarDeclaration { type_, name }
+        );
+    }
 
     while let Some(op) = parse_pre_unop(data) {
         unop_stack.push(op);

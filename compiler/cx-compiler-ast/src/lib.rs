@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use cx_data_ast::lex::token::Token;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser;
@@ -25,6 +26,7 @@ pub fn parse(lex_contents: LexContents) -> Option<ParseContents> {
             slice: &lex_contents,
             index: 0,
         },
+        type_symbols: HashSet::new(),
     };
 
     parse::parse_ast(parser_data)
