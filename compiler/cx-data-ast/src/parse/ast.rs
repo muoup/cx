@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::parse::value_type::CXValType;
+use crate::parse::value_type::{CXValType};
 use crate::parse::identifier::CXIdent;
 
 pub type TypeMap = HashMap<String, CXValType>;

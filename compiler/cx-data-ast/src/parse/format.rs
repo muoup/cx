@@ -1,8 +1,9 @@
+use std::env::args;
 use std::fmt::{Display, Formatter};
 use cx_util::format::{dedent, indent};
 use cx_util::{fwrite, fwriteln};
 use crate::parse::ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
-use crate::parse::value_type::CXValType;
+use crate::parse::value_type::{CXTypeUnion, CXValType};
 
 impl Display for CXAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -162,44 +163,50 @@ impl Display for CXExpr {
 
 impl Display for CXValType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.internal_type)
+    }
+}
+
+impl Display for CXTypeUnion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXValType::Integer { bytes, signed } => {
+            CXTypeUnion::Integer { bytes, signed } => {
                 let signed_str = if *signed { "i" } else { "u" };
                 let signed_bytes = *bytes * 8;
                 write!(f, "{}i{}", signed_str, signed_bytes)
             },
-            CXValType::Float { bytes } => {
+            CXTypeUnion::Float { bytes } => {
                 let float_bytes = *bytes * 8;
                 write!(f, "f{}", float_bytes)
             },
-            CXValType::Structured { fields } => {
+            CXTypeUnion::Structured { fields, name } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{}: {}", name, type_))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "struct {{ {} }}", field_strs)
+                write!(f, "struct {} {{ {} }}", name.as_ref().unwrap_or(&"".to_string()), field_strs)
             },
-            CXValType::Unit => write!(f, "()"),
-            CXValType::PointerTo(inner) => {
+            CXTypeUnion::Unit => write!(f, "()"),
+            CXTypeUnion::PointerTo(inner) => {
                 write!(f, "*{}", inner)
             },
-            CXValType::Array { size, _type } => {
+            CXTypeUnion::Array { size, _type } => {
                 write!(f, "[{}; {}]", size, _type)
             },
-            CXValType::Opaque { name, size } => {
+            CXTypeUnion::Opaque { name, size } => {
                 write!(f, "OPAQUE_{}(\"{}\")", size, name)
             },
-            CXValType::Identifier(name) => {
+            CXTypeUnion::Identifier(name) => {
                 write!(f, "{}", name)
             },
-            CXValType::Function { return_type, args } => {
+            CXTypeUnion::Function { return_type, args } => {
                 let arg_strs = args.iter()
                     .map(|type_| format!("{}", type_))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "fn({}) -> {}", arg_strs, return_type)
             },
-            CXValType::MemoryReference(inner) => {
+            CXTypeUnion::MemoryReference(inner) => {
                 write!(f, "mem({})", inner)
             },
         }

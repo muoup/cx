@@ -5,12 +5,12 @@ use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotK
 use cranelift_module::{DataDescription, DataId, Module};
 use cranelift_object::ObjectModule;
 use cx_data_ast::lex::token::OperatorType;
-use cx_data_ast::parse::value_type::{get_type_size, CXValType};
+use cx_data_ast::parse::value_type::{get_type_size, CXTypeUnion, CXValType};
 use crate::FunctionState;
 
 pub(crate) fn stack_alloca(context: &mut FunctionState, type_: &CXValType) -> Option<Value> {
-    match type_ {
-        CXValType::Structured { fields } => {
+    match &type_.internal_type {
+        CXTypeUnion::Structured { fields, .. } => {
             let field_values = fields.iter()
                 .map(|(_, type_)| stack_alloca(context, type_))
                 .collect::<Vec<_>>();

@@ -1,14 +1,14 @@
 use cranelift::codegen::ir;
 use cx_data_ast::parse::ast::TypeMap;
-use cx_data_ast::parse::value_type::CXValType;
+use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 
 pub(crate) fn get_cranelift_abi_type(type_map: &TypeMap, val_type: &CXValType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type, type_map))
 }
 
 pub(crate) fn get_cranelift_type(val_type: &CXValType, type_map: &TypeMap) -> ir::Type {
-    match val_type {
-        CXValType::Integer { bytes, .. } => {
+    match &val_type.internal_type {
+        CXTypeUnion::Integer { bytes, .. } => {
             match bytes {
                 1 => ir::types::I8,
                 2 => ir::types::I16,
@@ -17,19 +17,19 @@ pub(crate) fn get_cranelift_type(val_type: &CXValType, type_map: &TypeMap) -> ir
                 _ => panic!("Invalid integer size")
             }
         },
-        CXValType::Float { bytes } => {
+        CXTypeUnion::Float { bytes } => {
             match bytes {
                 4 => ir::types::F32,
                 8 => ir::types::F64,
                 _ => panic!("Invalid float size")
             }
         },
-        CXValType::PointerTo(_) |
-        CXValType::Array { .. } |
-        CXValType::Structured { .. } => ir::types::I64,
+        CXTypeUnion::PointerTo(_) |
+        CXTypeUnion::Array { .. } |
+        CXTypeUnion::Structured { .. } => ir::types::I64,
 
-        CXValType::Unit => panic!("Unit type has no representation"),
-        CXValType::Identifier(_type) => {
+        CXTypeUnion::Unit => panic!("Unit type has no representation"),
+        CXTypeUnion::Identifier(_type) => {
             let Some(type_) = type_map.get(_type.as_str()) else {
                 panic!("Typechecking allowed invalid type {:#?}", _type);
             };

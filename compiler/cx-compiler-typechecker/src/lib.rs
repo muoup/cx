@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXParameter, FunctionMap, TypeMap, CXAST};
-use cx_data_ast::parse::value_type::CXValType;
+use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
 use crate::intrinsic_types::add_internal_types;
@@ -19,7 +19,7 @@ pub fn type_check(ast: &mut CXAST) -> Option<()> {
         type_map: &mut ast.type_map,
         fn_map: &mut ast.function_map,
         symbol_table: ScopedMap::new(),
-        return_type: CXValType::Unit,
+        return_type: CXValType::unit(),
     };
 
     // TODO: Global Variables

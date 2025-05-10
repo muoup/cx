@@ -3,7 +3,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
-use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, CXValType};
+use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BytecodeFunction, ValueID, VirtualInstruction};
 use crate::{FunctionState, GlobalState, VariableTable};
 use crate::instruction::codegen_instruction;
@@ -18,7 +18,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &C
         sig.params.push(get_cranelift_abi_type(global_state.type_map, type_));
     }
 
-    if !matches!(get_intrinsic_type(&global_state.type_map, &prototype.return_type)?, CXValType::Unit) {
+    if !matches!(get_intrinsic_type(&global_state.type_map, &prototype.return_type)?, CXTypeUnion::Unit) {
         sig.returns.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
 
         if is_structure(global_state.type_map, &prototype.return_type) {

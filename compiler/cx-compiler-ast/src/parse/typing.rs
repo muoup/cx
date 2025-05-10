@@ -1,10 +1,10 @@
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
+use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::expression::parse_name;
 use cx_data_ast::parse::ast::{TypeMap, CXAST};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::value_type::CXValType;
+use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeUnion, CXValType, CX_CONST, CX_VOLATILE};
 use cx_util::log_error;
 use crate::parse::parsing_tools::{goto_block_end, goto_statement_end};
 
@@ -39,6 +39,7 @@ pub fn parse_types(data: &mut ParserData) -> Option<TypeMap> {
         let type_record = match token {
             Token::Keyword(KeywordType::Typedef) =>
                 parse_typedef(data)?,
+
             Token::Keyword(KeywordType::Struct) |
             Token::Keyword(KeywordType::Enum) |
             Token::Keyword(KeywordType::Union) =>
@@ -60,49 +61,44 @@ pub fn parse_types(data: &mut ParserData) -> Option<TypeMap> {
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {
-    let type_ = parse_type(data)?;
-    let name = parse_name(data)?;
+    let (name, type_) = parse_initializer(data)?;
+
+    if name.is_none() {
+        log_error!("PARSER ERROR: Invalid typedef declaration with no name!");
+    }
 
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
     Some(
         TypeRecord {
-            name: Some(name),
-            type_: type_.type_
+            name: Some(name?.to_string()),
+            type_
         }
     )
 }
 
 pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
-    let Some(type_record) = parse_type(data) else {
-        log_error!("PARSER ERROR: Invalid type declaration in plain typedef!");
-    };
-    try_next!(data, Token::Punctuator(PunctuatorType::Semicolon));
+    match data.toks.next()? {
+        Token::Keyword(KeywordType::Struct) => {
+            let type_ = parse_struct(data)?;
+            let CXTypeUnion::Structured { name, .. } = &type_ else {
+                log_error!("PARSER ERROR: Expected struct type, found: {:#?}", type_);
+            };
+            try_next!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
-    Some(type_record)
-}
+            Some(
+                TypeRecord {
+                    name: name.clone(),
+                    type_: CXValType::new(0, type_)
+                }
+            )
+        },
 
-pub(crate) fn parse_type(data: &mut ParserData) -> Option<TypeRecord> {
-    match data.toks.peek().expect("parse_type() called with no tokens!") {
-        Token::Keyword(KeywordType::Struct) => parse_struct(data),
-        Token::Keyword(KeywordType::Union) => todo!("parse_union()"),
-        Token::Keyword(KeywordType::Enum) => todo!("parse_enum()"),
-
-        Token::Identifier(_) |
-        Token::Intrinsic(_) => Some(
-            TypeRecord {
-                name: None,
-                type_: parse_type_base(data)?
-            }
-        ),
-
-        _ => {
-            log_error!("PARSER ERROR: unknown type declaration starting with: {:#?}", data.toks.peek());
-        }
+        _ => todo!()
     }
 }
 
-pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
+pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeUnion> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Struct));
 
     let name = parse_name(data);
@@ -111,29 +107,39 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<TypeRecord> {
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
     while data.toks.peek() != Some(&Token::Punctuator(PunctuatorType::CloseBrace)) {
-        let type_start_token = data.toks.peek().cloned();
-        let Some(type_) = parse_type(data) else {
-            log_error!("PARSER ERROR: Invalid type declaration in struct definition starting with: {:#?}", type_start_token);
-        };
-
-        let name_start_token = data.toks.peek().cloned();
-        let Some(name) = parse_name(data) else {
-            log_error!("PARSER ERROR: Invalid identifier in struct definition starting with: {:#?}", name_start_token);
-        };
-
-        fields.push((name, type_.type_));
-
+        let (name, _type) = parse_initializer(data)?;
         assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+
+        fields.push(
+            (name?.to_string(), _type)
+        )
     }
 
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
 
     Some(
-        TypeRecord {
+        CXTypeUnion::Structured {
             name,
-            type_: CXValType::Structured { fields }
+            fields,
         }
     )
+}
+
+fn parse_specifier(data: &mut ParserData) -> CXTypeSpecifier {
+    let mut spec_acc = 0;
+
+    while let Some(Token::Specifier(spec)) = data.toks.next() {
+        match spec {
+            SpecifierType::Const => spec_acc |= CX_CONST,
+            SpecifierType::Volatile => spec_acc |= CX_VOLATILE,
+            SpecifierType::Restrict => spec_acc |= CX_VOLATILE,
+
+            _ => break
+        }
+    }
+
+    data.back();
+    spec_acc
 }
 
 fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXIdent>, CXValType)> {
@@ -144,7 +150,10 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
     match next_tok {
         Token::Operator(OperatorType::Asterisk) => {
             data.toks.next();
-            parse_typemod_name(data, CXValType::PointerTo(Box::new(acc_type)))
+            let specs = parse_specifier(data);
+            let acc_type = CXValType::new(specs, CXTypeUnion::PointerTo(Box::new(acc_type)));
+
+            parse_typemod_name(data, acc_type)
         },
 
         Token::Identifier(_) => Some((Some(parse_std_ident(data)?), acc_type)),
@@ -155,23 +164,33 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
 
 fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
     match data.toks.peek()? {
-        Token::Identifier(_) => Some(CXValType::Identifier(parse_std_ident(data)?)),
-        Token::Intrinsic(_) => Some(CXValType::Identifier(parse_intrinsic(data)?)),
+        Token::Identifier(_) => Some(
+            CXValType::new(
+                parse_specifier(data),
+                CXTypeUnion::Identifier(parse_std_ident(data)?)
+            )
+        ),
+        Token::Intrinsic(_) => Some(
+            CXValType::new(
+                parse_specifier(data),
+                CXTypeUnion::Identifier(parse_intrinsic(data)?)
+            )
+        ),
 
-        Token::Keyword(KeywordType::Struct) => {
-            let Some(type_record) = parse_struct(data) else {
-                log_error!("PARSER ERROR: Invalid type declaration in struct definition!");
-            };
-
-            Some(type_record.type_)
-        },
+        Token::Keyword(KeywordType::Struct) => Some(
+            CXValType::new(
+                parse_specifier(data),
+                parse_struct(data)?
+            )
+        ),
 
         _ => log_error!("Unknown base to type initializer: {:#?}", data.toks.peek()),
     }
 }
 
 pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<CXIdent>, CXValType)> {
-    let type_base = parse_type_base(data)?;
+    let prefix_specs = parse_specifier(data);
+    let mut type_base = parse_type_base(data)?;
 
-    parse_typemod_name(data, type_base)
+    parse_typemod_name(data, type_base.add_specifier(prefix_specs))
 }

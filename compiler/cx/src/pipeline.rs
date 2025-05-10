@@ -193,6 +193,8 @@ impl CompilerPipeline {
             .status()
             .expect("Failed to execute command");
 
+        println!("Successfully created executable: {}", self.output_file);
+
         self
     }
 }

@@ -223,9 +223,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let target = context.variable_table.get(memory).unwrap();
             let value = context.variable_table.get(value).unwrap();
 
-            let type_ = get_intrinsic_type(context.type_map, type_)?;
-
-            if is_structure(context.type_map, type_) {
+            if type_.is_structure(&context.type_map) {
                 let size = get_type_size(context.type_map, type_).unwrap() as u64;
                 let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
 

@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use crate::lex::token::Token;
+use crate::parse::value_type::{CXValType};
 use cx_util::scoped_map::ScopedMap;
-use crate::lex::token::{KeywordType, Token};
-use crate::parse::value_type::CXValType;
+use std::collections::HashSet;
 
 pub type VarTable = ScopedMap<CXValType>;
 
@@ -28,6 +28,11 @@ pub struct TokenIter<'a> {
 impl<'a> ParserData<'a> {
     pub fn back(&mut self) -> &mut Self {
         self.toks.back();
+        self
+    }
+
+    pub fn skip(&mut self) -> &mut Self {
+        self.toks.next();
         self
     }
 

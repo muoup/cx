@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::value_type::{get_type_size, CXValType};
+use cx_data_ast::parse::value_type::{get_type_size, CXTypeUnion, CXValType};
 use cx_data_bytecode::builder::{BytecodeBuilder, BytecodeFunctionPrototype, BytecodeParameter, VirtualInstruction};
 use cx_data_bytecode::ProgramBytecode;
 use crate::instruction_gen::generate_instruction;
@@ -57,7 +57,7 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
                     memory,
                     type_: arg.type_.clone()
                 },
-                CXValType::Unit
+                CXValType::unit()
             )?;
 
             if let Some(name) = &arg.name {
@@ -73,13 +73,13 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
                     VirtualInstruction::Literal {
                         val: 0,
                     },
-                    CXValType::Integer { bytes: 3, signed: true }
+                    CXTypeUnion::Integer { bytes: 3, signed: true }.to_val_type()
                 )?;
                 builder.add_instruction(
                     VirtualInstruction::Return {
                         value: Some(zero_literal)
                     },
-                    CXValType::Unit
+                    CXValType::unit()
                 )?;
             }
 
@@ -87,7 +87,7 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
                 VirtualInstruction::Return {
                     value: None
                 },
-                CXValType::Unit
+                CXValType::unit()
             )?;
         }
 

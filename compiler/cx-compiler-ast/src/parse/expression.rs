@@ -5,8 +5,8 @@ use crate::parse::global_scope::parse_body;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident};
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::value_type::CXValType;
 use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::parse::value_type::CXValType;
 use crate::parse::lvalues::reformat_lvalue;
 use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop};
 use cx_util::log_error;
@@ -62,21 +62,6 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     Some(expr)
 }
 
-pub(crate) fn form_compound_expr(lhs: CXExpr, rhs: CXExpr) -> Option<CXExpr> {
-    match (lhs, rhs) {
-        (CXExpr::Identifier(lident), CXExpr::Identifier(rident)) => {
-            Some(
-                CXExpr::VarDeclaration {
-                    type_: CXValType::Identifier(lident),
-                    name: rident
-                }
-            )
-        }
-
-        (lhs, rhs) => log_error!("Invalid compound expression: {:?} {:?}", lhs, rhs)
-    }
-}
-
 pub(crate) fn parse_expr_op_concat(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CXBinOp>) -> Option<()> {
     let Some(op) = parse_binop(data) else {
         return None;
@@ -109,12 +94,6 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CX
         return Some(());
     }
 
-    // if matches!(op_stack.last(), Some(CXBinOp::Assign(_))) {
-    //     let top = op_stack.pop().unwrap();
-    //     compress_lvalue(expr_stack, op_stack)?;
-    //     op_stack.push(top);
-    // }
-
     let mut ops = Vec::new();
     let mut exprs = Vec::new();
 
@@ -145,27 +124,6 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CX
     expr_stack.push(acc);
 
     Some(())
-}
-
-pub(crate) fn compress_lvalue(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CXBinOp>) -> Option<()> {
-    match expr_stack.len() {
-        0 => panic!("compress_lvalue reached with no value left of assignment"),
-        1 => {
-            let new_lvalue = reformat_lvalue(expr_stack.pop().unwrap())?;
-            expr_stack.push(new_lvalue);
-
-            Some(())
-        },
-        2 => {
-            let lexpr = expr_stack.pop().unwrap();
-            let rexpr = expr_stack.pop().unwrap();
-            let op = op_stack.pop().unwrap();
-
-            None
-        },
-
-        _ => log_error!("PARSER ERROR: No LValue can be formed from expression stack: {:#?}", expr_stack)
-    }
 }
 
 pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
