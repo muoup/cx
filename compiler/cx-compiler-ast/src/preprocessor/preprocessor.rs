@@ -18,7 +18,7 @@ pub(crate) fn preprocess_line(string: &str) -> String {
             let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
                 ""
             } else if file_name.starts_with("<") && file_name.ends_with(">") {
-                "libc_simplified/"
+                "libc/"
             } else {
                 panic!("Invalid include statement: {}", file_name);
             };
