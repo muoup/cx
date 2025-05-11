@@ -1,5 +1,3 @@
-use cx_data_ast::lex::token::Token;
-
 pub(crate) fn preprocess_line(string: &str) -> String {
     if string.contains("//") {
         return string.split("//").next().unwrap().to_string();
@@ -18,7 +16,7 @@ pub(crate) fn preprocess_line(string: &str) -> String {
             let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
                 ""
             } else if file_name.starts_with("<") && file_name.ends_with(">") {
-                "libc/"
+                "lib/libc/"
             } else {
                 panic!("Invalid include statement: {}", file_name);
             };
@@ -27,6 +25,6 @@ pub(crate) fn preprocess_line(string: &str) -> String {
             std::fs::read_to_string(path.as_str())
                 .expect(format!("Failed to read file: {}", path).as_str())
         },
-        _ => unimplemented!("Preprocessor directive not implemented")
+        dir => todo!("Preprocessor directive not implemented: {dir}")
     }
 }

@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::clone;
 use std::env::args;
 use cx_compiler_ast::parse::operators::comma_separated_mut;
 use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, struct_field_access, CXTypeUnion, CXValType, CX_CONST};
@@ -76,6 +77,10 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
                 log_error!("TYPE ERROR: Assignment operator can only be applied to memory references, found: {lhs_type}");
             };
 
+            if lhs_type.as_ref().get_specifier(CX_CONST) {
+                log_error!("TYPE ERROR: Assignment operator cannot be applied to const variables");
+            }
+
             implicit_coerce(env, rhs, lhs_type.as_ref().clone())?;
 
             Some(*lhs_type)
@@ -112,10 +117,12 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
         CXExpr::VarDeclaration { name, type_ } => {
             env.symbol_table.insert(name.to_owned(), type_.clone());
 
+            let modified_type = type_.clone().remove_specifier(CX_CONST);
+
             Some(
                 CXValType::new(
                     0,
-                    CXTypeUnion::MemoryReference(Box::new(type_.clone()))
+                    CXTypeUnion::MemoryReference(Box::new(modified_type))
                 )
             )
         },

@@ -21,7 +21,9 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
     }
 
     match tok.unwrap() {
-        Token::Intrinsic(_) |
+        Token::Intrinsic(_) => true,
+        Token::Specifier(_) => true,
+
         Token::Keyword(KeywordType::Struct) |
         Token::Keyword(KeywordType::Union) |
         Token::Keyword(KeywordType::Enum) => true,

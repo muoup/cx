@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, FunctionBuilder, Value};
+use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_data_ast::parse::ast::{FunctionMap, TypeMap};
@@ -111,6 +111,10 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     println!("Outputting to {}", output);
 
     let obj = global_state.object_module.finish();
+
+    let output_path = std::path::Path::new(output);
+
+    std::fs::create_dir_all(output_path.parent().unwrap()).expect("Failed to create output directory");
     std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
 
     println!("Successfully generated object file to {}", output);

@@ -77,6 +77,14 @@ impl CXValType {
             internal_type: self.internal_type.clone()
         }
     }
+
+    pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
+        CXValType {
+            specifiers: self.specifiers & !specifier,
+            internal_type: self.internal_type.clone()
+        }
+    }
+
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
     }
