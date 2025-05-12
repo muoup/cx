@@ -1,5 +1,5 @@
-use cx_data_ast::parse::ast::{CXBinOp, FunctionMap, TypeMap};
-use cx_data_ast::parse::value_type::CXValType;
+use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, FunctionMap, TypeMap};
+use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 use cx_util::scoped_map::ScopedMap;
 use crate::ProgramBytecode;
 
@@ -161,6 +161,11 @@ impl BytecodeBuilder {
             .map(|v| &v.type_)
     }
 
+    pub fn get_val_intrin_type(&self, value_id: ValueID) -> Option<&CXTypeUnion> {
+        self.get_type(value_id)
+            .and_then(|v| v.intrinsic_type(&self.type_map))
+    }
+
     pub fn set_current_block(&mut self, block: ElementID) {
         self.fun_mut().current_block = block;
     }
@@ -278,17 +283,23 @@ pub enum VirtualInstruction {
     },
 
     DirectCall {
-        reference: ValueID,
-        args: Vec<ValueID>
+        func: ValueID,
+        args: Vec<ValueID>,
+        method_sig: BytecodeFunctionPrototype
     },
 
-    MethodCall {
-        func: ValueID,
-        args: Vec<ValueID>
+    IndirectCall {
+        func_ptr: ValueID,
+        args: Vec<ValueID>,
+        method_sig: BytecodeFunctionPrototype
     },
 
     FunctionReference {
         name: String
+    },
+
+    GetFunctionAddr {
+        func_name: ValueID
     },
 
     Branch {

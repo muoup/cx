@@ -8,6 +8,7 @@ use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_bytecode::ProgramBytecode;
+use cx_util::format::{dump_data, dump_write};
 
 #[derive(Default, Debug)]
 pub struct CompilerPipeline {
@@ -32,6 +33,25 @@ pub enum PipelineStage {
     Bytecode(ProgramBytecode),
     Codegen,
     Linked
+}
+
+impl PipelineStage {
+    fn dump(&self) {
+        match self {
+            PipelineStage::Parsed(contents) => {
+                dump_data(contents);
+            },
+            PipelineStage::Verified(ast) => {
+                dump_data(ast);
+            },
+            PipelineStage::Bytecode(bytecode) => {
+                dump_data(bytecode);
+            },
+            _ => {
+                dump_write(format!("Pipeline stage has no dump implementation: {:?}", self).as_str())
+            }
+        }
+    }
 }
 
 impl CompilerPipeline {
@@ -72,6 +92,12 @@ impl CompilerPipeline {
 
     pub fn find_previous_object(&self) -> Option<File> {
         File::open(self.object_path()).ok()
+    }
+
+    pub fn dump(self) -> Self {
+        self.pipeline_stage.dump();
+
+        self
     }
 
     pub fn read_file(mut self) -> Self {

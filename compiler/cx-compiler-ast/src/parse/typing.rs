@@ -6,6 +6,7 @@ use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeUnion, CXValType, CX_CONST, CX_VOLATILE};
 use cx_util::log_error;
+use crate::parse::global_scope::parse_params;
 use crate::parse::parsing_tools::{goto_block_end, goto_statement_end};
 
 pub(crate) struct TypeRecord {
@@ -86,11 +87,18 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
             let CXTypeUnion::Structured { name, .. } = &type_ else {
                 log_error!("PARSER ERROR: Expected struct type, found: {:#?}", type_);
             };
+            let name = match name {
+                Some(name) => Some(name.to_string()),
+                None => {
+                    println!("PARSER Warning: Nameless global struct type is effective no-op");
+                    None
+                }
+            };
             try_next!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
             Some(
                 TypeRecord {
-                    name: name.clone(),
+                    name,
                     type_: CXValType::new(0, type_)
                 }
             )
@@ -103,7 +111,7 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
 pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeUnion> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Struct));
 
-    let name = parse_name(data);
+    let name = parse_std_ident(data);
     let mut fields = Vec::new();
 
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
@@ -153,9 +161,41 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
         Token::Operator(OperatorType::Asterisk) => {
             data.toks.next();
             let specs = parse_specifier(data);
-            let acc_type = CXValType::new(specs, CXTypeUnion::PointerTo(Box::new(acc_type)));
+            let acc_type = acc_type.pointer_to().add_specifier(specs);
 
             parse_typemod_name(data, acc_type)
+        },
+
+        Token::Punctuator(PunctuatorType::OpenParen) => {
+            data.toks.next();
+            assert_token_matches!(data, Token::Operator(OperatorType::Asterisk));
+            let name = parse_std_ident(data);
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+            let params = parse_params(data)?
+                .into_iter()
+                .map(|params| {
+                    if params.name.is_some() {
+                        log_error!("Function pointer parameters cannot have names");
+                    }
+
+                    Some(params.type_)
+                })
+                .collect::<Option<Vec<_>>>()?;
+
+            let acc_type = CXValType::new(
+                0,
+                CXTypeUnion::PointerTo(
+                    Box::new(CXValType::new(
+                        0,
+                        CXTypeUnion::Function {
+                            return_type: Box::new(acc_type),
+                            args: params
+                        }
+                    ))
+                )
+            );
+
+            Some((name, acc_type))
         },
 
         Token::Identifier(_) => Some((Some(parse_std_ident(data)?), acc_type)),

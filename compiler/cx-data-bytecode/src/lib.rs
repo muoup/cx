@@ -3,6 +3,7 @@ use cx_data_ast::parse::ast::{FunctionMap, TypeMap};
 use std::fmt::{Display, Formatter};
 
 pub mod builder;
+pub mod types;
 
 #[derive(Debug)]
 pub struct ProgramBytecode {

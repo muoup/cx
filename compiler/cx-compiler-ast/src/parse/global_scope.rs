@@ -84,12 +84,7 @@ fn handle_member_this(class_name: &str, params: &mut Vec<CXParameter>) {
 
         *first_param = CXParameter {
             name: take_param.name,
-            type_: CXValType::new(
-                0,
-                CXTypeUnion::PointerTo(
-                    Box::new(take_param.type_)
-                )
-            )
+            type_: take_param.type_.pointer_to()
         };
     }
 }

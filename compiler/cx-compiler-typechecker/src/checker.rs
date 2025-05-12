@@ -26,21 +26,17 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
         CXExpr::UnOp { operator, operand } => {
             match operator {
                 CXUnOp::AddressOf => {
-                    let CXExpr::Identifier(_) = operand.as_ref() else {
-                        log_error!("TYPE ERROR: AddressOf operator can only be applied to variables");
-                    };
+                    let operand_type = type_check_traverse(env, operand.as_mut())?;
 
-                    let mut operand_type = type_check_traverse(env, operand.as_mut())?;
+                    match operand_type.intrinsic_type(&env.type_map)? {
+                        CXTypeUnion::MemoryReference(inner) => Some(inner.clone().pointer_to()),
+                        CXTypeUnion::Function { .. } => coerce_value(env, operand.as_mut()),
 
-                    Some(
-                        CXValType::new(
-                            0,
-                            CXTypeUnion::PointerTo(Box::new(operand_type.clone()))
-                        )
-                    )
+                        _ => log_error!("TYPE ERROR: Cannot take address of expr: {operand_type}"),
+                    }
                 },
                 CXUnOp::Dereference => {
-                    let operand_type = type_check_traverse(env, operand.as_mut())?;
+                    let operand_type = coerce_value(env, operand.as_mut())?;
                     let CXTypeUnion::PointerTo(deref) = get_intrinsic_type(env.type_map, &operand_type).cloned()? else {
                         log_error!("TYPE ERROR: Dereference operator can only be applied to pointers");
                     };
@@ -90,8 +86,13 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
             access_struct(env, lhs.as_mut(), rhs.as_mut()),
 
         CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
-            let lhs_type = coerce_value(env, lhs)?;
-            let CXTypeUnion::Function { return_type, args } = lhs_type.internal_type else {
+            let mut lhs_type = coerce_mem_ref(env, lhs)?;
+
+            if let Some(CXTypeUnion::PointerTo(inner)) = lhs_type.intrinsic_type(&env.type_map) {
+                lhs_type = *inner.clone();
+            }
+
+            let CXTypeUnion::Function { return_type, args } = lhs_type.intrinsic_type(&env.type_map).cloned()? else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
 
@@ -102,7 +103,6 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
             {
                 implicit_coerce(env, arg, expected_type.clone())?;
             }
-
 
             Some(*return_type)
         }
@@ -218,6 +218,8 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
             log_error!("Bare initializer list {indices:?} found in expression context"),
 
         CXExpr::ImplicitCast { to_type, .. } => Some(to_type.clone()),
+        CXExpr::ImplicitLoad { loaded_type, .. } => Some(loaded_type.clone()),
+        CXExpr::GetFunctionAddr { func_sig, .. } => Some(func_sig.clone().pointer_to()),
 
         CXExpr::For { init, condition, increment, body } => {
             type_check_traverse(env, init)?;
@@ -263,13 +265,14 @@ pub fn implicit_coerce(
     Some(())
 }
 
-fn coerce_value(
+fn coerce_mem_ref(
     env: &mut TypeEnvironment,
     expr: &mut CXExpr,
 ) -> Option<CXValType> {
     let expr_type = type_check_traverse(env, expr)?;
 
-    let CXTypeUnion::MemoryReference(inner) = expr_type.internal_type else {
+    let CXTypeUnion::MemoryReference(inner)
+        = expr_type.intrinsic_type(env.type_map).cloned()? else {
         return Some(expr_type);
     };
 
@@ -279,5 +282,25 @@ fn coerce_value(
         loaded_type: inner.as_ref().clone()
     };
 
-    Some(*inner)
+    type_check_traverse(env, expr)
+}
+
+fn coerce_value(
+    env: &mut TypeEnvironment,
+    expr: &mut CXExpr,
+) -> Option<CXValType> {
+    let expr_type = type_check_traverse(env, expr)?;
+
+    match expr_type.intrinsic_type(env.type_map)? {
+        CXTypeUnion::MemoryReference(_) => coerce_mem_ref(env, expr),
+        CXTypeUnion::Function { .. } => {
+            let expr_temp = std::mem::replace(expr, CXExpr::Taken);
+            *expr = CXExpr::GetFunctionAddr {
+                func_name: Box::new(expr_temp),
+                func_sig: expr_type.clone()
+            };
+            type_check_traverse(env, expr)
+        },
+        _ => Some(expr_type)
+    }
 }

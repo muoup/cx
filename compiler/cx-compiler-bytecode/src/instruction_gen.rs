@@ -1,8 +1,10 @@
+use std::clone;
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::value_type::{get_intrinsic_type, get_type_size, prototype_to_type, struct_field_access, CXTypeUnion, CXValType, CX_CONST};
 use cx_data_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
+use cx_data_bytecode::types::type_to_prototype;
 use cx_util::log_error;
 use crate::implicit_cast::implicit_cast;
 
@@ -72,17 +74,43 @@ pub fn generate_instruction(
                 args.push(arg_id);
             }
 
-            let CXTypeUnion::Function { return_type, .. } = &builder.get_type(left_id)?.internal_type else {
-                log_error!("Invalid method call: {lhs}");
-            };
+            let method_sig = builder.get_type(left_id)?.clone();
 
-            builder.add_instruction(
-                VirtualInstruction::MethodCall {
-                    func: left_id,
-                    args
+            match get_intrinsic_type(&builder.type_map, &method_sig)? {
+                CXTypeUnion::Function { return_type, args: _ } => {
+                    builder.add_instruction(
+                        VirtualInstruction::DirectCall {
+                            func: left_id,
+                            args,
+                            method_sig: type_to_prototype(
+                                &builder.type_map,
+                                &method_sig
+                            )
+                        },
+                        return_type.as_ref().clone()
+                    )
                 },
-                return_type.as_ref().clone()
-            )
+                CXTypeUnion::PointerTo(inner) => {
+                    let Some(CXTypeUnion::Function { return_type, args: _ }) =
+                        inner.intrinsic_type(&builder.type_map) else {
+                        log_error!("Invalid function pointer type: {inner}");
+                    };
+
+                    builder.add_instruction(
+                        VirtualInstruction::IndirectCall {
+                            func_ptr: left_id,
+                            args,
+                            method_sig: type_to_prototype(
+                                &builder.type_map,
+                                inner.as_ref()
+                            )
+                        },
+                        return_type.as_ref().clone()
+                    )
+                },
+
+                type_ => log_error!("Invalid function pointer type: {type_}")
+            }
         },
 
         CXExpr::BinOp { lhs, rhs, op } => {
@@ -141,6 +169,16 @@ pub fn generate_instruction(
                     value: inner
                 },
                 loaded_type.clone()
+            )
+        },
+        CXExpr::GetFunctionAddr { func_name, func_sig } => {
+            let func_name = generate_instruction(builder, func_name.as_ref())?;
+
+            builder.add_instruction(
+                VirtualInstruction::GetFunctionAddr {
+                    func_name
+                },
+                func_sig.clone()
             )
         },
 

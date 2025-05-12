@@ -24,7 +24,7 @@ pub enum CXTypeUnion {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
     Structured {
-        name: Option<String>,
+        name: Option<CXIdent>,
         fields: Vec<(String, CXValType)>
     },
     Unit,
@@ -92,9 +92,12 @@ impl CXValType {
     pub fn intrinsic_type<'a>(&'a self, type_map: &'a TypeMap) -> Option<&'a CXTypeUnion> {
         get_intrinsic_type(type_map, self)
     }
-
-    pub fn is_structure(&self, type_map: &TypeMap) -> bool {
+        pub fn is_structure(&self, type_map: &TypeMap) -> bool {
         matches!(get_intrinsic_type(type_map, self), Some(CXTypeUnion::Structured { .. }))
+    }
+
+    pub fn is_void(&self, type_map: &TypeMap) -> bool {
+        matches!(self.intrinsic_type(type_map), Some(CXTypeUnion::Unit))
     }
 
     pub fn intrin_eq(&self, other: &CXValType, type_map: &TypeMap) -> bool {
@@ -107,6 +110,20 @@ impl CXValType {
 
     pub fn size(&self, type_map: &TypeMap) -> Option<usize> {
         get_type_size(type_map, self)
+    }
+
+    pub fn pointer_to(self) -> Self {
+        CXValType {
+            specifiers: 0,
+            internal_type: CXTypeUnion::PointerTo(Box::new(self))
+        }
+    }
+
+    pub fn deref(self) -> Self {
+        CXValType {
+            specifiers: 0,
+            internal_type: CXTypeUnion::MemoryReference(Box::new(self))
+        }
     }
 }
 
@@ -141,6 +158,12 @@ fn same_type(type_map: &TypeMap, t1: &CXValType, t2: &CXValType) -> bool {
                 .all(|(f1, f2)|
                     same_type(type_map, &f1.1, &f2.1))
         },
+
+        (CXTypeUnion::Function { return_type: ret1, args: args1 },
+         CXTypeUnion::Function { return_type: ret2, args: args2 }) =>
+            same_type(type_map, ret1, ret2) &&
+                args1.iter().zip(args2.iter())
+                    .all(|(a1, a2)| same_type(type_map, a1, a2)),
 
         (CXTypeUnion::Integer { bytes: t1_bytes, signed: t1_signed },
             CXTypeUnion::Integer { bytes: t2_bytes, signed: t2_signed }) =>

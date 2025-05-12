@@ -9,5 +9,6 @@ cx-compiler-typechecker = { path = "../cx-compiler-typechecker" }
 cx-compiler-bytecode = { path = "../cx-compiler-bytecode" }
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-util = { path = "../cx-util" }
 
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }

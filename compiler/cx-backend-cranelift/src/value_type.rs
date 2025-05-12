@@ -3,10 +3,10 @@ use cx_data_ast::parse::ast::TypeMap;
 use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 
 pub(crate) fn get_cranelift_abi_type(type_map: &TypeMap, val_type: &CXValType) -> ir::AbiParam {
-    ir::AbiParam::new(get_cranelift_type(val_type, type_map))
+    ir::AbiParam::new(get_cranelift_type(type_map, val_type))
 }
 
-pub(crate) fn get_cranelift_type(val_type: &CXValType, type_map: &TypeMap) -> ir::Type {
+pub(crate) fn get_cranelift_type(type_map: &TypeMap, val_type: &CXValType) -> ir::Type {
     match &val_type.internal_type {
         CXTypeUnion::Integer { bytes, .. } => {
             match bytes {
@@ -24,6 +24,8 @@ pub(crate) fn get_cranelift_type(val_type: &CXValType, type_map: &TypeMap) -> ir
                 _ => panic!("Invalid float size")
             }
         },
+
+        CXTypeUnion::Function { .. } |
         CXTypeUnion::PointerTo(_) |
         CXTypeUnion::Array { .. } |
         CXTypeUnion::Structured { .. } => ir::types::I64,
@@ -33,7 +35,7 @@ pub(crate) fn get_cranelift_type(val_type: &CXValType, type_map: &TypeMap) -> ir
             let Some(type_) = type_map.get(_type.as_str()) else {
                 panic!("Typechecking allowed invalid type {:#?}", _type);
             };
-            get_cranelift_type(type_, type_map)
+            get_cranelift_type(type_map, type_)
         },
 
         _ => panic!("Unverified type: {:#?}", val_type),

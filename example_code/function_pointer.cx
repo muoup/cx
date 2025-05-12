@@ -15,6 +15,7 @@ int main() {
     int y = 2;
 
     operation op = add;
+    operation op_offset = op + 2;
     int(*op2)(int, int) = subtract;
 
     int temp = op(x, y);

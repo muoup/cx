@@ -149,6 +149,11 @@ pub enum CXExpr {
         loaded_type: CXValType
     },
 
+    GetFunctionAddr {
+        func_name: Box<CXExpr>,
+        func_sig: CXValType
+    },
+
     InitializerList {
         indices: Vec<CXInitIndex>,
     }

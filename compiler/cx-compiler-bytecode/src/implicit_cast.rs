@@ -43,6 +43,24 @@ pub(crate) fn implicit_cast(
             )
         },
 
+        (CXTypeUnion::Integer { signed: true, .. }, CXTypeUnion::PointerTo(_)) => {
+            builder.add_instruction(
+                VirtualInstruction::SExtend {
+                    value,
+                },
+                to_type.clone()
+            )
+        },
+
+        (CXTypeUnion::Integer { signed: false, .. }, CXTypeUnion::PointerTo(_)) => {
+            builder.add_instruction(
+                VirtualInstruction::ZExtend {
+                    value,
+                },
+                to_type.clone()
+            )
+        },
+
         (CXTypeUnion::PointerTo(ptr1), CXTypeUnion::PointerTo(ptr2)) => {
             if ptr1.is_intrinsic(&CXTypeUnion::Unit, &builder.type_map) ||
                ptr2.is_intrinsic(&CXTypeUnion::Unit, &builder.type_map) {

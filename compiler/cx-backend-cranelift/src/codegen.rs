@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use cranelift::codegen::ir::{Function, UserFuncName};
-use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
+use cranelift::codegen::ir::{FuncRef, Function, UserFuncName};
+use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature, Value};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BytecodeFunction, ValueID, VirtualInstruction};
-use crate::{FunctionState, GlobalState, VariableTable};
-use crate::instruction::codegen_instruction;
+use crate::{CodegenValue, FunctionState, GlobalState, VariableTable};
+use crate::instruction::{codegen_instruction};
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
+
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &CXFunctionPrototype) -> Option<()> {
     let mut sig = Signature::new(
@@ -82,7 +83,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
             }
 
             for arg in bc_func.prototype.args.iter() {
-                let cranelift_type = get_cranelift_type(&arg.type_, context.type_map);
+                let cranelift_type = get_cranelift_type(context.type_map, &arg.type_);
                 let arg = context.builder.append_block_param(block, cranelift_type);
 
                 context.fn_params.push(arg);

@@ -99,6 +99,10 @@ impl Display for CXExpr {
                 fwrite!(f, "{}#load({})", expr, loaded_type)
             },
 
+            CXExpr::GetFunctionAddr { func_name, func_sig } => {
+                fwrite!(f, "{}#fn_addr({})", func_name, func_sig)
+            },
+
             CXExpr::InitializerList { indices } => {
                 indent();
                 fwriteln!(f, "{{")?;
@@ -184,7 +188,13 @@ impl Display for CXTypeUnion {
                     .map(|(name, type_)| format!("{}: {}", name, type_))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "struct {} {{ {} }}", name.as_ref().unwrap_or(&"".to_string()), field_strs)
+                let name_str = if let Some(name) = name {
+                    format!("{} ", name)
+                } else {
+                    "".to_string()
+                };
+
+                write!(f, "struct {} {{ {} }}", name_str, field_strs)
             },
             CXTypeUnion::Unit => write!(f, "()"),
             CXTypeUnion::PointerTo(inner) => {

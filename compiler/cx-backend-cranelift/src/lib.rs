@@ -16,8 +16,36 @@ mod codegen;
 mod value_type;
 mod routines;
 mod instruction;
+mod inst_calling;
 
-pub(crate) type VariableTable = HashMap<ValueID, Value>;
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CodegenValue {
+    Value(Value),
+    FunctionRef(FuncRef),
+    NULL
+}
+
+impl CodegenValue {
+    pub(crate) fn as_value(&self) -> Value {
+        match self {
+            CodegenValue::Value(value) => *value,
+            CodegenValue::FunctionRef(func_ref) =>
+                panic!("Expected Value, got FunctionRef: {:?}", func_ref),
+            CodegenValue::NULL => panic!("Expected Value, got NULL")
+        }
+    }
+
+    pub(crate) fn as_function_ref(&self) -> FuncRef {
+        match self {
+            CodegenValue::Value(value) =>
+                panic!("Expected FunctionRef, got Value: {:?}", value),
+            CodegenValue::FunctionRef(func_ref) => *func_ref,
+            CodegenValue::NULL => panic!("Expected FunctionRef, got NULL")
+        }
+    }
+}
+
+pub(crate) type VariableTable = HashMap<ValueID, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
