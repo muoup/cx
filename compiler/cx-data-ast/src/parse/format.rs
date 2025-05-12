@@ -1,9 +1,8 @@
-use std::env::args;
-use std::fmt::{Display, Formatter};
-use cx_util::format::{dedent, indent};
-use cx_util::{fwrite, fwriteln};
 use crate::parse::ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
 use crate::parse::value_type::{CXTypeUnion, CXValType};
+use cx_util::format::{dedent, indent};
+use cx_util::{fwrite, fwriteln};
+use std::fmt::{Display, Formatter};
 
 impl Display for CXAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -35,7 +34,7 @@ impl Display for CXGlobalStmt {
 
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "fn {}({}) -> {}",
+        write!(f, "fn {}({}) -> {}",
                  self.name,
                  self.parameters.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
                  self.return_type

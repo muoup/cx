@@ -5,6 +5,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BytecodeFunction, ValueID, VirtualInstruction};
+use cx_util::format::dump_data;
 use crate::{CodegenValue, FunctionState, GlobalState, VariableTable};
 use crate::instruction::{codegen_instruction};
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
@@ -109,7 +110,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
                         println!("Redundant instructions after terminator in block {}", block_id);
 
                         for instr in fn_block.body.iter().skip(value_id + 1) {
-                            println!("{:?}", instr);
+                            println!("{}", instr);
                         }
                     }
                     break;
@@ -122,7 +123,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     context.builder.seal_all_blocks();
     context.builder.finalize();
 
-    println!("{:?}", func);
+    dump_data(&func);
 
     let GlobalState { object_module, context, .. } = global_state;
 

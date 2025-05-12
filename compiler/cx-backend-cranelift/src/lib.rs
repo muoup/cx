@@ -113,8 +113,6 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     for global_str in ast.global_strs.iter() {
         let global_val = string_literal(&mut global_state.object_module, global_str);
 
-        println!("Global string: {:?}", global_val);
-
         global_state.global_strs.push(global_val);
     }
 
