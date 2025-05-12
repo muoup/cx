@@ -177,7 +177,10 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         )
     } else {
         let body = parse_expr(data)?;
-        assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+
+        if requires_semicolon(&body) {
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+        }
 
         Some(body)
     }

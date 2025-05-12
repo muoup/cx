@@ -1,3 +1,4 @@
+use cx_data_ast::parse::macros::error_pointer;
 use std::clone;
 use std::collections::VecDeque;
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
@@ -9,7 +10,7 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::parse::value_type::CXValType;
 use crate::parse::lvalues::reformat_lvalue;
 use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop};
-use cx_util::log_error;
+use cx_util::{log_error, point_log_error};
 use crate::parse::typing::{is_type_decl, parse_initializer};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
@@ -131,6 +132,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
 
     if is_type_decl(data) {
         let Some((Some(name), type_)) = parse_initializer(data) else {
+            println!("{}", error_pointer(&data.toks));
             log_error!("PARSER ERROR: Failed to parse type declaration");
         };
 
@@ -231,6 +233,19 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
                 }
             )
         },
+        KeywordType::Do => {
+            let body = parse_body(data)?;
+            assert_token_matches!(data, Token::Keyword(KeywordType::While));
+            let expr = parse_expr_val(data)?;
+
+            Some(
+                CXExpr::While {
+                    condition: Box::new(expr),
+                    body: Box::new(body),
+                    pre_eval: false,
+                }
+            )
+        },
         KeywordType::While => {
             let expr = parse_expr_val(data)?;
             let body = parse_body(data)?;
@@ -238,10 +253,13 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             Some(
                 CXExpr::While {
                     condition: Box::new(expr),
-                    body: Box::new(body)
+                    body: Box::new(body),
+                    pre_eval: true
                 }
             )
         },
+        KeywordType::Break => Some(CXExpr::Break),
+        KeywordType::Continue => Some(CXExpr::Continue),
         KeywordType::For => {
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
 

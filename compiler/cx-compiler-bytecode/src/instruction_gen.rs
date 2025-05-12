@@ -64,6 +64,29 @@ pub fn generate_instruction(
             )
         },
 
+        CXExpr::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
+            let left_id = generate_instruction(builder, lhs.as_ref())?;
+            let right_id = generate_instruction(builder, rhs.as_ref())?;
+
+            let intrinsic_type = builder.get_type(left_id)?
+                .intrinsic_type(&builder.type_map)?.clone();
+            let CXTypeUnion::PointerTo(lhs_inner)  = intrinsic_type else {
+                panic!("Invalid array index type: {intrinsic_type}");
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::IntegerBinOp {
+                    left: left_id,
+                    right: right_id,
+                    op: CXBinOp::Add
+                },
+                CXValType::new(
+                    0,
+                    CXTypeUnion::MemoryReference(lhs_inner)
+                )
+            )
+        },
+
         CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let rhs = comma_separated(rhs.as_ref());
@@ -379,13 +402,19 @@ pub fn generate_instruction(
             Some(ValueID::NULL)
         },
 
-        CXExpr::While { condition, body } => {
+        CXExpr::While { condition, body, pre_eval } => {
             let condition_block = builder.create_block();
             let body_block = builder.create_block();
             let merge_block = builder.create_block();
 
+            let first_block = if *pre_eval {
+                condition_block.clone()
+            } else {
+                body_block.clone()
+            };
+
             builder.add_instruction(
-                VirtualInstruction::Jump { target: condition_block.clone() },
+                VirtualInstruction::Jump { target: first_block },
                 CXValType::unit()
             );
 

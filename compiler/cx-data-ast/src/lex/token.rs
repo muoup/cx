@@ -111,6 +111,8 @@ impl Token {
             "union" => Token::Keyword(KeywordType::Union),
             "typedef" => Token::Keyword(KeywordType::Typedef),
             "int" => Token::Intrinsic(IntrinsicType::Int),
+            "long" => Token::Intrinsic(IntrinsicType::Long),
+            "short" => Token::Intrinsic(IntrinsicType::Short),
             "float" => Token::Intrinsic(IntrinsicType::Float),
             "char" => Token::Intrinsic(IntrinsicType::Char),
             "void" => Token::Intrinsic(IntrinsicType::Void),

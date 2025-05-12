@@ -1,10 +1,22 @@
-pub(crate) fn preprocess_line(string: &str) -> String {
+use crate::preprocessor::Preprocessor;
+
+fn handle_non_directive(preprocessor: &mut Preprocessor, string: &str) -> String {
+    let mut result = string.to_string();
+
+    for (token, value) in preprocessor.defined_tokens.iter() {
+        result = result.replace(token, value);
+    }
+
+    result
+}
+
+pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str) -> String {
     if string.contains("//") {
-        return string.split("//").next().unwrap().to_string();
+        string = string.split("//").next().unwrap();
     }
 
     if !string.starts_with("#") {
-        return string.to_string();
+        return handle_non_directive(preprocessor, string);
     }
 
     let mut split = string.split_whitespace();
@@ -22,8 +34,20 @@ pub(crate) fn preprocess_line(string: &str) -> String {
             };
 
             let path = format!("{}{}", prefix, &file_name[1.. file_name.len() - 1]);
-            std::fs::read_to_string(path.as_str())
-                .expect(format!("Failed to read file: {}", path).as_str())
+            let string = std::fs::read_to_string(path.as_str())
+                .expect(format!("Failed to read file: {path}").as_str());
+
+            string.lines()
+                .map(|line| preprocess_line(preprocessor, line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        },
+        "#define" => {
+            let token = split.next().unwrap();
+            let value = split.next().unwrap();
+
+            preprocessor.defined_tokens.push((token.to_string(), value.to_string()));
+            "".to_string()
         },
         dir => todo!("Preprocessor directive not implemented: {dir}")
     }

@@ -204,6 +204,39 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
     }
 }
 
+fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXValType) -> Option<CXValType> {
+    let Some(next_tok) = data.toks.peek() else {
+        return Some(acc_type);
+    };
+
+    match next_tok {
+        Token::Punctuator(PunctuatorType::OpenBracket) => {
+            data.toks.next();
+
+            if try_next!(data, Token::Punctuator(PunctuatorType::CloseBracket)) {
+                return Some(acc_type.pointer_to());
+            }
+
+            let Token::IntLiteral(size) = data.toks.next().cloned()? else {
+                log_error!("PARSER ERROR: Expected integer literal for array size");
+            };
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBracket));
+
+            Some(
+                CXValType::new(
+                    0,
+                    CXTypeUnion::Array {
+                        size: size.clone() as usize,
+                        _type: Box::new(acc_type)
+                    }
+                )
+            )
+        },
+
+        _ => Some(acc_type),
+    }
+}
+
 fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
     match data.toks.peek()? {
         Token::Identifier(_) => Some(
@@ -232,7 +265,9 @@ fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
 
 pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<CXIdent>, CXValType)> {
     let prefix_specs = parse_specifier(data);
-    let mut type_base = parse_type_base(data)?;
+    let type_base = parse_type_base(data)?;
+    let (name, modified_type)
+        = parse_typemod_name(data, type_base.add_specifier(prefix_specs))?;
 
-    parse_typemod_name(data, type_base.add_specifier(prefix_specs))
+    Some((name, parse_suffix_typemod(data, modified_type)?))
 }

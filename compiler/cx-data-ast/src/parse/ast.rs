@@ -106,7 +106,8 @@ pub enum CXExpr {
     },
     While {
         condition: Box<CXExpr>,
-        body: Box<CXExpr>
+        body: Box<CXExpr>,
+        pre_eval: bool
     },
     For {
         init: Box<CXExpr>,
@@ -133,6 +134,9 @@ pub enum CXExpr {
         exprs: Vec<CXExpr>,
         value: Option<Box<CXExpr>>
     },
+
+    Break,
+    Continue,
 
     Return {
         value: Option<Box<CXExpr>>

@@ -19,8 +19,11 @@ macro_rules! log_error {
 macro_rules! point_log_error {
     ($data:ident, $($arg:tt)*) => {
         {
-            eprintln!("{}", cx_util::macros::error_pointer(&$data.toks));
-            log_error!($($arg)*);
+            use cx_util::log_error;
+            use cx_util::error_pointer;
+
+            eprintln!("{}", cx_util::error_pointer(&$data.toks));
+            cx_util::macros::log_error!($($arg)*);
         }
     }
 }

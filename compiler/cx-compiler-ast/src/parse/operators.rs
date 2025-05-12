@@ -4,7 +4,7 @@ use cx_data_ast::parse::parser::ParserData;
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access | CXBinOp::MethodCall => 1,
+        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -102,7 +102,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
                 let punc = punc.clone();
                 data.toks.back();
                 match punc {
-                    PunctuatorType::OpenBrace   => CXBinOp::ArrayIndex,
+                    PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
                     PunctuatorType::OpenParen   => CXBinOp::MethodCall,
 
                     _ => return None
