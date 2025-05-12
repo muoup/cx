@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::iter;
 use crate::builder::{BlockInstruction, BytecodeFunction, BytecodeFunctionPrototype, FunctionBlock, ValueID, VirtualInstruction, VirtualValue};
 use crate::ProgramBytecode;
 
@@ -16,9 +17,10 @@ impl Display for ProgramBytecode {
 
 impl Display for BytecodeFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:", self.prototype)?;
+        writeln!(f, "{}:", self.prototype)?;
 
-        for block in self.blocks.iter() {
+        for (i, block) in self.blocks.iter().enumerate() {
+            writeln!(f, "block{}:", i)?;
             writeln!(f, "{}", block)?;
         }
 
@@ -28,10 +30,8 @@ impl Display for BytecodeFunction {
 
 impl Display for FunctionBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "block:")?;
-
-        for instruction in self.body.iter() {
-            writeln!(f, "    {}", instruction)?;
+        for (i, instruction) in self.body.iter().enumerate() {
+            writeln!(f, "    v{i} = {}", instruction)?;
         }
 
         Ok(())
