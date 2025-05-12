@@ -153,7 +153,7 @@ fn string_lex(iter: &mut CharIter) -> Option<Token> {
             .replace("\\r", "\r")
             .replace("\\\"", "\"");
 
-    Some(Token::StringLiteral(string.to_string()))
+    Some(Token::StringLiteral(string))
 }
 
 fn char_lex(iter: &mut CharIter) -> Option<Token> {
