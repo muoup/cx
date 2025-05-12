@@ -1,6 +1,6 @@
 use std::clone;
 use cx_compiler_ast::parse::operators::comma_separated;
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::value_type::{get_intrinsic_type, get_type_size, prototype_to_type, struct_field_access, CXTypeUnion, CXValType, CX_CONST};
 use cx_data_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
@@ -458,4 +458,44 @@ pub fn generate_instruction(
 
         _ => todo!("generate_instruction for {:?}", expr)
     }
+}
+
+pub(crate) fn implicit_return(
+    builder: &mut BytecodeBuilder,
+    prototype: &CXFunctionPrototype,
+) -> Option<()> {
+    let last_instruction = builder.last_instruction();
+
+    if let Some(last_instruction) = last_instruction {
+        if let VirtualInstruction::Return { .. } = last_instruction.instruction {
+            return Some(());
+        }
+    }
+
+    if prototype.name.data == "main" {
+        let zero = builder.add_instruction(
+            VirtualInstruction::Immediate {
+                value: 0
+            },
+            CXTypeUnion::Integer { bytes: 4, signed: true }.to_val_type()
+        )?;
+
+        builder.add_instruction(
+            VirtualInstruction::Return {
+                value: Some(zero)
+            },
+            CXValType::unit()
+        );
+    } else if prototype.return_type.is_void(&builder.type_map) {
+        builder.add_instruction(
+            VirtualInstruction::Return {
+                value: None
+            },
+            CXValType::unit()
+        )?;
+    } else {
+        log_error!("Function {} has a return type but no return statement", prototype.name);
+    }
+
+    Some(())
 }

@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 
 pub mod builder;
 pub mod types;
+mod format;
 
 #[derive(Debug)]
 pub struct ProgramBytecode {
@@ -12,14 +13,4 @@ pub struct ProgramBytecode {
 
     pub global_strs: Vec<String>,
     pub fn_defs: Vec<BytecodeFunction>,
-}
-
-impl Display for ProgramBytecode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for func in self.fn_defs.iter() {
-            writeln!(f, "{:#?}", func)?;
-        }
-
-        Ok(())
-    }
 }
