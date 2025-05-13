@@ -4,12 +4,12 @@ use std::collections::VecDeque;
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
 use crate::parse::global_scope::parse_body;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr};
-use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident};
+use cx_data_ast::parse::identifier::{parse_identifier, parse_intrinsic, parse_std_ident};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::parse::value_type::CXValType;
 use crate::parse::lvalues::reformat_lvalue;
-use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop};
+use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error, point_log_error};
 use crate::parse::typing::{is_type_decl, parse_initializer};
 
@@ -36,11 +36,9 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
-    let Some(expr) = parse_expr_val(data) else {
+    let Some(_) = parse_expr_val(data, &mut expr_stack, &mut op_stack) else {
         return Some(CXExpr::Unit);
     };
-
-    expr_stack.push(expr);
 
     loop {
         if let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {
@@ -63,34 +61,53 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     Some(expr)
 }
 
-pub(crate) fn parse_expr_op_concat(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CXBinOp>) -> Option<()> {
+pub(crate) fn parse_expr_op_concat(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>) -> Option<()> {
     let Some(op) = parse_binop(data) else {
         return None;
     };
 
-    match op {
-        // TODO: Handle LValue assignment
+    let op_prec = binop_prec(op.clone());
+    compress_stack(expr_stack, op_stack, op_prec)?;
 
-        _ => {
-            let op_prec = binop_prec(op.clone());
+    op_stack.push(PrecOperator::BinOp(op));
 
-            let Some(next_val) = parse_expr_val(data) else {
-                log_error!("PARSER ERROR: Failed to parse expression value after operator: {:#?}", data.toks.peek());
-            };
-
-            expr_stack.push(next_val);
-            op_stack.push(op);
-
-            if op_stack.len() > 1 {
-                compress_stack(expr_stack, op_stack, op_prec)?;
-            }
-        }
-    }
+    let Some(_) = parse_expr_val(data, expr_stack, op_stack) else {
+        log_error!("PARSER ERROR: Failed to parse expression value after operator: {:#?}", data.toks.peek());
+    };
 
     Some(())
 }
 
-pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CXBinOp>, rprec: u8) -> Option<()> {
+fn compress_one_expr(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>) -> Option<CXExpr> {
+    let op = op_stack.pop().unwrap();
+
+    match op {
+        PrecOperator::UnOp(un_op) => {
+            let rhs = expr_stack.pop().unwrap();
+
+            let acc = CXExpr::UnOp {
+                operator: un_op,
+                operand: Box::new(rhs)
+            };
+
+            Some(acc)
+        },
+        PrecOperator::BinOp(bin_op) => {
+            let lhs = expr_stack.pop().unwrap();
+            let rhs = expr_stack.pop().unwrap();
+
+            let acc = CXExpr::BinOp {
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                op: bin_op
+            };
+
+            Some(acc)
+        }
+    }
+}
+
+pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>, rprec: u8) -> Option<()> {
     if op_stack.is_empty() {
         return Some(());
     }
@@ -98,54 +115,53 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<CX
     let mut ops = Vec::new();
     let mut exprs = Vec::new();
 
-    while let Some(op2) = op_stack.pop() {
-        let op_prec = binop_prec(op2.clone());
+    exprs.push(expr_stack.pop().unwrap());
 
-        if op_prec > rprec {
-            op_stack.push(op2);
+    while let Some(op2) = op_stack.last() {
+        if op2.get_precedence() > rprec {
             break;
         }
 
-        ops.push(op2);
+        if matches!(op2, PrecOperator::UnOp(_)) {
+            let un_expr = compress_one_expr(&mut exprs, op_stack)?;
+            exprs.push(un_expr);
+            continue;
+        }
+
+        ops.push(op_stack.pop().unwrap());
         exprs.push(expr_stack.pop().unwrap());
     }
 
-    let mut acc = expr_stack.pop().unwrap();
-
-    while let Some(op) = ops.pop() {
-        let rhs = exprs.pop().unwrap();
-
-        acc = CXExpr::BinOp {
-            lhs: Box::new(acc),
-            rhs: Box::new(rhs),
-            op
-        };
+    while !ops.is_empty() {
+        let expr = compress_one_expr(&mut exprs, &mut ops)?;
+        exprs.push(expr);
     }
 
-    expr_stack.push(acc);
+    expr_stack.push(exprs.pop().unwrap());
+
+    if !exprs.is_empty() {
+        log_error!("PARSER ERROR: Expression stack is not empty after parsing expression: {:#?} {:#?}", exprs, op_stack);
+    }
 
     Some(())
 }
 
-pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
-    let mut unop_stack = Vec::new();
-
+pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>) -> Option<()> {
     if is_type_decl(data) {
         let Some((Some(name), type_)) = parse_initializer(data) else {
             println!("{}", error_pointer(&data.toks));
             log_error!("PARSER ERROR: Failed to parse type declaration");
         };
 
-        return Some(
-            CXExpr::VarDeclaration { type_, name }
-        );
+        expr_stack.push(CXExpr::VarDeclaration { type_, name });
+        return Some(());
     }
 
     while let Some(op) = parse_pre_unop(data) {
-        unop_stack.push(op);
+        op_stack.push(PrecOperator::UnOp(op));
     }
 
-    let mut acc = match data.toks.next()? {
+    let acc = match data.toks.next()? {
         Token::IntLiteral(value) =>
             CXExpr::IntLiteral { bytes: 4, val: value.clone() },
         Token::FloatLiteral(value) =>
@@ -160,17 +176,20 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
 
         Token::Punctuator(PunctuatorType::OpenParen) => {
             if try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
-                return Some(CXExpr::Unit);
+                expr_stack.push(CXExpr::Unit);
+                return Some(());
             }
 
             let expr = parse_expr(data)?;
+
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
 
             expr
         },
         Token::Punctuator(PunctuatorType::OpenBracket) => {
             if try_next!(data, Token::Punctuator(PunctuatorType::CloseBracket)) {
-                return Some(CXExpr::Unit);
+                expr_stack.push(CXExpr::Unit);
+                return Some(());
             }
 
             let index = parse_expr(data)?;
@@ -185,19 +204,16 @@ pub(crate) fn parse_expr_val(data: &mut ParserData) -> Option<CXExpr> {
         }
     };
 
+    expr_stack.push(acc);
+
     while let Some(op) = parse_post_unop(data) {
-        unop_stack.push(op);
+        let prec = unop_prec(op.clone());
+
+        compress_stack(expr_stack, op_stack, prec);
+        op_stack.push(PrecOperator::UnOp(op));
     }
 
-    for op in unop_stack.into_iter().rev() {
-        let temp_acc = std::mem::replace(&mut acc, CXExpr::Taken);
-        acc = CXExpr::UnOp {
-            operand: Box::new(temp_acc),
-            operator: op
-        }
-    }
-
-    Some(acc)
+    Some(())
 }
 
 pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> Option<CXExpr> {
@@ -216,7 +232,9 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             )
         },
         KeywordType::If => {
-            let expr = parse_expr_val(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
             let then_body = parse_body(data)?;
             let else_body =
                 if try_next!(data, Token::Keyword(KeywordType::Else)) {
@@ -236,7 +254,10 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
         KeywordType::Do => {
             let body = parse_body(data)?;
             assert_token_matches!(data, Token::Keyword(KeywordType::While));
-            let expr = parse_expr_val(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
             Some(
                 CXExpr::While {
@@ -247,7 +268,9 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             )
         },
         KeywordType::While => {
-            let expr = parse_expr_val(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
             let body = parse_body(data)?;
 
             Some(

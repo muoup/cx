@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXParameter, FunctionMap, TypeMap, CXAST};
-use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
+use cx_data_ast::parse::value_type::CXValType;
 use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
 use crate::intrinsic_types::add_internal_types;
@@ -10,6 +10,7 @@ pub mod checker;
 pub mod intrinsic_types;
 pub mod mappings;
 mod struct_typechecking;
+mod casting;
 
 pub fn type_check(ast: &mut CXAST) -> Option<()> {
     parse_fn_mappings(ast);

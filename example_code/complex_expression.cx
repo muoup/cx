@@ -1,0 +1,7 @@
+void function(int* x, int *y) {
+    if (*(x + 2) == *(y + 2)) {
+        return;
+    } else {
+        return;
+    }
+}

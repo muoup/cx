@@ -11,7 +11,9 @@
 void lotto(int *a)
 {
 	int numbers[BALLS];
-	int x,y,r;
+	int x;
+	int y;
+	int r;
 
 	for( x=0; x<BALLS; x++ )
 	{
@@ -41,7 +43,9 @@ void lotto(int *a)
 
 int winner(int *m, int *g)
 {
-	int x,y,c;
+	int x;
+	int y;
+	int c;
 
 	c = 0;
 	for( x=0; x<DRAW; x++ )
@@ -55,12 +59,16 @@ int winner(int *m, int *g)
 
 int main()
 {
-	const int tomatch = 5;
-	const int tally = 100;
-	int x,c,count;
-	int match[DRAW],guess[DRAW];
+#define tomatch 5
+#define tally 100
+	int x;
+	int c;
+	int count;
+	int match[DRAW];
+	int guess[DRAW];
 	/* new variables here */
-	int q,results[tally];
+	int q;
+	int results[tally];
 	long total;
 	float average;
 
@@ -99,7 +107,8 @@ int main()
 
 	/* reporting statements */
 	printf("For %d times, the average count ",tally);
-	printf("to match %d balls is %.0f\n",tomatch,average);
+	printf("to match %d balls is",tomatch);
+    printf(" %.0f\n",average);
 
 	return(0);
 }

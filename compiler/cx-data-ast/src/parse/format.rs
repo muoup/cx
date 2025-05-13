@@ -18,15 +18,19 @@ impl Display for CXGlobalStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXGlobalStmt::GlobalVariable { name, type_, .. } => {
-                writeln!(f, "{}: {}", name, type_)
+                fwriteln!(f, "{}: {}", name, type_)
             },
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
-                write!(f, "{}", prototype)?;
-                write!(f, "{}", body)?;
+                indent();
+                fwriteln!(f, "{} {{", prototype)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "")?;
+                fwriteln!(f, "}}")?;
                 Ok(())
             },
             CXGlobalStmt::FunctionForward { prototype } => {
-                writeln!(f, "{};", prototype)
+                fwriteln!(f, "{};", prototype)
             },
         }
     }
@@ -46,16 +50,9 @@ impl Display for CXExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXExpr::Block { exprs, .. } => {
-                indent();
-                fwriteln!(f, "{{")?;
-                for stmt in exprs.iter().take(exprs.len() - 1) {
-                    fwriteln!(f, "{};", stmt)?;
+                for stmt in exprs.iter() {
+                    fwriteln!(f, "{}", stmt)?;
                 }
-                dedent();
-                if let Some(last_stmt) = exprs.last() {
-                    fwriteln!(f, "{}", last_stmt)?;
-                }
-                fwrite!(f, "}}")?;
                 Ok(())
             },
 
@@ -84,6 +81,10 @@ impl Display for CXExpr {
 
             CXExpr::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
                 fwrite!(f, "{}({})", lhs, rhs)
+            },
+
+            CXExpr::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
+                fwrite!(f, "{}[{}]", lhs, rhs)
             },
 
             CXExpr::BinOp { lhs, rhs, op } => {
@@ -119,18 +120,21 @@ impl Display for CXExpr {
 
             CXExpr::UnOp { operator, operand } => {
                 match operator {
-                    CXUnOp::Negative => fwrite!(f, "-{}", operand),
-                    CXUnOp::LNot => fwrite!(f, "!{}", operand),
-                    CXUnOp::BNot => fwrite!(f, "~{}", operand),
+                    CXUnOp::Negative => fwrite!(f, "-({})", operand),
+                    CXUnOp::LNot => fwrite!(f, "!({})", operand),
+                    CXUnOp::BNot => fwrite!(f, "~({})", operand),
                     CXUnOp::InitializerIndex => fwrite!(f, ".{}", operand),
-                    CXUnOp::Dereference => fwrite!(f, "*{}", operand),
-                    CXUnOp::ArrayIndex => fwrite!(f, "{}[]", operand),
-                    CXUnOp::AddressOf => fwrite!(f, "&{}", operand),
+                    CXUnOp::Dereference => fwrite!(f, "*({})", operand),
+                    CXUnOp::ArrayIndex => fwrite!(f, "({})[]", operand),
+                    CXUnOp::AddressOf => fwrite!(f, "&({})", operand),
 
                     CXUnOp::PreIncrement(1) => fwrite!(f, "++{}", operand),
                     CXUnOp::PostIncrement(1) => fwrite!(f, "{}++", operand),
                     CXUnOp::PreIncrement(-1) => fwrite!(f, "--{}", operand),
                     CXUnOp::PostIncrement(-1) => fwrite!(f, "{}--", operand),
+
+                    CXUnOp::ExplicitCast(to_type)
+                        => fwrite!(f, "({to_type}) ({operand})"),
 
                     CXUnOp::PreIncrement(_) |
                     CXUnOp::PostIncrement(_) => panic!("Invalid increment operator"),
@@ -138,25 +142,45 @@ impl Display for CXExpr {
             },
 
             CXExpr::If { condition, then_branch, else_branch } => {
-                fwrite!(f, "if {} {{", condition)?;
                 indent();
+                fwriteln!(f, "if {} {{", condition)?;
                 fwriteln!(f, "{}", then_branch)?;
                 dedent();
+                fwriteln!(f, "")?;
                 if let Some(else_branch) = else_branch {
-                    fwrite!(f, "}} else {{")?;
                     indent();
+                    fwriteln!(f, "}} else {{")?;
                     fwriteln!(f, "{}", else_branch)?;
                     dedent();
+                } else {
                 }
                 fwrite!(f, "}}")
             },
 
             CXExpr::For { init, condition, increment, body } => {
-                fwrite!(f, "for ({}; {}; {})", init, condition, increment)?;
                 indent();
+                fwriteln!(f, "for ({}; {}; {}) {{", init, condition, increment)?;
                 fwriteln!(f, "{}", body)?;
                 dedent();
-                Ok(())
+                fwriteln!(f, "")?;
+                fwrite!(f, "}}")
+            },
+
+            CXExpr::While { condition, body, pre_eval: true } => {
+                indent();
+                fwriteln!(f, "while ({condition}) {{")?;
+                fwriteln!(f, "{}", body)?;
+                dedent();
+                fwrite!(f, "}}")
+            },
+
+            CXExpr::While { condition, body, pre_eval: false } => {
+                indent();
+                fwriteln!(f, "while ({condition}) {{")?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "")?;
+                fwrite!(f, "}}")
             },
 
             _ => fwrite!(f, "{:?}", self)
@@ -215,7 +239,7 @@ impl Display for CXTypeUnion {
                     .join(", ");
                 write!(f, "fn({}) -> {}", arg_strs, return_type)
             },
-            CXTypeUnion::MemoryReference(inner) => {
+            CXTypeUnion::MemoryAlias(inner) => {
                 write!(f, "mem({})", inner)
             },
         }
@@ -245,7 +269,14 @@ impl Display for CXBinOp {
             CXBinOp::Equal      => fwrite!(f, "=="),
             CXBinOp::NotEqual   => fwrite!(f, "!="),
 
+            CXBinOp::Less       => fwrite!(f, "<"),
+            CXBinOp::LessEqual  => fwrite!(f, "<="),
+            CXBinOp::Greater    => fwrite!(f, ">"),
+            CXBinOp::GreaterEqual => fwrite!(f, ">="),
+
             CXBinOp::Access     => fwrite!(f, "."),
+
+            CXBinOp::Comma      => fwrite!(f, ","),
 
             CXBinOp::Assign(add) => {
                 if let Some(add) = add {

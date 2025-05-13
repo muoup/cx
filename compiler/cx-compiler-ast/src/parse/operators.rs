@@ -1,6 +1,31 @@
+use cx_data_ast::assert_token_matches;
 use cx_data_ast::lex::token::{OperatorType, PunctuatorType, Token};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
+use crate::parse::typing::{is_type_decl, parse_initializer};
+
+#[derive(Debug, Clone)]
+pub(crate) enum PrecOperator {
+    BinOp(CXBinOp),
+    UnOp(CXUnOp),
+}
+
+impl PrecOperator {
+    pub(crate) fn get_precedence(&self) -> u8 {
+        match self {
+            PrecOperator::BinOp(op) => binop_prec(op.clone()),
+            PrecOperator::UnOp(op) => unop_prec(op.clone()),
+        }
+    }
+
+    pub(crate) fn is_binop(&self) -> bool {
+        matches!(self, PrecOperator::BinOp(_))
+    }
+
+    pub(crate) fn is_unop(&self) -> bool {
+        matches!(self, PrecOperator::UnOp(_))
+    }
+}
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
@@ -10,16 +35,29 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
         CXBinOp::LShift | CXBinOp::RShift => 6,
         CXBinOp::Less | CXBinOp::Greater | CXBinOp::LessEqual | CXBinOp::GreaterEqual => 7,
-        CXBinOp::Equal | CXBinOp::NotEqual => 8,
 
-        CXBinOp::LAnd => 9,
-        CXBinOp::LOr => 10,
+        CXBinOp::Equal | CXBinOp::NotEqual => 10,
 
-        CXBinOp::Assign(_) => 14,
+        CXBinOp::LAnd => 14,
+        CXBinOp::LOr => 15,
+        CXBinOp::Assign(_) => 16,
 
-        CXBinOp::Comma => 15,
+        CXBinOp::Comma => 17,
 
         _ => todo!("binop_prec {op:?}")
+    }
+}
+
+pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
+    match op {
+        CXUnOp::AddressOf => 3,
+        CXUnOp::Dereference => 3,
+        CXUnOp::PreIncrement(_) => 3,
+        CXUnOp::ExplicitCast(_) => 3,
+
+        CXUnOp::PostIncrement(_) => 4,
+
+        _ => todo!("unop_prec {op:?}")
     }
 }
 
@@ -36,6 +74,25 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                     data.toks.back();
                     return None;
                 }
+            },
+
+            // Maybe a type cast
+            Token::Punctuator(PunctuatorType::OpenParen) => {
+                let pre_index = data.toks.index - 1;
+
+                if !is_type_decl(data) {
+                    data.toks.index = pre_index;
+                    return None;
+                }
+
+                let Some((None, type_)) = parse_initializer(data) else {
+                    data.toks.index = pre_index;
+                    return None;
+                };
+
+                assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+
+                return Some(CXUnOp::ExplicitCast(type_));
             },
 
             _ => {

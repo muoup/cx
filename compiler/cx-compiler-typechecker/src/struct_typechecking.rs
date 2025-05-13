@@ -37,7 +37,7 @@ pub fn access_struct(
     Some(
         CXValType::new(
             0,
-            CXTypeUnion::MemoryReference(Box::new(field_type.clone()))
+            CXTypeUnion::MemoryAlias(Box::new(field_type.clone()))
         )
     )
 }

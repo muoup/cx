@@ -6,9 +6,9 @@ macro_rules! log_error {
             eprintln!($($arg)*);
 
             // If in debug mode, panic on error
-            if cfg!(debug_assertions) {
-                panic!()
-            }
+            // if cfg!(debug_assertions) {
+            //     panic!()
+            // }
 
             return None;
         }

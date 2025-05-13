@@ -30,7 +30,7 @@ pub enum CXTypeUnion {
     Unit,
 
     PointerTo(Box<CXValType>),
-    MemoryReference(Box<CXValType>),
+    MemoryAlias(Box<CXValType>),
     Array {
         size: usize,
         _type: Box<CXValType>
@@ -118,13 +118,6 @@ impl CXValType {
             internal_type: CXTypeUnion::PointerTo(Box::new(self))
         }
     }
-
-    pub fn deref(self) -> Self {
-        CXValType {
-            specifiers: 0,
-            internal_type: CXTypeUnion::MemoryReference(Box::new(self))
-        }
-    }
 }
 
 pub fn is_structure(type_map: &TypeMap, val_type: &CXValType) -> bool {
@@ -196,7 +189,7 @@ pub fn get_type_size(type_map: &TypeMap, type_: &CXValType) -> Option<usize> {
 
         CXTypeUnion::Float { bytes } => Some(*bytes as usize),
         CXTypeUnion::Integer { bytes, .. } => Some(*bytes as usize),
-        CXTypeUnion::MemoryReference(inner) =>
+        CXTypeUnion::MemoryAlias(inner) =>
             get_type_size(type_map, inner.as_ref()),
 
         CXTypeUnion::Array { _type, size }

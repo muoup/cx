@@ -82,7 +82,7 @@ pub fn generate_instruction(
                 },
                 CXValType::new(
                     0,
-                    CXTypeUnion::MemoryReference(lhs_inner)
+                    CXTypeUnion::MemoryAlias(lhs_inner)
                 )
             )
         },

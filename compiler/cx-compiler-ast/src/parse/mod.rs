@@ -23,7 +23,7 @@ pub fn parse_ast(mut data: ParserData) -> Option<CXAST> {
     data.reset();
 
     while data.toks.has_next() {
-        parse_global_stmt(&mut data, &mut cx_ast);
+        parse_global_stmt(&mut data, &mut cx_ast)?;
     }
 
     Some(cx_ast)

@@ -218,7 +218,8 @@ fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXValType) -> Option<CX
             }
 
             let Token::IntLiteral(size) = data.toks.next().cloned()? else {
-                log_error!("PARSER ERROR: Expected integer literal for array size");
+                println!("Error parsing type, acc_type = {acc_type}");
+                log_error!("PARSER ERROR: Expected integer literal for array size, found: {:#?}", data.back().toks.peek());
             };
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBracket));
 
@@ -259,7 +260,7 @@ fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
             )
         ),
 
-        _ => log_error!("Unknown base to type initializer: {:#?}", data.toks.peek()),
+        _ => None
     }
 }
 

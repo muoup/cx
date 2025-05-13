@@ -46,13 +46,15 @@ pub enum CXGlobalStmt {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
     BNot, LNot,
     ArrayIndex,
     InitializerIndex,
+
+    ExplicitCast(CXValType),
 
     PreIncrement(i8),
     PostIncrement(i8),

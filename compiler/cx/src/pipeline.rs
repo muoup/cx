@@ -155,6 +155,7 @@ impl CompilerPipeline {
 
         let Some(()) = type_check(&mut ast) else {
             eprintln!("ERROR: Failed to verify AST");
+            dump_data(&ast);
             exit(1);
         };
 
