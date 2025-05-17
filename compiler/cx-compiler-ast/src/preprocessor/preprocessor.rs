@@ -4,18 +4,32 @@ fn handle_non_directive(preprocessor: &mut Preprocessor, string: &str) -> String
     let mut result = string.to_string();
 
     for (token, value) in preprocessor.defined_tokens.iter() {
-        result = result.replace(token, value);
+        result = result.replace(format!("[^a-zA-Z]{}[^a-zA-Z]", token).as_str(), value);
     }
 
     result
 }
 
 pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str) -> String {
+    if preprocessor.in_ml_comment {
+        if string.contains("*/") {
+            string = string.split("*/").skip(1).next().unwrap_or("");
+            preprocessor.in_ml_comment = false;
+        } else {
+            return "".to_string();
+        }
+    }
+    
     if string.contains("//") {
         string = string.split("//").next().unwrap();
     }
+    
+    if string.contains("/*") {
+        string = string.split("/*").next().unwrap();
+        preprocessor.in_ml_comment = true;
+    }
 
-    if !string.starts_with("#") {
+    if !string.trim_start().starts_with("#") {
         return handle_non_directive(preprocessor, string);
     }
 
