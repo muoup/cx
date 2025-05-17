@@ -33,7 +33,7 @@ pub enum OperatorType {
 
     NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
 
-    Ampersand, LOr, LNot,
+    LAnd, LOr, LNot,
     BAnd, BOr, BXor, BNot,
     LShift, RShift,
 

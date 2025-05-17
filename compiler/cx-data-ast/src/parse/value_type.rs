@@ -124,7 +124,7 @@ pub fn is_structure(type_map: &TypeMap, val_type: &CXValType) -> bool {
     matches!(get_intrinsic_type(type_map, val_type), Some(CXTypeUnion::Structured { .. }))
 }
 
-fn same_type(type_map: &TypeMap, t1: &CXValType, t2: &CXValType) -> bool {
+pub fn same_type(type_map: &TypeMap, t1: &CXValType, t2: &CXValType) -> bool {
     match (&t1.internal_type, &t2.internal_type) {
         (CXTypeUnion::Identifier(name1),
             CXTypeUnion::Identifier(name2))

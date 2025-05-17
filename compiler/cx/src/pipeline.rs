@@ -217,6 +217,7 @@ impl CompilerPipeline {
             .arg(output_path)
             .arg("-o")
             .arg(output_file)
+            .arg("-g")
             .status()
             .expect("Failed to execute command");
 

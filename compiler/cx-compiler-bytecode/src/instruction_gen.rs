@@ -1,4 +1,5 @@
 use std::clone;
+use std::mem::forget;
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
@@ -70,8 +71,10 @@ pub fn generate_instruction(
 
             let intrinsic_type = builder.get_type(left_id)?
                 .intrinsic_type(&builder.type_map)?.clone();
-            let CXTypeUnion::PointerTo(lhs_inner)  = intrinsic_type else {
-                panic!("Invalid array index type: {intrinsic_type}");
+            let lhs_inner = match intrinsic_type {
+                CXTypeUnion::PointerTo(inner) => inner,
+                CXTypeUnion::Array { _type, .. } => _type,
+                _ => panic!("Invalid array index type: {intrinsic_type}"),
             };
 
             builder.add_instruction(
@@ -179,10 +182,10 @@ pub fn generate_instruction(
 
             Some(ValueID::NULL)
         },
-        CXExpr::ImplicitCast { expr, from_type, to_type} => {
+        CXExpr::ImplicitCast { expr, from_type, to_type, cast_type} => {
             let inner = generate_instruction(builder, expr.as_ref())?;
 
-            implicit_cast(builder, inner, &from_type, &to_type)
+            implicit_cast(builder, inner, &from_type, &to_type, cast_type)
         },
         CXExpr::ImplicitLoad { expr, loaded_type } => {
             let inner = generate_instruction(builder, expr.as_ref())?;
@@ -241,6 +244,13 @@ pub fn generate_instruction(
                 None => None
             };
 
+            let final_block = builder.create_block();
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: final_block.clone() },
+                CXValType::unit()
+            );
+
+            builder.set_current_block(final_block);
             builder.add_instruction(
                 VirtualInstruction::Return { value },
                 CXValType::unit()
@@ -357,6 +367,9 @@ pub fn generate_instruction(
                     Some(loaded_val)
                 },
 
+                CXUnOp::ExplicitCast(_) =>
+                    generate_instruction(builder, operand.as_ref()),
+
                 _ => todo!("generate_instruction for {:?}", operator)
             }
         },
@@ -372,11 +385,7 @@ pub fn generate_instruction(
                 VirtualInstruction::Branch {
                     condition,
                     true_block: then_block.clone(),
-                    false_block:
-                        match else_branch {
-                            Some(_) => else_block.clone(),
-                            None => merge_block.clone()
-                        }
+                    false_block: else_block.clone()
                 },
                 CXValType::unit()
             );
@@ -388,24 +397,23 @@ pub fn generate_instruction(
                 CXValType::unit()
             );
 
+            builder.set_current_block(else_block);
             if let Some(else_branch) = else_branch {
-                builder.set_current_block(else_block);
                 generate_instruction(builder, else_branch.as_ref());
-                builder.add_instruction(
-                    VirtualInstruction::Jump { target: merge_block.clone() },
-                    CXValType::unit()
-                );
             }
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: merge_block.clone() },
+                CXValType::unit()
+            );
 
             builder.set_current_block(merge_block);
-
             Some(ValueID::NULL)
         },
 
         CXExpr::While { condition, body, pre_eval } => {
-            let condition_block = builder.create_block();
+            let condition_block = builder.start_cond_point();
             let body_block = builder.create_block();
-            let merge_block = builder.create_block();
+            let merge_block = builder.start_scope();
 
             let first_block = if *pre_eval {
                 condition_block.clone()
@@ -437,16 +445,16 @@ pub fn generate_instruction(
                 CXValType::unit()
             );
 
-            builder.set_current_block(merge_block);
-
+            builder.end_scope();
+            builder.end_cond();
             Some(ValueID::NULL)
         },
 
         CXExpr::For { init, condition, increment, body } => {
-            let condition_block = builder.create_block();
+            let condition_block = builder.start_cond_point();
             let body_block = builder.create_block();
             let increment_block = builder.create_block();
-            let merge_block = builder.create_block();
+            let merge_block = builder.start_scope();
 
             generate_instruction(builder, init.as_ref())?;
             builder.add_instruction(
@@ -456,7 +464,6 @@ pub fn generate_instruction(
 
             builder.set_current_block(condition_block);
             let condition_value = generate_instruction(builder, condition.as_ref())?;
-
             builder.add_instruction(
                 VirtualInstruction::Branch {
                     condition: condition_value,
@@ -480,7 +487,33 @@ pub fn generate_instruction(
                 CXValType::unit()
             );
 
-            builder.set_current_block(merge_block);
+            builder.end_scope();
+            builder.end_cond();
+            Some(ValueID::NULL)
+        },
+
+        CXExpr::Break => {
+            let Some(merge) = builder.get_merge() else {
+                log_error!("TYPE ERROR: Invalid break in outermost scope");
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: merge },
+                CXValType::unit()
+            );
+
+            Some(ValueID::NULL)
+        },
+
+        CXExpr::Continue => {
+            let Some(cond) = builder.get_continue() else {
+                log_error!("TYPE ERROR: Invalid continue in outermost scope");
+            };
+
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: cond },
+                CXValType::unit()
+            );
 
             Some(ValueID::NULL)
         },
@@ -500,6 +533,15 @@ pub(crate) fn implicit_return(
             return Some(());
         }
     }
+
+    let return_block = builder.create_block();
+    builder.add_instruction(
+        VirtualInstruction::Jump {
+            target: return_block.clone()
+        },
+        CXValType::unit()
+    );
+    builder.set_current_block(return_block);
 
     if prototype.name.data == "main" {
         let zero = builder.add_instruction(
@@ -523,7 +565,8 @@ pub(crate) fn implicit_return(
             CXValType::unit()
         )?;
     } else {
-        log_error!("Function {} has a return type but no return statement", prototype.name);
+        let last_instruction = builder.last_instruction();
+        log_error!("Function {} has a return type but no return statement\nLast Statement found: {:?}", prototype.name, last_instruction);
     }
 
     Some(())

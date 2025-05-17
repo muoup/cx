@@ -286,6 +286,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx"
+version = "0.0.0"
+dependencies = [
+ "cx-backend-cranelift",
+ "cx-compiler-ast",
+ "cx-compiler-bytecode",
+ "cx-compiler-typechecker",
+ "cx-data-ast",
+ "cx-data-bytecode",
+ "cx-util",
+]
+
+[[package]]
 name = "cx-backend-cranelift"
 version = "0.1.0"
 dependencies = [
@@ -293,19 +306,6 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
- "cx-data-ast",
- "cx-data-bytecode",
- "cx-util",
-]
-
-[[package]]
-name = "cx-compiler"
-version = "0.0.0"
-dependencies = [
- "cx-backend-cranelift",
- "cx-compiler-ast",
- "cx-compiler-bytecode",
- "cx-compiler-typechecker",
  "cx-data-ast",
  "cx-data-bytecode",
  "cx-util",

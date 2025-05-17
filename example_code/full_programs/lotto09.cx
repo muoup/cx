@@ -1,8 +1,14 @@
 // Sample code courtesy of dangookin on GitHub
 // Link: https://github.com/dangookin/Tiny_C_Projects/blob/main/14_lotto/lotto09.c
 
+void printf(char* c, int d);
+void putchar(char c);
+int rand();
+void srand(int seed);
+
+#define NULL ((void*)0)
+
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
 #define BALLS 69
@@ -59,7 +65,7 @@ int winner(int *m, int *g)
 
 int main()
 {
-#define tomatch 5
+#define tomatch 4
 #define tally 100
 	int x;
 	int c;
@@ -70,17 +76,16 @@ int main()
 	int q;
 	int results[tally];
 	long total;
-	float average;
 
 	srand( (unsigned)time(NULL) );
 
-	printf("Trying to match:");
+	printf("Trying to match:", 0);
 	lotto(match);
 	for( x=0; x<DRAW; x++ )
 	{
 		printf(" %d",match[x]+1);
 		if( x<DRAW-1 )
-			printf(" -");
+			printf(" -", 0);
 	}
 	putchar('\n');
 
@@ -102,13 +107,11 @@ int main()
 	/* obtain the total and the average */
 	total = 0;
 	for( x=0; x<tally; x++ )
-		total += results[x];		/* add up all the values */
-	average = (float)total/(float)tally;	/* divide to get the average */
+		total = total + results[x];		    /* add up all the values */
 
 	/* reporting statements */
-	printf("For %d times, the average count ",tally);
-	printf("to match %d balls is",tomatch);
-    printf(" %.0f\n",average);
+    printf("(%d/", total);
+    printf("%d)\n", tally);
 
 	return(0);
 }

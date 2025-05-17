@@ -5,10 +5,10 @@ use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
+use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
 use cx_data_ast::parse::ast::CXBinOp;
-use cx_data_ast::parse::value_type::{get_type_size, is_structure};
+use cx_data_ast::parse::value_type::{get_type_size, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BlockInstruction, BytecodeFunctionPrototype, ValueID, VirtualInstruction};
 
 /**
@@ -237,12 +237,43 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
+        VirtualInstruction::FloatBinOp {
+            left, right, op
+        } => {
+            let left = context.variable_table.get(left).unwrap().as_value();
+            let right = context.variable_table.get(right).unwrap().as_value();
+
+            match op {
+                CXBinOp::Add => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fadd(left, right)
+                    )
+                ),
+                CXBinOp::Subtract => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fsub(left, right)
+                    )
+                ),
+                CXBinOp::Multiply => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fmul(left, right)
+                    )
+                ),
+                CXBinOp::Divide => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fdiv(left, right)
+                    )
+                ),
+                _ => unimplemented!("Operator not implemented: {:?}", op)
+            }
+        },
+
         VirtualInstruction::Branch {
             condition, true_block, false_block
         } => {
             let condition = context.variable_table.get(condition).unwrap().as_value();
-            let true_block = Block::from_u32(*true_block + 1);
-            let false_block = Block::from_u32(*false_block + 1);
+            let true_block = context.block_map.get(*true_block as usize).unwrap().clone();
+            let false_block = context.block_map.get(*false_block as usize).unwrap().clone();
 
             context.builder.ins()
                 .brif(condition,
@@ -255,7 +286,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Jump {
             target
         } => {
-            let target = Block::from_u32(*target + 1);
+            let target = context.block_map.get(*target as usize).unwrap().clone();
 
             context.builder.ins().jump(target, &[]);
 
@@ -365,7 +396,83 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     context.builder.ins().iconst(cranelift_type, *value as i64)
                 )
             )
-        }
+        },
+
+        VirtualInstruction::BitCast {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+
+            Some(val)
+        },
+
+        VirtualInstruction::IntToFloat {
+            from, value
+        } => {
+            let val = context.variable_table.get(value).unwrap().as_value();
+            let _type = &instruction.value.type_;
+
+            let from_cl_type = get_cranelift_type(context.type_map, from);
+            let to_cl_type = get_cranelift_type(context.type_map, _type);
+
+            let CXTypeUnion::Integer { signed, .. }
+                = from.intrinsic_type(context.type_map)? else {
+                panic!("Invalid type for int to float conversion: {:?}", _type)
+            };
+
+            let inst = if *signed {
+                context.builder.ins().fcvt_from_sint(to_cl_type, val)
+            } else {
+                context.builder.ins().fcvt_from_uint(to_cl_type, val)
+            };
+
+            Some(
+                CodegenValue::Value(
+                    inst
+                )
+            )
+        },
+
+        VirtualInstruction::FloatToInt {
+            from, value
+        } => {
+            let val = context.variable_table.get(value).unwrap().as_value();
+            let _type = &instruction.value.type_;
+
+            let to_cl_type = get_cranelift_type(context.type_map, _type);
+
+            let CXTypeUnion::Float { bytes: float_bytes, .. }
+                = from.intrinsic_type(context.type_map)? else {
+                panic!("Invalid type for float to int conversion")
+            };
+
+            let CXTypeUnion::Integer { bytes: int_bytes, signed }
+                = _type.intrinsic_type(context.type_map)? else {
+                panic!("Invalid type for float to int conversion")
+            };
+
+            let ival = if *signed {
+                context.builder.ins().fcvt_to_sint(to_cl_type, val)
+            } else {
+                context.builder.ins().fcvt_to_uint(to_cl_type, val)
+            };
+
+            let val = if float_bytes > int_bytes {
+                context.builder.ins().ireduce(to_cl_type, ival)
+            } else if float_bytes < int_bytes && *signed {
+                context.builder.ins().sextend(to_cl_type, ival)
+            } else if float_bytes < int_bytes {
+                context.builder.ins().uextend(to_cl_type, ival)
+            } else {
+                ival
+            };
+
+            Some(
+                CodegenValue::Value(
+                    val
+                )
+            )
+        },
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }

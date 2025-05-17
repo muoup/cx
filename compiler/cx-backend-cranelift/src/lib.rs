@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, Configurable, FunctionBuilder, Value};
+use cranelift::prelude::{settings, Block, Configurable, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_data_ast::parse::ast::{FunctionMap, TypeMap};
@@ -56,6 +56,8 @@ pub struct FunctionState<'a> {
 
     pub(crate) type_map: &'a TypeMap,
     pub(crate) fn_map: &'a FunctionMap,
+
+    pub(crate) block_map: Vec<Block>,
 
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) local_defined_functions: HashMap<String, FuncRef>,

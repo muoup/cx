@@ -44,7 +44,7 @@ pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str)
         },
         "#define" => {
             let token = split.next().unwrap();
-            let value = split.next().unwrap();
+            let value = split.collect::<Vec<_>>().join(" ");
 
             preprocessor.defined_tokens.push((token.to_string(), value.to_string()));
             "".to_string()

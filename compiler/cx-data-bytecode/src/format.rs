@@ -160,6 +160,18 @@ impl Display for VirtualInstruction {
             VirtualInstruction::GetFunctionAddr { func_name } => {
                 write!(f, "get_function_addr {func_name}")
             },
+            VirtualInstruction::BitCast { value } => {
+                write!(f, "bit_cast {value}")
+            },
+            VirtualInstruction::IntToFloat { from, value } => {
+                write!(f, "int_to_float ({from}) {value}")
+            },
+            VirtualInstruction::FloatToInt { from, value } => {
+                write!(f, "float_to_int ({from}) {value}")
+            },
+            VirtualInstruction::FloatCast { value } => {
+                write!(f, "float_cast {value}")
+            },
             VirtualInstruction::NOP => {
                 write!(f, "nop")
             }

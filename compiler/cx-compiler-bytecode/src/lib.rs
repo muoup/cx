@@ -66,7 +66,7 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         }
 
         generate_instruction(&mut builder, body)?;
-        implicit_return(&mut builder, prototype);
+        implicit_return(&mut builder, prototype)?;
 
         builder.symbol_table.pop_scope();
         builder.finish_function();

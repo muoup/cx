@@ -29,6 +29,8 @@ pub fn add_internal_types(type_map: &mut TypeMap) {
     add!("int", CXTypeUnion::Integer { bytes: 4, signed: true });
     add!("signed int", CXTypeUnion::Integer { bytes: 4, signed: true });
     add!("unsigned int", CXTypeUnion::Integer { bytes: 4, signed: false });
+    add!("signed", CXTypeUnion::Integer { bytes: 4, signed: true });
+    add!("unsigned", CXTypeUnion::Integer { bytes: 4, signed: false });
     add!("long", CXTypeUnion::Integer { bytes: 8, signed: true });
     add!("long int", CXTypeUnion::Integer { bytes: 8, signed: true });
     add!("unsigned long", CXTypeUnion::Integer { bytes: 8, signed: false });

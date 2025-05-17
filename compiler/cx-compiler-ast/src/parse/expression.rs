@@ -40,13 +40,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
         return Some(CXExpr::Unit);
     };
 
-    loop {
-        if let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {
-            continue;
-        }
-
-        break;
-    }
+    while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {}
 
     compress_stack(&mut expr_stack, &mut op_stack, 100)?;
 
@@ -93,8 +87,8 @@ fn compress_one_expr(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperat
             Some(acc)
         },
         PrecOperator::BinOp(bin_op) => {
-            let lhs = expr_stack.pop().unwrap();
             let rhs = expr_stack.pop().unwrap();
+            let lhs = expr_stack.pop().unwrap();
 
             let acc = CXExpr::BinOp {
                 lhs: Box::new(lhs),
@@ -112,35 +106,18 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<Pr
         return Some(());
     }
 
-    let mut ops = Vec::new();
-    let mut exprs = Vec::new();
+    // let mut ops = Vec::new();
+    // let mut exprs = Vec::new();
 
-    exprs.push(expr_stack.pop().unwrap());
+    // exprs.push(expr_stack.pop().unwrap());
 
     while let Some(op2) = op_stack.last() {
         if op2.get_precedence() > rprec {
             break;
         }
 
-        if matches!(op2, PrecOperator::UnOp(_)) {
-            let un_expr = compress_one_expr(&mut exprs, op_stack)?;
-            exprs.push(un_expr);
-            continue;
-        }
-
-        ops.push(op_stack.pop().unwrap());
-        exprs.push(expr_stack.pop().unwrap());
-    }
-
-    while !ops.is_empty() {
-        let expr = compress_one_expr(&mut exprs, &mut ops)?;
-        exprs.push(expr);
-    }
-
-    expr_stack.push(exprs.pop().unwrap());
-
-    if !exprs.is_empty() {
-        log_error!("PARSER ERROR: Expression stack is not empty after parsing expression: {:#?} {:#?}", exprs, op_stack);
+        let expr = compress_one_expr(expr_stack, op_stack)?;
+        expr_stack.push(expr);
     }
 
     Some(())

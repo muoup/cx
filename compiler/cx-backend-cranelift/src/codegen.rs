@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use cranelift::codegen::ir::{FuncRef, Function, UserFuncName};
-use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature, Value};
+use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext, Signature, Value};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, CXTypeUnion};
@@ -47,10 +47,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     let mut binding = FunctionBuilderContext::new();
     let mut builder = FunctionBuilder::new(&mut func, &mut binding);
 
-    let block = builder.create_block();
-    builder.switch_to_block(block);
-
-    let var_table = VariableTable::new();
     let pointer_type = global_state.object_module.target_config().pointer_type();
 
     let mut context = FunctionState {
@@ -62,30 +58,37 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         type_map: &global_state.type_map,
         fn_map: &global_state.fn_map,
 
+        variable_table: VariableTable::new(),
+        block_map: Vec::new(),
         local_defined_functions: HashMap::new(),
         fn_params: Vec::new(),
 
         builder,
         function_prototype: &bc_func.prototype,
-        variable_table: var_table,
         global_strs: &global_state.global_strs,
         pointer_type,
 
         current_block_exited: false
     };
 
+    for _ in 0..bc_func.blocks.len() {
+        context.block_map.push(
+            context.builder.create_block()
+        );
+    }
+
     for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
-        let block = context.builder.create_block();
-        context.builder.switch_to_block(block);
+        let block = context.block_map.get(block_id).unwrap();
+        context.builder.switch_to_block(*block);
 
         if block_id == 0 {
-            if is_structure(context.type_map, &bc_func.prototype.return_type) {
-                context.builder.append_block_param(block, context.pointer_type);
+            if bc_func.prototype.return_type.is_structure(context.type_map) {
+                context.builder.append_block_param(*block, context.pointer_type);
             }
 
             for arg in bc_func.prototype.args.iter() {
                 let cranelift_type = get_cranelift_type(context.type_map, &arg.type_);
-                let arg = context.builder.append_block_param(block, cranelift_type);
+                let arg = context.builder.append_block_param(*block, cranelift_type);
 
                 context.fn_params.push(arg);
             }
@@ -124,6 +127,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     context.builder.finalize();
 
     dump_data(&func);
+    println!("Function: {}", func);
 
     let GlobalState { object_module, context, .. } = global_state;
 

@@ -147,7 +147,8 @@ pub enum CXExpr {
     ImplicitCast {
         expr: Box<CXExpr>,
         from_type: CXValType,
-        to_type: CXValType
+        to_type: CXValType,
+        cast_type: CXCastType
     },
 
     ImplicitLoad {
@@ -163,4 +164,16 @@ pub enum CXExpr {
     InitializerList {
         indices: Vec<CXInitIndex>,
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum CXCastType {
+    IntegralCast,
+    FloatCast,
+    IntToFloat,
+    FloatToInt,
+    BitCast,
+    IntegralTrunc,
+    IntToScaledPtrDiff,
+    FunctionToPointerDecay,
 }

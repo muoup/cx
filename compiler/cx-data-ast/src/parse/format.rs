@@ -200,7 +200,7 @@ impl Display for CXTypeUnion {
             CXTypeUnion::Integer { bytes, signed } => {
                 let signed_str = if *signed { "i" } else { "u" };
                 let signed_bytes = *bytes * 8;
-                write!(f, "{}i{}", signed_str, signed_bytes)
+                write!(f, "{}{}", signed_str, signed_bytes)
             },
             CXTypeUnion::Float { bytes } => {
                 let float_bytes = *bytes * 8;

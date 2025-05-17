@@ -246,7 +246,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::Ampersand))
+                Some(Token::Operator(OperatorType::LAnd))
             },
             _ => Some(Token::Operator(OperatorType::BAnd))
         },
