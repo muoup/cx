@@ -15,17 +15,17 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &C
     let mut sig = Signature::new(
         global_state.object_module.target_config().default_call_conv
     );
-
-    for CXParameter { type_, .. } in prototype.parameters.iter() {
-        sig.params.push(get_cranelift_abi_type(global_state.type_map, type_));
-    }
-
+    
     if !matches!(get_intrinsic_type(&global_state.type_map, &prototype.return_type)?, CXTypeUnion::Unit) {
         sig.returns.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
 
         if is_structure(global_state.type_map, &prototype.return_type) {
             sig.params.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
         }
+    }
+    
+    for CXParameter { type_, .. } in prototype.parameters.iter() {
+        sig.params.push(get_cranelift_abi_type(global_state.type_map, type_));
     }
 
     let id = global_state.object_module

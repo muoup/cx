@@ -21,8 +21,8 @@ pub fn access_struct(
 
         lhs_type = *inner;
     }
-
-    if !is_structure(env.type_map, &lhs_type) {
+    
+    if !lhs_type.is_structure(env.type_map) {
         log_error!("TYPE ERROR: Access operator can only be applied to structured types, found {lhs_type}");
     }
 

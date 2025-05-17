@@ -278,6 +278,18 @@ pub fn generate_instruction(
 
         CXExpr::UnOp { operator, operand } => {
             match operator {
+                CXUnOp::Negative => {
+                    let operand = generate_instruction(builder, operand.as_ref())?;
+                    let op_type = builder.get_type(operand)?.clone();
+                    
+                    builder.add_instruction(
+                        VirtualInstruction::IntegerUnOp {
+                            value: operand,
+                            op: CXUnOp::Negative
+                        },
+                        op_type
+                    )
+                },
                 CXUnOp::Dereference => {
                     generate_instruction(builder, operand.as_ref())
                 },
@@ -411,7 +423,7 @@ pub fn generate_instruction(
         },
 
         CXExpr::While { condition, body, pre_eval } => {
-            let condition_block = builder.start_cond_point();
+            let condition_block = builder.start_cont_point();
             let body_block = builder.create_block();
             let merge_block = builder.start_scope();
 
@@ -451,9 +463,9 @@ pub fn generate_instruction(
         },
 
         CXExpr::For { init, condition, increment, body } => {
-            let condition_block = builder.start_cond_point();
+            let condition_block = builder.create_block();
             let body_block = builder.create_block();
-            let increment_block = builder.create_block();
+            let increment_block = builder.start_cont_point();
             let merge_block = builder.start_scope();
 
             generate_instruction(builder, init.as_ref())?;

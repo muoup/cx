@@ -19,6 +19,11 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
         Token::Keyword(KeywordType::Struct) |
         Token::Keyword(KeywordType::Enum) |
         Token::Keyword(KeywordType::Union) => goto_statement_end(data),
+        
+        Token::Punctuator(PunctuatorType::Semicolon) => {
+            data.toks.next();
+            Some(())
+        },
 
         Token::Specifier(_) => parse_specifier(data, ast),
 

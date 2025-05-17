@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, FunctionMap, TypeMap};
+use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp, FunctionMap, TypeMap};
 use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 use cx_util::scoped_map::ScopedMap;
 use crate::ProgramBytecode;
@@ -171,7 +171,7 @@ impl BytecodeBuilder {
             .and_then(|v| v.intrinsic_type(&self.type_map))
     }
 
-    pub fn start_cond_point(&mut self) -> ElementID {
+    pub fn start_cont_point(&mut self) -> ElementID {
         let cond_block = self.create_block();
 
         let context = self.fun_mut();
@@ -314,6 +314,11 @@ pub enum VirtualInstruction {
         op: CXBinOp,
         left: ValueID,
         right: ValueID
+    },
+    
+    IntegerUnOp {
+        op: CXUnOp,
+        value: ValueID
     },
 
     FloatBinOp {

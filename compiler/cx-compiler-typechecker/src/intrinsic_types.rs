@@ -17,12 +17,14 @@ pub fn add_internal_types(type_map: &mut TypeMap) {
     add!("i16", CXTypeUnion::Integer { bytes: 2, signed: true });
     add!("i32", CXTypeUnion::Integer { bytes: 4, signed: true });
     add!("i64", CXTypeUnion::Integer { bytes: 8, signed: true });
-
+    add!("isize", CXTypeUnion::Integer { bytes: 8, signed: true });
+    
     add!("u8", CXTypeUnion::Integer { bytes: 1, signed: false });
     add!("u16", CXTypeUnion::Integer { bytes: 2, signed: false });
     add!("u32", CXTypeUnion::Integer { bytes: 4, signed: false });
     add!("u64", CXTypeUnion::Integer { bytes: 8, signed: false });
-
+    add!("usize", CXTypeUnion::Integer { bytes: 8, signed: false });
+    
     add!("f32", CXTypeUnion::Float { bytes: 4 });
     add!("f64", CXTypeUnion::Float { bytes: 8 });
 

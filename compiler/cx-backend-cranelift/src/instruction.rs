@@ -7,7 +7,7 @@ use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
-use cx_data_ast::parse::ast::CXBinOp;
+use cx_data_ast::parse::ast::{CXBinOp, CXUnOp};
 use cx_data_ast::parse::value_type::{get_type_size, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BlockInstruction, BytecodeFunctionPrototype, ValueID, VirtualInstruction};
 
@@ -236,6 +236,25 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         },
+        
+        VirtualInstruction::IntegerUnOp {
+            op, value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+
+            let inst = match op {
+                CXUnOp::Negative => {
+                    context.builder.ins().ineg(val.as_value())
+                },
+                _ => todo!("UnOp not implemented: {:?}", op)
+            };
+
+            Some(
+                CodegenValue::Value(
+                    inst
+                )
+            )
+        }
 
         VirtualInstruction::FloatBinOp {
             left, right, op

@@ -38,7 +38,7 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
 pub fn parse_types(data: &mut ParserData) -> Option<TypeMap> {
     let mut type_map = TypeMap::new();
 
-    while let Some(token) = data.toks.next() {
+    while let Some(token) = data.toks.peek() {
         let type_record = match token {
             Token::Keyword(KeywordType::Typedef) =>
                 parse_typedef(data)?,
@@ -64,6 +64,8 @@ pub fn parse_types(data: &mut ParserData) -> Option<TypeMap> {
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {
+    assert_token_matches!(data, Token::Keyword(KeywordType::Typedef));
+    
     let (name, type_) = parse_initializer(data)?;
 
     if name.is_none() {
@@ -81,7 +83,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {
 }
 
 pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
-    match data.toks.next()? {
+    match data.toks.peek()? {
         Token::Keyword(KeywordType::Struct) => {
             let type_ = parse_struct(data)?;
             let CXTypeUnion::Structured { name, .. } = &type_ else {
@@ -104,7 +106,7 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
             )
         },
 
-        _ => todo!()
+        tok => todo!("parse_plain_typedef: {tok:?}")
     }
 }
 

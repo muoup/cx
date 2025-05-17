@@ -23,6 +23,10 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
 
         CXExpr::UnOp { operator, operand } => {
             match operator {
+                CXUnOp::Negative => { 
+                    coerce_value(env, operand.as_mut())
+                },
+                
                 CXUnOp::AddressOf => {
                     let operand_type = type_check_traverse(env, operand.as_mut())?;
 
@@ -71,7 +75,7 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
                     Some(to_type.clone())
                 },
 
-                _ => todo!(),
+                _ => todo!("CXUnOp {operator:?} not implemented"),
             }
         },
 
@@ -152,7 +156,8 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
                     // Array variables are themselves memory aliases, so wrapping
                     // them in a memory alias ends up adding an extra load operation
                     // when using them
-                    CXTypeUnion::Array { .. } => {
+                    CXTypeUnion::Array { .. } |
+                    CXTypeUnion::Structured { .. } => {
                         Some(record)
                     },
                     

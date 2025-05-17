@@ -145,6 +145,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::IntegerBinOp { left, right, op } => {
                 write!(f, "int_binop {op} {left} {right}")
             },
+            VirtualInstruction::IntegerUnOp { op, value } => {
+                write!(f, "int_unop {op:?} {value}")
+            },
             VirtualInstruction::FloatBinOp { left, right, op } => {
                 write!(f, "float_binop {op} {left} {right}")
             },

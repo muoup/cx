@@ -50,6 +50,8 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
+        CXUnOp::Negative => 2,
+        
         CXUnOp::AddressOf => 3,
         CXUnOp::Dereference => 3,
         CXUnOp::PreIncrement(_) => 3,
@@ -69,6 +71,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                 OperatorType::Asterisk      => CXUnOp::Dereference,
                 OperatorType::Increment     => CXUnOp::PreIncrement(1),
                 OperatorType::Decrement     => CXUnOp::PreIncrement(-1),
+                OperatorType::Minus         => CXUnOp::Negative,
 
                 _ => {
                     data.toks.back();
