@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::parse::value_type::CXValType;
+use crate::parse::value_type::{CXValType};
 use crate::parse::identifier::CXIdent;
 
 pub type TypeMap = HashMap<String, CXValType>;
@@ -46,13 +46,15 @@ pub enum CXGlobalStmt {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
     BNot, LNot,
     ArrayIndex,
     InitializerIndex,
+
+    ExplicitCast(CXValType),
 
     PreIncrement(i8),
     PostIncrement(i8),
@@ -106,7 +108,8 @@ pub enum CXExpr {
     },
     While {
         condition: Box<CXExpr>,
-        body: Box<CXExpr>
+        body: Box<CXExpr>,
+        pre_eval: bool
     },
     For {
         init: Box<CXExpr>,
@@ -134,6 +137,9 @@ pub enum CXExpr {
         value: Option<Box<CXExpr>>
     },
 
+    Break,
+    Continue,
+
     Return {
         value: Option<Box<CXExpr>>
     },
@@ -141,7 +147,8 @@ pub enum CXExpr {
     ImplicitCast {
         expr: Box<CXExpr>,
         from_type: CXValType,
-        to_type: CXValType
+        to_type: CXValType,
+        cast_type: CXCastType
     },
 
     ImplicitLoad {
@@ -149,7 +156,24 @@ pub enum CXExpr {
         loaded_type: CXValType
     },
 
+    GetFunctionAddr {
+        func_name: Box<CXExpr>,
+        func_sig: CXValType
+    },
+
     InitializerList {
         indices: Vec<CXInitIndex>,
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum CXCastType {
+    IntegralCast,
+    FloatCast,
+    IntToFloat,
+    FloatToInt,
+    BitCast,
+    IntegralTrunc,
+    IntToScaledPtrDiff,
+    FunctionToPointerDecay,
 }

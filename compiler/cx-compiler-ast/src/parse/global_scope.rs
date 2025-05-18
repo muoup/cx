@@ -4,9 +4,10 @@ use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::value_type::CXValType;
-use crate::parse::typing::{parse_initializer, parse_plain_typedef, parse_type};
+use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
+use crate::parse::typing::{parse_initializer, parse_plain_typedef};
 use cx_util::log_error;
+use crate::parse::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     match data.toks.peek()
@@ -14,9 +15,15 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
 
         Token::Keyword(KeywordType::Import) => parse_import(data, ast),
 
+        Token::Keyword(KeywordType::Typedef) |
         Token::Keyword(KeywordType::Struct) |
         Token::Keyword(KeywordType::Enum) |
-        Token::Keyword(KeywordType::Union) => parse_plain_typedef(data, ast),
+        Token::Keyword(KeywordType::Union) => goto_statement_end(data),
+        
+        Token::Punctuator(PunctuatorType::Semicolon) => {
+            data.toks.next();
+            Some(())
+        },
 
         Token::Specifier(_) => parse_specifier(data, ast),
 
@@ -24,7 +31,7 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
     }
 }
 
-pub(crate) fn parse_specifier(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_specifier(data: &mut ParserData, _: &mut CXAST) -> Option<()> {
     assert_token_matches!(data, Token::Specifier(specifier));
 
     match specifier {
@@ -73,13 +80,17 @@ fn handle_member_this(class_name: &str, params: &mut Vec<CXParameter>) {
         return;
     };
 
-    let CXValType::Identifier(ident) = &first_param.type_ else {
+    let CXTypeUnion::Identifier(ident) = &first_param.type_.internal_type else {
         return;
     };
 
     if matches!(ident.as_str(), "this") {
-        first_param.type_ = CXValType::PointerTo(Box::new(CXValType::Identifier(CXIdent::from(class_name))));
-        first_param.name = Some(CXIdent::from("this"));
+        let take_param = std::mem::replace(first_param, CXParameter { name: None, type_: CXValType::unit() });
+
+        *first_param = CXParameter {
+            name: take_param.name,
+            type_: take_param.type_.pointer_to()
+        };
     }
 }
 
@@ -171,7 +182,10 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         )
     } else {
         let body = parse_expr(data)?;
-        assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+
+        if requires_semicolon(&body) {
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+        }
 
         Some(body)
     }

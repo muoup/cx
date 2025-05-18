@@ -1,9 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
+    "compiler/cx",
+    "compiler/cx-data-ast",
     "compiler/cx-data-bytecode",
     "compiler/cx-compiler-ast",
     "compiler/cx-compiler-bytecode",
+    "compiler/cx-compiler-typechecker",
     "compiler/cx-backend-cranelift",
-    "compiler/cx-lsp"
-, "compiler/cx-data-ast", "compiler/cx", "compiler/cx-util", "compiler/cx-compiler-typechecker"]
+    "compiler/cx-lsp",
+    "compiler/cx-util"
+]

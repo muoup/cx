@@ -1,6 +1,7 @@
-use cx_util::scoped_map::ScopedMap;
 use crate::lex::token::Token;
-use crate::parse::value_type::CXValType;
+use crate::parse::value_type::{CXValType};
+use cx_util::scoped_map::ScopedMap;
+use std::collections::HashSet;
 
 pub type VarTable = ScopedMap<CXValType>;
 
@@ -13,6 +14,7 @@ pub enum VisibilityMode {
 
 #[derive(Debug, Clone)]
 pub struct ParserData<'a> {
+    pub type_symbols: HashSet<String>,
     pub toks: TokenIter<'a>,
     pub visibility: VisibilityMode,
 }
@@ -27,6 +29,15 @@ impl<'a> ParserData<'a> {
     pub fn back(&mut self) -> &mut Self {
         self.toks.back();
         self
+    }
+
+    pub fn skip(&mut self) -> &mut Self {
+        self.toks.next();
+        self
+    }
+
+    pub fn reset(&mut self) {
+        self.toks.index = 0;
     }
 }
 

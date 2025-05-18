@@ -10,6 +10,7 @@ pub mod checker;
 pub mod intrinsic_types;
 pub mod mappings;
 mod struct_typechecking;
+mod casting;
 
 pub fn type_check(ast: &mut CXAST) -> Option<()> {
     parse_fn_mappings(ast);
@@ -19,7 +20,7 @@ pub fn type_check(ast: &mut CXAST) -> Option<()> {
         type_map: &mut ast.type_map,
         fn_map: &mut ast.function_map,
         symbol_table: ScopedMap::new(),
-        return_type: CXValType::Unit,
+        return_type: CXValType::unit(),
     };
 
     // TODO: Global Variables

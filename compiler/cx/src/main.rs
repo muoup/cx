@@ -24,8 +24,11 @@ fn main() {
         .preprocess()
         .lex()
         .parse()
+        .dump()
         .verify()
+        .dump()
         .generate_bytecode()
+        .dump()
         .codegen()
         .link();
 

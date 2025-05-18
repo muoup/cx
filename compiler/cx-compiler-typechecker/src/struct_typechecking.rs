@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXExpr, CXUnOp};
-use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, struct_field_type, CXValType};
+use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, struct_field_type, CXTypeUnion, CXValType};
 use cx_util::log_error;
 use crate::checker::type_check_traverse;
 use crate::TypeEnvironment;
@@ -11,7 +11,7 @@ pub fn access_struct(
 ) -> Option<CXValType> {
     let mut lhs_type = type_check_traverse(env, lhs)?;
 
-    if let CXValType::PointerTo(inner) = lhs_type {
+    if let CXTypeUnion::PointerTo(inner) = lhs_type.internal_type {
         let lhs_temp = std::mem::replace(lhs, CXExpr::Taken);
         *lhs =
             CXExpr::UnOp {
@@ -21,8 +21,8 @@ pub fn access_struct(
 
         lhs_type = *inner;
     }
-
-    if !is_structure(env.type_map, &lhs_type) {
+    
+    if !lhs_type.is_structure(env.type_map) {
         log_error!("TYPE ERROR: Access operator can only be applied to structured types, found {lhs_type}");
     }
 
@@ -34,5 +34,10 @@ pub fn access_struct(
         log_error!("TYPE ERROR: Invalid struct accessor {accessor} for type {lhs_type}");
     };
 
-    Some(CXValType::MemoryReference(Box::new(field_type)))
+    Some(
+        CXValType::new(
+            0,
+            CXTypeUnion::MemoryAlias(Box::new(field_type.clone()))
+        )
+    )
 }

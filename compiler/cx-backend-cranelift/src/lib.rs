@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, FunctionBuilder, Value};
+use cranelift::prelude::{settings, Block, Configurable, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_data_ast::parse::ast::{FunctionMap, TypeMap};
@@ -16,8 +16,36 @@ mod codegen;
 mod value_type;
 mod routines;
 mod instruction;
+mod inst_calling;
 
-pub(crate) type VariableTable = HashMap<ValueID, Value>;
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CodegenValue {
+    Value(Value),
+    FunctionRef(FuncRef),
+    NULL
+}
+
+impl CodegenValue {
+    pub(crate) fn as_value(&self) -> Value {
+        match self {
+            CodegenValue::Value(value) => *value,
+            CodegenValue::FunctionRef(func_ref) =>
+                panic!("Expected Value, got FunctionRef: {:?}", func_ref),
+            CodegenValue::NULL => panic!("Expected Value, got NULL")
+        }
+    }
+
+    pub(crate) fn as_function_ref(&self) -> FuncRef {
+        match self {
+            CodegenValue::Value(value) =>
+                panic!("Expected FunctionRef, got Value: {:?}", value),
+            CodegenValue::FunctionRef(func_ref) => *func_ref,
+            CodegenValue::NULL => panic!("Expected FunctionRef, got NULL")
+        }
+    }
+}
+
+pub(crate) type VariableTable = HashMap<ValueID, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -28,6 +56,8 @@ pub struct FunctionState<'a> {
 
     pub(crate) type_map: &'a TypeMap,
     pub(crate) fn_map: &'a FunctionMap,
+
+    pub(crate) block_map: Vec<Block>,
 
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) local_defined_functions: HashMap<String, FuncRef>,
@@ -85,8 +115,6 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     for global_str in ast.global_strs.iter() {
         let global_val = string_literal(&mut global_state.object_module, global_str);
 
-        println!("Global string: {:?}", global_val);
-
         global_state.global_strs.push(global_val);
     }
 
@@ -111,6 +139,10 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     println!("Outputting to {}", output);
 
     let obj = global_state.object_module.finish();
+
+    let output_path = std::path::Path::new(output);
+
+    std::fs::create_dir_all(output_path.parent().unwrap()).expect("Failed to create output directory");
     std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
 
     println!("Successfully generated object file to {}", output);

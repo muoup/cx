@@ -1,5 +1,5 @@
-use cx_data_ast::parse::ast::{CXBinOp, FunctionMap, TypeMap};
-use cx_data_ast::parse::value_type::CXValType;
+use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp, FunctionMap, TypeMap};
+use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 use cx_util::scoped_map::ScopedMap;
 use crate::ProgramBytecode;
 
@@ -68,6 +68,9 @@ pub struct BytecodeFunctionContext {
     prototype: BytecodeFunctionPrototype,
     current_block: ElementID,
 
+    merge_stack: Vec<ElementID>,
+    continue_stack: Vec<ElementID>,
+
     blocks: Vec<FunctionBlock>
 }
 
@@ -93,7 +96,9 @@ impl BytecodeBuilder {
             BytecodeFunctionContext {
                 prototype: fn_prototype,
                 current_block: 0,
-                blocks: Vec::new()
+                blocks: Vec::new(),
+                merge_stack: Vec::new(),
+                continue_stack: Vec::new()
             }
         );
 
@@ -161,6 +166,54 @@ impl BytecodeBuilder {
             .map(|v| &v.type_)
     }
 
+    pub fn get_val_intrin_type(&self, value_id: ValueID) -> Option<&CXTypeUnion> {
+        self.get_type(value_id)
+            .and_then(|v| v.intrinsic_type(&self.type_map))
+    }
+
+    pub fn start_cont_point(&mut self) -> ElementID {
+        let cond_block = self.create_block();
+
+        let context = self.fun_mut();
+        context.continue_stack.push(cond_block.clone());
+
+        cond_block
+    }
+
+    pub fn start_scope(&mut self) -> ElementID {
+        let merge_block = self.create_block();
+
+        let context = self.fun_mut();
+        context.merge_stack.push(merge_block.clone());
+
+        merge_block
+    }
+
+    pub fn get_merge(&mut self) -> Option<ElementID> {
+        let context = self.fun_mut();
+
+        context.merge_stack.last().cloned()
+    }
+
+    pub fn get_continue(&mut self) -> Option<ElementID> {
+        let context = self.fun_mut();
+
+        context.continue_stack.last().cloned()
+    }
+
+    pub fn end_scope(&mut self) {
+        let context = self.fun_mut();
+
+        let merge_block = context.merge_stack.pop().unwrap();
+        context.current_block = merge_block;
+    }
+
+    pub fn end_cond(&mut self) {
+        let context = self.fun_mut();
+
+        context.continue_stack.pop().unwrap();
+    }
+
     pub fn set_current_block(&mut self, block: ElementID) {
         self.fun_mut().current_block = block;
     }
@@ -183,7 +236,7 @@ impl BytecodeBuilder {
     pub fn last_instruction(&self) -> Option<&BlockInstruction> {
         let context = self.fun();
 
-        let block = context.blocks.get(self.current_block as usize)?;
+        let block = context.blocks.last()?;
         block.body.last()
     }
 
@@ -262,6 +315,11 @@ pub enum VirtualInstruction {
         left: ValueID,
         right: ValueID
     },
+    
+    IntegerUnOp {
+        op: CXUnOp,
+        value: ValueID
+    },
 
     FloatBinOp {
         op: CXBinOp,
@@ -278,17 +336,37 @@ pub enum VirtualInstruction {
     },
 
     DirectCall {
-        reference: ValueID,
-        args: Vec<ValueID>
+        func: ValueID,
+        args: Vec<ValueID>,
+        method_sig: BytecodeFunctionPrototype
     },
 
-    MethodCall {
-        func: ValueID,
-        args: Vec<ValueID>
+    IndirectCall {
+        func_ptr: ValueID,
+        args: Vec<ValueID>,
+        method_sig: BytecodeFunctionPrototype
     },
 
     FunctionReference {
         name: String
+    },
+
+    GetFunctionAddr {
+        func_name: ValueID
+    },
+
+    IntToFloat {
+        from: CXValType,
+        value: ValueID
+    },
+
+    FloatToInt {
+        from: CXValType,
+        value: ValueID
+    },
+
+    FloatCast {
+        value: ValueID
     },
 
     Branch {
@@ -303,6 +381,10 @@ pub enum VirtualInstruction {
 
     Return {
         value: Option<ValueID>
+    },
+
+    BitCast {
+        value: ValueID
     },
 
     NOP

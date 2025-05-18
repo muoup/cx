@@ -1,8 +1,8 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::value_type::{get_type_size, CXValType};
+use cx_data_ast::parse::value_type::{get_type_size, CXTypeUnion, CXValType};
 use cx_data_bytecode::builder::{BytecodeBuilder, BytecodeFunctionPrototype, BytecodeParameter, VirtualInstruction};
 use cx_data_bytecode::ProgramBytecode;
-use crate::instruction_gen::generate_instruction;
+use crate::instruction_gen::{generate_instruction, implicit_return};
 
 pub mod instruction_gen;
 mod implicit_cast;
@@ -57,7 +57,7 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
                     memory,
                     type_: arg.type_.clone()
                 },
-                CXValType::Unit
+                CXValType::unit()
             )?;
 
             if let Some(name) = &arg.name {
@@ -66,30 +66,7 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         }
 
         generate_instruction(&mut builder, body)?;
-
-        if !matches!(builder.last_instruction(), Some(instr) if matches!(instr.instruction, VirtualInstruction::Return { .. })) {
-            if prototype.name.as_str() == "main" {
-                let zero_literal = builder.add_instruction(
-                    VirtualInstruction::Literal {
-                        val: 0,
-                    },
-                    CXValType::Integer { bytes: 3, signed: true }
-                )?;
-                builder.add_instruction(
-                    VirtualInstruction::Return {
-                        value: Some(zero_literal)
-                    },
-                    CXValType::Unit
-                )?;
-            }
-
-            builder.add_instruction(
-                VirtualInstruction::Return {
-                    value: None
-                },
-                CXValType::Unit
-            )?;
-        }
+        implicit_return(&mut builder, prototype)?;
 
         builder.symbol_table.pop_scope();
         builder.finish_function();

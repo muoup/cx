@@ -137,12 +137,23 @@ fn string_lex(iter: &mut CharIter) -> Option<Token> {
     assert_eq!(iter.next(), Some('"'));
     let start_iter = iter.current_iter;
     while let Some(c) = iter.next() {
+        if c == '\\' {
+            // skip the next character
+            iter.next();
+        }
+
         if c == '"' {
             break;
         }
     }
-    let string = &iter.source[start_iter..iter.current_iter - 1];
-    Some(Token::StringLiteral(string.to_string()))
+    let string =
+        iter.source[start_iter..iter.current_iter - 1]
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\r", "\r")
+            .replace("\\\"", "\"");
+
+    Some(Token::StringLiteral(string))
 }
 
 fn char_lex(iter: &mut CharIter) -> Option<Token> {
@@ -235,7 +246,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::Ampersand))
+                Some(Token::Operator(OperatorType::LAnd))
             },
             _ => Some(Token::Operator(OperatorType::BAnd))
         },

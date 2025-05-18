@@ -1,20 +1,20 @@
+use crate::inst_calling::{get_method_return, prepare_method_call};
+use crate::routines::allocate_variable;
+use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
+use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::codegen::ir::FuncRef;
-use cranelift::prelude::{Block, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
+use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
-use cx_data_ast::parse::ast::CXBinOp;
-use cx_data_ast::parse::value_type::{get_intrinsic_type, get_type_size, is_structure};
+use cx_data_ast::parse::ast::{CXBinOp, CXUnOp};
+use cx_data_ast::parse::value_type::{get_type_size, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BlockInstruction, BytecodeFunctionPrototype, ValueID, VirtualInstruction};
-use crate::FunctionState;
-use crate::routines::allocate_variable;
-use crate::value_type::get_cranelift_type;
 
 /**
  *  May or may not return a valid, panics if error occurs
  */
-pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<Value> {
+pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
         VirtualInstruction::Allocate {
             size
@@ -28,60 +28,89 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             );
 
             Some(
-                context.builder.ins().stack_addr(
-                    context.pointer_type,
-                    slot,
-                    0
+                CodegenValue::Value(
+                    context.builder.ins().stack_addr(
+                        context.pointer_type,
+                        slot,
+                        0
+                    )
                 )
             )
         }
 
         VirtualInstruction::Literal {
             val
-        } => Some(context.builder.ins().iconst(ir::Type::int(32)?, *val as i64)),
+        } => Some(
+            CodegenValue::Value(
+                context.builder.ins().iconst(ir::Type::int(32)?, *val as i64)
+            )
+        ),
 
         VirtualInstruction::StringLiteral { str_id } => {
             let global_id = context.global_strs.get(*str_id as usize).cloned().unwrap();
             let global_val = context.object_module.declare_data_in_func(global_id, &mut context.builder.func);
 
             Some(
-                context.builder.ins()
-                    .global_value(context.pointer_type, global_val)
+                CodegenValue::Value(
+                    context.builder.ins()
+                        .global_value(context.pointer_type, global_val)
+                )
             )
         },
 
-        VirtualInstruction::MethodCall {
-            func, args
+        VirtualInstruction::DirectCall {
+            func, args, method_sig
         } => {
-            let val = context.variable_table.get(func).cloned().unwrap();
-            let mut params = args.iter()
-                .map(|arg| context.variable_table.get(arg).cloned().unwrap())
-                .collect::<Vec<_>>();
+            let (val, params) = prepare_method_call(
+                context,
+                func.clone(),
+                method_sig,
+                args
+            )?;
 
-            if is_structure(context.type_map, &instruction.value.type_) {
-                let type_size = get_type_size(context.type_map, &context.function_prototype.return_type)?;
+            let inst = context.builder.ins()
+                .call(val.as_function_ref(), params.as_slice());
 
-                let temp_buffer = allocate_variable(context, type_size as u32, None)?;
+            get_method_return(context, inst)
+        },
 
-                params.insert(0, temp_buffer);
-            }
+        VirtualInstruction::IndirectCall {
+            func_ptr, args, method_sig
+        } => {
+            let (val, params) = prepare_method_call(
+                context,
+                func_ptr.clone(),
+                &context.function_prototype,
+                args
+            )?;
 
-            let inst = context.builder.ins().call(
-                FuncRef::from_u32(val.as_u32()),
-                params.as_slice()
+            let mut sig = context.object_module.make_signature();
+            let return_type = &method_sig.return_type;
+
+            sig.returns = if return_type.is_void(&context.type_map) {
+                vec![]
+            } else {
+                vec![get_cranelift_abi_type(&context.type_map, return_type)]
+            };
+            sig.params = method_sig.args
+                .iter()
+                .map(|arg| get_cranelift_abi_type(&context.type_map, &arg.type_))
+                .collect();
+            let sig_ref = context.builder.import_signature(sig);
+
+            let inst = context.builder.ins().call_indirect(
+                sig_ref, val.as_value(), params.as_slice()
             );
 
-            let returns = context.builder.inst_results(inst);
-
-            returns.first().cloned().or(Some(Value::from_u32(0)))
-        }
+            get_method_return(context, inst)
+        },
 
         VirtualInstruction::FunctionReference {
             name
         } => {
             if let Some(func_ref) = context.local_defined_functions.get(name) {
                 return Some(
-                    Value::from_u32(func_ref.as_u32())
+                    CodegenValue::FunctionRef(func_ref.clone())
                 );
             }
 
@@ -93,9 +122,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             context.local_defined_functions.insert(name.clone(), func_ref);
 
-            Some(
-                Value::from_u32(func_ref.as_u32())
-            )
+            Some(CodegenValue::FunctionRef(func_ref))
         }
 
         VirtualInstruction::Return { value } => {
@@ -111,13 +138,13 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                         context.builder.call_memcpy(
                             context.target_frontend_config.clone(),
                             callee_buffer,
-                            return_value,
+                            return_value.as_value(),
                             size_literal
                         );
 
                         context.builder.ins().return_(&[callee_buffer]);
                     } else {
-                        context.builder.ins().return_(&[return_value]);
+                        context.builder.ins().return_(&[return_value.as_value()]);
                     }
                 },
                 None => {
@@ -131,30 +158,53 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::FunctionParameter { param_index, .. } => {
             let parameter_ptr = context.fn_params.get(*param_index as usize).cloned().unwrap();
 
-            Some(parameter_ptr)
+            Some(
+                CodegenValue::Value(
+                    parameter_ptr
+                )
+            )
+        },
+
+        VirtualInstruction::GetFunctionAddr {
+            func_name
+        } => {
+            let CodegenValue::FunctionRef(func_ref)
+                = context.variable_table.get(func_name).cloned().unwrap() else {
+                panic!("Function reference not found")
+            };
+
+            let pointer = context.pointer_type.clone();
+            Some(
+                CodegenValue::Value(
+                    context.builder.ins()
+                        .func_addr(pointer, func_ref)
+                )
+            )
         },
 
         VirtualInstruction::Load { value } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let type_ = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(type_, context.type_map);
+            let cranelift_type = get_cranelift_type(context.type_map, type_);
 
             Some(
-                context.builder.ins()
-                    .load(
-                        cranelift_type,
-                        MemFlags::new(),
-                        val,
-                        0
-                    )
+                CodegenValue::Value(
+                    context.builder.ins()
+                        .load(
+                            cranelift_type,
+                            MemFlags::new(),
+                            val.as_value(),
+                            0
+                        )
+                )
             )
         },
 
         VirtualInstruction::IntegerBinOp {
             op, left, right
         } => {
-            let left = context.variable_table.get(left).cloned().unwrap();
-            let right = context.variable_table.get(right).cloned().unwrap();
+            let left = context.variable_table.get(left).unwrap().as_value();
+            let right = context.variable_table.get(right).unwrap().as_value();
 
             let inst = match op {
                 CXBinOp::Add                => context.builder.ins().iadd(left, right),
@@ -180,32 +230,86 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 _ => unimplemented!("Operator not implemented: {:?}", op)
             };
 
-            Some(inst)
+            Some(
+                CodegenValue::Value(
+                    inst
+                )
+            )
+        },
+        
+        VirtualInstruction::IntegerUnOp {
+            op, value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+
+            let inst = match op {
+                CXUnOp::Negative => {
+                    context.builder.ins().ineg(val.as_value())
+                },
+                _ => todo!("UnOp not implemented: {:?}", op)
+            };
+
+            Some(
+                CodegenValue::Value(
+                    inst
+                )
+            )
+        }
+
+        VirtualInstruction::FloatBinOp {
+            left, right, op
+        } => {
+            let left = context.variable_table.get(left).unwrap().as_value();
+            let right = context.variable_table.get(right).unwrap().as_value();
+
+            match op {
+                CXBinOp::Add => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fadd(left, right)
+                    )
+                ),
+                CXBinOp::Subtract => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fsub(left, right)
+                    )
+                ),
+                CXBinOp::Multiply => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fmul(left, right)
+                    )
+                ),
+                CXBinOp::Divide => Some(
+                    CodegenValue::Value(
+                        context.builder.ins().fdiv(left, right)
+                    )
+                ),
+                _ => unimplemented!("Operator not implemented: {:?}", op)
+            }
         },
 
         VirtualInstruction::Branch {
             condition, true_block, false_block
         } => {
-            let condition = context.variable_table.get(condition).cloned().unwrap();
-            let true_block = Block::from_u32(*true_block + 1);
-            let false_block = Block::from_u32(*false_block + 1);
+            let condition = context.variable_table.get(condition).unwrap().as_value();
+            let true_block = context.block_map.get(*true_block as usize).unwrap().clone();
+            let false_block = context.block_map.get(*false_block as usize).unwrap().clone();
 
             context.builder.ins()
                 .brif(condition,
                       true_block, &[],
                       false_block, &[]);
 
-            Some(Value::from_u32(0))
+            Some(CodegenValue::NULL)
         },
 
         VirtualInstruction::Jump {
             target
         } => {
-            let target = Block::from_u32(*target + 1);
+            let target = context.block_map.get(*target as usize).unwrap().clone();
 
             context.builder.ins().jump(target, &[]);
 
-            Some(Value::from_u32(0))
+            Some(CodegenValue::NULL)
         },
 
         VirtualInstruction::StructAccess {
@@ -214,52 +318,59 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let ptr = context.variable_table.get(struct_).unwrap().clone();
             let _type = &instruction.value.type_;
 
-            Some(context.builder.ins().iadd_imm(ptr, *field_offset as i64))
+            Some(
+                CodegenValue::Value(
+                    context.builder.ins().iadd_imm(ptr.as_value(), *field_offset as i64)
+                )
+            )
         },
 
         VirtualInstruction::Store {
             memory, value, type_
         } => {
-            let target = context.variable_table.get(memory).unwrap();
-            let value = context.variable_table.get(value).unwrap();
+            let target = context.variable_table.get(memory)
+                .unwrap()
+                .as_value();
+            let value = context.variable_table.get(value)
+                .unwrap()
+                .as_value();
 
-            let type_ = get_intrinsic_type(context.type_map, type_)?;
-
-            if is_structure(context.type_map, type_) {
+            if type_.is_structure(&context.type_map) {
                 let size = get_type_size(context.type_map, type_).unwrap() as u64;
                 let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
 
                 context.builder.call_memcpy(
                     context.target_frontend_config.clone(),
-                    target.clone(),
-                    value.clone(),
+                    target,
+                    value,
                     size_literal
                 )
             } else {
-                context.builder.ins().store(MemFlags::new(), value.clone(), target.clone(), 0);
+                context.builder.ins().store(MemFlags::new(), value, target, 0);
             }
 
-            Some(
-                Value::from_u32(0)
-            )
+            Some(CodegenValue::NULL)
         },
 
         VirtualInstruction::AddressOf {
             value
-        } => {
-            let val = context.variable_table.get(value).cloned().unwrap();
-            Some(val)
-        },
+        } => Some(
+                CodegenValue::Value(
+                    context.variable_table.get(value).unwrap().as_value()
+                )
+            ),
 
         VirtualInstruction::ZExtend {
             value
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(_type, context.type_map);
+            let cranelift_type = get_cranelift_type(context.type_map, _type);
 
             Some(
-                context.builder.ins().uextend(cranelift_type, val)
+                CodegenValue::Value(
+                    context.builder.ins().uextend(cranelift_type, val.as_value())
+                )
             )
         },
 
@@ -268,10 +379,12 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(_type, context.type_map);
+            let cranelift_type = get_cranelift_type(context.type_map, _type);
 
             Some(
-                context.builder.ins().sextend(cranelift_type, val)
+                CodegenValue::Value(
+                    context.builder.ins().sextend(cranelift_type, val.as_value())
+                )
             )
         }
 
@@ -280,25 +393,105 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(_type, context.type_map);
+            let cranelift_type = get_cranelift_type(context.type_map, _type);
 
             Some(
-                context.builder.ins().ireduce(cranelift_type, val)
+                CodegenValue::Value(
+                    context.builder.ins().ireduce(cranelift_type, val.as_value())
+                )
             )
         }
 
-        VirtualInstruction::NOP => Some(Value::from_u32(0)),
+        VirtualInstruction::NOP => Some(CodegenValue::NULL),
 
         VirtualInstruction::Immediate {
             value
         } => {
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(_type, context.type_map);
+            let cranelift_type = get_cranelift_type(context.type_map, _type);
 
             Some(
-                context.builder.ins().iconst(cranelift_type, *value as i64)
+                CodegenValue::Value(
+                    context.builder.ins().iconst(cranelift_type, *value as i64)
+                )
             )
-        }
+        },
+
+        VirtualInstruction::BitCast {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+
+            Some(val)
+        },
+
+        VirtualInstruction::IntToFloat {
+            from, value
+        } => {
+            let val = context.variable_table.get(value).unwrap().as_value();
+            let _type = &instruction.value.type_;
+
+            let from_cl_type = get_cranelift_type(context.type_map, from);
+            let to_cl_type = get_cranelift_type(context.type_map, _type);
+
+            let CXTypeUnion::Integer { signed, .. }
+                = from.intrinsic_type(context.type_map)? else {
+                panic!("Invalid type for int to float conversion: {:?}", _type)
+            };
+
+            let inst = if *signed {
+                context.builder.ins().fcvt_from_sint(to_cl_type, val)
+            } else {
+                context.builder.ins().fcvt_from_uint(to_cl_type, val)
+            };
+
+            Some(
+                CodegenValue::Value(
+                    inst
+                )
+            )
+        },
+
+        VirtualInstruction::FloatToInt {
+            from, value
+        } => {
+            let val = context.variable_table.get(value).unwrap().as_value();
+            let _type = &instruction.value.type_;
+
+            let to_cl_type = get_cranelift_type(context.type_map, _type);
+
+            let CXTypeUnion::Float { bytes: float_bytes, .. }
+                = from.intrinsic_type(context.type_map)? else {
+                panic!("Invalid type for float to int conversion")
+            };
+
+            let CXTypeUnion::Integer { bytes: int_bytes, signed }
+                = _type.intrinsic_type(context.type_map)? else {
+                panic!("Invalid type for float to int conversion")
+            };
+
+            let ival = if *signed {
+                context.builder.ins().fcvt_to_sint(to_cl_type, val)
+            } else {
+                context.builder.ins().fcvt_to_uint(to_cl_type, val)
+            };
+
+            let val = if float_bytes > int_bytes {
+                context.builder.ins().ireduce(to_cl_type, ival)
+            } else if float_bytes < int_bytes && *signed {
+                context.builder.ins().sextend(to_cl_type, ival)
+            } else if float_bytes < int_bytes {
+                context.builder.ins().uextend(to_cl_type, ival)
+            } else {
+                ival
+            };
+
+            Some(
+                CodegenValue::Value(
+                    val
+                )
+            )
+        },
 
         _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
     }
@@ -323,7 +516,7 @@ fn generate_params(
 
     for param in params.iter() {
         args.push(
-            context.variable_table.get(param).cloned().unwrap()
+            context.variable_table.get(param).unwrap().as_value()
         );
     }
 

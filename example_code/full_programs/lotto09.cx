@@ -1,0 +1,117 @@
+// Sample code courtesy of dangookin on GitHub
+// Link: https://github.com/dangookin/Tiny_C_Projects/blob/main/14_lotto/lotto09.c
+
+void printf(char* c, int d);
+void putchar(char c);
+int rand();
+void srand(int seed);
+
+#define NULL ((void*)0)
+
+#include <stdio.h>
+#include <time.h>
+
+#define BALLS 69
+#define DRAW 5
+
+void lotto(int *a)
+{
+	int numbers[BALLS];
+	int x;
+	int y;
+	int r;
+
+	for( x=0; x<BALLS; x++ )
+	{
+		numbers[x] = 0;
+	}
+
+	for( x=0; x<DRAW; x++ )
+	{
+		do
+			r=rand()%BALLS;
+		while( numbers[r]==1 );
+		numbers[r] = 1;
+	}
+
+	y = 0;
+	for( x=0; x<BALLS; x++ )
+	{
+		if( numbers[x] )
+		{
+			*(a+y) = x;
+			y++;
+		}
+		if( y==DRAW )
+			break;
+	}
+}
+
+int winner(int *m, int *g)
+{
+	int x;
+	int y;
+	int c;
+
+	c = 0;
+	for( x=0; x<DRAW; x++ )
+		for( y=0; y<DRAW; y++ )
+		{
+			if( *(m+x) == *(g+y) )
+				c++;
+		}
+	return(c);
+}
+
+int main()
+{
+#define tomatch 4
+#define tally 100
+	int x;
+	int c;
+	int count;
+	int match[DRAW];
+	int guess[DRAW];
+	/* new variables here */
+	int q;
+	int results[tally];
+	long total;
+
+	srand( (unsigned)time(NULL) );
+
+	printf("Trying to match:", 0);
+	lotto(match);
+	for( x=0; x<DRAW; x++ )
+	{
+		printf(" %d",match[x]+1);
+		if( x<DRAW-1 )
+			printf(" -", 0);
+	}
+	putchar('\n');
+
+	/* new loop to preform the operation 100 times */
+	q = 0;					/* loop counter */
+	while( q<tally )		/* loop 'tally' times */
+	{
+		count = 0;
+		do
+		{
+			lotto(guess);
+			c = winner(match,guess);
+			count++;
+		} while( c<tomatch );
+		results[q] = count;		/* retain the repeat count */
+		q++;				/* increment the loop counter */
+	}
+
+	/* obtain the total and the average */
+	total = 0;
+	for( x=0; x<tally; x++ )
+		total = total + results[x];		    /* add up all the values */
+
+	/* reporting statements */
+    printf("(%d/", total);
+    printf("%d)\n", tally);
+
+	return(0);
+}
