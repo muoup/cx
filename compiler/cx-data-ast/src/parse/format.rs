@@ -1,3 +1,4 @@
+use std::env::args;
 use crate::parse::ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
 use crate::parse::value_type::{CXTypeUnion, CXValType};
 use cx_util::format::{dedent, indent};
@@ -232,12 +233,8 @@ impl Display for CXTypeUnion {
             CXTypeUnion::Identifier(name) => {
                 write!(f, "{}", name)
             },
-            CXTypeUnion::Function { return_type, args } => {
-                let arg_strs = args.iter()
-                    .map(|type_| format!("{}", type_))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                write!(f, "fn({}) -> {}", arg_strs, return_type)
+            CXTypeUnion::Function { prototype } => {
+                write!(f, "fn {}", prototype)
             },
             CXTypeUnion::MemoryAlias(inner) => {
                 write!(f, "mem({})", inner)

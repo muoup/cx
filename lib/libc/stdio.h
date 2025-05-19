@@ -9,5 +9,6 @@ int fflush(void *stream);
 int fgetpos(void *stream, void *pos);
 
 int putchar(int c);
-
 int puts(char *s);
+
+void printf(const char *format, ...);

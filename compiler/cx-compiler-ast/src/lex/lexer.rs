@@ -234,7 +234,15 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             },
             _ => try_assignment(iter, OperatorType::Minus)
         },
-        '.' => Some(Token::Operator(OperatorType::Access)),
+        '.' => {
+            if iter.next() == Some('.') && iter.peek() == Some('.') {
+                iter.next();
+                Some(Token::Punctuator(PunctuatorType::Ellipsis))
+            } else {
+                iter.back();
+                Some(Token::Operator(OperatorType::Access))
+            }
+        },
 
         '|' => match iter.peek() {
             Some('|') => {

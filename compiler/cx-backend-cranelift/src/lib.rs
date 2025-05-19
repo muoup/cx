@@ -18,10 +18,13 @@ mod routines;
 mod instruction;
 mod inst_calling;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
     Value(Value),
-    FunctionRef(FuncRef),
+    FunctionID {
+        fn_name: String,
+        id: FuncId
+    },
     NULL
 }
 
@@ -29,18 +32,23 @@ impl CodegenValue {
     pub(crate) fn as_value(&self) -> Value {
         match self {
             CodegenValue::Value(value) => *value,
-            CodegenValue::FunctionRef(func_ref) =>
-                panic!("Expected Value, got FunctionRef: {:?}", func_ref),
-            CodegenValue::NULL => panic!("Expected Value, got NULL")
+
+            _ => panic!("Expected Value, got: {:?}", self)
         }
     }
 
-    pub(crate) fn as_function_ref(&self) -> FuncRef {
+    pub(crate) fn as_func_id(&self) -> FuncId {
         match self {
-            CodegenValue::Value(value) =>
-                panic!("Expected FunctionRef, got Value: {:?}", value),
-            CodegenValue::FunctionRef(func_ref) => *func_ref,
-            CodegenValue::NULL => panic!("Expected FunctionRef, got NULL")
+            CodegenValue::FunctionID { id, .. } => *id,
+
+            _ => panic!("Expected FunctionID, got: {:?}", self)
+        }
+    }
+
+    pub(crate) fn as_func_name(&self) -> &str {
+        match self {
+            CodegenValue::FunctionID { fn_name, .. } => fn_name.as_str(),
+            _ => panic!("Expected FunctionID, got: {:?}", self)
         }
     }
 }

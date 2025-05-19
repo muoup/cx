@@ -1,8 +1,8 @@
 use crate::parse::parser::TokenIter;
 
 pub fn error_pointer(toks: &TokenIter) -> String {
-    let previous_tokens = toks.index.min(2);
-    let next_tokens = (toks.slice.len() - toks.index).min(2);
+    let previous_tokens = toks.index.min(3);
+    let next_tokens = (toks.slice.len() - toks.index).min(3);
 
     let mut error_tokens = String::new();
 

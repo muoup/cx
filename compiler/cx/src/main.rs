@@ -22,6 +22,7 @@ fn main() {
     pipeline
         .read_file()
         .preprocess()
+        .dump()
         .lex()
         .parse()
         .dump()

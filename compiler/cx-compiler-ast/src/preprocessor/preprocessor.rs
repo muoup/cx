@@ -4,16 +4,30 @@ fn handle_non_directive(preprocessor: &mut Preprocessor, string: &str) -> String
     let mut result = string.to_string();
 
     for (token, value) in preprocessor.defined_tokens.iter() {
-        result = result.replace(format!("[^a-zA-Z]{}[^a-zA-Z]", token).as_str(), value);
+        result = result.replace(format!("{}", token).as_str(), value);
     }
 
     result
 }
 
 pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str) -> String {
+    if string.contains("/*") {
+        if string.contains("*/") {
+            let pre = string.split_once("/*").unwrap().0;
+            let post = string.split_once("*/").unwrap().1;
+
+            return format!("{}{}", preprocess_line(preprocessor, pre), preprocess_line(preprocessor, post));
+        }
+
+        string = string.split_once("/*").unwrap().0;
+        preprocessor.in_ml_comment = true;
+    }
+
     if preprocessor.in_ml_comment {
         if string.contains("*/") {
-            string = string.split("*/").skip(1).next().unwrap_or("");
+            string = string.rsplit_once("*/")
+                .unwrap()
+                .1;
             preprocessor.in_ml_comment = false;
         } else {
             return "".to_string();
@@ -22,11 +36,6 @@ pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str)
     
     if string.contains("//") {
         string = string.split("//").next().unwrap();
-    }
-    
-    if string.contains("/*") {
-        string = string.split("/*").next().unwrap();
-        preprocessor.in_ml_comment = true;
     }
 
     if !string.trim_start().starts_with("#") {

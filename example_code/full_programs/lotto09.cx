@@ -1,13 +1,7 @@
 // Sample code courtesy of dangookin on GitHub
 // Link: https://github.com/dangookin/Tiny_C_Projects/blob/main/14_lotto/lotto09.c
 
-void printf(char* c, int d);
-void putchar(char c);
-int rand();
-void srand(int seed);
-
-#define NULL ((void*)0)
-
+#include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -79,13 +73,13 @@ int main()
 
 	srand( (unsigned)time(NULL) );
 
-	printf("Trying to match:", 0);
+	printf("Trying to match:");
 	lotto(match);
 	for( x=0; x<DRAW; x++ )
 	{
 		printf(" %d",match[x]+1);
 		if( x<DRAW-1 )
-			printf(" -", 0);
+			printf(" -");
 	}
 	putchar('\n');
 
@@ -110,8 +104,7 @@ int main()
 		total = total + results[x];		    /* add up all the values */
 
 	/* reporting statements */
-    printf("(%d/", total);
-    printf("%d)\n", tally);
+    printf("(%d/%d)\n", total, tally);
 
 	return(0);
 }

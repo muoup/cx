@@ -38,6 +38,9 @@ pub enum PipelineStage {
 impl PipelineStage {
     fn dump(&self) {
         match self {
+            PipelineStage::Preprocessed(contents) => {
+                dump_data(contents);
+            },
             PipelineStage::Parsed(contents) => {
                 dump_data(contents);
             },

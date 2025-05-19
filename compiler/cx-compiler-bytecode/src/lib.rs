@@ -2,6 +2,7 @@ use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::value_type::{get_type_size, CXTypeUnion, CXValType};
 use cx_data_bytecode::builder::{BytecodeBuilder, BytecodeFunctionPrototype, BytecodeParameter, VirtualInstruction};
 use cx_data_bytecode::ProgramBytecode;
+use cx_data_bytecode::types::prototype_cx2bc;
 use crate::instruction_gen::{generate_instruction, implicit_return};
 
 pub mod instruction_gen;
@@ -19,22 +20,7 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         };
 
         builder.symbol_table.push_scope();
-        builder.new_function(
-            BytecodeFunctionPrototype {
-                name: prototype.name.to_owned(),
-                return_type: prototype.return_type.clone(),
-                args: prototype.parameters.iter()
-                    .map(|param| BytecodeParameter {
-                        name: if let Some(name) = &param.name {
-                            Some(name.to_string())
-                        } else {
-                            None
-                        },
-                        type_: param.type_.clone()
-                    })
-                    .collect()
-            }
-        );
+        builder.new_function(prototype_cx2bc(&builder.type_map, prototype));
 
         for (i, arg) in prototype.parameters.iter().enumerate() {
             let memory = builder.add_instruction(

@@ -53,6 +53,7 @@ pub enum PunctuatorType {
     OpenBracket, CloseBracket,
     OpenBrace, CloseBrace,
     Semicolon,
+    Ellipsis,
     Colon, Period,
     QuestionMark
 }

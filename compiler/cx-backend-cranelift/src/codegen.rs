@@ -1,32 +1,17 @@
-use std::collections::HashMap;
-use cranelift::codegen::ir::{FuncRef, Function, UserFuncName};
-use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext, Signature, Value};
+use crate::instruction::codegen_instruction;
+use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
+use crate::{FunctionState, GlobalState, VariableTable};
+use cranelift::codegen::ir::{ArgumentPurpose, Function, UserFuncName};
+use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
-use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BytecodeFunction, ValueID, VirtualInstruction};
 use cx_util::format::dump_data;
-use crate::{CodegenValue, FunctionState, GlobalState, VariableTable};
-use crate::instruction::{codegen_instruction};
-use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
-
+use std::collections::HashMap;
+use crate::inst_calling::prepare_function_sig;
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &CXFunctionPrototype) -> Option<()> {
-    let mut sig = Signature::new(
-        global_state.object_module.target_config().default_call_conv
-    );
-    
-    if !matches!(get_intrinsic_type(&global_state.type_map, &prototype.return_type)?, CXTypeUnion::Unit) {
-        sig.returns.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
-
-        if is_structure(global_state.type_map, &prototype.return_type) {
-            sig.params.push(get_cranelift_abi_type(global_state.type_map, &prototype.return_type));
-        }
-    }
-    
-    for CXParameter { type_, .. } in prototype.parameters.iter() {
-        sig.params.push(get_cranelift_abi_type(global_state.type_map, type_));
-    }
+    let sig = prepare_function_sig(global_state.type_map, &mut global_state.object_module, &prototype)?;
 
     let id = global_state.object_module
         .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)

@@ -1,12 +1,12 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::expression::parse_name;
-use cx_data_ast::parse::ast::{TypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, TypeMap, CXAST};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeUnion, CXValType, CX_CONST, CX_VOLATILE};
 use cx_util::log_error;
-use crate::parse::global_scope::parse_params;
+use crate::parse::global_scope::{parse_params, ParseParamsResult};
 use crate::parse::parsing_tools::{goto_block_end, goto_statement_end};
 
 pub(crate) struct TypeRecord {
@@ -173,31 +173,19 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
             assert_token_matches!(data, Token::Operator(OperatorType::Asterisk));
             let name = parse_std_ident(data);
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
-            let params = parse_params(data)?
-                .into_iter()
-                .map(|params| {
-                    if params.name.is_some() {
-                        log_error!("Function pointer parameters cannot have names");
-                    }
+            let ParseParamsResult { params, var_args } = parse_params(data)?;
 
-                    Some(params.type_)
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let prototype = CXFunctionPrototype {
+                name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
+                return_type: acc_type,
+                parameters: params,
+                var_args
+            };
 
-            let acc_type = CXValType::new(
-                0,
-                CXTypeUnion::PointerTo(
-                    Box::new(CXValType::new(
-                        0,
-                        CXTypeUnion::Function {
-                            return_type: Box::new(acc_type),
-                            args: params
-                        }
-                    ))
-                )
-            );
-
-            Some((name, acc_type))
+            Some((
+                name,
+                CXTypeUnion::Function { prototype: Box::new(prototype) }.to_val_type().pointer_to()
+            ))
         },
 
         Token::Identifier(_) => Some((Some(parse_std_ident(data)?), acc_type)),
