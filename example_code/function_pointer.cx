@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 typedef int(*operation)(int, int);
-typedef void(*pf)(const char*, ...);
+typedef int(*pf)(const char*, ...);
 
 int add(int a, int b) {
     return a + b;

@@ -11,4 +11,4 @@ int fgetpos(void *stream, void *pos);
 int putchar(int c);
 int puts(char *s);
 
-void printf(const char *format, ...);
+int printf(const char *format, ...);
