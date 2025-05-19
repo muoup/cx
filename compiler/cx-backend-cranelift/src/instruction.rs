@@ -104,6 +104,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .iter()
                 .map(|arg| get_cranelift_abi_type(&context.type_map, &arg.type_))
                 .collect();
+
+            for i in method_sig.args.len()..params.len() {
+                let arg = params[i];
+                let arg_type = context.builder.func.dfg.value_type(arg);
+
+                sig.params.push(ir::AbiParam::new(arg_type));
+            }
+
             let sig_ref = context.builder.import_signature(sig);
 
             let inst = context.builder.ins().call_indirect(
