@@ -1,6 +1,7 @@
-void printf(char* str, int n);
+#include <stdio.h>
 
 typedef int(*operation)(int, int);
+typedef int(*pf)(const char*, ...);
 
 int add(int a, int b) {
     return a + b;
@@ -16,11 +17,13 @@ int main() {
 
     operation op = add;
     operation op_offset = op + 2;
+    pf pfunc = printf;
+
     int(*op2)(int, int) = subtract;
 
     int temp = op(x, y);
-    printf("Result of addition: %d\n", temp);
+    pfunc("Result of addition: %d\n", temp);
 
     temp = op2(x, y);
-    printf("Result of subtraction: %d\n", temp);
+    pfunc("Result of subtraction: %d\n", temp);
 }

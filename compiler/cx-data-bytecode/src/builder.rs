@@ -33,7 +33,8 @@ pub struct BytecodeParameter {
 pub struct BytecodeFunctionPrototype {
     pub name: String,
     pub return_type: CXValType,
-    pub args: Vec<BytecodeParameter>
+    pub args: Vec<BytecodeParameter>,
+    pub var_args: bool,
 }
 
 #[derive(Debug)]

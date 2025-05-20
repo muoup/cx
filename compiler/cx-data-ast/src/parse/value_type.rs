@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::iter;
+use std::iter::zip;
 use cx_util::log_error;
 use crate::parse::ast::{CXFunctionPrototype, TypeMap};
 use crate::parse::identifier::CXIdent;
@@ -40,8 +42,7 @@ pub enum CXTypeUnion {
         size: usize
     },
     Function {
-        return_type: Box<CXValType>,
-        args: Vec<CXValType>
+        prototype: Box<CXFunctionPrototype>,
     },
 
     Identifier(CXIdent)
@@ -152,11 +153,11 @@ pub fn same_type(type_map: &TypeMap, t1: &CXValType, t2: &CXValType) -> bool {
                     same_type(type_map, &f1.1, &f2.1))
         },
 
-        (CXTypeUnion::Function { return_type: ret1, args: args1 },
-         CXTypeUnion::Function { return_type: ret2, args: args2 }) =>
-            same_type(type_map, ret1, ret2) &&
-                args1.iter().zip(args2.iter())
-                    .all(|(a1, a2)| same_type(type_map, a1, a2)),
+        (CXTypeUnion::Function { prototype: p1 },
+         CXTypeUnion::Function { prototype: p2 }) =>
+            same_type(type_map, &p1.return_type, &p2.return_type) &&
+                p1.parameters.iter().zip(p2.parameters.iter())
+                    .all(|(a1, a2)| same_type(type_map, &a1.type_, &a2.type_)),
 
         (CXTypeUnion::Integer { bytes: t1_bytes, signed: t1_signed },
             CXTypeUnion::Integer { bytes: t2_bytes, signed: t2_signed }) =>
@@ -263,24 +264,6 @@ pub fn struct_field_access(
     }
 
     None
-}
-
-pub fn prototype_to_type(prototype: &CXFunctionPrototype) -> Option<CXValType> {
-    let return_type = prototype.return_type.clone();
-    let args = prototype.parameters.iter()
-        .cloned()
-        .map(|param| param.type_)
-        .collect::<Vec<_>>();
-
-    Some(
-        CXValType::new(
-            0,
-            CXTypeUnion::Function {
-                return_type: Box::new(return_type),
-                args
-            }
-        )
-    )
 }
 
 pub fn struct_field_type(

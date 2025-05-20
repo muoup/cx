@@ -1,3 +1,4 @@
+use std::clone;
 use cx_data_ast::assert_token_matches;
 use cx_data_ast::lex::token::{OperatorType, PunctuatorType, Token};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
@@ -157,6 +158,13 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
 pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
     Some(
         match data.toks.next() {
+            Some(Token::Operator(OperatorType::Comma)) => {
+                if data.get_comma_mode() {
+                    op_to_binop(OperatorType::Comma)?
+                } else {
+                    return None;
+                }
+            },
             Some(Token::Operator(op)) => op_to_binop(op.clone())?,
             Some(Token::Punctuator(punc)) => {
                 let punc = punc.clone();

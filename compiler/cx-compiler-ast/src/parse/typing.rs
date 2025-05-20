@@ -1,12 +1,12 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::expression::parse_name;
-use cx_data_ast::parse::ast::{TypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, TypeMap, CXAST};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeUnion, CXValType, CX_CONST, CX_VOLATILE};
 use cx_util::log_error;
-use crate::parse::global_scope::parse_params;
+use crate::parse::global_scope::{parse_params, ParseParamsResult};
 use crate::parse::parsing_tools::{goto_block_end, goto_statement_end};
 
 pub(crate) struct TypeRecord {
@@ -119,12 +119,24 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeUnion> {
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
     while data.toks.peek() != Some(&Token::Punctuator(PunctuatorType::CloseBrace)) {
-        let (name, _type) = parse_initializer(data)?;
-        assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+        let specifiers = parse_specifier(data);
+        let base_type = parse_type_base(data)?.add_specifier(specifiers);
 
-        fields.push(
-            (name?.to_string(), _type)
-        )
+        loop {
+            let (Some(name), _type) = parse_base_mods(data, base_type.clone())? else {
+                log_error!("UNSUPPORTED: Nameless struct members");
+            };
+
+            fields.push((name.data, _type));
+
+            if try_next!(data, Token::Operator(OperatorType::Comma)) {
+                continue;
+            }
+
+            break;
+        };
+
+        assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
     }
 
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBrace));
@@ -137,7 +149,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeUnion> {
     )
 }
 
-fn parse_specifier(data: &mut ParserData) -> CXTypeSpecifier {
+pub(crate) fn parse_specifier(data: &mut ParserData) -> CXTypeSpecifier {
     let mut spec_acc = 0;
 
     while let Some(Token::Specifier(spec)) = data.toks.next() {
@@ -154,7 +166,7 @@ fn parse_specifier(data: &mut ParserData) -> CXTypeSpecifier {
     spec_acc
 }
 
-fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXIdent>, CXValType)> {
+pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXIdent>, CXValType)> {
     let Some(next_tok) = data.toks.peek() else {
         return Some((None, acc_type));
     };
@@ -165,7 +177,7 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
             let specs = parse_specifier(data);
             let acc_type = acc_type.pointer_to().add_specifier(specs);
 
-            parse_typemod_name(data, acc_type)
+            parse_typemods(data, acc_type)
         },
 
         Token::Punctuator(PunctuatorType::OpenParen) => {
@@ -173,31 +185,19 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
             assert_token_matches!(data, Token::Operator(OperatorType::Asterisk));
             let name = parse_std_ident(data);
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
-            let params = parse_params(data)?
-                .into_iter()
-                .map(|params| {
-                    if params.name.is_some() {
-                        log_error!("Function pointer parameters cannot have names");
-                    }
+            let ParseParamsResult { params, var_args } = parse_params(data)?;
 
-                    Some(params.type_)
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let prototype = CXFunctionPrototype {
+                name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
+                return_type: acc_type,
+                parameters: params,
+                var_args
+            };
 
-            let acc_type = CXValType::new(
-                0,
-                CXTypeUnion::PointerTo(
-                    Box::new(CXValType::new(
-                        0,
-                        CXTypeUnion::Function {
-                            return_type: Box::new(acc_type),
-                            args: params
-                        }
-                    ))
-                )
-            );
-
-            Some((name, acc_type))
+            Some((
+                name,
+                CXTypeUnion::Function { prototype: Box::new(prototype) }.to_val_type().pointer_to()
+            ))
         },
 
         Token::Identifier(_) => Some((Some(parse_std_ident(data)?), acc_type)),
@@ -206,7 +206,7 @@ fn parse_typemod_name(data: &mut ParserData, acc_type: CXValType) -> Option<(Opt
     }
 }
 
-fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXValType) -> Option<CXValType> {
+pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXValType) -> Option<CXValType> {
     let Some(next_tok) = data.toks.peek() else {
         return Some(acc_type);
     };
@@ -240,7 +240,7 @@ fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXValType) -> Option<CX
     }
 }
 
-fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
+pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
     match data.toks.peek()? {
         Token::Identifier(_) => Some(
             CXValType::new(
@@ -266,11 +266,15 @@ fn parse_type_base(data: &mut ParserData) -> Option<CXValType> {
     }
 }
 
+pub(crate) fn parse_base_mods(data: &mut ParserData, acc_type: CXValType) -> Option<(Option<CXIdent>, CXValType)> {
+    let (name, modified_type) = parse_typemods(data, acc_type)?;
+
+    Some((name, parse_suffix_typemod(data, modified_type)?))
+}
+
 pub(crate) fn parse_initializer(data: &mut ParserData) -> Option<(Option<CXIdent>, CXValType)> {
     let prefix_specs = parse_specifier(data);
     let type_base = parse_type_base(data)?;
-    let (name, modified_type)
-        = parse_typemod_name(data, type_base.add_specifier(prefix_specs))?;
 
-    Some((name, parse_suffix_typemod(data, modified_type)?))
+    parse_base_mods(data, type_base.add_specifier(prefix_specs))
 }

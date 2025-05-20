@@ -26,6 +26,7 @@ pub struct CXFunctionPrototype {
     pub name: CXIdent,
     pub return_type: CXValType,
     pub parameters: Vec<CXParameter>,
+    pub var_args: bool
 }
 
 #[derive(Debug)]

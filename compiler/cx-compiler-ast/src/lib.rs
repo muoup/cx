@@ -20,14 +20,6 @@ pub fn lex(preprocess_contents: PreprocessContents) -> LexContents {
 }
 
 pub fn parse(lex_contents: LexContents) -> Option<ParseContents> {
-    let parser_data = parser::ParserData {
-        visibility: parser::VisibilityMode::Package,
-        toks: parser::TokenIter {
-            slice: &lex_contents,
-            index: 0,
-        },
-        type_symbols: HashSet::new(),
-    };
-
+    let parser_data = parser::ParserData::new(lex_contents.as_slice());
     parse::parse_ast(parser_data)
 }

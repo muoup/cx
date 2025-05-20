@@ -1,12 +1,13 @@
-use crate::inst_calling::{get_method_return, prepare_method_call};
+use std::process::id;
+use crate::inst_calling::{get_func_ref, get_method_return, prepare_method_call};
 use crate::routines::allocate_variable;
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
-use cranelift_module::Module;
+use cranelift::prelude::{InstBuilder, MemFlags, Signature, StackSlotData, StackSlotKind, Value};
+use cranelift_module::{FuncId, Module};
 use cx_data_ast::parse::ast::{CXBinOp, CXUnOp};
 use cx_data_ast::parse::value_type::{get_type_size, is_structure, CXTypeUnion};
 use cx_data_bytecode::builder::{BlockInstruction, BytecodeFunctionPrototype, ValueID, VirtualInstruction};
@@ -68,8 +69,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 args
             )?;
 
+            let fn_ref = get_func_ref(
+                context,
+                val.as_func_id(),
+                val.as_func_name(),
+                params.as_slice()
+            )?;
+
             let inst = context.builder.ins()
-                .call(val.as_function_ref(), params.as_slice());
+                .call(fn_ref, params.as_slice());
 
             get_method_return(context, inst)
         },
@@ -96,6 +104,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .iter()
                 .map(|arg| get_cranelift_abi_type(&context.type_map, &arg.type_))
                 .collect();
+
+            for i in method_sig.args.len()..params.len() {
+                let arg = params[i];
+                let arg_type = context.builder.func.dfg.value_type(arg);
+
+                sig.params.push(ir::AbiParam::new(arg_type));
+            }
+
             let sig_ref = context.builder.import_signature(sig);
 
             let inst = context.builder.ins().call_indirect(
@@ -108,21 +124,12 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::FunctionReference {
             name
         } => {
-            if let Some(func_ref) = context.local_defined_functions.get(name) {
-                return Some(
-                    CodegenValue::FunctionRef(func_ref.clone())
-                );
-            }
-
-            let func_id = context.function_ids.get(name).unwrap();
-            let func_ref = context.object_module.declare_func_in_func(
-                *func_id,
-                &mut context.builder.func
-            );
-
-            context.local_defined_functions.insert(name.clone(), func_ref);
-
-            Some(CodegenValue::FunctionRef(func_ref))
+            Some(
+                CodegenValue::FunctionID {
+                    fn_name: name.clone(),
+                    id: context.function_ids.get(name).cloned().unwrap()
+                }
+            )
         }
 
         VirtualInstruction::Return { value } => {
@@ -168,10 +175,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::GetFunctionAddr {
             func_name
         } => {
-            let CodegenValue::FunctionRef(func_ref)
+            let CodegenValue::FunctionID { id, .. }
                 = context.variable_table.get(func_name).cloned().unwrap() else {
                 panic!("Function reference not found")
             };
+            let func_ref = context.object_module.declare_func_in_func(
+                id,
+                &mut context.builder.func
+            );
 
             let pointer = context.pointer_type.clone();
             Some(

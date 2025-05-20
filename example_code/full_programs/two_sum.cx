@@ -4,9 +4,7 @@
 void printf(const char* format, int i);
 
 struct ts_result {
-    int index1;
-    int index2;
-    int sum;
+    int index1, index2, sum;
 };
 
 ts_result two_sum(int* arr, int length, int sum) {

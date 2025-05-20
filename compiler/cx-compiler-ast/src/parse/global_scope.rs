@@ -25,13 +25,13 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
             Some(())
         },
 
-        Token::Specifier(_) => parse_specifier(data, ast),
+        Token::Specifier(_) => parse_access_mods(data, ast),
 
         _ => parse_global_expr(data, ast)
     }
 }
 
-pub(crate) fn parse_specifier(data: &mut ParserData, _: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<()> {
     assert_token_matches!(data, Token::Specifier(specifier));
 
     match specifier {
@@ -44,7 +44,7 @@ pub(crate) fn parse_specifier(data: &mut ParserData, _: &mut CXAST) -> Option<()
             try_next!(data, Token::Punctuator(PunctuatorType::Colon));
         },
 
-        _ => unimplemented!("parse_specifier: {:#?}", specifier)
+        _ => unimplemented!("parse_access_mods: {:#?}", specifier)
     };
 
     Some(())
@@ -105,12 +105,14 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
 
     match data.toks.peek() {
         Some(Token::Punctuator(PunctuatorType::OpenParen)) => {
-            let Some(mut params) = parse_params(data) else {
+            let Some(result) = parse_params(data) else {
                 log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
             };
 
             let prototype = CXFunctionPrototype {
-                return_type, name, parameters: params
+                return_type, name,
+                parameters: result.params,
+                var_args: result.var_args,
             };
 
             if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
@@ -130,12 +132,23 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
     }
 }
 
-pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
+pub(crate) struct ParseParamsResult {
+    pub(crate) params: Vec<CXParameter>,
+    pub(crate) var_args: bool,
+}
+
+pub(crate) fn parse_params(data: &mut ParserData) -> Option<ParseParamsResult> {
     assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
 
     let mut params = Vec::new();
 
     while !try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
+        if let Some(Token::Punctuator(PunctuatorType::Ellipsis)) = data.toks.peek() {
+            data.toks.next();
+            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+            return Some(ParseParamsResult { params, var_args: true });
+        }
+
         if let Some((name, type_)) = parse_initializer(data) {
             let name = name.map(|name| name);
 
@@ -149,7 +162,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<Vec<CXParameter>> {
         }
     }
 
-    Some(params)
+    Some(ParseParamsResult { params, var_args: false })
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {

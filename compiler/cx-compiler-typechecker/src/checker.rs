@@ -1,5 +1,6 @@
 use std::clone;
-use cx_compiler_ast::parse::operators::comma_separated_mut;
+use std::env::args;
+use cx_compiler_ast::parse::operators::{comma_separated, comma_separated_mut};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, is_structure, same_type, struct_field_access, CXTypeUnion, CXValType, CX_CONST};
 use cx_util::log_error;
@@ -119,19 +120,33 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
                 lhs_type = *inner.clone();
             }
 
-            let CXTypeUnion::Function { return_type, args } = lhs_type.intrinsic_type(&env.type_map).cloned()? else {
+            let CXTypeUnion::Function { prototype } = lhs_type.intrinsic_type(&env.type_map).cloned()? else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
 
-            for (arg, expected_type) in
-                comma_separated_mut(rhs)
-                .into_iter()
-                .zip(args.iter())
-            {
-                implicit_coerce(env, arg, expected_type.clone())?;
+            let mut args = comma_separated_mut(rhs);
+
+            if args.len() != prototype.parameters.len() && !prototype.var_args {
+                log_error!("TYPE ERROR: Method call operator expects {} arguments, found {}", prototype.parameters.len(), args.len());
             }
 
-            Some(*return_type)
+            for (arg, expected_type) in
+                args
+                .iter_mut()
+                .zip(prototype.parameters.iter())
+            {
+                implicit_coerce(env, arg, expected_type.type_.clone())?;
+            }
+
+            for i in prototype.parameters.len()..args.len() {
+                let va_type = coerce_value(env, args[i])?;
+
+                if va_type.is_structure(&env.type_map) {
+                    log_error!("TYPE ERROR: Cannot pass structure type as vararg");
+                }
+            }
+
+            Some(prototype.return_type.clone())
         }
 
         CXExpr::BinOp { lhs, rhs, .. } =>
@@ -173,21 +188,9 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
             };
 
             if let Some(func) = env.fn_map.get(name.as_str()) {
-                let return_type = func.return_type.clone();
-                let args = func.parameters.iter()
-                    .cloned()
-                    .map(|param| param.type_)
-                    .collect::<Vec<_>>();
-
-                return Some(
-                    CXValType::new(
-                        0,
-                        CXTypeUnion::Function {
-                            return_type: Box::new(return_type),
-                            args: args.into(),
-                        }
-                    )
-                );
+                return Some((
+                    CXTypeUnion::Function { prototype: Box::new(func.clone()) }.to_val_type()
+                ));
             };
 
             log_error!("TYPE ERROR: Unknown identifier {name}");

@@ -3,7 +3,7 @@ use std::mem::forget;
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::value_type::{get_intrinsic_type, get_type_size, prototype_to_type, struct_field_access, CXTypeUnion, CXValType, CX_CONST};
+use cx_data_ast::parse::value_type::{get_intrinsic_type, get_type_size, struct_field_access, CXTypeUnion, CXValType, CX_CONST};
 use cx_data_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::type_to_prototype;
 use cx_util::log_error;
@@ -103,7 +103,7 @@ pub fn generate_instruction(
             let method_sig = builder.get_type(left_id)?.clone();
 
             match get_intrinsic_type(&builder.type_map, &method_sig)? {
-                CXTypeUnion::Function { return_type, args: _ } => {
+                CXTypeUnion::Function { prototype } => {
                     builder.add_instruction(
                         VirtualInstruction::DirectCall {
                             func: left_id,
@@ -113,11 +113,11 @@ pub fn generate_instruction(
                                 &method_sig
                             )
                         },
-                        return_type.as_ref().clone()
+                        prototype.return_type.clone()
                     )
                 },
                 CXTypeUnion::PointerTo(inner) => {
-                    let Some(CXTypeUnion::Function { return_type, args: _ }) =
+                    let Some(CXTypeUnion::Function { prototype }) =
                         inner.intrinsic_type(&builder.type_map) else {
                         log_error!("Invalid function pointer type: {inner}");
                     };
@@ -131,7 +131,7 @@ pub fn generate_instruction(
                                 inner.as_ref()
                             )
                         },
-                        return_type.as_ref().clone()
+                        prototype.return_type.clone()
                     )
                 },
 
@@ -231,7 +231,9 @@ pub fn generate_instruction(
                     VirtualInstruction::FunctionReference {
                         name: val.to_owned()
                     },
-                    prototype_to_type(func)?
+                    CXTypeUnion::Function {
+                        prototype: Box::new(func.clone())
+                    }.to_val_type()
                 )
             } else {
                 log_error!("Unknown identifier {val}")

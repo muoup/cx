@@ -234,7 +234,15 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             },
             _ => try_assignment(iter, OperatorType::Minus)
         },
-        '.' => Some(Token::Operator(OperatorType::Access)),
+        '.' => {
+            if iter.next() == Some('.') && iter.peek() == Some('.') {
+                iter.next();
+                Some(Token::Punctuator(PunctuatorType::Ellipsis))
+            } else {
+                iter.back();
+                Some(Token::Operator(OperatorType::Access))
+            }
+        },
 
         '|' => match iter.peek() {
             Some('|') => {
@@ -299,7 +307,8 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                 Some(Token::Operator(OperatorType::Equal))
             },
             _ => Some(Token::Assignment(None))
-        }
+        },
+        ',' => Some(Token::Operator(OperatorType::Comma)),
         _ => {
             iter.back();
             None
@@ -319,7 +328,6 @@ fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
         ']' => Some(Token::Punctuator(PunctuatorType::CloseBracket)),
         '{' => Some(Token::Punctuator(PunctuatorType::OpenBrace)),
         '}' => Some(Token::Punctuator(PunctuatorType::CloseBrace)),
-        ',' => Some(Token::Operator(OperatorType::Comma)),
         ';' => Some(Token::Punctuator(PunctuatorType::Semicolon)),
         ':' => Some(Token::Punctuator(PunctuatorType::Colon)),
         '.' => Some(Token::Punctuator(PunctuatorType::Period)),

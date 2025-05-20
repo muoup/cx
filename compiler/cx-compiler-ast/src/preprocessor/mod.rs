@@ -14,5 +14,6 @@ pub fn preprocess(str: &str) -> String {
     str
         .lines()
         .map(|line| preprocessor::preprocess_line(&mut preprocessor, line))
-        .collect()
+        .collect::<Vec<String>>()
+        .join("\n")
 }
