@@ -191,6 +191,22 @@ impl CompilerPipeline {
         Some(ast)
     }
 
+    pub fn llvm_codegen(mut self) -> Self {
+        let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
+            eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
+            exit(1);
+        };
+
+        let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
+        cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
+            eprintln!("ERROR: Failed to generate code");
+            exit(1);
+        });
+
+        self.pipeline_stage = PipelineStage::Codegen;
+        self
+    }
+
     pub fn codegen(mut self) -> Self {
         let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
             eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
@@ -198,7 +214,7 @@ impl CompilerPipeline {
         };
 
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
-        bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
+        cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             eprintln!("ERROR: Failed to generate code");
             exit(1);
         });

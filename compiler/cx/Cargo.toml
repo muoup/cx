@@ -12,3 +12,4 @@ cx-data-bytecode = { path = "../cx-data-bytecode" }
 cx-util = { path = "../cx-util" }
 
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
+cx-backend-llvm = { path = "../cx-backend-llvm" }

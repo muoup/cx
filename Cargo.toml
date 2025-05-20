@@ -10,4 +10,4 @@ members = [
     "compiler/cx-backend-cranelift",
     "compiler/cx-lsp",
     "compiler/cx-util"
-]
+, "compiler/cx-backend-llvm"]
