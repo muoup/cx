@@ -17,6 +17,7 @@ pub struct ParserData<'a> {
     pub type_symbols: HashSet<String>,
     pub toks: TokenIter<'a>,
     pub visibility: VisibilityMode,
+    pub expr_commas: Vec<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +27,15 @@ pub struct TokenIter<'a> {
 }
 
 impl<'a> ParserData<'a> {
+    pub fn new(toks: &'a [Token]) -> Self {
+        ParserData {
+            type_symbols: HashSet::new(),
+            toks: TokenIter { slice: toks, index: 0 },
+            visibility: VisibilityMode::Package,
+            expr_commas: vec![true],
+        }
+    }
+
     pub fn back(&mut self) -> &mut Self {
         self.toks.back();
         self
@@ -38,6 +48,22 @@ impl<'a> ParserData<'a> {
 
     pub fn reset(&mut self) {
         self.toks.index = 0;
+    }
+
+    pub fn change_comma_mode(&mut self, expr_comma: bool) {
+        self.expr_commas.push(expr_comma);
+    }
+
+    pub fn pop_comma_mode(&mut self) {
+        if self.expr_commas.is_empty() {
+            panic!("CRITICAL: No comma mode to pop!");
+        }
+
+        self.expr_commas.pop();
+    }
+
+    pub fn get_comma_mode(&self) -> bool {
+        *self.expr_commas.last().expect("CRITICAL: No comma mode to get!")
     }
 }
 

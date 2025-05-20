@@ -8,7 +8,6 @@ pub mod expression;
 pub mod global_scope;
 pub mod typing;
 pub mod operators;
-mod lvalues;
 mod parsing_tools;
 
 pub fn parse_ast(mut data: ParserData) -> Option<CXAST> {

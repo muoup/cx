@@ -2,16 +2,15 @@ use cx_data_ast::parse::macros::error_pointer;
 use std::clone;
 use std::collections::VecDeque;
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::global_scope::parse_body;
+use crate::parse::global_scope::{parse_body, parse_access_mods};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr};
 use cx_data_ast::parse::identifier::{parse_identifier, parse_intrinsic, parse_std_ident};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::parse::value_type::CXValType;
-use crate::parse::lvalues::reformat_lvalue;
 use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error, point_log_error};
-use crate::parse::typing::{is_type_decl, parse_initializer};
+use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base, parse_typemods};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr {
@@ -24,6 +23,10 @@ pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
 }
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
+    if is_type_decl(data) {
+        return parse_declaration(data);
+    }
+
     if let Some(Token::Keyword(keyword)) = data.toks.peek() {
         let keyword = keyword.clone();
         data.toks.next();
@@ -53,6 +56,51 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     }
 
     Some(expr)
+}
+
+pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
+    let specifiers = parse_specifier(data);
+    let base_type = parse_type_base(data)?.add_specifier(specifiers);
+
+    let mut decls = Vec::new();
+    data.change_comma_mode(false);
+
+    loop {
+        let (Some(name), mut _type) = parse_base_mods(data, base_type.clone())? else {
+            log_error!("PARSER ERROR: Failed to parse type declaration");
+        };
+        _type.specifiers = specifiers;
+
+        if try_next!(data, Token::Assignment(None)) {
+            let expr = parse_expr(data)?;
+            decls.push(
+                CXExpr::BinOp {
+                    lhs: Box::new(CXExpr::VarDeclaration { type_: _type, name }),
+                    rhs: Box::new(expr),
+                    op: CXBinOp::Assign(None)
+                }
+            )
+        } else {
+            decls.push(CXExpr::VarDeclaration { type_: _type.clone(), name: name.clone() });
+        }
+
+        if !try_next!(data, Token::Operator(OperatorType::Comma)) {
+            break;
+        }
+    }
+
+    data.pop_comma_mode();
+
+    if decls.len() == 1 {
+        Some(decls.pop().unwrap())
+    } else {
+        Some(
+            CXExpr::Block {
+                exprs: decls,
+                value: None
+            }
+        )
+    }
 }
 
 pub(crate) fn parse_expr_op_concat(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>) -> Option<()> {
@@ -106,11 +154,6 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<Pr
         return Some(());
     }
 
-    // let mut ops = Vec::new();
-    // let mut exprs = Vec::new();
-
-    // exprs.push(expr_stack.pop().unwrap());
-
     while let Some(op2) = op_stack.last() {
         if op2.get_precedence() > rprec {
             break;
@@ -124,16 +167,6 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<Pr
 }
 
 pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>) -> Option<()> {
-    if is_type_decl(data) {
-        let Some((Some(name), type_)) = parse_initializer(data) else {
-            println!("{}", error_pointer(&data.toks));
-            log_error!("PARSER ERROR: Failed to parse type declaration");
-        };
-
-        expr_stack.push(CXExpr::VarDeclaration { type_, name });
-        return Some(());
-    }
-
     while let Some(op) = parse_pre_unop(data) {
         op_stack.push(PrecOperator::UnOp(op));
     }
@@ -157,7 +190,11 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
                 return Some(());
             }
 
+            data.change_comma_mode(true);
+
             let expr = parse_expr(data)?;
+
+            data.pop_comma_mode();
 
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
 

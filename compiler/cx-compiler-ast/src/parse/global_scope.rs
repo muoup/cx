@@ -25,13 +25,13 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
             Some(())
         },
 
-        Token::Specifier(_) => parse_specifier(data, ast),
+        Token::Specifier(_) => parse_access_mods(data, ast),
 
         _ => parse_global_expr(data, ast)
     }
 }
 
-pub(crate) fn parse_specifier(data: &mut ParserData, _: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<()> {
     assert_token_matches!(data, Token::Specifier(specifier));
 
     match specifier {
@@ -44,7 +44,7 @@ pub(crate) fn parse_specifier(data: &mut ParserData, _: &mut CXAST) -> Option<()
             try_next!(data, Token::Punctuator(PunctuatorType::Colon));
         },
 
-        _ => unimplemented!("parse_specifier: {:#?}", specifier)
+        _ => unimplemented!("parse_access_mods: {:#?}", specifier)
     };
 
     Some(())

@@ -25,8 +25,7 @@ pub(crate) fn prepare_function_sig(
         sig.returns.push(get_cranelift_abi_type(type_map, &prototype.return_type));
 
         if is_structure(type_map, &prototype.return_type) {
-            let mut abi_type = get_cranelift_abi_type(type_map, &prototype.return_type);
-            abi_type.purpose = ArgumentPurpose::StructReturn;
+            let abi_type = get_cranelift_abi_type(type_map, &prototype.return_type);
 
             sig.params.push(abi_type);
         }

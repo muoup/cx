@@ -11,9 +11,7 @@
 void lotto(int *a)
 {
 	int numbers[BALLS];
-	int x;
-	int y;
-	int r;
+	int x, y, r;
 
 	for( x=0; x<BALLS; x++ )
 	{
@@ -61,14 +59,10 @@ int main()
 {
 #define tomatch 4
 #define tally 100
-	int x;
-	int c;
-	int count;
-	int match[DRAW];
-	int guess[DRAW];
+	int x, c, count;
+	int match[DRAW], guess[DRAW];
 	/* new variables here */
-	int q;
-	int results[tally];
+	int q, results[tally];
 	long total;
 
 	srand( (unsigned)time(NULL) );
