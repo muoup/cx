@@ -188,12 +188,12 @@ pub fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Opti
             };
 
             if let Some(func) = env.fn_map.get(name.as_str()) {
-                return Some((
+                return Some(
                     CXTypeUnion::Function { prototype: Box::new(func.clone()) }.to_val_type()
-                ));
+                );
             };
 
-            log_error!("TYPE ERROR: Unknown identifier {name}");
+            log_error!("TYPE ERROR: Unknown identifier {name}, fn_map dump: \n{:#?}", env.fn_map);
         },
 
         CXExpr::IntLiteral { bytes, .. } => {
