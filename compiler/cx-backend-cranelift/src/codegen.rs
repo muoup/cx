@@ -1,17 +1,16 @@
+use crate::inst_calling::prepare_function_sig;
 use crate::instruction::codegen_instruction;
-use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
+use crate::value_type::get_cranelift_type;
 use crate::{FunctionState, GlobalState, VariableTable};
-use cranelift::codegen::ir::{ArgumentPurpose, Function, UserFuncName};
+use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
-use cx_data_bytecode::builder::{BytecodeFunction, ValueID, VirtualInstruction};
 use cx_util::format::dump_data;
 use std::collections::HashMap;
-use crate::inst_calling::prepare_function_sig;
+use cx_data_bytecode::{BCFunctionPrototype, BytecodeFunction, ValueID, VirtualInstruction};
 
-pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &CXFunctionPrototype) -> Option<()> {
-    let sig = prepare_function_sig(global_state.type_map, &mut global_state.object_module, &prototype)?;
+pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
+    let sig = prepare_function_sig(&mut global_state.object_module, &prototype)?;
 
     let id = global_state.object_module
         .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)
@@ -67,12 +66,12 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         context.builder.switch_to_block(*block);
 
         if block_id == 0 {
-            if bc_func.prototype.return_type.is_structure(context.type_map) {
+            if bc_func.prototype.return_type.is_structure() {
                 context.builder.append_block_param(*block, context.pointer_type);
             }
 
-            for arg in bc_func.prototype.args.iter() {
-                let cranelift_type = get_cranelift_type(context.type_map, &arg.type_);
+            for arg in bc_func.prototype.params.iter() {
+                let cranelift_type = get_cranelift_type(&arg.type_);
                 let arg = context.builder.append_block_param(*block, cranelift_type);
 
                 context.fn_params.push(arg);

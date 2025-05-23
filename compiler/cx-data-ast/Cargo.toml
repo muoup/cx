@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 cx-util = { path = "../cx-util" }
+uuid = { version = "1.16.0", features = ["v4"] }
