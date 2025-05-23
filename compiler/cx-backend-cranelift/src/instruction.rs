@@ -9,9 +9,6 @@ use cranelift_module::Module;
 use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::BCTypeKind;
 
-/**
- *  May or may not return a valid, panics if error occurs
- */
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
         VirtualInstruction::Allocate {
