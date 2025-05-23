@@ -1,20 +1,14 @@
-use std::process::id;
 use crate::inst_calling::{get_func_ref, get_method_return, prepare_method_call};
 use crate::routines::allocate_variable;
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
-use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{InstBuilder, MemFlags, Signature, StackSlotData, StackSlotKind, Value};
-use cranelift_module::{FuncId, Module};
-use cx_data_ast::parse::ast::{CXBinOp, CXUnOp};
-use cx_data_ast::parse::value_type::{get_type_size, is_structure, CXTypeUnion};
-use cx_data_bytecode::builder::{BlockInstruction, BytecodeFunctionPrototype, ValueID, VirtualInstruction};
+use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
+use cranelift_module::Module;
+use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction};
+use cx_data_bytecode::types::BCTypeKind;
 
-/**
- *  May or may not return a valid, panics if error occurs
- */
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
         VirtualInstruction::Allocate {
@@ -95,17 +89,17 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let mut sig = context.object_module.make_signature();
             let return_type = &method_sig.return_type;
 
-            sig.returns = if return_type.is_void(&context.type_map) {
+            sig.returns = if return_type.is_void() {
                 vec![]
             } else {
-                vec![get_cranelift_abi_type(&context.type_map, return_type)]
+                vec![get_cranelift_abi_type(return_type)]
             };
-            sig.params = method_sig.args
+            sig.params = method_sig.params
                 .iter()
-                .map(|arg| get_cranelift_abi_type(&context.type_map, &arg.type_))
+                .map(|arg| get_cranelift_abi_type(&arg.type_))
                 .collect();
 
-            for i in method_sig.args.len()..params.len() {
+            for i in method_sig.params.len()..params.len() {
                 let arg = params[i];
                 let arg_type = context.builder.func.dfg.value_type(arg);
 
@@ -137,8 +131,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 Some(value) => {
                     let return_value = context.variable_table.get(value).cloned().unwrap();
 
-                    if is_structure(context.type_map, &context.function_prototype.return_type) {
-                        let size = get_type_size(context.type_map, &context.function_prototype.return_type).unwrap() as u64;
+                    if context.function_prototype.return_type.is_structure() {
+                        let size = context.function_prototype.return_type.size();
                         let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
                         let callee_buffer = Value::from_u32(0);
 
@@ -196,7 +190,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Load { value } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let type_ = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(context.type_map, type_);
+            let cranelift_type = get_cranelift_type(type_);
 
             Some(
                 CodegenValue::Value(
@@ -218,26 +212,50 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let right = context.variable_table.get(right).unwrap().as_value();
 
             let inst = match op {
-                CXBinOp::Add                => context.builder.ins().iadd(left, right),
-                CXBinOp::Subtract           => context.builder.ins().isub(left, right),
-                CXBinOp::Multiply           => context.builder.ins().imul(left, right),
-                CXBinOp::Divide             => context.builder.ins().udiv(left, right),
-                CXBinOp::Modulus            => context.builder.ins().urem(left, right),
-
-                CXBinOp::Less          => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
-                CXBinOp::Greater       => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
-                CXBinOp::LessEqual     => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
-                CXBinOp::GreaterEqual  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
-                CXBinOp::Equal         => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
-                CXBinOp::NotEqual      => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
-
-                CXBinOp::LAnd          => {
+                BCIntBinOp::ADD             => context.builder.ins().iadd(left, right),
+                BCIntBinOp::SUB             => context.builder.ins().isub(left, right),
+                BCIntBinOp::MUL => context.builder.ins().imul(left, right),
+                BCIntBinOp::IDIV            => context.builder.ins().sdiv(left, right),
+                BCIntBinOp::IREM            => context.builder.ins().srem(left, right),
+                
+                BCIntBinOp::UDIV            => context.builder.ins().udiv(left, right),
+                BCIntBinOp::UREM            => context.builder.ins().urem(left, right),
+                
+                BCIntBinOp::SHL             => context.builder.ins().ishl(left, right),
+                BCIntBinOp::ASHR            => context.builder.ins().sshr(left, right),
+                BCIntBinOp::LSHR            => context.builder.ins().ushr(left, right),
+                
+                BCIntBinOp::BAND            => context.builder.ins().band(left, right),
+                BCIntBinOp::BOR             => context.builder.ins().bor(left, right),
+                BCIntBinOp::BXOR            => context.builder.ins().bxor(left, right),
+                
+                BCIntBinOp::LAND            => {
                     let left = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, left, 0);
                     let right = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, right, 0);
 
                     context.builder.ins().band(left, right)
-                }
+                },
+                
+                BCIntBinOp::LOR             => {
+                    let left = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, left, 0);
+                    let right = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, right, 0);
 
+                    context.builder.ins().bor(left, right)
+                },
+                
+                BCIntBinOp::EQ              => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
+                BCIntBinOp::NE              => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
+                
+                BCIntBinOp::ILT             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
+                BCIntBinOp::IGT             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
+                BCIntBinOp::ILE             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
+                BCIntBinOp::IGE             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
+                
+                BCIntBinOp::ULT             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedLessThan, left, right),
+                BCIntBinOp::UGT             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedGreaterThan, left, right),
+                BCIntBinOp::ULE             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedLessThanOrEqual, left, right),
+                BCIntBinOp::UGE             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedGreaterThanOrEqual, left, right),
+                
                 _ => unimplemented!("Operator not implemented: {:?}", op)
             };
 
@@ -254,9 +272,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let val = context.variable_table.get(value).cloned().unwrap();
 
             let inst = match op {
-                CXUnOp::Negative => {
-                    context.builder.ins().ineg(val.as_value())
-                },
+                BCIntUnOp::NEG      => context.builder.ins().ineg(val.as_value()),
+                BCIntUnOp::BNOT     => context.builder.ins().bnot(val.as_value()),
+                BCIntUnOp::LNOT     => context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, val.as_value(), 0),
                 _ => todo!("UnOp not implemented: {:?}", op)
             };
 
@@ -273,29 +291,18 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let left = context.variable_table.get(left).unwrap().as_value();
             let right = context.variable_table.get(right).unwrap().as_value();
 
-            match op {
-                CXBinOp::Add => Some(
-                    CodegenValue::Value(
-                        context.builder.ins().fadd(left, right)
-                    )
-                ),
-                CXBinOp::Subtract => Some(
-                    CodegenValue::Value(
-                        context.builder.ins().fsub(left, right)
-                    )
-                ),
-                CXBinOp::Multiply => Some(
-                    CodegenValue::Value(
-                        context.builder.ins().fmul(left, right)
-                    )
-                ),
-                CXBinOp::Divide => Some(
-                    CodegenValue::Value(
-                        context.builder.ins().fdiv(left, right)
-                    )
-                ),
-                _ => unimplemented!("Operator not implemented: {:?}", op)
-            }
+            Some(
+                CodegenValue::Value(
+                    match op {
+                        BCFloatBinOp::ADD           => context.builder.ins().fadd(left, right),
+                        BCFloatBinOp::SUB           => context.builder.ins().fsub(left, right),
+                        BCFloatBinOp::FMUL          => context.builder.ins().fmul(left, right),
+                        BCFloatBinOp::FDIV          => context.builder.ins().fdiv(left, right),
+                        
+                        _ => unimplemented!("Operator not implemented: {:?}", op)
+                    }
+                )
+            )
         },
 
         VirtualInstruction::Branch {
@@ -346,8 +353,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .unwrap()
                 .as_value();
 
-            if type_.is_structure(&context.type_map) {
-                let size = get_type_size(context.type_map, type_).unwrap() as u64;
+            if type_.is_structure() {
+                let size = type_.size();
                 let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
 
                 context.builder.call_memcpy(
@@ -376,7 +383,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(context.type_map, _type);
+            let cranelift_type = get_cranelift_type(_type);
 
             Some(
                 CodegenValue::Value(
@@ -390,7 +397,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(context.type_map, _type);
+            let cranelift_type = get_cranelift_type(_type);
 
             Some(
                 CodegenValue::Value(
@@ -404,7 +411,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(context.type_map, _type);
+            let cranelift_type = get_cranelift_type(_type);
 
             Some(
                 CodegenValue::Value(
@@ -419,7 +426,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             value
         } => {
             let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(context.type_map, _type);
+            let cranelift_type = get_cranelift_type(_type);
 
             Some(
                 CodegenValue::Value(
@@ -442,18 +449,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let val = context.variable_table.get(value).unwrap().as_value();
             let _type = &instruction.value.type_;
 
-            let from_cl_type = get_cranelift_type(context.type_map, from);
-            let to_cl_type = get_cranelift_type(context.type_map, _type);
+            let to_cl_type = get_cranelift_type(_type);
 
-            let CXTypeUnion::Integer { signed, .. }
-                = from.intrinsic_type(context.type_map)? else {
-                panic!("Invalid type for int to float conversion: {:?}", _type)
-            };
-
-            let inst = if *signed {
+            let inst = if matches!(from.kind, BCTypeKind::Signed { .. }) {
                 context.builder.ins().fcvt_from_sint(to_cl_type, val)
-            } else {
+            } else if matches!(from.kind, BCTypeKind::Unsigned { .. }) {
                 context.builder.ins().fcvt_from_uint(to_cl_type, val)
+            } else {
+                panic!("Invalid type for int to float conversion")
             };
 
             Some(
@@ -469,27 +472,26 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let val = context.variable_table.get(value).unwrap().as_value();
             let _type = &instruction.value.type_;
 
-            let to_cl_type = get_cranelift_type(context.type_map, _type);
+            let to_cl_type = get_cranelift_type(_type);
 
-            let CXTypeUnion::Float { bytes: float_bytes, .. }
-                = from.intrinsic_type(context.type_map)? else {
+            let BCTypeKind::Float { bytes: float_bytes, .. } = &from.kind else {
                 panic!("Invalid type for float to int conversion")
             };
 
-            let CXTypeUnion::Integer { bytes: int_bytes, signed }
-                = _type.intrinsic_type(context.type_map)? else {
-                panic!("Invalid type for float to int conversion")
-            };
-
-            let ival = if *signed {
-                context.builder.ins().fcvt_to_sint(to_cl_type, val)
+            let (ival, signed, int_bytes) =
+            if let BCTypeKind::Signed { bytes: int_bytes } = &_type.kind {
+                let ival = context.builder.ins().fcvt_to_sint(to_cl_type, val);
+                (ival, true, int_bytes)
+            } else if let BCTypeKind::Unsigned { bytes: int_bytes } = &_type.kind {
+                let ival = context.builder.ins().fcvt_to_uint(to_cl_type, val);
+                (ival, false, int_bytes)
             } else {
-                context.builder.ins().fcvt_to_uint(to_cl_type, val)
+                panic!("Invalid type for float to int conversion")
             };
 
             let val = if float_bytes > int_bytes {
                 context.builder.ins().ireduce(to_cl_type, ival)
-            } else if float_bytes < int_bytes && *signed {
+            } else if float_bytes < int_bytes && signed {
                 context.builder.ins().sextend(to_cl_type, ival)
             } else if float_bytes < int_bytes {
                 context.builder.ins().uextend(to_cl_type, ival)
@@ -510,15 +512,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
 fn generate_params(
     context: &mut FunctionState,
-    prototype: &BytecodeFunctionPrototype,
+    prototype: &BCFunctionPrototype,
     params: &[ValueID]
 ) -> Option<Vec<Value>> {
     let mut args = Vec::new();
 
-    if is_structure(context.type_map, &prototype.return_type) {
+    if prototype.return_type.is_structure() {
         let temp_buffer = allocate_variable(
             context,
-            get_type_size(context.type_map, &prototype.return_type)? as u32,
+            prototype.return_type.size() as u32,
             None
         )?;
 

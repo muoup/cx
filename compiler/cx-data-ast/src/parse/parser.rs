@@ -1,9 +1,9 @@
 use crate::lex::token::Token;
-use crate::parse::value_type::{CXValType};
+use crate::parse::value_type::{CXType};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::HashSet;
 
-pub type VarTable = ScopedMap<CXValType>;
+pub type VarTable = ScopedMap<CXType>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VisibilityMode {

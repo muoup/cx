@@ -7,6 +7,7 @@ use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::CXAST;
+use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_data_bytecode::ProgramBytecode;
 use cx_util::format::{dump_data, dump_write};
 
@@ -29,7 +30,7 @@ pub enum PipelineStage {
     Preprocessed(PreprocessContents),
     Lexed(LexContents),
     Parsed(ParseContents),
-    Verified(CXAST),
+    Typechecked(CXAST, ExprTypeMap),
     Bytecode(ProgramBytecode),
     Codegen,
     Linked
@@ -44,7 +45,7 @@ impl PipelineStage {
             PipelineStage::Parsed(contents) => {
                 dump_data(contents);
             },
-            PipelineStage::Verified(ast) => {
+            PipelineStage::Typechecked(ast, ..) => {
                 dump_data(ast);
             },
             PipelineStage::Bytecode(bytecode) => {
@@ -156,24 +157,24 @@ impl CompilerPipeline {
             exit(1);
         };
 
-        let Some(()) = type_check(&mut ast) else {
+        let Some(expr_type_map) = type_check(&mut ast) else {
             eprintln!("ERROR: Failed to verify AST");
             dump_data(&ast);
             exit(1);
         };
 
-        self.pipeline_stage = PipelineStage::Verified(ast);
+        self.pipeline_stage = PipelineStage::Typechecked(ast, expr_type_map);
 
         self
     }
 
     pub fn generate_bytecode(mut self) -> Self {
-        let PipelineStage::Verified(ast) = std::mem::take(&mut self.pipeline_stage) else {
+        let PipelineStage::Typechecked(ast, expr_type_map) = std::mem::take(&mut self.pipeline_stage) else {
             eprintln!("PIPELINE ERROR: Cannot generate bytecode without a verified AST!");
             exit(1);
         };
 
-        let Some(bytecode) = generate_bytecode(ast) else {
+        let Some(bytecode) = generate_bytecode(ast, expr_type_map) else {
             eprintln!("ERROR: Failed to generate bytecode");
             exit(1);
         };

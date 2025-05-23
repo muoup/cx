@@ -1,7 +1,6 @@
-use std::clone;
 use cx_data_ast::assert_token_matches;
 use cx_data_ast::lex::token::{OperatorType, PunctuatorType, Token};
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
 use crate::parse::typing::{is_type_decl, parse_initializer};
 
@@ -193,40 +192,32 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
     )
 }
 
-pub fn comma_separated_owned(expr: CXExpr) -> Vec<CXExpr> {
-    let CXExpr::BinOp { lhs, rhs, op: CXBinOp::Comma } = expr else {
-        return vec![expr];
-    };
-
-    let mut lresults = comma_separated_owned(*lhs);
-    let rresults = comma_separated_owned(*rhs);
-
-    lresults.extend(rresults);
-    lresults
-}
-
-pub fn comma_separated_mut(expr: &mut CXExpr) -> Vec<&mut CXExpr> {
-    if matches!(expr, CXExpr::Unit) {
+pub fn comma_separated_mut<'a>(expr: &'a mut CXExpr) -> Vec<&'a mut CXExpr> {
+    if matches!(expr.kind, CXExprKind::Unit) {
         return vec![];
     }
-
-    let CXExpr::BinOp { lhs, rhs, op: CXBinOp::Comma } = expr else {
+    
+    if !matches!(&expr.kind, CXExprKind::BinOp { op: CXBinOp::Comma, .. }) {
         return vec![expr];
+    }
+
+    let CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Comma } = &mut expr.kind else {
+        unreachable!()
     };
 
-    let mut lresults = comma_separated_mut(lhs.as_mut());
-    let rresults = comma_separated_mut(rhs.as_mut());
+    let mut lresults : Vec<&'a mut CXExpr> = comma_separated_mut(lhs.as_mut());
+    let rresults : Vec<&'a mut CXExpr> = comma_separated_mut(rhs.as_mut());
 
     lresults.extend(rresults);
     lresults
 }
 
 pub fn comma_separated(expr: &CXExpr) -> Vec<&CXExpr> {
-    if matches!(expr, CXExpr::Unit) {
+    if matches!(expr.kind, CXExprKind::Unit) {
         return vec![];
     }
 
-    let CXExpr::BinOp { lhs, rhs, op: CXBinOp::Comma } = expr else {
+    let CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Comma } = &expr.kind else {
         return vec![expr];
     };
 

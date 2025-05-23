@@ -1,10 +1,10 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
 use crate::parse::expression::{parse_expr, requires_semicolon};
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
+use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use crate::parse::typing::{parse_initializer, parse_plain_typedef};
 use cx_util::log_error;
 use crate::parse::parsing_tools::goto_statement_end;
@@ -80,12 +80,12 @@ fn handle_member_this(class_name: &str, params: &mut Vec<CXParameter>) {
         return;
     };
 
-    let CXTypeUnion::Identifier(ident) = &first_param.type_.internal_type else {
+    let CXTypeKind::Identifier(ident) = &first_param.type_.kind else {
         return;
     };
 
     if matches!(ident.as_str(), "this") {
-        let take_param = std::mem::replace(first_param, CXParameter { name: None, type_: CXValType::unit() });
+        let take_param = std::mem::replace(first_param, CXParameter { name: None, type_: CXType::unit() });
 
         *first_param = CXParameter {
             name: take_param.name,
@@ -111,14 +111,14 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
 
             let prototype = CXFunctionPrototype {
                 return_type, name,
-                parameters: result.params,
+                params: result.params,
                 var_args: result.var_args,
             };
 
             if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
                 ast.global_stmts.push(CXGlobalStmt::FunctionForward { prototype });
             } else {
-                let body = parse_body(data)?;
+                let body = Box::new(parse_body(data)?);
                 ast.global_stmts.push(CXGlobalStmt::FunctionDefinition { prototype, body })
             }
 
@@ -188,10 +188,10 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         }
 
         Some (
-            CXExpr::Block {
+            CXExprKind::Block {
                 exprs: body,
                 value: None
-            }
+            }.into()
         )
     } else {
         let body = parse_expr(data)?;
