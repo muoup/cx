@@ -120,7 +120,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     let name = parse_std_ident(data);
     
     if !try_next!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
-        return Some(CXTypeKind::Identifier(name?));
+        return Some(name?.as_str().into());
     }
     
     let mut fields = Vec::new();
@@ -252,13 +252,13 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
         Token::Identifier(_) => Some(
             CXType::new(
                 parse_specifier(data),
-                CXTypeKind::Identifier(parse_std_ident(data)?)
+                parse_std_ident(data)?.into()
             )
         ),
         Token::Intrinsic(_) => Some(
             CXType::new(
                 parse_specifier(data),
-                CXTypeKind::Identifier(parse_intrinsic(data)?)
+                parse_intrinsic(data)?.into()
             )
         ),
 

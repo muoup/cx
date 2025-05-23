@@ -277,7 +277,7 @@ pub fn generate_instruction(
                     Box::new(
                         CXType::new(
                             CX_CONST,
-                            CXTypeKind::Identifier(CXIdent::from("char"))
+                            "char".into()
                         )
                     )
                 ).to_val_type()

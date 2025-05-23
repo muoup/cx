@@ -40,7 +40,36 @@ pub enum CXTypeKind {
         prototype: Box<CXFunctionPrototype>,
     },
 
-    Identifier(CXIdent)
+    Identifier {
+        name: CXIdent,
+        predeclaration: PredeclarationType
+    }
+}
+
+impl From<&str> for CXTypeKind {
+    fn from(value: &str) -> Self {
+        CXTypeKind::Identifier {
+            name: CXIdent::from(value),
+            predeclaration: PredeclarationType::None
+        }
+    }
+}
+
+impl From<CXIdent> for CXTypeKind {
+    fn from(value: CXIdent) -> Self {
+        CXTypeKind::Identifier {
+            name: value,
+            predeclaration: PredeclarationType::None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PredeclarationType {
+    None,
+    Struct,
+    Union,
+    Enum
 }
 
 impl CXTypeKind {
@@ -118,15 +147,15 @@ impl CXType {
 
 pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
     match (&t1.kind, &t2.kind) {
-        (CXTypeKind::Identifier(name1),
-            CXTypeKind::Identifier(name2))
+        (CXTypeKind::Identifier { name: name1, .. },
+            CXTypeKind::Identifier { name: name2, .. })
         if name1 == name2 =>
             true,
 
-        (CXTypeKind::Identifier(name1), _) =>
+        (CXTypeKind::Identifier { name: name1, .. }, _) =>
             same_type(type_map, &type_map.get(name1.as_str()).unwrap(), t2),
 
-        (_, CXTypeKind::Identifier(name2)) =>
+        (_, CXTypeKind::Identifier { name: name2, .. }) =>
             same_type(type_map, t1, &type_map.get(name2.as_str()).unwrap()),
 
         (CXTypeKind::Array { _type: t1_type, .. },
@@ -167,7 +196,7 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
 
 pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Option<&'a CXTypeKind> {
     match &type_.kind {
-        CXTypeKind::Identifier(name)
+        CXTypeKind::Identifier { name, .. }
             => type_map.get(name.as_str())
                 .and_then(|_type| get_intrinsic_type(type_map, _type)),
 
@@ -196,7 +225,7 @@ pub fn get_type_size(type_map: &CXTypeMap, type_: &CXType) -> Option<usize> {
         | CXTypeKind::Function { .. } => Some(8),
 
         CXTypeKind::Opaque { size, .. } => Some(*size),
-        CXTypeKind::Identifier(name) =>
+        CXTypeKind::Identifier { name, .. } =>
             type_map.get(name.as_str())
                 .map(|_type| get_type_size(type_map, _type))
                 .flatten()

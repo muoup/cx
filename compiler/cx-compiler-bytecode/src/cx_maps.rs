@@ -170,12 +170,12 @@ pub(crate) fn convert_cx_func_map(cx_type_map: &CXTypeMap, cx_proto: &CXFunction
 pub(crate) fn convert_cx_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
     Some(
         match cx_type_kind {
-            CXTypeKind::Identifier(ident) => {
-                let inner = cx_type_map.get(ident.as_str())
+            CXTypeKind::Identifier { name, .. } => {
+                let inner = cx_type_map.get(name.as_str())
                     .expect("PANIC: Identifier not found in type map");
 
                 convert_cx_type_kind(cx_type_map, &inner.kind)?
-            },
+            }
 
             CXTypeKind::Opaque { size, .. } =>
                 BCTypeKind::Opaque { bytes: *size },

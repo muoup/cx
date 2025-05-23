@@ -76,11 +76,11 @@ fn handle_member_this(class_name: &str, params: &mut Vec<CXParameter>) {
         return;
     };
 
-    let CXTypeKind::Identifier(ident) = &first_param.type_.kind else {
+    let CXTypeKind::Identifier { name, .. } = &first_param.type_.kind else {
         return;
     };
 
-    if matches!(ident.as_str(), "this") {
+    if matches!(name.as_str(), "this") {
         let take_param = std::mem::replace(first_param, CXParameter { name: None, type_: CXType::unit() });
 
         *first_param = CXParameter {

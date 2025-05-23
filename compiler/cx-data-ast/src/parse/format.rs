@@ -236,7 +236,7 @@ impl Display for CXTypeKind {
             CXTypeKind::Opaque { name, size } => {
                 write!(f, "OPAQUE_{}(\"{}\")", size, name)
             },
-            CXTypeKind::Identifier(name) => {
+            CXTypeKind::Identifier { name, .. } => {
                 write!(f, "{}", name)
             },
             CXTypeKind::Function { prototype } => {
