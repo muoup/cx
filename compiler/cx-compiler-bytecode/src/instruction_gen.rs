@@ -40,7 +40,7 @@ pub fn generate_instruction(
                 type_.clone()
             )?;
 
-            builder.symbol_table.insert(name.to_owned(), memory);
+            builder.symbol_table.insert(name.as_string(), memory);
 
             Some(memory)
         },
@@ -237,7 +237,7 @@ pub fn generate_instruction(
             } else if builder.fn_map.contains_key(val.as_str()) {
                 builder.add_instruction_bt(
                     VirtualInstruction::FunctionReference {
-                        name: val.to_owned()
+                        name: val.as_string()
                     },
                     BCTypeKind::Pointer.into()
                 )
@@ -277,7 +277,7 @@ pub fn generate_instruction(
                     Box::new(
                         CXType::new(
                             CX_CONST,
-                            CXTypeKind::Identifier(CXIdent::from("char"))
+                            "char".into()
                         )
                     )
                 ).to_val_type()

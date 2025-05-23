@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::ParserData;
+use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
 use crate::parse::typing::parse_types;
 
@@ -22,7 +23,9 @@ pub fn parse_ast(mut data: ParserData) -> Option<CXAST> {
     data.reset();
 
     while data.toks.has_next() {
-        parse_global_stmt(&mut data, &mut cx_ast)?;
+        let Some(_) = parse_global_stmt(&mut data, &mut cx_ast) else {
+            point_log_error!(data, "PARSER ERROR: Failed to parse global statement");
+        };
     }
 
     Some(cx_ast)

@@ -3,9 +3,10 @@ use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Specifi
 use crate::parse::expression::parse_name;
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap, CXAST};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
+use cx_data_ast::parse::macros::error_pointer;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE};
-use cx_util::log_error;
+use cx_util::{log_error, point_log_error};
 use crate::parse::global_scope::{parse_params, ParseParamsResult};
 use crate::parse::parsing_tools::{goto_block_end, goto_statement_end};
 
@@ -86,21 +87,24 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
     match data.toks.peek()? {
         Token::Keyword(KeywordType::Struct) => {
             let type_ = parse_struct(data)?;
-            let CXTypeKind::Structured { name, .. } = &type_ else {
-                log_error!("PARSER ERROR: Expected struct type, found: {:#?}", type_);
+            
+            // parse_struct returned some "struct [identifier]", which is a placeholder
+            // type that need to be processed by the type parser.
+            // alternatively parse_struct returned a nameless struct declaration, which
+            // is an effective no-op.
+            let CXTypeKind::Structured { name: Some(name), .. } = &type_ else {
+                goto_statement_end(data);
+                
+                // this is janky but returning a None here indicates an error,
+                // not that no type needs to be parsed.
+                return Some(TypeRecord { name: None, type_: CXType::unit() });
             };
-            let name = match name {
-                Some(name) => Some(name.to_string()),
-                None => {
-                    println!("PARSER Warning: Nameless global struct type is effective no-op");
-                    None
-                }
-            };
+            
             try_next!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
             Some(
                 TypeRecord {
-                    name,
+                    name: Some(name.to_string()),
                     type_: CXType::new(0, type_)
                 }
             )
@@ -114,9 +118,12 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     assert_token_matches!(data, Token::Keyword(KeywordType::Struct));
 
     let name = parse_std_ident(data);
+    
+    if !try_next!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
+        return Some(name?.as_str().into());
+    }
+    
     let mut fields = Vec::new();
-
-    assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenBrace));
 
     while data.toks.peek() != Some(&Token::Punctuator(PunctuatorType::CloseBrace)) {
         let specifiers = parse_specifier(data);
@@ -245,13 +252,13 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
         Token::Identifier(_) => Some(
             CXType::new(
                 parse_specifier(data),
-                CXTypeKind::Identifier(parse_std_ident(data)?)
+                parse_std_ident(data)?.into()
             )
         ),
         Token::Intrinsic(_) => Some(
             CXType::new(
                 parse_specifier(data),
-                CXTypeKind::Identifier(parse_intrinsic(data)?)
+                parse_intrinsic(data)?.into()
             )
         ),
 

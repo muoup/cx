@@ -157,7 +157,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             alg_bin_op_coercion(env, lhs, rhs),
 
         CXExprKind::VarDeclaration { name, type_ } => {
-            env.symbol_table.insert(name.to_owned(), type_.clone());
+            env.symbol_table.insert(name.as_string(), type_.clone());
 
             let modified_type = type_.clone().remove_specifier(CX_CONST);
 

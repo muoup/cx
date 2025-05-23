@@ -40,15 +40,19 @@ impl PipelineStage {
     fn dump(&self) {
         match self {
             PipelineStage::Preprocessed(contents) => {
+                dump_write("/// Preprocessed contents ///\n");
                 dump_data(contents);
             },
             PipelineStage::Parsed(contents) => {
+                dump_write("/// Parsed contents ///\n");
                 dump_data(contents);
             },
             PipelineStage::Typechecked(ast, ..) => {
+                dump_write("/// Typechecked AST ///\n");
                 dump_data(ast);
             },
             PipelineStage::Bytecode(bytecode) => {
+                dump_write("/// Bytecode ///\n");
                 dump_data(bytecode);
             },
             _ => {
@@ -222,6 +226,7 @@ impl CompilerPipeline {
             .arg("-o")
             .arg(output_file)
             .arg("-g")
+            .arg("-no-pie")
             .status()
             .expect("Failed to execute command");
 

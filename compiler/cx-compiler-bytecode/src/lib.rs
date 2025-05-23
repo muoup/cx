@@ -49,7 +49,7 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
             )?;
 
             if let Some(name) = &arg.name {
-                builder.symbol_table.insert(name.to_owned(), memory);
+                builder.symbol_table.insert(name.as_string(), memory);
             }
         }
 
