@@ -1,7 +1,5 @@
 use crate::types::BCType;
 use std::collections::HashMap;
-use cx_data_ast::parse::ast::CXUnOp;
-use cx_data_ast::parse::value_type::CXType;
 
 pub mod node_type_map;
 pub mod types;
@@ -139,7 +137,7 @@ pub enum VirtualInstruction {
     },
 
     FloatUnOp {
-        op: CXUnOp,
+        op: BCFloatUnOp,
         value: ValueID
     },
 
@@ -206,7 +204,7 @@ pub enum VirtualInstruction {
     NOP
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BCIntBinOp {
     ADD, SUB,
     MUL, IDIV, UDIV, IREM, UREM,
@@ -221,17 +219,18 @@ pub enum BCIntBinOp {
     ILE, IGE, ULE, UGE
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BCIntUnOp {
     BNOT, LNOT, NEG
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BCFloatBinOp {
     ADD, SUB,
     FMUL, FDIV
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum BCFloatUnOp {
     NEG
 }
