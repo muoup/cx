@@ -1,16 +1,237 @@
-use crate::builder::BytecodeFunction;
-use cx_data_ast::parse::ast::{FunctionMap, TypeMap};
-use std::fmt::{Display, Formatter};
+use crate::types::BCType;
+use std::collections::HashMap;
+use cx_data_ast::parse::ast::CXUnOp;
+use cx_data_ast::parse::value_type::CXType;
 
-pub mod builder;
+pub mod node_type_map;
 pub mod types;
 mod format;
 
+pub type BCTypeMap = HashMap<String, BCType>;
+pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
+
 #[derive(Debug)]
 pub struct ProgramBytecode {
-    pub fn_map: FunctionMap,
-    pub type_map: TypeMap,
+    pub fn_map: BCFunctionMap,
+    pub type_map: BCTypeMap,
 
     pub global_strs: Vec<String>,
     pub fn_defs: Vec<BytecodeFunction>,
+}
+
+pub type ElementID = u32;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct ValueID {
+    pub block_id: ElementID,
+    pub value_id: ElementID
+}
+
+impl ValueID {
+    pub const NULL: Self = ValueID {
+        block_id: u32::MAX,
+        value_id: u32::MAX
+    };
+}
+
+#[derive(Debug, Clone)]
+pub struct VirtualValue {
+    pub type_: BCType
+}
+
+#[derive(Debug)]
+pub struct BCParameter {
+    pub name: Option<String>,
+    pub type_: BCType
+}
+
+#[derive(Debug)]
+pub struct BCFunctionPrototype {
+    pub name: String,
+    pub return_type: BCType,
+    pub params: Vec<BCParameter>,
+    pub var_args: bool,
+}
+
+#[derive(Debug)]
+pub struct BytecodeFunction {
+    pub prototype: BCFunctionPrototype,
+    pub blocks: Vec<FunctionBlock>
+}
+
+#[derive(Debug)]
+pub struct FunctionBlock {
+    pub body: Vec<BlockInstruction>
+}
+
+#[derive(Debug)]
+pub struct BlockInstruction {
+    pub instruction: VirtualInstruction,
+    pub value: VirtualValue
+}
+
+#[derive(Debug)]
+pub enum VirtualInstruction {
+    FunctionParameter {
+        param_index: u32
+    },
+
+    Allocate {
+        size: usize
+    },
+
+    Load {
+        value: ValueID,
+    },
+
+    Immediate {
+        value: i32
+    },
+
+    StructAccess {
+        struct_: ValueID,
+        field_index: usize,
+        field_offset: usize
+    },
+
+    Store {
+        memory: ValueID,
+        value: ValueID,
+        type_: BCType
+    },
+
+    AddressOf {
+        value: ValueID
+    },
+
+    Assign {
+        target: ValueID,
+        value: ValueID
+    },
+
+    ZExtend {
+        value: ValueID,
+    },
+
+    SExtend {
+        value: ValueID,
+    },
+
+    Trunc {
+        value: ValueID
+    },
+
+    IntegerBinOp {
+        op: BCIntBinOp,
+        left: ValueID,
+        right: ValueID
+    },
+
+    IntegerUnOp {
+        op: BCIntUnOp,
+        value: ValueID
+    },
+
+    FloatBinOp {
+        op: BCFloatBinOp,
+        left: ValueID,
+        right: ValueID
+    },
+
+    FloatUnOp {
+        op: CXUnOp,
+        value: ValueID
+    },
+
+    Literal {
+        val: u64
+    },
+
+    StringLiteral {
+        str_id: ElementID
+    },
+
+    DirectCall {
+        func: ValueID,
+        args: Vec<ValueID>,
+        method_sig: BCFunctionPrototype
+    },
+
+    IndirectCall {
+        func_ptr: ValueID,
+        args: Vec<ValueID>,
+        method_sig: BCFunctionPrototype
+    },
+
+    FunctionReference {
+        name: String
+    },
+
+    GetFunctionAddr {
+        func_name: ValueID
+    },
+
+    IntToFloat {
+        from: BCType,
+        value: ValueID
+    },
+
+    FloatToInt {
+        from: BCType,
+        value: ValueID
+    },
+
+    FloatCast {
+        value: ValueID
+    },
+
+    Branch {
+        condition: ValueID,
+        true_block: ElementID,
+        false_block: ElementID
+    },
+
+    Jump {
+        target: ElementID
+    },
+
+    Return {
+        value: Option<ValueID>
+    },
+
+    BitCast {
+        value: ValueID
+    },
+
+    NOP
+}
+
+#[derive(Debug)]
+pub enum BCIntBinOp {
+    ADD, SUB,
+    MUL, IDIV, UDIV, IREM, UREM,
+
+    ASHR, LSHR, SHL,
+
+    BAND, BOR, BXOR,
+    LAND, LOR,
+    
+    EQ, NE,
+    ILT, IGT, ULT, UGT,
+    ILE, IGE, ULE, UGE
+}
+
+#[derive(Debug)]
+pub enum BCIntUnOp {
+    BNOT, LNOT, NEG
+}
+
+#[derive(Debug)]
+pub enum BCFloatBinOp {
+    ADD, SUB,
+    FMUL, FDIV
+}
+
+pub enum BCFloatUnOp {
+    NEG
 }

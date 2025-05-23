@@ -1,16 +1,18 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::value_type::{get_type_size, CXTypeUnion, CXValType};
-use cx_data_bytecode::builder::{BytecodeBuilder, BytecodeFunctionPrototype, BytecodeParameter, VirtualInstruction};
-use cx_data_bytecode::ProgramBytecode;
-use cx_data_bytecode::types::prototype_cx2bc;
+use cx_data_ast::parse::value_type::{get_type_size, CXType};
+use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
+use cx_data_bytecode::node_type_map::ExprTypeMap;
+use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::{generate_instruction, implicit_return};
 
 pub mod instruction_gen;
+mod builder;
 mod implicit_cast;
+mod cx_maps;
+mod aux_routines;
 
-
-pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
-    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map);
+pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<ProgramBytecode> {
+    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map, env_type_map);
 
     for stmt in ast.global_stmts.iter() {
         let CXGlobalStmt::FunctionDefinition {
@@ -20,12 +22,12 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
         };
 
         builder.symbol_table.push_scope();
-        builder.new_function(prototype_cx2bc(&builder.type_map, prototype));
+        builder.new_function(prototype);
 
-        for (i, arg) in prototype.parameters.iter().enumerate() {
+        for (i, arg) in prototype.params.iter().enumerate() {
             let memory = builder.add_instruction(
                 VirtualInstruction::Allocate {
-                    size: get_type_size(&builder.type_map, &arg.type_)?
+                    size: get_type_size(&builder.cx_type_map, &arg.type_)?
                 },
                 arg.type_.clone()
             )?;
@@ -41,9 +43,9 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
                 VirtualInstruction::Store {
                     value,
                     memory,
-                    type_: arg.type_.clone()
+                    type_: builder.convert_cx_type(&arg.type_)?,
                 },
-                CXValType::unit()
+                CXType::unit()
             )?;
 
             if let Some(name) = &arg.name {
@@ -51,7 +53,9 @@ pub fn generate_bytecode(ast: CXAST) -> Option<ProgramBytecode> {
             }
         }
 
-        generate_instruction(&mut builder, body)?;
+        let Some(_) = generate_instruction(&mut builder, body) else {
+            panic!("Failed to generate body for function: {}", prototype.name);
+        };
         implicit_return(&mut builder, prototype)?;
 
         builder.symbol_table.pop_scope();

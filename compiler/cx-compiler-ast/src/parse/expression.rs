@@ -1,22 +1,18 @@
-use cx_data_ast::parse::macros::error_pointer;
-use std::clone;
-use std::collections::VecDeque;
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Token};
-use crate::parse::global_scope::{parse_body, parse_access_mods};
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr};
-use cx_data_ast::parse::identifier::{parse_identifier, parse_intrinsic, parse_std_ident};
+use crate::parse::global_scope::{parse_body};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
+use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::parse::value_type::CXValType;
-use crate::parse::operators::{binop_prec, comma_separated, comma_separated_owned, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
-use cx_util::{log_error, point_log_error};
-use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base, parse_typemods};
+use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
+use cx_util::{log_error};
+use crate::parse::typing::{is_type_decl, parse_base_mods, parse_specifier, parse_type_base, parse_typemods};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
-    match expr {
-        CXExpr::If { .. } => false,
-        CXExpr::While { .. } => false,
-        CXExpr::For { .. } => false,
+    match expr.kind {
+        CXExprKind::If { .. } => false,
+        CXExprKind::While { .. } => false,
+        CXExprKind::For { .. } => false,
 
         _ => true
     }
@@ -40,7 +36,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     let mut expr_stack = Vec::new();
 
     let Some(_) = parse_expr_val(data, &mut expr_stack, &mut op_stack) else {
-        return Some(CXExpr::Unit);
+        return Some(CXExprKind::Unit.into());
     };
 
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {}
@@ -74,14 +70,19 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
         if try_next!(data, Token::Assignment(None)) {
             let expr = parse_expr(data)?;
             decls.push(
-                CXExpr::BinOp {
-                    lhs: Box::new(CXExpr::VarDeclaration { type_: _type, name }),
+                CXExprKind::BinOp {
+                    lhs: Box::new(CXExprKind::VarDeclaration { type_: _type, name }.into()),
                     rhs: Box::new(expr),
                     op: CXBinOp::Assign(None)
-                }
+                }.into()
             )
         } else {
-            decls.push(CXExpr::VarDeclaration { type_: _type.clone(), name: name.clone() });
+            decls.push(
+                CXExprKind::VarDeclaration { 
+                    type_: _type.clone(), 
+                    name: name.clone() 
+                }.into()
+            );
         }
 
         if !try_next!(data, Token::Operator(OperatorType::Comma)) {
@@ -95,10 +96,10 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
         Some(decls.pop().unwrap())
     } else {
         Some(
-            CXExpr::Block {
+            CXExprKind::Block {
                 exprs: decls,
                 value: None
-            }
+            }.into()
         )
     }
 }
@@ -127,24 +128,24 @@ fn compress_one_expr(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperat
         PrecOperator::UnOp(un_op) => {
             let rhs = expr_stack.pop().unwrap();
 
-            let acc = CXExpr::UnOp {
+            let acc = CXExprKind::UnOp {
                 operator: un_op,
                 operand: Box::new(rhs)
             };
 
-            Some(acc)
+            Some(acc.into())
         },
         PrecOperator::BinOp(bin_op) => {
             let rhs = expr_stack.pop().unwrap();
             let lhs = expr_stack.pop().unwrap();
 
-            let acc = CXExpr::BinOp {
+            let acc = CXExprKind::BinOp {
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
                 op: bin_op
             };
 
-            Some(acc)
+            Some(acc.into())
         }
     }
 }
@@ -173,20 +174,20 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
     let acc = match data.toks.next()? {
         Token::IntLiteral(value) =>
-            CXExpr::IntLiteral { bytes: 4, val: value.clone() },
+            CXExprKind::IntLiteral { bytes: 4, val: value.clone() },
         Token::FloatLiteral(value) =>
-            CXExpr::FloatLiteral { bytes: 4, val: value.clone() },
+            CXExprKind::FloatLiteral { bytes: 4, val: value.clone() },
         Token::StringLiteral(value) =>
-            CXExpr::StringLiteral { val: value.clone() },
+            CXExprKind::StringLiteral { val: value.clone() },
 
         Token::Intrinsic(_) =>
-            CXExpr::Identifier(parse_intrinsic(data.back())?),
+            CXExprKind::Identifier(parse_intrinsic(data.back())?),
         Token::Identifier(_) =>
-            CXExpr::Identifier(parse_std_ident(data.back())?),
+            CXExprKind::Identifier(parse_std_ident(data.back())?),
 
         Token::Punctuator(PunctuatorType::OpenParen) => {
             if try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
-                expr_stack.push(CXExpr::Unit);
+                expr_stack.push(CXExprKind::Unit.into());
                 return Some(());
             }
 
@@ -198,25 +199,25 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
 
-            expr
+            expr.kind
         },
         Token::Punctuator(PunctuatorType::OpenBracket) => {
             if try_next!(data, Token::Punctuator(PunctuatorType::CloseBracket)) {
-                expr_stack.push(CXExpr::Unit);
+                expr_stack.push(CXExprKind::Unit.into());
                 return Some(());
             }
 
             let index = parse_expr(data)?;
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseBracket));
 
-            index
+            index.kind
         },
 
         _ => {
             data.back();
             return None
         }
-    };
+    }.into();
 
     expr_stack.push(acc);
 
@@ -235,12 +236,12 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
         KeywordType::Return => {
             let val = parse_expr(data)?;
 
-            if matches!(val, CXExpr::Unit) {
-                return Some(CXExpr::Return { value: None });
+            if matches!(val.kind, CXExprKind::Unit) {
+                return Some(CXExprKind::Return { value: None }.into());
             }
 
             Some(
-                CXExpr::Return {
+                CXExprKind::Return {
                     value: Some(Box::new(val))
                 }
             )
@@ -258,7 +259,7 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
                 };
 
             Some(
-                CXExpr::If {
+                CXExprKind::If {
                     condition: Box::new(expr),
                     then_branch: Box::new(then_body),
                     else_branch: else_body.map(|b| Box::new(b))
@@ -274,7 +275,7 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
 
             Some(
-                CXExpr::While {
+                CXExprKind::While {
                     condition: Box::new(expr),
                     body: Box::new(body),
                     pre_eval: false,
@@ -288,15 +289,15 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             let body = parse_body(data)?;
 
             Some(
-                CXExpr::While {
+                CXExprKind::While {
                     condition: Box::new(expr),
                     body: Box::new(body),
                     pre_eval: true
                 }
             )
         },
-        KeywordType::Break => Some(CXExpr::Break),
-        KeywordType::Continue => Some(CXExpr::Continue),
+        KeywordType::Break => Some(CXExprKind::Break),
+        KeywordType::Continue => Some(CXExprKind::Continue),
         KeywordType::For => {
             assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
 
@@ -312,7 +313,7 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
             let body = parse_body(data)?;
 
             Some(
-                CXExpr::For {
+                CXExprKind::For {
                     init: Box::new(init),
                     condition: Box::new(condition),
                     increment: Box::new(increment),
@@ -322,7 +323,7 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
         },
 
         _ => log_error!("Unsupported keyword: {:#?}", keyword)
-    }
+    }.map(|e| e.into())
 }
 
 pub(crate) fn parse_braced_expr(data: &mut ParserData) -> Option<CXExpr> {

@@ -1,14 +1,14 @@
-use std::clone;
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType};
-use cx_data_ast::parse::value_type::{get_intrinsic_type, CXTypeUnion, CXValType};
-use cx_data_bytecode::builder::VirtualInstruction::IntegerBinOp;
-use cx_data_bytecode::builder::{BytecodeBuilder, ValueID, VirtualInstruction};
+use crate::builder::BytecodeBuilder;
+use cx_data_ast::parse::ast::CXCastType;
+use cx_data_ast::parse::value_type::{get_intrinsic_type, CXType, CXTypeKind};
+use cx_data_bytecode::VirtualInstruction::IntegerBinOp;
+use cx_data_bytecode::{BCIntBinOp, ValueID, VirtualInstruction};
 
 pub(crate) fn implicit_cast(
     builder: &mut BytecodeBuilder,
     value: ValueID,
-    from_type: &CXValType,
-    to_type: &CXValType,
+    from_type: &CXType,
+    to_type: &CXType,
     cast_type: &CXCastType
 ) -> Option<ValueID> {
     match cast_type {
@@ -22,14 +22,14 @@ pub(crate) fn implicit_cast(
         },
         
         CXCastType::IntToScaledPtrDiff => {
-            let CXTypeUnion::PointerTo(inner) =
-                to_type.intrinsic_type(&builder.type_map)?.clone() else {
+            let CXTypeKind::PointerTo(inner) =
+                to_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid pointer type")
                 };
-            let elem_size = inner.size(&builder.type_map)?;
+            let elem_size = inner.size(&builder.cx_type_map)?;
             
-            let CXTypeUnion::Integer { bytes, signed } =
-                from_type.intrinsic_type(&builder.type_map)?.clone() else {
+            let CXTypeKind::Integer { bytes, signed } =
+                from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid integer type")
                 };
             
@@ -39,14 +39,14 @@ pub(crate) fn implicit_cast(
                         VirtualInstruction::SExtend {
                             value,
                         },
-                        CXTypeUnion::Integer { bytes: 8, signed: false }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
                     )?
                 } else {
                     builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
-                        CXTypeUnion::Integer { bytes: 8, signed: false }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
                     )?
                 }
             } else {
@@ -57,12 +57,12 @@ pub(crate) fn implicit_cast(
                 VirtualInstruction::Immediate {
                     value: elem_size as i32
                 },
-                CXTypeUnion::Integer { bytes: 8, signed: false }.to_val_type()
+                CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
             )?;
             
             builder.add_instruction(
                 IntegerBinOp {
-                    op: CXBinOp::Multiply,
+                    op: BCIntBinOp::MUL,
                     left: val,
                     right: constant
                 },
@@ -80,10 +80,10 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::IntegralCast => {
-            let (_type, signed) = match get_intrinsic_type(&builder.type_map, to_type)? {
-                CXTypeUnion::Integer { signed, .. } => (to_type.clone(), *signed),
-                CXTypeUnion::PointerTo(_)
-                    => (CXTypeUnion::Integer { signed: false, bytes: 8 }.to_val_type(), false),
+            let (_type, signed) = match get_intrinsic_type(&builder.cx_type_map, to_type)? {
+                CXTypeKind::Integer { signed, .. } => (to_type.clone(), *signed),
+                CXTypeKind::PointerTo(_)
+                    => (CXTypeKind::Integer { signed: false, bytes: 8 }.to_val_type(), false),
 
                 _ => panic!("INTERNAL PANIC: Invalid integral cast type")
             };
@@ -126,7 +126,7 @@ pub(crate) fn implicit_cast(
         CXCastType::IntToFloat => {
             builder.add_instruction(
                 VirtualInstruction::IntToFloat {
-                    from: from_type.clone(),
+                    from: builder.convert_cx_type(from_type)?,
                     value,
                 },
                 to_type.clone()
@@ -136,7 +136,7 @@ pub(crate) fn implicit_cast(
         CXCastType::FloatToInt => {
             builder.add_instruction(
                 VirtualInstruction::FloatToInt {
-                    from: from_type.clone(),
+                    from: builder.convert_cx_type(from_type)?,
                     value,
                 },
                 to_type.clone()
