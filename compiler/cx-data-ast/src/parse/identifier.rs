@@ -13,7 +13,7 @@ impl CXIdent {
         self.data.as_str()
     }
 
-    pub fn to_owned(&self) -> String {
+    pub fn as_string(&self) -> String {
         self.data.clone()
     }
 

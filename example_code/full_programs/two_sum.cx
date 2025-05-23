@@ -7,9 +7,9 @@ struct ts_result {
     int index1, index2, sum;
 };
 
-ts_result two_sum(int* arr, int length, int sum) {
+struct ts_result two_sum(int* arr, int length, int sum) {
     int* set = calloc(4, 255);
-    ts_result result;
+    struct ts_result result;
     result.index1 = -1;
     result.index2 = -1;
     result.sum = -1;
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         arr[i] = atoi(argv[i + 1]);
     }
 
-    ts_result result = two_sum(arr, argc - 2, arr[argc - 2]);
+    struct ts_result result = two_sum(arr, argc - 2, arr[argc - 2]);
 
     if (result.index1 == -1) {
         printf("No two numbers add up to %d\n", arr[argc - 2]);

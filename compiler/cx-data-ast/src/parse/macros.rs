@@ -35,7 +35,7 @@ macro_rules! assert_token_matches {
         let $pattern = $data.toks.next()? else {
             use cx_data_ast::parse::macros::error_pointer;
             use cx_util::log_error;
-
+            
             $data.toks.back();
             eprintln!("{}", error_pointer(&($data).toks));
             log_error!("Expected token to match pattern: {:#?}\n Found: {:#?}", stringify!($pattern), $data.toks.peek());

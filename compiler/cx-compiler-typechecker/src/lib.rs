@@ -38,7 +38,7 @@ pub fn type_check(ast: &mut CXAST) -> Option<ExprTypeMap> {
 
         for CXParameter { type_, name } in prototype.params.iter() {
             if let Some(name) = name {
-                type_environment.symbol_table.insert(name.to_owned(), type_.clone());
+                type_environment.symbol_table.insert(name.as_string(), type_.clone());
             }
         }
 

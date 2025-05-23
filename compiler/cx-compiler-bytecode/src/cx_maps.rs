@@ -138,7 +138,7 @@ fn convert_cx_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCType> 
 pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
     Some(
         BCFunctionPrototype {
-            name: cx_proto.name.to_owned(),
+            name: cx_proto.name.as_string(),
             return_type: convert_cx_type(cx_type_map, &cx_proto.return_type)?,
             params: cx_proto.params.iter()
                 .map(|param| BCParameter {

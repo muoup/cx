@@ -10,7 +10,7 @@ pub(crate) fn get_cranelift_abi_type(val_type: &BCType) -> ir::AbiParam {
 pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
     match &val_type.kind {
         BCTypeKind::Signed { bytes } |
-        BCTypeKind::Unsigned { bytes }      => ir::Type::int(*bytes as u16 * 8)
+        BCTypeKind::Unsigned { bytes }    => ir::Type::int(*bytes as u16 * 8)
             .expect(format!("PANIC: Invalid integer size: {} bytes", *bytes).as_str()),
         
         BCTypeKind::Float { bytes: 2 }         => ir::types::F16,
@@ -18,7 +18,9 @@ pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
         BCTypeKind::Float { bytes: 8 }         => ir::types::F64,
         BCTypeKind::Float { bytes: 16 }        => ir::types::F128,
         
-        BCTypeKind::Pointer                     => ir::Type::int(64).unwrap(),
+        BCTypeKind::Struct { .. } |
+        BCTypeKind::Array { .. } |
+        BCTypeKind::Pointer                    => ir::Type::int(64).unwrap(),
         
         _ => panic!("PANIC: Unsupported type for Cranelift: {:?}", val_type),
     }

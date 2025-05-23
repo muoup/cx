@@ -6,7 +6,7 @@ use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use crate::parse::typing::{parse_initializer, parse_plain_typedef};
-use cx_util::log_error;
+use cx_util::{log_error, point_log_error};
 use crate::parse::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
@@ -14,11 +14,7 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
         .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!") {
 
         Token::Keyword(KeywordType::Import) => parse_import(data, ast),
-
-        Token::Keyword(KeywordType::Typedef) |
-        Token::Keyword(KeywordType::Struct) |
-        Token::Keyword(KeywordType::Enum) |
-        Token::Keyword(KeywordType::Union) => goto_statement_end(data),
+        Token::Keyword(KeywordType::Typedef) => goto_statement_end(data),
         
         Token::Punctuator(PunctuatorType::Semicolon) => {
             data.toks.next();
@@ -100,7 +96,8 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
     };
 
     let Some(name) = name else {
-        log_error!("PARSER ERROR: Identifier expected, found none!");
+        goto_statement_end(data);
+        return Some(());
     };
 
     match data.toks.peek() {
@@ -128,7 +125,10 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
         Some(Token::Punctuator(PunctuatorType::Semicolon))
         | Some(Token::Assignment(_)) => todo!("Global variables"),
 
-        _ => log_error!("PARSER ERROR: Expected a function declaration or variable assignment after initializer {:?} {:?}! Found token: {:?}", return_type, name, data.toks.peek()),
+        _ => {
+            goto_statement_end(data);
+            Some(())
+        },
     }
 }
 
