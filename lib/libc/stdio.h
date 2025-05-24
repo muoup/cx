@@ -1,14 +1,19 @@
-void* fopen(char *filename, char *mode);
-int fclose(void *stream);
-void clearerr(void *stream);
+@annotations std::annotations;
 
-int feof(void *stream);
-int ferror(void *stream);
-int fflush(void *stream);
+typedef void fpos_t;
+typedef void FILE;
 
-int fgetpos(void *stream, void *pos);
+void* fopen(@NonNull const char *filename, @NonNull char *mode);
+int fclose(@NonNull FILE *stream);
+void clearerr(@NonNull FILE *stream);
 
-int putchar(int c);
-int puts(char *s);
+int feof(@NonNull FILE *stream);
+int ferror(@NonNull FILE *stream);
+int fflush(@NonNull FILE *stream);
 
-int printf(const char *format, ...);
+int fgetpos(@NonNull FILE *stream, @NonNull fpos_t *pos);
+
+int putchar(@InRange(0, 255) int c);
+int puts(@NonNull char *s);
+
+int printf(@NonNull const char *format, ...);

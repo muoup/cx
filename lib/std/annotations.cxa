@@ -1,0 +1,19 @@
+@NonNull {
+    assertion { #value != null }
+}
+
+@Null {
+    assertion { #value == null }
+}
+
+@NonZero {
+    assertion { #value != 0 }
+}
+
+@Positive {
+    assertion { #value > 0 }
+}
+
+@InRange(low, high) {
+    assertion { #value >= low && #value <= high }
+}

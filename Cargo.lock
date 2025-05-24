@@ -340,6 +340,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-data-annotations"
+version = "0.1.0"
+
+[[package]]
 name = "cx-data-ast"
 version = "0.0.0"
 dependencies = [
