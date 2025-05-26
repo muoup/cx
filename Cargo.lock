@@ -312,6 +312,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-compiler-annotations"
+version = "0.1.0"
+dependencies = [
+ "cx-data-annotations",
+]
+
+[[package]]
 name = "cx-compiler-ast"
 version = "0.0.0"
 dependencies = [
