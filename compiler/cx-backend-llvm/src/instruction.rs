@@ -2,13 +2,14 @@ use std::clone;
 use std::env::args;
 use crate::attributes::noundef;
 use crate::mangling::string_literal_name;
-use crate::typing::{any_to_basic_val, bc_llvm_prototype, cx_llvm_prototype};
+use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, cx_llvm_prototype, cx_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::builder::{BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::values::{AnyValue, FunctionValue};
 use inkwell::Either;
 use std::sync::Mutex;
+use cx_data_ast::parse::ast::CXBinOp;
 
 fn inst_num() -> String {
     static NUM: Mutex<usize> = Mutex::new(0);
@@ -184,8 +185,140 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::NULL
             },
+            
+            VirtualInstruction::FunctionParameter { param_index } => {
+                let param = function_val
+                    .get_nth_param(*param_index as u32)
+                    .unwrap();
+                
+                CodegenValue::Value(param.as_any_value_enum())
+            },
+            
+            VirtualInstruction::Store { value, type_, memory } => {
+                let any_value = function_state
+                    .get_val_ref(value)?
+                    .get_value();
+                let any_type = cx_llvm_type(global_state, type_).unwrap();
 
-            _ => todo!("LLVM: generate_instruction: {:?}", block_instruction)
+                let basic_val = any_to_basic_val(any_value)?;
+                let basic_type = any_to_basic_type(any_type).unwrap();
+
+                let memory_val = function_state
+                    .get_val_ref(memory)?
+                    .get_value()
+                    .into_pointer_value();
+
+                function_state
+                    .builder
+                    .build_store(memory_val, basic_val)
+                    .ok()?;
+
+                CodegenValue::NULL
+            },
+            
+            VirtualInstruction::Load { value } => {
+                let any_value = function_state
+                    .get_val_ref(value)?
+                    .get_value()
+                    .into_pointer_value();
+                
+                let loaded_type = cx_llvm_type(
+                    global_state, 
+                    &block_instruction.value.type_,
+                ).unwrap();
+                let basic_type = any_to_basic_type(loaded_type).unwrap();
+
+                let val = function_state
+                    .builder
+                    .build_load(basic_type, any_value, inst_num().as_str())
+                    .ok()?;
+                
+                CodegenValue::Value(val.as_any_value_enum())
+            },
+            
+            VirtualInstruction::IntegerBinOp { left, right, op } => {
+                let left_value = function_state
+                    .get_val_ref(left)?
+                    .get_value()
+                    .into_int_value();
+                
+                let right_value = function_state
+                    .get_val_ref(right)?
+                    .get_value()
+                    .into_int_value();
+                
+                CodegenValue::Value(
+                    match op {
+                        CXBinOp::Add => function_state.builder
+                            .build_int_add(left_value, right_value, inst_num().as_str())
+                            .ok()?
+                            .as_any_value_enum(),
+                        CXBinOp::Subtract => function_state.builder
+                            .build_int_sub(left_value, right_value, inst_num().as_str())
+                            .ok()?
+                            .as_any_value_enum(),
+                        CXBinOp::Less => function_state.builder
+                            .build_int_compare(
+                                inkwell::IntPredicate::SLT,
+                                left_value, 
+                                right_value, 
+                                inst_num().as_str()
+                            )
+                            .ok()?
+                            .as_any_value_enum(),
+                        
+                        _ => todo!("LLVM: generate_instruction: IntegerBinOp {:?}", op)
+                    }
+                )
+            },
+            
+            VirtualInstruction::Branch { condition, true_block, false_block } => {
+                let condition_value = function_state
+                    .get_val_ref(condition)?
+                    .get_value()
+                    .into_int_value();
+                
+                let true_block_val = function_val
+                    .get_basic_blocks()
+                    .get(*true_block as usize)
+                    .unwrap()
+                    .clone();
+                
+                let false_block_val = function_val
+                    .get_basic_blocks()
+                    .get(*false_block as usize)
+                    .unwrap()
+                    .clone();
+                
+                function_state.builder
+                    .build_conditional_branch(
+                        condition_value,
+                        true_block_val,
+                        false_block_val,
+                    )
+                    .ok()?;
+                
+                CodegenValue::NULL
+            },
+            
+            // _ => todo!("LLVM: generate_instruction: {:?}", block_instruction),
+            VirtualInstruction::StructAccess { .. } => todo!("LLVM: generate_instruction: StructAccess"),
+            VirtualInstruction::AddressOf { .. } => todo!("LLVM: generate_instruction: AddressOf"),
+            VirtualInstruction::Assign { .. } => todo!("LLVM: generate_instruction: Assign"),
+            VirtualInstruction::ZExtend { .. } => todo!("LLVM: generate_instruction: ZExtend"),
+            VirtualInstruction::SExtend { .. } => todo!("LLVM: generate_instruction: SExtend"),
+            VirtualInstruction::Trunc { .. } => todo!("LLVM: generate_instruction: Trunc"),
+            VirtualInstruction::IntegerUnOp { .. } => todo!("LLVM: generate_instruction: IntegerUnOp"),
+            VirtualInstruction::FloatBinOp { .. } => todo!("LLVM: generate_instruction: FloatBinOp"),
+            VirtualInstruction::Literal { .. } => todo!("LLVM: generate_instruction: Literal"),
+            VirtualInstruction::GetFunctionAddr { .. } => todo!("LLVM: generate_instruction: GetFunctionAddr"),
+            VirtualInstruction::IntToFloat { .. } => todo!("LLVM: generate_instruction: IntToFloat"),
+            VirtualInstruction::FloatToInt { .. } => todo!("LLVM: generate_instruction: FloatToInt"),
+            VirtualInstruction::FloatCast { .. } => todo!("LLVM: generate_instruction: FloatCast"),
+            VirtualInstruction::NOP => {
+                // NOP instruction does nothing, just return NULL
+                CodegenValue::NULL
+            },
         }
     )
 }
