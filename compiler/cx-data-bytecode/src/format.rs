@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
-use std::iter;
-use crate::builder::{BlockInstruction, BytecodeFunction, BytecodeFunctionPrototype, FunctionBlock, ValueID, VirtualInstruction, VirtualValue};
-use crate::ProgramBytecode;
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue};
+use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -38,11 +37,11 @@ impl Display for FunctionBlock {
     }
 }
 
-impl Display for BytecodeFunctionPrototype {
+impl Display for BCFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}(", self.name)?;
 
-        for (i, arg) in self.args.iter().enumerate() {
+        for (i, arg) in self.params.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
@@ -151,6 +150,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::FloatBinOp { left, right, op } => {
                 write!(f, "float_binop {op} {left} {right}")
             },
+            VirtualInstruction::FloatUnOp { op, value } => {
+                write!(f, "float_unop {op:?} {value}")
+            },
             VirtualInstruction::Literal { val } => {
                 write!(f, "literal {val}")
             },
@@ -178,6 +180,115 @@ impl Display for VirtualInstruction {
             VirtualInstruction::NOP => {
                 write!(f, "nop")
             }
+        }
+    }
+}
+
+impl Display for BCIntBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}",
+           match self {
+                BCIntBinOp::ADD => "+",
+                BCIntBinOp::SUB => "-",
+                BCIntBinOp::MUL => "*",
+                BCIntBinOp::IDIV => "i/",
+                BCIntBinOp::IREM => "i%",
+
+                BCIntBinOp::UDIV => "u/",
+                BCIntBinOp::UREM => "u%",
+
+                BCIntBinOp::SHL => "<<",
+                BCIntBinOp::ASHR => "a>>",
+                BCIntBinOp::LSHR => "l>>",
+
+                BCIntBinOp::BAND => "&",
+                BCIntBinOp::BOR => "|",
+                BCIntBinOp::BXOR => "^",
+
+                BCIntBinOp::LAND => "&&",
+                BCIntBinOp::LOR => "||",
+               
+                BCIntBinOp::EQ => "==",
+                BCIntBinOp::NE => "!=",
+               
+                BCIntBinOp::ILT => "i<",
+                BCIntBinOp::IGT => "i>",
+                BCIntBinOp::ILE => "i<=",
+                BCIntBinOp::IGE => "i>=",
+               
+                BCIntBinOp::ULT => "u<",
+                BCIntBinOp::UGT => "u>",
+                BCIntBinOp::ULE => "u<=",
+                BCIntBinOp::UGE => "u>=",
+           },
+        )
+    }
+}
+
+impl Display for BCIntUnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}",
+            match self {
+                BCIntUnOp::BNOT => "~",
+                BCIntUnOp::LNOT => "!",
+                BCIntUnOp::NEG => "-",
+            },
+        )
+    }
+}
+
+impl Display for BCFloatBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}",
+            match self {
+                BCFloatBinOp::ADD => "+",
+                BCFloatBinOp::SUB => "-",
+                BCFloatBinOp::FMUL => "*",
+                BCFloatBinOp::FDIV => "/",
+            },
+        )
+    }
+}
+
+impl Display for BCFloatUnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}",
+            match self {
+                BCFloatUnOp::NEG => "-",
+            },
+        )
+    }
+}
+
+impl Display for BCType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for BCTypeKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
+            BCTypeKind::Signed { bytes } => write!(f, "i{bytes}"),
+            BCTypeKind::Unsigned { bytes } => write!(f, "u{bytes}"),
+            BCTypeKind::Float { bytes } => write!(f, "f{bytes}"),
+            BCTypeKind::Pointer => write!(f, "*"),
+
+            BCTypeKind::Struct { fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, _type)| format!("{}: {}", name, _type))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "struct {{ {} }}", fields)
+            },
+            BCTypeKind::Array { size, _type } => {
+                write!(f, "[{}; {}]", _type, size)
+            },
+
+            BCTypeKind::Unit => write!(f, "()"),
         }
     }
 }

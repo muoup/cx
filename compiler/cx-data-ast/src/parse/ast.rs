@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use crate::parse::value_type::{CXValType};
+use uuid::Uuid;
+use crate::parse::value_type::{CXType};
 use crate::parse::identifier::CXIdent;
 
-pub type TypeMap = HashMap<String, CXValType>;
-pub type FunctionMap = HashMap<String, CXFunctionPrototype>;
+pub type CXTypeMap = HashMap<String, CXType>;
+pub type CXFunctionMap = HashMap<String, CXFunctionPrototype>;
 
 #[derive(Debug)]
 pub struct CXAST {
@@ -11,21 +12,21 @@ pub struct CXAST {
 
     pub global_stmts: Vec<CXGlobalStmt>,
 
-    pub type_map: TypeMap,
-    pub function_map: FunctionMap,
+    pub type_map: CXTypeMap,
+    pub function_map: CXFunctionMap,
 }
 
 #[derive(Debug, Clone)]
 pub struct CXParameter {
     pub name: Option<CXIdent>,
-    pub type_: CXValType,
+    pub type_: CXType,
 }
 
 #[derive(Debug, Clone)]
 pub struct CXFunctionPrototype {
     pub name: CXIdent,
-    pub return_type: CXValType,
-    pub parameters: Vec<CXParameter>,
+    pub return_type: CXType,
+    pub params: Vec<CXParameter>,
     pub var_args: bool
 }
 
@@ -33,13 +34,13 @@ pub struct CXFunctionPrototype {
 pub enum CXGlobalStmt {
     GlobalVariable {
         name: CXIdent,
-        type_: CXValType,
+        type_: CXType,
         initializer: Option<CXExpr>
     },
 
     FunctionDefinition {
         prototype: CXFunctionPrototype,
-        body: CXExpr,
+        body: Box<CXExpr>,
     },
 
     FunctionForward {
@@ -55,7 +56,7 @@ pub enum CXUnOp {
     ArrayIndex,
     InitializerIndex,
 
-    ExplicitCast(CXValType),
+    ExplicitCast(CXType),
 
     PreIncrement(i8),
     PostIncrement(i8),
@@ -84,7 +85,22 @@ pub enum CXInitIndex {
 }
 
 #[derive(Debug)]
-pub enum CXExpr {
+pub struct CXExpr {
+    pub uuid: usize,
+    pub kind: CXExprKind,
+}
+
+impl Default for CXExpr {
+    fn default() -> Self {
+        CXExpr {
+            uuid: 0,
+            kind: CXExprKind::Taken
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CXExprKind {
     Taken,
     Unit,
 
@@ -120,7 +136,7 @@ pub enum CXExpr {
     },
 
     VarDeclaration {
-        type_: CXValType,
+        type_: CXType,
         name: CXIdent
     },
     BinOp {
@@ -147,23 +163,32 @@ pub enum CXExpr {
 
     ImplicitCast {
         expr: Box<CXExpr>,
-        from_type: CXValType,
-        to_type: CXValType,
+        from_type: CXType,
+        to_type: CXType,
         cast_type: CXCastType
     },
 
     ImplicitLoad {
         expr: Box<CXExpr>,
-        loaded_type: CXValType
+        loaded_type: CXType
     },
 
     GetFunctionAddr {
         func_name: Box<CXExpr>,
-        func_sig: CXValType
+        func_sig: CXType
     },
 
     InitializerList {
         indices: Vec<CXInitIndex>,
+    }
+}
+
+impl Into<CXExpr> for CXExprKind {
+    fn into(self) -> CXExpr {
+        CXExpr {
+            uuid: Uuid::new_v4().as_u128() as usize,
+            kind: self
+        }
     }
 }
 

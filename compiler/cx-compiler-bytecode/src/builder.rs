@@ -1,60 +1,25 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp, FunctionMap, TypeMap};
-use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
-use cx_util::scoped_map::ScopedMap;
 use crate::ProgramBytecode;
-
-pub type ElementID = u32;
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct ValueID {
-    pub block_id: ElementID,
-    pub value_id: ElementID
-}
-
-impl ValueID {
-    pub const NULL: Self = ValueID {
-        block_id: u32::MAX,
-        value_id: u32::MAX
-    };
-}
-
-#[derive(Debug, Clone)]
-pub struct VirtualValue {
-    pub type_: CXValType
-}
-
-#[derive(Debug)]
-pub struct BytecodeParameter {
-    pub name: Option<String>,
-    pub type_: CXValType
-}
-
-#[derive(Debug)]
-pub struct BytecodeFunctionPrototype {
-    pub name: String,
-    pub return_type: CXValType,
-    pub args: Vec<BytecodeParameter>,
-    pub var_args: bool,
-}
-
-#[derive(Debug)]
-pub struct BytecodeFunction {
-    pub prototype: BytecodeFunctionPrototype,
-    pub blocks: Vec<FunctionBlock>
-}
-
-#[derive(Debug)]
-pub struct FunctionBlock {
-    pub body: Vec<BlockInstruction>
-}
+use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXFunctionMap, CXTypeMap};
+use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_bytecode::types::BCType;
+use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap};
+use cx_data_bytecode::node_type_map::ExprTypeMap;
+use cx_util::log_error;
+use cx_util::scoped_map::ScopedMap;
+use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
 
 #[derive(Debug)]
 pub struct BytecodeBuilder {
     global_strings: Vec<String>,
     functions: Vec<BytecodeFunction>,
 
-    pub type_map: TypeMap,
-    pub fn_map: FunctionMap,
+    pub cx_type_map: CXTypeMap,
+    pub cx_function_map: CXFunctionMap,
+    
+    pub type_map: BCTypeMap,
+    pub fn_map: BCFunctionMap,
+    
+    pub expr_type_map: ExprTypeMap,
 
     pub current_block: u16,
     pub current_instruction: u16,
@@ -66,7 +31,7 @@ pub struct BytecodeBuilder {
 
 #[derive(Debug)]
 pub struct BytecodeFunctionContext {
-    prototype: BytecodeFunctionPrototype,
+    prototype: BCFunctionPrototype,
     current_block: ElementID,
 
     merge_stack: Vec<ElementID>,
@@ -76,13 +41,17 @@ pub struct BytecodeFunctionContext {
 }
 
 impl BytecodeBuilder {
-    pub fn new(type_map: TypeMap, fn_map: FunctionMap) -> Self {
+    pub fn new(type_map: CXTypeMap, fn_map: CXFunctionMap, expr_type_map: ExprTypeMap) -> Self {
         BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
 
-            type_map,
-            fn_map,
+            type_map: convert_cx_type_map(&type_map),
+            fn_map: convert_cx_func_map(&type_map, &fn_map),
+            expr_type_map,
+            
+            cx_type_map: type_map,
+            cx_function_map: fn_map,
 
             symbol_table: ScopedMap::new(),
             current_block: 0,
@@ -92,7 +61,8 @@ impl BytecodeBuilder {
         }
     }
 
-    pub fn new_function(&mut self, fn_prototype: BytecodeFunctionPrototype) {
+    pub fn new_function(&mut self, fn_prototype: &CXFunctionPrototype) {
+        let fn_prototype = self.convert_cx_prototype(fn_prototype).unwrap();
         self.function_context = Some(
             BytecodeFunctionContext {
                 prototype: fn_prototype,
@@ -129,11 +99,11 @@ impl BytecodeBuilder {
         self.function_context.as_ref()
             .expect("Attempted to access function context with no current function selected")
     }
-
-    pub fn add_instruction(
+    
+    pub fn add_instruction_bt(
         &mut self,
         instruction: VirtualInstruction,
-        value_type: CXValType
+        value_type: BCType
     ) -> Option<ValueID> {
         let context = self.fun_mut();
         let current_block = context.current_block;
@@ -155,6 +125,19 @@ impl BytecodeBuilder {
         )
     }
 
+    pub fn add_instruction(
+        &mut self,
+        instruction: VirtualInstruction,
+        value_type: CXType
+    ) -> Option<ValueID> {
+        let value_type = self.convert_cx_type(&value_type)?;
+        
+        self.add_instruction_bt(
+            instruction,
+            value_type
+        )
+    }
+
     pub fn get_variable(&self, value_id: ValueID) -> Option<&VirtualValue> {
         self.fun()
             .blocks[value_id.block_id as usize]
@@ -162,16 +145,26 @@ impl BytecodeBuilder {
             .map(|v| &v.value)
     }
 
-    pub fn get_type(&self, value_id: ValueID) -> Option<&CXValType> {
-        self.get_variable(value_id)
-            .map(|v| &v.type_)
+    pub fn get_expr_type(&self, expr: &CXExpr) -> Option<CXType> {
+        self.expr_type_map.get(expr).cloned()
     }
-
-    pub fn get_val_intrin_type(&self, value_id: ValueID) -> Option<&CXTypeUnion> {
-        self.get_type(value_id)
-            .and_then(|v| v.intrinsic_type(&self.type_map))
+    
+    pub fn get_expr_intrinsic_type(&self, expr: &CXExpr) -> Option<CXTypeKind> {
+        let Some(cx_type) = self.get_expr_type(expr) else {
+            log_error!("INTERNAL PANIC: Failed to get intrinsic type for expression: {:?}\nKey: {}\n{:#?}", expr, &expr as *const _ as u64, self.expr_type_map);
+        };
+        
+        cx_type.intrinsic_type(&self.cx_type_map).cloned()
     }
-
+    
+    pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
+        let Some(value) = self.get_variable(value_id) else {
+            panic!("INTERNAL PANIC: Failed to get variable for value id: {:?}", value_id);
+        };
+        
+        Some(&value.type_)
+    }
+    
     pub fn start_cont_point(&mut self) -> ElementID {
         let cond_block = self.create_block();
 
@@ -252,141 +245,4 @@ impl BytecodeBuilder {
             }
         )
     }
-}
-
-#[derive(Debug)]
-pub struct BlockInstruction {
-    pub instruction: VirtualInstruction,
-    pub value: VirtualValue
-}
-
-#[derive(Debug)]
-pub enum VirtualInstruction {
-    FunctionParameter {
-        param_index: u32
-    },
-
-    Allocate {
-        size: usize
-    },
-
-    Load {
-        value: ValueID,
-    },
-
-    Immediate {
-        value: i32
-    },
-
-    StructAccess {
-        struct_: ValueID,
-        field_index: usize,
-        field_offset: usize
-    },
-
-    Store {
-        memory: ValueID,
-        value: ValueID,
-        type_: CXValType
-    },
-
-    AddressOf {
-        value: ValueID
-    },
-
-    Assign {
-        target: ValueID,
-        value: ValueID
-    },
-
-    ZExtend {
-        value: ValueID,
-    },
-
-    SExtend {
-        value: ValueID,
-    },
-
-    Trunc {
-        value: ValueID
-    },
-
-    IntegerBinOp {
-        op: CXBinOp,
-        left: ValueID,
-        right: ValueID
-    },
-    
-    IntegerUnOp {
-        op: CXUnOp,
-        value: ValueID
-    },
-
-    FloatBinOp {
-        op: CXBinOp,
-        left: ValueID,
-        right: ValueID
-    },
-
-    Literal {
-        val: u64
-    },
-
-    StringLiteral {
-        str_id: ElementID
-    },
-
-    DirectCall {
-        func: ValueID,
-        args: Vec<ValueID>,
-        method_sig: BytecodeFunctionPrototype
-    },
-
-    IndirectCall {
-        func_ptr: ValueID,
-        args: Vec<ValueID>,
-        method_sig: BytecodeFunctionPrototype
-    },
-
-    FunctionReference {
-        name: String
-    },
-
-    GetFunctionAddr {
-        func_name: ValueID
-    },
-
-    IntToFloat {
-        from: CXValType,
-        value: ValueID
-    },
-
-    FloatToInt {
-        from: CXValType,
-        value: ValueID
-    },
-
-    FloatCast {
-        value: ValueID
-    },
-
-    Branch {
-        condition: ValueID,
-        true_block: ElementID,
-        false_block: ElementID
-    },
-
-    Jump {
-        target: ElementID
-    },
-
-    Return {
-        value: Option<ValueID>
-    },
-
-    BitCast {
-        value: ValueID
-    },
-
-    NOP
 }

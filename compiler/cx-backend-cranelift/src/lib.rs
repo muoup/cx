@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, Block, Configurable, FunctionBuilder, Value};
+use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_ast::parse::ast::{FunctionMap, TypeMap};
-use cx_data_bytecode::builder::{BytecodeFunctionPrototype, ValueID};
-use cx_data_bytecode::ProgramBytecode;
+use cx_data_ast::parse::ast::{CXFunctionMap, CXTypeMap};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, ProgramBytecode, ValueID};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::routines::string_literal;
@@ -62,8 +61,8 @@ pub struct FunctionState<'a> {
     pub(crate) function_ids: &'a HashMap<String, FuncId>,
     pub(crate) global_strs: &'a Vec<DataId>,
 
-    pub(crate) type_map: &'a TypeMap,
-    pub(crate) fn_map: &'a FunctionMap,
+    pub(crate) type_map: &'a BCTypeMap,
+    pub(crate) fn_map: &'a BCFunctionMap,
 
     pub(crate) block_map: Vec<Block>,
 
@@ -72,7 +71,7 @@ pub struct FunctionState<'a> {
 
     pub(crate) fn_params: Vec<Value>,
 
-    pub(crate) function_prototype: &'a BytecodeFunctionPrototype,
+    pub(crate) function_prototype: &'a BCFunctionPrototype,
     pub(crate) variable_table: VariableTable,
 
     pub(crate) pointer_type: ir::Type,
@@ -85,8 +84,8 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) object_module: ObjectModule,
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
-    pub(crate) fn_map: &'a FunctionMap,
-    pub(crate) type_map: &'a TypeMap,
+    pub(crate) fn_map: &'a BCFunctionMap,
+    pub(crate) type_map: &'a BCTypeMap,
 
     pub(crate) global_strs: Vec<DataId>,
 

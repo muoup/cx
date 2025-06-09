@@ -1,38 +1,31 @@
-use std::env::args;
-use std::process::id;
-use cranelift::codegen::ir;
-use cranelift::codegen::ir::{ArgumentPurpose, FuncRef, Inst};
-use cranelift::prelude::{InstBuilder, Signature, Value};
-use cranelift_module::{FuncId, Module};
-use cranelift_object::ObjectModule;
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter, TypeMap};
-use cx_data_ast::parse::value_type::{get_intrinsic_type, get_type_size, is_structure, CXTypeUnion, CXValType};
-use cx_data_bytecode::builder::{BytecodeFunctionPrototype, ValueID};
-use crate::{CodegenValue, FunctionState, GlobalState};
 use crate::routines::allocate_variable;
 use crate::value_type::get_cranelift_abi_type;
+use crate::{CodegenValue, FunctionState};
+use cranelift::codegen::ir;
+use cranelift::codegen::ir::{FuncRef, Inst};
+use cranelift::prelude::{Signature, Value};
+use cranelift_module::{FuncId, Module};
+use cranelift_object::ObjectModule;
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, ValueID};
 
 pub(crate) fn prepare_function_sig(
-    type_map: &TypeMap,
     object_module: &mut ObjectModule,
-    prototype: &CXFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<Signature> {
     let mut sig = Signature::new(
         object_module.target_config().default_call_conv
     );
 
-    if !matches!(get_intrinsic_type(type_map, &prototype.return_type)?, CXTypeUnion::Unit) {
-        sig.returns.push(get_cranelift_abi_type(type_map, &prototype.return_type));
+    if !prototype.return_type.is_void() {
+        sig.returns.push(get_cranelift_abi_type(&prototype.return_type));
 
-        if is_structure(type_map, &prototype.return_type) {
-            let abi_type = get_cranelift_abi_type(type_map, &prototype.return_type);
-
-            sig.params.push(abi_type);
+        if prototype.return_type.is_structure() {
+            sig.params.push(get_cranelift_abi_type(&prototype.return_type));
         }
     }
 
-    for CXParameter { type_, .. } in prototype.parameters.iter() {
-        sig.params.push(get_cranelift_abi_type(type_map, type_));
+    for BCParameter { type_, .. } in prototype.params.iter() {
+        sig.params.push(get_cranelift_abi_type(type_));
     }
 
     Some(sig)
@@ -41,7 +34,7 @@ pub(crate) fn prepare_function_sig(
 pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
     func: ValueID,
-    prototype: &BytecodeFunctionPrototype,
+    prototype: &BCFunctionPrototype,
     args: &'a [ValueID],
 ) -> Option<(CodegenValue, Vec<Value>)> {
     let val = context.variable_table.get(&func).cloned().unwrap();
@@ -49,8 +42,8 @@ pub(crate) fn prepare_method_call<'a>(
         .map(|arg| context.variable_table.get(arg).unwrap().as_value())
         .collect::<Vec<_>>();
 
-    if is_structure(context.type_map, &prototype.return_type) {
-        let type_size = get_type_size(context.type_map, &context.function_prototype.return_type)?;
+    if prototype.return_type.is_structure() {
+        let type_size = prototype.return_type.size();
         let temp_buffer = allocate_variable(context, type_size as u32, None)?;
 
         params.insert(0, temp_buffer);
@@ -79,7 +72,7 @@ pub(crate) fn get_func_ref(
         .fn_map
         .get(name)?;
 
-    if !prototype.var_args || args.len() == prototype.parameters.len() {
+    if !prototype.var_args || args.len() == prototype.params.len() {
         return Some(
             context
             .object_module
@@ -87,9 +80,9 @@ pub(crate) fn get_func_ref(
         )
     }
 
-    let mut sig = prepare_function_sig(context.type_map, context.object_module, prototype)?;
+    let mut sig = prepare_function_sig(context.object_module, prototype)?;
 
-    for i in prototype.parameters.len()..args.len() {
+    for i in prototype.params.len()..args.len() {
         let arg_type = context.builder.func.dfg.value_type(args[i]);
 
         sig.params.push(
