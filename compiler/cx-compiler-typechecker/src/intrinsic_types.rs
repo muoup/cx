@@ -1,7 +1,7 @@
 use cx_data_ast::parse::ast::CXTypeMap;
 use cx_data_ast::parse::value_type::CXTypeKind;
 
-pub fn add_internal_types(type_map: &mut CXTypeMap) {
+pub fn add_kinds(type_map: &mut CXTypeMap) {
     macro_rules! add {
         ($name:expr, $type_:expr) => {
             type_map.insert(

@@ -1,18 +1,17 @@
 use crate::attributes::*;
 use crate::mangling::string_literal_name;
-use crate::typing::{any_to_basic_type, create_fn_proto, cx_llvm_prototype, cx_llvm_type};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, FunctionMap, TypeMap};
-use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
-use cx_data_bytecode::builder::{BytecodeFunction, ElementID, ValueID};
-use cx_data_bytecode::ProgramBytecode;
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BytecodeFunction, ElementID, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::targets::{InitializationConfig, Target};
-use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicType, FunctionType};
 use inkwell::values::{AnyValue, AnyValueEnum, AsValueRef, BasicValue};
 use std::collections::HashMap;
+use inkwell::types::FunctionType;
+use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
+use crate::typing::{any_to_basic_type, cx_llvm_prototype, cx_llvm_type};
 
 pub(crate) mod typing;
 mod instruction;
@@ -25,8 +24,8 @@ pub(crate) struct GlobalState<'a> {
 
     functions: HashMap<String, FunctionType<'a>>,
 
-    type_map: &'a TypeMap,
-    function_map: &'a FunctionMap,
+    type_map: &'a BCTypeMap,
+    function_map: &'a BCFunctionMap,
 }
 
 pub(crate) struct FunctionState<'a> {
@@ -169,9 +168,9 @@ fn fn_aot_codegen(
 fn cache_type<'a>(
     global_state: &GlobalState<'a>,
     name: &str,
-    _type: &CXValType
+    _type: &BCType
 ) -> Option<()> {
-    let CXTypeUnion::Structured { fields, .. } = &_type.internal_type else {
+    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         return Some(());
     };
 
@@ -194,7 +193,7 @@ fn cache_type<'a>(
 
 fn cache_prototype<'a>(
     global_state: &mut GlobalState<'a>,
-    prototype: &'a CXFunctionPrototype
+    prototype: &'a BCFunctionPrototype,
 ) -> Option<()> {
     let llvm_prototype = cx_llvm_prototype(
         global_state,
@@ -207,7 +206,7 @@ fn cache_prototype<'a>(
         None
     );
 
-    for i in 0..prototype.parameters.len() {
+    for i in 0..prototype.params.len() {
         func.add_attribute(
             AttributeLoc::Param(i as u32),
             noundef(global_state.context)
@@ -215,7 +214,7 @@ fn cache_prototype<'a>(
     }
 
     global_state.functions.insert(
-        prototype.name.to_owned(),
+        prototype.name.to_string(),
         func.get_type()
     );
 

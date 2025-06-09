@@ -1,10 +1,8 @@
-use std::clone;
-use std::env::args;
 use crate::attributes::noundef;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, cx_llvm_prototype, cx_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_data_bytecode::builder::{BlockInstruction, VirtualInstruction};
+use cx_data_bytecode::{BCIntBinOp, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::values::{AnyValue, FunctionValue};
 use inkwell::Either;
@@ -249,15 +247,15 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::Value(
                     match op {
-                        CXBinOp::Add => function_state.builder
+                        BCIntBinOp::ADD => function_state.builder
                             .build_int_add(left_value, right_value, inst_num().as_str())
                             .ok()?
                             .as_any_value_enum(),
-                        CXBinOp::Subtract => function_state.builder
+                        BCIntBinOp::SUB => function_state.builder
                             .build_int_sub(left_value, right_value, inst_num().as_str())
                             .ok()?
                             .as_any_value_enum(),
-                        CXBinOp::Less => function_state.builder
+                        BCIntBinOp::ILT => function_state.builder
                             .build_int_compare(
                                 inkwell::IntPredicate::SLT,
                                 left_value, 
@@ -315,6 +313,9 @@ pub(crate) fn generate_instruction<'a>(
             VirtualInstruction::IntToFloat { .. } => todo!("LLVM: generate_instruction: IntToFloat"),
             VirtualInstruction::FloatToInt { .. } => todo!("LLVM: generate_instruction: FloatToInt"),
             VirtualInstruction::FloatCast { .. } => todo!("LLVM: generate_instruction: FloatCast"),
+            VirtualInstruction::FloatUnOp { .. } => todo!("LLVM: generate_instruction: FloatUnOp"),
+            
+            
             VirtualInstruction::NOP => {
                 // NOP instruction does nothing, just return NULL
                 CodegenValue::NULL

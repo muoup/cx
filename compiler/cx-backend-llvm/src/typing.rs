@@ -1,10 +1,9 @@
 use inkwell::AddressSpace;
 use crate::GlobalState;
-use cx_data_ast::parse::value_type::{CXTypeUnion, CXValType};
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum, FunctionType};
-use inkwell::values::{AnyValueEnum, BasicValue, BasicValueEnum};
-use cx_data_ast::parse::ast::CXFunctionPrototype;
-use cx_data_bytecode::builder::BytecodeFunctionPrototype;
+use inkwell::values::{AnyValueEnum, BasicValueEnum};
+use cx_data_bytecode::BCFunctionPrototype;
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 
 pub(crate) fn any_to_basic_type<'a>(any_type: AnyTypeEnum) -> Option<BasicTypeEnum> {
     match any_type {
@@ -55,11 +54,12 @@ pub(crate) fn create_fn_proto<'a>(return_type: AnyTypeEnum<'a>, args: &[AnyTypeE
     )
 }
 
-pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &CXValType) -> Option<AnyTypeEnum<'a>> {
+pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
     Some(
-        match &_type.internal_type {
-            CXTypeUnion::Unit => state.context.void_type().as_any_type_enum(),
-            CXTypeUnion::Integer { bytes, .. } => {
+        match &_type.kind {
+            BCTypeKind::Unit => state.context.void_type().as_any_type_enum(),
+            BCTypeKind::Signed { bytes, .. } |
+            BCTypeKind::Unsigned { bytes, .. } => {
                 match *bytes {
                     1 => state.context.i8_type().as_any_type_enum(),
                     2 => state.context.i16_type().as_any_type_enum(),
@@ -69,25 +69,10 @@ pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &CXValType) -> Op
                     _ => panic!("Invalid integer size")
                 }
             },
-            CXTypeUnion::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
-            CXTypeUnion::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
-            CXTypeUnion::PointerTo(_)
-                => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
-
-            CXTypeUnion::Identifier(ident) => {
-                let ident_type = state.type_map.get(ident.as_str())?;
-                let name = ident.as_str();
-                
-                match ident_type.internal_type {
-                    CXTypeUnion::Structured { .. } =>
-                        state.module.get_struct_type(name)
-                            .unwrap_or(state.context.opaque_struct_type(name))
-                            .as_any_type_enum(),
-
-                    _ => return cx_llvm_type(state, ident_type)
-                }
-            },
-
+            BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
+            BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
+            BCTypeKind::Pointer => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+            
             _ => panic!("Invalid type: {:?}", _type)
         }
     )
@@ -95,11 +80,11 @@ pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &CXValType) -> Op
 
 pub(crate) fn cx_llvm_prototype<'a>(
     state: &GlobalState<'a>,
-    prototype: &CXFunctionPrototype
+    prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
     let return_type = cx_llvm_type(state, &prototype.return_type)?;
     let arg_types = prototype
-        .parameters
+        .params
         .iter()
         .map(|arg| cx_llvm_type(state, &arg.type_))
         .collect::<Option<Vec<_>>>()?;
@@ -113,11 +98,11 @@ pub(crate) fn cx_llvm_prototype<'a>(
 
 pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
-    prototype: &BytecodeFunctionPrototype
+    prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
     let return_type = cx_llvm_type(state, &prototype.return_type)?;
     let arg_types = prototype
-        .args
+        .params
         .iter()
         .map(|arg| cx_llvm_type(state, &arg.type_))
         .collect::<Option<Vec<_>>>()?;
