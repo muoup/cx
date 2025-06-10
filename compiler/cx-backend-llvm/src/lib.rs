@@ -1,22 +1,26 @@
 use crate::attributes::*;
 use crate::mangling::string_literal_name;
+use crate::typing::{any_to_basic_type, cx_llvm_prototype, cx_llvm_type};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BytecodeFunction, ElementID, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::targets::{InitializationConfig, Target};
+use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
+use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
+use inkwell::types::{AnyType, FunctionType};
 use inkwell::values::{AnyValue, AnyValueEnum, AsValueRef, BasicValue};
+use inkwell::OptimizationLevel;
 use std::collections::HashMap;
-use inkwell::types::FunctionType;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use crate::typing::{any_to_basic_type, cx_llvm_prototype, cx_llvm_type};
+use std::path::Path;
+use cx_util::format::dump_data;
 
 pub(crate) mod typing;
 mod instruction;
 mod mangling;
 mod attributes;
+mod arithmetic;
 
 pub(crate) struct GlobalState<'a> {
     module: Module<'a>,
@@ -83,8 +87,8 @@ pub fn bytecode_aot_codegen(
         function_map: &bytecode.fn_map,
     };
 
-    for (name, _type) in global_state.type_map.iter() {
-        cache_type(&mut global_state, name, _type).unwrap();
+    for _type in global_state.type_map.values() {
+        cache_type(&mut global_state, _type).unwrap();
     }
 
     for prototypes in global_state.function_map.values() {
@@ -110,17 +114,61 @@ pub fn bytecode_aot_codegen(
     }
 
     for func in bytecode.fn_defs.iter() {
-        fn_aot_codegen(func, &global_state)?;
+        fn_aot_codegen(func, &global_state)
+            .expect(format!("Failed to generate function code for function: {}", func.prototype.name).as_str());
     }
 
-    let output = global_state.module.print_to_string();
+    let target = Target::from_triple(
+        &TargetMachine::get_default_triple()
+    ).expect("Failed to get target from triple");
 
+    let target_machine = target
+        .create_target_machine(
+            &TargetMachine::get_default_triple(),
+            "generic",
+            "",
+            OptimizationLevel::None,
+            RelocMode::Default,
+            CodeModel::Default
+        )
+        .expect("Failed to create target machine");
+    
+    global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {:#?}", err));
+    global_state.module.set_triple(&TargetMachine::get_default_triple());
+    
+    // global_state.module
+    //     .run_passes(
+    //         "default<O1>",
+    //         &target_machine,
+    //         PassBuilderOptions::create()
+    //     )
+    //     .expect("Failed to run passes");
+    
+    let output = global_state.module.print_to_string();
+    dump_data(&output.to_string_lossy());
     println!(
         "LLVM IR:\n{}\n",
         output.to_string_lossy()
     );
+    std::fs::write(
+        ".internal/debug.ll",
+        output.to_string_lossy().as_bytes()
+    ).expect("Failed to write to file");
 
-    None
+    let asm = target_machine
+        .write_to_memory_buffer(
+            &global_state.module,
+            inkwell::targets::FileType::Assembly,
+        )
+        .expect("Failed to write module to memory buffer");
+    
+    dump_data(&String::from_utf8_lossy(asm.as_slice()));
+
+    target_machine
+        .write_to_file(&global_state.module, inkwell::targets::FileType::Object, Path::new(output_path))
+        .expect("Failed to add analysis passes");
+
+    Some(())
 }
 
 fn fn_aot_codegen(
@@ -153,12 +201,26 @@ fn fn_aot_codegen(
                 &function_state,
                 &func_val,
                 inst
-            )?;
+            ).expect(format!(
+                "Failed to generate instruction {} in block {}",
+                value_id, block_id
+            ).as_str());
 
             function_state.value_map.insert(
                 ValueID { block_id: block_id as ElementID, value_id: value_id as ElementID },
                 value
             );
+            
+            if inst.instruction.is_block_terminating() {
+                if value_id + 1 < block.body.len() {
+                    println!("Redundant instructions after terminator in block {}", block_id);
+                    
+                    for instr in block.body.iter().skip(value_id + 1) {
+                        println!("{}", instr);
+                    }
+                }
+                break;
+            }
         }
     }
 
@@ -167,26 +229,24 @@ fn fn_aot_codegen(
 
 fn cache_type<'a>(
     global_state: &GlobalState<'a>,
-    name: &str,
     _type: &BCType
 ) -> Option<()> {
-    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+    let BCTypeKind::Struct { fields, name } = &_type.kind else {
         return Some(());
     };
 
     let fields = fields
         .iter()
-        .map(|(_, _type)| {
-            let llvm_type = cx_llvm_type(global_state, _type)?;
-            any_to_basic_type(llvm_type)
+        .map(|(_, field_type)| {
+            let type_ = cx_llvm_type(global_state, field_type)?;
+
+            any_to_basic_type(type_)
         })
-        .collect::<Option<Vec<_>>>()
-        .unwrap();
-
-    let opaque_type = global_state.module.get_struct_type(name)
-        .unwrap_or(global_state.context.opaque_struct_type(name));
-
-    opaque_type.set_body(&fields, false);
+        .collect::<Option<Vec<_>>>()?;
+    
+    let struct_type = cx_llvm_type(global_state, _type)?.into_struct_type();
+    struct_type.set_body(&fields, false);
+    struct_type.as_any_type_enum();
 
     Some(())
 }

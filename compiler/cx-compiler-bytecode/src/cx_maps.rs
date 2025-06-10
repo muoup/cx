@@ -194,11 +194,15 @@ pub(crate) fn convert_cx_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTyp
 
             CXTypeKind::Array { _type, size } =>
                 BCTypeKind::Array { size: *size, _type: Box::new(convert_cx_type(cx_type_map, _type)?) },
-            CXTypeKind::Structured { fields, .. } =>
-                BCTypeKind::Struct { fields:
-                fields.iter()
-                    .map(|(_name, _type)| Some((_name.clone(), convert_cx_type(cx_type_map, &_type)?)))
-                    .collect::<Option<Vec<_>>>()?
+            CXTypeKind::Structured { fields, name } =>
+                BCTypeKind::Struct {
+                    name: match name {
+                        Some(name) => name.as_string(),
+                        None => "".to_string()
+                    },
+                    fields: fields.iter()
+                        .map(|(_name, _type)| Some((_name.clone(), convert_cx_type(cx_type_map, &_type)?)))
+                        .collect::<Option<Vec<_>>>()?
                 },
 
             CXTypeKind::Unit => BCTypeKind::Unit

@@ -30,7 +30,8 @@ fn main() {
         .dump()
         .generate_bytecode()
         .dump()
-        .llvm_codegen();
+        .llvm_codegen()
+        .link();
 
     println!("Compilation complete!");
 }

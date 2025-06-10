@@ -10,7 +10,7 @@ pub(crate) fn get_struct_field(
     _type: &BCType,
     name: &str
 ) -> Option<StructAccess> {
-    let BCTypeKind::Struct { fields } = &_type.kind else {
+    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         panic!("PANIC: Expected struct type, got: {:?}", _type);
     };
     

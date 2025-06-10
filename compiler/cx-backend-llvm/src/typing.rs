@@ -1,9 +1,19 @@
 use inkwell::AddressSpace;
-use crate::GlobalState;
+use inkwell::llvm_sys::LLVMValue;
+use crate::{FunctionState, GlobalState};
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum, FunctionType};
-use inkwell::values::{AnyValueEnum, BasicValueEnum};
+use inkwell::values::{AnyValueEnum, AsValueRef, BasicValueEnum};
 use cx_data_bytecode::BCFunctionPrototype;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
+
+pub(crate) fn anonymous_struct_counter() -> usize {
+    static mut COUNTER: usize = 0;
+    unsafe {
+        let current = COUNTER;
+        COUNTER += 1;
+        current
+    }
+}
 
 pub(crate) fn any_to_basic_type<'a>(any_type: AnyTypeEnum) -> Option<BasicTypeEnum> {
     match any_type {
@@ -72,6 +82,11 @@ pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
             BCTypeKind::Pointer => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+
+            BCTypeKind::Struct { name, .. } =>
+                state.context.get_struct_type(name.as_str())
+                    .unwrap_or_else(|| state.context.opaque_struct_type(name.as_str()))
+                    .as_any_type_enum(),
             
             _ => panic!("Invalid type: {:?}", _type)
         }
@@ -82,7 +97,10 @@ pub(crate) fn cx_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
-    let return_type = cx_llvm_type(state, &prototype.return_type)?;
+    let return_type = match cx_llvm_type(state, &prototype.return_type)? {
+        AnyTypeEnum::StructType(_) => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+        any_type => any_type,
+    };
     let arg_types = prototype
         .params
         .iter()

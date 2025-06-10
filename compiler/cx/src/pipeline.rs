@@ -110,7 +110,7 @@ impl CompilerPipeline {
 
     pub fn read_file(mut self) -> Self {
         let file_contents = std::fs::read_to_string(self.source_dir.as_str())
-            .expect("PIPELINE ERROR: Failed to read source file");
+            .expect(format!("PIPELINE ERROR: Failed to read source file {}", self.source_dir).as_str());
 
         self.pipeline_stage = PipelineStage::FileRead(file_contents);
         self
@@ -201,6 +201,9 @@ impl CompilerPipeline {
             eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
             exit(1);
         };
+        
+        std::fs::create_dir_all(&self.internal_dir)
+            .expect("Failed to create internal directory");
 
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
         cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
@@ -218,6 +221,9 @@ impl CompilerPipeline {
             exit(1);
         };
 
+        std::fs::create_dir_all(&self.internal_dir)
+            .expect("Failed to create internal directory");
+        
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
         cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             eprintln!("ERROR: Failed to generate code");
@@ -237,7 +243,7 @@ impl CompilerPipeline {
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
         let output_file = self.output_file.clone();
 
-        Command::new("gcc")
+        let status = Command::new("gcc")
             .arg(output_path)
             .arg("-o")
             .arg(output_file)
@@ -246,6 +252,11 @@ impl CompilerPipeline {
             .status()
             .expect("Failed to execute command");
 
+        if !status.success() {
+            eprintln!("ERROR: Linking failed with status: {}", status);
+            exit(1);
+        }
+        
         println!("Successfully created executable: {}", self.output_file);
 
         self

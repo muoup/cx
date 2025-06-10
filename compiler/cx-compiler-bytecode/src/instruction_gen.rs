@@ -63,6 +63,7 @@ pub fn generate_instruction(
             builder.add_instruction_bt(
                 VirtualInstruction::StructAccess {
                     struct_: left_id,
+                    struct_type: ltype,
                     field_offset: struct_access.offset,
                     field_index: struct_access.index,
                 },

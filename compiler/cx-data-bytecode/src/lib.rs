@@ -88,6 +88,7 @@ pub enum VirtualInstruction {
 
     StructAccess {
         struct_: ValueID,
+        struct_type: BCType,
         field_index: usize,
         field_offset: usize
     },
@@ -99,11 +100,6 @@ pub enum VirtualInstruction {
     },
 
     AddressOf {
-        value: ValueID
-    },
-
-    Assign {
-        target: ValueID,
         value: ValueID
     },
 
@@ -139,10 +135,6 @@ pub enum VirtualInstruction {
     FloatUnOp {
         op: BCFloatUnOp,
         value: ValueID
-    },
-
-    Literal {
-        val: u64
     },
 
     StringLiteral {
@@ -202,6 +194,17 @@ pub enum VirtualInstruction {
     },
 
     NOP
+}
+
+impl VirtualInstruction {
+    pub fn is_block_terminating(&self) -> bool {
+        match self {
+            VirtualInstruction::Branch { .. } |
+            VirtualInstruction::Jump   { .. } |
+            VirtualInstruction::Return { .. } => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

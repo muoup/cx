@@ -39,7 +39,7 @@ pub(crate) fn implicit_cast(
                         VirtualInstruction::SExtend {
                             value,
                         },
-                        CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
                     )?
                 } else {
                     builder.add_instruction(

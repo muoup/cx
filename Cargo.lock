@@ -325,8 +325,8 @@ dependencies = [
 name = "cx-backend-llvm"
 version = "0.1.0"
 dependencies = [
- "cx-data-ast",
  "cx-data-bytecode",
+ "cx-util",
  "inkwell",
 ]
 

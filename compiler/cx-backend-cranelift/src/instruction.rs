@@ -33,14 +33,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         }
 
-        VirtualInstruction::Literal {
-            val
-        } => Some(
-            CodegenValue::Value(
-                context.builder.ins().iconst(ir::Type::int(32)?, *val as i64)
-            )
-        ),
-
         VirtualInstruction::StringLiteral { str_id } => {
             let global_id = context.global_strs.get(*str_id as usize).cloned().unwrap();
             let global_val = context.object_module.declare_data_in_func(global_id, &mut context.builder.func);
@@ -214,7 +206,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let inst = match op {
                 BCIntBinOp::ADD             => context.builder.ins().iadd(left, right),
                 BCIntBinOp::SUB             => context.builder.ins().isub(left, right),
-                BCIntBinOp::MUL => context.builder.ins().imul(left, right),
+                BCIntBinOp::MUL             => context.builder.ins().imul(left, right),
                 BCIntBinOp::IDIV            => context.builder.ins().sdiv(left, right),
                 BCIntBinOp::IREM            => context.builder.ins().srem(left, right),
                 
