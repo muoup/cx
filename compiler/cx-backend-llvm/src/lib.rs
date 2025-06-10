@@ -146,15 +146,7 @@ pub fn bytecode_aot_codegen(
     
     let output = global_state.module.print_to_string();
     dump_data(&output.to_string_lossy());
-    println!(
-        "LLVM IR:\n{}\n",
-        output.to_string_lossy()
-    );
-    std::fs::write(
-        ".internal/debug.ll",
-        output.to_string_lossy().as_bytes()
-    ).expect("Failed to write to file");
-
+    
     let asm = target_machine
         .write_to_memory_buffer(
             &global_state.module,
