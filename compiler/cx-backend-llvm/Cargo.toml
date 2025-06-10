@@ -1,0 +1,10 @@
+[package]
+name = "cx-backend-llvm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-util = { path = "../cx-util" }
+
+inkwell = { version="0.6.0", default-features = false, features=["llvm18-1"] }

@@ -88,21 +88,16 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
                     val
                 );
             }
+            
+            if instr.instruction.is_block_terminating() {
+                if value_id + 1 < fn_block.body.len() {
+                    println!("Redundant instructions after terminator in block {}", block_id);
 
-            match instr.instruction {
-                VirtualInstruction::Return { .. } |
-                VirtualInstruction::Branch { .. } |
-                VirtualInstruction::Jump { .. } => {
-                    if value_id + 1 < fn_block.body.len() {
-                        println!("Redundant instructions after terminator in block {}", block_id);
-
-                        for instr in fn_block.body.iter().skip(value_id + 1) {
-                            println!("{}", instr);
-                        }
+                    for instr in fn_block.body.iter().skip(value_id + 1) {
+                        println!("{}", instr);
                     }
-                    break;
-                },
-                _ => {}
+                }
+                break;
             }
         }
     }

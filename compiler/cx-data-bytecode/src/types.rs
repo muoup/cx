@@ -17,7 +17,7 @@ pub enum BCTypeKind {
     Pointer,
     
     Array { size: usize, _type: Box<BCType> },
-    Struct { fields: Vec<(String, BCType)> },
+    Struct { name: String, fields: Vec<(String, BCType)> },
 
     Unit
 }
@@ -38,7 +38,7 @@ impl BCType {
             BCTypeKind::Pointer => 8, // TODO: make this configurable
             BCTypeKind::Array { size, _type } 
                 => size * _type.size(),
-            BCTypeKind::Struct { fields } 
+            BCTypeKind::Struct { fields, .. } 
                 => fields.iter().map(|(_, field)| field.size()).sum(),
             BCTypeKind::Unit => 0,
         }

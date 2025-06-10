@@ -4,9 +4,9 @@ use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
+use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
-use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp};
 use cx_data_bytecode::types::BCTypeKind;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
@@ -32,14 +32,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         }
-
-        VirtualInstruction::Literal {
-            val
-        } => Some(
-            CodegenValue::Value(
-                context.builder.ins().iconst(ir::Type::int(32)?, *val as i64)
-            )
-        ),
 
         VirtualInstruction::StringLiteral { str_id } => {
             let global_id = context.global_strs.get(*str_id as usize).cloned().unwrap();
@@ -204,6 +196,45 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         },
+        
+        VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
+            let size = ptr_type.size() as u32;
+            let val = context.variable_table.get(value).cloned().unwrap();
+            
+            let ptr_diff = context.builder.ins().imul_imm(
+                val.as_value(),
+                Imm64::from(size as i64)
+            );
+            
+            CodegenValue::Value(ptr_diff).into()
+        }, 
+        
+        VirtualInstruction::PointerBinOp {
+            op, left, right, ..
+        } => {
+            let left = context.variable_table.get(left).unwrap().as_value();
+            let right = context.variable_table.get(right).unwrap().as_value();
+            let _type = &instruction.value.type_;
+
+            let inst = match op {
+                BCPtrBinOp::ADD => context.builder.ins().iadd(left, right),
+                BCPtrBinOp::SUB => context.builder.ins().isub(left, right),
+                
+                BCPtrBinOp::EQ  => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
+                BCPtrBinOp::NE  => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
+                
+                BCPtrBinOp::LT  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
+                BCPtrBinOp::GT  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
+                BCPtrBinOp::LE  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
+                BCPtrBinOp::GE  => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
+            };
+
+            Some(
+                CodegenValue::Value(
+                    inst
+                )
+            )
+        },
 
         VirtualInstruction::IntegerBinOp {
             op, left, right
@@ -214,7 +245,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let inst = match op {
                 BCIntBinOp::ADD             => context.builder.ins().iadd(left, right),
                 BCIntBinOp::SUB             => context.builder.ins().isub(left, right),
-                BCIntBinOp::MUL => context.builder.ins().imul(left, right),
+                BCIntBinOp::MUL             => context.builder.ins().imul(left, right),
                 BCIntBinOp::IDIV            => context.builder.ins().sdiv(left, right),
                 BCIntBinOp::IREM            => context.builder.ins().srem(left, right),
                 

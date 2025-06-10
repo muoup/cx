@@ -88,6 +88,7 @@ pub enum VirtualInstruction {
 
     StructAccess {
         struct_: ValueID,
+        struct_type: BCType,
         field_index: usize,
         field_offset: usize
     },
@@ -102,11 +103,6 @@ pub enum VirtualInstruction {
         value: ValueID
     },
 
-    Assign {
-        target: ValueID,
-        value: ValueID
-    },
-
     ZExtend {
         value: ValueID,
     },
@@ -117,6 +113,18 @@ pub enum VirtualInstruction {
 
     Trunc {
         value: ValueID
+    },
+    
+    IntToPtrDiff {
+        value: ValueID,
+        ptr_type: BCType
+    },
+    
+    PointerBinOp {
+        op: BCPtrBinOp,
+        ptr_type: BCType,
+        left: ValueID,
+        right: ValueID,
     },
 
     IntegerBinOp {
@@ -139,10 +147,6 @@ pub enum VirtualInstruction {
     FloatUnOp {
         op: BCFloatUnOp,
         value: ValueID
-    },
-
-    Literal {
-        val: u64
     },
 
     StringLiteral {
@@ -202,6 +206,25 @@ pub enum VirtualInstruction {
     },
 
     NOP
+}
+
+impl VirtualInstruction {
+    pub fn is_block_terminating(&self) -> bool {
+        match self {
+            VirtualInstruction::Branch { .. } |
+            VirtualInstruction::Jump   { .. } |
+            VirtualInstruction::Return { .. } => true,
+            _ => false
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BCPtrBinOp {
+    ADD, SUB,
+    
+    EQ, NE,
+    LT, GT, LE, GE
 }
 
 #[derive(Debug, Clone, Copy)]

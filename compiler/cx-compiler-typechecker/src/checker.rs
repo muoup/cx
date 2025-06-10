@@ -103,7 +103,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             access_struct(env, lhs.as_mut(), rhs.as_mut()),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
-            let end_type = alg_bin_op_coercion(env, lhs, rhs)?;
+            let end_type = alg_bin_op_coercion(env, CXBinOp::ArrayIndex, lhs, rhs)?;
 
             let CXTypeKind::PointerTo(inner) = end_type.intrinsic_type(env.type_map)? else {
                 log_error!("TYPE ERROR: Array index operator can only be applied to pointers, found: {end_type}");
@@ -153,8 +153,8 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             Some(prototype.return_type.clone())
         }
 
-        CXExprKind::BinOp { lhs, rhs, .. } =>
-            alg_bin_op_coercion(env, lhs, rhs),
+        CXExprKind::BinOp { lhs, rhs, op } =>
+            alg_bin_op_coercion(env, op.clone(), lhs, rhs),
 
         CXExprKind::VarDeclaration { name, type_ } => {
             env.symbol_table.insert(name.as_string(), type_.clone());

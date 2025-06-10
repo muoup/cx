@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -91,11 +91,8 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Immediate { value } => {
                 write!(f, "immediate {}", value)
             },
-            VirtualInstruction::StructAccess { struct_, field_index, field_offset } => {
+            VirtualInstruction::StructAccess { struct_, field_index, field_offset, .. } => {
                 write!(f, "struct_access {}[{}] + {}", struct_, field_index, field_offset)
-            },
-            VirtualInstruction::Assign { target, value } => {
-                write!(f, "assign {target} <- {value}")
             },
             VirtualInstruction::ZExtend { value } => {
                 write!(f, "zextend {value}")
@@ -105,6 +102,9 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::Trunc { value } => {
                 write!(f, "trunc {value}")
+            },
+            VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
+                write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             },
             VirtualInstruction::Return { value } => {
                 write!(f, "return")?;
@@ -141,6 +141,9 @@ impl Display for VirtualInstruction {
                 }
                 write!(f, ")")
             },
+            VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
+                write!(f, "ptr_binop ({ptr_type}*) {op} {left} {right}")
+            },
             VirtualInstruction::IntegerBinOp { left, right, op } => {
                 write!(f, "int_binop {op} {left} {right}")
             },
@@ -152,9 +155,6 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::FloatUnOp { op, value } => {
                 write!(f, "float_unop {op:?} {value}")
-            },
-            VirtualInstruction::Literal { val } => {
-                write!(f, "literal {val}")
             },
             VirtualInstruction::StringLiteral { str_id } => {
                 write!(f, "string_literal {str_id}")
@@ -181,6 +181,25 @@ impl Display for VirtualInstruction {
                 write!(f, "nop")
             }
         }
+    }
+}
+
+impl Display for BCPtrBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}",
+            match self {
+                BCPtrBinOp::ADD => "+",
+                BCPtrBinOp::SUB => "-",
+                
+                BCPtrBinOp::EQ => "==",
+                BCPtrBinOp::NE => "!=",
+                
+                BCPtrBinOp::LT => "<",
+                BCPtrBinOp::GT => ">",
+                BCPtrBinOp::LE => "<=",
+                BCPtrBinOp::GE => ">=",
+            },
+        )
     }
 }
 
@@ -270,12 +289,12 @@ impl Display for BCTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
             BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
-            BCTypeKind::Signed { bytes } => write!(f, "i{bytes}"),
-            BCTypeKind::Unsigned { bytes } => write!(f, "u{bytes}"),
-            BCTypeKind::Float { bytes } => write!(f, "f{bytes}"),
+            BCTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
+            BCTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
+            BCTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
             BCTypeKind::Pointer => write!(f, "*"),
 
-            BCTypeKind::Struct { fields } => {
+            BCTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
                     .map(|(name, _type)| format!("{}: {}", name, _type))

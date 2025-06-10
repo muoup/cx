@@ -2,11 +2,12 @@ use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::value_type::{get_type_size, CXTypeKind, CXType, CX_CONST};
-use cx_data_bytecode::types::BCTypeKind;
-use cx_data_bytecode::{BCIntBinOp, BCIntUnOp, ValueID, VirtualInstruction};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_bytecode::{BCIntBinOp, BCIntUnOp, BCPtrBinOp, ValueID, VirtualInstruction};
 use cx_util::log_error;
 use crate::aux_routines::get_struct_field;
 use crate::builder::BytecodeBuilder;
+use crate::cx_maps::convert_cx_type_kind;
 use crate::implicit_cast::implicit_cast;
 
 pub fn generate_instruction(
@@ -63,6 +64,7 @@ pub fn generate_instruction(
             builder.add_instruction_bt(
                 VirtualInstruction::StructAccess {
                     struct_: left_id,
+                    struct_type: ltype,
                     field_offset: struct_access.offset,
                     field_index: struct_access.index,
                 },
@@ -80,12 +82,15 @@ pub fn generate_instruction(
                 CXTypeKind::Array { _type, .. } => _type,
                 _ => panic!("Invalid array index type: {l_type}"),
             };
+            
+            let inner_as_bc = convert_cx_type_kind(&builder.cx_type_map, &lhs_inner.kind)?;
 
             builder.add_instruction(
-                VirtualInstruction::IntegerBinOp {
+                VirtualInstruction::PointerBinOp {
                     left: left_id,
                     right: right_id,
-                    op: BCIntBinOp::ADD
+                    ptr_type: BCType::from(inner_as_bc),
+                    op: BCPtrBinOp::ADD
                 },
                 CXType::new(
                     0,
@@ -152,13 +157,29 @@ pub fn generate_instruction(
                     )
                 },
 
-                BCTypeKind::Unsigned { .. } |
-                BCTypeKind::Pointer { .. } => {
-                    builder.add_instruction_bt(
+                BCTypeKind::Unsigned { .. } => {
+                    builder.add_instruction_bt(    
                         VirtualInstruction::IntegerBinOp {
                             left: left_id,
                             right: right_id,
                             op: builder.cx_u_binop(op)?
+                        },
+                        lhs_type
+                    )
+                },
+                
+                BCTypeKind::Pointer { .. } => {
+                    let CXTypeKind::PointerTo(left_inner) = builder
+                        .get_expr_type(lhs)?
+                        .intrinsic_type(&builder.cx_type_map)?
+                        .clone() else { unreachable!() };
+                    
+                    builder.add_instruction_bt(
+                        VirtualInstruction::PointerBinOp {
+                            left: left_id,
+                            right: right_id,
+                            ptr_type: builder.convert_cx_type(&left_inner)?,
+                            op: builder.cx_ptr_binop(op)?
                         },
                         lhs_type
                     )

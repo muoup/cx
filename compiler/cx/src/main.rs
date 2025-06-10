@@ -4,6 +4,7 @@ mod pipeline;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
+    
     let Some(file_name) = args.get(1) else {
         println!("Usage: {} <file>", args[0]);
         return;
@@ -30,7 +31,7 @@ fn main() {
         .dump()
         .generate_bytecode()
         .dump()
-        .codegen()
+        .llvm_codegen()
         .link();
 
     println!("Compilation complete!");

@@ -200,6 +200,6 @@ pub enum CXCastType {
     FloatToInt,
     BitCast,
     IntegralTrunc,
-    IntToScaledPtrDiff,
+    IntToPtrDiff,
     FunctionToPointerDecay,
 }
