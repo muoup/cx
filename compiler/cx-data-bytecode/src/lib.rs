@@ -114,6 +114,18 @@ pub enum VirtualInstruction {
     Trunc {
         value: ValueID
     },
+    
+    IntToPtrDiff {
+        value: ValueID,
+        ptr_type: BCType
+    },
+    
+    PointerBinOp {
+        op: BCPtrBinOp,
+        ptr_type: BCType,
+        left: ValueID,
+        right: ValueID,
+    },
 
     IntegerBinOp {
         op: BCIntBinOp,
@@ -205,6 +217,14 @@ impl VirtualInstruction {
             _ => false
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BCPtrBinOp {
+    ADD, SUB,
+    
+    EQ, NE,
+    LT, GT, LE, GE
 }
 
 #[derive(Debug, Clone, Copy)]

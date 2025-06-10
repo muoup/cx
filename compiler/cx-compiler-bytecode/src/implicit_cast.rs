@@ -1,8 +1,8 @@
 use crate::builder::BytecodeBuilder;
 use cx_data_ast::parse::ast::CXCastType;
 use cx_data_ast::parse::value_type::{get_intrinsic_type, CXType, CXTypeKind};
-use cx_data_bytecode::VirtualInstruction::IntegerBinOp;
-use cx_data_bytecode::{BCIntBinOp, ValueID, VirtualInstruction};
+use cx_data_bytecode::VirtualInstruction::IntToPtrDiff;
+use cx_data_bytecode::{ValueID, VirtualInstruction};
 
 pub(crate) fn implicit_cast(
     builder: &mut BytecodeBuilder,
@@ -21,12 +21,11 @@ pub(crate) fn implicit_cast(
             )
         },
         
-        CXCastType::IntToScaledPtrDiff => {
+        CXCastType::IntToPtrDiff => {
             let CXTypeKind::PointerTo(inner) =
                 to_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid pointer type")
                 };
-            let elem_size = inner.size(&builder.cx_type_map)?;
             
             let CXTypeKind::Integer { bytes, signed } =
                 from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
@@ -53,22 +52,16 @@ pub(crate) fn implicit_cast(
                 value
             };
             
-            let constant = builder.add_instruction(
-                VirtualInstruction::Immediate {
-                    value: elem_size as i32
-                },
-                CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
-            )?;
+            let bc_type = builder.convert_cx_type(inner.as_ref())?;
             
             builder.add_instruction(
-                IntegerBinOp {
-                    op: BCIntBinOp::MUL,
-                    left: val,
-                    right: constant
+                IntToPtrDiff {
+                    value: val,
+                    ptr_type: bc_type,
                 },
                 to_type.clone()
             )
-        },
+        }
 
         CXCastType::IntegralTrunc => {
             builder.add_instruction(

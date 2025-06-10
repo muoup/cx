@@ -1,46 +1,106 @@
 use inkwell::values::{AnyValue, AnyValueEnum, IntMathValue};
-use cx_data_bytecode::BCIntBinOp;
+use cx_data_bytecode::{BCIntBinOp, BCPtrBinOp};
+use cx_data_bytecode::types::BCType;
 use crate::{CodegenValue, FunctionState, GlobalState};
+use crate::typing::{any_to_basic_type, cx_llvm_type};
+
+pub(crate) fn generate_ptr_binop<'a>(
+    global_state: &GlobalState<'a>, function_state: &FunctionState<'a>,
+    ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, op: BCPtrBinOp
+) -> Option<CodegenValue<'a>> {
+    let (ptr, int) = if left_value.is_pointer_value() {
+        (left_value.into_pointer_value(), right_value.into_int_value())
+    } else {
+        (right_value.into_pointer_value(), left_value.into_int_value())
+    };
+    
+    let ptr_type = cx_llvm_type(global_state, ptr_type)?;
+    let basic_type = any_to_basic_type(ptr_type)?;
+
+    Some(
+        CodegenValue::Value(
+            match op {
+                BCPtrBinOp::ADD => unsafe {
+                    function_state.builder
+                        .build_in_bounds_gep(basic_type, ptr, &[int], crate::instruction::inst_num().as_str())
+                        .ok()?
+                        .as_any_value_enum()
+                }
+                BCPtrBinOp::SUB => unsafe {
+                    let negative = function_state.builder
+                        .build_int_neg(int, crate::instruction::inst_num().as_str())
+                        .ok()?
+                        .as_any_value_enum();
+
+                    function_state.builder
+                        .build_in_bounds_gep(basic_type, ptr, &[negative.into_int_value()], crate::instruction::inst_num().as_str())
+                        .ok()?
+                        .as_any_value_enum()
+                }
+                BCPtrBinOp::EQ =>
+                    function_state.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::EQ,
+                            ptr, right_value.into_pointer_value(),
+                            crate::instruction::inst_num().as_str()
+                        )
+                        .ok()?
+                        .as_any_value_enum(),
+                BCPtrBinOp::NE => 
+                    function_state.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::NE,
+                            ptr, right_value.into_pointer_value(),
+                            crate::instruction::inst_num().as_str()
+                        )
+                        .ok()?
+                        .as_any_value_enum(),
+                BCPtrBinOp::LT =>
+                    function_state.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::ULT,
+                            ptr, right_value.into_pointer_value(),
+                            crate::instruction::inst_num().as_str()
+                        )
+                        .ok()?
+                        .as_any_value_enum(),
+                BCPtrBinOp::LE =>
+                    function_state.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::ULE,
+                            ptr, right_value.into_pointer_value(),
+                            crate::instruction::inst_num().as_str()
+                        )
+                        .ok()?
+                        .as_any_value_enum(),
+                BCPtrBinOp::GT => 
+                    function_state.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::UGT,
+                            ptr, right_value.into_pointer_value(),
+                            crate::instruction::inst_num().as_str()
+                        )
+                        .ok()?
+                        .as_any_value_enum(),
+                BCPtrBinOp::GE =>
+                    function_state.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::UGE,
+                            ptr, right_value.into_pointer_value(),
+                            crate::instruction::inst_num().as_str()
+                        )
+                        .ok()?
+                        .as_any_value_enum(),
+            }
+        )
+    )
+}
 
 pub(crate) fn generate_int_binop<'a>(
-    global_state: &GlobalState<'a>,
+    _: &GlobalState<'a>,
     function_state: &FunctionState<'a>,
     left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, op: BCIntBinOp
 ) -> Option<CodegenValue<'a>> {
-    if left_value.is_pointer_value() || right_value.is_pointer_value() {
-        let (ptr, int) = if left_value.is_pointer_value() {
-            (left_value.into_pointer_value(), right_value.into_int_value())
-        } else {
-            (right_value.into_pointer_value(), left_value.into_int_value())
-        };
-        
-        return match op {
-            BCIntBinOp::ADD => unsafe {
-                Some(CodegenValue::Value(
-                    function_state.builder
-                        .build_in_bounds_gep(global_state.context.i8_type(), ptr, &[int], crate::instruction::inst_num().as_str())
-                        .ok()?
-                        .as_any_value_enum()
-                ))
-            }
-            BCIntBinOp::SUB => unsafe {
-                let negative = function_state.builder
-                    .build_int_neg(int, crate::instruction::inst_num().as_str())
-                    .ok()?
-                    .as_any_value_enum();
-                
-                Some(CodegenValue::Value(
-                    function_state.builder
-                        .build_in_bounds_gep(global_state.context.i8_type(), ptr, &[negative.into_int_value()], crate::instruction::inst_num().as_str())
-                        .ok()?
-                        .as_any_value_enum()
-                ))
-            }
-            
-            _ => None,
-        }
-    }
-    
     let left_value = left_value.into_int_value();
     let right_value = right_value.into_int_value();
     

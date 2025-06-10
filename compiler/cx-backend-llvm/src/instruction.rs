@@ -1,4 +1,4 @@
-use crate::arithmetic::generate_int_binop;
+use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::noundef;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, cx_llvm_type};
@@ -155,6 +155,10 @@ pub(crate) fn generate_instruction<'a>(
                         .as_any_value_enum()
                 )
             },
+            
+            VirtualInstruction::IntToPtrDiff { value, .. } => {
+                function_state.get_val_ref(value)?.clone()
+            },
 
             VirtualInstruction::Immediate { value } => {
                 let imm_type = cx_llvm_type(
@@ -267,6 +271,23 @@ pub(crate) fn generate_instruction<'a>(
                     .ok()?;
                 
                 CodegenValue::Value(val.as_any_value_enum())
+            },
+            
+            VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
+                let left_value = function_state
+                    .get_val_ref(left)?
+                    .get_value();
+                
+                let right_value = function_state
+                    .get_val_ref(right)?
+                    .get_value();
+
+                generate_ptr_binop(
+                    global_state, function_state,
+                    ptr_type,
+                    left_value, right_value,
+                    *op
+                )?
             },
             
             VirtualInstruction::IntegerUnOp { value, op } => {

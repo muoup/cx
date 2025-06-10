@@ -1,7 +1,7 @@
 use std::clone;
 use std::ops::Deref;
 use crate::TypeEnvironment;
-use cx_data_ast::parse::ast::{CXCastType, CXExpr, CXExprKind};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
 use cx_util::log_error;
 use crate::checker::coerce_value;
@@ -107,7 +107,7 @@ pub(crate) fn add_implicit_cast(expr: &mut CXExpr, from_type: CXType, to_type: C
     Some(())
 }
 
-pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment,
+pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
                                   lhs: &mut Box<CXExpr>, rhs: &mut Box<CXExpr>)
                                   -> Option<CXType> {
     let l_type = coerce_value(env, lhs)?;
@@ -121,13 +121,18 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment,
            r_type.intrinsic_type(env.type_map).cloned()?) {
 
         (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. }) => {
-            add_implicit_cast(rhs, r_type.clone(), l_type.clone(), CXCastType::IntToScaledPtrDiff)?;
+            add_implicit_cast(rhs, r_type.clone(), l_type.clone(), CXCastType::IntToPtrDiff)?;
             
             Some(l_type)
         },
 
         (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(_)) => {
-            add_implicit_cast(lhs, l_type.clone(), r_type.clone(), CXCastType::IntToScaledPtrDiff)?;
+            if matches!(op, CXBinOp::Subtract) {
+                log_error!("Invalid operation [integer] - [pointer] for types {l_type} and {r_type}");
+            }
+            
+            add_implicit_cast(lhs, l_type.clone(), r_type.clone(), CXCastType::IntToPtrDiff)?;
+            std::mem::swap(lhs, rhs);
             
             Some(r_type)
         },

@@ -1,6 +1,6 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXFunctionMap, CXFunctionPrototype, CXTypeMap, CXUnOp};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCTypeMap};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use crate::builder::BytecodeBuilder;
 
@@ -24,7 +24,29 @@ impl BytecodeBuilder {
         
         self.convert_cx_prototype(prototype)
     }
-    
+
+    pub(crate) fn cx_ptr_binop(
+        &self,
+        op: &CXBinOp
+    ) -> Option<BCPtrBinOp> {
+        Some(
+            match op {
+                CXBinOp::Add => BCPtrBinOp::ADD,
+                CXBinOp::Subtract => BCPtrBinOp::SUB,
+
+                CXBinOp::Less => BCPtrBinOp::LT,
+                CXBinOp::Greater => BCPtrBinOp::GT,
+                CXBinOp::LessEqual => BCPtrBinOp::LE,
+                CXBinOp::GreaterEqual => BCPtrBinOp::GE,
+
+                CXBinOp::Equal => BCPtrBinOp::EQ,
+                CXBinOp::NotEqual => BCPtrBinOp::NE,
+
+                _ => return None
+            }
+        )
+    }
+
     pub(crate) fn cx_u_binop(
         &self,
         op: &CXBinOp
@@ -43,7 +65,7 @@ impl BytecodeBuilder {
             }
         )
     }
-    
+
     pub(crate) fn cx_i_binop(
         &self,
         op: &CXBinOp

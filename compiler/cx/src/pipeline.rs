@@ -1,9 +1,6 @@
 use std::fs::File;
 use std::process::{exit, Command};
-use cx_backend_cranelift::bytecode_aot_codegen;
-use cx_data_ast::lex::token::Token;
 use cx_compiler_ast::{lex, parse, preprocessor, LexContents, ParseContents, PreprocessContents};
-use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::CXAST;
@@ -215,7 +212,7 @@ impl CompilerPipeline {
         self
     }
 
-    pub fn codegen(mut self) -> Self {
+    pub fn cranelift_codegen(mut self) -> Self {
         let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
             eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
             exit(1);
@@ -225,7 +222,7 @@ impl CompilerPipeline {
             .expect("Failed to create internal directory");
         
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
-        cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
+        cx_backend_cranelift::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             eprintln!("ERROR: Failed to generate code");
             exit(1);
         });

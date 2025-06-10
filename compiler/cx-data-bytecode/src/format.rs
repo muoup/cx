@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -103,6 +103,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Trunc { value } => {
                 write!(f, "trunc {value}")
             },
+            VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
+                write!(f, "int_to_ptrdiff ({ptr_type}*) {value} (i64)")
+            },
             VirtualInstruction::Return { value } => {
                 write!(f, "return")?;
 
@@ -137,6 +140,9 @@ impl Display for VirtualInstruction {
                     write!(f, "{arg}")?;
                 }
                 write!(f, ")")
+            },
+            VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
+                write!(f, "ptr_binop ({ptr_type}*) {op} {left} {right}")
             },
             VirtualInstruction::IntegerBinOp { left, right, op } => {
                 write!(f, "int_binop {op} {left} {right}")
@@ -175,6 +181,25 @@ impl Display for VirtualInstruction {
                 write!(f, "nop")
             }
         }
+    }
+}
+
+impl Display for BCPtrBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}",
+            match self {
+                BCPtrBinOp::ADD => "+",
+                BCPtrBinOp::SUB => "-",
+                
+                BCPtrBinOp::EQ => "==",
+                BCPtrBinOp::NE => "!=",
+                
+                BCPtrBinOp::LT => "<",
+                BCPtrBinOp::GT => ">",
+                BCPtrBinOp::LE => "<=",
+                BCPtrBinOp::GE => ">=",
+            },
+        )
     }
 }
 
