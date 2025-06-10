@@ -169,14 +169,16 @@ pub fn generate_instruction(
                 },
                 
                 BCTypeKind::Pointer { .. } => {
-                    let CXTypeKind::PointerTo(left_inner) = builder.get_expr_type(lhs)?.kind
-                        else { unreachable!() };
+                    let CXTypeKind::PointerTo(left_inner) = builder
+                        .get_expr_type(lhs)?
+                        .intrinsic_type(&builder.cx_type_map)?
+                        .clone() else { unreachable!() };
                     
                     builder.add_instruction_bt(
                         VirtualInstruction::PointerBinOp {
                             left: left_id,
                             right: right_id,
-                            ptr_type: builder.convert_cx_type(left_inner.as_ref())?,
+                            ptr_type: builder.convert_cx_type(&left_inner)?,
                             op: builder.cx_ptr_binop(op)?
                         },
                         lhs_type

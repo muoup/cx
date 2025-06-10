@@ -202,8 +202,7 @@ fn fn_aot_codegen(
                 &func_val,
                 inst
             ).expect(format!(
-                "Failed to generate instruction {} in block {}",
-                value_id, block_id
+                "Failed to generate instruction {}", inst
             ).as_str());
 
             function_state.value_map.insert(

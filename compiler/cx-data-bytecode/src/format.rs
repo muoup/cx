@@ -104,7 +104,7 @@ impl Display for VirtualInstruction {
                 write!(f, "trunc {value}")
             },
             VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
-                write!(f, "int_to_ptrdiff ({ptr_type}*) {value} (i64)")
+                write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             },
             VirtualInstruction::Return { value } => {
                 write!(f, "return")?;

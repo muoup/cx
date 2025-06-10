@@ -7,7 +7,7 @@ use cx_data_bytecode::types::BCTypeKind;
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, FunctionValue, IntMathValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
 use inkwell::Either;
 use std::sync::Mutex;
 
@@ -155,7 +155,7 @@ pub(crate) fn generate_instruction<'a>(
                         .as_any_value_enum()
                 )
             },
-            
+
             VirtualInstruction::IntToPtrDiff { value, .. } => {
                 function_state.get_val_ref(value)?.clone()
             },
@@ -219,11 +219,13 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::Store { value, type_, memory } => {
                 let any_value = function_state
-                    .get_val_ref(value)?
+                    .get_val_ref(value)
+                    .unwrap()
                     .get_value();
                 let any_type = cx_llvm_type(global_state, type_).unwrap();
 
-                let basic_val = any_to_basic_val(any_value)?;
+                let basic_val = any_to_basic_val(any_value)
+                    .expect(format!("Failed to convert value {any_value:?} to basic value").as_str());
                 let basic_type = any_to_basic_type(any_type).unwrap();
                 
                 let memory_val = function_state
@@ -247,7 +249,7 @@ pub(crate) fn generate_instruction<'a>(
                     function_state
                         .builder
                         .build_store(memory_val, basic_val)
-                        .ok()?;
+                        .unwrap();
                 }
                 
                 CodegenValue::NULL
@@ -272,12 +274,12 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::Value(val.as_any_value_enum())
             },
-            
+
             VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
                 let left_value = function_state
                     .get_val_ref(left)?
                     .get_value();
-                
+
                 let right_value = function_state
                     .get_val_ref(right)?
                     .get_value();
@@ -519,11 +521,20 @@ pub(crate) fn generate_instruction<'a>(
                 let function_val = global_state
                     .module
                     .get_function(function_name)
-                    .unwrap();
+                    .unwrap()
+                    .as_global_value()
+                    .as_pointer_value();
                 
-                CodegenValue::Value(
-                    function_val.as_any_value_enum()
-                )
+                // This might be a bug, but calling as_any_value_enum() on a pointer to
+                // a function returns a FunctionValue instead of a PointerValue.
+                let any_value_enum = AnyValueEnum::PointerValue(function_val);
+                
+                println!(
+                    "Function address for {}: {:?}",
+                    function_name, function_val
+                );
+                
+                CodegenValue::Value(any_value_enum)
             },
             
             VirtualInstruction::IntToFloat { from, value } => {
