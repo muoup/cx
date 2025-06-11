@@ -9,7 +9,11 @@ pub type CXFunctionMap = HashMap<String, CXFunctionPrototype>;
 
 #[derive(Debug)]
 pub struct CXAST {
+    // Path to .cx file
     pub file_path: String,
+    
+    // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
+    pub internal_path: String,
     
     pub imports: Vec<String>,
 

@@ -18,7 +18,7 @@ pub struct CompilerPipeline {
     source_dir: String,
     file_name: String,
     output_file: String,
-    internal_dir: String,
+    pub internal_dir: String,
     
     pub imports: Vec<String>,
     
@@ -68,16 +68,16 @@ impl PipelineStage {
 impl CompilerPipeline {
     pub fn new(source: String, output: String) -> Self {
         let extensionless = source.replace(".cx", "");
-        let (path, file) = extensionless.rfind('/')
-            .map(|index| (&extensionless[..index], &extensionless[index + 1..]))
-            .unwrap_or(("", &extensionless));
+        let el_as_path = Path::new(&extensionless);
 
-        let internal = format!(".internal/{}", path);
+        let internal = format!(".internal/{}{}", 
+                               el_as_path.parent().unwrap().to_str().unwrap(),
+                               el_as_path.file_stem().unwrap().to_str().unwrap());
 
         Self {
             source_dir: source,
             internal_dir: internal,
-            file_name: file.to_string(),
+            file_name: el_as_path.file_stem().unwrap().to_str().unwrap().to_string(),
 
             output_file: output,
 
@@ -97,14 +97,6 @@ impl CompilerPipeline {
 
     pub fn find_previous_header(&self) -> Option<File> {
         File::open(self.header_path()).ok()
-    }
-
-    pub fn object_path(&self) -> String {
-        format!("{}/{}.o", self.internal_dir, self.file_name)
-    }
-
-    pub fn find_previous_object(&self) -> Option<File> {
-        File::open(self.object_path()).ok()
     }
 
     pub fn dump(self) -> Self {
@@ -153,7 +145,7 @@ impl CompilerPipeline {
         
         let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let Some(ast) = parse_ast(parser_data) else {
+        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str()) else {
             println!("ERROR: Failed to parse AST");
             exit(1);
         };
@@ -212,10 +204,11 @@ impl CompilerPipeline {
             exit(1);
         };
         
-        std::fs::create_dir_all(&self.internal_dir)
+        let internal_path = Path::new(&self.internal_dir);
+        std::fs::create_dir_all(internal_path.parent().unwrap().as_os_str())
             .expect("Failed to create internal directory");
 
-        let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
+        let output_path = format!("{}.o", self.internal_dir);
         cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             eprintln!("ERROR: Failed to generate code");
             exit(1);
@@ -230,11 +223,12 @@ impl CompilerPipeline {
             eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
             exit(1);
         };
-
-        std::fs::create_dir_all(&self.internal_dir)
+        
+        let internal_path = Path::new(&self.internal_dir);
+        std::fs::create_dir_all(internal_path.parent().unwrap().as_os_str())
             .expect("Failed to create internal directory");
         
-        let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
+        let output_path = format!("{}.o", self.internal_dir);
         cx_backend_cranelift::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             eprintln!("ERROR: Failed to generate code");
             exit(1);
@@ -250,7 +244,7 @@ impl CompilerPipeline {
             exit(1);
         };
 
-        let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
+        let output_path = format!("{}.o", self.internal_dir);
         let output_file = self.output_file.clone();
         
         let mut imports = HashSet::new();

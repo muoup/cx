@@ -67,14 +67,6 @@ pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()>
         }
     };
     
-    if import_path.starts_with("std") {
-        let current_exe = std::env::current_exe()
-            .expect("Failed to get current executable path");
-        let prefix = format!("{}/lib/std/", current_exe.parent().unwrap().display());
-        
-        import_path = format!("{}{}", prefix, &import_path[3..]);
-    }
-    
     ast.imports.push(import_path);
     Some(())
 }

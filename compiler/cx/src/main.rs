@@ -24,14 +24,14 @@ fn main() {
                 .expect(format!("Failed to set current directory: {}", parent.display()).as_str());
         }
     }
-    let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
+    let file_name = path.file_name().unwrap().to_str().unwrap();
     
     std::fs::create_dir_all(".internal")
         .expect("Failed to create internal directory");
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
 
-    standard_llvm_compile(file_name.as_str());
+    standard_llvm_compile(file_name);
 
     println!("Compilation complete!");
 }

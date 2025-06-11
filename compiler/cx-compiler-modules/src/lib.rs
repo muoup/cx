@@ -10,12 +10,11 @@ pub struct ModuleData {
 }
 
 pub fn serialize_module_data(ast: &CXAST) -> Option<()> {
-    let dir_str = format!(".internal/{}", ast.file_path);
-    let directory = Path::new(dir_str.as_str());
+    let directory = Path::new(&ast.internal_path);
     std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
     
-    let mut type_file = File::create(format!(".internal/{}-types", ast.file_path))
+    let mut type_file = File::create(format!("{}.cx-types", ast.internal_path))
         .expect("Failed to create type file");
     
     for (type_name, cx_type) in &ast.type_map {
@@ -27,7 +26,7 @@ pub fn serialize_module_data(ast: &CXAST) -> Option<()> {
             .expect("Failed to write type to file");
     }
     
-    let mut function_file = File::create(format!(".internal/{}-functions", ast.file_path))
+    let mut function_file = File::create(format!("{}.cx-functions", ast.internal_path))
         .expect("Failed to create function file");
     
     for (_, function) in &ast.function_map {

@@ -12,9 +12,11 @@ pub mod typing;
 pub mod operators;
 mod parsing_tools;
 
-pub fn parse_ast(mut data: ParserData) -> Option<CXAST> {
+pub fn parse_ast(mut data: ParserData, internal_dir: &str) -> Option<CXAST> {
     let mut cx_ast = CXAST {
         file_path: data.file_path.clone(),
+        internal_path: internal_dir.to_string(),
+        
         imports: Vec::new(),
         global_stmts: Vec::new(),
 
