@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXAST};
 use cx_data_ast::parse::value_type::CXType;
 
@@ -9,8 +10,9 @@ pub struct ModuleData {
 }
 
 pub fn serialize_module_data(ast: &CXAST) -> Option<()> {
-    let directory = format!(".internal/{}", ast.file_path);
-    std::fs::create_dir_all(&directory)
+    let dir_str = format!(".internal/{}", ast.file_path);
+    let directory = Path::new(dir_str.as_str());
+    std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
     
     let mut type_file = File::create(format!(".internal/{}-types", ast.file_path))
