@@ -529,11 +529,6 @@ pub(crate) fn generate_instruction<'a>(
                 // a function returns a FunctionValue instead of a PointerValue.
                 let any_value_enum = AnyValueEnum::PointerValue(function_val);
                 
-                println!(
-                    "Function address for {}: {:?}",
-                    function_name, function_val
-                );
-                
                 CodegenValue::Value(any_value_enum)
             },
             

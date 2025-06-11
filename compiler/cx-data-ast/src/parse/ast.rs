@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 use crate::parse::value_type::{CXType};
 use crate::parse::identifier::CXIdent;
 
@@ -8,6 +9,8 @@ pub type CXFunctionMap = HashMap<String, CXFunctionPrototype>;
 
 #[derive(Debug)]
 pub struct CXAST {
+    pub file_path: String,
+    
     pub imports: Vec<String>,
 
     pub global_stmts: Vec<CXGlobalStmt>,
@@ -16,13 +19,13 @@ pub struct CXAST {
     pub function_map: CXFunctionMap,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXParameter {
     pub name: Option<CXIdent>,
     pub type_: CXType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXFunctionPrototype {
     pub name: CXIdent,
     pub return_type: CXType,

@@ -66,7 +66,7 @@ pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()>
             }
         }
     };
-
+    
     ast.imports.push(import_path);
     Some(())
 }

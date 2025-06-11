@@ -1,4 +1,5 @@
 use cx_util::log_error;
+use serde::{Deserialize, Serialize};
 use crate::parse::ast::{CXFunctionPrototype, CXTypeMap};
 use crate::parse::identifier::CXIdent;
 
@@ -10,13 +11,13 @@ pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
 pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
 pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXType {
     pub specifiers: CXTypeSpecifier,
     pub kind: CXTypeKind
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXTypeKind {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
@@ -64,7 +65,7 @@ impl From<CXIdent> for CXTypeKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PredeclarationType {
     None,
     Struct,

@@ -3,18 +3,18 @@ use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
+use crate::importing::import_module_data;
 use crate::intrinsic_types::add_kinds;
-use crate::mappings::parse_fn_mappings;
 
 pub mod type_utils;
 pub mod checker;
 pub mod intrinsic_types;
-pub mod mappings;
 mod struct_typechecking;
 mod casting;
+mod importing;
 
 pub fn type_check(ast: &mut CXAST) -> Option<ExprTypeMap> {
-    parse_fn_mappings(ast);
+    import_module_data(ast);
     add_kinds(&mut ast.type_map);
 
     let mut type_environment = TypeEnvironment {

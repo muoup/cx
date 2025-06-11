@@ -1,6 +1,6 @@
 use std::env;
-
-mod pipeline;
+use std::path::Path;
+use cx_exec_pipeline::standard_llvm_compile;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -9,30 +9,23 @@ fn main() {
         println!("Usage: {} <file>", args[0]);
         return;
     };
-
+    
+    if !file_name.ends_with(".cx") {
+        println!("Error: The file must have a .cx extension");
+        return;
+    }
+    
+    let path = Path::new(file_name);
+    // set working directory to the directory of the file
+    env::set_current_dir(&path.parent().unwrap()).unwrap();
+    let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
+    
     std::fs::create_dir_all(".internal")
         .expect("Failed to create internal directory");
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
 
-    let pipeline = pipeline::CompilerPipeline::new(
-        file_name.clone(),
-        "a.exe".to_owned()
-    );
-
-    pipeline
-        .read_file()
-        .preprocess()
-        .dump()
-        .lex()
-        .parse()
-        .dump()
-        .verify()
-        .dump()
-        .generate_bytecode()
-        .dump()
-        .llvm_codegen()
-        .link();
+    standard_llvm_compile(file_name.as_str());
 
     println!("Compilation complete!");
 }

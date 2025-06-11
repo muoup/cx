@@ -1,21 +1,29 @@
+use std::collections::HashSet;
 use std::fs::File;
+use std::path::Path;
 use std::process::{exit, Command};
 use cx_compiler_ast::{lex, parse, preprocessor, LexContents, ParseContents, PreprocessContents};
+use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::CXAST;
+use cx_data_ast::parse::parser::ParserData;
 use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_data_bytecode::ProgramBytecode;
 use cx_util::format::{dump_data, dump_write};
+use crate::request_compile;
 
 #[derive(Default, Debug)]
 pub struct CompilerPipeline {
+    base_dir: String,
+    
     source_dir: String,
     file_name: String,
     output_file: String,
-
     internal_dir: String,
-
+    
+    pub imports: Vec<String>,
+    
     pipeline_stage: PipelineStage
 }
 
@@ -75,7 +83,9 @@ impl CompilerPipeline {
 
             output_file: output,
 
-            pipeline_stage: PipelineStage::None
+            pipeline_stage: PipelineStage::None,
+
+            ..Self::default()
         }
     }
 
@@ -106,8 +116,8 @@ impl CompilerPipeline {
     }
 
     pub fn read_file(mut self) -> Self {
-        let file_contents = std::fs::read_to_string(self.source_dir.as_str())
-            .expect(format!("PIPELINE ERROR: Failed to read source file {}", self.source_dir).as_str());
+        let file_contents = std::fs::read_to_string(format!("{}", self.source_dir.as_str()))
+            .expect(format!("PIPELINE ERROR: Failed to read source file \"{}\"", self.source_dir).as_str());
 
         self.pipeline_stage = PipelineStage::FileRead(file_contents);
         self
@@ -142,12 +152,15 @@ impl CompilerPipeline {
             eprintln!("PIPELINE ERROR: Cannot parse without lexing!");
             exit(1);
         };
+        
+        let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let Some(ast) = parse(lexed) else {
+        let Some(ast) = parse_ast(parser_data) else {
             println!("ERROR: Failed to parse AST");
             exit(1);
         };
-
+        
+        self.imports = ast.imports.clone();
         self.pipeline_stage = PipelineStage::Parsed(ast);
         self
     }
@@ -157,6 +170,8 @@ impl CompilerPipeline {
             eprintln!("PIPELINE ERROR: Cannot verify without a parsed AST!");
             exit(1);
         };
+
+        self.imports.extend(request_compile(ast.imports.as_slice()).unwrap());
 
         let Some(expr_type_map) = type_check(&mut ast) else {
             eprintln!("ERROR: Failed to verify AST");
@@ -239,15 +254,34 @@ impl CompilerPipeline {
 
         let output_path = format!("{}/{}.o", self.internal_dir, self.file_name);
         let output_file = self.output_file.clone();
+        
+        let mut imports = HashSet::new();
+        
+        for import in &self.imports {
+            let import_path = format!(".internal/{}.o", import);
+            if !Path::new(&import_path).exists() {
+                eprintln!("ERROR: Import path does not exist: {}", import_path);
+                exit(1);
+            }
+            
+            imports.insert(import_path);
+        }
 
-        let status = Command::new("gcc")
+        let mut cmd = Command::new("gcc");
+        cmd
             .arg(output_path)
             .arg("-o")
             .arg(output_file)
             .arg("-g")
-            .arg("-no-pie")
-            .status()
-            .expect("Failed to execute command");
+            .arg("-no-pie");
+        
+        for import in imports {
+            cmd.arg(import);
+        }
+        
+        println!("Linking with command: {:?}", cmd);
+        
+        let status = cmd.status().expect("Failed to execute linker command");
 
         if !status.success() {
             eprintln!("ERROR: Linking failed with status: {}", status);

@@ -1,0 +1,5 @@
+#include <stdio.h>
+
+void imported_function() {
+    printf("Hello from the imported module!\n");
+}

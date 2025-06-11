@@ -1,5 +1,6 @@
 use std::io::BufRead;
 use cx_data_ast::lex::token::{OperatorType, PunctuatorType, Token};
+use cx_util::char_iter::CharIter;
 
 pub(crate) struct Lexer<'a> {
     source: &'a str,
@@ -15,33 +16,6 @@ impl Lexer<'_> {
         if !matches!(token, Token::Ignore) {
             self.tokens.push(token);
         }
-    }
-}
-
-struct CharIter<'a> {
-    source: &'a str,
-    current_iter: usize,
-}
-
-impl CharIter<'_> {
-    fn next(&mut self) -> Option<char> {
-        if let Some(c) = self.source.chars().nth(self.current_iter) {
-            self.current_iter += 1;
-            Some(c)
-        } else {
-            None
-        }
-    }
-    fn peek(&self) -> Option<char> {
-        self.source.chars().nth(self.current_iter)
-    }
-
-    fn back(&mut self) {
-        self.current_iter -= 1;
-    }
-
-    fn has_next(&self) -> bool {
-        self.source.chars().nth(self.current_iter).is_some()
     }
 }
 

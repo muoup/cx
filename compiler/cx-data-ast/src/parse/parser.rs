@@ -14,6 +14,7 @@ pub enum VisibilityMode {
 
 #[derive(Debug, Clone)]
 pub struct ParserData<'a> {
+    pub file_path: String,
     pub type_symbols: HashSet<String>,
     pub toks: TokenIter<'a>,
     pub visibility: VisibilityMode,
@@ -27,8 +28,9 @@ pub struct TokenIter<'a> {
 }
 
 impl<'a> ParserData<'a> {
-    pub fn new(toks: &'a [Token]) -> Self {
+    pub fn new(file_path: String, toks: &'a [Token]) -> Self {
         ParserData {
+            file_path,
             type_symbols: HashSet::new(),
             toks: TokenIter { slice: toks, index: 0 },
             visibility: VisibilityMode::Package,
