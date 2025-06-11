@@ -5,14 +5,19 @@ use cx_data_ast::parse::ast::CXAST;
 
 pub(crate) fn import_module_data(cxast: &mut CXAST) {
     for import in cxast.imports.iter() {
-        let internal_type_path = format!(".internal/{}.cx-types", import);
-        let internal_type_path = Path::new(&internal_type_path);
+        let type_path_str = format!(".internal/{}.cx-types", import);
+        let internal_type_path = Path::new(&type_path_str);
         
-        let cx_path = format!("{}.cx", import);
-        let cx_path = Path::new(&cx_path);
+        let cx_path_str = format!("{}.cx", import);
+        let cx_path = Path::new(&cx_path_str);
         
-        if !internal_type_path.exists() || !cx_path.exists() {
-            eprintln!("Import path does not exist: {}", import);
+        if !internal_type_path.exists() {
+            eprintln!("Import path does not exist: {}", type_path_str);
+            exit(1);
+        }
+        
+        if !cx_path.exists() {
+            eprintln!("Source file does not exist: {}", cx_path_str);
             exit(1);
         }
         

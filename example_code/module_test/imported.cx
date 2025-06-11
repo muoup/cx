@@ -1,5 +1,5 @@
-#include <stdio.h>
+import imported2;
 
 void imported_function() {
-    printf("Hello from the imported module!\n");
+    imported2_function();
 }

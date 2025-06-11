@@ -13,7 +13,7 @@ pub fn serialize_module_data(ast: &CXAST) -> Option<()> {
     std::fs::create_dir_all(&directory)
         .expect("Failed to create internal directory");
     
-    let mut type_file = File::create(format!(".internal/{}.cx-types", ast.file_path))
+    let mut type_file = File::create(format!(".internal/{}-types", ast.file_path))
         .expect("Failed to create type file");
     
     for (type_name, cx_type) in &ast.type_map {

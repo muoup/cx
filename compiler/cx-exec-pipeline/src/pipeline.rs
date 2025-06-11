@@ -1,9 +1,6 @@
-use std::collections::HashSet;
-use std::fs::File;
-use std::path::Path;
-use std::process::{exit, Command};
-use cx_compiler_ast::{lex, parse, preprocessor, LexContents, ParseContents, PreprocessContents};
+use crate::request_compile;
 use cx_compiler_ast::parse::parse_ast;
+use cx_compiler_ast::{lex, preprocessor, LexContents, ParseContents, PreprocessContents};
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::CXAST;
@@ -11,12 +8,13 @@ use cx_data_ast::parse::parser::ParserData;
 use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_data_bytecode::ProgramBytecode;
 use cx_util::format::{dump_data, dump_write};
-use crate::request_compile;
+use std::collections::HashSet;
+use std::fs::File;
+use std::path::Path;
+use std::process::{exit, Command};
 
 #[derive(Default, Debug)]
 pub struct CompilerPipeline {
-    base_dir: String,
-    
     source_dir: String,
     file_name: String,
     output_file: String,

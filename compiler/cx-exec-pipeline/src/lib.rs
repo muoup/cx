@@ -9,8 +9,8 @@ pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
         let internal_path = format!(".internal/{}.cx-types", file_path);
         let internal_path = Path::new(&internal_path);
         
-        let cx_path = format!(".internal/{}.cx", file_path);
-        let cx_path = Path::new(&cx_path);
+        let cx_path_str = format!("{}.cx", file_path);
+        let cx_path = Path::new(&cx_path_str);
         
         if !internal_path.exists() || 
             cx_path.metadata().map_or(true, |meta| {
@@ -19,7 +19,7 @@ pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
                })
             }) {
             
-            imports.extend(module_llvm_compile(file_path.clone())?);
+            imports.extend(module_llvm_compile(cx_path_str)?);
         } else {
             // If the internal path exists and the source file has not been modified,
             // we can skip recompilation.

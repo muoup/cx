@@ -1,5 +1,5 @@
 /target
-*.internal/*
+*/.internal
 
 *.hx
 *.o

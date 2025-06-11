@@ -17,7 +17,13 @@ fn main() {
     
     let path = Path::new(file_name);
     // set working directory to the directory of the file
-    env::set_current_dir(&path.parent().unwrap()).unwrap();
+    // if the path has no parent, we are already in the correct directory
+    if let Some(parent) = path.parent() {
+        if parent.to_str().unwrap() != "" {
+            env::set_current_dir(parent)
+                .expect(format!("Failed to set current directory: {}", parent.display()).as_str());
+        }
+    }
     let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
     
     std::fs::create_dir_all(".internal")
