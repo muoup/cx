@@ -66,28 +66,9 @@ pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()>
             }
         }
     };
-
+    
     ast.imports.push(import_path);
     Some(())
-}
-
-fn handle_member_this(class_name: &str, params: &mut Vec<CXParameter>) {
-    let Some(first_param) = params.first_mut() else {
-        return;
-    };
-
-    let CXTypeKind::Identifier { name, .. } = &first_param.type_.kind else {
-        return;
-    };
-
-    if matches!(name.as_str(), "this") {
-        let take_param = std::mem::replace(first_param, CXParameter { name: None, type_: CXType::unit() });
-
-        *first_param = CXParameter {
-            name: take_param.name,
-            type_: take_param.type_.pointer_to()
-        };
-    }
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {

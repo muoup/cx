@@ -20,6 +20,7 @@ pub fn dump_all(data: Vec<impl std::fmt::Display>) {
 
 pub fn dump_write(str: &str) {
     const DUMP_PATH: &str = ".internal/compiler-dump.data";
+    
     let mut dump_file =
         OpenOptions::new()
             .create(true)

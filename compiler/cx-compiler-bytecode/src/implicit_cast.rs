@@ -21,6 +21,20 @@ pub(crate) fn implicit_cast(
             )
         },
         
+        CXCastType::PtrToInt => {
+            let CXTypeKind::PointerTo(_) =
+                from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
+                    panic!("INTERNAL PANIC: Invalid pointer type")
+                };
+            
+            builder.add_instruction(
+                VirtualInstruction::PtrToInt {
+                    value
+                },
+                to_type.clone()
+            )
+        },
+        
         CXCastType::IntToPtrDiff => {
             let CXTypeKind::PointerTo(inner) =
                 to_type.intrinsic_type(&builder.cx_type_map)?.clone() else {

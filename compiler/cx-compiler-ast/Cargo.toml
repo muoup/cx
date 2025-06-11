@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 cx-util = { path = "../cx-util" }
 cx-data-ast = { path = "../cx-data-ast" }
+cx-compiler-modules = { path = "../cx-compiler-modules" }

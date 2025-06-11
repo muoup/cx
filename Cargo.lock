@@ -305,6 +305,7 @@ dependencies = [
  "cx-compiler-typechecker",
  "cx-data-ast",
  "cx-data-bytecode",
+ "cx-exec-pipeline",
  "cx-util",
 ]
 
@@ -334,6 +335,7 @@ dependencies = [
 name = "cx-compiler-ast"
 version = "0.0.0"
 dependencies = [
+ "cx-compiler-modules",
  "cx-data-ast",
  "cx-util",
 ]
@@ -349,10 +351,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-compiler-modules"
+version = "0.1.0"
+dependencies = [
+ "cx-data-ast",
+ "serde_json",
+]
+
+[[package]]
 name = "cx-compiler-typechecker"
 version = "0.1.0"
 dependencies = [
  "cx-compiler-ast",
+ "cx-compiler-modules",
  "cx-data-ast",
  "cx-data-bytecode",
  "cx-util",
@@ -363,6 +374,7 @@ name = "cx-data-ast"
 version = "0.0.0"
 dependencies = [
  "cx-util",
+ "serde",
  "uuid",
 ]
 
@@ -371,6 +383,20 @@ name = "cx-data-bytecode"
 version = "0.0.0"
 dependencies = [
  "cx-data-ast",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-exec-pipeline"
+version = "0.1.0"
+dependencies = [
+ "cx-backend-cranelift",
+ "cx-backend-llvm",
+ "cx-compiler-ast",
+ "cx-compiler-bytecode",
+ "cx-compiler-typechecker",
+ "cx-data-ast",
+ "cx-data-bytecode",
  "cx-util",
 ]
 

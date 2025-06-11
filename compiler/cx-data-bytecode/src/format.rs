@@ -103,6 +103,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Trunc { value } => {
                 write!(f, "trunc {value}")
             },
+            VirtualInstruction::PtrToInt { value } => {
+                write!(f, "ptr_to_int {value}")
+            },
             VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
                 write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             },

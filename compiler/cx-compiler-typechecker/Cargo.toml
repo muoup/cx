@@ -8,5 +8,6 @@ cx-data-ast = { path = "../cx-data-ast" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
 
 cx-compiler-ast = { path = "../cx-compiler-ast" }
+cx-compiler-modules = { path = "../cx-compiler-modules" }
 
 cx-util = { path = "../cx-util" }
