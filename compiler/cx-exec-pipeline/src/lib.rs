@@ -1,6 +1,10 @@
 use std::path::Path;
+use std::sync::LazyLock;
+use std::time::SystemTime;
 
 pub mod pipeline;
+
+static START_TIME: LazyLock<SystemTime> = LazyLock::new(SystemTime::now);
 
 pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
     let mut imports = Vec::new();
@@ -9,16 +13,10 @@ pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
         let internal_path = format!(".internal/{}.cx-types", file_path);
         let internal_path = Path::new(&internal_path);
         
-        let cx_path_str = format!("{}.cx", file_path);
-        let cx_path = Path::new(&cx_path_str);
-        
-        if !internal_path.exists() || 
-            cx_path.metadata().map_or(true, |meta| {
-               meta.modified().map_or(true, |modified| {
-                   modified > internal_path.metadata().map_or(modified, |m| m.modified().unwrap())
-               })
-            }) {
-            
+        if !internal_path.exists() ||
+            *START_TIME > internal_path.metadata().unwrap().modified().unwrap() {
+
+            let cx_path_str = format!("{}.cx", file_path);
             imports.extend(module_llvm_compile(cx_path_str)?);
         } else {
             // If the internal path exists and the source file has not been modified,

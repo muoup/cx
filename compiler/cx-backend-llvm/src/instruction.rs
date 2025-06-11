@@ -592,6 +592,25 @@ pub(crate) fn generate_instruction<'a>(
                 )
             },
             
+            VirtualInstruction::PtrToInt { value } => {
+                let value = function_state
+                    .get_val_ref(value)?
+                    .get_value()
+                    .into_pointer_value();
+                
+                let to_type = cx_llvm_type(
+                    global_state, 
+                    &block_instruction.value.type_
+                )?.into_int_type();
+                
+                CodegenValue::Value(
+                    function_state.builder
+                        .build_ptr_to_int(value, to_type, inst_num().as_str())
+                        .ok()?
+                        .as_any_value_enum()
+                )
+            },
+            
             VirtualInstruction::FloatCast { value } => {
                 let value = function_state
                     .get_val_ref(value)?

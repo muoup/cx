@@ -50,14 +50,13 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
-        CXUnOp::Negative => 2,
+        CXUnOp::PostIncrement(_) => 2,
         
+        CXUnOp::Negative => 3,
         CXUnOp::AddressOf => 3,
         CXUnOp::Dereference => 3,
         CXUnOp::PreIncrement(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
-
-        CXUnOp::PostIncrement(_) => 4,
 
         _ => todo!("unop_prec {op:?}")
     }

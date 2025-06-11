@@ -58,13 +58,16 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXUnOp::PostIncrement(_) |
                 CXUnOp::PreIncrement(_) => {
                     let operand_type = type_check_traverse(env, operand.as_mut())?.clone();
-
+                    
                     let CXTypeKind::MemoryAlias(inner) = &operand_type.kind else {
                         log_error!("TYPE ERROR: Increment operator can only be applied to memory references, found: {operand}");
                     };
+                    
+                    match get_intrinsic_type(env.type_map, &inner).cloned()? {
+                        CXTypeKind::Integer { .. } |
+                        CXTypeKind::PointerTo(_) => {},
 
-                    let CXTypeKind::Integer { .. } = get_intrinsic_type(env.type_map, &inner).cloned()? else {
-                        log_error!("TYPE ERROR: Increment operator can only be applied to integers, found: {inner}");
+                        _ => log_error!("TYPE ERROR: Increment operator can only be applied to integers or pointers, found: {inner}"),
                     };
 
                     Some(*inner.clone())

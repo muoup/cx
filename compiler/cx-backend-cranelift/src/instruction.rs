@@ -6,6 +6,7 @@ use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
+use cx_data_ast::parse::value_type::CXTypeKind;
 use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp};
 use cx_data_bytecode::types::BCTypeKind;
 
@@ -195,6 +196,31 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                         )
                 )
             )
+        },
+        
+        VirtualInstruction::PtrToInt { 
+            value
+        } => {
+            let bytes = match instruction.value.type_.kind {
+                BCTypeKind::Signed { bytes, .. } => bytes,
+                BCTypeKind::Unsigned { bytes, .. } => bytes,
+                _ => panic!("Invalid type for pointer to integer conversion")
+            };
+            
+            let val = context.variable_table.get(value).cloned().unwrap();
+            
+            if bytes < 8 {
+                return Some(
+                    CodegenValue::Value(
+                        context.builder.ins().ireduce(
+                            ir::Type::int(bytes as u16).unwrap(),
+                            val.as_value()
+                        )
+                    )
+                );
+            };
+            
+            Some(val)
         },
         
         VirtualInstruction::IntToPtrDiff { value, ptr_type } => {

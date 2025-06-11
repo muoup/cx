@@ -143,62 +143,15 @@ pub fn generate_instruction(
         CXExprKind::BinOp { lhs, rhs, op } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let right_id = generate_instruction(builder, rhs.as_ref())?;
-            let lhs_type = builder.get_type(left_id)?.clone();
-
-            match lhs_type.kind {
-                BCTypeKind::Signed { .. } => {
-                    builder.add_instruction_bt(
-                        VirtualInstruction::IntegerBinOp {
-                            left: left_id,
-                            right: right_id,
-                            op: builder.cx_i_binop(op)?
-                        },
-                        lhs_type
-                    )
-                },
-
-                BCTypeKind::Unsigned { .. } => {
-                    builder.add_instruction_bt(    
-                        VirtualInstruction::IntegerBinOp {
-                            left: left_id,
-                            right: right_id,
-                            op: builder.cx_u_binop(op)?
-                        },
-                        lhs_type
-                    )
-                },
-                
-                BCTypeKind::Pointer { .. } => {
-                    let CXTypeKind::PointerTo(left_inner) = builder
-                        .get_expr_type(lhs)?
-                        .intrinsic_type(&builder.cx_type_map)?
-                        .clone() else { unreachable!() };
-                    
-                    builder.add_instruction_bt(
-                        VirtualInstruction::PointerBinOp {
-                            left: left_id,
-                            right: right_id,
-                            ptr_type: builder.convert_cx_type(&left_inner)?,
-                            op: builder.cx_ptr_binop(op)?
-                        },
-                        lhs_type
-                    )
-                },
-
-                BCTypeKind::Float { .. } => {
-                    builder.add_instruction_bt(
-                        VirtualInstruction::FloatBinOp {
-                            left: left_id,
-                            right: right_id,
-                            op: builder.cx_float_binop(op)?
-                        },
-                        lhs_type
-                    )
-                },
-
-                _type =>
-                    panic!("Invalid arguments with type for binop not caught by type checker: {_type} \'{lhs}\' \'{rhs}\' {op:?} ")
-            }
+            let cx_lhs_type = builder.get_expr_type(lhs.as_ref())?;
+            
+            generate_binop(
+                builder,
+                &cx_lhs_type,
+                left_id,
+                right_id,
+                op
+            )
         },
         CXExprKind::Block { exprs, value } => {
             for expr in exprs {
@@ -242,13 +195,10 @@ pub fn generate_instruction(
                 VirtualInstruction::Immediate {
                     value: *val as i32
                 },
-                CXType::new(
-                    0,
-                    CXTypeKind::Integer {
-                        bytes: *bytes,
-                        signed: true
-                    }
-                )
+                CXTypeKind::Integer {
+                    bytes: *bytes,
+                    signed: true
+                }.to_val_type()
             )
         },
 
@@ -342,18 +292,20 @@ pub fn generate_instruction(
 
                     let one = builder.add_instruction_bt(
                         VirtualInstruction::Immediate {
-                            value: off.clone() as i32
+                            value: *off as i32
                         },
-                        val_type.clone()
+                        BCTypeKind::Signed { bytes: 8 }.into()
                     )?;
+                    
+                    let CXTypeKind::MemoryAlias(inner) = builder.get_expr_intrinsic_type(operand)?
+                        else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
-                    let incremented = builder.add_instruction_bt(
-                        VirtualInstruction::IntegerBinOp {
-                            left: value,
-                            right: one,
-                            op: BCIntBinOp::ADD
-                        },
-                        val_type.clone()
+                    let incremented = generate_binop(
+                        builder,
+                        inner.as_ref(),
+                        value,
+                        one,
+                        &CXBinOp::Add
                     )?;
 
                     builder.add_instruction(
@@ -379,19 +331,22 @@ pub fn generate_instruction(
 
                     let one = builder.add_instruction_bt(
                         VirtualInstruction::Immediate {
-                            value: off.clone() as i32
+                            value: *off as i32
                         },
-                        val_type.clone()
+                        BCTypeKind::Signed { bytes: 8 }.into()
+                    )?;
+                    
+                    let CXTypeKind::MemoryAlias(inner) = builder.get_expr_intrinsic_type(operand)?
+                        else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
+
+                    let incremented = generate_binop(
+                        builder,
+                        inner.as_ref(),
+                        value,
+                        one,
+                        &CXBinOp::Add
                     )?;
 
-                    let incremented = builder.add_instruction_bt(
-                        VirtualInstruction::IntegerBinOp {
-                            left: loaded_val,
-                            right: one,
-                            op: BCIntBinOp::ADD
-                        },
-                        val_type.clone()
-                    )?;
                     builder.add_instruction(
                         VirtualInstruction::Store {
                             memory: value,
@@ -556,6 +511,69 @@ pub fn generate_instruction(
         },
 
         _ => todo!("generate_instruction for {:?}", expr)
+    }
+}
+
+pub(crate) fn generate_binop(
+    builder: &mut BytecodeBuilder,
+    cx_lhs_type: &CXType,
+    left_id: ValueID,
+    right_id: ValueID,
+    op: &CXBinOp
+) -> Option<ValueID> {
+    let lhs_type = builder.get_type(left_id)?.clone();
+    
+    match lhs_type.kind {
+        BCTypeKind::Signed { .. } => {
+            builder.add_instruction_bt(
+                VirtualInstruction::IntegerBinOp {
+                    left: left_id,
+                    right: right_id,
+                    op: builder.cx_i_binop(op)?
+                },
+                lhs_type
+            )
+        },
+
+        BCTypeKind::Unsigned { .. } => {
+            builder.add_instruction_bt(
+                VirtualInstruction::IntegerBinOp {
+                    left: left_id,
+                    right: right_id,
+                    op: builder.cx_u_binop(op)?
+                },
+                lhs_type
+            )
+        },
+
+        BCTypeKind::Pointer { .. } => {
+            let CXTypeKind::PointerTo(left_inner) = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
+                else { unreachable!("generate_binop: Expected pointer type for expr, found {cx_lhs_type}") };
+
+            builder.add_instruction_bt(
+                VirtualInstruction::PointerBinOp {
+                    left: left_id,
+                    right: right_id,
+                    ptr_type: builder.convert_cx_type(&left_inner)?,
+                    op: builder.cx_ptr_binop(op)?
+                },
+                lhs_type
+            )
+        },
+
+        BCTypeKind::Float { .. } => {
+            builder.add_instruction_bt(
+                VirtualInstruction::FloatBinOp {
+                    left: left_id,
+                    right: right_id,
+                    op: builder.cx_float_binop(op)?
+                },
+                lhs_type
+            )
+        },
+
+        _type =>
+            panic!("Invalid arguments with type for binop not caught by type checker")
     }
 }
 

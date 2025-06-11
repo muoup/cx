@@ -11,7 +11,10 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
     Some(
         match (from_type.intrinsic_type(env.type_map).cloned()?,
                to_type.intrinsic_type(env.type_map).cloned()?) {
-
+            (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. }) => {
+                Some(CXCastType::PtrToInt)
+            },
+            
             (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. })
                 => if b1 > b2 {
                     Some(CXCastType::IntegralTrunc)

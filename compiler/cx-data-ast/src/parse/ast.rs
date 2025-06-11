@@ -204,5 +204,6 @@ pub enum CXCastType {
     BitCast,
     IntegralTrunc,
     IntToPtrDiff,
+    PtrToInt,
     FunctionToPointerDecay,
 }

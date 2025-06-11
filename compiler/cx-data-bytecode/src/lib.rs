@@ -182,6 +182,10 @@ pub enum VirtualInstruction {
         from: BCType,
         value: ValueID
     },
+    
+    PtrToInt {
+        value: ValueID
+    },
 
     FloatCast {
         value: ValueID
