@@ -1,5 +1,5 @@
-use cx_data_ast::assert_token_matches;
-use cx_data_ast::lex::token::{OperatorType, PunctuatorType, Token};
+use cx_data_ast::{assert_token_matches, next_kind};
+use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
 use crate::parse::typing::{is_type_decl, parse_initializer};
@@ -52,6 +52,7 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 2,
         
+        CXUnOp::LNot => 3,
         CXUnOp::Negative => 3,
         CXUnOp::AddressOf => 3,
         CXUnOp::Dereference => 3,
@@ -64,13 +65,14 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
 
 pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
     Some(
-        match data.toks.next()? {
-            Token::Operator(op) => match op {
+        match &data.toks.next()?.kind {
+            TokenKind::Operator(op) => match op {
                 OperatorType::BAnd          => CXUnOp::AddressOf,
                 OperatorType::Asterisk      => CXUnOp::Dereference,
                 OperatorType::Increment     => CXUnOp::PreIncrement(1),
                 OperatorType::Decrement     => CXUnOp::PreIncrement(-1),
                 OperatorType::Minus         => CXUnOp::Negative,
+                OperatorType::LNot          => CXUnOp::LNot,
 
                 _ => {
                     data.toks.back();
@@ -79,7 +81,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
             },
 
             // Maybe a type cast
-            Token::Punctuator(PunctuatorType::OpenParen) => {
+            TokenKind::Punctuator(PunctuatorType::OpenParen) => {
                 let pre_index = data.toks.index - 1;
 
                 if !is_type_decl(data) {
@@ -92,7 +94,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                     return None;
                 };
 
-                assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+                assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
 
                 return Some(CXUnOp::ExplicitCast(type_));
             },
@@ -107,8 +109,8 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
 
 pub(crate) fn parse_post_unop(data: &mut ParserData) -> Option<CXUnOp> {
     Some(
-        match data.toks.next()? {
-            Token::Operator(op) => match op {
+        match &data.toks.next()?.kind {
+            TokenKind::Operator(op) => match op {
                 OperatorType::Increment     => CXUnOp::PostIncrement(1),
                 OperatorType::Decrement     => CXUnOp::PostIncrement(-1),
 
@@ -155,16 +157,16 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
 
 pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
     Some(
-        match data.toks.next() {
-            Some(Token::Operator(OperatorType::Comma)) => {
+        match next_kind!(data) {
+            Some(TokenKind::Operator(OperatorType::Comma)) => {
                 if data.get_comma_mode() {
                     op_to_binop(OperatorType::Comma)?
                 } else {
                     return None;
                 }
             },
-            Some(Token::Operator(op)) => op_to_binop(op.clone())?,
-            Some(Token::Punctuator(punc)) => {
+            Some(TokenKind::Operator(op)) => op_to_binop(op.clone())?,
+            Some(TokenKind::Punctuator(punc)) => {
                 let punc = punc.clone();
                 data.toks.back();
                 match punc {
@@ -174,7 +176,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
                     _ => return None
                 }
             },
-            Some(Token::Assignment(op)) => {
+            Some(TokenKind::Assignment(op)) => {
                 let op = match op {
                     Some(op) => Some(Box::new(op_to_binop(op.clone())?)),
                     None => None

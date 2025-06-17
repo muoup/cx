@@ -12,7 +12,7 @@ use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
 pub struct BytecodeBuilder {
     global_strings: Vec<String>,
     functions: Vec<BytecodeFunction>,
-
+    
     pub cx_type_map: CXTypeMap,
     pub cx_function_map: CXFunctionMap,
     
@@ -232,6 +232,10 @@ impl BytecodeBuilder {
 
         let block = context.blocks.last()?;
         block.body.last()
+    }
+    
+    pub fn current_function_name(&self) -> Option<&str> {
+        self.function_context.as_ref().map(|ctx| ctx.prototype.name.as_str())
     }
 
     pub fn finish(self) -> Option<ProgramBytecode> {

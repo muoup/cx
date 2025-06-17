@@ -16,6 +16,31 @@ macro_rules! log_error {
 }
 
 #[macro_export]
+macro_rules! expr_error_log {
+    ($toks:expr, $start:expr, $end:expr, $($arg:tt)*) => {
+        {
+            use cx_util::log_error;
+            
+            eprintln!("{}", $toks[$start .. $end].iter().map(|tok| format!("{}", tok)).collect::<Vec<_>>().join(" "));
+            log_error!($($arg)*);
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! bytecode_error_log {
+    ($builder:ident, $($arg:tt)*) => {
+        {
+            use cx_data_ast::parse::macros::error_pointer;
+            use cx_util::log_error;
+            
+            eprintln!("Error in method {}", $builder.current_function_name().unwrap_or("<unknown>"));
+            log_error!($($arg)*);
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! point_log_error {
     ($data:ident, $($arg:tt)*) => {
         {

@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use cx_util::log_error;
-use crate::lex::token::{OperatorType, Token};
+use crate::lex::token::{OperatorType, TokenKind};
 use crate::parse::parser::ParserData;
+use crate::try_next;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CXIdent {
@@ -55,7 +56,7 @@ impl CXTypedIdent {
 }
 
 pub fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
-    if matches!(data.toks.peek()?, Token::Intrinsic(_)) {
+    if matches!(data.toks.peek()?.kind, TokenKind::Intrinsic(_)) {
         return Some(
             CXTypedIdent::Intrinsic(
                 parse_intrinsic(data)?
@@ -63,15 +64,15 @@ pub fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
         );
     }
 
-    let Token::Identifier(ident) = data.toks.peek().cloned()? else {
+    let TokenKind::Identifier(ident) = data.toks.peek().cloned()?.kind else {
         return None;
     };
     data.toks.next();
 
     let mut idents = vec![CXIdent::from_owned(ident)];
 
-    while let Some(Token::Operator(OperatorType::ScopeRes)) = data.toks.next() {
-        let Token::Identifier(ident) = data.toks.peek().cloned()? else {
+    while try_next!(data, TokenKind::Operator(OperatorType::ScopeRes)) {
+        let TokenKind::Identifier(ident) = data.toks.peek().cloned()?.kind else {
             log_error!("Invalid token in namespace identifier: {:?}", data.toks.prev());
         };
         data.toks.next();
@@ -98,7 +99,7 @@ pub fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
 pub fn parse_intrinsic(data: &mut ParserData) -> Option<CXIdent> {
     let mut ss = String::new();
 
-    while let Some(Token::Intrinsic(ident)) = data.toks.peek() {
+    while let Some(TokenKind::Intrinsic(ident)) = data.toks.peek().map(|tok| &tok.kind) {
         ss.push_str(format!("{:?}", ident).to_lowercase().as_str());
         data.toks.next();
     }
@@ -115,7 +116,7 @@ pub fn parse_intrinsic(data: &mut ParserData) -> Option<CXIdent> {
 }
 
 pub fn parse_std_ident(data: &mut ParserData) -> Option<CXIdent> {
-    let Token::Identifier(ident) = data.toks.peek().cloned()? else {
+    let TokenKind::Identifier(ident) = data.toks.peek().cloned()?.kind else {
         return None;
     };
 

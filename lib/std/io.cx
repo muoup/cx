@@ -1,11 +1,23 @@
+private:
+
 #include <stdio.h>
 
 public:
 
 void print(char* str) {
-    while (str) putchar(*str++);
+    for (char* ptr = str; *ptr; ptr++) {
+        putchar(*ptr);
+    }
 }
 
 void println(char* str) {
     puts(str);
+}
+
+void print_int(i32 i) {
+    printf("%d", i);
+}
+
+void print_char(i32 c) {
+    putchar(c);
 }

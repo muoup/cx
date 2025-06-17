@@ -1,10 +1,15 @@
 pub struct CharIter<'a> {
     pub source: &'a str,
     pub current_iter: usize,
+    pub line: u32,
 }
 
 impl CharIter<'_> {
     pub fn next(&mut self) -> Option<char> {
+        if self.peek() == Some('\n') {
+            self.line += 1;
+        }
+        
         if let Some(c) = self.source.chars().nth(self.current_iter) {
             self.current_iter += 1;
             Some(c)

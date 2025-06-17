@@ -118,8 +118,33 @@ impl CXType {
     pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
         get_intrinsic_type(type_map, self)
     }
-    pub fn is_structure(&self, type_map: &CXTypeMap) -> bool {
-        matches!(get_intrinsic_type(type_map, self), Some(CXTypeKind::Structured { .. }))
+    pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+            return false;
+        };
+          
+        inner.is_structured(type_map)
+    }
+    
+    pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Structured { .. }))
+    }
+    
+    pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+            return None;
+        };
+
+        let intrin = inner.intrinsic_type(type_map);
+        if matches!(intrin, Some(CXTypeKind::Structured { .. })) {
+            intrin.cloned()
+        } else {
+            panic!("Expected a structured type, found: {:?}", inner.kind);
+        }
+    }
+    
+    pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::PointerTo(_)))
     }
 
     pub fn is_void(&self, type_map: &CXTypeMap) -> bool {
@@ -292,8 +317,7 @@ pub fn struct_field_type(
     type_: &CXType,
     field: &str
 ) -> Option<CXType> {
-    let CXTypeKind::Structured { fields, .. }
-        = &get_intrinsic_type(type_map, type_)? else {
+    let Some(CXTypeKind::Structured { fields, .. }) = type_.get_structure_ref(type_map) else {
         log_error!("Cannot access field {field} of non-structured type {type_}");
     };
 

@@ -1,4 +1,7 @@
+use cx_data_ast::parse::ast::CXExpr;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_util::bytecode_error_log;
+use crate::builder::BytecodeBuilder;
 
 pub(crate) struct StructAccess {
     pub(crate) offset: usize,
@@ -7,11 +10,12 @@ pub(crate) struct StructAccess {
 }
 
 pub(crate) fn get_struct_field(
+    builder: &BytecodeBuilder,
     _type: &BCType,
     name: &str
 ) -> Option<StructAccess> {
     let BCTypeKind::Struct { fields, .. } = &_type.kind else {
-        panic!("PANIC: Expected struct type, got: {:?}", _type);
+        bytecode_error_log!(builder, "PANIC: Expected struct type on access {name}, got: {:?}", _type);
     };
     
     let mut offset = 0;

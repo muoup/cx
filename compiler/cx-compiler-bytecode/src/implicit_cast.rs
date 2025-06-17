@@ -35,6 +35,40 @@ pub(crate) fn implicit_cast(
             )
         },
         
+        CXCastType::IntToPtr => {
+            let CXTypeKind::Integer { bytes, signed } =
+                from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
+                    panic!("INTERNAL PANIC: Invalid integer type")
+                };
+            
+            let val = if bytes < 8 {
+                if signed {
+                    builder.add_instruction(
+                        VirtualInstruction::SExtend {
+                            value,
+                        },
+                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                    )?
+                } else {
+                    builder.add_instruction(
+                        VirtualInstruction::ZExtend {
+                            value,
+                        },
+                        CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
+                    )?
+                }
+            } else {
+                value
+            };
+            
+            builder.add_instruction(
+                VirtualInstruction::BitCast {
+                    value: val
+                },
+                to_type.clone()
+            )
+        },
+
         CXCastType::IntToPtrDiff => {
             let CXTypeKind::PointerTo(inner) =
                 to_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
@@ -89,8 +123,6 @@ pub(crate) fn implicit_cast(
         CXCastType::IntegralCast => {
             let (_type, signed) = match get_intrinsic_type(&builder.cx_type_map, to_type)? {
                 CXTypeKind::Integer { signed, .. } => (to_type.clone(), *signed),
-                CXTypeKind::PointerTo(_)
-                    => (CXTypeKind::Integer { signed: false, bytes: 8 }.to_val_type(), false),
 
                 _ => panic!("INTERNAL PANIC: Invalid integral cast type")
             };

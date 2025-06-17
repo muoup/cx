@@ -277,11 +277,13 @@ pub(crate) fn generate_instruction<'a>(
 
             VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
                 let left_value = function_state
-                    .get_val_ref(left)?
+                    .get_val_ref(left)
+                    .unwrap()
                     .get_value();
 
                 let right_value = function_state
-                    .get_val_ref(right)?
+                    .get_val_ref(right)
+                    .unwrap()
                     .get_value();
 
                 generate_ptr_binop(

@@ -101,12 +101,13 @@ pub(crate) fn cx_llvm_prototype<'a>(
         AnyTypeEnum::StructType(_) => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
         any_type => any_type,
     };
+    
     let arg_types = prototype
         .params
         .iter()
         .map(|arg| cx_llvm_type(state, &arg.type_))
         .collect::<Option<Vec<_>>>()?;
-
+    
     create_fn_proto(
         return_type,
         &arg_types,

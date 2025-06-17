@@ -1,12 +1,15 @@
-void* fopen(char *filename, char *mode);
-int fclose(void *stream);
-void clearerr(void *stream);
+typedef void FILE;
 
-int feof(void *stream);
-int ferror(void *stream);
-int fflush(void *stream);
+FILE *fopen(char *filename, char *mode);
+int fclose(FILE *stream);
+void clearerr(FILE *stream);
 
-int fgetpos(void *stream, void *pos);
+int feof(FILE *stream);
+int ferror(FILE *stream);
+int fflush(FILE *stream);
+
+char* fgets(char *s, int size, FILE *stream);
+int fgetpos(FILE *stream, void *pos);
 
 int putchar(int c);
 int puts(char *s);

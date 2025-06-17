@@ -1,4 +1,4 @@
-use crate::lex::token::Token;
+use crate::lex::token::{TokenKind, Token};
 use crate::parse::value_type::{CXType};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::HashSet;

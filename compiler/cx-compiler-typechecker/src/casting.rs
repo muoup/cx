@@ -4,7 +4,7 @@ use crate::TypeEnvironment;
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
 use cx_util::log_error;
-use crate::checker::coerce_value;
+use crate::checker::{coerce_value, type_check_traverse};
 
 pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
                            -> Option<Option<CXCastType>> {
@@ -56,11 +56,8 @@ pub fn valid_explicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. })
                 => Some(CXCastType::IntegralTrunc),
 
-            (CXTypeKind::Integer { bytes, .. }, CXTypeKind::PointerTo(_))
-                if bytes == 8 => Some(CXCastType::BitCast),
-
             (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(_))
-                => Some(CXCastType::IntegralCast),
+                => Some(CXCastType::IntToPtr),
 
             _ => None
         }
@@ -105,7 +102,7 @@ pub(crate) fn add_implicit_cast(expr: &mut CXExpr, from_type: CXType, to_type: C
         from_type,
         to_type,
         cast_type
-    }.into();
+    }.into_expr(0, 0);
     
     Some(())
 }
@@ -117,41 +114,101 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
     let r_type = coerce_value(env, rhs)?;
     
     if same_type(env.type_map, &l_type, &r_type) {
-        return Some(l_type);
+        return binop_type(&op, None, &l_type);
     }
 
     match (l_type.intrinsic_type(env.type_map).cloned()?,
            r_type.intrinsic_type(env.type_map).cloned()?) {
 
         (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. }) => {
-            add_implicit_cast(rhs, r_type.clone(), l_type.clone(), CXCastType::IntToPtrDiff)?;
-            
-            Some(l_type)
+            ptr_int_binop_coercion(env, op, &l_type, rhs)
         },
 
         (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(_)) => {
             if matches!(op, CXBinOp::Subtract) {
                 log_error!("Invalid operation [integer] - [pointer] for types {l_type} and {r_type}");
             }
-            
-            add_implicit_cast(lhs, l_type.clone(), r_type.clone(), CXCastType::IntToPtrDiff)?;
             std::mem::swap(lhs, rhs);
-            
-            Some(r_type)
+
+            ptr_int_binop_coercion(env, op, &r_type, lhs)
         },
 
         (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. }) => {
             if b1 > b2 {
                 add_implicit_cast(rhs, r_type.clone(), l_type.clone(), CXCastType::IntegralCast)?;
-                Some(l_type)
             } else if b1 < b2 {
                 add_implicit_cast(lhs, l_type.clone(), r_type.clone(), CXCastType::IntegralCast)?;
-                Some(r_type)
-            } else {
-                Some(l_type)
             }
+            
+            binop_type(&op, None, &l_type)
         },
 
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) 
+            => ptr_ptr_binop_coercion(env, op, &l_type, rhs),
+
         _ => log_error!("Cannot perform binary operation on types {l_type} and {r_type}"),
+    }
+}
+
+pub(crate) fn ptr_int_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
+                                     pointer_inner: &CXType, non_pointer: &mut CXExpr) -> Option<CXType> {
+    match op {
+        // Requires one pointer and one integer
+        CXBinOp::Add |
+        CXBinOp::Subtract |
+        CXBinOp::ArrayIndex => {
+            let _type = type_check_traverse(env, non_pointer)?.clone();
+
+            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone(), CXCastType::IntToPtrDiff)?;
+        },
+
+        // Requires two pointers
+        CXBinOp::LessEqual | CXBinOp::GreaterEqual |
+        CXBinOp::Less | CXBinOp::Greater |
+        CXBinOp::Equal | CXBinOp::NotEqual => {
+            let _type = type_check_traverse(env, non_pointer)?.clone();
+
+            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone().pointer_to(), CXCastType::IntToPtr)?;
+        },
+
+        _ => panic!("Invalid binary operation {op} for pointer type")
+    };
+    
+    binop_type(&op, Some(&pointer_inner), &pointer_inner.clone().pointer_to())
+}
+
+pub(crate) fn ptr_ptr_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
+                                     pointer_inner: &CXType, non_pointer: &mut CXExpr) -> Option<CXType> {
+    match op {
+        // Requires two pointers
+        CXBinOp::LessEqual | CXBinOp::GreaterEqual |
+        CXBinOp::Less | CXBinOp::Greater |
+        CXBinOp::Equal | CXBinOp::NotEqual => {
+            let _type = type_check_traverse(env, non_pointer)?.clone();
+
+            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone(), CXCastType::BitCast)?;
+        },
+
+        _ => panic!("Invalid binary operation {op} for pointer type")
+    };
+    
+    binop_type(&op, Some(&pointer_inner), &pointer_inner.clone())
+}
+
+pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXType) -> Option<CXType> {
+    match op {
+        CXBinOp::Add | CXBinOp::Subtract | CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => {
+            Some(lhs.clone())
+        },
+        
+        CXBinOp::ArrayIndex => pointer_inner.cloned(),
+
+        CXBinOp::Less | CXBinOp::Greater | 
+        CXBinOp::LessEqual | CXBinOp::GreaterEqual |
+        CXBinOp::Equal | CXBinOp::NotEqual => {
+            Some(CXTypeKind::Integer { bytes: 1, signed: false }.to_val_type())
+        },
+
+        _ => panic!("Invalid binary operation {op} for type {lhs}")
     }
 }

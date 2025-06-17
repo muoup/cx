@@ -1,9 +1,9 @@
-use crate::request_compile;
+use crate::{request_compile, request_type_compilation};
 use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_ast::{lex, preprocessor, LexContents, ParseContents, PreprocessContents};
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
-use cx_data_ast::parse::ast::CXAST;
+use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_data_bytecode::ProgramBytecode;
@@ -32,6 +32,7 @@ pub enum PipelineStage {
     FileRead(String),
     Preprocessed(PreprocessContents),
     Lexed(LexContents),
+    TypesAndDependences(LexContents, CXTypeMap, Vec<String>),
     Parsed(ParseContents),
     Typechecked(CXAST, ExprTypeMap),
     Bytecode(ProgramBytecode),
@@ -115,8 +116,7 @@ impl CompilerPipeline {
 
     pub fn preprocess(mut self) -> Self {
         let PipelineStage::FileRead(file_contents) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot preprocess without reading a file!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot preprocess without reading a file!");
         };
 
         let preprocessed = preprocessor::preprocess(file_contents.as_str());
@@ -127,8 +127,7 @@ impl CompilerPipeline {
 
     pub fn lex(mut self) -> Self {
         let PipelineStage::Preprocessed(preprocessed) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot lex without preprocessing!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot lex without preprocessing!");
         };
 
         let lexed = lex::generate_tokens(preprocessed.as_str());
@@ -137,36 +136,80 @@ impl CompilerPipeline {
         self
     }
 
-    pub fn parse(mut self) -> Self {
+    pub fn parse_types_and_deps(mut self) -> Self {
         let PipelineStage::Lexed(lexed) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot parse without lexing!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot parse types and dependencies without lexing!");
         };
-        
+
         let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str()) else {
-            println!("ERROR: Failed to parse AST");
-            exit(1);
+        let (mut type_map, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data, self.internal_dir.as_str())
+            .expect("Failed to parse types and dependencies");
+
+        let recursive_imports = request_type_compilation(imports.as_slice())
+            .expect("Failed to request compile for imports");
+        imports.extend(recursive_imports);
+        
+        for import in imports.iter() {
+            let deserialized = cx_compiler_modules::deserialize_type_data(import)
+                .expect(format!("Failed to deserialize module data for import: {}", import).as_str());
+            
+            for (type_name, cx_type) in deserialized {
+                if type_map.contains_key(&type_name) {
+                    eprintln!("WARNING: Type {} already exists in the type map, skipping import.", type_name);
+                } else {
+                    type_map.insert(type_name, cx_type);
+                }
+            }
+        }
+
+
+        self.imports = imports;
+        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, type_map, self.imports.clone());
+        self
+    }
+
+    pub fn emit_serialized_types(self) -> Self {
+        let PipelineStage::TypesAndDependences(_, type_map, _) = &self.pipeline_stage else {
+            panic!("PIPELINE ERROR: Cannot emit serialized types without parsing types and dependencies!");
+        };
+
+        cx_compiler_ast::parse::serialize_type_data(self.internal_dir.as_str(), type_map.iter())
+            .expect("Failed to serialize type data");
+
+        self
+    }
+
+    pub fn parse(mut self) -> Self {
+        let PipelineStage::TypesAndDependences(lexed, types, dependencies) = std::mem::take(&mut self.pipeline_stage) else {
+            panic!("PIPELINE ERROR: Cannot parse without types and dependencies! Found stage: {:?}", self.pipeline_stage);
         };
         
-        self.imports = ast.imports.clone();
+        let mut parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
+        
+        for name in types.keys() {
+            parser_data.type_symbols.insert(name.clone());
+        }
+        
+        request_compile(dependencies.as_slice())
+            .expect("Failed to request compile for dependencies");
+
+        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types, dependencies) else {
+            panic!("ERROR: Failed to parse AST");
+        };
+        
         self.pipeline_stage = PipelineStage::Parsed(ast);
         self
     }
 
     pub fn verify(mut self) -> Self {
         let PipelineStage::Parsed(mut ast) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot verify without a parsed AST!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot verify without a parsed AST!");
         };
 
-        self.imports.extend(request_compile(ast.imports.as_slice()).unwrap());
-
         let Some(expr_type_map) = type_check(&mut ast) else {
-            eprintln!("ERROR: Failed to verify AST");
             dump_data(&ast);
-            exit(1);
+            panic!("ERROR: Failed to verify AST");
         };
 
         self.pipeline_stage = PipelineStage::Typechecked(ast, expr_type_map);
@@ -176,13 +219,11 @@ impl CompilerPipeline {
 
     pub fn generate_bytecode(mut self) -> Self {
         let PipelineStage::Typechecked(ast, expr_type_map) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot generate bytecode without a verified AST!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot generate bytecode without a verified AST!");
         };
 
         let Some(bytecode) = generate_bytecode(ast, expr_type_map) else {
-            eprintln!("ERROR: Failed to generate bytecode");
-            exit(1);
+            panic!("ERROR: Failed to generate bytecode");
         };
 
         self.pipeline_stage = PipelineStage::Bytecode(bytecode);
@@ -191,8 +232,7 @@ impl CompilerPipeline {
 
     pub fn take_ast(self) -> Option<CXAST> {
         let PipelineStage::Parsed(ast) = self.pipeline_stage else {
-            eprintln!("PIPELINE ERROR: Cannot take AST without a parsed AST!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot take AST without a parsed AST!");
         };
 
         Some(ast)
@@ -200,8 +240,7 @@ impl CompilerPipeline {
 
     pub fn llvm_codegen(mut self) -> Self {
         let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
         };
         
         let internal_path = Path::new(&self.internal_dir);
@@ -210,8 +249,7 @@ impl CompilerPipeline {
 
         let output_path = format!("{}.o", self.internal_dir);
         cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
-            eprintln!("ERROR: Failed to generate code");
-            exit(1);
+            panic!("ERROR: Failed to generate code");
         });
 
         self.pipeline_stage = PipelineStage::Codegen;
@@ -220,8 +258,7 @@ impl CompilerPipeline {
 
     pub fn cranelift_codegen(mut self) -> Self {
         let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
         };
         
         let internal_path = Path::new(&self.internal_dir);
@@ -230,8 +267,7 @@ impl CompilerPipeline {
         
         let output_path = format!("{}.o", self.internal_dir);
         cx_backend_cranelift::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
-            eprintln!("ERROR: Failed to generate code");
-            exit(1);
+            panic!("ERROR: Failed to generate code");
         });
 
         self.pipeline_stage = PipelineStage::Codegen;
@@ -240,8 +276,7 @@ impl CompilerPipeline {
 
     pub fn link(mut self) -> Self {
         let PipelineStage::Codegen = std::mem::take(&mut self.pipeline_stage) else {
-            eprintln!("PIPELINE ERROR: Cannot link without generating code!");
-            exit(1);
+            panic!("PIPELINE ERROR: Cannot link without generating code!");
         };
 
         let output_path = format!("{}.o", self.internal_dir);
