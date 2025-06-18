@@ -8,32 +8,35 @@ pub(crate) fn generate_ptr_binop<'a>(
     global_state: &GlobalState<'a>, function_state: &FunctionState<'a>,
     ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, op: BCPtrBinOp
 ) -> Option<CodegenValue<'a>> {
-    let (ptr, int) = if left_value.is_pointer_value() {
-        (left_value.into_pointer_value(), right_value.into_int_value())
-    } else {
-        (right_value.into_pointer_value(), left_value.into_int_value())
-    };
-    
     let ptr_type = cx_llvm_type(global_state, ptr_type)?;
-    let basic_type = any_to_basic_type(ptr_type)?;
 
     Some(
         CodegenValue::Value(
             match op {
                 BCPtrBinOp::ADD => unsafe {
+                    let basic_type = any_to_basic_type(ptr_type)
+                        .expect("Expected a basic type for pointer addition");
+
                     function_state.builder
-                        .build_in_bounds_gep(basic_type, ptr, &[int], crate::instruction::inst_num().as_str())
+                        .build_in_bounds_gep(basic_type,
+                                             left_value.into_pointer_value(), &[right_value.into_int_value()],
+                                             crate::instruction::inst_num().as_str())
                         .ok()?
                         .as_any_value_enum()
                 }
                 BCPtrBinOp::SUB => unsafe {
+                    let basic_type = any_to_basic_type(ptr_type)
+                        .expect("Expected a basic type for pointer subtraction");
+
                     let negative = function_state.builder
-                        .build_int_neg(int, crate::instruction::inst_num().as_str())
+                        .build_int_neg(right_value.into_pointer_value(), crate::instruction::inst_num().as_str())
                         .ok()?
                         .as_any_value_enum();
 
                     function_state.builder
-                        .build_in_bounds_gep(basic_type, ptr, &[negative.into_int_value()], crate::instruction::inst_num().as_str())
+                        .build_in_bounds_gep(basic_type,
+                                             left_value.into_pointer_value(), &[negative.into_int_value()],
+                                             crate::instruction::inst_num().as_str())
                         .ok()?
                         .as_any_value_enum()
                 }
@@ -41,16 +44,17 @@ pub(crate) fn generate_ptr_binop<'a>(
                     function_state.builder
                         .build_int_compare(
                             inkwell::IntPredicate::EQ,
-                            ptr, right_value.into_pointer_value(),
+                            left_value.into_pointer_value(), right_value.into_pointer_value(),
                             crate::instruction::inst_num().as_str()
                         )
-                        .ok()?
+                        .ok()
+                        .unwrap()
                         .as_any_value_enum(),
                 BCPtrBinOp::NE => 
                     function_state.builder
                         .build_int_compare(
                             inkwell::IntPredicate::NE,
-                            ptr, right_value.into_pointer_value(),
+                            left_value.into_pointer_value(), right_value.into_pointer_value(),
                             crate::instruction::inst_num().as_str()
                         )
                         .ok()?
@@ -59,7 +63,7 @@ pub(crate) fn generate_ptr_binop<'a>(
                     function_state.builder
                         .build_int_compare(
                             inkwell::IntPredicate::ULT,
-                            ptr, right_value.into_pointer_value(),
+                            left_value.into_pointer_value(), right_value.into_pointer_value(),
                             crate::instruction::inst_num().as_str()
                         )
                         .ok()?
@@ -68,7 +72,7 @@ pub(crate) fn generate_ptr_binop<'a>(
                     function_state.builder
                         .build_int_compare(
                             inkwell::IntPredicate::ULE,
-                            ptr, right_value.into_pointer_value(),
+                            left_value.into_pointer_value(), right_value.into_pointer_value(),
                             crate::instruction::inst_num().as_str()
                         )
                         .ok()?
@@ -77,7 +81,7 @@ pub(crate) fn generate_ptr_binop<'a>(
                     function_state.builder
                         .build_int_compare(
                             inkwell::IntPredicate::UGT,
-                            ptr, right_value.into_pointer_value(),
+                            left_value.into_pointer_value(), right_value.into_pointer_value(),
                             crate::instruction::inst_num().as_str()
                         )
                         .ok()?
@@ -86,7 +90,7 @@ pub(crate) fn generate_ptr_binop<'a>(
                     function_state.builder
                         .build_int_compare(
                             inkwell::IntPredicate::UGE,
-                            ptr, right_value.into_pointer_value(),
+                            left_value.into_pointer_value(), right_value.into_pointer_value(),
                             crate::instruction::inst_num().as_str()
                         )
                         .ok()?

@@ -1,5 +1,5 @@
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, Token};
+use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use cx_data_ast::parse::identifier::CXIdent;
@@ -11,33 +11,33 @@ use crate::parse::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     match data.toks.peek()
-        .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!") {
+        .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!")
+        .kind {
 
-        Token::Keyword(KeywordType::Import) => parse_import(data, ast),
-        Token::Keyword(KeywordType::Typedef) => goto_statement_end(data),
+        TokenKind::Keyword(KeywordType::Typedef) |
+        TokenKind::Keyword(KeywordType::Import) => goto_statement_end(data),
         
-        Token::Punctuator(PunctuatorType::Semicolon) => {
+        TokenKind::Punctuator(PunctuatorType::Semicolon) => {
             data.toks.next();
             Some(())
         },
-
-        Token::Specifier(_) => parse_access_mods(data, ast),
+        TokenKind::Specifier(_) => parse_access_mods(data, ast),
 
         _ => parse_global_expr(data, ast)
     }
 }
 
 pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<()> {
-    assert_token_matches!(data, Token::Specifier(specifier));
+    assert_token_matches!(data, TokenKind::Specifier(specifier));
 
     match specifier {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
-            try_next!(data, Token::Punctuator(PunctuatorType::Colon));
+            try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
         },
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
-            try_next!(data, Token::Punctuator(PunctuatorType::Colon));
+            try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
         },
 
         _ => unimplemented!("parse_access_mods: {:#?}", specifier)
@@ -46,8 +46,8 @@ pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<
     Some(())
 }
 
-pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
-    assert_token_matches!(data, Token::Keyword(KeywordType::Import));
+pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
+    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Import));
 
     let mut import_path = String::new();
 
@@ -56,10 +56,10 @@ pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()>
             log_error!("PARSER ERROR: Reached end of token stream when parsing import!");
         };
 
-        match tok {
-            Token::Punctuator(PunctuatorType::Semicolon) => break,
-            Token::Operator(OperatorType::ScopeRes) => import_path.push('/'),
-            Token::Identifier(ident) => import_path.push_str(&ident),
+        match &tok.kind {
+            TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
+            TokenKind::Operator(OperatorType::ScopeRes) => import_path.push('/'),
+            TokenKind::Identifier(ident) => import_path.push_str(&ident),
 
             _ => {
                 log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
@@ -67,22 +67,25 @@ pub(crate) fn parse_import(data: &mut ParserData, ast: &mut CXAST) -> Option<()>
         }
     };
     
-    ast.imports.push(import_path);
-    Some(())
+    Some(import_path)
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
     let Some((name, return_type)) = parse_initializer(data) else {
-        log_error!("PARSER ERROR: Failed to parse initializer in global expression!");
+        point_log_error!(data, "PARSER ERROR: Failed to parse initializer in global expression!");
     };
-
+    
     let Some(name) = name else {
         goto_statement_end(data);
         return Some(());
     };
+    
+    if !data.toks.has_next() {
+        point_log_error!(data, "PARSER ERROR: Reached end of token stream when parsing global expression!");
+    }
 
-    match data.toks.peek() {
-        Some(Token::Punctuator(PunctuatorType::OpenParen)) => {
+    match data.toks.peek().unwrap().kind {
+        TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             let Some(result) = parse_params(data) else {
                 log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
             };
@@ -92,10 +95,14 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
                 params: result.params,
                 var_args: result.var_args,
             };
+            
+            ast.function_map.insert(prototype.name.as_string(), prototype.clone());
+            
+            if data.visibility == VisibilityMode::Public {
+                ast.public_functions.push(prototype.name.as_string());
+            }
 
-            if try_next!(data, Token::Punctuator(PunctuatorType::Semicolon)) {
-                ast.global_stmts.push(CXGlobalStmt::FunctionForward { prototype });
-            } else {
+            if !try_next!(data, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
                 let body = Box::new(parse_body(data)?);
                 ast.global_stmts.push(CXGlobalStmt::FunctionDefinition { prototype, body })
             }
@@ -103,8 +110,8 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
             Some(())
         },
 
-        Some(Token::Punctuator(PunctuatorType::Semicolon))
-        | Some(Token::Assignment(_)) => todo!("Global variables"),
+        TokenKind::Punctuator(PunctuatorType::Semicolon)
+        | TokenKind::Assignment(_) => todo!("Global variables"),
 
         _ => {
             goto_statement_end(data);
@@ -119,14 +126,13 @@ pub(crate) struct ParseParamsResult {
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> Option<ParseParamsResult> {
-    assert_token_matches!(data, Token::Punctuator(PunctuatorType::OpenParen));
+    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
 
     let mut params = Vec::new();
 
-    while !try_next!(data, Token::Punctuator(PunctuatorType::CloseParen)) {
-        if let Some(Token::Punctuator(PunctuatorType::Ellipsis)) = data.toks.peek() {
-            data.toks.next();
-            assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+    while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
+        if try_next!(data, TokenKind::Punctuator(PunctuatorType::Ellipsis)) {
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
             return Some(ParseParamsResult { params, var_args: true });
         }
 
@@ -138,7 +144,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<ParseParamsResult> {
             log_error!("Failed to parse parameter in function call: {:#?}", data.toks.peek());
         }
 
-        if !try_next!(data, Token::Operator(OperatorType::Comma)) { assert_token_matches!(data, Token::Punctuator(PunctuatorType::CloseParen));
+        if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) { assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
             break;
         }
     }
@@ -147,15 +153,16 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<ParseParamsResult> {
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
-    if try_next!(data, Token::Punctuator(PunctuatorType::OpenBrace)) {
+    if try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
+        let start_index = data.toks.index - 1;
         let mut body = Vec::new();
 
-        while !try_next!(data, Token::Punctuator(PunctuatorType::CloseBrace)) {
+        while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
             let start_index = data.toks.index;
 
             if let Some(stmt) = parse_expr(data) {
                 if requires_semicolon(&stmt) {
-                    assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
                 }
 
                 body.push(stmt);
@@ -172,13 +179,13 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
             CXExprKind::Block {
                 exprs: body,
                 value: None
-            }.into()
+            }.into_expr(start_index, data.toks.index)
         )
     } else {
         let body = parse_expr(data)?;
 
         if requires_semicolon(&body) {
-            assert_token_matches!(data, Token::Punctuator(PunctuatorType::Semicolon));
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
         }
 
         Some(body)

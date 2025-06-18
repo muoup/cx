@@ -4,11 +4,20 @@ pub struct TokenData {
     pub start: u16,
     pub end: u16,
 
-    pub data: Token,
+    pub data: TokenKind,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub struct Token {
+    pub kind: TokenKind,
+    
+    pub line: u32,
+    pub start_index: usize,
+    pub end_index: usize,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenKind {
     Ignore,
 
     Assignment(Option<OperatorType>),
@@ -93,49 +102,49 @@ pub enum SpecifierType {
     ThreadLocal
 }
 
-impl Token {
-    pub fn from_str(str: String) -> Token {
+impl TokenKind {
+    pub fn from_str(str: String) -> TokenKind {
         match str.trim() {
-            "if" => Token::Keyword(KeywordType::If),
-            "else" => Token::Keyword(KeywordType::Else),
-            "while" => Token::Keyword(KeywordType::While),
-            "for" => Token::Keyword(KeywordType::For),
-            "do" => Token::Keyword(KeywordType::Do),
-            "break" => Token::Keyword(KeywordType::Break),
-            "continue" => Token::Keyword(KeywordType::Continue),
-            "return" => Token::Keyword(KeywordType::Return),
-            "switch" => Token::Keyword(KeywordType::Switch),
-            "case" => Token::Keyword(KeywordType::Case),
-            "default" => Token::Keyword(KeywordType::Default),
-            "struct" => Token::Keyword(KeywordType::Struct),
-            "enum" => Token::Keyword(KeywordType::Enum),
-            "union" => Token::Keyword(KeywordType::Union),
-            "typedef" => Token::Keyword(KeywordType::Typedef),
-            "int" => Token::Intrinsic(IntrinsicType::Int),
-            "long" => Token::Intrinsic(IntrinsicType::Long),
-            "short" => Token::Intrinsic(IntrinsicType::Short),
-            "float" => Token::Intrinsic(IntrinsicType::Float),
-            "char" => Token::Intrinsic(IntrinsicType::Char),
-            "void" => Token::Intrinsic(IntrinsicType::Void),
-            "auto" => Token::Intrinsic(IntrinsicType::Auto),
-            "unsigned" => Token::Intrinsic(IntrinsicType::Unsigned),
-            "signed" => Token::Intrinsic(IntrinsicType::Signed),
-            "register" => Token::Keyword(KeywordType::Register),
-            "sizeof" => Token::Keyword(KeywordType::Sizeof),
+            "if" => TokenKind::Keyword(KeywordType::If),
+            "else" => TokenKind::Keyword(KeywordType::Else),
+            "while" => TokenKind::Keyword(KeywordType::While),
+            "for" => TokenKind::Keyword(KeywordType::For),
+            "do" => TokenKind::Keyword(KeywordType::Do),
+            "break" => TokenKind::Keyword(KeywordType::Break),
+            "continue" => TokenKind::Keyword(KeywordType::Continue),
+            "return" => TokenKind::Keyword(KeywordType::Return),
+            "switch" => TokenKind::Keyword(KeywordType::Switch),
+            "case" => TokenKind::Keyword(KeywordType::Case),
+            "default" => TokenKind::Keyword(KeywordType::Default),
+            "struct" => TokenKind::Keyword(KeywordType::Struct),
+            "enum" => TokenKind::Keyword(KeywordType::Enum),
+            "union" => TokenKind::Keyword(KeywordType::Union),
+            "typedef" => TokenKind::Keyword(KeywordType::Typedef),
+            "int" => TokenKind::Intrinsic(IntrinsicType::Int),
+            "long" => TokenKind::Intrinsic(IntrinsicType::Long),
+            "short" => TokenKind::Intrinsic(IntrinsicType::Short),
+            "float" => TokenKind::Intrinsic(IntrinsicType::Float),
+            "char" => TokenKind::Intrinsic(IntrinsicType::Char),
+            "void" => TokenKind::Intrinsic(IntrinsicType::Void),
+            "auto" => TokenKind::Intrinsic(IntrinsicType::Auto),
+            "unsigned" => TokenKind::Intrinsic(IntrinsicType::Unsigned),
+            "signed" => TokenKind::Intrinsic(IntrinsicType::Signed),
+            "register" => TokenKind::Keyword(KeywordType::Register),
+            "sizeof" => TokenKind::Keyword(KeywordType::Sizeof),
 
-            "public" => Token::Specifier(SpecifierType::Public),
-            "private" => Token::Specifier(SpecifierType::Private),
-            "volatile" => Token::Specifier(SpecifierType::Volatile),
-            "inline" => Token::Specifier(SpecifierType::Inline),
-            "extern" => Token::Specifier(SpecifierType::Extern),
-            "static" => Token::Specifier(SpecifierType::Static),
-            "restrict" => Token::Specifier(SpecifierType::Restrict),
-            "const" => Token::Specifier(SpecifierType::Const),
-            "thread_local" => Token::Specifier(SpecifierType::ThreadLocal),
+            "public" => TokenKind::Specifier(SpecifierType::Public),
+            "private" => TokenKind::Specifier(SpecifierType::Private),
+            "volatile" => TokenKind::Specifier(SpecifierType::Volatile),
+            "inline" => TokenKind::Specifier(SpecifierType::Inline),
+            "extern" => TokenKind::Specifier(SpecifierType::Extern),
+            "static" => TokenKind::Specifier(SpecifierType::Static),
+            "restrict" => TokenKind::Specifier(SpecifierType::Restrict),
+            "const" => TokenKind::Specifier(SpecifierType::Const),
+            "thread_local" => TokenKind::Specifier(SpecifierType::ThreadLocal),
 
-            "import" => Token::Keyword(KeywordType::Import),
+            "import" => TokenKind::Keyword(KeywordType::Import),
 
-            _ => Token::Identifier(str),
+            _ => TokenKind::Identifier(str),
         }
     }
 }

@@ -1,11 +1,17 @@
 use std::fmt::{Display, Formatter};
-use crate::lex::token::{IntrinsicType, Token};
+use crate::lex::token::{IntrinsicType, TokenKind, Token};
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for TokenKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Identifier(name) => write!(f, "{}", name),
-            Token::Intrinsic(intrin) => write!(f, "{}", intrin),
+            TokenKind::Identifier(name) => write!(f, "{}", name),
+            TokenKind::Intrinsic(intrin) => write!(f, "{}", intrin),
 
             _ => write!(f, "{:?}", self),
         }

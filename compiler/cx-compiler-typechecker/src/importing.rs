@@ -11,7 +11,7 @@ pub(crate) fn import_module_data(cxast: &mut CXAST) {
         let cx_path_str = if import_path.starts_with("std") {
             let current_exe = std::env::current_exe()
                 .expect("Failed to get current executable path");
-            format!("{}/lib/std/{}.cx", current_exe.parent().unwrap().display(), &import_path[3..])
+            format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &import_path)
         } else {
             format!("{}.cx", import_path)
         };

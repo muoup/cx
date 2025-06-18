@@ -29,7 +29,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     );
 
     let mut binding = FunctionBuilderContext::new();
-    let mut builder = FunctionBuilder::new(&mut func, &mut binding);
+    let builder = FunctionBuilder::new(&mut func, &mut binding);
 
     let pointer_type = global_state.object_module.target_config().pointer_type();
 
@@ -90,13 +90,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
             }
             
             if instr.instruction.is_block_terminating() {
-                if value_id + 1 < fn_block.body.len() {
-                    println!("Redundant instructions after terminator in block {}", block_id);
-
-                    for instr in fn_block.body.iter().skip(value_id + 1) {
-                        println!("{}", instr);
-                    }
-                }
                 break;
             }
         }

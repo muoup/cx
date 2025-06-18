@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use crate::lex::token::{TokenKind, Token};
 use crate::parse::value_type::{CXType};
 use crate::parse::identifier::CXIdent;
 
@@ -9,6 +10,8 @@ pub type CXFunctionMap = HashMap<String, CXFunctionPrototype>;
 
 #[derive(Debug)]
 pub struct CXAST {
+    pub tokens: Vec<Token>,
+
     // Path to .cx file
     pub file_path: String,
     
@@ -18,6 +21,8 @@ pub struct CXAST {
     pub imports: Vec<String>,
 
     pub global_stmts: Vec<CXGlobalStmt>,
+    
+    pub public_functions: Vec<String>,
 
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
@@ -48,10 +53,6 @@ pub enum CXGlobalStmt {
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
-    },
-
-    FunctionForward {
-        prototype: CXFunctionPrototype,
     }
 }
 
@@ -95,13 +96,19 @@ pub enum CXInitIndex {
 pub struct CXExpr {
     pub uuid: usize,
     pub kind: CXExprKind,
+
+    pub start_index: usize,
+    pub end_index: usize,
 }
 
 impl Default for CXExpr {
     fn default() -> Self {
         CXExpr {
             uuid: 0,
-            kind: CXExprKind::Taken
+            kind: CXExprKind::Taken,
+
+            start_index: 0,
+            end_index: 0,
         }
     }
 }
@@ -190,11 +197,14 @@ pub enum CXExprKind {
     }
 }
 
-impl Into<CXExpr> for CXExprKind {
-    fn into(self) -> CXExpr {
+impl CXExprKind {
+    pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpr {
         CXExpr {
             uuid: Uuid::new_v4().as_u128() as usize,
-            kind: self
+            kind: self,
+
+            start_index,
+            end_index,
         }
     }
 }
@@ -209,5 +219,6 @@ pub enum CXCastType {
     IntegralTrunc,
     IntToPtrDiff,
     PtrToInt,
+    IntToPtr,
     FunctionToPointerDecay,
 }

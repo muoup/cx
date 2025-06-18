@@ -2,6 +2,7 @@ use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::value_type::{get_type_size, CXType};
 use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
 use cx_data_bytecode::node_type_map::ExprTypeMap;
+use cx_data_bytecode::types::BCTypeKind;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::{generate_instruction, implicit_return};
 
@@ -25,11 +26,11 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
         builder.new_function(prototype);
 
         for (i, arg) in prototype.params.iter().enumerate() {
-            let memory = builder.add_instruction(
+            let memory = builder.add_instruction_bt(
                 VirtualInstruction::Allocate {
                     size: get_type_size(&builder.cx_type_map, &arg.type_)?
                 },
-                arg.type_.clone()
+                BCTypeKind::Pointer.into()
             )?;
 
             let value = builder.add_instruction(
@@ -56,6 +57,7 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
         let Some(_) = generate_instruction(&mut builder, body) else {
             panic!("Failed to generate body for function: {}", prototype.name);
         };
+        
         implicit_return(&mut builder, prototype)?;
 
         builder.symbol_table.pop_scope();

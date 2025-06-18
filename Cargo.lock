@@ -298,20 +298,12 @@ dependencies = [
 name = "cx"
 version = "0.0.0"
 dependencies = [
- "cx-backend-cranelift",
- "cx-backend-llvm",
- "cx-compiler-ast",
- "cx-compiler-bytecode",
- "cx-compiler-typechecker",
- "cx-data-ast",
- "cx-data-bytecode",
  "cx-exec-pipeline",
- "cx-util",
 ]
 
 [[package]]
 name = "cx-backend-cranelift"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cranelift",
  "cranelift-module",
@@ -324,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "cx-backend-llvm"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-data-bytecode",
  "cx-util",
@@ -352,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "cx-compiler-modules"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-data-ast",
  "serde_json",
@@ -360,7 +352,7 @@ dependencies = [
 
 [[package]]
 name = "cx-compiler-typechecker"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-compiler-ast",
  "cx-compiler-modules",
@@ -388,12 +380,13 @@ dependencies = [
 
 [[package]]
 name = "cx-exec-pipeline"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-backend-cranelift",
  "cx-backend-llvm",
  "cx-compiler-ast",
  "cx-compiler-bytecode",
+ "cx-compiler-modules",
  "cx-compiler-typechecker",
  "cx-data-ast",
  "cx-data-bytecode",
@@ -410,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "cx-util"
-version = "0.1.0"
+version = "0.0.0"
 
 [[package]]
 name = "dashmap"

@@ -1,6 +1,5 @@
 use inkwell::AddressSpace;
-use inkwell::llvm_sys::LLVMValue;
-use crate::{FunctionState, GlobalState};
+use crate::GlobalState;
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, AsValueRef, BasicValueEnum};
 use cx_data_bytecode::BCFunctionPrototype;
@@ -101,12 +100,18 @@ pub(crate) fn cx_llvm_prototype<'a>(
         AnyTypeEnum::StructType(_) => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
         any_type => any_type,
     };
-    let arg_types = prototype
+    
+    let mut arg_types = prototype
         .params
         .iter()
         .map(|arg| cx_llvm_type(state, &arg.type_))
         .collect::<Option<Vec<_>>>()?;
-
+    
+    if prototype.return_type.is_structure() {
+        arg_types.insert(0, state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum());
+        
+    }
+    
     create_fn_proto(
         return_type,
         &arg_types,

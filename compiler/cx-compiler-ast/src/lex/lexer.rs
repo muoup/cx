@@ -1,5 +1,5 @@
 use std::io::BufRead;
-use cx_data_ast::lex::token::{OperatorType, PunctuatorType, Token};
+use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind, Token};
 use cx_util::char_iter::CharIter;
 
 pub(crate) struct Lexer<'a> {
@@ -13,7 +13,7 @@ pub(crate) struct Lexer<'a> {
 
 impl Lexer<'_> {
     pub(crate) fn add_token(&mut self, token: Token) {
-        if !matches!(token, Token::Ignore) {
+        if !matches!(token.kind, TokenKind::Ignore) {
             self.tokens.push(token);
         }
     }
@@ -27,7 +27,9 @@ impl Lexer<'_> {
             last_consume: 0,
             iter: CharIter {
                 source,
+                
                 current_iter: 0,
+                line: 1,
             },
 
             tokens: Vec::new(),
@@ -74,7 +76,16 @@ impl Lexer<'_> {
         self.last_consume = self.iter.current_iter;
 
         if str.chars().any(|c| !c.is_whitespace()) {
-            self.add_token(Token::from_str(str));
+            let kind = TokenKind::from_str(str);
+            
+            self.add_token(
+                Token {
+                    kind,
+                    line: self.iter.line,
+                    start_index: self.last_consume,
+                    end_index: up_to,
+                }
+            )
         }
     }
 
@@ -100,11 +111,20 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
         iter.next();
     }
     let num = &iter.source[start_index..iter.current_iter];
-    if dot {
-        Some(Token::FloatLiteral(num.parse().unwrap()))
+    let kind = if dot {
+        TokenKind::FloatLiteral(num.parse().unwrap())
     } else {
-        Some(Token::IntLiteral(num.parse().expect(&format!("Invalid number: {}\n", num))))
-    }
+        TokenKind::IntLiteral(num.parse().expect(&format!("Invalid number: {}\n", num)))
+    };
+    
+    Some(
+        Token {
+            kind,
+            line: iter.line,
+            start_index,
+            end_index: iter.current_iter,
+        }
+    )
 }
 
 fn string_lex(iter: &mut CharIter) -> Option<Token> {
@@ -127,42 +147,70 @@ fn string_lex(iter: &mut CharIter) -> Option<Token> {
             .replace("\\r", "\r")
             .replace("\\\"", "\"");
 
-    Some(Token::StringLiteral(string))
+    Some(
+        Token {
+            kind: TokenKind::StringLiteral(string),
+        
+            line: iter.line,
+            start_index: start_iter,
+            end_index: iter.current_iter - 1,
+        }
+    )
 }
 
 fn char_lex(iter: &mut CharIter) -> Option<Token> {
     assert_eq!(iter.next(), Some('\''));
+    let start_index = iter.current_iter;
     let c = iter.next()?;
 
-    match iter.next()? {
-        '\'' => Some(Token::IntLiteral(c as i64)),
-        'n' => {
+    let kind = match iter.next()? {
+        '\'' => TokenKind::IntLiteral(c as i64),
+        '0' => {
+            assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
-            Some(Token::IntLiteral('\n' as i64))
+            TokenKind::IntLiteral(0)
+        },
+        'n' => {
+            assert_eq!(c, '\\');
+            assert_eq!(iter.next(), Some('\''));
+            TokenKind::IntLiteral('\n' as i64)
         },
         't' => {
+            assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
-            Some(Token::IntLiteral('\t' as i64))
+            TokenKind::IntLiteral('\t' as i64)
         },
         'r' => {
+            assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
-            Some(Token::IntLiteral('\r' as i64))
+            TokenKind::IntLiteral('\r' as i64)
         },
-        _ => None
-    }
+        _ => panic!("Invalid character literal: '{}'", c)
+    };
+    
+    Some(
+        Token {
+            kind,
+            line: iter.line,
+            start_index,
+            end_index: iter.current_iter,
+        }
+    )
 }
 
 fn operator_lex(iter: &mut CharIter) -> Option<Token> {
-    fn try_assignment(iter: &mut CharIter, operator: OperatorType) -> Option<Token> {
+    fn try_assignment(iter: &mut CharIter, operator: OperatorType) -> Option<TokenKind> {
         if Some('=') == iter.peek() {
             iter.next();
-            Some(Token::Assignment(Some(operator)))
+            Some(TokenKind::Assignment(Some(operator)))
         } else {
-            Some(Token::Operator(operator))
+            Some(TokenKind::Operator(operator))
         }
     }
+    
+    let start_index = iter.current_iter;
 
-    match iter.next()? {
+    let kind = match iter.next()? {
         '*' => try_assignment(iter, OperatorType::Asterisk),
         '/' => {
             match iter.peek() {
@@ -173,7 +221,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                             break;
                         }
                     }
-                    Some(Token::Ignore)
+                    Some(TokenKind::Ignore)
                 },
                 Some('*') => {
                     iter.next();
@@ -183,7 +231,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                             break;
                         }
                     }
-                    Some(Token::Ignore)
+                    Some(TokenKind::Ignore)
                 },
                 _ => try_assignment(iter, OperatorType::Slash)
             }
@@ -193,60 +241,60 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '+' => match iter.peek() {
             Some('+') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::Increment))
+                Some(TokenKind::Operator(OperatorType::Increment))
             },
             _ => try_assignment(iter, OperatorType::Plus)
         }
         '-' => match iter.peek() {
             Some('>') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::Access))
+                Some(TokenKind::Operator(OperatorType::Access))
             },
             Some('-') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::Decrement))
+                Some(TokenKind::Operator(OperatorType::Decrement))
             },
             _ => try_assignment(iter, OperatorType::Minus)
         },
         '.' => {
             if iter.next() == Some('.') && iter.peek() == Some('.') {
                 iter.next();
-                Some(Token::Punctuator(PunctuatorType::Ellipsis))
+                Some(TokenKind::Punctuator(PunctuatorType::Ellipsis))
             } else {
                 iter.back();
-                Some(Token::Operator(OperatorType::Access))
+                Some(TokenKind::Operator(OperatorType::Access))
             }
         },
 
         '|' => match iter.peek() {
             Some('|') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::LOr))
+                Some(TokenKind::Operator(OperatorType::LOr))
             },
-            _ => Some(Token::Operator(OperatorType::BOr))
+            _ => Some(TokenKind::Operator(OperatorType::BOr))
         },
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::LAnd))
+                Some(TokenKind::Operator(OperatorType::LAnd))
             },
-            _ => Some(Token::Operator(OperatorType::BAnd))
+            _ => Some(TokenKind::Operator(OperatorType::BAnd))
         },
-        '^' => Some(Token::Operator(OperatorType::BXor)),
+        '^' => Some(TokenKind::Operator(OperatorType::BXor)),
         '!' => {
             if Some('=') == iter.peek() {
                 iter.next();
-                Some(Token::Operator(OperatorType::NotEqual))
+                Some(TokenKind::Operator(OperatorType::NotEqual))
             } else {
-                Some(Token::Operator(OperatorType::LNot))
+                Some(TokenKind::Operator(OperatorType::LNot))
             }
         },
-        '~' => Some(Token::Operator(OperatorType::BNot)),
+        '~' => Some(TokenKind::Operator(OperatorType::BNot)),
 
         ':' => {
             if Some(':') == iter.peek() {
                 iter.next();
-                Some(Token::Operator(OperatorType::ScopeRes))
+                Some(TokenKind::Operator(OperatorType::ScopeRes))
             } else {
                 iter.back();
                 None
@@ -256,38 +304,47 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '>' => match iter.peek() {
             Some('>') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::RShift))
+                Some(TokenKind::Operator(OperatorType::RShift))
             },
             Some('=') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::GreaterEqual))
+                Some(TokenKind::Operator(OperatorType::GreaterEqual))
             },
-            _ => Some(Token::Operator(OperatorType::Greater))
+            _ => Some(TokenKind::Operator(OperatorType::Greater))
         },
         '<' => match iter.peek() {
             Some('<') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::LShift))
+                Some(TokenKind::Operator(OperatorType::LShift))
             },
             Some('=') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::LessEqual))
+                Some(TokenKind::Operator(OperatorType::LessEqual))
             },
-            _ => Some(Token::Operator(OperatorType::Less))
+            _ => Some(TokenKind::Operator(OperatorType::Less))
         },
         '=' => match iter.peek() {
             Some('=') => {
                 iter.next();
-                Some(Token::Operator(OperatorType::Equal))
+                Some(TokenKind::Operator(OperatorType::Equal))
             },
-            _ => Some(Token::Assignment(None))
+            _ => Some(TokenKind::Assignment(None))
         },
-        ',' => Some(Token::Operator(OperatorType::Comma)),
+        ',' => Some(TokenKind::Operator(OperatorType::Comma)),
         _ => {
             iter.back();
             None
         }
-    }
+    }?;
+    
+    Some(
+        Token {
+            kind,
+            line: iter.line,
+            start_index,
+            end_index: iter.current_iter,
+        }
+    )
 }
 
 fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
@@ -295,21 +352,31 @@ fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
         return None;
     }
 
-    match iter.next().unwrap() {
-        '(' => Some(Token::Punctuator(PunctuatorType::OpenParen)),
-        ')' => Some(Token::Punctuator(PunctuatorType::CloseParen)),
-        '[' => Some(Token::Punctuator(PunctuatorType::OpenBracket)),
-        ']' => Some(Token::Punctuator(PunctuatorType::CloseBracket)),
-        '{' => Some(Token::Punctuator(PunctuatorType::OpenBrace)),
-        '}' => Some(Token::Punctuator(PunctuatorType::CloseBrace)),
-        ';' => Some(Token::Punctuator(PunctuatorType::Semicolon)),
-        ':' => Some(Token::Punctuator(PunctuatorType::Colon)),
-        '.' => Some(Token::Punctuator(PunctuatorType::Period)),
-        '?' => Some(Token::Punctuator(PunctuatorType::QuestionMark)),
+    let start_index = iter.current_iter;
+    let kind = match iter.next().unwrap() {
+        '(' => Some(TokenKind::Punctuator(PunctuatorType::OpenParen)),
+        ')' => Some(TokenKind::Punctuator(PunctuatorType::CloseParen)),
+        '[' => Some(TokenKind::Punctuator(PunctuatorType::OpenBracket)),
+        ']' => Some(TokenKind::Punctuator(PunctuatorType::CloseBracket)),
+        '{' => Some(TokenKind::Punctuator(PunctuatorType::OpenBrace)),
+        '}' => Some(TokenKind::Punctuator(PunctuatorType::CloseBrace)),
+        ';' => Some(TokenKind::Punctuator(PunctuatorType::Semicolon)),
+        ':' => Some(TokenKind::Punctuator(PunctuatorType::Colon)),
+        '.' => Some(TokenKind::Punctuator(PunctuatorType::Period)),
+        '?' => Some(TokenKind::Punctuator(PunctuatorType::QuestionMark)),
 
         _ => {
             iter.back();
             None
         }
-    }
+    }?;
+    
+    Some(
+        Token {
+            kind,
+            line: iter.line,
+            start_index,
+            end_index: iter.current_iter,
+        }
+    )
 }

@@ -37,13 +37,13 @@ pub struct VirtualValue {
     pub type_: BCType
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BCParameter {
     pub name: Option<String>,
     pub type_: BCType
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BCFunctionPrototype {
     pub name: String,
     pub return_type: BCType,
@@ -97,10 +97,6 @@ pub enum VirtualInstruction {
         memory: ValueID,
         value: ValueID,
         type_: BCType
-    },
-
-    AddressOf {
-        value: ValueID
     },
 
     ZExtend {

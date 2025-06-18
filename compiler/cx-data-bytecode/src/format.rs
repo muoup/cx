@@ -76,9 +76,6 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Allocate { size } => {
                 write!(f, "alloca {size}")
             },
-            VirtualInstruction::AddressOf { value } => {
-                write!(f, "address_of {value}")
-            },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
             },

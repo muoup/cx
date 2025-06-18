@@ -16,15 +16,16 @@ pub fn generate_instruction(
 ) -> Option<ValueID> {
     match &expr.kind {
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
-            let lhs = generate_instruction(builder, lhs.as_ref())?;
-            let rhs = generate_instruction(builder, rhs.as_ref())?;
-            let assn_type = builder.get_type(lhs)?.clone();
+            let left_id = generate_instruction(builder, lhs.as_ref())?;
+            let right_id = generate_instruction(builder, rhs.as_ref())?;
+            let lhs_type = builder.get_expr_type(lhs.as_ref())?
+                .clone();
 
             builder.add_instruction(
                 VirtualInstruction::Store {
-                    memory: lhs,
-                    value: rhs,
-                    type_: assn_type
+                    memory: left_id,
+                    value: right_id,
+                    type_: builder.convert_cx_type(&lhs_type)?
                 },
                 CXType::unit()
             )
@@ -34,11 +35,11 @@ pub fn generate_instruction(
                 log_error!("Invalid type for variable declaration: {type_}");
             };
 
-            let memory = builder.add_instruction(
+            let memory = builder.add_instruction_bt(
                 VirtualInstruction::Allocate {
                     size: type_size
                 },
-                type_.clone()
+                BCTypeKind::Pointer.into()
             )?;
 
             builder.symbol_table.insert(name.as_string(), memory);
@@ -48,13 +49,16 @@ pub fn generate_instruction(
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
-            let ltype = builder.get_type(left_id)?.clone();
+            let lhs_type = builder.get_expr_intrinsic_type(lhs.as_ref())?
+                .clone();
+            let ltype = builder.convert_cx_type(&lhs_type.to_val_type())?;
 
             let CXExprKind::Identifier(field_name) = &rhs.as_ref().kind else {
                 panic!("PANIC: Attempting to access struct field with rhs: {rhs:?}");
             };
 
             let struct_access = get_struct_field(
+                builder,
                 &ltype,
                 field_name.as_str()
             ).unwrap_or_else(|| {
@@ -269,50 +273,63 @@ pub fn generate_instruction(
                         op_type
                     )
                 },
-                CXUnOp::Dereference => {
-                    generate_instruction(builder, operand.as_ref())
-                },
-                CXUnOp::AddressOf => {
-                    let value = generate_instruction(builder, operand.as_ref())?;
+                CXUnOp::LNot => {
+                    let operand = generate_instruction(builder, operand.as_ref())?;
+                    let op_type = builder.get_type(operand)?.clone();
 
                     builder.add_instruction_bt(
-                        VirtualInstruction::AddressOf { value },
-                        BCTypeKind::Pointer.into()
+                        VirtualInstruction::IntegerUnOp {
+                            value: operand,
+                            op: BCIntUnOp::LNOT
+                        },
+                        op_type
                     )
                 },
+                
+                CXUnOp::Dereference |
+                CXUnOp::AddressOf => generate_instruction(builder, operand.as_ref()),
+                
                 CXUnOp::PreIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;
-                    let val_type = builder.get_type(value)?.clone();
-                    let value = builder.add_instruction_bt(
+                    let val_type = builder.get_expr_intrinsic_type(operand)?
+                        .clone();
+
+                    let CXTypeKind::MemoryAlias(inner) = val_type
+                        else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
+
+                    let loaded_val = builder.add_instruction(
                         VirtualInstruction::Load {
                             value: value.clone()
                         },
-                        val_type.clone()
+                        inner.as_ref().clone()
                     )?;
+
+                    let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
+                        CXTypeKind::Integer { bytes, .. } => *bytes,
+                        CXTypeKind::PointerTo(_) => 8,
+                        _ => panic!("Invalid type for post increment: {inner:?}")
+                    };
 
                     let one = builder.add_instruction_bt(
                         VirtualInstruction::Immediate {
                             value: *off as i32
                         },
-                        BCTypeKind::Signed { bytes: 8 }.into()
+                        BCTypeKind::Signed { bytes }.into()
                     )?;
-                    
-                    let CXTypeKind::MemoryAlias(inner) = builder.get_expr_intrinsic_type(operand)?
-                        else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
                     let incremented = generate_binop(
                         builder,
                         inner.as_ref(),
-                        value,
+                        loaded_val,
                         one,
                         &CXBinOp::Add
                     )?;
 
                     builder.add_instruction(
                         VirtualInstruction::Store {
-                            memory: value,
+                            memory: loaded_val,
                             value: incremented.clone(),
-                            type_: val_type
+                            type_: builder.convert_cx_type(inner.as_ref())?
                         },
                         CXType::unit()
                     )?;
@@ -321,28 +338,36 @@ pub fn generate_instruction(
                 },
                 CXUnOp::PostIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;
-                    let val_type = builder.get_type(value)?.clone();
-                    let loaded_val = builder.add_instruction_bt(
+                    let val_type = builder.get_expr_intrinsic_type(operand)?
+                        .clone();
+
+                    let CXTypeKind::MemoryAlias(inner) = val_type
+                        else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
+
+                    let loaded_val = builder.add_instruction(
                         VirtualInstruction::Load {
                             value: value.clone()
                         },
-                        val_type.clone()
+                        inner.as_ref().clone()
                     )?;
+
+                    let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
+                        CXTypeKind::Integer { bytes, .. } => *bytes,
+                        CXTypeKind::PointerTo(_) => 8,
+                        _ => panic!("Invalid type for post increment: {inner:?}")
+                    };
 
                     let one = builder.add_instruction_bt(
                         VirtualInstruction::Immediate {
                             value: *off as i32
                         },
-                        BCTypeKind::Signed { bytes: 8 }.into()
+                        BCTypeKind::Signed { bytes }.into()
                     )?;
-                    
-                    let CXTypeKind::MemoryAlias(inner) = builder.get_expr_intrinsic_type(operand)?
-                        else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
                     let incremented = generate_binop(
                         builder,
                         inner.as_ref(),
-                        value,
+                        loaded_val,
                         one,
                         &CXBinOp::Add
                     )?;
@@ -351,7 +376,7 @@ pub fn generate_instruction(
                         VirtualInstruction::Store {
                             memory: value,
                             value: incremented,
-                            type_: val_type
+                            type_: builder.convert_cx_type(inner.as_ref())?
                         },
                         CXType::unit()
                     )?;
@@ -548,7 +573,7 @@ pub(crate) fn generate_binop(
 
         BCTypeKind::Pointer { .. } => {
             let CXTypeKind::PointerTo(left_inner) = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
-                else { unreachable!("generate_binop: Expected pointer type for expr, found {cx_lhs_type}") };
+                else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
 
             builder.add_instruction_bt(
                 VirtualInstruction::PointerBinOp {

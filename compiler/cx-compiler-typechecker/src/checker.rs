@@ -1,10 +1,10 @@
 use cx_compiler_ast::parse::operators::{comma_separated_mut};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, same_type, CXTypeKind, CXType, CX_CONST};
-use cx_util::log_error;
+use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::access_struct;
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
-use crate::TypeEnvironment;
+use crate::{type_check, TypeEnvironment};
 
 pub(crate) fn type_check_traverse<'a>(env: &'a mut TypeEnvironment, expr: &mut CXExpr) -> Option<&'a CXType> {
     let _type = type_check_inner(env, expr)?;
@@ -28,8 +28,17 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
         CXExprKind::UnOp { operator, operand } => {
             match operator {
+                CXUnOp::BNot |
+                CXUnOp::LNot |
                 CXUnOp::Negative => { 
-                    coerce_value(env, operand.as_mut())
+                    let mut _type = coerce_value(env, operand.as_mut())?;
+                    
+                    if !matches!(_type.intrinsic_type(env.type_map)?, CXTypeKind::Integer { .. }) {
+                        implicit_coerce(env, operand, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
+                        _type = type_check_traverse(env, operand.as_mut()).cloned()?;
+                    }
+                    
+                    Some(_type)
                 },
                 
                 CXUnOp::AddressOf => {
@@ -87,7 +96,9 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             }
         },
 
-        CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
+        CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Assign(op) } => {
+            if op.is_some() { todo!("Compound assignment") }
+            
             let lhs_type = type_check_traverse(env, lhs)?.clone();
             let CXTypeKind::MemoryAlias(lhs_type) = &lhs_type.kind else {
                 log_error!("TYPE ERROR: Assignment operator can only be applied to memory references, found: {lhs_type}");
@@ -134,7 +145,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             let mut args = comma_separated_mut(rhs);
 
             if args.len() != prototype.params.len() && !prototype.var_args {
-                log_error!("TYPE ERROR: Method call operator expects {} arguments, found {}", prototype.params.len(), args.len());
+                log_error!("TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name, prototype.params.len(), args.len());
             }
 
             for (arg, expected_type) in
@@ -148,7 +159,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             for i in prototype.params.len()..args.len() {
                 let va_type = coerce_value(env, args[i])?;
 
-                if va_type.is_structure(&env.type_map) {
+                if va_type.is_structure_ref(&env.type_map) {
                     log_error!("TYPE ERROR: Cannot pass structure type as vararg");
                 }
             }
@@ -178,8 +189,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     // Array variables are themselves memory aliases, so wrapping
                     // them in a memory alias ends up adding an extra load operation
                     // when using them
-                    CXTypeKind::Array { .. } |
-                    CXTypeKind::Structured { .. } => {
+                    CXTypeKind::Array { .. } => {
                         Some(record)
                     },
                     
@@ -227,7 +237,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                         Box::new(
                             CXType::new(
                                 CX_CONST,
-                                CXTypeKind::Integer { bytes: 1, signed: true }
+                                "char".into()
                             )
                         )
                     )
@@ -237,8 +247,9 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
         CXExprKind::If { condition, then_branch, else_branch } => {
             let condition_type = coerce_value(env, condition)?;
+            
             if !matches!(condition_type.intrinsic_type(&env.type_map), Some(CXTypeKind::Integer { .. })) {
-                log_error!("TYPE ERROR: If condition must be of type int, found: {condition_type}");
+                implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
             }
 
             type_check_traverse(env, then_branch)?;
@@ -251,7 +262,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
         CXExprKind::Return { value } => {
             if let Some(value) = value {
-                implicit_coerce(env, value, env.return_type.clone())?;
+                let value_type = coerce_value(env, value)?;
+                
+                if !value_type.is_structure_ref(env.type_map) {
+                    implicit_coerce(env, value, env.return_type.clone())?;
+                }
             } else if !env.return_type.is_void(&env.type_map) {
                 log_error!("TYPE ERROR: Function with empty return in non-void context");
             }
@@ -268,7 +283,12 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
         CXExprKind::For { init, condition, increment, body } => {
             type_check_traverse(env, init)?;
-            let condition_type = type_check_traverse(env, condition)?.clone();
+            let condition_type = coerce_value(env, condition)?.clone();
+            
+            if !matches!(condition_type.intrinsic_type(env.type_map)?, CXTypeKind::Integer { .. }) {
+                implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
+            }
+            
             type_check_traverse(env, increment)?;
             type_check_traverse(env, body)?;
 
@@ -311,7 +331,7 @@ pub(crate) fn implicit_coerce(
     }
 
     let Some(()) = implicit_cast(env, expr, &from_type, &to_type)? else {
-        log_error!("TYPE ERROR: Cannot implicitly cast {from_type} to {to_type}");
+        expr_error_log!(env.tokens, expr.start_index, expr.end_index, "TYPE ERROR: Cannot implicitly cast {from_type} to {to_type}");
     };
 
     Some(())
@@ -327,12 +347,23 @@ fn coerce_mem_ref(
         = expr_type.intrinsic_type(env.type_map).cloned()? else {
         return Some(expr_type);
     };
+    
+    match inner.intrinsic_type(env.type_map)? {
+        CXTypeKind::Structured { .. } => {},
+        
+        _ => {
+            let expr_temp = std::mem::take(expr);
+            let start_index = expr_temp.start_index;
+            let end_index = expr_temp.end_index;
+            
+            *expr = CXExprKind::ImplicitLoad {
+                expr: Box::new(expr_temp),
+                loaded_type: inner.as_ref().clone()
+            }.into_expr(start_index, end_index);
+        }
+    }
+    
 
-    let expr_temp = std::mem::take(expr);
-    *expr = CXExprKind::ImplicitLoad {
-        expr: Box::new(expr_temp),
-        loaded_type: inner.as_ref().clone()
-    }.into();
     type_check_traverse(env, expr).cloned()
 }
 
@@ -349,14 +380,18 @@ pub(crate) fn coerce_value(
                 CXTypeKind::PointerTo(_type.clone())
             )
         ),
+        
         CXTypeKind::Function { .. } => {
             let expr_temp = std::mem::take(expr);
+            let start_index = expr_temp.start_index;
+            let end_index = expr_temp.end_index;
             *expr = CXExprKind::GetFunctionAddr {
                 func_name: Box::new(expr_temp),
                 func_sig: expr_type.clone()
-            }.into();
+            }.into_expr(start_index, end_index);
             type_check_traverse(env, expr).cloned()
         },
+        
         _ => Some(expr_type)
     }
 }
