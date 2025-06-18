@@ -33,7 +33,7 @@ pub(crate) struct GlobalState<'a> {
 }
 
 pub(crate) struct FunctionState<'a> {
-    function_name: String,
+    current_function: String,
     
     builder: Builder<'a>,
     value_map: HashMap<ValueID, CodegenValue<'a>>,
@@ -138,7 +138,7 @@ pub fn bytecode_aot_codegen(
     global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {:#?}", err));
     global_state.module.set_triple(&TargetMachine::get_default_triple());
     
-    println!("{}", global_state.module.print_to_string().to_string_lossy());
+    // println!("{}", global_state.module.print_to_string().to_string_lossy());
     
     // global_state.module
     //     .run_passes(
@@ -178,9 +178,9 @@ fn fn_aot_codegen(
     let builder = global_state.context.create_builder();
 
     let mut function_state = FunctionState {
-        function_name: bytecode.prototype.name.clone(),
+        current_function: bytecode.prototype.name.clone(),
+        
         builder,
-
         value_map: HashMap::new(),
     };
 
@@ -208,13 +208,6 @@ fn fn_aot_codegen(
             );
             
             if inst.instruction.is_block_terminating() {
-                if value_id + 1 < block.body.len() {
-                    println!("Redundant instructions after terminator in block {}", block_id);
-                    
-                    for instr in block.body.iter().skip(value_id + 1) {
-                        println!("{}", instr);
-                    }
-                }
                 break;
             }
         }

@@ -16,12 +16,12 @@ pub mod intrinsic_types;
 
 pub fn parse_types_and_deps(mut data: ParserData, internal_dir: &str) -> Option<(CXTypeMap, Vec<String>)> {
     let (mut type_map, imports) = parse_types(&mut data)?;
-    
+
     serialize_type_data(internal_dir, type_map.iter())
         .expect("Failed to serialize type data");
     
     add_intrinsic_types(&mut type_map);
-    
+
     Some((type_map, imports))
 }
 

@@ -19,7 +19,7 @@ pub fn request_type_compilation(file_paths: &[String]) -> Option<Vec<String>> {
             let cx_path_str = if import_path.starts_with("std") {
                 let current_exe = std::env::current_exe()
                     .expect("Failed to get current executable path");
-                format!("{}/lib/std/{}.cx", current_exe.parent().unwrap().display(), &import_path[3..])
+                format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &import_path)
             } else {
                 format!("{}.cx", import_path)
             };
@@ -50,14 +50,14 @@ pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
             let cx_path_str = if import_path.starts_with("std") {
                 let current_exe = std::env::current_exe()
                     .expect("Failed to get current executable path");
-                format!("{}/lib/std/{}.cx", current_exe.parent().unwrap().display(), &import_path[3..])
+                format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &import_path)
             } else {
                 format!("{}.cx", import_path)
             };
 
             imports.extend(module_llvm_compile(format!(".internal/{}", import_path), cx_path_str)?);
         } else {
-            // If the internal path exists and the source file has not been modified,
+            // If the file exists in the internal directory from after compilation began,
             // we can skip recompilation.
             println!("Skipping recompilation for {}", import_path);
         }

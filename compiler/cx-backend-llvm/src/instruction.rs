@@ -40,7 +40,7 @@ pub(crate) fn generate_instruction<'a>(
                         .as_any_value_enum()
                 ),
             
-            VirtualInstruction::DirectCall { func, args, .. } => {
+            VirtualInstruction::DirectCall { func, args, method_sig } => {
                 let function_name =
                     function_state
                         .get_val_ref(func)?
@@ -51,7 +51,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_function(function_name)
                     .unwrap();
 
-                let arg_vals = args
+                let mut arg_vals = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
@@ -63,6 +63,19 @@ pub(crate) fn generate_instruction<'a>(
                         Some(basic_val.into())
                     })
                     .collect::<Option<Vec<_>>>()?;
+
+                if method_sig.return_type.is_structure() {
+                    let llvm_type = cx_llvm_type(global_state, &method_sig.return_type)?;
+                    let temp_buffer = function_state
+                        .builder
+                        .build_alloca(
+                            any_to_basic_type(llvm_type)?,
+                            inst_num().as_str()
+                        )
+                        .ok()?;
+
+                    arg_vals.insert(0, temp_buffer.into());
+                }
 
                 let val = function_state.builder
                     .build_direct_call(function_val.clone(), arg_vals.as_slice(), inst_num().as_str())
@@ -89,7 +102,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value();
                 let fn_type = bc_llvm_prototype(global_state, method_sig)
                     .unwrap();
-                let args = args
+                let mut args = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
@@ -101,6 +114,19 @@ pub(crate) fn generate_instruction<'a>(
                         Some(basic_val.into())
                     })
                     .collect::<Option<Vec<_>>>()?;
+
+                if method_sig.return_type.is_structure() {
+                    let llvm_type = cx_llvm_type(global_state, &method_sig.return_type)?;
+                    let temp_buffer = function_state
+                        .builder
+                        .build_alloca(
+                            any_to_basic_type(llvm_type)?,
+                            inst_num().as_str()
+                        )
+                        .ok()?;
+
+                    args.insert(0, temp_buffer.into());
+                }
                 
                 let val = function_state.builder
                     .build_indirect_call(
@@ -199,19 +225,62 @@ pub(crate) fn generate_instruction<'a>(
                     .cloned()
                     .unwrap();
                 
-                let basic_val = any_to_basic_val(value.get_value())?;
+                let current_prototype = global_state.function_map
+                    .get(&function_state.current_function)
+                    .unwrap();
                 
-                function_state
-                    .builder
-                    .build_return(Some(&basic_val))
-                    .ok()?;
+                if current_prototype.return_type.is_structure() {
+                    let llvm_type = cx_llvm_type(
+                        global_state, 
+                        &current_prototype.return_type
+                    )?;
+                    let type_size = any_to_basic_type(llvm_type)?
+                        .size_of()
+                        .expect("Failed to get size of type");
+                    
+                    let return_param = function_val
+                        .get_nth_param(0)
+                        .unwrap()
+                        .into_pointer_value();
+                    
+                    function_state.builder
+                        .build_memcpy(
+                            return_param, 1,
+                            value.get_value().into_pointer_value(), 1,
+                            type_size
+                        )
+                        .unwrap();
+                    
+                    function_state
+                        .builder
+                        .build_return(Some(&return_param.as_basic_value_enum()))
+                        .ok()?;
+                } else {
+                    let basic_val = any_to_basic_val(value.get_value())?;
+
+                    function_state
+                        .builder
+                        .build_return(Some(&basic_val))
+                        .ok()?;   
+                }
                 
                 CodegenValue::NULL
             },
             
             VirtualInstruction::FunctionParameter { param_index } => {
+                let function = global_state
+                    .function_map
+                    .get(function_state.current_function.as_str())
+                    .unwrap();
+                
+                let param_index = if function.return_type.is_structure() {
+                    *param_index + 1 // Skip the first parameter for the return type
+                } else {
+                    *param_index
+                };
+                
                 let param = function_val
-                    .get_nth_param(*param_index as u32)
+                    .get_nth_param(param_index)
                     .unwrap();
                 
                 CodegenValue::Value(param.as_any_value_enum())
@@ -425,15 +494,6 @@ pub(crate) fn generate_instruction<'a>(
                     .ok()?;
                 
                 CodegenValue::NULL
-            },
-            
-            VirtualInstruction::AddressOf { value } => {
-                CodegenValue::Value(
-                    function_state
-                        .get_val_ref(value)?
-                        .get_value()
-                        .as_any_value_enum()
-                )
             },
             
             VirtualInstruction::ZExtend { value } => {

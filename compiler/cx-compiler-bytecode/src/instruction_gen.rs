@@ -16,15 +16,16 @@ pub fn generate_instruction(
 ) -> Option<ValueID> {
     match &expr.kind {
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
-            let lhs = generate_instruction(builder, lhs.as_ref())?;
-            let rhs = generate_instruction(builder, rhs.as_ref())?;
-            let assn_type = builder.get_type(lhs)?.clone();
+            let left_id = generate_instruction(builder, lhs.as_ref())?;
+            let right_id = generate_instruction(builder, rhs.as_ref())?;
+            let lhs_type = builder.get_expr_type(lhs.as_ref())?
+                .clone();
 
             builder.add_instruction(
                 VirtualInstruction::Store {
-                    memory: lhs,
-                    value: rhs,
-                    type_: assn_type
+                    memory: left_id,
+                    value: right_id,
+                    type_: builder.convert_cx_type(&lhs_type)?
                 },
                 CXType::unit()
             )
@@ -284,15 +285,10 @@ pub fn generate_instruction(
                         op_type
                     )
                 },
-                CXUnOp::Dereference => generate_instruction(builder, operand.as_ref()),
-                CXUnOp::AddressOf => {
-                    let value = generate_instruction(builder, operand.as_ref())?;
-
-                    builder.add_instruction_bt(
-                        VirtualInstruction::AddressOf { value },
-                        BCTypeKind::Pointer.into()
-                    )
-                },
+                
+                CXUnOp::Dereference |
+                CXUnOp::AddressOf => generate_instruction(builder, operand.as_ref()),
+                
                 CXUnOp::PreIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;
                     let val_type = builder.get_expr_intrinsic_type(operand)?

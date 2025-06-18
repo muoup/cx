@@ -1,16 +1,5 @@
 public:
 
-u64 strlen(const char* str) {
-    u64 length = 0;
-
-    while (*str) {
-        length++;
-        str++;
-    }
-
-    return length;
-}
-
 struct string {
     char* data;
     u64 length;
@@ -31,17 +20,15 @@ void string_append(string* s, const char* str) {
 
     if (s.length + str_length + 1 > s.capacity) {
         s.capacity = s.capacity * 2;
-
-        printf("Resizing string from %llu to %llu bytes\n", s.capacity / 2, s.capacity);
         s.data = realloc(s.data, s.capacity);
     }
 
-    printf("Appending '%s' to string of length %llu\n", str, s.length);
     memcpy(s.data + s.length, str, str_length);
+    s.length = str_length + s.length;
 }
 
 private:
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <memory.h>
+#include <string.h>

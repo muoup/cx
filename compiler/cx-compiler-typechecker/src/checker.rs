@@ -353,10 +353,13 @@ fn coerce_mem_ref(
         
         _ => {
             let expr_temp = std::mem::take(expr);
+            let start_index = expr_temp.start_index;
+            let end_index = expr_temp.end_index;
+            
             *expr = CXExprKind::ImplicitLoad {
                 expr: Box::new(expr_temp),
                 loaded_type: inner.as_ref().clone()
-            }.into_expr(0, 0);
+            }.into_expr(start_index, end_index);
         }
     }
     
@@ -380,10 +383,12 @@ pub(crate) fn coerce_value(
         
         CXTypeKind::Function { .. } => {
             let expr_temp = std::mem::take(expr);
+            let start_index = expr_temp.start_index;
+            let end_index = expr_temp.end_index;
             *expr = CXExprKind::GetFunctionAddr {
                 func_name: Box::new(expr_temp),
                 func_sig: expr_type.clone()
-            }.into_expr(0, 0);
+            }.into_expr(start_index, end_index);
             type_check_traverse(env, expr).cloned()
         },
         

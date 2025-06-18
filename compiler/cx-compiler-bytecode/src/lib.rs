@@ -57,6 +57,7 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
         let Some(_) = generate_instruction(&mut builder, body) else {
             panic!("Failed to generate body for function: {}", prototype.name);
         };
+        
         implicit_return(&mut builder, prototype)?;
 
         builder.symbol_table.pop_scope();

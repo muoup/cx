@@ -169,17 +169,6 @@ impl CompilerPipeline {
         self
     }
 
-    pub fn emit_serialized_types(self) -> Self {
-        let PipelineStage::TypesAndDependences(_, type_map, _) = &self.pipeline_stage else {
-            panic!("PIPELINE ERROR: Cannot emit serialized types without parsing types and dependencies!");
-        };
-
-        cx_compiler_ast::parse::serialize_type_data(self.internal_dir.as_str(), type_map.iter())
-            .expect("Failed to serialize type data");
-
-        self
-    }
-
     pub fn parse(mut self) -> Self {
         let PipelineStage::TypesAndDependences(lexed, types, dependencies) = std::mem::take(&mut self.pipeline_stage) else {
             panic!("PIPELINE ERROR: Cannot parse without types and dependencies! Found stage: {:?}", self.pipeline_stage);

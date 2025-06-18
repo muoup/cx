@@ -58,7 +58,7 @@ pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str)
                     .to_str()
                     .expect("Failed to convert path to string")
                     .to_string();
-                path.push_str("/lib/libc/");
+                path.push_str("/../../lib/libc/");
                 
                 path
             } else {

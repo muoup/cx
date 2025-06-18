@@ -4,8 +4,6 @@ use cx_data_ast::lex::token::{PunctuatorType, TokenKind};
 use cx_data_ast::parse::parser::ParserData;
 
 pub fn goto_statement_end(data: &mut ParserData) -> Option<()> {
-    let start_index = format!("{}", data.toks.peek()?);
-
     while let Some(token) = data.toks.next() {
         match &token.kind {
             TokenKind::Punctuator(PunctuatorType::Semicolon) =>

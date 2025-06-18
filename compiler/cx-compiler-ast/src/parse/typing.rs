@@ -53,7 +53,14 @@ pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>)> {
                     parse_import(data)?
                 );
                 continue;
-            }
+            },
+
+            TokenKind::Specifier(SpecifierType::Public) |
+            TokenKind::Specifier(SpecifierType::Private) => {
+                data.toks.next();
+                data.toks.next();
+                continue;
+            },
 
             _ => {
                 goto_statement_end(data);
@@ -133,11 +140,11 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
 
     while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
         let (name, _type) = parse_initializer(data)?;
-        
+
         let Some(name) = name else {
             point_log_error!(data, "UNSUPPORTED: Nameless struct member of type {}", _type);
         };
-        
+
         fields.push((name.data, _type));
         assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
@@ -224,7 +231,7 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
                 println!("Error parsing type, acc_type = {acc_type}");
                 log_error!("PARSER ERROR: Expected integer literal for array size, found: {:#?}", data.back().toks.peek());
             };
-            
+
             assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
 
             Some(
@@ -266,9 +273,9 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
 
         _ => return None
     };
-    
+
     let specifiers = parse_specifier(data);
-    
+
     Some(_type?.add_specifier(specifiers))
 }
 

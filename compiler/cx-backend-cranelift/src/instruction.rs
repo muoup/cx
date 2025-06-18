@@ -427,13 +427,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(CodegenValue::NULL)
         },
 
-        VirtualInstruction::AddressOf {
-            value
-        } => Some(
-                CodegenValue::Value(
-                    context.variable_table.get(value).unwrap().as_value()
-                )
-            ),
 
         VirtualInstruction::ZExtend {
             value

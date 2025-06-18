@@ -13,7 +13,7 @@ pub fn serialize_type_data<'a>(internal_path: &str, types: impl Iterator<Item = 
     let directory = Path::new(internal_path);
     std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
-    
+
     let mut type_file = File::create(format!("{}.cx-types", internal_path))
         .expect("Failed to create type file");
     

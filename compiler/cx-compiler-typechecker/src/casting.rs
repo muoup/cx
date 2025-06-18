@@ -96,13 +96,15 @@ pub fn explicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
 
 pub(crate) fn add_implicit_cast(expr: &mut CXExpr, from_type: CXType, to_type: CXType, cast_type: CXCastType) -> Option<()> {
     let old_expr = std::mem::take(expr);
+    let start_index = old_expr.start_index;
+    let end_index = old_expr.end_index;
     
     *expr = CXExprKind::ImplicitCast {
         expr: Box::new(old_expr),
         from_type,
         to_type,
         cast_type
-    }.into_expr(0, 0);
+    }.into_expr(start_index, end_index);
     
     Some(())
 }
