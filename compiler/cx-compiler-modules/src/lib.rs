@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXTypeMap, CXAST};
 use cx_data_ast::parse::value_type::CXType;
 
 pub struct ModuleData {
@@ -9,7 +9,7 @@ pub struct ModuleData {
     pub functions: Vec<CXFunctionPrototype>,
 }
 
-pub fn serialize_type_data<'a>(internal_path: &str, types: impl Iterator<Item = (&'a String, &'a CXType)>) -> Option<()> {
+pub fn serialize_type_data<'a>(internal_path: &str, type_map: &CXTypeMap, types: impl Iterator<Item = &'a String>) -> Option<()> {
     let directory = Path::new(internal_path);
     std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
@@ -17,7 +17,9 @@ pub fn serialize_type_data<'a>(internal_path: &str, types: impl Iterator<Item = 
     let mut type_file = File::create(format!("{}.cx-types", internal_path))
         .expect("Failed to create type file");
     
-    for (type_name, cx_type) in types {
+    for type_name in types {
+        let cx_type = type_map.get(type_name)
+            .expect("Type not found in type map");
         let serialized = serde_json::to_string(&(type_name, cx_type))
             .expect("Failed to serialize type");
         
@@ -29,7 +31,7 @@ pub fn serialize_type_data<'a>(internal_path: &str, types: impl Iterator<Item = 
     Some(())
 }
 
-pub fn serialize_function_data<'a>(internal_path: &str, functions: impl Iterator<Item = &'a CXFunctionPrototype>) -> Option<()> {
+pub fn serialize_function_data<'a>(internal_path: &str, function_map: &CXFunctionMap, functions: impl Iterator<Item = &'a String>) -> Option<()> {
     let directory = Path::new(internal_path);
     std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
@@ -37,7 +39,10 @@ pub fn serialize_function_data<'a>(internal_path: &str, functions: impl Iterator
     let mut function_file = File::create(format!("{}.cx-functions", internal_path))
         .expect("Failed to create function file");
     
-    for function in functions {
+    for fn_name in functions {
+        let function = function_map.get(fn_name)
+            .expect("Function not found in function map");
+        
         let serialized = serde_json::to_string(function)
             .expect("Failed to serialize function");
         

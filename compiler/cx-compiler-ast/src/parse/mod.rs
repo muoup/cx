@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, serialize_type_data};
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXTypeMap, CXAST};
-use cx_data_ast::parse::parser::ParserData;
+use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
 use crate::parse::intrinsic_types::add_intrinsic_types;
@@ -14,15 +14,12 @@ pub mod operators;
 mod parsing_tools;
 pub mod intrinsic_types;
 
-pub fn parse_types_and_deps(mut data: ParserData, internal_dir: &str) -> Option<(CXTypeMap, Vec<String>)> {
-    let (mut type_map, imports) = parse_types(&mut data)?;
+pub fn parse_types_and_deps(mut data: ParserData, internal_dir: &str) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
+    let (mut type_map, public_types, imports) = parse_types(&mut data)?;
 
-    serialize_type_data(internal_dir, type_map.iter())
-        .expect("Failed to serialize type data");
-    
     add_intrinsic_types(&mut type_map);
 
-    Some((type_map, imports))
+    Some((type_map, public_types, imports))
 }
 
 pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, imports: Vec<String>) -> Option<CXAST> {
@@ -35,8 +32,10 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
         imports,
         global_stmts: Vec::new(),
 
+        public_functions: Vec::new(),
+        
         type_map,
-        function_map: HashMap::new()
+        function_map: HashMap::new(),
     };
 
     data.reset();
@@ -47,23 +46,6 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
         };
     }
     
-    for stmt in &mut cx_ast.global_stmts {
-        match stmt {
-            CXGlobalStmt::FunctionDefinition { prototype, .. } => {
-                let name = prototype.name.as_string();
-                cx_ast.function_map.insert(name.clone(), prototype.clone());
-            },
-            CXGlobalStmt::FunctionForward { prototype } => {
-                let name = prototype.name.as_string();
-                cx_ast.function_map.insert(name, prototype.clone());
-            },
-            _ => {}
-        }
-    }
-    
-    serialize_function_data(cx_ast.internal_path.as_str(), cx_ast.function_map.values())
-        .expect("Failed to serialize function data");
-
     Some(cx_ast)
 }
 

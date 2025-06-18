@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 pub type VarTable = ScopedMap<CXType>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum VisibilityMode {
     Package,
     Public,

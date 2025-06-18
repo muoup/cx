@@ -118,6 +118,7 @@ impl CXType {
     pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
         get_intrinsic_type(type_map, self)
     }
+    
     pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
         let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
             return false;

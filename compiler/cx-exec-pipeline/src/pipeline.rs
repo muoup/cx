@@ -32,7 +32,7 @@ pub enum PipelineStage {
     FileRead(String),
     Preprocessed(PreprocessContents),
     Lexed(LexContents),
-    TypesAndDependences(LexContents, CXTypeMap, Vec<String>),
+    TypesAndDependences(LexContents, CXTypeMap, Vec<String>, Vec<String>),
     Parsed(ParseContents),
     Typechecked(CXAST, ExprTypeMap),
     Bytecode(ProgramBytecode),
@@ -143,7 +143,7 @@ impl CompilerPipeline {
 
         let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let (mut type_map, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data, self.internal_dir.as_str())
+        let (mut type_map, public_types, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data, self.internal_dir.as_str())
             .expect("Failed to parse types and dependencies");
 
         let recursive_imports = request_type_compilation(imports.as_slice())
@@ -163,14 +163,35 @@ impl CompilerPipeline {
             }
         }
 
-
         self.imports = imports;
-        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, type_map, self.imports.clone());
+        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, type_map, public_types, self.imports.clone());
+        self
+    }
+    
+    pub fn emit_type_defs(mut self) -> Self {
+        let PipelineStage::TypesAndDependences(_, types, public_types, _) = &self.pipeline_stage else {
+            panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!");
+        };
+
+        cx_compiler_modules::serialize_type_data(self.internal_dir.as_str(), types, public_types.iter())
+            .expect("Failed to serialize type data to header file");
+
+        self
+    }
+    
+    pub fn emit_function_defs(mut self) -> Self {
+        let PipelineStage::Parsed(parsed) = &self.pipeline_stage else {
+            panic!("PIPELINE ERROR: Cannot emit function definitions without types and dependencies!");
+        };
+
+        cx_compiler_modules::serialize_function_data(self.internal_dir.as_str(), &parsed.function_map, parsed.public_functions.iter())
+            .expect("Failed to serialize function data to header file");
+
         self
     }
 
     pub fn parse(mut self) -> Self {
-        let PipelineStage::TypesAndDependences(lexed, types, dependencies) = std::mem::take(&mut self.pipeline_stage) else {
+        let PipelineStage::TypesAndDependences(lexed, types, public_types, dependencies) = std::mem::take(&mut self.pipeline_stage) else {
             panic!("PIPELINE ERROR: Cannot parse without types and dependencies! Found stage: {:?}", self.pipeline_stage);
         };
         

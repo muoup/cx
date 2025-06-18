@@ -95,10 +95,14 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
                 params: result.params,
                 var_args: result.var_args,
             };
+            
+            ast.function_map.insert(prototype.name.as_string(), prototype.clone());
+            
+            if data.visibility == VisibilityMode::Public {
+                ast.public_functions.push(prototype.name.as_string());
+            }
 
-            if try_next!(data, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
-                ast.global_stmts.push(CXGlobalStmt::FunctionForward { prototype });
-            } else {
+            if !try_next!(data, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
                 let body = Box::new(parse_body(data)?);
                 ast.global_stmts.push(CXGlobalStmt::FunctionDefinition { prototype, body })
             }

@@ -30,9 +30,6 @@ impl Display for CXGlobalStmt {
                 fwriteln!(f, "}}")?;
                 Ok(())
             },
-            CXGlobalStmt::FunctionForward { prototype } => {
-                fwriteln!(f, "{};", prototype)
-            },
         }
     }
 }

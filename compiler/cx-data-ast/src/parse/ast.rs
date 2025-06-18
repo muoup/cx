@@ -21,6 +21,8 @@ pub struct CXAST {
     pub imports: Vec<String>,
 
     pub global_stmts: Vec<CXGlobalStmt>,
+    
+    pub public_functions: Vec<String>,
 
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
@@ -51,10 +53,6 @@ pub enum CXGlobalStmt {
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
-    },
-
-    FunctionForward {
-        prototype: CXFunctionPrototype,
     }
 }
 

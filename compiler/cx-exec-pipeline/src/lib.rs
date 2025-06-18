@@ -79,7 +79,8 @@ pub fn module_type_compile(internal_dir: String, file_path: String) -> Option<Ve
         .preprocess()
         .dump()
         .lex()
-        .parse_types_and_deps();
+        .parse_types_and_deps()
+        .emit_type_defs();
     
     Some(pipeline.imports)
 }
@@ -99,6 +100,7 @@ pub fn module_llvm_compile(internal_dir: String, file_path: String) -> Option<Ve
         .lex()
         .parse_types_and_deps()
         .parse()
+        .emit_function_defs()
         .dump()
         .verify()
         .dump()
@@ -121,7 +123,9 @@ pub fn standard_llvm_compile(file_path: &str) -> Option<()> {
         .dump()
         .lex()
         .parse_types_and_deps()
+        .emit_type_defs()
         .parse()
+        .emit_function_defs()
         .dump()
         .verify()
         .dump()

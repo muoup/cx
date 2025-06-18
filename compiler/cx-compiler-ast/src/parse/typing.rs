@@ -1,8 +1,8 @@
 use cx_data_ast::{assert_token_matches, next_kind, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap, CXAST};
-use cx_data_ast::parse::identifier::{parse_identifier, parse_intrinsic, parse_std_ident, CXIdent};
-use cx_data_ast::parse::parser::ParserData;
+use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
+use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE};
 use cx_util::{log_error, point_log_error};
 use crate::parse::global_scope::{parse_import, parse_params, ParseParamsResult};
@@ -34,8 +34,9 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
     }
 }
 
-pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>)> {
+pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
     let mut type_map = CXTypeMap::new();
+    let mut public_types = Vec::new();
     let mut imports = Vec::new();
 
     while let Some(token) = data.toks.peek() {
@@ -55,11 +56,18 @@ pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>)> {
                 continue;
             },
 
-            TokenKind::Specifier(SpecifierType::Public) |
-            TokenKind::Specifier(SpecifierType::Private) => {
+            TokenKind::Specifier(SpecifierType::Public) => {
+                data.visibility = VisibilityMode::Public;
                 data.toks.next();
-                data.toks.next();
+                try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
                 continue;
+            },
+
+            TokenKind::Specifier(SpecifierType::Private) => {
+                data.visibility = VisibilityMode::Private;
+                data.toks.next();
+                try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
+                continue
             },
 
             _ => {
@@ -70,11 +78,14 @@ pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>)> {
 
         if let Some(name) = type_record.name {
             type_map.insert(name.clone(), type_record.type_);
+            if data.visibility == VisibilityMode::Public {
+                public_types.push(name.clone());
+            }
             data.type_symbols.insert(name);
         }
     }
 
-    Some((type_map, imports))
+    Some((type_map, public_types, imports))
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {
