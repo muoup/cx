@@ -13,6 +13,7 @@ pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
         CXExprKind::If { .. } => false,
         CXExprKind::While { .. } => false,
         CXExprKind::For { .. } => false,
+        CXExprKind::Switch { .. } => false,
 
         _ => true
     }
@@ -276,6 +277,50 @@ pub(crate) fn parse_keyword_val(data: &mut ParserData, keyword: KeywordType) -> 
                     condition: Box::new(expr),
                     then_branch: Box::new(then_body),
                     else_branch: else_body.map(|b| Box::new(b))
+                }
+            )
+        },
+        KeywordType::Switch => {
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+            
+            let mut block = Vec::new();
+            let mut cases = Vec::new();
+            let mut default_case = None;
+            let mut index = 0;
+            
+            while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+                if try_next!(data, TokenKind::Keyword(KeywordType::Case)) {
+                    assert_token_matches!(data, TokenKind::IntLiteral(case_value));
+                    cases.push((*case_value as u64, index));
+                    
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Colon));
+                    continue;
+                } else if try_next!(data, TokenKind::Keyword(KeywordType::Default)) {
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Colon));
+                    if default_case.is_some() {
+                        log_error!("PARSER ERROR: Multiple default cases in switch statement");
+                    }
+                    default_case = Some(index);
+                    continue;
+                }
+                
+                let expr = parse_expr(data)?;
+                index += 1;
+                if requires_semicolon(&expr) {
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+                }
+                block.push(expr);
+            }
+            
+            Some(
+                CXExprKind::Switch {
+                    condition: Box::new(expr),
+                    block,
+                    cases,
+                    default_case
                 }
             )
         },

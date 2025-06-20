@@ -248,13 +248,27 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::If { condition, then_branch, else_branch } => {
             let condition_type = coerce_value(env, condition)?;
             
-            if !matches!(condition_type.intrinsic_type(&env.type_map), Some(CXTypeKind::Integer { .. })) {
+            if !condition_type.is_integer(env.type_map) {
                 implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
             }
 
             type_check_traverse(env, then_branch)?;
             if let Some(else_branch) = else_branch {
                 type_check_traverse(env, else_branch)?;
+            }
+
+            Some(CXType::unit())
+        },
+        
+        CXExprKind::Switch { condition, block, .. } => {
+            let condition_type = coerce_value(env, condition)?;
+            
+            if !condition_type.is_integer(env.type_map) {
+                implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
+            }
+
+            for expr in block {
+                type_check_traverse(env, expr);
             }
 
             Some(CXType::unit())

@@ -148,6 +148,12 @@ pub enum CXExprKind {
         increment: Box<CXExpr>,
         body: Box<CXExpr>
     },
+    Switch {
+        condition: Box<CXExpr>,
+        block: Vec<CXExpr>,
+        cases: Vec<(u64, usize)>,
+        default_case: Option<usize>
+    },
 
     VarDeclaration {
         type_: CXType,

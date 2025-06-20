@@ -175,7 +175,7 @@ impl BytecodeBuilder {
     }
 
     pub fn start_scope(&mut self) -> ElementID {
-        let merge_block = self.create_block();
+        let merge_block = self.create_named_block("merge");
 
         let context = self.fun_mut();
         context.merge_stack.push(merge_block.clone());
@@ -221,6 +221,18 @@ impl BytecodeBuilder {
         let context = self.fun_mut();
 
         context.blocks.push(FunctionBlock {
+            debug_name: "".to_owned(),
+            body: Vec::new()
+        });
+
+        (context.blocks.len() - 1) as ElementID
+    }
+    
+    pub fn create_named_block(&mut self, name: &str) -> ElementID {
+        let context = self.fun_mut();
+
+        context.blocks.push(FunctionBlock {
+            debug_name: name.to_owned(),
             body: Vec::new()
         });
 

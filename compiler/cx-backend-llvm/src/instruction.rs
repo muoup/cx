@@ -496,6 +496,40 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::NULL
             },
             
+            VirtualInstruction::JumpTable { value, targets, default } => {
+                let value = function_state
+                    .get_val_ref(value)?
+                    .get_value()
+                    .into_int_value();
+                
+                let targets = targets
+                    .iter()
+                    .map(|(value, block)| {
+                        let value = global_state.context.i32_type()
+                            .const_int(*value as u64, false);
+                        let block = function_val
+                            .get_basic_blocks()
+                            .get(*block as usize)
+                            .unwrap()
+                            .clone();
+                        
+                        (value, block)
+                    })
+                    .collect::<Vec<_>>();
+                
+                function_state.builder
+                    .build_switch(
+                        value,
+                        function_val.get_basic_blocks().get(*default as usize)
+                            .unwrap()
+                            .clone(),
+                        targets.as_slice()
+                    )
+                    .ok()?;
+                
+                CodegenValue::NULL
+            },
+            
             VirtualInstruction::ZExtend { value } => {
                 let value = function_state
                     .get_val_ref(value)?

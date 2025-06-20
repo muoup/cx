@@ -59,6 +59,7 @@ pub struct BytecodeFunction {
 
 #[derive(Debug)]
 pub struct FunctionBlock {
+    pub debug_name: String,
     pub body: Vec<BlockInstruction>
 }
 
@@ -196,6 +197,12 @@ pub enum VirtualInstruction {
     Jump {
         target: ElementID
     },
+    
+    JumpTable {
+        value: ValueID,
+        targets: Vec<(u64, ElementID)>,
+        default: ElementID
+    },
 
     Return {
         value: Option<ValueID>
@@ -211,6 +218,7 @@ pub enum VirtualInstruction {
 impl VirtualInstruction {
     pub fn is_block_terminating(&self) -> bool {
         match self {
+            VirtualInstruction::JumpTable { .. } |
             VirtualInstruction::Branch { .. } |
             VirtualInstruction::Jump   { .. } |
             VirtualInstruction::Return { .. } => true,

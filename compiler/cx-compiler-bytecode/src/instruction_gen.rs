@@ -467,6 +467,72 @@ pub fn generate_instruction(
             Some(ValueID::NULL)
         },
 
+        CXExprKind::Switch { condition, block, cases, default_case } => {
+            let condition_value = generate_instruction(builder, condition);
+            
+            let default_block = if default_case.is_some() {
+                Some(builder.create_named_block("switch default"))
+            } else {
+                None
+            };
+            let merge_block = builder.start_scope();
+            let case_blocks = cases
+                .iter()
+                .map(|_| builder.create_block())
+                .collect::<Vec<_>>();
+
+            let mut sorted_cases = cases.clone();
+            sorted_cases.sort_by(|a, b| a.1.cmp(&b.1));
+            
+            builder.add_instruction(
+                VirtualInstruction::JumpTable {
+                    value: condition_value.unwrap_or(ValueID::NULL),
+                    targets: sorted_cases.iter()
+                        .enumerate()
+                        .map(|(i, (case, _))| (*case, case_blocks[i]))
+                        .collect(),
+                    default: default_block.clone().unwrap_or(merge_block.clone())
+                },
+                CXType::unit()
+            );
+            
+            let mut case_iter = sorted_cases.iter()
+                .map(|(_, i)| *i);
+            let mut case_block_iter = case_blocks.iter();
+            let mut next_index = case_iter.next();
+            
+            for (i, expr) in block.iter().enumerate() {
+                while next_index == Some(i) {
+                    let case_block = case_block_iter.next().unwrap();
+                    builder.add_instruction(
+                        VirtualInstruction::Jump { target: case_block.clone() },
+                        CXType::unit()
+                    );
+                    next_index = case_iter.next();
+                    builder.set_current_block(case_block.clone());
+                }
+                
+                if *default_case == Some(i) {
+                    let block = default_block.unwrap();
+                    builder.add_instruction(
+                        VirtualInstruction::Jump { target: block },
+                        CXType::unit()
+                    );
+                    builder.set_current_block(block);
+                }
+                
+                generate_instruction(builder, expr)?;
+            }
+            
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: merge_block.clone() },
+                CXType::unit()
+            );
+            
+            builder.end_scope();
+            Some(ValueID::NULL)
+        },
+
         CXExprKind::For { init, condition, increment, body } => {
             let condition_block = builder.create_block();
             let body_block = builder.create_block();

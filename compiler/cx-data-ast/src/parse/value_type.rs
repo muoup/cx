@@ -131,6 +131,10 @@ impl CXType {
         matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Structured { .. }))
     }
     
+    pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Integer { .. }))
+    }
+    
     pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
         let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
             return None;

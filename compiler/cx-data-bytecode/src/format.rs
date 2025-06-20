@@ -19,7 +19,11 @@ impl Display for BytecodeFunction {
         writeln!(f, "{}:", self.prototype)?;
 
         for (i, block) in self.blocks.iter().enumerate() {
-            writeln!(f, "block{}:", i)?;
+            write!(f, "block{}", i)?;
+            if block.debug_name != "" {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
             writeln!(f, "{}", block)?;
         }
 
@@ -121,6 +125,16 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
             },
+            VirtualInstruction::JumpTable { value, targets, default } => {
+                write!(f, "jump_table {value} -> [")?;
+                for (i, (key, block_id)) in targets.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{key} -> {block_id}")?;
+                }
+                write!(f, "] else {default}")
+            }
             VirtualInstruction::DirectCall { func, args, .. } => {
                 write!(f, "direct_call {func}(")?;
                 for (i, arg) in args.iter().enumerate() {
