@@ -1,0 +1,25 @@
+union complex {
+    int i;
+    struct {
+        double d;
+        char c[8];
+    } s;
+};
+
+#include <stdio.h>
+
+int main() {
+    union complex u;
+
+    printf("Size of union complex: %zu bytes\n", sizeof(u));
+    printf("Size of int: %zu bytes\n", sizeof(u.i));
+    printf("Size of double: %zu bytes\n", sizeof(u.s.d));
+    printf("Size of char[8]: %zu bytes\n", sizeof(u.s.c));
+
+    u.i = 42;
+    printf("Value of u.i: %d\n", u.i);
+    u.s.d = 3.14;
+    printf("Value of u.s.d: %f\n", u.s.d);
+
+    return 0;
+}

@@ -63,7 +63,7 @@ pub enum CXUnOp {
     BNot, LNot,
     ArrayIndex,
     InitializerIndex,
-
+    
     ExplicitCast(CXType),
 
     PreIncrement(i8),
@@ -148,7 +148,16 @@ pub enum CXExprKind {
         increment: Box<CXExpr>,
         body: Box<CXExpr>
     },
+    Switch {
+        condition: Box<CXExpr>,
+        block: Vec<CXExpr>,
+        cases: Vec<(u64, usize)>,
+        default_case: Option<usize>
+    },
 
+    SizeOf {
+        expr: Box<CXExpr>
+    },
     VarDeclaration {
         type_: CXType,
         name: CXIdent

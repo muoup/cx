@@ -25,6 +25,10 @@ pub enum CXTypeKind {
         name: Option<CXIdent>,
         fields: Vec<(String, CXType)>
     },
+    Union {
+        name: Option<CXIdent>,
+        fields: Vec<(String, CXType)>
+    },
     Unit,
 
     PointerTo(Box<CXType>),
@@ -131,6 +135,10 @@ impl CXType {
         matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Structured { .. }))
     }
     
+    pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Integer { .. }))
+    }
+    
     pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
         let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
             return None;
@@ -142,6 +150,14 @@ impl CXType {
         } else {
             panic!("Expected a structured type, found: {:?}", inner.kind);
         }
+    }
+    
+    pub fn mem_ref_inner(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+            return None;
+        };
+        
+        inner.intrinsic_type(type_map).cloned()
     }
     
     pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
@@ -247,6 +263,10 @@ pub fn get_type_size(type_map: &CXTypeMap, type_: &CXType) -> Option<usize> {
             fields.iter()
                 .map(|field| get_type_size(type_map, &field.1))
                 .sum(),
+        CXTypeKind::Union { fields, .. } =>
+            fields.iter()
+                .map(|field| get_type_size(type_map, &field.1))
+                .max()?,
 
         CXTypeKind::PointerTo(_)
         | CXTypeKind::Function { .. } => Some(8),

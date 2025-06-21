@@ -19,7 +19,11 @@ impl Display for BytecodeFunction {
         writeln!(f, "{}:", self.prototype)?;
 
         for (i, block) in self.blocks.iter().enumerate() {
-            writeln!(f, "block{}:", i)?;
+            write!(f, "block{}", i)?;
+            if block.debug_name != "" {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
             writeln!(f, "{}", block)?;
         }
 
@@ -88,8 +92,11 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Immediate { value } => {
                 write!(f, "immediate {}", value)
             },
-            VirtualInstruction::StructAccess { struct_, field_index, field_offset, .. } => {
-                write!(f, "struct_access {}[{}] + {}", struct_, field_index, field_offset)
+            VirtualInstruction::FloatImmediate { value } => {
+                write!(f, "float_immediate {}", value)
+            },
+            VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
+                write!(f, "struct_access {} ({})[index: {}; offset: {}]", struct_, struct_type, field_index, field_offset)
             },
             VirtualInstruction::ZExtend { value } => {
                 write!(f, "zextend {value}")
@@ -121,6 +128,16 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
             },
+            VirtualInstruction::JumpTable { value, targets, default } => {
+                write!(f, "jump_table {value} -> [")?;
+                for (i, (key, block_id)) in targets.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{key} -> {block_id}")?;
+                }
+                write!(f, "] else {default}")
+            }
             VirtualInstruction::DirectCall { func, args, .. } => {
                 write!(f, "direct_call {func}(")?;
                 for (i, arg) in args.iter().enumerate() {
@@ -302,6 +319,15 @@ impl Display for BCTypeKind {
                     .join(", ");
 
                 write!(f, "struct {{ {} }}", fields)
+            },
+            BCTypeKind::Union { fields, .. } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, _type)| format!("{}: {}", name, _type))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "union {{ {} }}", fields)
             },
             BCTypeKind::Array { size, _type } => {
                 write!(f, "[{}; {}]", _type, size)

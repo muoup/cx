@@ -5,7 +5,7 @@ use cx_data_ast::parse::value_type::{get_type_size, CXTypeKind, CXType, CX_CONST
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCIntBinOp, BCIntUnOp, BCPtrBinOp, ValueID, VirtualInstruction};
 use cx_util::log_error;
-use crate::aux_routines::get_struct_field;
+use crate::aux_routines::{get_struct_field, get_union_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_cx_type_kind;
 use crate::implicit_cast::implicit_cast;
@@ -20,12 +20,14 @@ pub fn generate_instruction(
             let right_id = generate_instruction(builder, rhs.as_ref())?;
             let lhs_type = builder.get_expr_type(lhs.as_ref())?
                 .clone();
+            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type(&builder.cx_type_map)?
+                else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: left_id,
                     value: right_id,
-                    type_: builder.convert_cx_type(&lhs_type)?
+                    type_: builder.convert_cx_type(inner.as_ref())?
                 },
                 CXType::unit()
             )
@@ -56,24 +58,32 @@ pub fn generate_instruction(
             let CXExprKind::Identifier(field_name) = &rhs.as_ref().kind else {
                 panic!("PANIC: Attempting to access struct field with rhs: {rhs:?}");
             };
+            
+            match ltype.kind {
+                BCTypeKind::Struct { .. } => {
+                    let struct_access = get_struct_field(
+                        builder,
+                        &ltype,
+                        field_name.as_str()
+                    ).unwrap_or_else(|| {
+                        panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
+                    });
 
-            let struct_access = get_struct_field(
-                builder,
-                &ltype,
-                field_name.as_str()
-            ).unwrap_or_else(|| {
-                panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
-            });
-
-            builder.add_instruction_bt(
-                VirtualInstruction::StructAccess {
-                    struct_: left_id,
-                    struct_type: ltype,
-                    field_offset: struct_access.offset,
-                    field_index: struct_access.index,
+                    builder.add_instruction_bt(
+                        VirtualInstruction::StructAccess {
+                            struct_: left_id,
+                            struct_type: ltype,
+                            field_offset: struct_access.offset,
+                            field_index: struct_access.index,
+                        },
+                        struct_access._type
+                    )
                 },
-                struct_access._type
-            )
+                
+                BCTypeKind::Union { .. } => Some(left_id),
+                
+                _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
+            }
         },
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
@@ -203,6 +213,15 @@ pub fn generate_instruction(
                     bytes: *bytes,
                     signed: true
                 }.to_val_type()
+            )
+        },
+        
+        CXExprKind::FloatLiteral { val, bytes } => {
+            builder.add_instruction(
+                VirtualInstruction::FloatImmediate {
+                    value: *val
+                },
+                CXTypeKind::Float { bytes: *bytes }.to_val_type()
             )
         },
 
@@ -467,6 +486,72 @@ pub fn generate_instruction(
             Some(ValueID::NULL)
         },
 
+        CXExprKind::Switch { condition, block, cases, default_case } => {
+            let condition_value = generate_instruction(builder, condition);
+            
+            let default_block = if default_case.is_some() {
+                Some(builder.create_named_block("switch default"))
+            } else {
+                None
+            };
+            let merge_block = builder.start_scope();
+            let case_blocks = cases
+                .iter()
+                .map(|_| builder.create_block())
+                .collect::<Vec<_>>();
+
+            let mut sorted_cases = cases.clone();
+            sorted_cases.sort_by(|a, b| a.1.cmp(&b.1));
+            
+            builder.add_instruction(
+                VirtualInstruction::JumpTable {
+                    value: condition_value.unwrap_or(ValueID::NULL),
+                    targets: sorted_cases.iter()
+                        .enumerate()
+                        .map(|(i, (case, _))| (*case, case_blocks[i]))
+                        .collect(),
+                    default: default_block.clone().unwrap_or(merge_block.clone())
+                },
+                CXType::unit()
+            );
+            
+            let mut case_iter = sorted_cases.iter()
+                .map(|(_, i)| *i);
+            let mut case_block_iter = case_blocks.iter();
+            let mut next_index = case_iter.next();
+            
+            for (i, expr) in block.iter().enumerate() {
+                while next_index == Some(i) {
+                    let case_block = case_block_iter.next().unwrap();
+                    builder.add_instruction(
+                        VirtualInstruction::Jump { target: case_block.clone() },
+                        CXType::unit()
+                    );
+                    next_index = case_iter.next();
+                    builder.set_current_block(case_block.clone());
+                }
+                
+                if *default_case == Some(i) {
+                    let block = default_block.unwrap();
+                    builder.add_instruction(
+                        VirtualInstruction::Jump { target: block },
+                        CXType::unit()
+                    );
+                    builder.set_current_block(block);
+                }
+                
+                generate_instruction(builder, expr)?;
+            }
+            
+            builder.add_instruction(
+                VirtualInstruction::Jump { target: merge_block.clone() },
+                CXType::unit()
+            );
+            
+            builder.end_scope();
+            Some(ValueID::NULL)
+        },
+
         CXExprKind::For { init, condition, increment, body } => {
             let condition_block = builder.create_block();
             let body_block = builder.create_block();
@@ -534,7 +619,27 @@ pub fn generate_instruction(
 
             Some(ValueID::NULL)
         },
-
+        
+        CXExprKind::SizeOf { expr } => {
+            let type_ = builder.get_expr_intrinsic_type(expr.as_ref())?;
+            
+            let bc_type = if matches!(expr.kind, CXExprKind::VarDeclaration { .. }) {
+                let CXTypeKind::MemoryAlias(inner) = type_
+                    else { unreachable!("generate_instruction: Expected memory alias type for expr, found {type_}") };
+                
+                convert_cx_type_kind(&builder.cx_type_map, &inner.kind)?
+            } else {
+                convert_cx_type_kind(&builder.cx_type_map, &type_)?
+            };
+            
+            builder.add_instruction(
+                VirtualInstruction::Immediate {
+                    value: BCType::from(bc_type).size() as i32,
+                },
+                CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+            )
+        },
+        
         _ => todo!("generate_instruction for {:?}", expr)
     }
 }

@@ -1,7 +1,7 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::noundef;
 use crate::mangling::string_literal_name;
-use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, cx_llvm_type};
+use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::BCTypeKind;
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockInstruction, VirtualInstruction};
@@ -65,7 +65,7 @@ pub(crate) fn generate_instruction<'a>(
                     .collect::<Option<Vec<_>>>()?;
 
                 if method_sig.return_type.is_structure() {
-                    let llvm_type = cx_llvm_type(global_state, &method_sig.return_type)?;
+                    let llvm_type = bc_llvm_type(global_state, &method_sig.return_type)?;
                     let temp_buffer = function_state
                         .builder
                         .build_alloca(
@@ -116,7 +116,7 @@ pub(crate) fn generate_instruction<'a>(
                     .collect::<Option<Vec<_>>>()?;
 
                 if method_sig.return_type.is_structure() {
-                    let llvm_type = cx_llvm_type(global_state, &method_sig.return_type)?;
+                    let llvm_type = bc_llvm_type(global_state, &method_sig.return_type)?;
                     let temp_buffer = function_state
                         .builder
                         .build_alloca(
@@ -164,7 +164,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value();
                 let basic_val = any_to_basic_val(val)?;
                 
-                let bit_cast_type = cx_llvm_type(
+                let bit_cast_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?;
@@ -187,12 +187,21 @@ pub(crate) fn generate_instruction<'a>(
             },
 
             VirtualInstruction::Immediate { value } => {
-                let imm_type = cx_llvm_type(
+                let imm_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_int_type();
                 
                 CodegenValue::Value(imm_type.const_int(*value as u64, false).as_any_value_enum())
+            },
+
+            VirtualInstruction::FloatImmediate { value } => {
+                let imm_type = bc_llvm_type(
+                    global_state,
+                    &block_instruction.value.type_
+                )?.into_float_type();
+
+                CodegenValue::Value(imm_type.const_float(*value).as_any_value_enum())
             },
             
             VirtualInstruction::Jump { target } => {
@@ -230,7 +239,7 @@ pub(crate) fn generate_instruction<'a>(
                     .unwrap();
                 
                 if current_prototype.return_type.is_structure() {
-                    let llvm_type = cx_llvm_type(
+                    let llvm_type = bc_llvm_type(
                         global_state, 
                         &current_prototype.return_type
                     )?;
@@ -291,7 +300,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_val_ref(value)
                     .unwrap()
                     .get_value();
-                let any_type = cx_llvm_type(global_state, type_).unwrap();
+                let any_type = bc_llvm_type(global_state, type_).unwrap();
 
                 let basic_val = any_to_basic_val(any_value)
                     .expect(format!("Failed to convert value {any_value:?} to basic value").as_str());
@@ -330,7 +339,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_pointer_value();
                 
-                let loaded_type = cx_llvm_type(
+                let loaded_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_,
                 ).unwrap();
@@ -496,12 +505,46 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::NULL
             },
             
+            VirtualInstruction::JumpTable { value, targets, default } => {
+                let value = function_state
+                    .get_val_ref(value)?
+                    .get_value()
+                    .into_int_value();
+                
+                let targets = targets
+                    .iter()
+                    .map(|(value, block)| {
+                        let value = global_state.context.i32_type()
+                            .const_int(*value as u64, false);
+                        let block = function_val
+                            .get_basic_blocks()
+                            .get(*block as usize)
+                            .unwrap()
+                            .clone();
+                        
+                        (value, block)
+                    })
+                    .collect::<Vec<_>>();
+                
+                function_state.builder
+                    .build_switch(
+                        value,
+                        function_val.get_basic_blocks().get(*default as usize)
+                            .unwrap()
+                            .clone(),
+                        targets.as_slice()
+                    )
+                    .ok()?;
+                
+                CodegenValue::NULL
+            },
+            
             VirtualInstruction::ZExtend { value } => {
                 let value = function_state
                     .get_val_ref(value)?
                     .get_value()
                     .into_int_value();
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_int_type();
@@ -519,7 +562,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_val_ref(value)?
                     .get_value()
                     .into_int_value();
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_int_type();
@@ -538,7 +581,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_pointer_value();
                 
-                let struct_type = cx_llvm_type(
+                let struct_type = bc_llvm_type(
                     global_state, 
                     struct_type
                 )?.into_struct_type();
@@ -562,7 +605,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_int_value();
                 
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_int_type();
@@ -600,7 +643,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_int_value();
                 
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_float_type();
@@ -630,7 +673,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_float_value();
                 
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_int_type();
@@ -660,7 +703,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_pointer_value();
                 
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_int_type();
@@ -679,7 +722,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_float_value();
                 
-                let to_type = cx_llvm_type(
+                let to_type = bc_llvm_type(
                     global_state, 
                     &block_instruction.value.type_
                 )?.into_float_type();

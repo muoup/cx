@@ -34,3 +34,20 @@ pub(crate) fn get_struct_field(
     
     None
 }
+
+pub(crate) fn get_union_field(
+    builder: &BytecodeBuilder,
+    _type: &BCType,
+    name: &str
+) -> Option<BCType> {
+    let BCTypeKind::Union { fields, .. } = &_type.kind else {
+        bytecode_error_log!(builder, "PANIC: Expected union type on access {name}, got: {:?}", _type);
+    };
+    
+    fields.iter()
+        .find(|(field_name, _)| field_name == name)
+        .map(|(_, field_type)| field_type.clone())
+        .or_else(|| {
+            bytecode_error_log!(builder, "PANIC: Invalid union accessor {name} for type {:?}", _type);
+        })
+}
