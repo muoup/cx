@@ -1,6 +1,6 @@
 use crate::attributes::*;
 use crate::mangling::string_literal_name;
-use crate::typing::{any_to_basic_type, cx_llvm_prototype, cx_llvm_type};
+use crate::typing::{any_to_basic_type, cx_llvm_prototype, bc_llvm_type};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BytecodeFunction, ElementID, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
@@ -227,13 +227,13 @@ fn cache_type<'a>(
     let fields = fields
         .iter()
         .map(|(_, field_type)| {
-            let type_ = cx_llvm_type(global_state, field_type)?;
+            let type_ = bc_llvm_type(global_state, field_type)?;
 
             any_to_basic_type(type_)
         })
         .collect::<Option<Vec<_>>>()?;
     
-    let struct_type = cx_llvm_type(global_state, _type)?.into_struct_type();
+    let struct_type = bc_llvm_type(global_state, _type)?.into_struct_type();
     struct_type.set_body(&fields, false);
     struct_type.as_any_type_enum();
 

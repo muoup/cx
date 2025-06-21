@@ -95,8 +95,8 @@ impl Display for VirtualInstruction {
             VirtualInstruction::FloatImmediate { value } => {
                 write!(f, "float_immediate {}", value)
             },
-            VirtualInstruction::StructAccess { struct_, field_index, field_offset, .. } => {
-                write!(f, "struct_access {}[{}] + {}", struct_, field_index, field_offset)
+            VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
+                write!(f, "struct_access {} ({})[index: {}; offset: {}]", struct_, struct_type, field_index, field_offset)
             },
             VirtualInstruction::ZExtend { value } => {
                 write!(f, "zextend {value}")

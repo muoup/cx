@@ -2,13 +2,13 @@ use inkwell::values::{AnyValue, AnyValueEnum, IntMathValue};
 use cx_data_bytecode::{BCIntBinOp, BCPtrBinOp};
 use cx_data_bytecode::types::BCType;
 use crate::{CodegenValue, FunctionState, GlobalState};
-use crate::typing::{any_to_basic_type, cx_llvm_type};
+use crate::typing::{any_to_basic_type, bc_llvm_type};
 
 pub(crate) fn generate_ptr_binop<'a>(
     global_state: &GlobalState<'a>, function_state: &FunctionState<'a>,
     ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, op: BCPtrBinOp
 ) -> Option<CodegenValue<'a>> {
-    let ptr_type = cx_llvm_type(global_state, ptr_type)?;
+    let ptr_type = bc_llvm_type(global_state, ptr_type)?;
 
     Some(
         CodegenValue::Value(

@@ -1,9 +1,19 @@
+use std::sync::Mutex;
 use inkwell::AddressSpace;
 use crate::GlobalState;
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, AsValueRef, BasicValueEnum};
 use cx_data_bytecode::BCFunctionPrototype;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
+
+fn anonymous_struct_name() -> String {
+    static ANON_COUNTER: Mutex<usize> = Mutex::new(0);
+
+    let mut counter = ANON_COUNTER.lock().unwrap();
+    *counter += 1;
+
+    format!("anonymous_struct_{}", *counter)
+}
 
 pub(crate) fn any_to_basic_type<'a>(any_type: AnyTypeEnum) -> Option<BasicTypeEnum> {
     match any_type {
@@ -54,7 +64,7 @@ pub(crate) fn create_fn_proto<'a>(return_type: AnyTypeEnum<'a>, args: &[AnyTypeE
     )
 }
 
-pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
+pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
     Some(
         match &_type.kind {
             BCTypeKind::Unit => state.context.void_type().as_any_type_enum(),
@@ -71,17 +81,42 @@ pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             },
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
+
+            BCTypeKind::Array { .. } |
             BCTypeKind::Pointer => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
 
-            BCTypeKind::Struct { name, .. } =>
-                state.context.get_struct_type(name.as_str())
-                    .unwrap_or_else(|| state.context.opaque_struct_type(name.as_str()))
-                    .as_any_type_enum(),
+            BCTypeKind::Struct { name, fields } => {
+                if let Some(_type) = state.context.get_struct_type(name.as_str()) {
+                    return Some(_type.as_any_type_enum());
+                }
+
+                let _types = fields
+                    .iter()
+                    .map(|(_, field_type)| {
+                        let type_ = bc_llvm_type(state, field_type)?;
+
+                        any_to_basic_type(type_)
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+
+                let struct_type = state.context.struct_type(
+                    _types.as_slice(),
+                    false
+                );
+
+                if name != "" {
+                    let anonymous_name = anonymous_struct_name();
+                    let anonymous_struct_type = state.context.opaque_struct_type(&anonymous_name);
+                    anonymous_struct_type.set_body(_types.as_slice(), false);
+                }
+
+                return Some(struct_type.as_any_type_enum());
+            }
             BCTypeKind::Union { name, .. } =>
                 state.context.get_struct_type(name.as_str())
                     .unwrap_or_else(|| state.context.opaque_struct_type(name.as_str()))
                     .as_any_type_enum(),
-            
+
             _ => panic!("Invalid type: {:?}", _type)
         }
     )
@@ -91,7 +126,7 @@ pub(crate) fn cx_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
-    let return_type = match cx_llvm_type(state, &prototype.return_type)? {
+    let return_type = match bc_llvm_type(state, &prototype.return_type)? {
         AnyTypeEnum::StructType(_) => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
         any_type => any_type,
     };
@@ -99,7 +134,7 @@ pub(crate) fn cx_llvm_prototype<'a>(
     let mut arg_types = prototype
         .params
         .iter()
-        .map(|arg| cx_llvm_type(state, &arg.type_))
+        .map(|arg| bc_llvm_type(state, &arg.type_))
         .collect::<Option<Vec<_>>>()?;
     
     if prototype.return_type.is_structure() {
@@ -118,11 +153,11 @@ pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
-    let return_type = cx_llvm_type(state, &prototype.return_type)?;
+    let return_type = bc_llvm_type(state, &prototype.return_type)?;
     let arg_types = prototype
         .params
         .iter()
-        .map(|arg| cx_llvm_type(state, &arg.type_))
+        .map(|arg| bc_llvm_type(state, &arg.type_))
         .collect::<Option<Vec<_>>>()?;
 
     create_fn_proto(
