@@ -2,7 +2,7 @@ use cx_compiler_ast::parse::operators::{comma_separated_mut};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, same_type, CXTypeKind, CXType, CX_CONST};
 use cx_util::{expr_error_log, log_error};
-use crate::struct_typechecking::access_struct;
+use crate::struct_typechecking::typecheck_access;
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
 use crate::{type_check, TypeEnvironment};
 
@@ -114,7 +114,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         },
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } =>
-            access_struct(env, lhs.as_mut(), rhs.as_mut()),
+            typecheck_access(env, lhs.as_mut(), rhs.as_mut()),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
             let end_type = alg_bin_op_coercion(env, CXBinOp::ArrayIndex, lhs, rhs)?;
@@ -158,9 +158,23 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
             for i in prototype.params.len()..args.len() {
                 let va_type = coerce_value(env, args[i])?;
-
-                if va_type.is_structure_ref(&env.type_map) {
-                    log_error!("TYPE ERROR: Cannot pass structure type as vararg");
+                
+                match va_type.intrinsic_type(env.type_map)? {
+                    CXTypeKind::Integer { bytes, signed } => {
+                        if *bytes != 8 {
+                            let to_type = CXTypeKind::Integer { bytes: 8, signed: *signed }.to_val_type();
+                            implicit_cast(env, args[i], &va_type, &to_type)?;
+                        }
+                    },
+                    
+                    CXTypeKind::Float { bytes } => {
+                        if *bytes != 8 {
+                            let to_type = CXTypeKind::Float { bytes: 8 }.to_val_type();
+                            implicit_cast(env, args[i], &va_type, &to_type)?;
+                        }
+                    },
+                    
+                    _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", args[i]),
                 }
             }
 
@@ -363,6 +377,7 @@ fn coerce_mem_ref(
     };
     
     match inner.intrinsic_type(env.type_map)? {
+        CXTypeKind::Union { .. } |
         CXTypeKind::Structured { .. } => {},
         
         _ => {

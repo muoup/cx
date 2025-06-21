@@ -223,6 +223,19 @@ impl Display for CXTypeKind {
 
                 write!(f, "struct {} {{ {} }}", name_str, field_strs)
             },
+            CXTypeKind::Union { fields, name } => {
+                let field_strs = fields.iter()
+                    .map(|(name, type_)| format!("{}: {}", name, type_))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let name_str = if let Some(name) = name {
+                    format!("{} ", name)
+                } else {
+                    "".to_string()
+                };
+
+                write!(f, "union {} {{ {} }}", name_str, field_strs)
+            },
             CXTypeKind::Unit => write!(f, "()"),
             CXTypeKind::PointerTo(inner) => {
                 write!(f, "*{}", inner)

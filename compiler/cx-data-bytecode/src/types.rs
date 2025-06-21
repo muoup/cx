@@ -18,6 +18,7 @@ pub enum BCTypeKind {
     
     Array { size: usize, _type: Box<BCType> },
     Struct { name: String, fields: Vec<(String, BCType)> },
+    Union { name: String, fields: Vec<(String, BCType)> },
 
     Unit
 }
@@ -40,6 +41,8 @@ impl BCType {
                 => size * _type.size(),
             BCTypeKind::Struct { fields, .. } 
                 => fields.iter().map(|(_, field)| field.size()).sum(),
+            BCTypeKind::Union { fields, .. }
+                => fields.iter().map(|(_, field)| field.size()).max().unwrap(),
             BCTypeKind::Unit => 0,
         }
     }

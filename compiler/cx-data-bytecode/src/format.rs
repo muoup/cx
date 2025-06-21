@@ -92,6 +92,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Immediate { value } => {
                 write!(f, "immediate {}", value)
             },
+            VirtualInstruction::FloatImmediate { value } => {
+                write!(f, "float_immediate {}", value)
+            },
             VirtualInstruction::StructAccess { struct_, field_index, field_offset, .. } => {
                 write!(f, "struct_access {}[{}] + {}", struct_, field_index, field_offset)
             },
@@ -316,6 +319,15 @@ impl Display for BCTypeKind {
                     .join(", ");
 
                 write!(f, "struct {{ {} }}", fields)
+            },
+            BCTypeKind::Union { fields, .. } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, _type)| format!("{}: {}", name, _type))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "union {{ {} }}", fields)
             },
             BCTypeKind::Array { size, _type } => {
                 write!(f, "[{}; {}]", _type, size)

@@ -5,15 +5,6 @@ use inkwell::values::{AnyValueEnum, AsValueRef, BasicValueEnum};
 use cx_data_bytecode::BCFunctionPrototype;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 
-pub(crate) fn anonymous_struct_counter() -> usize {
-    static mut COUNTER: usize = 0;
-    unsafe {
-        let current = COUNTER;
-        COUNTER += 1;
-        current
-    }
-}
-
 pub(crate) fn any_to_basic_type<'a>(any_type: AnyTypeEnum) -> Option<BasicTypeEnum> {
     match any_type {
         AnyTypeEnum::IntType(int_type) => Some(int_type.into()),
@@ -83,6 +74,10 @@ pub(crate) fn cx_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Pointer => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
 
             BCTypeKind::Struct { name, .. } =>
+                state.context.get_struct_type(name.as_str())
+                    .unwrap_or_else(|| state.context.opaque_struct_type(name.as_str()))
+                    .as_any_type_enum(),
+            BCTypeKind::Union { name, .. } =>
                 state.context.get_struct_type(name.as_str())
                     .unwrap_or_else(|| state.context.opaque_struct_type(name.as_str()))
                     .as_any_type_enum(),

@@ -195,6 +195,15 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(imm_type.const_int(*value as u64, false).as_any_value_enum())
             },
             
+            VirtualInstruction::FloatImmediate { value } => {
+                let imm_type = cx_llvm_type(
+                    global_state, 
+                    &block_instruction.value.type_
+                )?.into_float_type();
+                
+                CodegenValue::Value(imm_type.const_float(*value).as_any_value_enum())
+            },
+            
             VirtualInstruction::Jump { target } => {
                 function_state
                     .builder

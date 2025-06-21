@@ -86,6 +86,10 @@ pub enum VirtualInstruction {
     Immediate {
         value: i32
     },
+    
+    FloatImmediate {
+        value: f64
+    },
 
     StructAccess {
         struct_: ValueID,

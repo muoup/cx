@@ -3,7 +3,7 @@ use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Specifi
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap, CXAST};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE};
+use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
 use cx_util::{log_error, point_log_error};
 use crate::parse::global_scope::{parse_import, parse_params, ParseParamsResult};
 use crate::parse::parsing_tools::goto_statement_end;
@@ -133,6 +133,31 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
                 }
             )
         },
+        
+        TokenKind::Keyword(KeywordType::Union) => {
+            let type_ = parse_union(data)?;
+            
+            // parse_union returned some "union [identifier]", which is a placeholder
+            // type that need to be processed by the type parser.
+            // alternatively parse_union returned a nameless union declaration, which
+            // is an effective no-op.
+            let CXTypeKind::Union { name: Some(name), .. } = &type_ else {
+                goto_statement_end(data);
+                
+                // this is janky but returning a None here indicates an error,
+                // not that no type needs to be parsed.
+                return Some(TypeRecord { name: None, type_: CXType::unit() });
+            };
+            
+            try_next!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+
+            Some(
+                TypeRecord {
+                    name: Some(name.to_string()),
+                    type_: CXType::new(0, type_)
+                }
+            )
+        },
 
         tok => todo!("parse_plain_typedef: {tok:?}")
     }
@@ -162,6 +187,36 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
 
     Some(
         CXTypeKind::Structured {
+            name,
+            fields,
+        }
+    )
+}
+
+pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {
+    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Union));
+
+    let name = parse_std_ident(data);
+    
+    if !try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
+        return Some(name?.as_str().into());
+    }
+    
+    let mut fields = Vec::new();
+
+    while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+        let (name, _type) = parse_initializer(data)?;
+
+        let Some(name) = name else {
+            point_log_error!(data, "UNSUPPORTED: Nameless union member of type {}", _type);
+        };
+
+        fields.push((name.data, _type));
+        assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+    }
+
+    Some(
+        CXTypeKind::Union {
             name,
             fields,
         }
@@ -263,23 +318,24 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
 pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
     let _type = match data.toks.peek()?.kind {
         TokenKind::Identifier(_) => Some(
-            CXType::new(
-                0,
-                parse_std_ident(data)?.into()
-            )
+            CXTypeKind::Identifier {
+                name: parse_std_ident(data)?.into(),
+                predeclaration: PredeclarationType::None
+            }.to_val_type()
         ),
         TokenKind::Intrinsic(_) => Some(
-            CXType::new(
-                0,
-                parse_intrinsic(data)?.into()
-            )
+            CXTypeKind::Identifier {
+                name: parse_intrinsic(data)?,
+                predeclaration: PredeclarationType::None
+            }.to_val_type()
         ),
 
         TokenKind::Keyword(KeywordType::Struct) => Some(
-            CXType::new(
-                0,
-                parse_struct(data)?
-            )
+            parse_struct(data)?.to_val_type()
+        ),
+        
+        TokenKind::Keyword(KeywordType::Union) => Some(
+            parse_union(data)?.to_val_type()
         ),
 
         _ => return None

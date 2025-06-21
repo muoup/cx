@@ -5,7 +5,7 @@ use cx_data_ast::parse::value_type::{get_type_size, CXTypeKind, CXType, CX_CONST
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCIntBinOp, BCIntUnOp, BCPtrBinOp, ValueID, VirtualInstruction};
 use cx_util::log_error;
-use crate::aux_routines::get_struct_field;
+use crate::aux_routines::{get_struct_field, get_union_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_cx_type_kind;
 use crate::implicit_cast::implicit_cast;
@@ -20,12 +20,14 @@ pub fn generate_instruction(
             let right_id = generate_instruction(builder, rhs.as_ref())?;
             let lhs_type = builder.get_expr_type(lhs.as_ref())?
                 .clone();
+            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type(&builder.cx_type_map)?
+                else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: left_id,
                     value: right_id,
-                    type_: builder.convert_cx_type(&lhs_type)?
+                    type_: builder.convert_cx_type(inner.as_ref())?
                 },
                 CXType::unit()
             )
@@ -56,24 +58,32 @@ pub fn generate_instruction(
             let CXExprKind::Identifier(field_name) = &rhs.as_ref().kind else {
                 panic!("PANIC: Attempting to access struct field with rhs: {rhs:?}");
             };
+            
+            match ltype.kind {
+                BCTypeKind::Struct { .. } => {
+                    let struct_access = get_struct_field(
+                        builder,
+                        &ltype,
+                        field_name.as_str()
+                    ).unwrap_or_else(|| {
+                        panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
+                    });
 
-            let struct_access = get_struct_field(
-                builder,
-                &ltype,
-                field_name.as_str()
-            ).unwrap_or_else(|| {
-                panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
-            });
-
-            builder.add_instruction_bt(
-                VirtualInstruction::StructAccess {
-                    struct_: left_id,
-                    struct_type: ltype,
-                    field_offset: struct_access.offset,
-                    field_index: struct_access.index,
+                    builder.add_instruction_bt(
+                        VirtualInstruction::StructAccess {
+                            struct_: left_id,
+                            struct_type: ltype,
+                            field_offset: struct_access.offset,
+                            field_index: struct_access.index,
+                        },
+                        struct_access._type
+                    )
                 },
-                struct_access._type
-            )
+                
+                BCTypeKind::Union { .. } => Some(left_id),
+                
+                _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
+            }
         },
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
@@ -203,6 +213,15 @@ pub fn generate_instruction(
                     bytes: *bytes,
                     signed: true
                 }.to_val_type()
+            )
+        },
+        
+        CXExprKind::FloatLiteral { val, bytes } => {
+            builder.add_instruction(
+                VirtualInstruction::FloatImmediate {
+                    value: *val
+                },
+                CXTypeKind::Float { bytes: *bytes }.to_val_type()
             )
         },
 

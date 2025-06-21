@@ -216,6 +216,7 @@ pub(crate) fn convert_cx_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTyp
             CXTypeKind::MemoryAlias(inner) => {
                 match inner.intrinsic_type(cx_type_map)? {
                     CXTypeKind::Structured { .. } => convert_cx_type_kind(cx_type_map, &inner.kind)?,
+                    CXTypeKind::Union { .. } => convert_cx_type_kind(cx_type_map, &inner.kind)?,
                     
                     _ => BCTypeKind::Pointer
                 }
@@ -225,6 +226,16 @@ pub(crate) fn convert_cx_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTyp
                 BCTypeKind::Array { size: *size, _type: Box::new(convert_cx_type(cx_type_map, _type)?) },
             CXTypeKind::Structured { fields, name } =>
                 BCTypeKind::Struct {
+                    name: match name {
+                        Some(name) => name.as_string(),
+                        None => "".to_string()
+                    },
+                    fields: fields.iter()
+                        .map(|(_name, _type)| Some((_name.clone(), convert_cx_type(cx_type_map, &_type)?)))
+                        .collect::<Option<Vec<_>>>()?
+                },
+            CXTypeKind::Union { fields, name } =>
+                BCTypeKind::Union {
                     name: match name {
                         Some(name) => name.as_string(),
                         None => "".to_string()
