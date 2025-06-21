@@ -1,0 +1,5 @@
+import imported;
+
+int main() {
+    imported_function();
+}

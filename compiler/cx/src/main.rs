@@ -1,0 +1,37 @@
+use std::env;
+use std::path::Path;
+use cx_exec_pipeline::standard_llvm_compile;
+
+fn main() {
+    let args = env::args().collect::<Vec<String>>();
+    
+    let Some(file_name) = args.get(1) else {
+        println!("Usage: {} <file>", args[0]);
+        return;
+    };
+    
+    if !file_name.ends_with(".cx") {
+        println!("Error: The file must have a .cx extension");
+        return;
+    }
+    
+    let path = Path::new(file_name);
+    // set working directory to the directory of the file
+    // if the path has no parent, we are already in the correct directory
+    if let Some(parent) = path.parent() {
+        if parent.to_str().unwrap() != "" {
+            env::set_current_dir(parent)
+                .expect(format!("Failed to set current directory: {}", parent.display()).as_str());
+        }
+    }
+    let file_name = path.file_name().unwrap().to_str().unwrap();
+    
+    std::fs::create_dir_all(".internal")
+        .expect("Failed to create internal directory");
+    std::fs::write(".internal/compiler-dump.data", "")
+        .expect("Failed to clear dump file");
+
+    standard_llvm_compile(file_name);
+
+    println!("Compilation complete!");
+}

@@ -1,0 +1,29 @@
+#include <stdio.h>
+
+typedef int(*operation)(int, int);
+typedef int(*pf)(const char*, ...);
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int subtract(int a, int b) {
+    return a - b;
+}
+
+int main() {
+    int x = 2;
+    int y = 2;
+
+    operation op = add;
+    operation op_offset = op + 2;
+    pf pfunc = printf;
+
+    int(*op2)(int, int) = subtract;
+
+    int temp = op(x, y);
+    pfunc("Result of addition: %d\n", temp);
+
+    temp = op2(x, y);
+    pfunc("Result of subtraction: %d\n", temp);
+}

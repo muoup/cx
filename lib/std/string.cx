@@ -1,53 +1,34 @@
-// C-style string functions
-
 public:
-
-u64 strlen(char* c) {
-    u64 i = 0;
-    while (c[i] != '\0')
-        i++;
-    return i;
-}
-
-u64 strcpy(char* dest, char* src) {
-    u64 i = 0;
-    while (src[i] != '\0') {
-        dest[i] = src[i];
-        i++;
-    }
-    dest[i] = '\0';
-}
-
-// String class implementation
 
 struct string {
     char* data;
     u64 length;
+    u64 capacity;
+};
+
+string new_string() {
+    string s;
+    s.data = malloc(16);
+    s.length = 0;
+    s.capacity = 16;
+    s.data[0] = '\0'; // Initialize as an empty string
+    return s;
 }
 
-string string::new(char* s) {
-    u64 length = strlen(s);
-    char* data = malloc(length + 1);
+void string_append(string* s, const char* str) {
+    u64 str_length = strlen(str);
 
-    strcpy(data, s);
+    if (s.length + str_length + 1 > s.capacity) {
+        s.capacity = s.capacity * 2;
+        s.data = realloc(s.data, s.capacity);
+    }
 
-    return string {
-        .data = data,
-        .length = length
-    };
+    memcpy(s.data + s.length, str, str_length);
+    s.length = str_length + s.length;
 }
 
-string string::take(char* s) {
-    return string {
-        .data = s,
-        .length = strlen(s)
-    };
-}
+private:
 
-string::~string() {
-    free(data);
-}
-
-char* string::c_str() {
-    return data;
-}
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
