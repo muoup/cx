@@ -49,7 +49,7 @@ pub enum OperatorType {
     Increment, Decrement,
 
     Comma,
-
+    
     ArrayIndex,
 
     Access,

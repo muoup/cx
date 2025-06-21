@@ -619,7 +619,27 @@ pub fn generate_instruction(
 
             Some(ValueID::NULL)
         },
-
+        
+        CXExprKind::SizeOf { expr } => {
+            let type_ = builder.get_expr_intrinsic_type(expr.as_ref())?;
+            
+            let bc_type = if matches!(expr.kind, CXExprKind::VarDeclaration { .. }) {
+                let CXTypeKind::MemoryAlias(inner) = type_
+                    else { unreachable!("generate_instruction: Expected memory alias type for expr, found {type_}") };
+                
+                convert_cx_type_kind(&builder.cx_type_map, &inner.kind)?
+            } else {
+                convert_cx_type_kind(&builder.cx_type_map, &type_)?
+            };
+            
+            builder.add_instruction(
+                VirtualInstruction::Immediate {
+                    value: BCType::from(bc_type).size() as i32,
+                },
+                CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+            )
+        },
+        
         _ => todo!("generate_instruction for {:?}", expr)
     }
 }

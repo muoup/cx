@@ -158,7 +158,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
             for i in prototype.params.len()..args.len() {
                 let va_type = coerce_value(env, args[i])?;
-                
+
                 match va_type.intrinsic_type(env.type_map)? {
                     CXTypeKind::Integer { bytes, signed } => {
                         if *bytes != 8 {
@@ -166,14 +166,14 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                             implicit_cast(env, args[i], &va_type, &to_type)?;
                         }
                     },
-                    
+
                     CXTypeKind::Float { bytes } => {
                         if *bytes != 8 {
                             let to_type = CXTypeKind::Float { bytes: 8 }.to_val_type();
                             implicit_cast(env, args[i], &va_type, &to_type)?;
                         }
                     },
-                    
+
                     _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", args[i]),
                 }
             }
@@ -339,6 +339,12 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             Some(CXType::unit())
         },
 
+        CXExprKind::SizeOf { expr } => {
+            type_check_traverse(env, expr)?;
+            
+            Some(CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type())
+        },
+        
         CXExprKind::Unit |
         CXExprKind::Break |
         CXExprKind::Continue => Some(CXType::unit()),
