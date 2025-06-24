@@ -160,6 +160,10 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 let va_type = coerce_value(env, args[i])?;
 
                 match va_type.intrinsic_type(env.type_map)? {
+                    CXTypeKind::PointerTo(_) => {
+                        // Pointer types are already compatible with varargs, no need to cast
+                    },
+                    
                     CXTypeKind::Integer { bytes, signed } => {
                         if *bytes != 8 {
                             let to_type = CXTypeKind::Integer { bytes: 8, signed: *signed }.to_val_type();

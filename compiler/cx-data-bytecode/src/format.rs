@@ -123,7 +123,7 @@ impl Display for VirtualInstruction {
                 Ok(())
             },
             VirtualInstruction::Branch { condition, true_block, false_block } => {
-                write!(f, "branch on {condition}; true = {true_block}, false = {false_block}")
+                write!(f, "branch on {condition}; true -> block{true_block}, false -> block{false_block}")
             },
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")

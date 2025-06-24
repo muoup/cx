@@ -18,11 +18,21 @@ pub struct CompilerPipeline {
     source_dir: String,
     file_name: String,
     output_file: String,
-    pub internal_dir: String,
     
+    pub internal_dir: String,
     pub imports: Vec<String>,
     
+    backend: CompilerBackend,
+    
     pipeline_stage: PipelineStage
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub enum CompilerBackend {
+    #[default]
+    Cranelift,
+    
+    LLVM
 }
 
 #[derive(Default, Debug)]
@@ -67,7 +77,7 @@ impl PipelineStage {
 }
 
 impl CompilerPipeline {
-    pub fn new(source: String, output: String) -> Self {
+    pub fn new(source: String, output: String, backend_type: CompilerBackend) -> Self {
         let extensionless = source.replace(".cx", "");
         let el_as_path = Path::new(&extensionless);
 
@@ -80,8 +90,9 @@ impl CompilerPipeline {
             internal_dir: internal,
             file_name: el_as_path.file_stem().unwrap().to_str().unwrap().to_string(),
 
+            backend: backend_type,
+            
             output_file: output,
-
             pipeline_stage: PipelineStage::None,
 
             ..Self::default()
@@ -201,7 +212,7 @@ impl CompilerPipeline {
             parser_data.type_symbols.insert(name.clone());
         }
         
-        request_compile(dependencies.as_slice())
+        request_compile(dependencies.as_slice(), self.backend)
             .expect("Failed to request compile for dependencies");
 
         let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types, dependencies) else {
@@ -247,8 +258,15 @@ impl CompilerPipeline {
 
         Some(ast)
     }
+    
+    pub fn codegen(mut self) -> Self {
+        match self.backend {
+            CompilerBackend::LLVM => self.llvm_codegen(),
+            CompilerBackend::Cranelift => self.cranelift_codegen(),
+        }
+    }
 
-    pub fn llvm_codegen(mut self) -> Self {
+    fn llvm_codegen(mut self) -> Self {
         let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
             panic!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
         };
@@ -257,7 +275,7 @@ impl CompilerPipeline {
         std::fs::create_dir_all(internal_path.parent().unwrap().as_os_str())
             .expect("Failed to create internal directory");
 
-        let output_path = format!("{}.o", self.internal_dir);
+        let output_path = format!("{}/.o", self.internal_dir);
         cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             panic!("ERROR: Failed to generate code");
         });
@@ -266,7 +284,7 @@ impl CompilerPipeline {
         self
     }
 
-    pub fn cranelift_codegen(mut self) -> Self {
+    fn cranelift_codegen(mut self) -> Self {
         let PipelineStage::Bytecode(bytecode) = std::mem::take(&mut self.pipeline_stage) else {
             panic!("PIPELINE ERROR: Cannot generate code without a parsed AST!");
         };
@@ -275,7 +293,7 @@ impl CompilerPipeline {
         std::fs::create_dir_all(internal_path.parent().unwrap().as_os_str())
             .expect("Failed to create internal directory");
         
-        let output_path = format!("{}.o", self.internal_dir);
+        let output_path = format!("{}/.o", self.internal_dir);
         cx_backend_cranelift::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
             panic!("ERROR: Failed to generate code");
         });
@@ -289,13 +307,13 @@ impl CompilerPipeline {
             panic!("PIPELINE ERROR: Cannot link without generating code!");
         };
 
-        let output_path = format!("{}.o", self.internal_dir);
+        let output_path = format!("{}/.o", self.internal_dir);
         let output_file = self.output_file.clone();
         
         let mut imports = HashSet::new();
         
         for import in &self.imports {
-            let import_path = format!(".internal/{}.o", import);
+            let import_path = format!(".internal/{}/.o", import);
             if !Path::new(&import_path).exists() {
                 eprintln!("ERROR: Import path does not exist: {}", import_path);
                 exit(1);

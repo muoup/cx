@@ -4,10 +4,11 @@ use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
 use cx_data_ast::parse::value_type::CXTypeKind;
-use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp};
+use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp, BCFloatUnOp};
 use cx_data_bytecode::types::BCTypeKind;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
@@ -341,6 +342,21 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         }
+        
+        VirtualInstruction::FloatUnOp { value, op } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            let _type = &instruction.value.type_;
+            
+            match op {
+                BCFloatUnOp::NEG => {
+                    Some(
+                        CodegenValue::Value(
+                            context.builder.ins().fneg(val.as_value())
+                        )
+                    )
+                }
+            }
+        }
 
         VirtualInstruction::FloatBinOp {
             left, right, op
@@ -484,6 +500,24 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         },
+        
+        VirtualInstruction::FloatImmediate { 
+            value
+        } => {
+            let BCTypeKind::Float { bytes } = &instruction.value.type_.kind
+                else { unreachable!("Non-FP Type Float Immediate") };
+
+            Some(
+                CodegenValue::Value(
+                    match bytes {
+                        4 => context.builder.ins().f32const(*value as f32),
+                        8 => context.builder.ins().f64const(*value),
+                        
+                        _ => panic!("Unsupported float size: {}", bytes)
+                    }
+                )
+            )
+        }
 
         VirtualInstruction::BitCast {
             value
@@ -492,6 +526,32 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             Some(val)
         },
+        
+        VirtualInstruction::FloatCast { value } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            let to_type = &instruction.value.type_;
+            let cranelift_type = get_cranelift_type(to_type);
+            
+            match &to_type.kind {
+                BCTypeKind::Float { bytes }
+                    if *bytes == 4 => {
+                        Some(
+                            CodegenValue::Value(
+                                context.builder.ins().fdemote(cranelift_type, val.as_value())
+                            )
+                        )
+                    },
+                BCTypeKind::Float { bytes }
+                    if *bytes == 8 => {
+                        Some(
+                            CodegenValue::Value(
+                                context.builder.ins().fpromote(cranelift_type, val.as_value())
+                            )
+                        )
+                    },
+                _ => unreachable!("Invalid type for float cast")
+            }
+        }, 
 
         VirtualInstruction::IntToFloat {
             from, value
@@ -555,8 +615,25 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         },
-
-        _ => unimplemented!("Instruction not implemented: {:?}", instruction.instruction)
+        
+        VirtualInstruction::JumpTable { value, targets, default } => {
+            let mut switch = Switch::new();
+            
+            for (value, block_id) in targets {
+                switch.set_entry(
+                    *value as u128,
+                    context.block_map.get(*block_id as usize).unwrap().clone()
+                );
+            }
+            
+            switch.emit(
+                &mut context.builder,
+                context.variable_table.get(value).unwrap().as_value(),
+                context.block_map.get(*default as usize).unwrap().clone()
+            );
+            
+            Some(CodegenValue::NULL)
+        }
     }
 }
 

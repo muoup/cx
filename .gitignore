@@ -1,5 +1,9 @@
 /target
 */.internal
 
+*.data
+*.exe
 *.hx
+*.cx-types
+*.cx-functions
 *.o

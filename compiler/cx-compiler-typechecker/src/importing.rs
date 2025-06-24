@@ -5,7 +5,7 @@ use cx_data_ast::parse::ast::CXAST;
 
 pub(crate) fn import_module_data(cxast: &mut CXAST) {
     for import_path in cxast.imports.iter() {
-        let type_path_str = format!("{}.cx-types", cxast.internal_path);
+        let type_path_str = format!("{}/.cx-types", cxast.internal_path);
         let internal_type_path = Path::new(&type_path_str);
 
         let cx_path_str = if import_path.starts_with("std") {

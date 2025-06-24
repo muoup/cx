@@ -199,7 +199,7 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
             same_type(type_map, &type_map.get(name1.as_str()).unwrap(), t2),
 
         (_, CXTypeKind::Identifier { name: name2, .. }) =>
-            same_type(type_map, t1, &type_map.get(name2.as_str()).unwrap()),
+            same_type(type_map, t1, &type_map.get(name2.as_str()).expect(format!("Type not found: {name2}").as_str())),
 
         (CXTypeKind::Array { _type: t1_type, .. },
          CXTypeKind::Array { _type: t2_type, .. }) =>

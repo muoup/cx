@@ -154,19 +154,9 @@ pub fn generate_instruction(
             }
         },
 
-        CXExprKind::BinOp { lhs, rhs, op } => {
-            let left_id = generate_instruction(builder, lhs.as_ref())?;
-            let right_id = generate_instruction(builder, rhs.as_ref())?;
-            let cx_lhs_type = builder.get_expr_type(lhs.as_ref())?;
-            
-            generate_binop(
-                builder,
-                &cx_lhs_type,
-                left_id,
-                right_id,
-                op
-            )
-        },
+        CXExprKind::BinOp { lhs, rhs, op } => 
+            generate_binop(builder, lhs.as_ref(), rhs.as_ref(), op),
+        
         CXExprKind::Block { exprs, value } => {
             for expr in exprs {
                 generate_instruction(builder, expr)?;
@@ -336,7 +326,7 @@ pub fn generate_instruction(
                         BCTypeKind::Signed { bytes }.into()
                     )?;
 
-                    let incremented = generate_binop(
+                    let incremented = generate_algebraic_binop(
                         builder,
                         inner.as_ref(),
                         loaded_val,
@@ -383,7 +373,7 @@ pub fn generate_instruction(
                         BCTypeKind::Signed { bytes }.into()
                     )?;
 
-                    let incremented = generate_binop(
+                    let incremented = generate_algebraic_binop(
                         builder,
                         inner.as_ref(),
                         loaded_val,
@@ -645,6 +635,105 @@ pub fn generate_instruction(
 }
 
 pub(crate) fn generate_binop(
+    builder: &mut BytecodeBuilder, 
+    lhs: &CXExpr, rhs: &CXExpr, 
+    op: &CXBinOp
+) -> Option<ValueID> {
+    match op {
+        CXBinOp::LAnd | CXBinOp::LOr => {
+            // Short circuit evaluation for logical operators
+            let left_id = generate_instruction(builder, lhs)?;
+            let left_type = builder.get_type(left_id)?.clone();
+            
+            let storage = builder.add_instruction_bt(
+                VirtualInstruction::Allocate {
+                    size: left_type.size(),
+                },
+                BCType::from(BCTypeKind::Pointer)
+            )?;
+            
+            let standard_block = builder.create_block();
+            let short_circuit_block = builder.create_block();
+            let merge_block = builder.create_block();
+            
+            let (true_block, false_block) = match op {
+                CXBinOp::LAnd => (standard_block, short_circuit_block.clone()),
+                CXBinOp::LOr => (short_circuit_block.clone(), standard_block.clone()),
+                _ => unreachable!("generate_binop: Expected logical operator, found {op}"),
+            };
+            
+            builder.add_instruction(
+                VirtualInstruction::Branch {
+                    condition: left_id,
+                    true_block,
+                    false_block
+                },
+                CXType::unit()
+            );
+            
+            builder.set_current_block(standard_block);
+            
+            let right_id = generate_instruction(builder, rhs)?;
+            builder.add_instruction(
+                VirtualInstruction::Store {
+                    memory: storage.clone(),
+                    value: right_id,
+                    type_: left_type.clone()
+                },
+                CXType::unit()
+            );
+            
+            builder.add_instruction(
+                VirtualInstruction::Jump {
+                    target: merge_block.clone()
+                },
+                CXType::unit()
+            );
+            
+            builder.set_current_block(short_circuit_block);
+            
+            builder.add_instruction(
+                VirtualInstruction::Store {
+                    memory: storage.clone(),
+                    value: left_id,
+                    type_: left_type.clone()
+                },
+                CXType::unit()
+            );
+            
+            builder.add_instruction(
+                VirtualInstruction::Jump {
+                    target: merge_block.clone()
+                },
+                CXType::unit()
+            );
+            
+            builder.set_current_block(merge_block);
+            
+            builder.add_instruction_bt(
+                VirtualInstruction::Load {
+                    value: storage
+                },
+                left_type.clone()
+            )
+        },
+        
+        _ => {
+            let left_id = generate_instruction(builder, lhs)?;
+            let right_id = generate_instruction(builder, rhs)?;
+            let cx_lhs_type = builder.get_expr_intrinsic_type(lhs)?.to_val_type();
+            
+            generate_algebraic_binop(
+                builder,
+                &cx_lhs_type,
+                left_id, right_id,
+                op
+            )
+        },
+    }
+}
+
+pub(crate) fn generate_algebraic_binop(
     builder: &mut BytecodeBuilder,
     cx_lhs_type: &CXType,
     left_id: ValueID,
@@ -652,7 +741,7 @@ pub(crate) fn generate_binop(
     op: &CXBinOp
 ) -> Option<ValueID> {
     let lhs_type = builder.get_type(left_id)?.clone();
-    
+
     match lhs_type.kind {
         BCTypeKind::Signed { .. } => {
             builder.add_instruction_bt(
@@ -678,7 +767,7 @@ pub(crate) fn generate_binop(
 
         BCTypeKind::Pointer { .. } => {
             let CXTypeKind::PointerTo(left_inner) = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
-                else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
+            else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
 
             builder.add_instruction_bt(
                 VirtualInstruction::PointerBinOp {

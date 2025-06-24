@@ -27,7 +27,7 @@ impl Display for CXGlobalStmt {
                 fwrite!(f, "{}", body)?;
                 dedent();
                 fwriteln!(f, "")?;
-                fwriteln!(f, "}}")?;
+                fwrite!(f, "}}")?;
                 Ok(())
             },
         }
@@ -54,8 +54,12 @@ impl Display for CXExprKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXExprKind::Block { exprs, .. } => {
-                for stmt in exprs.iter() {
-                    fwriteln!(f, "{}", stmt)?;
+                for (i, stmt) in exprs.iter().enumerate() {
+                    fwrite!(f, "{}", stmt)?;
+                    
+                    if i != exprs.len() - 1 {
+                        fwriteln!(f, "")?;
+                    }
                 }
                 Ok(())
             },
@@ -73,7 +77,16 @@ impl Display for CXExprKind {
 
             CXExprKind::IntLiteral { val, .. } => fwrite!(f, "{}", val),
             CXExprKind::FloatLiteral { val, .. } => fwrite!(f, "{}", val),
-            CXExprKind::StringLiteral { val, .. } => fwrite!(f, "\"{}\"", val),
+            CXExprKind::StringLiteral { val, .. } => {
+                // Sanitize input (i.e. convert \n to \\n)
+                let sanitized = val
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t");
+                fwrite!(f, "\"{}\"", sanitized)
+            },
 
             CXExprKind::Return { value } => {
                 fwrite!(f, "return")?;

@@ -1,6 +1,7 @@
 use std::env;
 use std::path::Path;
-use cx_exec_pipeline::standard_llvm_compile;
+use cx_exec_pipeline::pipeline::CompilerBackend;
+use cx_exec_pipeline::standard_compile;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -31,7 +32,7 @@ fn main() {
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
 
-    standard_llvm_compile(file_name);
+    standard_compile(file_name, CompilerBackend::Cranelift);
 
     println!("Compilation complete!");
 }

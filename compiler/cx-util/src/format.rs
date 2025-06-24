@@ -3,7 +3,7 @@ use std::io::Write;
 use std::sync::Mutex;
 
 pub fn dump_data(data: &impl std::fmt::Display) {
-    dump_write(&format!("{}\n", data));
+    dump_write(&format!("{}\n\n", data));
 }
 
 pub fn dump_all(data: Vec<impl std::fmt::Display>) {

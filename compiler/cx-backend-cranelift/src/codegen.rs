@@ -99,7 +99,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     context.builder.finalize();
 
     dump_data(&func);
-    println!("Function: {}", func);
 
     let GlobalState { object_module, context, .. } = global_state;
 
