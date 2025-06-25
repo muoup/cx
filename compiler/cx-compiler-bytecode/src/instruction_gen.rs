@@ -1,7 +1,7 @@
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::value_type::{get_type_size, CXTypeKind, CXType, CX_CONST};
+use cx_data_ast::parse::value_type::{get_type_size, CXTypeKind, CXType, CX_CONST, TypeSize};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCIntBinOp, BCIntUnOp, BCPtrBinOp, ValueID, VirtualInstruction};
 use cx_util::log_error;
@@ -33,19 +33,24 @@ pub fn generate_instruction(
             )
         },
         CXExprKind::VarDeclaration { name, type_ } => {
-            let Some(type_size) = get_type_size(&builder.cx_type_map, type_) else {
-                log_error!("Invalid type for variable declaration: {type_}");
-            };
-
-            let memory = builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size: type_size
+            let type_size = type_.size(&builder.cx_type_map)?;
+            
+            let memory = match generate_type_size(builder, &type_size)? {
+                BCTypeSize::Literal(size) => {
+                    builder.add_instruction_bt(
+                        VirtualInstruction::Allocate { size },
+                        BCTypeKind::Pointer.into()
+                    )?
                 },
-                BCTypeKind::Pointer.into()
-            )?;
-
+                BCTypeSize::Variable(size_expr) => {
+                    builder.add_instruction_bt(
+                        VirtualInstruction::VariableAllocate { size: size_expr },
+                        BCTypeKind::Pointer.into()
+                    )?
+                }
+            };
+            
             builder.symbol_table.insert(name.as_string(), memory);
-
             Some(memory)
         },
 
@@ -93,7 +98,10 @@ pub fn generate_instruction(
 
             let lhs_inner = match l_type {
                 CXTypeKind::PointerTo(inner) => inner,
+                
+                CXTypeKind::VariableLengthArray { _type, .. } |
                 CXTypeKind::Array { _type, .. } => _type,
+                
                 _ => panic!("Invalid array index type: {l_type}"),
             };
             
@@ -611,23 +619,20 @@ pub fn generate_instruction(
         },
         
         CXExprKind::SizeOf { expr } => {
-            let type_ = builder.get_expr_intrinsic_type(expr.as_ref())?;
+            let type_ = builder.get_expr_type(expr.as_ref())?;
+            let type_size = type_.size(&builder.cx_type_map)?;
             
-            let bc_type = if matches!(expr.kind, CXExprKind::VarDeclaration { .. }) {
-                let CXTypeKind::MemoryAlias(inner) = type_
-                    else { unreachable!("generate_instruction: Expected memory alias type for expr, found {type_}") };
-                
-                convert_cx_type_kind(&builder.cx_type_map, &inner.kind)?
-            } else {
-                convert_cx_type_kind(&builder.cx_type_map, &type_)?
-            };
-            
-            builder.add_instruction(
-                VirtualInstruction::Immediate {
-                    value: BCType::from(bc_type).size() as i32,
-                },
-                CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
-            )
+            match generate_type_size(builder, &type_size)? {
+                BCTypeSize::Literal(size) =>
+                    builder.add_instruction(
+                        VirtualInstruction::Immediate {
+                            value: size as i32
+                        },
+                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                    ),
+                BCTypeSize::Variable(size_expr) =>
+                    Some(size_expr)
+            }
         },
         
         _ => todo!("generate_instruction for {:?}", expr)
@@ -794,6 +799,46 @@ pub(crate) fn generate_algebraic_binop(
         _type =>
             panic!("Invalid arguments with type for binop not caught by type checker")
     }
+}
+
+pub(crate) enum BCTypeSize {
+    Literal(usize),
+    Variable(ValueID),
+}
+
+pub(crate) fn generate_type_size(
+    builder: &mut BytecodeBuilder,
+    type_size: &TypeSize
+) -> Option<BCTypeSize> {
+    Some(
+        match type_size {
+            TypeSize::Fixed(size) => BCTypeSize::Literal(*size),
+            TypeSize::Variable { elem_size, size_expr } => {
+                let size_expr = generate_instruction(builder, size_expr.as_ref())?;
+                let elem_size = match generate_type_size(builder, elem_size)? {
+                    BCTypeSize::Variable(val) => val,
+                    BCTypeSize::Literal(size) =>
+                        builder.add_instruction(
+                            VirtualInstruction::Immediate {
+                                value: size as i32
+                            },
+                            CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                        )?
+                };
+                
+                BCTypeSize::Variable(
+                    builder.add_instruction(
+                        VirtualInstruction::IntegerBinOp {
+                            left: elem_size,
+                            right: size_expr,
+                            op: BCIntBinOp::MUL
+                        },
+                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                    )?
+                )
+            }
+        }
+    )
 }
 
 pub(crate) fn implicit_return(

@@ -1,6 +1,6 @@
 use cx_util::log_error;
 use serde::{Deserialize, Serialize};
-use crate::parse::ast::{CXFunctionPrototype, CXTypeMap};
+use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXTypeMap};
 use crate::parse::identifier::CXIdent;
 
 pub type CXTypeSpecifier = u8;
@@ -36,6 +36,10 @@ pub enum CXTypeKind {
     Array {
         size: usize,
         _type: Box<CXType>
+    },
+    VariableLengthArray {
+        size: Box<CXExpr>,
+        _type: Box<CXType>,
     },
     Opaque {
         name: String,
@@ -176,7 +180,7 @@ impl CXType {
         matches!(get_intrinsic_type(type_map, self), intrin)
     }
 
-    pub fn size(&self, type_map: &CXTypeMap) -> Option<usize> {
+    pub fn size(&self, type_map: &CXTypeMap) -> Option<TypeSize> {
         get_type_size(type_map, self)
     }
 
@@ -247,54 +251,88 @@ pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Opt
     }
 }
 
-pub fn get_type_size(type_map: &CXTypeMap, type_: &CXType) -> Option<usize> {
-    match &type_.kind {
-        CXTypeKind::Unit => Some(0),
-
-        CXTypeKind::Float { bytes } => Some(*bytes as usize),
-        CXTypeKind::Integer { bytes, .. } => Some(*bytes as usize),
-        CXTypeKind::MemoryAlias(inner) =>
-            get_type_size(type_map, inner.as_ref()),
-
-        CXTypeKind::Array { _type, size }
-        => Some(get_type_size(type_map, _type)? * size),
-
-        CXTypeKind::Structured { fields, .. } =>
-            fields.iter()
-                .map(|field| get_type_size(type_map, &field.1))
-                .sum(),
-        CXTypeKind::Union { fields, .. } =>
-            fields.iter()
-                .map(|field| get_type_size(type_map, &field.1))
-                .max()?,
-
-        CXTypeKind::PointerTo(_)
-        | CXTypeKind::Function { .. } => Some(8),
-
-        CXTypeKind::Opaque { size, .. } => Some(*size),
-        CXTypeKind::Identifier { name, .. } =>
-            type_map.get(name.as_str())
-                .map(|_type| get_type_size(type_map, _type))
-                .flatten()
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TypeSize {
+    Fixed(usize),
+    Variable {
+        elem_size: Box<TypeSize>,
+        size_expr: Box<CXExpr>
     }
 }
 
-pub(crate) fn struct_field_index(fields: &[(String, CXType)], field_name: &str) -> Option<usize> {
-    fields.iter()
-        .position(|field| field.0 == field_name)
-        .or_else(|| {
-            log_error!("Field {} not found in struct", field_name);
-        })
+impl TypeSize {
+    pub fn assert_fixed(&self, msg: &str) -> usize {
+        match self {
+            TypeSize::Fixed(size) => *size,
+            TypeSize::Variable { .. } => panic!("{msg}: Expected fixed size, found variable size"),
+        }
+    }
 }
 
-pub(crate) fn struct_field_offset(type_map: &CXTypeMap, fields: &[(String, CXType)],
-                                  field_name: &str) -> Option<usize> {
-    let field_index = struct_field_index(fields, field_name)?;
+pub fn get_type_size(type_map: &CXTypeMap, type_: &CXType) -> Option<TypeSize> {
+    Some(
+        match &type_.kind {
+            CXTypeKind::Unit => TypeSize::Fixed(0),
 
-    fields[0.. field_index]
-        .iter()
-        .map(|(_, type_)| get_type_size(type_map, type_))
-        .sum::<Option<usize>>()
+            CXTypeKind::Float { bytes } |
+            CXTypeKind::Integer { bytes, .. } => TypeSize::Fixed(*bytes as usize),
+
+            CXTypeKind::MemoryAlias(inner) =>
+                get_type_size(type_map, inner.as_ref())?,
+
+            CXTypeKind::Array { _type, size } => {
+                let elem_size = get_type_size(type_map, _type)?;
+                
+                match elem_size {
+                    TypeSize::Fixed(field_size) 
+                        => TypeSize::Fixed(field_size * size),
+
+                    TypeSize::Variable { .. } => {
+                        let size_literal = CXExprKind::IntLiteral {
+                            val: *size as i64,
+                            bytes: 8
+                        }.into_expr(0, 0);
+                        
+                        TypeSize::Variable {
+                            elem_size: Box::new(elem_size),
+                            size_expr: Box::new(size_literal)
+                        }
+                    }
+                }
+            },
+
+            CXTypeKind::Structured { fields, .. } =>
+                TypeSize::Fixed(
+                    fields.iter()
+                        .map(|field|
+                            get_type_size(type_map, &field.1).unwrap().assert_fixed("Structured type field size"))
+                        .sum()
+                ),
+            CXTypeKind::Union { fields, .. } =>
+                TypeSize::Fixed(
+                    fields.iter()
+                        .map(|field|
+                            get_type_size(type_map, &field.1).unwrap().assert_fixed("Union type field size"))
+                        .max()?
+                ),
+
+            CXTypeKind::PointerTo(_) |
+            CXTypeKind::Function { .. } => TypeSize::Fixed(8),
+
+            CXTypeKind::Opaque { size, .. } => TypeSize::Fixed(*size),
+            CXTypeKind::Identifier { name, .. } =>
+                type_map.get(name.as_str())
+                    .map(|_type| get_type_size(type_map, _type))
+                    .flatten()?,
+
+            CXTypeKind::VariableLengthArray { _type, size } => {
+                TypeSize::Variable {
+                    elem_size: Box::new(get_type_size(type_map, _type)?),
+                    size_expr: size.clone()
+                }
+            }
+        }
+    )
 }
 
 pub struct StructAccessRecord {
@@ -327,7 +365,7 @@ pub fn struct_field_access(
             );
         }
 
-        offset += get_type_size(type_map, ty)?;
+        offset += get_type_size(type_map, ty)?.assert_fixed("Structured type field size");
     }
 
     None

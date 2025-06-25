@@ -29,6 +29,7 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
             let memory = builder.add_instruction_bt(
                 VirtualInstruction::Allocate {
                     size: get_type_size(&builder.cx_type_map, &arg.type_)?
+                        .assert_fixed("Function argument type must be fixed size"),
                 },
                 BCTypeKind::Pointer.into()
             )?;

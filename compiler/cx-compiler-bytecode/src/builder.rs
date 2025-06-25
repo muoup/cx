@@ -151,7 +151,7 @@ impl BytecodeBuilder {
     
     pub fn get_expr_intrinsic_type(&self, expr: &CXExpr) -> Option<CXTypeKind> {
         let Some(cx_type) = self.get_expr_type(expr) else {
-            log_error!("INTERNAL PANIC: Failed to get intrinsic type for expression: {:?}\nKey: {}\n{:#?}", expr, &expr as *const _ as u64, self.expr_type_map);
+            log_error!("INTERNAL PANIC: Failed to get intrinsic type for expression: {:?}", expr)
         };
         
         cx_type.intrinsic_type(&self.cx_type_map).cloned()

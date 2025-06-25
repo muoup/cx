@@ -42,7 +42,7 @@ pub struct CXFunctionPrototype {
     pub var_args: bool
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum CXGlobalStmt {
     GlobalVariable {
         name: CXIdent,
@@ -56,7 +56,7 @@ pub enum CXGlobalStmt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
@@ -70,7 +70,7 @@ pub enum CXUnOp {
     PostIncrement(i8),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXBinOp {
     Add, Subtract, Multiply, Divide, Modulus,
     Less, Greater, LessEqual, GreaterEqual,
@@ -86,13 +86,13 @@ pub enum CXBinOp {
     Access, MethodCall, ArrayIndex
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXInitIndex {
     Named(CXIdent, Box<CXExpr>),
     Unnamed(Box<CXExpr>)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXExpr {
     pub uuid: usize,
     pub kind: CXExprKind,
@@ -113,7 +113,7 @@ impl Default for CXExpr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXExprKind {
     Taken,
     Unit,
@@ -218,7 +218,7 @@ impl CXExprKind {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXCastType {
     IntegralCast,
     FloatCast,

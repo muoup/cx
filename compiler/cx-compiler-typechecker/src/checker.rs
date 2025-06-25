@@ -117,15 +117,16 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             typecheck_access(env, lhs.as_mut(), rhs.as_mut()),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
-            let end_type = alg_bin_op_coercion(env, CXBinOp::ArrayIndex, lhs, rhs)?;
+            let lhs = coerce_value(env, lhs)?;
+            implicit_coerce(env, rhs, CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type())?;
 
-            let CXTypeKind::PointerTo(inner) = end_type.intrinsic_type(env.type_map)? else {
-                log_error!("TYPE ERROR: Array index operator can only be applied to pointers, found: {end_type}");
+            let CXTypeKind::PointerTo(inner) = lhs.intrinsic_type(&env.type_map).cloned()? else {
+                log_error!("TYPE ERROR: Array index operator can only be applied to pointers, found: {lhs}");
             };
             
             Some(
                 CXType::new(
-                    end_type.specifiers,
+                    lhs.specifiers,
                     CXTypeKind::MemoryAlias(inner.clone())
                 )
             )
@@ -189,8 +190,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             alg_bin_op_coercion(env, op.clone(), lhs, rhs),
 
         CXExprKind::VarDeclaration { name, type_ } => {
+            if let CXTypeKind::VariableLengthArray { _type, size } = &mut type_.kind {
+                implicit_coerce(env, size.as_mut(), CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type())?;
+            };
+            
             env.symbol_table.insert(name.as_string(), type_.clone());
-
             let modified_type = type_.clone().remove_specifier(CX_CONST);
 
             Some(
@@ -207,6 +211,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     // Array variables are themselves memory aliases, so wrapping
                     // them in a memory alias ends up adding an extra load operation
                     // when using them
+                    CXTypeKind::VariableLengthArray { .. } |
                     CXTypeKind::Array { .. } => {
                         Some(record)
                     },
@@ -413,6 +418,7 @@ pub(crate) fn coerce_value(
     let expr_type = coerce_mem_ref(env, expr)?;
 
     match expr_type.intrinsic_type(env.type_map)? {
+        CXTypeKind::VariableLengthArray { _type, .. } |
         CXTypeKind::Array { _type, .. } => Some(
             CXType::new(
                 expr_type.specifiers,

@@ -256,6 +256,9 @@ impl Display for CXTypeKind {
             CXTypeKind::Array { size, _type } => {
                 write!(f, "[{}; {}]", size, _type)
             },
+            CXTypeKind::VariableLengthArray { _type, .. } => {
+                write!(f, "[{}; variable]", _type)
+            },
             CXTypeKind::Opaque { name, size } => {
                 write!(f, "OPAQUE_{}(\"{}\")", size, name)
             },

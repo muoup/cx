@@ -80,6 +80,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Allocate { size } => {
                 write!(f, "alloca {size}")
             },
+            VirtualInstruction::VariableAllocate { size } => {
+                write!(f, "variable_alloca {size}")
+            },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
             },
@@ -328,9 +331,6 @@ impl Display for BCTypeKind {
                     .join(", ");
 
                 write!(f, "union {{ {} }}", fields)
-            },
-            BCTypeKind::Array { size, _type } => {
-                write!(f, "[{}; {}]", _type, size)
             },
 
             BCTypeKind::Unit => write!(f, "()"),

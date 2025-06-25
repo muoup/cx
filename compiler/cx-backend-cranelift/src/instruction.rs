@@ -3,6 +3,7 @@ use crate::routines::allocate_variable;
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
+use cranelift::codegen::ir::DynamicStackSlotData;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
@@ -33,7 +34,12 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     )
                 )
             )
-        }
+        },
+
+        VirtualInstruction::VariableAllocate {
+            ..
+        } => unimplemented!("Cranelift does not currently support dynamic stack allocation,\
+                             use the LLVM backend if this feature is desired."),
 
         VirtualInstruction::StringLiteral { str_id } => {
             let global_id = context.global_strs.get(*str_id as usize).cloned().unwrap();
