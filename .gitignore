@@ -1,5 +1,6 @@
 /target
 */.internal
+.idea
 
 *.data
 *.exe
