@@ -32,7 +32,11 @@ fn main() {
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
 
+    #[cfg(feature = "backend-llvm")]
     standard_compile(file_name, CompilerBackend::LLVM);
+
+    #[cfg(feature = "backend-cranelift")]
+    standard_compile(file_name, CompilerBackend::Cranelift);
 
     println!("Compilation complete!");
 }
