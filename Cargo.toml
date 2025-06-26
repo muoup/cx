@@ -12,5 +12,5 @@ members = [
     "compiler/cx-backend-cranelift",
     "compiler/cx-backend-llvm",
     "compiler/cx-lsp",
-    "compiler/cx-util",
+    "compiler/cx-util", "compiler/cx-exec-data",
 ]
