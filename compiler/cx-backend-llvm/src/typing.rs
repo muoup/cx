@@ -82,7 +82,6 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
 
-            BCTypeKind::Array { .. } |
             BCTypeKind::Pointer => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
 
             BCTypeKind::Struct { name, fields } => {

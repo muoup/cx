@@ -205,6 +205,7 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
         
         CXBinOp::ArrayIndex => pointer_inner.cloned(),
 
+        CXBinOp::LAnd | CXBinOp::LOr |
         CXBinOp::Less | CXBinOp::Greater | 
         CXBinOp::LessEqual | CXBinOp::GreaterEqual |
         CXBinOp::Equal | CXBinOp::NotEqual => {

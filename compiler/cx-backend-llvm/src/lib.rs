@@ -11,9 +11,10 @@ use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{AnyType, FunctionType};
 use inkwell::values::{AnyValue, AnyValueEnum, AsValueRef, BasicValue};
-use inkwell::OptimizationLevel;
+
 use std::collections::HashMap;
 use std::path::Path;
+use cx_exec_data::OptimizationLevel;
 use cx_util::format::dump_data;
 
 pub(crate) mod typing;
@@ -72,7 +73,8 @@ impl<'a> CodegenValue<'a> {
 
 pub fn bytecode_aot_codegen(
     bytecode: &ProgramBytecode,
-    output_path: &str
+    output_path: &str,
+    optimization_level: OptimizationLevel,
 ) -> Option<()> {
     let context = Context::create();
     Target::initialize_native(&InitializationConfig::default()).expect(
@@ -124,12 +126,21 @@ pub fn bytecode_aot_codegen(
         &TargetMachine::get_default_triple()
     ).expect("Failed to get target from triple");
 
+    let (pass_manager_str, inkwell_optimization_level) = match optimization_level {
+        OptimizationLevel::O0 => ("default<O0>", inkwell::OptimizationLevel::None),
+        OptimizationLevel::O1 => ("default<O1>", inkwell::OptimizationLevel::Less),
+        OptimizationLevel::O2 => ("default<O2>", inkwell::OptimizationLevel::Default),
+        OptimizationLevel::O3 => ("default<O3>", inkwell::OptimizationLevel::Aggressive),
+        OptimizationLevel::Osize => ("default<Os>", inkwell::OptimizationLevel::Default),
+        OptimizationLevel::Ofast => ("default<O3>", inkwell::OptimizationLevel::Aggressive),
+    };
+
     let target_machine = target
         .create_target_machine(
             &TargetMachine::get_default_triple(),
             "generic",
             "",
-            OptimizationLevel::None,
+            inkwell_optimization_level,
             RelocMode::Default,
             CodeModel::Default
         )
@@ -140,13 +151,13 @@ pub fn bytecode_aot_codegen(
     
     // println!("{}", global_state.module.print_to_string().to_string_lossy());
     
-    // global_state.module
-    //     .run_passes(
-    //         "default<O1>",
-    //         &target_machine,
-    //         PassBuilderOptions::create()
-    //     )
-    //     .expect("Failed to run passes");
+    global_state.module
+        .run_passes(
+            pass_manager_str,
+            &target_machine,
+            PassBuilderOptions::create()
+        )
+        .expect("Failed to run passes");
     
     let output = global_state.module.print_to_string();
     dump_data(&output.to_string_lossy());

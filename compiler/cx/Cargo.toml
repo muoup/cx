@@ -3,5 +3,10 @@ name = "cx"
 version = "0.0.0"
 edition = "2021"
 
+[features]
+default = ["cx-exec-pipeline/backend-cranelift"]
+backend-llvm = ["cx-exec-pipeline/backend-llvm"]
+
 [dependencies]
-cx-exec-pipeline = { path = "../cx-exec-pipeline" }
+cx-exec-pipeline = { path = "../cx-exec-pipeline", default-features = false, features = ["backend-llvm", "backend-cranelift"] }
+cx-exec-data = { path = "../cx-exec-data" }

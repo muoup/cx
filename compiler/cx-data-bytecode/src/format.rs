@@ -80,6 +80,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Allocate { size } => {
                 write!(f, "alloca {size}")
             },
+            VirtualInstruction::VariableAllocate { size } => {
+                write!(f, "variable_alloca {size}")
+            },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
             },
@@ -123,7 +126,7 @@ impl Display for VirtualInstruction {
                 Ok(())
             },
             VirtualInstruction::Branch { condition, true_block, false_block } => {
-                write!(f, "branch on {condition}; true = {true_block}, false = {false_block}")
+                write!(f, "branch on {condition}; true -> block{true_block}, false -> block{false_block}")
             },
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
@@ -328,9 +331,6 @@ impl Display for BCTypeKind {
                     .join(", ");
 
                 write!(f, "union {{ {} }}", fields)
-            },
-            BCTypeKind::Array { size, _type } => {
-                write!(f, "[{}; {}]", _type, size)
             },
 
             BCTypeKind::Unit => write!(f, "()"),

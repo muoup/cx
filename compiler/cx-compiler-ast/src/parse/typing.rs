@@ -5,6 +5,7 @@ use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
 use cx_util::{log_error, point_log_error};
+use crate::parse::expression::parse_expr;
 use crate::parse::global_scope::{parse_import, parse_params, ParseParamsResult};
 use crate::parse::parsing_tools::goto_statement_end;
 
@@ -289,26 +290,27 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
         TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
             data.toks.next();
 
-            if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket)) {
-                return Some(acc_type.pointer_to());
-            }
-
-            let Some(TokenKind::IntLiteral(size)) = next_kind!(data) else {
-                println!("Error parsing type, acc_type = {acc_type}");
-                log_error!("PARSER ERROR: Expected integer literal for array size, found: {:#?}", data.back().toks.peek());
+            let _type = match data.toks.peek()?.kind {
+                TokenKind::Punctuator(PunctuatorType::CloseBracket) => {
+                    acc_type.pointer_to()
+                },
+                TokenKind::IntLiteral(size) => {
+                    data.toks.next();
+                    CXTypeKind::Array { _type: Box::new(acc_type), size: size as usize }.to_val_type()
+                },
+                _ => {
+                    let size = parse_expr(data)?;
+                    
+                    CXTypeKind::VariableLengthArray { 
+                        _type: Box::new(acc_type),
+                        size: Box::new(size)
+                    }.to_val_type()
+                }
             };
-
+            
             assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
 
-            Some(
-                CXType::new(
-                    0,
-                    CXTypeKind::Array {
-                        size: size.clone() as usize,
-                        _type: Box::new(acc_type)
-                    }
-                )
-            )
+            Some(_type)
         },
 
         _ => Some(acc_type),

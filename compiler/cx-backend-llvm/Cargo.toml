@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-exec-data = { path = "../cx-exec-data" }
 cx-util = { path = "../cx-util" }
 
 inkwell = { version="0.6.0", default-features = false, features=["llvm18-1"] }

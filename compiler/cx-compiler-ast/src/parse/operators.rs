@@ -149,6 +149,10 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
 
             OperatorType::BAnd              => CXBinOp::LAnd,
             OperatorType::LOr               => CXBinOp::LOr,
+            OperatorType::LAnd              => CXBinOp::LAnd,
+            
+            OperatorType::LShift            => CXBinOp::LShift,
+            OperatorType::RShift            => CXBinOp::RShift,
 
             _ => todo!("op_to_binop: {op:?}")
         }

@@ -143,8 +143,6 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    println!("Outputting to {}", output);
-
     let obj = global_state.object_module.finish();
 
     let output_path = std::path::Path::new(output);

@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::SystemTime;
+use cx_exec_data::{CompilerBackend, OptimizationLevel};
 
 pub mod pipeline;
 
@@ -10,7 +11,7 @@ pub fn request_type_compilation(file_paths: &[String]) -> Option<Vec<String>> {
     let mut imports = Vec::new();
     
     for import_path in file_paths.iter() {
-        let internal_path = format!(".internal/{}.cx-types", import_path);
+        let internal_path = format!(".internal/{}/.cx-types", import_path);
         let internal_path = Path::new(&internal_path);
 
         if !internal_path.exists() ||
@@ -37,11 +38,11 @@ pub fn request_type_compilation(file_paths: &[String]) -> Option<Vec<String>> {
     Some(imports)
 }
 
-pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
+pub fn request_compile(file_paths: &[String], compiler_backend: CompilerBackend, optimization_level: OptimizationLevel) -> Option<Vec<String>> {
     let mut imports = Vec::new();
 
     for import_path in file_paths.iter() {
-        let internal_path = format!(".internal/{}.cx-functions", import_path);
+        let internal_path = format!(".internal/{}/.cx-functions", import_path);
         let internal_path = Path::new(&internal_path);
 
         if !internal_path.exists() ||
@@ -55,7 +56,9 @@ pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
                 format!("{}.cx", import_path)
             };
 
-            imports.extend(module_llvm_compile(format!(".internal/{}", import_path), cx_path_str)?);
+            imports.extend(
+                module_compile(format!(".internal/{}", import_path), cx_path_str, compiler_backend, optimization_level)?
+            );
         } else {
             // If the file exists in the internal directory from after compilation began,
             // we can skip recompilation.
@@ -69,7 +72,10 @@ pub fn request_compile(file_paths: &[String]) -> Option<Vec<String>> {
 pub fn module_type_compile(internal_dir: String, file_path: String) -> Option<Vec<String>> {
     let mut pipeline = pipeline::CompilerPipeline::new(
         file_path,
-        String::new()
+        String::new(),
+        
+        // No code is generated, so it does not matter which backend we use.
+        CompilerBackend::Cranelift
     );
     
     pipeline.internal_dir = internal_dir;
@@ -85,13 +91,13 @@ pub fn module_type_compile(internal_dir: String, file_path: String) -> Option<Ve
     Some(pipeline.imports)
 }
 
-pub fn module_llvm_compile(internal_dir: String, file_path: String) -> Option<Vec<String>> {
+pub fn module_compile(internal_dir: String, file_path: String, compiler_backend: CompilerBackend, optimization_level: OptimizationLevel) -> Option<Vec<String>> {
     let mut pipeline = pipeline::CompilerPipeline::new(
-        file_path,
-        "a.exe".to_owned()
+        file_path, "a.exe".to_owned(), compiler_backend
     );
     
     pipeline.internal_dir = internal_dir;
+    pipeline.optimization_level = optimization_level;
 
     let pipeline = pipeline
         .read_file()
@@ -106,16 +112,19 @@ pub fn module_llvm_compile(internal_dir: String, file_path: String) -> Option<Ve
         .dump()
         .generate_bytecode()
         .dump()
-        .llvm_codegen();
+        .codegen();
     
     Some(pipeline.imports)
 }
 
-pub fn standard_llvm_compile(file_path: &str) -> Option<()> {
-    let pipeline = pipeline::CompilerPipeline::new(
+pub fn standard_compile(file_path: &str, output_file: &str, compiler_backend: CompilerBackend, optimization_level: OptimizationLevel) -> Option<()> {
+    let mut pipeline = pipeline::CompilerPipeline::new(
         file_path.to_owned(),
-        "a.exe".to_owned()
+        output_file.to_owned(),
+        compiler_backend
     );
+
+    pipeline.optimization_level = optimization_level;
 
     pipeline
         .read_file()
@@ -131,7 +140,7 @@ pub fn standard_llvm_compile(file_path: &str) -> Option<()> {
         .dump()
         .generate_bytecode()
         .dump()
-        .llvm_codegen()
+        .codegen()
         .link();
     
     Some(())

@@ -40,6 +40,30 @@ pub(crate) fn generate_instruction<'a>(
                         .as_any_value_enum()
                 ),
             
+            VirtualInstruction::VariableAllocate { size } => {
+                let size = function_state
+                    .get_val_ref(size)?
+                    .get_value()
+                    .into_int_value();
+                
+                let allocation = function_state.builder
+                    .build_array_alloca(
+                        global_state.context.i8_type(),
+                        size,
+                        inst_num().as_str()
+                    )
+                    .ok()?
+                    .as_any_value_enum();
+                
+                function_state.builder
+                    .get_insert_block()?
+                    .get_last_instruction()?
+                    .set_alignment(8)
+                    .ok()?;
+                
+                CodegenValue::Value(allocation)
+            },
+            
             VirtualInstruction::DirectCall { func, args, method_sig } => {
                 let function_name =
                     function_state
