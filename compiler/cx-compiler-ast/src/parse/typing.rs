@@ -292,7 +292,6 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
 
             let _type = match data.toks.peek()?.kind {
                 TokenKind::Punctuator(PunctuatorType::CloseBracket) => {
-                    data.toks.next();
                     acc_type.pointer_to()
                 },
                 TokenKind::IntLiteral(size) => {

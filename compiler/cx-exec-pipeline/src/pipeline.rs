@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::path::Path;
 use std::process::{exit, Command};
+use cx_exec_data::{CompilerBackend, OptimizationLevel};
 
 #[derive(Default, Debug)]
 pub struct CompilerPipeline {
@@ -23,16 +24,9 @@ pub struct CompilerPipeline {
     pub imports: Vec<String>,
     
     backend: CompilerBackend,
+    pub optimization_level: OptimizationLevel,
     
     pipeline_stage: PipelineStage
-}
-
-#[derive(Default, Debug, Clone, Copy)]
-pub enum CompilerBackend {
-    #[default]
-    Cranelift,
-    
-    LLVM
 }
 
 #[derive(Default, Debug)]
@@ -218,7 +212,7 @@ impl CompilerPipeline {
             parser_data.type_symbols.insert(name.clone());
         }
         
-        request_compile(dependencies.as_slice(), self.backend)
+        request_compile(dependencies.as_slice(), self.backend, self.optimization_level)
             .expect("Failed to request compile for dependencies");
 
         let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types, dependencies) else {
@@ -287,7 +281,7 @@ impl CompilerPipeline {
             .expect("Failed to create internal directory");
 
         let output_path = format!("{}/.o", self.internal_dir);
-        cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str()).or_else(|| {
+        cx_backend_llvm::bytecode_aot_codegen(&bytecode, output_path.as_str(), self.optimization_level).or_else(|| {
             panic!("ERROR: Failed to generate code");
         });
 
@@ -300,7 +294,6 @@ impl CompilerPipeline {
         panic!("LLVM backend is not enabled, but was selected!")
     }
 
-    #[cfg(feature = "backend-cranelift")]
     fn cranelift_codegen(mut self) -> Self {
         let bytecode = match std::mem::take(&mut self.pipeline_stage) {
             PipelineStage::Bytecode(bytecode) => bytecode,
@@ -318,11 +311,6 @@ impl CompilerPipeline {
 
         self.pipeline_stage = PipelineStage::Codegen;
         self
-    }
-
-    #[cfg(not(feature = "backend-cranelift"))]
-    fn cranelift_codegen(mut self) -> Self {
-        panic!("Cranelift backend is not enabled, but was selected!")
     }
 
     pub fn link(mut self) -> Self {

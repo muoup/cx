@@ -298,6 +298,7 @@ dependencies = [
 name = "cx"
 version = "0.0.0"
 dependencies = [
+ "cx-exec-data",
  "cx-exec-pipeline",
 ]
 
@@ -319,6 +320,7 @@ name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
  "cx-data-bytecode",
+ "cx-exec-data",
  "cx-util",
  "inkwell",
 ]
@@ -379,6 +381,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-exec-data"
+version = "0.1.0"
+
+[[package]]
 name = "cx-exec-pipeline"
 version = "0.0.0"
 dependencies = [
@@ -390,6 +396,7 @@ dependencies = [
  "cx-compiler-typechecker",
  "cx-data-ast",
  "cx-data-bytecode",
+ "cx-exec-data",
  "cx-util",
 ]
 
