@@ -74,6 +74,10 @@ pub enum VirtualInstruction {
     FunctionParameter {
         param_index: u32
     },
+    
+    VariableAllocate {
+        size: ValueID
+    },
 
     Allocate {
         size: usize

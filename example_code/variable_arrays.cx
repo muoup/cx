@@ -1,0 +1,26 @@
+#include <stdio.h>
+
+void procedure(int n) {
+    int arr[n];
+    
+    printf("Array of size %d created.\n", sizeof(arr));
+    
+    for (int i = 0; i < n; i++) {
+        arr[i] = i * 2; // Initialize array with some values
+    }
+    
+    printf("Array contents: ");
+    
+    for (int i = 0; i < n; i++) {
+        printf("%d ", arr[i]);
+    }
+
+    printf("\n");
+}
+
+int main() {
+    procedure(5);
+    procedure(10);
+    procedure(15);
+    return 0;
+}
