@@ -85,7 +85,7 @@ pub fn parse_args() -> Result<AppArgs, String> {
         return Err("Input file must have a .cx extension".to_string());
     }
 
-    let default_output_file = input_file.replace(".cx", "");
+    let default_output_file = String::from("a.out");
     let output_file = output_file.unwrap_or(default_output_file);
 
     Ok(AppArgs {

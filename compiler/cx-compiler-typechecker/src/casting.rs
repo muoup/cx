@@ -122,17 +122,17 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
     match (l_type.intrinsic_type(env.type_map).cloned()?,
            r_type.intrinsic_type(env.type_map).cloned()?) {
 
-        (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. }) => {
-            ptr_int_binop_coercion(env, op, &l_type, rhs)
+        (CXTypeKind::PointerTo(l_inner), CXTypeKind::Integer { .. }) => {
+            ptr_int_binop_coercion(env, op, l_inner.as_ref(), rhs)
         },
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(_)) => {
+        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(r_inner)) => {
             if matches!(op, CXBinOp::Subtract) {
                 log_error!("Invalid operation [integer] - [pointer] for types {l_type} and {r_type}");
             }
             std::mem::swap(lhs, rhs);
 
-            ptr_int_binop_coercion(env, op, &r_type, lhs)
+            ptr_int_binop_coercion(env, op, r_inner.as_ref(), lhs)
         },
 
         (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. }) => {
@@ -161,7 +161,7 @@ pub(crate) fn ptr_int_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         CXBinOp::ArrayIndex => {
             let _type = type_check_traverse(env, non_pointer)?.clone();
 
-            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone(), CXCastType::IntToPtrDiff)?;
+            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone().pointer_to(), CXCastType::IntToPtrDiff)?;
         },
 
         // Requires two pointers

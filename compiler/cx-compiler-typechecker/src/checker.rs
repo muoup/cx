@@ -53,10 +53,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 },
                 CXUnOp::Dereference => {
                     let operand_type = coerce_value(env, operand.as_mut())?;
+                    
                     let CXTypeKind::PointerTo(deref) = get_intrinsic_type(env.type_map, &operand_type).cloned()? else {
                         log_error!("TYPE ERROR: Dereference operator can only be applied to pointers, found {operand} of type {operand_type}");
                     };
-
+                    
                     Some(
                         CXType::new(
                             0,
@@ -100,6 +101,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             if op.is_some() { todo!("Compound assignment") }
             
             let lhs_type = type_check_traverse(env, lhs)?.clone();
+            
             let CXTypeKind::MemoryAlias(lhs_type) = &lhs_type.kind else {
                 log_error!("TYPE ERROR: Assignment operator can only be applied to memory references, found: {lhs_type}");
             };
@@ -107,7 +109,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             if lhs_type.as_ref().get_specifier(CX_CONST) {
                 log_error!("TYPE ERROR: Assignment operator cannot be applied to const variables");
             }
-
+            
             implicit_coerce(env, rhs, lhs_type.as_ref().clone())?;
 
             Some(*lhs_type.clone())

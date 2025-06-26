@@ -20,7 +20,7 @@ macro_rules! expr_error_log {
     ($toks:expr, $start:expr, $end:expr, $($arg:tt)*) => {
         {
             use cx_util::log_error;
-            
+
             eprintln!("{}", $toks[$start .. $end].iter().map(|tok| format!("{}", tok)).collect::<Vec<_>>().join(" "));
             log_error!($($arg)*);
         }
