@@ -15,7 +15,7 @@ pub enum BCTypeKind {
     Unsigned { bytes: u8 },
     Float { bytes: u8 },
     Pointer,
-    
+
     Struct { name: String, fields: Vec<(String, BCType)> },
     Union { name: String, fields: Vec<(String, BCType)> },
 

@@ -110,7 +110,7 @@ pub(crate) fn add_implicit_cast(expr: &mut CXExpr, from_type: CXType, to_type: C
 }
 
 pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
-                                  lhs: &mut Box<CXExpr>, rhs: &mut Box<CXExpr>)
+                                  lhs: &mut CXExpr, rhs: &mut CXExpr)
                                   -> Option<CXType> {
     let l_type = coerce_value(env, lhs)?;
     let r_type = coerce_value(env, rhs)?;
@@ -203,7 +203,14 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
             Some(lhs.clone())
         },
         
-        CXBinOp::ArrayIndex => pointer_inner.cloned(),
+        CXBinOp::ArrayIndex => {
+            Some(
+                CXType {
+                    specifiers: pointer_inner?.specifiers,
+                    kind: CXTypeKind::MemoryAlias(Box::new(pointer_inner?.clone()))
+                }
+            )
+        },
 
         CXBinOp::LAnd | CXBinOp::LOr |
         CXBinOp::Less | CXBinOp::Greater | 
