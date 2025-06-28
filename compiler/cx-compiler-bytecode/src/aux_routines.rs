@@ -29,7 +29,7 @@ pub(crate) fn get_struct_field(
             });
         }
         
-        offset += field_type.size();
+        offset += field_type.fixed_size();
     }
     
     None

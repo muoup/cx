@@ -15,13 +15,13 @@ use cx_data_bytecode::types::BCTypeKind;
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
         VirtualInstruction::Allocate {
-            size
+            size, alignment
         } => {
             let slot = context.builder.create_sized_stack_slot(
                 StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     StackSize::from(*size as u32),
-                    0u8
+                    *alignment
                 )
             );
 
@@ -38,7 +38,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::VariableAllocate {
             ..
-        } => unimplemented!("Cranelift does not currently support dynamic stack allocation,\
+        } => unimplemented!("The Cranelift backend does not currently support dynamic stack allocation, \
                              use the LLVM backend if this feature is desired."),
 
         VirtualInstruction::StringLiteral { str_id } => {
@@ -132,7 +132,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     let return_value = context.variable_table.get(value).cloned().unwrap();
 
                     if context.function_prototype.return_type.is_structure() {
-                        let size = context.function_prototype.return_type.size();
+                        let size = context.function_prototype.return_type.fixed_size();
                         let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
                         let callee_buffer = Value::from_u32(0);
 
@@ -231,7 +231,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
         
         VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
-            let size = ptr_type.size() as u32;
+            let size = ptr_type.fixed_size();
             let val = context.variable_table.get(value).cloned().unwrap();
             
             let ptr_diff = context.builder.ins().imul_imm(
@@ -433,7 +433,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .as_value();
 
             if type_.is_structure() {
-                let size = type_.size();
+                let size = type_.fixed_size();
                 let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
 
                 context.builder.call_memcpy(
@@ -653,7 +653,7 @@ fn generate_params(
     if prototype.return_type.is_structure() {
         let temp_buffer = allocate_variable(
             context,
-            prototype.return_type.size() as u32,
+            prototype.return_type.fixed_size() as u32,
             None
         )?;
 

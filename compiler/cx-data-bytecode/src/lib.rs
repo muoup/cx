@@ -76,11 +76,13 @@ pub enum VirtualInstruction {
     },
     
     VariableAllocate {
-        size: ValueID
+        size: ValueID,
+        alignment: u8,
     },
 
     Allocate {
-        size: usize
+        size: usize,
+        alignment: u8,
     },
 
     Load {

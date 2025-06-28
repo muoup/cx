@@ -165,7 +165,7 @@ pub(crate) fn implicit_cast(
         CXCastType::IntToFloat => {
             builder.add_instruction(
                 VirtualInstruction::IntToFloat {
-                    from: builder.convert_cx_type(from_type)?,
+                    from: builder.convert_fixed_cx_type(from_type)?,
                     value,
                 },
                 to_type.clone()
@@ -175,7 +175,7 @@ pub(crate) fn implicit_cast(
         CXCastType::FloatToInt => {
             builder.add_instruction(
                 VirtualInstruction::FloatToInt {
-                    from: builder.convert_cx_type(from_type)?,
+                    from: builder.convert_fixed_cx_type(from_type)?,
                     value,
                 },
                 to_type.clone()

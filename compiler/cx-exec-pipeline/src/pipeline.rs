@@ -176,7 +176,7 @@ impl CompilerPipeline {
         self
     }
     
-    pub fn emit_type_defs(mut self) -> Self {
+    pub fn emit_type_defs(self) -> Self {
         let (_, types, public_types, _) = match &self.pipeline_stage {
             PipelineStage::TypesAndDependences(lexed, types, public_types, dependencies) => (lexed, types, public_types, dependencies),
             _ => panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!"),
@@ -188,7 +188,7 @@ impl CompilerPipeline {
         self
     }
     
-    pub fn emit_function_defs(mut self) -> Self {
+    pub fn emit_function_defs(self) -> Self {
         let parsed = match &self.pipeline_stage {
             PipelineStage::Parsed(parsed) => parsed,
             _ => panic!("PIPELINE ERROR: Cannot emit function definitions without types and dependencies!"),
@@ -262,7 +262,7 @@ impl CompilerPipeline {
         Some(ast)
     }
     
-    pub fn codegen(mut self) -> Self {
+    pub fn codegen(self) -> Self {
         match self.backend {
             CompilerBackend::LLVM => self.llvm_codegen(),
             CompilerBackend::Cranelift => self.cranelift_codegen(),
@@ -290,7 +290,7 @@ impl CompilerPipeline {
     }
 
     #[cfg(not(feature = "backend-llvm"))]
-    fn llvm_codegen(mut self) -> Self {
+    fn llvm_codegen(self) -> Self {
         panic!("LLVM backend is not enabled, but was selected!")
     }
 

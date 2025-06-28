@@ -77,11 +77,11 @@ impl Display for ValueID {
 impl Display for VirtualInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            VirtualInstruction::Allocate { size } => {
-                write!(f, "alloca {size}")
+            VirtualInstruction::Allocate { size, alignment } => {
+                write!(f, "alloca {size} (alignment: {})", alignment)
             },
-            VirtualInstruction::VariableAllocate { size } => {
-                write!(f, "variable_alloca {size}")
+            VirtualInstruction::VariableAllocate { size, alignment } => {
+                write!(f, "variable_alloca {size} (alignment: {})", size)
             },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
@@ -334,6 +334,9 @@ impl Display for BCTypeKind {
             },
 
             BCTypeKind::Unit => write!(f, "()"),
+            BCTypeKind::VariableSized { size, alignment } => {
+                write!(f, "variable_sized (size: {}, alignment: {})", size, alignment)
+            },
         }
     }
 }
