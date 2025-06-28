@@ -26,6 +26,12 @@ void lotto(int *a)
 		numbers[r] = 1;
 	}
 
+//	for ( x=0; x<BALLS; x++ )
+//    {
+//        if( numbers[x] )
+//            printf("%d ", x+1);
+//    }
+
 	y = 0;
 	for( x=0; x<BALLS; x++ )
 	{
@@ -94,11 +100,14 @@ int main()
 
 	/* obtain the total and the average */
 	total = 0;
-	for( x=0; x<tally; x++ )
+	for( x=0; x<tally; x++ ) {
 		total = total + results[x];		    /* add up all the values */
 
+		printf("results[%d] = %d\n", x, results[x]); /* print each result */
+	}
+
 	/* reporting statements */
-    printf("(%d/%d)\n", total, tally);
+    printf("(%ld/%ld)\n", total, tally);
 
 	return(0);
 }

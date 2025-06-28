@@ -118,22 +118,6 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } =>
             typecheck_access(env, lhs.as_mut(), rhs.as_mut()),
 
-        CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
-            let lhs = coerce_value(env, lhs)?;
-            implicit_coerce(env, rhs, CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type())?;
-
-            let CXTypeKind::PointerTo(inner) = lhs.intrinsic_type(&env.type_map).cloned()? else {
-                log_error!("TYPE ERROR: Array index operator can only be applied to pointers, found: {lhs}");
-            };
-            
-            Some(
-                CXType::new(
-                    lhs.specifiers,
-                    CXTypeKind::MemoryAlias(inner.clone())
-                )
-            )
-        },
-
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
             let mut lhs_type = coerce_mem_ref(env, lhs)?;
 
