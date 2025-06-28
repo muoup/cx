@@ -43,7 +43,7 @@ pub(crate) fn prepare_method_call<'a>(
         .collect::<Vec<_>>();
 
     if prototype.return_type.is_structure() {
-        let type_size = prototype.return_type.size();
+        let type_size = prototype.return_type.fixed_size();
         let temp_buffer = allocate_variable(context, type_size as u32, None)?;
 
         params.insert(0, temp_buffer);

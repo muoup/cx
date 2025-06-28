@@ -172,18 +172,6 @@ impl CXType {
         matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Unit))
     }
 
-    pub fn intrin_eq(&self, other: &CXType, type_map: &CXTypeMap) -> bool {
-        same_type(type_map, self, other)
-    }
-
-    pub fn is_intrinsic(&self, intrin: &CXTypeKind, type_map: &CXTypeMap) -> bool {
-        matches!(get_intrinsic_type(type_map, self), intrin)
-    }
-
-    pub fn size(&self, type_map: &CXTypeMap) -> Option<TypeSize> {
-        get_type_size(type_map, self)
-    }
-
     pub fn pointer_to(self) -> Self {
         CXType {
             specifiers: 0,
@@ -267,108 +255,6 @@ impl TypeSize {
             TypeSize::Variable { .. } => panic!("{msg}: Expected fixed size, found variable size"),
         }
     }
-}
-
-pub fn get_type_size(type_map: &CXTypeMap, type_: &CXType) -> Option<TypeSize> {
-    Some(
-        match &type_.kind {
-            CXTypeKind::Unit => TypeSize::Fixed(0),
-
-            CXTypeKind::Float { bytes } |
-            CXTypeKind::Integer { bytes, .. } => TypeSize::Fixed(*bytes as usize),
-
-            CXTypeKind::MemoryAlias(inner) =>
-                get_type_size(type_map, inner.as_ref())?,
-
-            CXTypeKind::Array { _type, size } => {
-                let elem_size = get_type_size(type_map, _type)?;
-                
-                match elem_size {
-                    TypeSize::Fixed(field_size) 
-                        => TypeSize::Fixed(field_size * size),
-
-                    TypeSize::Variable { .. } => {
-                        let size_literal = CXExprKind::IntLiteral {
-                            val: *size as i64,
-                            bytes: 8
-                        }.into_expr(0, 0);
-                        
-                        TypeSize::Variable {
-                            elem_size: Box::new(elem_size),
-                            size_expr: Box::new(size_literal)
-                        }
-                    }
-                }
-            },
-
-            CXTypeKind::Structured { fields, .. } =>
-                TypeSize::Fixed(
-                    fields.iter()
-                        .map(|field|
-                            get_type_size(type_map, &field.1).unwrap().assert_fixed("Structured type field size"))
-                        .sum()
-                ),
-            CXTypeKind::Union { fields, .. } =>
-                TypeSize::Fixed(
-                    fields.iter()
-                        .map(|field|
-                            get_type_size(type_map, &field.1).unwrap().assert_fixed("Union type field size"))
-                        .max()?
-                ),
-
-            CXTypeKind::PointerTo(_) |
-            CXTypeKind::Function { .. } => TypeSize::Fixed(8),
-
-            CXTypeKind::Opaque { size, .. } => TypeSize::Fixed(*size),
-            CXTypeKind::Identifier { name, .. } =>
-                type_map.get(name.as_str())
-                    .map(|_type| get_type_size(type_map, _type))
-                    .flatten()?,
-
-            CXTypeKind::VariableLengthArray { _type, size } => {
-                TypeSize::Variable {
-                    elem_size: Box::new(get_type_size(type_map, _type)?),
-                    size_expr: size.clone()
-                }
-            }
-        }
-    )
-}
-
-pub struct StructAccessRecord {
-    pub field_type: CXType,
-    pub field_offset: usize,
-    pub field_index: usize,
-    pub field_name: String
-}
-
-pub fn struct_field_access(
-    type_map: &CXTypeMap,
-    type_: &CXType,
-    field: &str
-) -> Option<StructAccessRecord> {
-    let CXTypeKind::Structured { fields, .. } = get_intrinsic_type(type_map, type_)? else {
-        log_error!("Cannot access field {field} of non-structured type {type_}");
-    };
-
-    let mut offset = 0;
-
-    for (i, (name, ty)) in fields.iter().enumerate() {
-        if name == field {
-            return Some(
-                StructAccessRecord {
-                    field_type: ty.clone(),
-                    field_offset: offset,
-                    field_index: i,
-                    field_name: name.clone()
-                }
-            );
-        }
-
-        offset += get_type_size(type_map, ty)?.assert_fixed("Structured type field size");
-    }
-
-    None
 }
 
 pub fn struct_field_type(

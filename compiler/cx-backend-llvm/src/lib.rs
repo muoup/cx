@@ -149,8 +149,6 @@ pub fn bytecode_aot_codegen(
     global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {:#?}", err));
     global_state.module.set_triple(&TargetMachine::get_default_triple());
     
-    // println!("{}", global_state.module.print_to_string().to_string_lossy());
-    
     global_state.module
         .run_passes(
             pass_manager_str,

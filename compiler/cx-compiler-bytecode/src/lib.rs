@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::value_type::{get_type_size, CXType};
+use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
 use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_data_bytecode::types::BCTypeKind;
@@ -26,10 +26,13 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
         builder.new_function(prototype);
 
         for (i, arg) in prototype.params.iter().enumerate() {
+            let bc_type = builder.convert_cx_type(&arg.type_)?;
+            
             let memory = builder.add_instruction_bt(
                 VirtualInstruction::Allocate {
-                    size: get_type_size(&builder.cx_type_map, &arg.type_)?
+                    size: bc_type.size()
                         .assert_fixed("Function argument type must be fixed size"),
+                    alignment: bc_type.alignment(),
                 },
                 BCTypeKind::Pointer.into()
             )?;
@@ -40,12 +43,14 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
                 },
                 arg.type_.clone()
             )?;
+            
+            let arg_type = builder.convert_cx_type(&arg.type_)?;
 
             builder.add_instruction(
                 VirtualInstruction::Store {
                     value,
                     memory,
-                    type_: builder.convert_cx_type(&arg.type_)?,
+                    type_: arg_type
                 },
                 CXType::unit()
             )?;

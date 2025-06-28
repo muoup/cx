@@ -1,7 +1,4 @@
-use std::thread::Builder;
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap};
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use crate::{BCFunctionPrototype, BCParameter};
+use crate::ValueID;
 
 #[derive(Debug, Clone)]
 pub struct BCType {
@@ -18,8 +15,25 @@ pub enum BCTypeKind {
 
     Struct { name: String, fields: Vec<(String, BCType)> },
     Union { name: String, fields: Vec<(String, BCType)> },
+    
+    VariableSized { size: ValueID, alignment: u8 },
 
     Unit
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BCTypeSize {
+    Fixed(usize),
+    Variable(ValueID),
+}
+
+impl BCTypeSize {
+    pub fn assert_fixed(self, msg: &str) -> usize {
+        match self {
+            BCTypeSize::Fixed(size) => size,
+            BCTypeSize::Variable(_) => panic!("{}: expected fixed size, got variable", msg),
+        }
+    }
 }
 
 impl From<BCTypeKind> for BCType {
@@ -29,7 +43,14 @@ impl From<BCTypeKind> for BCType {
 }
 
 impl BCType {
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> BCTypeSize {
+        match &self.kind {
+            BCTypeKind::VariableSized { size, .. } => BCTypeSize::Variable(*size),
+            _ => BCTypeSize::Fixed(self.fixed_size()),
+        }
+    }
+    
+    pub fn fixed_size(&self) -> usize {
         match &self.kind {
             BCTypeKind::Opaque { bytes } => *bytes,
             BCTypeKind::Signed { bytes } => *bytes as usize,
@@ -37,10 +58,33 @@ impl BCType {
             BCTypeKind::Float { bytes } => *bytes as usize,
             BCTypeKind::Pointer => 8, // TODO: make this configurable
             BCTypeKind::Struct { fields, .. }
-                => fields.iter().map(|(_, field)| field.size()).sum(),
+                => fields.iter()
+                        .map(|(_, field)| field.fixed_size())
+                        .sum(),
             BCTypeKind::Union { fields, .. }
-                => fields.iter().map(|(_, field)| field.size()).max().unwrap(),
+                => fields.iter()
+                        .map(|(_, field)| field.fixed_size())
+                        .max()
+                        .unwrap(),
             BCTypeKind::Unit => 0,
+            
+            _ => panic!("Invalid type for fixed size: {:?}", self.kind),
+        }
+    }
+    
+    pub fn alignment(&self) -> u8 {
+        match &self.kind {
+            BCTypeKind::Opaque { bytes } => *bytes as u8,
+            BCTypeKind::Signed { bytes } => *bytes,
+            BCTypeKind::Unsigned { bytes } => *bytes,
+            BCTypeKind::Float { bytes } => *bytes,
+            BCTypeKind::Pointer => 8, // TODO: make this configurable
+            BCTypeKind::Struct { fields, .. }
+                => fields.iter().map(|(_, field)| field.alignment()).max().unwrap_or(1),
+            BCTypeKind::Union { fields, .. }
+                => fields.iter().map(|(_, field)| field.alignment()).max().unwrap_or(1),
+            BCTypeKind::Unit => 1,
+            BCTypeKind::VariableSized { alignment, .. } => *alignment,
         }
     }
     

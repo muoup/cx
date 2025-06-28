@@ -28,19 +28,25 @@ pub(crate) fn generate_instruction<'a>(
 ) -> Option<CodegenValue<'a>> {
     Some(
         match &block_instruction.instruction {
-            VirtualInstruction::Allocate { size } =>
-                CodegenValue::Value(
-                    function_state
-                        .builder
-                        .build_alloca(
-                            global_state.context.i8_type().array_type(*size as u32),
-                            inst_num().as_str()
-                        )
-                        .ok()?
-                        .as_any_value_enum()
-                ),
+            VirtualInstruction::Allocate { size, alignment } => {
+                let inst = function_state.builder
+                    .build_alloca(
+                        global_state.context.i8_type().array_type(*size as u32),
+                        inst_num().as_str()
+                    )
+                    .ok()?
+                    .as_any_value_enum();
+                
+                function_state.builder
+                    .get_insert_block()?
+                    .get_last_instruction()?
+                    .set_alignment(*alignment as u32)
+                    .ok()?;
+                
+                CodegenValue::Value(inst)
+            },
             
-            VirtualInstruction::VariableAllocate { size } => {
+            VirtualInstruction::VariableAllocate { size, alignment } => {
                 let size = function_state
                     .get_val_ref(size)?
                     .get_value()
@@ -58,7 +64,7 @@ pub(crate) fn generate_instruction<'a>(
                 function_state.builder
                     .get_insert_block()?
                     .get_last_instruction()?
-                    .set_alignment(8)
+                    .set_alignment(*alignment as u32)
                     .ok()?;
                 
                 CodegenValue::Value(allocation)
