@@ -331,6 +331,7 @@ version = "0.0.0"
 dependencies = [
  "cx-compiler-modules",
  "cx-data-ast",
+ "cx-exec-data",
  "cx-util",
 ]
 
@@ -360,6 +361,7 @@ dependencies = [
  "cx-compiler-modules",
  "cx-data-ast",
  "cx-data-bytecode",
+ "cx-exec-data",
  "cx-util",
 ]
 
@@ -762,6 +764,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "integration-tests"
+version = "0.1.0"
+dependencies = [
+ "cx-exec-data",
+ "cx-exec-pipeline",
 ]
 
 [[package]]

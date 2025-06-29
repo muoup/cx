@@ -75,7 +75,7 @@ impl CompilerPipeline {
         let extensionless = source.replace(".cx", "");
         let el_as_path = Path::new(&extensionless);
 
-        let internal = format!(".internal/{}{}", 
+        let internal = format!(".internal/{}/{}", 
                                el_as_path.parent().unwrap().to_str().unwrap(),
                                el_as_path.file_stem().unwrap().to_str().unwrap());
 
