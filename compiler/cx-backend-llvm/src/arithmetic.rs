@@ -6,7 +6,8 @@ use crate::typing::{any_to_basic_type, bc_llvm_type};
 
 pub(crate) fn generate_ptr_binop<'a>(
     global_state: &GlobalState<'a>, function_state: &FunctionState<'a>,
-    ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, op: BCPtrBinOp
+    ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, 
+    op: BCPtrBinOp
 ) -> Option<CodegenValue<'a>> {
     let ptr_type = bc_llvm_type(global_state, ptr_type)?;
 
@@ -18,9 +19,11 @@ pub(crate) fn generate_ptr_binop<'a>(
                         .expect("Expected a basic type for pointer addition");
 
                     function_state.builder
-                        .build_in_bounds_gep(basic_type,
-                                             left_value.into_pointer_value(), &[right_value.into_int_value()],
-                                             crate::instruction::inst_num().as_str())
+                        .build_in_bounds_gep(
+                            basic_type,
+                            left_value.into_pointer_value(), &[right_value.into_int_value()],
+                            crate::instruction::inst_num().as_str()
+                        )
                         .ok()?
                         .as_any_value_enum()
                 }
@@ -34,9 +37,11 @@ pub(crate) fn generate_ptr_binop<'a>(
                         .as_any_value_enum();
 
                     function_state.builder
-                        .build_in_bounds_gep(basic_type,
-                                             left_value.into_pointer_value(), &[negative.into_int_value()],
-                                             crate::instruction::inst_num().as_str())
+                        .build_in_bounds_gep(
+                            basic_type,
+                            left_value.into_pointer_value(), &[negative.into_int_value()],
+                            crate::instruction::inst_num().as_str()
+                        )
                         .ok()?
                         .as_any_value_enum()
                 }
