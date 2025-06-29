@@ -260,10 +260,15 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::Float { bytes } =>
                 BCTypeKind::Float { bytes: *bytes },
 
-            CXTypeKind::Array { .. } |
             CXTypeKind::Function { .. } |
             CXTypeKind::PointerTo(_) =>
                 BCTypeKind::Pointer,
+            
+            CXTypeKind::Array { _type, size } =>
+                BCTypeKind::Array {
+                    element: Box::new(convert_fixed_type(cx_type_map, _type)?),
+                    size: *size
+                },
             
             CXTypeKind::MemoryAlias(inner) => {
                 match inner.intrinsic_type(cx_type_map)? {
