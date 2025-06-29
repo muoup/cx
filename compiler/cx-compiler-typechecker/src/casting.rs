@@ -74,7 +74,7 @@ pub fn implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
         return Some(None);
     };
     
-    add_implicit_cast(expr, from_type.clone(), to_type.clone(), cast)?;
+    add_implicit_cast(env, expr, from_type.clone(), to_type.clone(), cast)?;
 
     Some(Some(()))
 }
@@ -89,12 +89,12 @@ pub fn explicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
         return None;
     };
 
-    add_implicit_cast(expr, from_type.clone(), to_type.clone(), expl_cast_type)?;
+    add_implicit_cast(env, expr, from_type.clone(), to_type.clone(), expl_cast_type)?;
 
     Some(())
 }
 
-pub(crate) fn add_implicit_cast(expr: &mut CXExpr, from_type: CXType, to_type: CXType, cast_type: CXCastType) -> Option<()> {
+pub(crate) fn add_implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: CXType, to_type: CXType, cast_type: CXCastType) -> Option<()> {
     let old_expr = std::mem::take(expr);
     let start_index = old_expr.start_index;
     let end_index = old_expr.end_index;
@@ -102,16 +102,16 @@ pub(crate) fn add_implicit_cast(expr: &mut CXExpr, from_type: CXType, to_type: C
     *expr = CXExprKind::ImplicitCast {
         expr: Box::new(old_expr),
         from_type,
-        to_type,
+        to_type: to_type.clone(),
         cast_type
     }.into_expr(start_index, end_index);
+    env.expr_type_map.insert(expr, to_type);
     
     Some(())
 }
 
 pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
-                                  lhs: &mut CXExpr, rhs: &mut CXExpr)
-                                  -> Option<CXType> {
+                                  lhs: &mut CXExpr, rhs: &mut CXExpr) -> Option<CXType> {
     let l_type = coerce_value(env, lhs)?;
     let r_type = coerce_value(env, rhs)?;
     
@@ -137,9 +137,9 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
 
         (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. }) => {
             if b1 > b2 {
-                add_implicit_cast(rhs, r_type.clone(), l_type.clone(), CXCastType::IntegralCast)?;
+                add_implicit_cast(env, rhs, r_type.clone(), l_type.clone(), CXCastType::IntegralCast)?;
             } else if b1 < b2 {
-                add_implicit_cast(lhs, l_type.clone(), r_type.clone(), CXCastType::IntegralCast)?;
+                add_implicit_cast(env, lhs, l_type.clone(), r_type.clone(), CXCastType::IntegralCast)?;
             }
             
             binop_type(&op, None, &l_type)
@@ -161,7 +161,7 @@ pub(crate) fn ptr_int_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         CXBinOp::ArrayIndex => {
             let _type = type_check_traverse(env, non_pointer)?.clone();
 
-            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone().pointer_to(), CXCastType::IntToPtrDiff)?;
+            add_implicit_cast(env, non_pointer, _type.clone(), pointer_inner.clone().pointer_to(), CXCastType::IntToPtrDiff)?;
         },
 
         // Requires two pointers
@@ -170,7 +170,7 @@ pub(crate) fn ptr_int_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         CXBinOp::Equal | CXBinOp::NotEqual => {
             let _type = type_check_traverse(env, non_pointer)?.clone();
 
-            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone().pointer_to(), CXCastType::IntToPtr)?;
+            add_implicit_cast(env, non_pointer, _type.clone(), pointer_inner.clone().pointer_to(), CXCastType::IntToPtr)?;
         },
 
         _ => panic!("Invalid binary operation {op} for pointer type")
@@ -188,7 +188,8 @@ pub(crate) fn ptr_ptr_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         CXBinOp::Equal | CXBinOp::NotEqual => {
             let _type = type_check_traverse(env, non_pointer)?.clone();
 
-            add_implicit_cast(non_pointer, _type.clone(), pointer_inner.clone(), CXCastType::BitCast)?;
+            add_implicit_cast(env, non_pointer, _type.clone(), pointer_inner.clone(), CXCastType::BitCast)?;
+            type_check_traverse(env, non_pointer)?;
         },
 
         _ => panic!("Invalid binary operation {op} for pointer type")

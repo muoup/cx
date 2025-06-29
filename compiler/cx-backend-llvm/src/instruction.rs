@@ -408,8 +408,18 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_int_value();
                 
+                let signed = match block_instruction.value.type_.kind {
+                    BCTypeKind::Signed { .. } => true,
+                    BCTypeKind::Unsigned { .. } => false,
+                    _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp
+                };
+                
                 CodegenValue::Value(
                     match op {
+                        BCIntUnOp::NEG if signed => function_state.builder
+                            .build_int_nsw_neg(value, inst_num().as_str())
+                            .ok()?
+                            .as_any_value_enum(),
                         BCIntUnOp::NEG => function_state.builder
                             .build_int_neg(value, inst_num().as_str())
                             .ok()?
@@ -427,7 +437,6 @@ pub(crate) fn generate_instruction<'a>(
                             )
                             .ok()?
                             .as_any_value_enum(),
-                        _ => return None, // Unsupported operation for IntegerUnOp
                     }
                 )
             },
@@ -435,13 +444,21 @@ pub(crate) fn generate_instruction<'a>(
             VirtualInstruction::IntegerBinOp { left, right, op } => {
                 let left = function_state
                     .get_val_ref(left)?
-                    .get_value();
+                    .get_value()
+                    .into_int_value();
                 
                 let right = function_state
                     .get_val_ref(right)?
-                    .get_value();
+                    .get_value()
+                    .into_int_value();
+                
+                let signed = match block_instruction.value.type_.kind {
+                    BCTypeKind::Signed { .. } => true,
+                    BCTypeKind::Unsigned { .. } => false,
+                    _ => return None, // Unsupported type for IntegerBinOp
+                };
 
-                generate_int_binop(global_state, function_state, left, right, *op)?
+                generate_int_binop(global_state, function_state, left, right, *op, signed)?
             },
             
             VirtualInstruction::FloatUnOp { value, op } => {

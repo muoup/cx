@@ -314,6 +314,9 @@ impl Display for BCTypeKind {
             BCTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
             BCTypeKind::Pointer => write!(f, "*"),
 
+            BCTypeKind::Array { element, size } => {
+                write!(f, "[{}; {}]", element, size)
+            },
             BCTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()

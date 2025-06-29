@@ -392,7 +392,6 @@ fn coerce_mem_ref(
             }.into_expr(start_index, end_index);
         }
     }
-    
 
     type_check_traverse(env, expr).cloned()
 }

@@ -13,6 +13,7 @@ pub enum BCTypeKind {
     Float { bytes: u8 },
     Pointer,
 
+    Array { element: Box<BCType>, size: usize },
     Struct { name: String, fields: Vec<(String, BCType)> },
     Union { name: String, fields: Vec<(String, BCType)> },
     
@@ -57,6 +58,8 @@ impl BCType {
             BCTypeKind::Unsigned { bytes } => *bytes as usize,
             BCTypeKind::Float { bytes } => *bytes as usize,
             BCTypeKind::Pointer => 8, // TODO: make this configurable
+            BCTypeKind::Array { element, size } =>
+                element.fixed_size() * size,
             BCTypeKind::Struct { fields, .. }
                 => fields.iter()
                         .map(|(_, field)| field.fixed_size())
@@ -79,6 +82,7 @@ impl BCType {
             BCTypeKind::Unsigned { bytes } => *bytes,
             BCTypeKind::Float { bytes } => *bytes,
             BCTypeKind::Pointer => 8, // TODO: make this configurable
+            BCTypeKind::Array { element, .. } => element.alignment(),
             BCTypeKind::Struct { fields, .. }
                 => fields.iter().map(|(_, field)| field.alignment()).max().unwrap_or(1),
             BCTypeKind::Union { fields, .. }
