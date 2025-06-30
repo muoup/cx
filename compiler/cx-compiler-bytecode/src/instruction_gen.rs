@@ -169,8 +169,12 @@ pub fn generate_instruction(
             }
         },
 
-        CXExprKind::BinOp { lhs, rhs, op } => 
-            generate_binop(builder, lhs.as_ref(), rhs.as_ref(), op),
+        CXExprKind::BinOp { lhs, rhs, op } => {
+            let return_type = builder.get_expr_type(expr)?;
+            let as_bc = builder.convert_cx_type(&return_type)?;
+            
+            generate_binop(builder, lhs.as_ref(), rhs.as_ref(), as_bc, op)
+        }
         
         CXExprKind::Block { exprs, value } => {
             for expr in exprs {
@@ -346,6 +350,7 @@ pub fn generate_instruction(
                         inner.as_ref(),
                         loaded_val,
                         one,
+                        builder.convert_fixed_cx_type(inner.as_ref())?,
                         &CXBinOp::Add
                     )?;
 
@@ -393,6 +398,7 @@ pub fn generate_instruction(
                         inner.as_ref(),
                         loaded_val,
                         one,
+                        builder.convert_fixed_cx_type(inner.as_ref())?,
                         &CXBinOp::Add
                     )?;
 
@@ -650,20 +656,34 @@ pub fn generate_instruction(
 pub(crate) fn generate_binop(
     builder: &mut BytecodeBuilder, 
     lhs: &CXExpr, rhs: &CXExpr, 
+    return_type: BCType,
     op: &CXBinOp
 ) -> Option<ValueID> {
     match op {
         CXBinOp::LAnd | CXBinOp::LOr => {
             // Short circuit evaluation for logical operators
-            let left_id = generate_instruction(builder, lhs)?;
-            let left_type = builder.get_type(left_id)?.clone();
-            
+            let false_imm = builder.add_instruction(
+                VirtualInstruction::Immediate {
+                    value: 0
+                },
+                builder.get_expr_type(lhs).unwrap()
+            )?;
             let storage = builder.add_instruction_bt(
                 VirtualInstruction::Allocate {
-                    size: left_type.fixed_size(),
-                    alignment: left_type.alignment(),
+                    size: 1,
+                    alignment: 1,
                 },
                 BCType::from(BCTypeKind::Pointer)
+            )?;
+            
+            let left_id = generate_instruction(builder, lhs)?;
+            let left_cmp = builder.add_instruction(
+                VirtualInstruction::IntegerBinOp {
+                    left: left_id,
+                    right: false_imm,
+                    op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap()
+                },
+                CXTypeKind::Integer { bytes: 1, signed: true }.to_val_type()
             )?;
             
             let standard_block = builder.create_block();
@@ -678,7 +698,7 @@ pub(crate) fn generate_binop(
             
             builder.add_instruction(
                 VirtualInstruction::Branch {
-                    condition: left_id,
+                    condition: left_cmp,
                     true_block,
                     false_block
                 },
@@ -688,11 +708,20 @@ pub(crate) fn generate_binop(
             builder.set_current_block(standard_block);
             
             let right_id = generate_instruction(builder, rhs)?;
+            let right_cmp = builder.add_instruction(
+                VirtualInstruction::IntegerBinOp {
+                    left: right_id,
+                    right: false_imm,
+                    op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap()
+                },
+                CXTypeKind::Integer { bytes: 1, signed: true }.to_val_type()
+            )?;
+            
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: storage.clone(),
-                    value: right_id,
-                    type_: left_type.clone()
+                    value: right_cmp,
+                    type_: BCTypeKind::Signed { bytes: 1 }.into()
                 },
                 CXType::unit()
             );
@@ -709,8 +738,8 @@ pub(crate) fn generate_binop(
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: storage.clone(),
-                    value: left_id,
-                    type_: left_type.clone()
+                    value: left_cmp,
+                    type_: BCTypeKind::Signed { bytes: 1 }.into()
                 },
                 CXType::unit()
             );
@@ -728,7 +757,7 @@ pub(crate) fn generate_binop(
                 VirtualInstruction::Load {
                     value: storage
                 },
-                left_type.clone()
+                return_type
             )
         },
         
@@ -741,6 +770,7 @@ pub(crate) fn generate_binop(
                 builder,
                 &cx_lhs_type,
                 left_id, right_id,
+                return_type,
                 op
             )
         },
@@ -752,11 +782,10 @@ pub(crate) fn generate_algebraic_binop(
     cx_lhs_type: &CXType,
     left_id: ValueID,
     right_id: ValueID,
+    return_type: BCType,
     op: &CXBinOp
 ) -> Option<ValueID> {
-    let lhs_type = builder.get_type(left_id)?.clone();
-
-    match lhs_type.kind {
+    match return_type.kind {
         BCTypeKind::Signed { .. } => {
             builder.add_instruction_bt(
                 VirtualInstruction::IntegerBinOp {
@@ -764,7 +793,7 @@ pub(crate) fn generate_algebraic_binop(
                     right: right_id,
                     op: builder.cx_i_binop(op)?
                 },
-                lhs_type
+                return_type
             )
         },
 
@@ -775,7 +804,7 @@ pub(crate) fn generate_algebraic_binop(
                     right: right_id,
                     op: builder.cx_u_binop(op)?
                 },
-                lhs_type
+                return_type
             )
         },
 
@@ -790,7 +819,7 @@ pub(crate) fn generate_algebraic_binop(
                     ptr_type: builder.convert_fixed_cx_type(&left_inner)?,
                     op: builder.cx_ptr_binop(op)?
                 },
-                lhs_type
+                return_type
             )
         },
 
@@ -801,7 +830,7 @@ pub(crate) fn generate_algebraic_binop(
                     right: right_id,
                     op: builder.cx_float_binop(op)?
                 },
-                lhs_type
+                return_type
             )
         },
 

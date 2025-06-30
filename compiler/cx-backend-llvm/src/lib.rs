@@ -146,6 +146,8 @@ pub fn bytecode_aot_codegen(
         )
         .expect("Failed to create target machine");
     
+    dump_data(&format!("{}", global_state.module.print_to_string().to_string_lossy()));
+    
     global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {:#?}", err));
     global_state.module.set_triple(&TargetMachine::get_default_triple());
     

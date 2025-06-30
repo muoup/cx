@@ -9,6 +9,10 @@ pub(crate) fn get_cranelift_abi_type(val_type: &BCType) -> ir::AbiParam {
 
 pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
     match &val_type.kind {
+        BCTypeKind::Signed { bytes} |
+        BCTypeKind::Unsigned { bytes } if *bytes == 0 
+            => ir::Type::int(8).expect("PANIC: Invalid integer size: 0 bytes"),
+        
         BCTypeKind::Signed { bytes } |
         BCTypeKind::Unsigned { bytes }    => ir::Type::int(*bytes as u16 * 8)
             .expect(format!("PANIC: Invalid integer size: {} bytes", *bytes).as_str()),

@@ -338,7 +338,23 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let inst = match op {
                 BCIntUnOp::NEG      => context.builder.ins().ineg(val.as_value()),
                 BCIntUnOp::BNOT     => context.builder.ins().bnot(val.as_value()),
-                BCIntUnOp::LNOT     => context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, val.as_value(), 0),
+                BCIntUnOp::LNOT     => {
+                    let cmp = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, val.as_value(), 0);
+                 
+                    let (signed, bytes) = match instruction.value.type_.kind {
+                        BCTypeKind::Signed { bytes, .. } => (true, bytes),
+                        BCTypeKind::Unsigned { bytes, .. } => (false, bytes),
+                        _ => panic!("Invalid type for integer unop")
+                    };
+                    
+                    if signed && bytes > 1 {
+                        context.builder.ins().sextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
+                    } else if !signed && bytes > 1 {
+                        context.builder.ins().uextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
+                    } else {
+                        cmp
+                    }
+                },
                 _ => todo!("UnOp not implemented: {:?}", op)
             };
 
