@@ -21,9 +21,6 @@ pub struct BytecodeBuilder {
     
     pub expr_type_map: ExprTypeMap,
 
-    pub current_block: u16,
-    pub current_instruction: u16,
-
     pub symbol_table: ScopedMap<ValueID>,
 
     function_context: Option<BytecodeFunctionContext>,
@@ -54,8 +51,6 @@ impl BytecodeBuilder {
             cx_function_map: fn_map,
 
             symbol_table: ScopedMap::new(),
-            current_block: 0,
-            current_instruction: 0,
 
             function_context: None
         }
@@ -215,6 +210,10 @@ impl BytecodeBuilder {
     pub fn create_global_string(&mut self, string: String) -> u32 {
         self.global_strings.push(string.clone());
         self.global_strings.len() as u32 - 1
+    }
+    
+    pub fn current_block(&self) -> ElementID {
+        self.fun().current_block
     }
 
     pub fn create_block(&mut self) -> ElementID {

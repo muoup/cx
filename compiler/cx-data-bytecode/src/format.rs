@@ -128,6 +128,20 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Branch { condition, true_block, false_block } => {
                 write!(f, "branch on {condition}; true -> block{true_block}, false -> block{false_block}")
             },
+            VirtualInstruction::Phi { predecessors: from } => {
+                write!(f, "phi")?;
+                if !from.is_empty() {
+                    write!(f, " from [")?;
+                    for (i, (value, block_id)) in from.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{value} @ b{block_id}")?;
+                    }
+                    write!(f, "]")?;
+                }
+                Ok(())
+            },
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
             },

@@ -1,9 +1,10 @@
+use std::ops::IndexMut;
 use crate::inst_calling::{get_func_ref, get_method_return, prepare_method_call};
 use crate::routines::allocate_variable;
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
-use cranelift::codegen::ir::DynamicStackSlotData;
+use cranelift::codegen::ir::{DynamicStackSlotData, InstructionData};
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
@@ -346,7 +347,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                         BCTypeKind::Unsigned { bytes, .. } => (false, bytes),
                         _ => panic!("Invalid type for integer unop")
                     };
-                    
+
                     if signed && bytes > 1 {
                         context.builder.ins().sextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
                     } else if !signed && bytes > 1 {
@@ -465,6 +466,59 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(CodegenValue::NULL)
         },
 
+        VirtualInstruction::Phi {
+            predecessors: from
+        } => {
+            let current_block = context.builder.current_block()?;
+            
+            context.builder
+                .append_block_param(current_block, get_cranelift_type(&instruction.value.type_));
+            
+            for (from_value, from_block) in from {
+                let value = context.variable_table.get(from_value)
+                    .cloned()
+                    .unwrap()
+                    .as_value();
+                let block = context.block_map.get(*from_block as usize)
+                    .expect("Invalid block ID in Phi instruction")
+                    .clone();
+                
+                // get last instruction in the block
+                let last_inst = context.builder.func.layout
+                    .block_insts(block)
+                    .last()
+                    .unwrap();
+                
+                unsafe {
+                    let value_pool : *mut _ = &mut context.builder.func.dfg.value_lists;
+                    
+                    match context.builder.func.dfg.insts.index_mut(last_inst) {
+                        InstructionData::Jump { destination, .. } => {
+                            destination.append_argument(value, &mut *value_pool);
+                        },
+                        InstructionData::Brif { blocks, .. } => {
+                            if blocks.get_mut(0)?.block(&*value_pool) == current_block {
+                                blocks.get_mut(0)?.append_argument(value, &mut *value_pool);
+                            } else if blocks.get_mut(1)?.block(&*value_pool) == current_block {
+                                blocks.get_mut(1)?.append_argument(value, &mut *value_pool);
+                            } else {
+                                panic!("Invalid block ID in Phi instruction");
+                            }
+                        },
+                        _ => {
+                            panic!("Invalid instruction type for Phi: {:?}", last_inst);
+                        }
+                    }
+                }
+            }
+            
+            let val = context.builder.block_params(current_block)
+                .last()
+                .cloned()
+                .expect("No block parameter found for Phi instruction");
+            
+            Some(CodegenValue::Value(val))
+        },
 
         VirtualInstruction::ZExtend {
             value

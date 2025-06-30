@@ -117,6 +117,10 @@ pub enum VirtualInstruction {
     SExtend {
         value: ValueID,
     },
+    
+    Phi {
+        predecessors: Vec<(ValueID, ElementID)>,
+    },
 
     Trunc {
         value: ValueID

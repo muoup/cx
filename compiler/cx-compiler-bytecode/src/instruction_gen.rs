@@ -2,7 +2,7 @@ use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST, TypeSize};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCIntUnOp, BCPtrBinOp, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCIntUnOp, BCPtrBinOp, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
 use crate::aux_routines::{get_struct_field};
 use crate::builder::BytecodeBuilder;
@@ -662,18 +662,12 @@ pub(crate) fn generate_binop(
     match op {
         CXBinOp::LAnd | CXBinOp::LOr => {
             // Short circuit evaluation for logical operators
+            let previous_block = builder.current_block();
             let false_imm = builder.add_instruction(
                 VirtualInstruction::Immediate {
                     value: 0
                 },
                 builder.get_expr_type(lhs).unwrap()
-            )?;
-            let storage = builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size: 1,
-                    alignment: 1,
-                },
-                BCType::from(BCTypeKind::Pointer)
             )?;
             
             let left_id = generate_instruction(builder, lhs)?;
@@ -686,13 +680,12 @@ pub(crate) fn generate_binop(
                 CXTypeKind::Integer { bytes: 1, signed: true }.to_val_type()
             )?;
             
-            let standard_block = builder.create_block();
-            let short_circuit_block = builder.create_block();
+            let no_short_circuit_block = builder.create_block();
             let merge_block = builder.create_block();
             
             let (true_block, false_block) = match op {
-                CXBinOp::LAnd => (standard_block, short_circuit_block.clone()),
-                CXBinOp::LOr => (short_circuit_block.clone(), standard_block.clone()),
+                CXBinOp::LAnd => (no_short_circuit_block, merge_block.clone()),
+                CXBinOp::LOr => (merge_block.clone(), no_short_circuit_block.clone()),
                 _ => unreachable!("generate_binop: Expected logical operator, found {op}"),
             };
             
@@ -705,7 +698,7 @@ pub(crate) fn generate_binop(
                 CXType::unit()
             );
             
-            builder.set_current_block(standard_block);
+            builder.set_current_block(no_short_circuit_block);
             
             let right_id = generate_instruction(builder, rhs)?;
             let right_cmp = builder.add_instruction(
@@ -718,33 +711,6 @@ pub(crate) fn generate_binop(
             )?;
             
             builder.add_instruction(
-                VirtualInstruction::Store {
-                    memory: storage.clone(),
-                    value: right_cmp,
-                    type_: BCTypeKind::Signed { bytes: 1 }.into()
-                },
-                CXType::unit()
-            );
-            
-            builder.add_instruction(
-                VirtualInstruction::Jump {
-                    target: merge_block.clone()
-                },
-                CXType::unit()
-            );
-            
-            builder.set_current_block(short_circuit_block);
-            
-            builder.add_instruction(
-                VirtualInstruction::Store {
-                    memory: storage.clone(),
-                    value: left_cmp,
-                    type_: BCTypeKind::Signed { bytes: 1 }.into()
-                },
-                CXType::unit()
-            );
-            
-            builder.add_instruction(
                 VirtualInstruction::Jump {
                     target: merge_block.clone()
                 },
@@ -754,8 +720,11 @@ pub(crate) fn generate_binop(
             builder.set_current_block(merge_block);
             
             builder.add_instruction_bt(
-                VirtualInstruction::Load {
-                    value: storage
+                VirtualInstruction::Phi {
+                    predecessors: vec![
+                        (left_cmp, previous_block as ElementID),
+                        (right_cmp, no_short_circuit_block),
+                    ]
                 },
                 return_type
             )

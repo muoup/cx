@@ -513,6 +513,37 @@ pub(crate) fn generate_instruction<'a>(
                 )
             },
             
+            VirtualInstruction::Phi { predecessors: from } => {
+                let val_type = bc_llvm_type(
+                    global_state, 
+                    &block_instruction.value.type_
+                )?;
+                let as_basic_type = any_to_basic_type(val_type)
+                    .expect("Failed to convert value type to basic type");
+                
+                let phi_node = function_state.builder
+                    .build_phi(as_basic_type, inst_num().as_str())
+                    .ok()?;
+                
+                for (value_id, block_id) in from {
+                    let value = function_state
+                        .get_val_ref(value_id)?
+                        .get_value();
+                    let value = any_to_basic_val(value)
+                        .expect("Failed to convert value to basic value");
+                    
+                    let block = function_val
+                        .get_basic_blocks()
+                        .get(*block_id as usize)
+                        .unwrap()
+                        .clone();
+                    
+                    phi_node.add_incoming(&[(&value, block)]);
+                }
+                
+                CodegenValue::Value(phi_node.as_any_value_enum())
+            },
+            
             VirtualInstruction::Branch { condition, true_block, false_block } => {
                 let mut condition_value = function_state
                     .get_val_ref(condition)?
