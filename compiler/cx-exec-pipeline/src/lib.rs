@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::SystemTime;
-use cx_exec_data::{CompilerBackend, OptimizationLevel};
+use cx_exec_data::{cx_path_str, CompilerBackend, OptimizationLevel};
 
 pub mod pipeline;
 
@@ -17,13 +17,7 @@ pub fn request_type_compilation(file_paths: &[String]) -> Option<Vec<String>> {
         if !internal_path.exists() ||
             *START_TIME > internal_path.metadata().unwrap().modified().unwrap() {
 
-            let cx_path_str = if import_path.starts_with("std") {
-                let current_exe = std::env::current_exe()
-                    .expect("Failed to get current executable path");
-                format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &import_path)
-            } else {
-                format!("{}.cx", import_path)
-            };
+            let cx_path_str = cx_path_str(import_path);
             
             imports.extend(
                 module_type_compile(format!(".internal/{}", import_path), cx_path_str)?
@@ -47,14 +41,8 @@ pub fn request_compile(file_paths: &[String], compiler_backend: CompilerBackend,
 
         if !internal_path.exists() ||
             *START_TIME > internal_path.metadata().unwrap().modified().unwrap() {
-
-            let cx_path_str = if import_path.starts_with("std") {
-                let current_exe = std::env::current_exe()
-                    .expect("Failed to get current executable path");
-                format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &import_path)
-            } else {
-                format!("{}.cx", import_path)
-            };
+            
+            let cx_path_str = cx_path_str(import_path);
 
             imports.extend(
                 module_compile(format!(".internal/{}", import_path), cx_path_str, compiler_backend, optimization_level)?
@@ -117,7 +105,7 @@ pub fn module_compile(internal_dir: String, file_path: String, compiler_backend:
     Some(pipeline.imports)
 }
 
-pub fn standard_compile(file_path: &str, output_file: &str, compiler_backend: CompilerBackend, optimization_level: OptimizationLevel) -> Option<()> {
+pub fn debug_compile(file_path: &str, output_file: &str, compiler_backend: CompilerBackend, optimization_level: OptimizationLevel) -> Option<()> {
     let mut pipeline = pipeline::CompilerPipeline::new(
         file_path.to_owned(),
         output_file.to_owned(),
@@ -140,6 +128,31 @@ pub fn standard_compile(file_path: &str, output_file: &str, compiler_backend: Co
         .dump()
         .generate_bytecode()
         .dump()
+        .codegen()
+        .link();
+    
+    Some(())
+}
+
+pub fn standard_compile(file_path: &str, output_file: &str, compiler_backend: CompilerBackend, optimization_level: OptimizationLevel) -> Option<()> {
+    let mut pipeline = pipeline::CompilerPipeline::new(
+        file_path.to_owned(),
+        output_file.to_owned(),
+        compiler_backend
+    );
+
+    pipeline.optimization_level = optimization_level;
+
+    pipeline
+        .read_file()
+        .preprocess()
+        .lex()
+        .parse_types_and_deps()
+        .emit_type_defs()
+        .parse()
+        .emit_function_defs()
+        .verify()
+        .generate_bytecode()
         .codegen()
         .link();
     

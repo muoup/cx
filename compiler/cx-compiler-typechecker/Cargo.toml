@@ -2,10 +2,12 @@
 name = "cx-compiler-typechecker"
 version = "0.0.0"
 edition = "2021"
+autotests = false
 
 [dependencies]
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-exec-data = { path = "../cx-exec-data" }
 
 cx-compiler-ast = { path = "../cx-compiler-ast" }
 cx-compiler-modules = { path = "../cx-compiler-modules" }

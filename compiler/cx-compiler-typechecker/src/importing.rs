@@ -2,20 +2,14 @@ use std::path::Path;
 use std::process::exit;
 use cx_compiler_modules::deserialize_module_data;
 use cx_data_ast::parse::ast::CXAST;
+use cx_exec_data::cx_path_str;
 
 pub(crate) fn import_module_data(cxast: &mut CXAST) {
     for import_path in cxast.imports.iter() {
         let type_path_str = format!("{}/.cx-types", cxast.internal_path);
         let internal_type_path = Path::new(&type_path_str);
 
-        let cx_path_str = if import_path.starts_with("std") {
-            let current_exe = std::env::current_exe()
-                .expect("Failed to get current executable path");
-            format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &import_path)
-        } else {
-            format!("{}.cx", import_path)
-        };
-
+        let cx_path_str = cx_path_str(import_path);
         let cx_path = Path::new(&cx_path_str);
         
         if !internal_type_path.exists() {

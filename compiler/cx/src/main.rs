@@ -1,7 +1,7 @@
 mod args;
 
 use std::path::Path;
-use cx_exec_pipeline::standard_compile;
+use cx_exec_pipeline::debug_compile;
 
 fn main() {
     let args = match args::parse_args() {
@@ -27,7 +27,7 @@ fn main() {
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
 
-    standard_compile(file_name, &args.output_file, args.backend, args.optimization_level);
+    debug_compile(file_name, &args.output_file, args.backend, args.optimization_level);
 
     println!("Compilation complete!");
 }

@@ -29,7 +29,6 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::UnOp { operator, operand } => {
             match operator {
                 CXUnOp::BNot |
-                CXUnOp::LNot |
                 CXUnOp::Negative => { 
                     let mut _type = coerce_value(env, operand.as_mut())?;
                     
@@ -39,6 +38,22 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     }
                     
                     Some(_type)
+                },
+                
+                CXUnOp::LNot => {
+                    let mut _type = coerce_value(env, operand.as_mut())?;
+                    
+                    if !matches!(_type.intrinsic_type(env.type_map)?, CXTypeKind::Integer { .. }) {
+                        implicit_coerce(env, operand, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
+                        _type = type_check_traverse(env, operand.as_mut()).cloned()?;
+                    }
+                    
+                    Some(
+                        CXType::new(
+                            _type.specifiers,
+                            CXTypeKind::Integer { bytes: 0, signed: false }
+                        )
+                    )
                 },
                 
                 CXUnOp::AddressOf => {

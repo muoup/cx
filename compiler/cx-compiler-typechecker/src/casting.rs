@@ -212,12 +212,12 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
                 }
             )
         },
-
+        
         CXBinOp::LAnd | CXBinOp::LOr |
         CXBinOp::Less | CXBinOp::Greater | 
         CXBinOp::LessEqual | CXBinOp::GreaterEqual |
         CXBinOp::Equal | CXBinOp::NotEqual => {
-            Some(CXTypeKind::Integer { bytes: 1, signed: false }.to_val_type())
+            Some(CXTypeKind::Integer { bytes: 0, signed: false }.to_val_type())
         },
 
         _ => panic!("Invalid binary operation {op} for type {lhs}")

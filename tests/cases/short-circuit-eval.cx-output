@@ -1,0 +1,6 @@
+Condition 1 evaluated
+condition1 && getCondition1() = 1
+condition2 && getCondition1() = 0
+condition1 || getCondition1() = 1
+Condition 1 evaluated
+condition2 || getCondition1() = 1

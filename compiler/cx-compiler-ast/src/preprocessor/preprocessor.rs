@@ -1,3 +1,4 @@
+use cx_exec_data::libary_path_prefix;
 use crate::preprocessor::Preprocessor;
 
 fn handle_non_directive(preprocessor: &mut Preprocessor, string: &str) -> String {
@@ -51,16 +52,7 @@ pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str)
             let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
                 "".to_string()
             } else if file_name.starts_with("<") && file_name.ends_with(">") {
-                let mut path = std::env::current_exe()
-                    .expect("Failed to get current executable path")
-                    .parent()
-                    .expect("Failed to get parent directory of executable")
-                    .to_str()
-                    .expect("Failed to convert path to string")
-                    .to_string();
-                path.push_str("/../../lib/libc/");
-                
-                path
+                format!("{}/libc/", libary_path_prefix())
             } else {
                 panic!("Invalid include statement: {}", file_name);
             };
