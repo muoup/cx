@@ -121,27 +121,30 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::IntegralCast => {
-            let (_type, signed) = match get_intrinsic_type(&builder.cx_type_map, to_type)? {
-                CXTypeKind::Integer { signed, .. } => (to_type.clone(), *signed),
-                CXTypeKind::Bool => (CXTypeKind::Integer { bytes: 1, signed: false }.to_val_type(), false),
+            match get_intrinsic_type(&builder.cx_type_map, from_type)? {
+                CXTypeKind::Integer { signed: true, .. } =>
+                    builder.add_instruction(
+                        VirtualInstruction::SExtend {
+                            value,
+                        },
+                        to_type.clone()
+                    ),
+                CXTypeKind::Integer { signed: false, .. } =>
+                    builder.add_instruction(
+                        VirtualInstruction::ZExtend {
+                            value,
+                        },
+                        to_type.clone()
+                    ),
+                CXTypeKind::Bool =>
+                    builder.add_instruction(
+                        VirtualInstruction::BoolExtend {
+                            value,
+                        },
+                        to_type.clone()
+                    ),
 
-                _ => panic!("INTERNAL PANIC: Invalid integral cast type")
-            };
-
-            if signed {
-                builder.add_instruction(
-                    VirtualInstruction::SExtend {
-                        value,
-                    },
-                    _type
-                )
-            } else {
-                builder.add_instruction(
-                    VirtualInstruction::ZExtend {
-                        value,
-                    },
-                    _type
-                )
+                _ => panic!("INTERNAL PANIC: Invalid integral cast type: {to_type:?}")
             }
         },
 

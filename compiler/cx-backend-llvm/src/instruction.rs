@@ -456,9 +456,9 @@ pub(crate) fn generate_instruction<'a>(
                 let signed = match block_instruction.value.type_.kind {
                     BCTypeKind::Signed { .. } => true,
                     BCTypeKind::Unsigned { .. } => false,
-                    BCTypeKind::Bool => false, 
-                    
-                    _ => log_error!("Unsupported type for IntegerBinOp"), 
+                    BCTypeKind::Bool => false,
+
+                    _ => log_error!("Unsupported type for IntegerBinOp"),
                 };
 
                 generate_int_binop(global_state, function_state, left, right, *op, signed)?
@@ -620,6 +620,7 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::NULL
             },
             
+            VirtualInstruction::BoolExtend { value } |
             VirtualInstruction::ZExtend { value } => {
                 let value = function_state
                     .get_val_ref(value)?

@@ -101,6 +101,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
                 write!(f, "struct_access {} ({})[index: {}; offset: {}]", struct_, struct_type, field_index, field_offset)
             },
+            VirtualInstruction::BoolExtend { value } => {
+                write!(f, "bool_extend {value}")
+            },
             VirtualInstruction::ZExtend { value } => {
                 write!(f, "zextend {value}")
             },

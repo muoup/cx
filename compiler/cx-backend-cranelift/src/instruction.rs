@@ -470,10 +470,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             predecessors: from
         } => {
             let current_block = context.builder.current_block()?;
-            
+
             context.builder
                 .append_block_param(current_block, get_cranelift_type(&instruction.value.type_));
-            
+
             for (from_value, from_block) in from {
                 let value = context.variable_table.get(from_value)
                     .cloned()
@@ -482,16 +482,16 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 let block = context.block_map.get(*from_block as usize)
                     .expect("Invalid block ID in Phi instruction")
                     .clone();
-                
+
                 // get last instruction in the block
                 let last_inst = context.builder.func.layout
                     .block_insts(block)
                     .last()
                     .unwrap();
-                
+
                 unsafe {
                     let value_pool : *mut _ = &mut context.builder.func.dfg.value_lists;
-                    
+
                     match context.builder.func.dfg.insts.index_mut(last_inst) {
                         InstructionData::Jump { destination, .. } => {
                             destination.append_argument(value, &mut *value_pool);
@@ -511,25 +511,52 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     }
                 }
             }
-            
+
             let val = context.builder.block_params(current_block)
                 .last()
                 .cloned()
                 .expect("No block parameter found for Phi instruction");
-            
+
             Some(CodegenValue::Value(val))
+        },
+
+        VirtualInstruction::BoolExtend {
+            value
+        } => {
+            let val = context.variable_table.get(value).cloned().unwrap();
+            
+            match instruction.value.type_.kind {
+                BCTypeKind::Signed { bytes : 1 } |
+                BCTypeKind::Unsigned { bytes : 1 } => {
+                    Some(val)
+                },
+
+                _ => {
+                    let _type = &instruction.value.type_;
+                    let cranelift_type = get_cranelift_type(_type);
+
+                    Some(
+                        CodegenValue::Value(
+                            context.builder.ins().uextend(cranelift_type, val.as_value())
+                        )
+                    )
+                }
+            }
         },
 
         VirtualInstruction::ZExtend {
             value
         } => {
-            let val = context.variable_table.get(value).cloned().unwrap();
+            let val = context.variable_table.get(value)
+                .cloned()
+                .unwrap()
+                .as_value();
             let _type = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(_type);
 
             Some(
                 CodegenValue::Value(
-                    context.builder.ins().uextend(cranelift_type, val.as_value())
+                    context.builder.ins().uextend(cranelift_type, val)
                 )
             )
         },
@@ -537,13 +564,16 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::SExtend {
             value
         } => {
-            let val = context.variable_table.get(value).cloned().unwrap();
+            let val = context.variable_table.get(value)
+                .cloned()
+                .unwrap()
+                .as_value();
             let _type = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(_type);
 
             Some(
                 CodegenValue::Value(
-                    context.builder.ins().sextend(cranelift_type, val.as_value())
+                    context.builder.ins().sextend(cranelift_type, val)
                 )
             )
         }
