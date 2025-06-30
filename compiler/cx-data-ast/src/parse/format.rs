@@ -223,6 +223,7 @@ impl Display for CXTypeKind {
                 let float_bytes = *bytes * 8;
                 write!(f, "f{}", float_bytes)
             },
+            CXTypeKind::Bool => write!(f, "bool"),
             CXTypeKind::Structured { fields, name } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{}: {}", name, type_))

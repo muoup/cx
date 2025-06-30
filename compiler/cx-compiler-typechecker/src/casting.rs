@@ -24,6 +24,8 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
                     Some(CXCastType::BitCast)
                 },
 
+            (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => Some(CXCastType::IntegralCast),
+
             (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::FloatCast),
 
             (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
@@ -145,6 +147,16 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
             binop_type(&op, None, &l_type)
         },
 
+        (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => {
+            add_implicit_cast(env, rhs, r_type.clone(), l_type.clone(), CXCastType::IntegralCast)?;
+            binop_type(&op, None, &l_type)
+        },
+
+        (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => {
+            add_implicit_cast(env, lhs, l_type.clone(), r_type.clone(), CXCastType::IntegralCast)?;
+            binop_type(&op, None, &r_type)
+        },
+
         (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) 
             => ptr_ptr_binop_coercion(env, op, &l_type, rhs),
 
@@ -216,9 +228,7 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
         CXBinOp::LAnd | CXBinOp::LOr |
         CXBinOp::Less | CXBinOp::Greater | 
         CXBinOp::LessEqual | CXBinOp::GreaterEqual |
-        CXBinOp::Equal | CXBinOp::NotEqual => {
-            Some(CXTypeKind::Integer { bytes: 0, signed: false }.to_val_type())
-        },
+        CXBinOp::Equal | CXBinOp::NotEqual => Some(CXTypeKind::Bool.to_val_type()),
 
         _ => panic!("Invalid binary operation {op} for type {lhs}")
     }

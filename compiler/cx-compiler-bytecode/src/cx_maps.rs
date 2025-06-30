@@ -252,6 +252,9 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
 
             CXTypeKind::Opaque { size, .. } =>
                 BCTypeKind::Opaque { bytes: *size },
+            
+            CXTypeKind::Bool => 
+                BCTypeKind::Bool,
 
             CXTypeKind::Integer { signed: true, bytes} =>
                 BCTypeKind::Signed { bytes: *bytes },

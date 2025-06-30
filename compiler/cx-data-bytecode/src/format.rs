@@ -325,6 +325,7 @@ impl Display for BCTypeKind {
             BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
             BCTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
             BCTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
+            BCTypeKind::Bool => write!(f, "bool"),
             BCTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
             BCTypeKind::Pointer => write!(f, "*"),
 

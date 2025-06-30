@@ -21,6 +21,7 @@ pub struct CXType {
 pub enum CXTypeKind {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
+    Bool,
     Structured {
         name: Option<CXIdent>,
         fields: Vec<(String, CXType)>
@@ -222,6 +223,7 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
             CXTypeKind::Float { bytes: t2_bytes }) =>
             t1_bytes == t2_bytes,
 
+        (CXTypeKind::Bool, CXTypeKind::Bool) |
         (CXTypeKind::Unit, CXTypeKind::Unit) =>
             true,
 

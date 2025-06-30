@@ -123,6 +123,7 @@ pub(crate) fn implicit_cast(
         CXCastType::IntegralCast => {
             let (_type, signed) = match get_intrinsic_type(&builder.cx_type_map, to_type)? {
                 CXTypeKind::Integer { signed, .. } => (to_type.clone(), *signed),
+                CXTypeKind::Bool => (CXTypeKind::Integer { bytes: 1, signed: false }.to_val_type(), false),
 
                 _ => panic!("INTERNAL PANIC: Invalid integral cast type")
             };

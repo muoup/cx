@@ -179,6 +179,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                             implicit_cast(env, args[i], &va_type, &to_type)?;
                         }
                     },
+                    
+                    CXTypeKind::Bool { .. } => {
+                        let to_type = CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type();
+                        implicit_cast(env, args[i], &va_type, &to_type)?;
+                    },
 
                     _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", args[i]),
                 }

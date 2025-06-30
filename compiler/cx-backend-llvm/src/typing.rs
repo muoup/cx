@@ -71,7 +71,6 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Signed { bytes, .. } |
             BCTypeKind::Unsigned { bytes, .. } => {
                 match *bytes {
-                    0 => state.context.bool_type().as_any_type_enum(),
                     1 => state.context.i8_type().as_any_type_enum(),
                     2 => state.context.i16_type().as_any_type_enum(),
                     4 => state.context.i32_type().as_any_type_enum(),
@@ -80,6 +79,7 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
                     _ => panic!("Invalid integer size")
                 }
             },
+            BCTypeKind::Bool => state.context.bool_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
 

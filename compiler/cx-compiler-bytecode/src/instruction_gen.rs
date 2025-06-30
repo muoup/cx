@@ -214,15 +214,7 @@ pub fn generate_instruction(
         },
 
         CXExprKind::IntLiteral { val, bytes } => {
-            builder.add_instruction(
-                VirtualInstruction::Immediate {
-                    value: *val as i32
-                },
-                CXTypeKind::Integer {
-                    bytes: *bytes,
-                    signed: true
-                }.to_val_type()
-            )
+            builder.int_const(*val as i32, *bytes, true)
         },
         
         CXExprKind::FloatLiteral { val, bytes } => {
@@ -338,19 +330,11 @@ pub fn generate_instruction(
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
-                    let one = builder.add_instruction_bt(
-                        VirtualInstruction::Immediate {
-                            value: *off as i32
-                        },
-                        BCTypeKind::Signed { bytes }.into()
-                    )?;
+                    let offset = builder.int_const(*off as i32, bytes, true)?;
 
                     let incremented = generate_algebraic_binop(
-                        builder,
-                        inner.as_ref(),
-                        loaded_val,
-                        one,
-                        builder.convert_fixed_cx_type(inner.as_ref())?,
+                        builder, inner.as_ref(), loaded_val,
+                        offset, builder.convert_fixed_cx_type(inner.as_ref())?,
                         &CXBinOp::Add
                     )?;
 
@@ -386,19 +370,11 @@ pub fn generate_instruction(
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
-                    let one = builder.add_instruction_bt(
-                        VirtualInstruction::Immediate {
-                            value: *off as i32
-                        },
-                        BCTypeKind::Signed { bytes }.into()
-                    )?;
+                    let one = builder.int_const(*off as i32, bytes, true)?;
 
                     let incremented = generate_algebraic_binop(
-                        builder,
-                        inner.as_ref(),
-                        loaded_val,
-                        one,
-                        builder.convert_fixed_cx_type(inner.as_ref())?,
+                        builder, inner.as_ref(),
+                        loaded_val, one, builder.convert_fixed_cx_type(inner.as_ref())?,
                         &CXBinOp::Add
                     )?;
 
@@ -637,15 +613,10 @@ pub fn generate_instruction(
                 .size();
             
             match type_size {
-                BCTypeSize::Fixed(size) =>
-                    builder.add_instruction(
-                        VirtualInstruction::Immediate {
-                            value: size as i32
-                        },
-                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
-                    ),
-                BCTypeSize::Variable(size_expr) =>
-                    Some(size_expr)
+                BCTypeSize::Fixed(size) 
+                    => builder.int_const(size as i32, 8, true),
+                BCTypeSize::Variable(size_expr) 
+                    => Some(size_expr)
             }
         },
         
@@ -663,21 +634,17 @@ pub(crate) fn generate_binop(
         CXBinOp::LAnd | CXBinOp::LOr => {
             // Short circuit evaluation for logical operators
             let previous_block = builder.current_block();
-            let false_imm = builder.add_instruction(
-                VirtualInstruction::Immediate {
-                    value: 0
-                },
-                builder.get_expr_type(lhs).unwrap()
-            )?;
+            let match_type = builder.get_expr_bc_type(lhs).unwrap();
+            let false_imm = builder.int_const_match(0, &match_type)?;
             
             let left_id = generate_instruction(builder, lhs)?;
-            let left_cmp = builder.add_instruction(
+            let left_cmp = builder.add_instruction_bt(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
                     right: false_imm,
                     op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap()
                 },
-                CXTypeKind::Integer { bytes: 1, signed: true }.to_val_type()
+                BCType::from(BCTypeKind::Bool)
             )?;
             
             let no_short_circuit_block = builder.create_block();
@@ -701,13 +668,13 @@ pub(crate) fn generate_binop(
             builder.set_current_block(no_short_circuit_block);
             
             let right_id = generate_instruction(builder, rhs)?;
-            let right_cmp = builder.add_instruction(
+            let right_cmp = builder.add_instruction_bt(
                 VirtualInstruction::IntegerBinOp {
                     left: right_id,
                     right: false_imm,
                     op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap()
                 },
-                CXTypeKind::Integer { bytes: 1, signed: true }.to_val_type()
+                BCType::from(BCTypeKind::Bool)
             )?;
             
             builder.add_instruction(
@@ -772,6 +739,17 @@ pub(crate) fn generate_algebraic_binop(
                     left: left_id,
                     right: right_id,
                     op: builder.cx_u_binop(op)?
+                },
+                return_type
+            )
+        },
+        
+        BCTypeKind::Bool => {
+            builder.add_instruction_bt(
+                VirtualInstruction::IntegerBinOp {
+                    left: left_id,
+                    right: right_id,
+                    op: builder.cx_i_binop(op)?
                 },
                 return_type
             )

@@ -1,7 +1,7 @@
 use crate::ProgramBytecode;
 use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::types::BCType;
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap};
 use cx_data_bytecode::node_type_map::ExprTypeMap;
 use cx_util::log_error;
@@ -132,12 +132,63 @@ impl BytecodeBuilder {
             value_type
         )
     }
+    
+    pub fn bool_const(
+        &mut self, value: bool
+    ) -> Option<ValueID> {
+        self.add_instruction_bt(
+            VirtualInstruction::Immediate { value: if value { 1 } else { 0 } },
+            BCType::from(BCTypeKind::Bool)
+        )
+    }
+    
+    pub fn int_const_match(
+        &mut self, value: i32, bc_type: &BCType
+    ) -> Option<ValueID> {
+        match bc_type.kind {
+            BCTypeKind::Signed { bytes } =>
+                self.int_const(value, bytes, true),
+            BCTypeKind::Unsigned { bytes } =>
+                self.int_const(value, bytes, false),
+            BCTypeKind::Bool =>
+                self.bool_const(value != 0),
+            
+            _ => panic!("INTERNAL PANIC: Attempted to create integer constant with non-integer type: {:?}", bc_type)
+        }
+    }
+    
+    pub fn int_const(
+        &mut self,
+        value: i32,
+        bytes: u8,
+        signed: bool
+    ) -> Option<ValueID> {
+        let value_type = BCType::from(
+            match signed {
+                true => BCTypeKind::Signed { bytes },
+                false => BCTypeKind::Unsigned { bytes },
+            }
+        );
+
+        self.add_instruction_bt(
+            VirtualInstruction::Immediate { value },
+            value_type
+        )
+    }
 
     pub fn get_variable(&self, value_id: ValueID) -> Option<&VirtualValue> {
         self.fun()
             .blocks[value_id.block_id as usize]
             .body.get(value_id.value_id as usize)
             .map(|v| &v.value)
+    }
+    
+    pub fn get_expr_bc_type(&mut self, expr: &CXExpr) -> Option<BCType> {
+        let Some(cx_type) = self.get_expr_type(expr) else {
+            log_error!("INTERNAL PANIC: Failed to get bytecode type for expression: {:?}", expr)
+        };
+        
+        self.convert_cx_type(&cx_type)
     }
 
     pub fn get_expr_type(&self, expr: &CXExpr) -> Option<CXType> {

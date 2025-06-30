@@ -10,6 +10,7 @@ pub enum BCTypeKind {
     Opaque { bytes: usize },
     Signed { bytes: u8 },
     Unsigned { bytes: u8 },
+    Bool,
     Float { bytes: u8 },
     Pointer,
 
@@ -80,6 +81,7 @@ impl BCType {
             BCTypeKind::Opaque { bytes } => *bytes as u8,
             BCTypeKind::Signed { bytes } => *bytes,
             BCTypeKind::Unsigned { bytes } => *bytes,
+            BCTypeKind::Bool => 1,
             BCTypeKind::Float { bytes } => *bytes,
             BCTypeKind::Pointer => 8, // TODO: make this configurable
             BCTypeKind::Array { element, .. } => element.alignment(),
