@@ -2,6 +2,7 @@
 name = "cx-backend-llvm"
 version = "0.0.0"
 edition = "2024"
+autotests = false
 
 [dependencies]
 cx-data-bytecode = { path = "../cx-data-bytecode" }

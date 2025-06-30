@@ -2,7 +2,7 @@
 name = "cx-data-bytecode"
 version = "0.0.0"
 edition = "2021"
+autotests = false
 
 [dependencies]
 cx-data-ast = { path = "../cx-data-ast" }
-cx-util = { path = "../cx-util" }

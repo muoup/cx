@@ -4,6 +4,3 @@ members = [
     "compiler/cx",
     "tests"
 ]
-
-[profile.test]
-packages = ["tests"]

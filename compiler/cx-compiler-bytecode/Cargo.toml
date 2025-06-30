@@ -2,6 +2,7 @@
 name = "cx-compiler-bytecode"
 version = "0.0.0"
 edition = "2021"
+autotests = false
 
 [dependencies]
 cx-compiler-ast = { path = "../cx-compiler-ast" }
