@@ -1,6 +1,6 @@
 use cx_data_ast::{assert_token_matches, next_kind, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
@@ -265,7 +265,7 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
             let prototype = CXFunctionPrototype {
                 name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
                 return_type: acc_type,
-                params: params,
+                params,
                 var_args
             };
 
@@ -321,7 +321,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
     let _type = match data.toks.peek()?.kind {
         TokenKind::Identifier(_) => Some(
             CXTypeKind::Identifier {
-                name: parse_std_ident(data)?.into(),
+                name: parse_std_ident(data)?,
                 predeclaration: PredeclarationType::None
             }.to_val_type()
         ),

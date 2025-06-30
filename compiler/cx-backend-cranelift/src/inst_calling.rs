@@ -59,7 +59,7 @@ pub(crate) fn get_method_return(
     context.builder.inst_results(inst)
         .first()
         .cloned()
-        .map(|res| CodegenValue::Value(res))
+        .map(CodegenValue::Value)
 }
 
 pub(crate) fn get_func_ref(

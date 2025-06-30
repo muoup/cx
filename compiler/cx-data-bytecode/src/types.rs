@@ -33,7 +33,7 @@ impl BCTypeSize {
     pub fn assert_fixed(self, msg: &str) -> usize {
         match self {
             BCTypeSize::Fixed(size) => size,
-            BCTypeSize::Variable(_) => panic!("{}: expected fixed size, got variable", msg),
+            BCTypeSize::Variable(_) => panic!("{msg}: expected fixed size, got variable"),
         }
     }
 }

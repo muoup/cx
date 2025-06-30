@@ -1,5 +1,3 @@
-use std::clone;
-use std::ops::Deref;
 use crate::TypeEnvironment;
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
@@ -188,7 +186,7 @@ pub(crate) fn ptr_int_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         _ => panic!("Invalid binary operation {op} for pointer type")
     };
     
-    binop_type(&op, Some(&pointer_inner), &pointer_inner.clone().pointer_to())
+    binop_type(&op, Some(pointer_inner), &pointer_inner.clone().pointer_to())
 }
 
 pub(crate) fn ptr_ptr_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
@@ -207,7 +205,7 @@ pub(crate) fn ptr_ptr_binop_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         _ => panic!("Invalid binary operation {op} for pointer type")
     };
     
-    binop_type(&op, Some(&pointer_inner), &pointer_inner.clone())
+    binop_type(&op, Some(pointer_inner), &pointer_inner.clone())
 }
 
 pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXType) -> Option<CXType> {

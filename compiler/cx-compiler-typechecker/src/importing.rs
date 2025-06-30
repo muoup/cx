@@ -13,12 +13,12 @@ pub(crate) fn import_module_data(cxast: &mut CXAST) {
         let cx_path = Path::new(&cx_path_str);
         
         if !internal_type_path.exists() {
-            eprintln!("Import path does not exist: {}", type_path_str);
+            eprintln!("Import path does not exist: {type_path_str}");
             exit(1);
         }
         
         if !cx_path.exists() {
-            eprintln!("Source file does not exist: {}", cx_path_str);
+            eprintln!("Source file does not exist: {cx_path_str}");
             exit(1);
         }
         

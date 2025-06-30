@@ -1,6 +1,6 @@
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
-use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST, TypeSize};
+use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCIntUnOp, BCPtrBinOp, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
@@ -190,7 +190,7 @@ pub fn generate_instruction(
         CXExprKind::ImplicitCast { expr, from_type, to_type, cast_type} => {
             let inner = generate_instruction(builder, expr.as_ref())?;
 
-            implicit_cast(builder, inner, &from_type, &to_type, cast_type)
+            implicit_cast(builder, inner, from_type, to_type, cast_type)
         },
         CXExprKind::ImplicitLoad { expr, loaded_type } => {
             let inner = generate_instruction(builder, expr.as_ref())?;
@@ -228,7 +228,7 @@ pub fn generate_instruction(
 
         CXExprKind::Identifier(val) => {
             if let Some(id) = builder.symbol_table.get(val.as_str()) {
-                Some(id.clone())
+                Some(*id)
             } else if builder.fn_map.contains_key(val.as_str()) {
                 builder.add_instruction_bt(
                     VirtualInstruction::FunctionReference {
@@ -249,7 +249,7 @@ pub fn generate_instruction(
 
             let final_block = builder.create_block();
             builder.add_instruction(
-                VirtualInstruction::Jump { target: final_block.clone() },
+                VirtualInstruction::Jump { target: final_block },
                 CXType::unit()
             );
 
@@ -319,7 +319,7 @@ pub fn generate_instruction(
 
                     let loaded_val = builder.add_instruction(
                         VirtualInstruction::Load {
-                            value: value.clone()
+                            value
                         },
                         inner.as_ref().clone()
                     )?;
@@ -341,7 +341,7 @@ pub fn generate_instruction(
                     builder.add_instruction(
                         VirtualInstruction::Store {
                             memory: loaded_val,
-                            value: incremented.clone(),
+                            value: incremented,
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
                         },
                         CXType::unit()
@@ -359,7 +359,7 @@ pub fn generate_instruction(
 
                     let loaded_val = builder.add_instruction(
                         VirtualInstruction::Load {
-                            value: value.clone()
+                            value
                         },
                         inner.as_ref().clone()
                     )?;
@@ -407,8 +407,8 @@ pub fn generate_instruction(
             builder.add_instruction(
                 VirtualInstruction::Branch {
                     condition,
-                    true_block: then_block.clone(),
-                    false_block: else_block.clone()
+                    true_block: then_block,
+                    false_block: else_block
                 },
                 CXType::unit()
             );
@@ -416,7 +416,7 @@ pub fn generate_instruction(
             builder.set_current_block(then_block);
             generate_instruction(builder, then_branch.as_ref());
             builder.add_instruction(
-                VirtualInstruction::Jump { target: merge_block.clone() },
+                VirtualInstruction::Jump { target: merge_block },
                 CXType::unit()
             );
 
@@ -425,7 +425,7 @@ pub fn generate_instruction(
                 generate_instruction(builder, else_branch.as_ref());
             }
             builder.add_instruction(
-                VirtualInstruction::Jump { target: merge_block.clone() },
+                VirtualInstruction::Jump { target: merge_block },
                 CXType::unit()
             );
 
@@ -439,9 +439,9 @@ pub fn generate_instruction(
             let merge_block = builder.start_scope();
 
             let first_block = if *pre_eval {
-                condition_block.clone()
+                condition_block
             } else {
-                body_block.clone()
+                body_block
             };
 
             builder.add_instruction(
@@ -455,8 +455,8 @@ pub fn generate_instruction(
             builder.add_instruction(
                 VirtualInstruction::Branch {
                     condition: condition_value,
-                    true_block: body_block.clone(),
-                    false_block: merge_block.clone()
+                    true_block: body_block,
+                    false_block: merge_block
                 },
                 CXType::unit()
             );
@@ -464,7 +464,7 @@ pub fn generate_instruction(
             builder.set_current_block(body_block);
             generate_instruction(builder, body.as_ref());
             builder.add_instruction(
-                VirtualInstruction::Jump { target: condition_block.clone() },
+                VirtualInstruction::Jump { target: condition_block },
                 CXType::unit()
             );
 
@@ -497,7 +497,7 @@ pub fn generate_instruction(
                         .enumerate()
                         .map(|(i, (case, _))| (*case, case_blocks[i]))
                         .collect(),
-                    default: default_block.clone().unwrap_or(merge_block.clone())
+                    default: default_block.unwrap_or(merge_block)
                 },
                 CXType::unit()
             );
@@ -511,11 +511,11 @@ pub fn generate_instruction(
                 while next_index == Some(i) {
                     let case_block = case_block_iter.next().unwrap();
                     builder.add_instruction(
-                        VirtualInstruction::Jump { target: case_block.clone() },
+                        VirtualInstruction::Jump { target: *case_block },
                         CXType::unit()
                     );
                     next_index = case_iter.next();
-                    builder.set_current_block(case_block.clone());
+                    builder.set_current_block(*case_block);
                 }
                 
                 if *default_case == Some(i) {
@@ -531,7 +531,7 @@ pub fn generate_instruction(
             }
             
             builder.add_instruction(
-                VirtualInstruction::Jump { target: merge_block.clone() },
+                VirtualInstruction::Jump { target: merge_block },
                 CXType::unit()
             );
             
@@ -547,7 +547,7 @@ pub fn generate_instruction(
 
             generate_instruction(builder, init.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Jump { target: condition_block.clone() },
+                VirtualInstruction::Jump { target: condition_block },
                 CXType::unit()
             );
 
@@ -556,8 +556,8 @@ pub fn generate_instruction(
             builder.add_instruction(
                 VirtualInstruction::Branch {
                     condition: condition_value,
-                    true_block: body_block.clone(),
-                    false_block: merge_block.clone()
+                    true_block: body_block,
+                    false_block: merge_block
                 },
                 CXType::unit()
             );
@@ -565,14 +565,14 @@ pub fn generate_instruction(
             builder.set_current_block(body_block);
             generate_instruction(builder, body.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Jump { target: increment_block.clone() },
+                VirtualInstruction::Jump { target: increment_block },
                 CXType::unit()
             );
 
             builder.set_current_block(increment_block);
             generate_instruction(builder, increment.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Jump { target: condition_block.clone() },
+                VirtualInstruction::Jump { target: condition_block },
                 CXType::unit()
             );
 
@@ -651,8 +651,8 @@ pub(crate) fn generate_binop(
             let merge_block = builder.create_block();
             
             let (true_block, false_block) = match op {
-                CXBinOp::LAnd => (no_short_circuit_block, merge_block.clone()),
-                CXBinOp::LOr => (merge_block.clone(), no_short_circuit_block.clone()),
+                CXBinOp::LAnd => (no_short_circuit_block, merge_block),
+                CXBinOp::LOr => (merge_block, no_short_circuit_block),
                 _ => unreachable!("generate_binop: Expected logical operator, found {op}"),
             };
             
@@ -679,7 +679,7 @@ pub(crate) fn generate_binop(
             
             builder.add_instruction(
                 VirtualInstruction::Jump {
-                    target: merge_block.clone()
+                    target: merge_block
                 },
                 CXType::unit()
             );
@@ -755,7 +755,7 @@ pub(crate) fn generate_algebraic_binop(
             )
         },
 
-        BCTypeKind::Pointer { .. } => {
+        BCTypeKind::Pointer => {
             let CXTypeKind::PointerTo(left_inner) = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
             else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
 
@@ -763,7 +763,7 @@ pub(crate) fn generate_algebraic_binop(
                 VirtualInstruction::PointerBinOp {
                     left: left_id,
                     right: right_id,
-                    ptr_type: builder.convert_fixed_cx_type(&left_inner)?,
+                    ptr_type: builder.convert_fixed_cx_type(left_inner)?,
                     op: builder.cx_ptr_binop(op)?
                 },
                 return_type
@@ -801,7 +801,7 @@ pub(crate) fn implicit_return(
     let return_block = builder.create_block();
     builder.add_instruction(
         VirtualInstruction::Jump {
-            target: return_block.clone()
+            target: return_block
         },
         CXType::unit()
     );

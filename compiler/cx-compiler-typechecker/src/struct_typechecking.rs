@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXUnOp};
-use cx_data_ast::parse::value_type::{struct_field_type, CXTypeKind, CXType};
+use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use cx_util::{log_error};
 use crate::checker::{coerce_value, type_check_traverse};
 use crate::TypeEnvironment;

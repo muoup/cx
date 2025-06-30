@@ -109,7 +109,7 @@ pub(crate) fn generate_instruction<'a>(
                 }
 
                 let val = function_state.builder
-                    .build_direct_call(function_val.clone(), arg_vals.as_slice(), inst_num().as_str())
+                    .build_direct_call(function_val, arg_vals.as_slice(), inst_num().as_str())
                     .ok()?;
                 
                 for i in 0..args.len() {
@@ -239,11 +239,10 @@ pub(crate) fn generate_instruction<'a>(
                 function_state
                     .builder
                     .build_unconditional_branch(
-                        function_val
+                        *function_val
                             .get_basic_blocks()
                             .get(*target as usize)
                             .unwrap()
-                            .clone()
                     ).ok()?;
                 
                 CodegenValue::NULL
@@ -334,7 +333,7 @@ pub(crate) fn generate_instruction<'a>(
                 let any_type = bc_llvm_type(global_state, type_).unwrap();
 
                 let basic_val = any_to_basic_val(any_value)
-                    .expect(format!("Failed to convert value {any_value:?} to basic value").as_str());
+                    .unwrap_or_else(|| panic!("Failed to convert value {any_value:?} to basic value"));
                 let basic_type = any_to_basic_type(any_type).unwrap();
                 
                 let memory_val = function_state
@@ -535,11 +534,10 @@ pub(crate) fn generate_instruction<'a>(
                     let value = any_to_basic_val(value)
                         .expect("Failed to convert value to basic value");
 
-                    let block = function_val
+                    let block = *function_val
                         .get_basic_blocks()
                         .get(*block_id as usize)
-                        .unwrap()
-                        .clone();
+                        .unwrap();
 
                     phi_node.add_incoming(&[(&value, block)]);
                 }
@@ -563,17 +561,15 @@ pub(crate) fn generate_instruction<'a>(
                         .ok()?;
                 }
                 
-                let true_block_val = function_val
+                let true_block_val = *function_val
                     .get_basic_blocks()
                     .get(*true_block as usize)
-                    .unwrap()
-                    .clone();
+                    .unwrap();
                 
-                let false_block_val = function_val
+                let false_block_val = *function_val
                     .get_basic_blocks()
                     .get(*false_block as usize)
-                    .unwrap()
-                    .clone();
+                    .unwrap();
                 
                 function_state.builder
                     .build_conditional_branch(
@@ -596,12 +592,11 @@ pub(crate) fn generate_instruction<'a>(
                     .iter()
                     .map(|(value, block)| {
                         let value = global_state.context.i32_type()
-                            .const_int(*value as u64, false);
-                        let block = function_val
+                            .const_int(*value, false);
+                        let block = *function_val
                             .get_basic_blocks()
                             .get(*block as usize)
-                            .unwrap()
-                            .clone();
+                            .unwrap();
                         
                         (value, block)
                     })
@@ -610,9 +605,8 @@ pub(crate) fn generate_instruction<'a>(
                 function_state.builder
                     .build_switch(
                         value,
-                        function_val.get_basic_blocks().get(*default as usize)
-                            .unwrap()
-                            .clone(),
+                        *function_val.get_basic_blocks().get(*default as usize)
+                            .unwrap(),
                         targets.as_slice()
                     )
                     .ok()?;

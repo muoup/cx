@@ -1,6 +1,6 @@
 use std::process::Command;
 use cx_exec_data::CompilerBackend;
-use cx_exec_pipeline::{debug_compile, standard_compile};
+use cx_exec_pipeline::debug_compile;
 
 fn get_output() -> String {
     let mut cmd = Command::new("./a.out");
@@ -16,7 +16,7 @@ fn run_tests() {
     std::env::set_current_dir("tests/cases").unwrap();
     
     std::fs::remove_dir_all(".internal")
-        .unwrap_or_else(|_| {});
+        .unwrap_or({});
     
     let cases_dir = std::fs::read_dir("./").unwrap();
 
@@ -27,7 +27,7 @@ fn run_tests() {
         if path.extension().is_some() && path.extension().unwrap() == "cx" {
             let expected_output_path = path.with_extension("cx-output");
             let expected_output = std::fs::read_to_string(&expected_output_path).unwrap_or_else(|_|
-                panic!("Could not read expected output file: {:?}", expected_output_path)
+                panic!("Could not read expected output file: {expected_output_path:?}")
             );
             
             debug_compile(path.to_str().unwrap(), "a.out", CompilerBackend::Cranelift, Default::default());

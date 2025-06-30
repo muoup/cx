@@ -3,13 +3,13 @@ use std::io::Write;
 use std::sync::Mutex;
 
 pub fn dump_data(data: &impl std::fmt::Display) {
-    dump_write(&format!("{}\n\n", data));
+    dump_write(&format!("{data}\n\n"));
 }
 
 pub fn dump_all(data: Vec<impl std::fmt::Display>) {
     let data = data
         .into_iter()
-        .map(|d| format!("{}\n", d))
+        .map(|d| format!("{d}\n"))
         .collect::<Vec<String>>()
         .join("\n");
 

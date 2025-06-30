@@ -5,7 +5,6 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_ast::parse::ast::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, ProgramBytecode, ValueID};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
@@ -32,7 +31,7 @@ impl CodegenValue {
         match self {
             CodegenValue::Value(value) => *value,
 
-            _ => panic!("Expected Value, got: {:?}", self)
+            _ => panic!("Expected Value, got: {self:?}")
         }
     }
 
@@ -40,14 +39,14 @@ impl CodegenValue {
         match self {
             CodegenValue::FunctionID { id, .. } => *id,
 
-            _ => panic!("Expected FunctionID, got: {:?}", self)
+            _ => panic!("Expected FunctionID, got: {self:?}")
         }
     }
 
     pub(crate) fn as_func_name(&self) -> &str {
         match self {
             CodegenValue::FunctionID { fn_name, .. } => fn_name.as_str(),
-            _ => panic!("Expected FunctionID, got: {:?}", self)
+            _ => panic!("Expected FunctionID, got: {self:?}")
         }
     }
 }
@@ -125,7 +124,7 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
         global_state.global_strs.push(global_val);
     }
 
-    for (_, fn_prototype) in &ast.fn_map {
+    for fn_prototype in ast.fn_map.values() {
         codegen_fn_prototype(&mut global_state, fn_prototype);
     }
 
@@ -150,7 +149,7 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     std::fs::create_dir_all(output_path.parent().unwrap()).expect("Failed to create output directory");
     std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
 
-    println!("Successfully generated object file to {}", output);
+    println!("Successfully generated object file to {output}");
 
     Some(())
 }

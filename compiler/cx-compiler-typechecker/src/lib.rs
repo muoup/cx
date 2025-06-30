@@ -1,4 +1,4 @@
-use cx_data_ast::lex::token::{TokenKind, Token};
+use cx_data_ast::lex::token::Token;
 use cx_data_ast::parse::ast::{CXFunctionMap, CXGlobalStmt, CXParameter, CXTypeMap, CXAST};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::ExprTypeMap;

@@ -153,7 +153,7 @@ impl BytecodeBuilder {
             BCTypeKind::Bool =>
                 self.bool_const(value != 0),
             
-            _ => panic!("INTERNAL PANIC: Attempted to create integer constant with non-integer type: {:?}", bc_type)
+            _ => panic!("INTERNAL PANIC: Attempted to create integer constant with non-integer type: {bc_type:?}")
         }
     }
     
@@ -205,7 +205,7 @@ impl BytecodeBuilder {
     
     pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
         let Some(value) = self.get_variable(value_id) else {
-            panic!("INTERNAL PANIC: Failed to get variable for value id: {:?}", value_id);
+            panic!("INTERNAL PANIC: Failed to get variable for value id: {value_id:?}");
         };
         
         Some(&value.type_)
@@ -215,7 +215,7 @@ impl BytecodeBuilder {
         let cond_block = self.create_block();
 
         let context = self.fun_mut();
-        context.continue_stack.push(cond_block.clone());
+        context.continue_stack.push(cond_block);
 
         cond_block
     }
@@ -224,7 +224,7 @@ impl BytecodeBuilder {
         let merge_block = self.create_named_block("merge");
 
         let context = self.fun_mut();
-        context.merge_stack.push(merge_block.clone());
+        context.merge_stack.push(merge_block);
 
         merge_block
     }

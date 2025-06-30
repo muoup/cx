@@ -169,9 +169,9 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
                     return None;
                 }
             },
-            Some(TokenKind::Operator(op)) => op_to_binop(op.clone())?,
+            Some(TokenKind::Operator(op)) => op_to_binop(op)?,
             Some(TokenKind::Punctuator(punc)) => {
-                let punc = punc.clone();
+                let punc = punc;
                 data.toks.back();
                 match punc {
                     PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
@@ -182,7 +182,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
             },
             Some(TokenKind::Assignment(op)) => {
                 let op = match op {
-                    Some(op) => Some(Box::new(op_to_binop(op.clone())?)),
+                    Some(op) => Some(Box::new(op_to_binop(op)?)),
                     None => None
                 };
 

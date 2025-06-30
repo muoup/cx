@@ -7,10 +7,10 @@ use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
 use std::collections::HashMap;
-use cx_data_bytecode::{BCFunctionPrototype, BytecodeFunction, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BytecodeFunction, ValueID};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
-    let sig = prepare_function_sig(&mut global_state.object_module, &prototype)?;
+    let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
 
     let id = global_state.object_module
         .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)
@@ -39,8 +39,8 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
 
         function_ids: &global_state.function_ids,
 
-        type_map: &global_state.type_map,
-        fn_map: &global_state.fn_map,
+        type_map: global_state.type_map,
+        fn_map: global_state.fn_map,
 
         variable_table: VariableTable::new(),
         block_map: Vec::new(),
@@ -79,7 +79,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         }
 
         for (value_id, instr) in fn_block.body.iter().enumerate() {
-            if let Some(val) = codegen_instruction(&mut context, &instr) {
+            if let Some(val) = codegen_instruction(&mut context, instr) {
                 context.variable_table.insert(
                     ValueID {
                         block_id: block_id as u32,
