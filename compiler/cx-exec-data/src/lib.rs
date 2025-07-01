@@ -35,9 +35,9 @@ pub fn libary_path_prefix() -> String {
         .to_string();
     
     if cfg!(feature = "test") {
-        format!("{}/../../../lib/", path)
+        format!("{path}/../../../lib/")
     } else {
-        format!("{}/../../lib/", path)
+        format!("{path}/../../lib/")
     }
 }
 
@@ -52,6 +52,6 @@ pub fn cx_path_str(path: &str) -> String {
             format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &path)
         }
     } else {
-        format!("{}.cx", path)
+        format!("{path}.cx")
     }
 }

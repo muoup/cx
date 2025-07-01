@@ -24,7 +24,7 @@ impl BytecodeBuilder {
     ) -> Option<BCFunctionPrototype> {
         let Some(CXTypeKind::Function { prototype })
             = cx_type.intrinsic_type(&self.cx_type_map) else {
-            panic!("Expected function type, got: {:?}", cx_type);
+            panic!("Expected function type, got: {cx_type:?}");
         };
         
         self.convert_cx_prototype(prototype)
@@ -104,7 +104,7 @@ impl BytecodeBuilder {
                 CXBinOp::Assign(_) |
                 CXBinOp::Access |
                 CXBinOp::MethodCall |
-                CXBinOp::ArrayIndex => panic!("Invalid binary operation: {:?}", op),
+                CXBinOp::ArrayIndex => panic!("Invalid binary operation: {op:?}"),
             }
         )
     }
@@ -252,6 +252,9 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
 
             CXTypeKind::Opaque { size, .. } =>
                 BCTypeKind::Opaque { bytes: *size },
+            
+            CXTypeKind::Bool => 
+                BCTypeKind::Bool,
 
             CXTypeKind::Integer { signed: true, bytes} =>
                 BCTypeKind::Signed { bytes: *bytes },
@@ -286,7 +289,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                         None => "".to_string()
                     },
                     fields: fields.iter()
-                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(cx_type_map, &_type)?)))
+                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(cx_type_map, _type)?)))
                         .collect::<Option<Vec<_>>>()?
                 },
             CXTypeKind::Union { fields, name } =>
@@ -296,7 +299,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                         None => "".to_string()
                     },
                     fields: fields.iter()
-                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(cx_type_map, &_type)?)))
+                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(cx_type_map, _type)?)))
                         .collect::<Option<Vec<_>>>()?
                 },
 

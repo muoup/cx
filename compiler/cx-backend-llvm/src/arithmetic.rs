@@ -1,4 +1,4 @@
-use inkwell::values::{AnyValue, AnyValueEnum, IntMathValue, IntValue};
+use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 use cx_data_bytecode::{BCIntBinOp, BCPtrBinOp};
 use cx_data_bytecode::types::BCType;
 use crate::{CodegenValue, FunctionState, GlobalState};

@@ -110,12 +110,23 @@ pub enum VirtualInstruction {
         type_: BCType
     },
 
+    // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
+    // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
+    // an error,
+    BoolExtend {
+        value: ValueID,
+    },
+    
     ZExtend {
         value: ValueID,
     },
 
     SExtend {
         value: ValueID,
+    },
+    
+    Phi {
+        predecessors: Vec<(ValueID, ElementID)>,
     },
 
     Trunc {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use crate::lex::token::{TokenKind, Token};
+use crate::lex::token::Token;
 use crate::parse::value_type::{CXType};
 use crate::parse::identifier::CXIdent;
 

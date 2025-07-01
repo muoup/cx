@@ -100,7 +100,7 @@ pub fn parse_intrinsic(data: &mut ParserData) -> Option<CXIdent> {
     let mut ss = String::new();
 
     while let Some(TokenKind::Intrinsic(ident)) = data.toks.peek().map(|tok| &tok.kind) {
-        ss.push_str(format!("{:?}", ident).to_lowercase().as_str());
+        ss.push_str(format!("{ident:?}").to_lowercase().as_str());
         data.toks.next();
     }
 

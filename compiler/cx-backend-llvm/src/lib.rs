@@ -10,7 +10,7 @@ use inkwell::module::{Linkage, Module};
 use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{AnyType, FunctionType};
-use inkwell::values::{AnyValue, AnyValueEnum, AsValueRef, BasicValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue};
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -56,9 +56,9 @@ pub(crate) enum CodegenValue<'a> {
 impl<'a> CodegenValue<'a> {
     pub fn get_value(&self) -> AnyValueEnum<'a> {
         match self {
-            CodegenValue::Value(value) => value.clone(),
+            CodegenValue::Value(value) => *value,
 
-            _ => panic!("Expected a value, found: {:?}", self)
+            _ => panic!("Expected a value, found: {self:?}")
         }
     }
 
@@ -66,7 +66,7 @@ impl<'a> CodegenValue<'a> {
         match self {
             CodegenValue::FunctionRef(name) => name,
 
-            _ => panic!("Expected a function reference, found: {:?}", self)
+            _ => panic!("Expected a function reference, found: {self:?}")
         }
     }
 }
@@ -119,7 +119,7 @@ pub fn bytecode_aot_codegen(
 
     for func in bytecode.fn_defs.iter() {
         fn_aot_codegen(func, &global_state)
-            .expect(format!("Failed to generate function code for function: {}", func.prototype.name).as_str());
+            .unwrap_or_else(|| panic!("Failed to generate function code for function: {}", func.prototype.name));
     }
 
     let target = Target::from_triple(
@@ -148,7 +148,7 @@ pub fn bytecode_aot_codegen(
     
     dump_data(&format!("{}", global_state.module.print_to_string().to_string_lossy()));
     
-    global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {:#?}", err));
+    global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {err:#?}"));
     global_state.module.set_triple(&TargetMachine::get_default_triple());
     
     global_state.module
@@ -196,22 +196,20 @@ fn fn_aot_codegen(
     };
 
     for i in 0..bytecode.blocks.len() {
-        global_state.context.append_basic_block(func_val, format!("block_{}", i).as_str());
+        global_state.context.append_basic_block(func_val, format!("block_{i}").as_str());
     }
 
     for (block_id, block) in bytecode.blocks.iter().enumerate() {
-        let block_val = func_val.get_basic_blocks().get(block_id).unwrap().clone();
+        let block_val = *func_val.get_basic_blocks().get(block_id).unwrap();
         function_state.builder.position_at_end(block_val);
 
         for (value_id, inst) in block.body.iter().enumerate() {
             let value = instruction::generate_instruction(
-                &global_state,
+                global_state,
                 &function_state,
                 &func_val,
                 inst
-            ).expect(format!(
-                "Failed to generate instruction {}", inst
-            ).as_str());
+            ).unwrap_or_else(|| panic!("Failed to generate instruction {inst}"));
 
             function_state.value_map.insert(
                 ValueID { block_id: block_id as ElementID, value_id: value_id as ElementID },
@@ -231,7 +229,7 @@ fn cache_type<'a>(
     global_state: &GlobalState<'a>,
     _type: &BCType
 ) -> Option<()> {
-    let BCTypeKind::Struct { fields, name } = &_type.kind else {
+    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         return Some(());
     };
 

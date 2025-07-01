@@ -8,3 +8,4 @@
 *.cx-types
 *.cx-functions
 *.o
+*.out

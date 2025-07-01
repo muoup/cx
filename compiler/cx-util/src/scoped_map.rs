@@ -6,6 +6,12 @@ pub struct ScopedMap<T> {
     overwrites: Vec<Vec<(String, T)>>
 }
 
+impl<T> Default for ScopedMap<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> ScopedMap<T> {
     pub fn new() -> Self {
         Self {

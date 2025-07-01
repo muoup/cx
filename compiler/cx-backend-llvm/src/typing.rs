@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use inkwell::AddressSpace;
 use crate::GlobalState;
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum, FunctionType};
-use inkwell::values::{AnyValueEnum, AsValueRef, BasicValueEnum};
+use inkwell::values::{AnyValueEnum, BasicValueEnum};
 use cx_data_bytecode::BCFunctionPrototype;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 
@@ -45,7 +45,7 @@ pub(crate) fn create_fn_proto<'a>(return_type: AnyTypeEnum<'a>, args: &[AnyTypeE
     let args = args
         .iter()
         .map(|arg| {
-            let basic_type = any_to_basic_type(arg.clone())?;
+            let basic_type = any_to_basic_type(*arg)?;
             
             unsafe { Some(BasicMetadataTypeEnum::new(basic_type.as_type_ref())) }
         })
@@ -59,7 +59,7 @@ pub(crate) fn create_fn_proto<'a>(return_type: AnyTypeEnum<'a>, args: &[AnyTypeE
             AnyTypeEnum::StructType(struct_type) => struct_type.fn_type(args.as_slice(), var_args),
             AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), var_args),
             
-            _ => panic!("Invalid return type, found: {:?}", return_type)
+            _ => panic!("Invalid return type, found: {return_type:?}")
         }
     )
 }
@@ -71,7 +71,6 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Signed { bytes, .. } |
             BCTypeKind::Unsigned { bytes, .. } => {
                 match *bytes {
-                    0 => state.context.bool_type().as_any_type_enum(),
                     1 => state.context.i8_type().as_any_type_enum(),
                     2 => state.context.i16_type().as_any_type_enum(),
                     4 => state.context.i32_type().as_any_type_enum(),
@@ -80,6 +79,7 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
                     _ => panic!("Invalid integer size")
                 }
             },
+            BCTypeKind::Bool => state.context.bool_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
 
@@ -104,7 +104,7 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
                     false
                 );
 
-                if name != "" {
+                if !name.is_empty() {
                     let anonymous_name = anonymous_struct_name();
                     let anonymous_struct_type = state.context.opaque_struct_type(&anonymous_name);
                     anonymous_struct_type.set_body(_types.as_slice(), false);
@@ -117,7 +117,7 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
                     .unwrap_or_else(|| state.context.opaque_struct_type(name.as_str()))
                     .as_any_type_enum(),
 
-            _ => panic!("Invalid type: {:?}", _type)
+            _ => panic!("Invalid type: {_type:?}")
         }
     )
 }

@@ -1,6 +1,6 @@
 use cx_util::log_error;
 use serde::{Deserialize, Serialize};
-use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXTypeMap};
+use crate::parse::ast::{CXExpr, CXFunctionPrototype, CXTypeMap};
 use crate::parse::identifier::CXIdent;
 
 pub type CXTypeSpecifier = u8;
@@ -21,6 +21,7 @@ pub struct CXType {
 pub enum CXTypeKind {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
+    Bool,
     Structured {
         name: Option<CXIdent>,
         fields: Vec<(String, CXType)>
@@ -188,10 +189,10 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
             true,
 
         (CXTypeKind::Identifier { name: name1, .. }, _) =>
-            same_type(type_map, &type_map.get(name1.as_str()).unwrap(), t2),
+            same_type(type_map, type_map.get(name1.as_str()).unwrap(), t2),
 
         (_, CXTypeKind::Identifier { name: name2, .. }) =>
-            same_type(type_map, t1, &type_map.get(name2.as_str()).expect(format!("Type not found: {name2}").as_str())),
+            same_type(type_map, t1, type_map.get(name2.as_str()).unwrap_or_else(|| panic!("Type not found: {name2}"))),
 
         (CXTypeKind::Array { _type: t1_type, .. },
          CXTypeKind::Array { _type: t2_type, .. }) =>
@@ -222,6 +223,7 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
             CXTypeKind::Float { bytes: t2_bytes }) =>
             t1_bytes == t2_bytes,
 
+        (CXTypeKind::Bool, CXTypeKind::Bool) |
         (CXTypeKind::Unit, CXTypeKind::Unit) =>
             true,
 

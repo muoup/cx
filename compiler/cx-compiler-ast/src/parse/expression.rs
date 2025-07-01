@@ -6,7 +6,7 @@ use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error};
-use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base, parse_typemods};
+use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr.kind {
@@ -25,7 +25,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     }
 
     if let Some(TokenKind::Keyword(keyword)) = data.toks.peek().map(|t| &t.kind) {
-        let keyword = keyword.clone();
+        let keyword = *keyword;
         data.toks.next();
 
         if let Some(expr) = parse_keyword_expr(data, keyword) {
@@ -186,9 +186,9 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
     let acc = match &data.toks.next()?.kind {
         TokenKind::IntLiteral(value) =>
-            CXExprKind::IntLiteral { bytes: 4, val: value.clone() },
+            CXExprKind::IntLiteral { bytes: 4, val: *value },
         TokenKind::FloatLiteral(value) =>
-            CXExprKind::FloatLiteral { bytes: 4, val: value.clone() },
+            CXExprKind::FloatLiteral { bytes: 4, val: *value },
         TokenKind::StringLiteral(value) =>
             CXExprKind::StringLiteral { val: value.clone() },
 
@@ -305,7 +305,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
                 CXExprKind::If {
                     condition: Box::new(expr),
                     then_branch: Box::new(then_body),
-                    else_branch: else_body.map(|b| Box::new(b))
+                    else_branch: else_body.map(Box::new)
                 }
             )
         },
@@ -411,14 +411,4 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
 
         _ => log_error!("Unsupported keyword: {:#?}", keyword)
     }.map(|e| e.into_expr(start_index, data.toks.index))
-}
-
-pub(crate) fn parse_braced_expr(data: &mut ParserData) -> Option<CXExpr> {
-    todo!()
-}
-
-pub(crate) fn parse_name(data: &mut ParserData) -> Option<String> {
-    assert_token_matches!(data, TokenKind::Identifier(identifier));
-
-    Some(identifier.clone())
 }

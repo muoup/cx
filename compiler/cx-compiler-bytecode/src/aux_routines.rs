@@ -1,4 +1,3 @@
-use cx_data_ast::parse::ast::CXExpr;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::bytecode_error_log;
 use crate::builder::BytecodeBuilder;

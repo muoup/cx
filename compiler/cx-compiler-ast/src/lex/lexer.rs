@@ -105,7 +105,7 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
     while let Some(c) = iter.peek() {
         if c == '.' {
             dot = true;
-        } else if !c.is_digit(10) {
+        } else if !c.is_ascii_digit() {
             break;
         }
         iter.next();
@@ -114,7 +114,7 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
     let kind = if dot {
         TokenKind::FloatLiteral(num.parse().unwrap())
     } else {
-        TokenKind::IntLiteral(num.parse().expect(&format!("Invalid number: {}\n", num)))
+        TokenKind::IntLiteral(num.parse().unwrap_or_else(|_| panic!("Invalid number: {num}\n")))
     };
     
     Some(
@@ -185,7 +185,7 @@ fn char_lex(iter: &mut CharIter) -> Option<Token> {
             assert_eq!(iter.next(), Some('\''));
             TokenKind::IntLiteral('\r' as i64)
         },
-        _ => panic!("Invalid character literal: '{}'", c)
+        _ => panic!("Invalid character literal: '{c}'")
     };
     
     Some(

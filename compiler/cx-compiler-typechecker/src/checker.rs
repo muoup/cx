@@ -4,7 +4,7 @@ use cx_data_ast::parse::value_type::{get_intrinsic_type, same_type, CXTypeKind, 
 use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::typecheck_access;
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
-use crate::{type_check, TypeEnvironment};
+use crate::TypeEnvironment;
 
 pub(crate) fn type_check_traverse<'a>(env: &'a mut TypeEnvironment, expr: &mut CXExpr) -> Option<&'a CXType> {
     let _type = type_check_inner(env, expr)?;
@@ -59,7 +59,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXUnOp::AddressOf => {
                     let operand_type = type_check_traverse(env, operand.as_mut())?.clone();
 
-                    match operand_type.intrinsic_type(&env.type_map)? {
+                    match operand_type.intrinsic_type(env.type_map)? {
                         CXTypeKind::MemoryAlias(inner) => Some(inner.clone().pointer_to()),
                         CXTypeKind::Function { .. } => coerce_value(env, operand.as_mut()),
 
@@ -88,7 +88,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                         log_error!("TYPE ERROR: Increment operator can only be applied to memory references, found: {operand}");
                     };
                     
-                    match get_intrinsic_type(env.type_map, &inner).cloned()? {
+                    match get_intrinsic_type(env.type_map, inner).cloned()? {
                         CXTypeKind::Integer { .. } |
                         CXTypeKind::PointerTo(_) => {},
 
@@ -136,11 +136,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
             let mut lhs_type = coerce_mem_ref(env, lhs)?;
 
-            if let Some(CXTypeKind::PointerTo(inner)) = lhs_type.intrinsic_type(&env.type_map) {
+            if let Some(CXTypeKind::PointerTo(inner)) = lhs_type.intrinsic_type(env.type_map) {
                 lhs_type = *inner.clone();
             }
 
-            let CXTypeKind::Function { prototype } = lhs_type.intrinsic_type(&env.type_map).cloned()? else {
+            let CXTypeKind::Function { prototype } = lhs_type.intrinsic_type(env.type_map).cloned()? else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
 
@@ -178,6 +178,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                             let to_type = CXTypeKind::Float { bytes: 8 }.to_val_type();
                             implicit_cast(env, args[i], &va_type, &to_type)?;
                         }
+                    },
+                    
+                    CXTypeKind::Bool => {
+                        let to_type = CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type();
+                        implicit_cast(env, args[i], &va_type, &to_type)?;
                     },
 
                     _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", args[i]),
@@ -305,7 +310,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 if !value_type.is_structure_ref(env.type_map) {
                     implicit_coerce(env, value, env.return_type.clone())?;
                 }
-            } else if !env.return_type.is_void(&env.type_map) {
+            } else if !env.return_type.is_void(env.type_map) {
                 log_error!("TYPE ERROR: Function with empty return in non-void context");
             }
 

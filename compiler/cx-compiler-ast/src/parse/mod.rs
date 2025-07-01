@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, serialize_type_data};
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXTypeMap, CXAST};
-use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
+use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
+use cx_data_ast::parse::parser::ParserData;
 use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
 use crate::parse::intrinsic_types::add_intrinsic_types;
@@ -14,7 +14,7 @@ pub mod operators;
 mod parsing_tools;
 pub mod intrinsic_types;
 
-pub fn parse_types_and_deps(mut data: ParserData, internal_dir: &str) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
+pub fn parse_types_and_deps(mut data: ParserData) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
     let (mut type_map, public_types, imports) = parse_types(&mut data)?;
 
     add_intrinsic_types(&mut type_map);

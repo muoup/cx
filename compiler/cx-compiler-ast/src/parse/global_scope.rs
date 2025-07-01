@@ -2,10 +2,8 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
-use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
-use crate::parse::typing::{parse_initializer, parse_plain_typedef};
+use crate::parse::typing::parse_initializer;
 use cx_util::{log_error, point_log_error};
 use crate::parse::parsing_tools::goto_statement_end;
 
@@ -59,7 +57,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
         match &tok.kind {
             TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
             TokenKind::Operator(OperatorType::ScopeRes) => import_path.push('/'),
-            TokenKind::Identifier(ident) => import_path.push_str(&ident),
+            TokenKind::Identifier(ident) => import_path.push_str(ident),
 
             _ => {
                 log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
@@ -137,7 +135,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<ParseParamsResult> {
         }
 
         if let Some((name, type_)) = parse_initializer(data) {
-            let name = name.map(|name| name);
+            let name = name;
 
             params.push(CXParameter { name, type_ });
         } else {

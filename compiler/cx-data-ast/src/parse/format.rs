@@ -1,4 +1,3 @@
-use std::env::args;
 use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
 use crate::parse::value_type::{CXTypeKind, CXType};
 use cx_util::format::{dedent, indent};
@@ -8,7 +7,7 @@ use std::fmt::{Display, Formatter};
 impl Display for CXAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for stmt in &self.global_stmts {
-            writeln!(f, "{}\n", stmt)?;
+            writeln!(f, "{stmt}\n")?;
         }
 
         Ok(())
@@ -38,7 +37,7 @@ impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}({}) -> {}",
                self.name,
-               self.params.iter().map(|p| format!("{}", p)).collect::<Vec<_>>().join(", "),
+               self.params.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", "),
                self.return_type
         )
     }
@@ -169,8 +168,7 @@ impl Display for CXExprKind {
                     fwriteln!(f, "}} else {{")?;
                     fwriteln!(f, "{}", else_branch)?;
                     dedent();
-                } else {
-                }
+                } 
                 fwrite!(f, "}}")
             },
 
@@ -217,59 +215,60 @@ impl Display for CXTypeKind {
             CXTypeKind::Integer { bytes, signed } => {
                 let signed_str = if *signed { "i" } else { "u" };
                 let signed_bytes = *bytes * 8;
-                write!(f, "{}{}", signed_str, signed_bytes)
+                write!(f, "{signed_str}{signed_bytes}")
             },
             CXTypeKind::Float { bytes } => {
                 let float_bytes = *bytes * 8;
-                write!(f, "f{}", float_bytes)
+                write!(f, "f{float_bytes}")
             },
+            CXTypeKind::Bool => write!(f, "bool"),
             CXTypeKind::Structured { fields, name } => {
                 let field_strs = fields.iter()
-                    .map(|(name, type_)| format!("{}: {}", name, type_))
+                    .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let name_str = if let Some(name) = name {
-                    format!("{} ", name)
+                    format!("{name} ")
                 } else {
                     "".to_string()
                 };
 
-                write!(f, "struct {} {{ {} }}", name_str, field_strs)
+                write!(f, "struct {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Union { fields, name } => {
                 let field_strs = fields.iter()
-                    .map(|(name, type_)| format!("{}: {}", name, type_))
+                    .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let name_str = if let Some(name) = name {
-                    format!("{} ", name)
+                    format!("{name} ")
                 } else {
                     "".to_string()
                 };
 
-                write!(f, "union {} {{ {} }}", name_str, field_strs)
+                write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
             CXTypeKind::PointerTo(inner) => {
-                write!(f, "*{}", inner)
+                write!(f, "*{inner}")
             },
             CXTypeKind::Array { size, _type } => {
-                write!(f, "[{}; {}]", size, _type)
+                write!(f, "[{size}; {_type}]")
             },
             CXTypeKind::VariableLengthArray { _type, .. } => {
-                write!(f, "[{}; variable]", _type)
+                write!(f, "[{_type}; variable]")
             },
             CXTypeKind::Opaque { name, size } => {
-                write!(f, "OPAQUE_{}(\"{}\")", size, name)
+                write!(f, "OPAQUE_{size}(\"{name}\")")
             },
             CXTypeKind::Identifier { name, .. } => {
-                write!(f, "{}", name)
+                write!(f, "{name}")
             },
             CXTypeKind::Function { prototype } => {
-                write!(f, "fn {}", prototype)
+                write!(f, "fn {prototype}")
             },
             CXTypeKind::MemoryAlias(inner) => {
-                write!(f, "mem({})", inner)
+                write!(f, "mem({inner})")
             },
         }
     }

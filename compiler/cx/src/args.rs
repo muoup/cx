@@ -68,7 +68,7 @@ pub fn parse_args() -> Result<AppArgs, String> {
                 }
             }
             _ if arg.starts_with('-') => {
-                return Err(format!("Unknown flag: {}", arg));
+                return Err(format!("Unknown flag: {arg}"));
             }
             _ => {
                 if input_file.is_some() {

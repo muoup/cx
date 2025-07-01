@@ -64,7 +64,7 @@ impl PipelineStage {
                 dump_data(bytecode);
             },
             _ => {
-                dump_write(format!("Pipeline stage has no dump implementation: {:?}", self).as_str())
+                dump_write(format!("Pipeline stage has no dump implementation: {self:?}").as_str())
             }
         }
     }
@@ -112,8 +112,8 @@ impl CompilerPipeline {
     }
 
     pub fn read_file(mut self) -> Self {
-        let file_contents = std::fs::read_to_string(format!("{}", self.source_dir.as_str()))
-            .expect(format!("PIPELINE ERROR: Failed to read source file \"{}\"", self.source_dir).as_str());
+        let file_contents = std::fs::read_to_string(self.source_dir.as_str())
+            .unwrap_or_else(|_| panic!("PIPELINE ERROR: Failed to read source file \"{}\"", self.source_dir));
 
         self.pipeline_stage = PipelineStage::FileRead(file_contents);
         self
@@ -151,7 +151,7 @@ impl CompilerPipeline {
 
         let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let (mut type_map, public_types, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data, self.internal_dir.as_str())
+        let (mut type_map, public_types, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data)
             .expect("Failed to parse types and dependencies");
 
         let recursive_imports = request_type_compilation(imports.as_slice())
@@ -160,11 +160,11 @@ impl CompilerPipeline {
         
         for import in imports.iter() {
             let deserialized = cx_compiler_modules::deserialize_type_data(import)
-                .expect(format!("Failed to deserialize module data for import: {}", import).as_str());
+                .unwrap_or_else(|| panic!("Failed to deserialize module data for import: {import}"));
             
             for (type_name, cx_type) in deserialized {
                 if type_map.contains_key(&type_name) {
-                    eprintln!("WARNING: Type {} already exists in the type map, skipping import.", type_name);
+                    eprintln!("WARNING: Type {type_name} already exists in the type map, skipping import.");
                 } else {
                     type_map.insert(type_name, cx_type);
                 }
@@ -325,9 +325,9 @@ impl CompilerPipeline {
         let mut imports = HashSet::new();
         
         for import in &self.imports {
-            let import_path = format!(".internal/{}/.o", import);
+            let import_path = format!(".internal/{import}/.o");
             if !Path::new(&import_path).exists() {
-                eprintln!("ERROR: Import path does not exist: {}", import_path);
+                eprintln!("ERROR: Import path does not exist: {import_path}");
                 exit(1);
             }
             
@@ -346,12 +346,12 @@ impl CompilerPipeline {
             cmd.arg(import);
         }
         
-        println!("Linking with command: {:?}", cmd);
+        println!("Linking with command: {cmd:?}");
         
         let status = cmd.status().expect("Failed to execute linker command");
 
         if !status.success() {
-            eprintln!("ERROR: Linking failed with status: {}", status);
+            eprintln!("ERROR: Linking failed with status: {status}");
             exit(1);
         }
         

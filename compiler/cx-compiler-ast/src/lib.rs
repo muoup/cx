@@ -1,4 +1,4 @@
-use cx_data_ast::lex::token::{TokenKind, Token};
+use cx_data_ast::lex::token::Token;
 use cx_data_ast::parse::ast::CXAST;
 
 pub mod lex;

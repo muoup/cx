@@ -37,7 +37,7 @@ pub(crate) fn signed_bin_op(builder: &mut FunctionBuilder, op: OperatorType, lhs
             OperatorType::LessEqual => builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, lhs, rhs),
             OperatorType::Greater => builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, lhs, rhs),
             OperatorType::GreaterEqual => builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, lhs, rhs),
-            _ => panic!("Unimplemented operator {:?}", op)
+            _ => panic!("Unimplemented operator {op:?}")
         }
     )
 }
@@ -49,7 +49,7 @@ pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> Dat
     ).unwrap();
 
     let mut str_data = str.to_owned().into_bytes();
-    str_data.push('\0' as u8);
+    str_data.push(b'\0');
 
     let mut data = DataDescription::new();
     data.define(str_data.into_boxed_slice());

@@ -14,7 +14,7 @@ pub fn serialize_type_data<'a>(internal_path: &str, type_map: &CXTypeMap, types:
     
     std::fs::create_dir_all(format!("{}/{}", directory.parent()?.display(), directory.file_stem()?.display()))
         .expect("Failed to create internal directory");
-    let type_file_dir = format!("{}/.cx-types", internal_path);
+    let type_file_dir = format!("{internal_path}/.cx-types");
     let mut type_file = File::create(type_file_dir)
         .expect("Failed to create type file");
     
@@ -37,7 +37,7 @@ pub fn serialize_function_data<'a>(internal_path: &str, function_map: &CXFunctio
     std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
     
-    let mut function_file = File::create(format!("{}/.cx-functions", internal_path))
+    let mut function_file = File::create(format!("{internal_path}/.cx-functions"))
         .expect("Failed to create function file");
     
     for fn_name in functions {
@@ -58,9 +58,9 @@ pub fn serialize_function_data<'a>(internal_path: &str, function_map: &CXFunctio
 pub fn deserialize_type_data(file_path: &str) -> Option<Vec<(String, CXType)>> {
     let mut types = Vec::new();
     
-    let type_file_path = format!(".internal/{}/.cx-types", file_path);
+    let type_file_path = format!(".internal/{file_path}/.cx-types");
     let type_file = File::open(&type_file_path)
-        .expect(format!("Failed to open type file: {}", type_file_path).as_str());
+        .unwrap_or_else(|_| panic!("Failed to open type file: {type_file_path}"));
     
     for line in BufReader::new(type_file).lines() {
         let line = line.expect("Failed to read line from type file");
@@ -76,7 +76,7 @@ pub fn deserialize_type_data(file_path: &str) -> Option<Vec<(String, CXType)>> {
 pub fn deserialize_function_data(file_path: &str) -> Option<Vec<CXFunctionPrototype>> {
     let mut functions = Vec::new();
     
-    let function_file_path = format!(".internal/{}/.cx-functions", file_path);
+    let function_file_path = format!(".internal/{file_path}/.cx-functions");
     let function_file = File::open(&function_file_path)
         .expect("Failed to open function file");
     
@@ -111,7 +111,7 @@ pub fn serialize_module_data(ast: &CXAST) -> Option<()> {
     let mut function_file = File::create(format!("{}/.cx-functions", ast.internal_path))
         .expect("Failed to create function file");
     
-    for (_, function) in &ast.function_map {
+    for function in ast.function_map.values() {
         let serialized = serde_json::to_string(function)
             .expect("Failed to serialize function");
         
@@ -129,11 +129,11 @@ pub fn deserialize_module_data(file_path: &str) -> Option<ModuleData> {
         functions: Vec::new(),
     };
     
-    let type_file_path = format!(".internal/{}/.cx-types", file_path);
-    let function_file_path = format!(".internal/{}/.cx-functions", file_path);
+    let type_file_path = format!(".internal/{file_path}/.cx-types");
+    let function_file_path = format!(".internal/{file_path}/.cx-functions");
     
     let type_file = File::open(&type_file_path)
-        .expect(format!("Failed to open type file: {}", type_file_path).as_str());
+        .unwrap_or_else(|_| panic!("Failed to open type file: {type_file_path}"));
     
     for line in BufReader::new(type_file).lines() {
         let line = line.expect("Failed to read line from type file");
@@ -144,7 +144,7 @@ pub fn deserialize_module_data(file_path: &str) -> Option<ModuleData> {
     }
     
     let function_file = File::open(&function_file_path)
-        .expect(format!("Failed to open function file: {}", function_file_path).as_str());
+        .unwrap_or_else(|_| panic!("Failed to open function file: {function_file_path}"));
     
     for line in BufReader::new(function_file).lines() {
         let line = line.expect("Failed to read line from function file");

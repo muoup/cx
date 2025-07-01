@@ -1,0 +1,7 @@
+int main() {
+    // Weird edge case where Cranelift will struggle with this
+    // since internally a boolean is already an i8, meaning it
+    // is trying to uextend from an i8 to an i8, which causes
+    // an error.
+    i8 convert = (1 == 1);
+}

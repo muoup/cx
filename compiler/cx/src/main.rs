@@ -7,7 +7,7 @@ fn main() {
     let args = match args::parse_args() {
         Ok(args) => args,
         Err(err) => {
-            eprintln!("Error: {}", err);
+            eprintln!("Error: {err}");
             std::process::exit(1);
         }
     };

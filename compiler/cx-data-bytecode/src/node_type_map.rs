@@ -7,6 +7,12 @@ pub struct ExprTypeMap {
     inner: HashMap<u64, CXType>
 }
 
+impl Default for ExprTypeMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExprTypeMap {
     fn node_hash(&self, expr: &CXExpr) -> u64 {
         // Using the address can't possibly go wrong, right?

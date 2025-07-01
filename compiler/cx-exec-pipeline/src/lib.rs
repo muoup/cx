@@ -11,7 +11,7 @@ pub fn request_type_compilation(file_paths: &[String]) -> Option<Vec<String>> {
     let mut imports = Vec::new();
     
     for import_path in file_paths.iter() {
-        let internal_path = format!(".internal/{}/.cx-types", import_path);
+        let internal_path = format!(".internal/{import_path}/.cx-types");
         let internal_path = Path::new(&internal_path);
 
         if !internal_path.exists() ||
@@ -20,12 +20,12 @@ pub fn request_type_compilation(file_paths: &[String]) -> Option<Vec<String>> {
             let cx_path_str = cx_path_str(import_path);
             
             imports.extend(
-                module_type_compile(format!(".internal/{}", import_path), cx_path_str)?
+                module_type_compile(format!(".internal/{import_path}"), cx_path_str)?
             );
         } else {
             // If the internal path exists and the source file has not been modified,
             // we can skip recompilation.
-            println!("Skipping recompilation for {}", import_path);
+            println!("Skipping recompilation for {import_path}");
         }
     }
 
@@ -36,7 +36,7 @@ pub fn request_compile(file_paths: &[String], compiler_backend: CompilerBackend,
     let mut imports = Vec::new();
 
     for import_path in file_paths.iter() {
-        let internal_path = format!(".internal/{}/.cx-functions", import_path);
+        let internal_path = format!(".internal/{import_path}/.cx-functions");
         let internal_path = Path::new(&internal_path);
 
         if !internal_path.exists() ||
@@ -45,12 +45,12 @@ pub fn request_compile(file_paths: &[String], compiler_backend: CompilerBackend,
             let cx_path_str = cx_path_str(import_path);
 
             imports.extend(
-                module_compile(format!(".internal/{}", import_path), cx_path_str, compiler_backend, optimization_level)?
+                module_compile(format!(".internal/{import_path}"), cx_path_str, compiler_backend, optimization_level)?
             );
         } else {
             // If the file exists in the internal directory from after compilation began,
             // we can skip recompilation.
-            println!("Skipping recompilation for {}", import_path);
+            println!("Skipping recompilation for {import_path}");
         }
     }
 
