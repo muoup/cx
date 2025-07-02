@@ -21,12 +21,14 @@ pub type ElementID = u32;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ValueID {
+    pub in_deferral: bool,
     pub block_id: ElementID,
     pub value_id: ElementID
 }
 
 impl ValueID {
     pub const NULL: Self = ValueID {
+        in_deferral: true,
         block_id: u32::MAX,
         value_id: u32::MAX
     };
@@ -54,7 +56,9 @@ pub struct BCFunctionPrototype {
 #[derive(Debug)]
 pub struct BytecodeFunction {
     pub prototype: BCFunctionPrototype,
-    pub blocks: Vec<FunctionBlock>
+    
+    pub blocks: Vec<FunctionBlock>,
+    pub defer_blocks: Vec<FunctionBlock>,
 }
 
 #[derive(Debug)]
@@ -214,6 +218,8 @@ pub enum VirtualInstruction {
         true_block: ElementID,
         false_block: ElementID
     },
+
+    GotoDefer,
 
     Jump {
         target: ElementID

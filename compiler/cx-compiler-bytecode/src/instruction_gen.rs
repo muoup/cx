@@ -2,9 +2,9 @@ use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCIntUnOp, BCPtrBinOp, ElementID, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
-use crate::aux_routines::{get_struct_field};
+use crate::aux_routines::get_struct_field;
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_fixed_type_kind;
 use crate::implicit_cast::implicit_cast;
@@ -246,19 +246,33 @@ pub fn generate_instruction(
                 Some(value) => generate_instruction(builder, value.as_ref()),
                 None => None
             };
-
-            let final_block = builder.create_block();
-            builder.add_instruction(
-                VirtualInstruction::Jump { target: final_block },
-                CXType::unit()
-            );
-
-            builder.set_current_block(final_block);
-            builder.add_instruction(
-                VirtualInstruction::Return { value },
-                CXType::unit()
-            )
+            
+            if !builder.function_defers() {
+                builder.add_instruction(
+                    VirtualInstruction::Return { value },
+                    CXType::unit()
+                );
+            } else {
+                builder.add_defer_jump(
+                    builder.current_block(),
+                    value
+                );
+            }
+            
+            Some(ValueID::NULL)
         },
+        
+        CXExprKind::Defer { expr } => {
+            let previous_block = builder.current_block();
+            
+            builder.enter_deferred_logic();
+            generate_instruction(builder, expr.as_ref())?;
+            builder.exit_deferred_logic();
+            
+            builder.set_current_block(previous_block);
+            
+            Some(ValueID::NULL)
+        }
 
         CXExprKind::StringLiteral { val, .. } => {
             let string_id = builder.create_global_string(val.clone());
@@ -788,13 +802,22 @@ pub(crate) fn generate_algebraic_binop(
 
 pub(crate) fn implicit_return(
     builder: &mut BytecodeBuilder,
-    prototype: &CXFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<()> {
     let last_instruction = builder.last_instruction();
 
     if let Some(last_instruction) = last_instruction {
-        if let VirtualInstruction::Return { .. } = last_instruction.instruction {
-            return Some(());
+        match last_instruction.instruction {
+            VirtualInstruction::Return { .. } => {
+                // If the last instruction is already a return, do nothing
+                return Some(());
+            },
+            VirtualInstruction::GotoDefer => {
+                // If the last instruction is a goto defer, we can also ignore it
+                return Some(());
+            },
+            
+            _ => {}
         }
     }
 
@@ -807,7 +830,7 @@ pub(crate) fn implicit_return(
     );
     builder.set_current_block(return_block);
 
-    if prototype.name.data == "main" {
+    if prototype.name == "main" {
         let zero = builder.add_instruction(
             VirtualInstruction::Immediate {
                 value: 0
@@ -821,7 +844,7 @@ pub(crate) fn implicit_return(
             },
             CXType::unit()
         );
-    } else if prototype.return_type.is_void(&builder.cx_type_map) {
+    } else if prototype.return_type.is_void() {
         builder.add_instruction(
             VirtualInstruction::Return {
                 value: None
@@ -830,8 +853,39 @@ pub(crate) fn implicit_return(
         )?;
     } else {
         let last_instruction = builder.last_instruction();
+        builder.dump_current_fn();
         log_error!("Function {} has a return type but no return statement\nLast Statement found: {:?}", prototype.name, last_instruction);
     }
 
+    Some(())
+}
+
+pub(crate) fn implicit_defer_return(
+    builder: &mut BytecodeBuilder,
+    prototype: &BCFunctionPrototype,
+) -> Option<()> {
+    if builder.function_defers() {
+        let return_value = if prototype.return_type.is_void() {
+            None
+        } else {
+            // Phi node for the return value
+            Some(
+                ValueID {
+                    in_deferral: true,
+                    block_id: 0,
+                    value_id: 0
+                }
+            )
+        };
+
+        builder.enter_deferred_logic();
+        builder.add_instruction(
+            VirtualInstruction::Return {
+                value: return_value,
+            },
+            CXType::unit()
+        )?;
+    }
+    
     Some(())
 }

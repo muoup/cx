@@ -70,10 +70,6 @@ impl Display for CXExprKind {
                 Ok(())
             },
 
-            CXExprKind::Identifier(ident) => {
-                fwrite!(f, "{}", ident)
-            },
-
             CXExprKind::IntLiteral { val, .. } => fwrite!(f, "{}", val),
             CXExprKind::FloatLiteral { val, .. } => fwrite!(f, "{}", val),
             CXExprKind::StringLiteral { val, .. } => {

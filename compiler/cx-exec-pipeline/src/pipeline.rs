@@ -5,7 +5,7 @@ use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_bytecode::node_type_map::ExprTypeMap;
+use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 use cx_util::format::{dump_data, dump_write};
 use std::collections::HashSet;
@@ -38,7 +38,7 @@ pub enum PipelineStage {
     Lexed(LexContents),
     TypesAndDependences(LexContents, CXTypeMap, Vec<String>, Vec<String>),
     Parsed(ParseContents),
-    Typechecked(CXAST, ExprTypeMap),
+    Typechecked(CXAST, TypeCheckData),
     Bytecode(ProgramBytecode),
     Codegen,
     Linked
@@ -235,7 +235,6 @@ impl CompilerPipeline {
         };
 
         self.pipeline_stage = PipelineStage::Typechecked(ast, expr_type_map);
-
         self
     }
 
@@ -346,7 +345,7 @@ impl CompilerPipeline {
             cmd.arg(import);
         }
         
-        println!("Linking with command: {cmd:?}");
+        // println!("Linking with command: {cmd:?}");
         
         let status = cmd.status().expect("Failed to execute linker command");
 

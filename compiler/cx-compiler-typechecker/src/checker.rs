@@ -9,7 +9,7 @@ use crate::TypeEnvironment;
 pub(crate) fn type_check_traverse<'a>(env: &'a mut TypeEnvironment, expr: &mut CXExpr) -> Option<&'a CXType> {
     let _type = type_check_inner(env, expr)?;
 
-    env.expr_type_map.insert(expr, _type.clone())
+    env.typecheck_data.insert(expr, _type.clone())
 }
 
 fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXType> {
@@ -308,12 +308,21 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 let value_type = coerce_value(env, value)?;
                 
                 if !value_type.is_structure_ref(env.type_map) {
-                    implicit_coerce(env, value, env.return_type.clone())?;
+                    implicit_coerce(env, value, env.current_prototype.as_ref()?.return_type.clone())?;
                 }
-            } else if !env.return_type.is_void(env.type_map) {
+            } else if !env.current_prototype.as_ref()?.return_type.is_void(env.type_map) {
                 log_error!("TYPE ERROR: Function with empty return in non-void context");
             }
 
+            Some(CXType::unit())
+        },
+        
+        CXExprKind::Defer { expr } => {
+            type_check_traverse(env, expr)?;
+            
+            let fn_name = env.current_prototype.clone()?.name;
+            env.typecheck_data.set_deferring_function(fn_name.as_string());
+            
             Some(CXType::unit())
         },
 
@@ -328,7 +337,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             type_check_traverse(env, init)?;
             let condition_type = coerce_value(env, condition)?.clone();
             
-            if !matches!(condition_type.intrinsic_type(env.type_map)?, CXTypeKind::Integer { .. }) {
+            if !condition_type.is_integer(env.type_map) {
                 implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
             }
             

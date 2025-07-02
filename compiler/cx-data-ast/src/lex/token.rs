@@ -84,7 +84,7 @@ pub enum KeywordType {
     Sizeof,
 
     // CX Specific
-    Import,
+    Import, Defer,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -120,6 +120,7 @@ impl TokenKind {
             "enum" => TokenKind::Keyword(KeywordType::Enum),
             "union" => TokenKind::Keyword(KeywordType::Union),
             "typedef" => TokenKind::Keyword(KeywordType::Typedef),
+            
             "int" => TokenKind::Intrinsic(IntrinsicType::Int),
             "long" => TokenKind::Intrinsic(IntrinsicType::Long),
             "short" => TokenKind::Intrinsic(IntrinsicType::Short),
@@ -141,8 +142,10 @@ impl TokenKind {
             "restrict" => TokenKind::Specifier(SpecifierType::Restrict),
             "const" => TokenKind::Specifier(SpecifierType::Const),
             "thread_local" => TokenKind::Specifier(SpecifierType::ThreadLocal),
-
+            
+            // CX Extensions
             "import" => TokenKind::Keyword(KeywordType::Import),
+            "defer" => TokenKind::Keyword(KeywordType::Defer),
 
             _ => TokenKind::Identifier(str),
         }

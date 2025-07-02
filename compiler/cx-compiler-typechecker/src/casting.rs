@@ -105,7 +105,7 @@ pub(crate) fn add_implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, fr
         to_type: to_type.clone(),
         cast_type
     }.into_expr(start_index, end_index);
-    env.expr_type_map.insert(expr, to_type);
+    env.typecheck_data.insert(expr, to_type);
     
     Some(())
 }

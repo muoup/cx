@@ -26,6 +26,15 @@ impl Display for BytecodeFunction {
             writeln!(f, ":")?;
             writeln!(f, "{block}")?;
         }
+        
+        for (i, block) in self.defer_blocks.iter().enumerate() {
+            write!(f, "defer_block{i}")?;
+            if !block.debug_name.is_empty() {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
+            writeln!(f, "{block}")?;
+        }
 
         Ok(())
     }
@@ -70,7 +79,7 @@ impl Display for VirtualValue {
 
 impl Display for ValueID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}@b{}", self.value_id, self.block_id)
+        write!(f, "v{}@b{}{}", self.value_id, self.block_id, if self.in_deferral { "*" } else { "" })
     }
 }
 
@@ -148,6 +157,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
             },
+            VirtualInstruction::GotoDefer => {
+                write!(f, "goto defer")
+            }
             VirtualInstruction::JumpTable { value, targets, default } => {
                 write!(f, "jump_table {value} -> [")?;
                 for (i, (key, block_id)) in targets.iter().enumerate() {

@@ -414,11 +414,20 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             Some(CodegenValue::NULL)
         },
+        
+        VirtualInstruction::GotoDefer => {
+            let defer_block = context.block_map.get(context.defer_offset)
+                .expect("Defer block not found in block map");
+            
+            context.builder.ins().jump(*defer_block, &[]);
+            
+            Some(CodegenValue::NULL)
+        },
 
         VirtualInstruction::Jump {
             target
         } => {
-            let target = *context.block_map.get(*target as usize).unwrap();
+            let target = context.get_block(*target as usize);
 
             context.builder.ins().jump(target, &[]);
 

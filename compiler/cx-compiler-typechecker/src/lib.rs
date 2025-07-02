@@ -1,7 +1,7 @@
 use cx_data_ast::lex::token::Token;
-use cx_data_ast::parse::ast::{CXFunctionMap, CXGlobalStmt, CXParameter, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXTypeMap, CXAST};
 use cx_data_ast::parse::value_type::CXType;
-use cx_data_bytecode::node_type_map::ExprTypeMap;
+use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
 use crate::importing::import_module_data;
@@ -12,7 +12,7 @@ mod struct_typechecking;
 mod casting;
 mod importing;
 
-pub fn type_check(ast: &mut CXAST) -> Option<ExprTypeMap> {
+pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
     import_module_data(ast);
 
     let mut type_environment = TypeEnvironment {
@@ -22,8 +22,9 @@ pub fn type_check(ast: &mut CXAST) -> Option<ExprTypeMap> {
         fn_map: &mut ast.function_map,
         
         symbol_table: ScopedMap::new(),
-        return_type: CXType::unit(),
-        expr_type_map: ExprTypeMap::new(),
+        
+        current_prototype: None,
+        typecheck_data: TypeCheckData::new(),
     };
 
     // TODO: Global Variables
@@ -33,7 +34,7 @@ pub fn type_check(ast: &mut CXAST) -> Option<ExprTypeMap> {
             continue;
         };
 
-        type_environment.return_type = prototype.return_type.clone();
+        type_environment.current_prototype = Some(prototype.clone());
         type_environment.symbol_table.push_scope();
 
         for CXParameter { type_, name } in prototype.params.iter() {
@@ -46,8 +47,8 @@ pub fn type_check(ast: &mut CXAST) -> Option<ExprTypeMap> {
 
         type_environment.symbol_table.pop_scope();
     }
-
-    Some(type_environment.expr_type_map)
+    
+    Some(type_environment.typecheck_data)
 }
 
 pub(crate) struct TypeEnvironment<'a> {
@@ -56,7 +57,7 @@ pub(crate) struct TypeEnvironment<'a> {
     type_map: &'a mut CXTypeMap,
     fn_map: &'a mut CXFunctionMap,
     symbol_table: ScopedMap<CXType>,
-    expr_type_map: ExprTypeMap,
+    typecheck_data: TypeCheckData,
     
-    return_type: CXType,
+    current_prototype: Option<CXFunctionPrototype>,
 }

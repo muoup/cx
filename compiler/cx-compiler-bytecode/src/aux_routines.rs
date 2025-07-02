@@ -1,3 +1,5 @@
+use cx_data_ast::parse::value_type::CXType;
+use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::bytecode_error_log;
 use crate::builder::BytecodeBuilder;

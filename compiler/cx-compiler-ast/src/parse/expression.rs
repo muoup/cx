@@ -10,6 +10,7 @@ use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, par
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr.kind {
+        CXExprKind::Defer { .. }    |
         CXExprKind::If { .. }       |
         CXExprKind::While { .. }    |
         CXExprKind::For { .. }      |
@@ -407,6 +408,11 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
                     body: Box::new(body)
                 }
             )
+        },
+        
+        KeywordType::Defer => {
+            let body = parse_body(data)?;
+            Some(CXExprKind::Defer { expr: Box::new(body) })
         },
 
         _ => log_error!("Unsupported keyword: {:#?}", keyword)

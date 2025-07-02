@@ -4,7 +4,7 @@ use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::BCTypeKind;
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockInstruction, VirtualInstruction};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockInstruction, ElementID, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
@@ -72,10 +72,13 @@ pub(crate) fn generate_instruction<'a>(
             },
             
             VirtualInstruction::DirectCall { func, args, method_sig } => {
-                let function_name =
+                let Some(function_name) =
                     function_state
-                        .get_val_ref(func)?
-                        .get_function_ref();
+                        .get_val_ref(func)
+                        .map(|val| val.get_function_ref()) else {
+                    
+                    log_error!("Function reference not found for {func:?}");
+                };
                 
                 let function_val = global_state
                     .module
@@ -235,13 +238,24 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(imm_type.const_float(*value).as_any_value_enum())
             },
             
+            VirtualInstruction::GotoDefer => {
+                let defer_block = function_state
+                    .get_block(function_val, function_state.defer_block_offset as ElementID)
+                    .unwrap();
+                
+                function_state.builder
+                    .build_unconditional_branch(defer_block)
+                    .ok()?;
+                
+                CodegenValue::NULL
+            },
+            
             VirtualInstruction::Jump { target } => {
                 function_state
                     .builder
                     .build_unconditional_branch(
-                        *function_val
-                            .get_basic_blocks()
-                            .get(*target as usize)
+                        function_state
+                            .get_block(function_val, *target)
                             .unwrap()
                     ).ok()?;
                 

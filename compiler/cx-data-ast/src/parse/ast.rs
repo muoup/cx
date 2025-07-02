@@ -183,6 +183,10 @@ pub enum CXExprKind {
     Return {
         value: Option<Box<CXExpr>>
     },
+    
+    Defer {
+        expr: Box<CXExpr>
+    },
 
     ImplicitCast {
         expr: Box<CXExpr>,

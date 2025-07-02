@@ -1,7 +1,7 @@
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::value_type::CXType;
-use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
-use cx_data_bytecode::node_type_map::ExprTypeMap;
+use cx_data_bytecode::{ProgramBytecode, ValueID, VirtualInstruction};
+use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::types::BCTypeKind;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::{generate_instruction, implicit_return};
@@ -12,8 +12,8 @@ mod implicit_cast;
 mod cx_maps;
 mod aux_routines;
 
-pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<ProgramBytecode> {
-    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map, env_type_map);
+pub fn generate_bytecode(ast: CXAST, type_check_data: TypeCheckData) -> Option<ProgramBytecode> {
+    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map, type_check_data);
 
     for stmt in ast.global_stmts.iter() {
         let CXGlobalStmt::FunctionDefinition {
@@ -64,8 +64,6 @@ pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<Progra
             panic!("Failed to generate body for function: {}", prototype.name);
         };
         
-        implicit_return(&mut builder, prototype)?;
-
         builder.symbol_table.pop_scope();
         builder.finish_function();
     }
