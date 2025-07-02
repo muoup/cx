@@ -1,0 +1,15 @@
+public:
+
+void strong* stdalloc(u64 size) {
+    return (void strong*) malloc(size);
+}
+
+void stdfree(void strong* ptr) {
+    printf("[stdfree] memory freed!");
+    free(move ptr);
+}
+
+private:
+
+#include <stdio.h>
+#include <stdlib.h>

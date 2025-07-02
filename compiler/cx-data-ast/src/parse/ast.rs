@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use crate::lex::token::Token;
-use crate::parse::value_type::{CXType};
+use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::parse::identifier::CXIdent;
 
 pub type CXTypeMap = HashMap<String, CXType>;
@@ -199,6 +199,10 @@ pub enum CXExprKind {
         expr: Box<CXExpr>,
         loaded_type: CXType
     },
+    
+    Move {
+        expr: Box<CXExpr>
+    },
 
     GetFunctionAddr {
         func_name: Box<CXExpr>,
@@ -234,4 +238,7 @@ pub enum CXCastType {
     PtrToInt,
     IntToPtr,
     FunctionToPointerDecay,
+    
+    AddPointerTag,
+    RemovePointerTag
 }

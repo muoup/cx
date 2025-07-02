@@ -2,9 +2,9 @@ use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, ElementID, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
-use crate::aux_routines::get_struct_field;
+use crate::aux_routines::{allocate_variable, get_struct_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_fixed_type_kind;
 use crate::implicit_cast::implicit_cast;
@@ -33,33 +33,8 @@ pub fn generate_instruction(
                 CXType::unit()
             )
         },
-        CXExprKind::VarDeclaration { name, type_ } => {
-            let bc_type = builder.convert_cx_type(type_)?;
-            
-            let memory = match bc_type.size() {
-                BCTypeSize::Fixed(size) => {
-                    builder.add_instruction_bt(
-                        VirtualInstruction::Allocate {
-                            size,
-                            alignment: bc_type.alignment(),
-                        },
-                        BCTypeKind::Pointer.into()
-                    )?
-                },
-                BCTypeSize::Variable(size_expr) => {
-                    builder.add_instruction_bt(
-                        VirtualInstruction::VariableAllocate {
-                            size: size_expr,
-                            alignment: bc_type.alignment(),
-                        },
-                        BCTypeKind::Pointer.into()
-                    )?
-                }
-            };
-            
-            builder.symbol_table.insert(name.as_string(), memory);
-            Some(memory)
-        },
+        CXExprKind::VarDeclaration { name, type_ } =>
+            allocate_variable(name.as_str(), builder, type_),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
@@ -104,7 +79,7 @@ pub fn generate_instruction(
             let l_type = builder.get_expr_intrinsic_type(lhs.as_ref())?.clone();
 
             let lhs_inner = match l_type {
-                CXTypeKind::PointerTo(inner) => inner,
+                CXTypeKind::PointerTo { inner, .. } => inner,
                 
                 CXTypeKind::VariableLengthArray { _type, .. } |
                 CXTypeKind::Array { _type, .. } => _type,
@@ -149,7 +124,7 @@ pub fn generate_instruction(
                         prototype.return_type.clone()
                     )
                 },
-                CXTypeKind::PointerTo(inner) => {
+                CXTypeKind::PointerTo { inner, .. } => {
                     let Some(CXTypeKind::Function { prototype }) =
                         inner.intrinsic_type(&builder.cx_type_map) else {
                         log_error!("Invalid function pointer type: {inner}");
@@ -246,18 +221,8 @@ pub fn generate_instruction(
                 Some(value) => generate_instruction(builder, value.as_ref()),
                 None => None
             };
-            
-            if !builder.function_defers() {
-                builder.add_instruction(
-                    VirtualInstruction::Return { value },
-                    CXType::unit()
-                );
-            } else {
-                builder.add_defer_jump(
-                    builder.current_block(),
-                    value
-                );
-            }
+
+            builder.add_return(value);
             
             Some(ValueID::NULL)
         },
@@ -277,19 +242,11 @@ pub fn generate_instruction(
         CXExprKind::StringLiteral { val, .. } => {
             let string_id = builder.create_global_string(val.clone());
 
-            builder.add_instruction(
+            builder.add_instruction_bt(
                 VirtualInstruction::StringLiteral {
                     str_id: string_id,
                 },
-
-                CXTypeKind::PointerTo(
-                    Box::new(
-                        CXType::new(
-                            CX_CONST,
-                            "char".into()
-                        )
-                    )
-                ).to_val_type()
+                BCType::from(BCTypeKind::Pointer)
             )
         },
 
@@ -340,7 +297,7 @@ pub fn generate_instruction(
 
                     let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
-                        CXTypeKind::PointerTo(_) => 8,
+                        CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
@@ -380,7 +337,7 @@ pub fn generate_instruction(
 
                     let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
-                        CXTypeKind::PointerTo(_) => 8,
+                        CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
@@ -633,7 +590,32 @@ pub fn generate_instruction(
                     => Some(size_expr)
             }
         },
-        
+
+        CXExprKind::Move { expr } => {
+            let memory = generate_instruction(builder, expr.as_ref())?;
+            let value = builder.add_instruction_bt(
+                VirtualInstruction::Load {
+                    value: memory
+                },
+                BCType::from(BCTypeKind::Pointer)
+            )?;
+            let no_tag = builder.add_instruction_bt(
+                VirtualInstruction::ClearPointerTag { value },
+                BCType::from(BCTypeKind::Pointer)
+            )?;
+
+            builder.add_instruction(
+                VirtualInstruction::Store {
+                    memory,
+                    value: no_tag,
+                    type_: BCType::from(BCTypeKind::Pointer)
+                },
+                CXType::unit()
+            )?;
+
+            Some(value)
+        },
+
         _ => todo!("generate_instruction for {:?}", expr)
     }
 }
@@ -703,7 +685,7 @@ pub(crate) fn generate_binop(
             builder.add_instruction_bt(
                 VirtualInstruction::Phi {
                     predecessors: vec![
-                        (left_cmp, previous_block as ElementID),
+                        (left_cmp, previous_block),
                         (right_cmp, no_short_circuit_block),
                     ]
                 },
@@ -770,7 +752,8 @@ pub(crate) fn generate_algebraic_binop(
         },
 
         BCTypeKind::Pointer => {
-            let CXTypeKind::PointerTo(left_inner) = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
+            let CXTypeKind::PointerTo { inner: left_inner, .. }
+                = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
             else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
 
             builder.add_instruction_bt(
@@ -812,7 +795,7 @@ pub(crate) fn implicit_return(
                 // If the last instruction is already a return, do nothing
                 return Some(());
             },
-            VirtualInstruction::GotoDefer => {
+            VirtualInstruction::GotoDefer { .. } => {
                 // If the last instruction is a goto defer, we can also ignore it
                 return Some(());
             },
@@ -838,19 +821,9 @@ pub(crate) fn implicit_return(
             CXTypeKind::Integer { bytes: 4, signed: true }.to_val_type()
         )?;
 
-        builder.add_instruction(
-            VirtualInstruction::Return {
-                value: Some(zero)
-            },
-            CXType::unit()
-        );
+        builder.add_return(Some(zero));
     } else if prototype.return_type.is_void() {
-        builder.add_instruction(
-            VirtualInstruction::Return {
-                value: None
-            },
-            CXType::unit()
-        )?;
+        builder.add_return(None);
     } else {
         let last_instruction = builder.last_instruction();
         builder.dump_current_fn();
@@ -871,8 +844,10 @@ pub(crate) fn implicit_defer_return(
             // Phi node for the return value
             Some(
                 ValueID {
-                    in_deferral: true,
-                    block_id: 0,
+                    block_id: BlockID {
+                        id: 0,
+                        in_deferral: true
+                    },
                     value_id: 0
                 }
             )

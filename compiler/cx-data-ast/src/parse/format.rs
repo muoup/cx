@@ -115,6 +115,10 @@ impl Display for CXExprKind {
                 fwrite!(f, "{}#fn_addr({})", func_name, func_sig)
             },
 
+            CXExprKind::Move { expr } => {
+                fwrite!(f, "(move {})", expr)
+            },
+
             CXExprKind::InitializerList { indices } => {
                 indent();
                 fwriteln!(f, "{{")?;
@@ -245,8 +249,14 @@ impl Display for CXTypeKind {
                 write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo(inner) => {
-                write!(f, "*{inner}")
+            CXTypeKind::PointerTo { inner, explicitly_weak: false } => {
+                write!(f, "{inner}*")
+            },
+            CXTypeKind::PointerTo { inner, explicitly_weak: true } => {
+                write!(f, "{inner} weak*")
+            },
+            CXTypeKind::StrongPointer { inner, .. } => {
+                write!(f, "{inner} strong*")
             },
             CXTypeKind::Array { size, _type } => {
                 write!(f, "[{size}; {_type}]")

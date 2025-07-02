@@ -12,7 +12,9 @@ impl Display for TokenKind {
         match self {
             TokenKind::Identifier(name) => write!(f, "{name}"),
             TokenKind::Intrinsic(intrin) => write!(f, "{intrin}"),
-
+            TokenKind::Keyword(keyword) => write!(f, "{}",
+                format!("{keyword:?}").to_lowercase()),
+            
             _ => write!(f, "{self:?}"),
         }
     }

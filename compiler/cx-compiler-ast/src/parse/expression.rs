@@ -197,6 +197,12 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             CXExprKind::Identifier(parse_intrinsic(data.back())?),
         TokenKind::Identifier(_) =>
             CXExprKind::Identifier(parse_std_ident(data.back())?),
+        
+        TokenKind::Operator(OperatorType::Move) => {
+            let expr = parse_expr(data)?;
+            
+            CXExprKind::Move { expr: Box::new(expr) }
+        },
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
@@ -415,6 +421,6 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
             Some(CXExprKind::Defer { expr: Box::new(body) })
         },
 
-        _ => log_error!("Unsupported keyword: {:#?}", keyword)
+        _ => return None
     }.map(|e| e.into_expr(start_index, data.toks.index))
 }

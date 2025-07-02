@@ -3,7 +3,7 @@ use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXFunctionMap, CXType
 use cx_data_ast::parse::ast::CXExprKind::Block;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap};
+use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap, BlockID};
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::format::{dump_all, dump_data};
 use cx_util::log_error;
@@ -33,10 +33,10 @@ pub struct BytecodeBuilder {
 #[derive(Debug)]
 pub struct BytecodeFunctionContext {
     prototype: BCFunctionPrototype,
-    current_block: ElementID,
+    current_block: BlockID,
 
-    merge_stack: Vec<ElementID>,
-    continue_stack: Vec<ElementID>,
+    merge_stack: Vec<BlockID>,
+    continue_stack: Vec<BlockID>,
 
     blocks: Vec<FunctionBlock>,
     deferred_blocks: Vec<FunctionBlock>,
@@ -71,7 +71,10 @@ impl BytecodeBuilder {
         self.function_context = Some(
             BytecodeFunctionContext {
                 prototype: fn_prototype,
-                current_block: 0,
+                current_block: BlockID {
+                    in_deferral: false,
+                    id: 0,
+                },
                 
                 merge_stack: Vec::new(),
                 continue_stack: Vec::new(),
@@ -82,13 +85,14 @@ impl BytecodeBuilder {
         );
 
         let entry_block = self.create_block();
+        
+        if defers {
+            self.setup_deferring_block();
+        }
+        
         self.set_current_block(
             entry_block
         );
-        
-        if defers {
-            self.setup_deferring_block()
-        }
     }
 
     pub fn finish_function(&mut self) {
@@ -141,9 +145,9 @@ impl BytecodeBuilder {
         let current_block = context.current_block;
 
         let body = if in_deferred_block {
-            &mut context.deferred_blocks[current_block as usize].body
+            &mut context.deferred_blocks[current_block.id as usize].body
         } else {
-            &mut context.blocks[current_block as usize].body
+            &mut context.blocks[current_block.id as usize].body
         };
 
         body.push(BlockInstruction {
@@ -155,8 +159,7 @@ impl BytecodeBuilder {
 
         Some(
             ValueID {
-                in_deferral: in_deferred_block,
-                block_id: context.current_block,
+                block_id: context.current_block, 
                 value_id: (body.len() - 1) as ElementID,
             }
         )
@@ -175,26 +178,40 @@ impl BytecodeBuilder {
         )
     }
     
+    pub(crate) fn add_return(
+        &mut self,
+        value_id: Option<ValueID>
+    ) -> Option<ValueID> {
+        if self.function_defers() {
+            self.add_defer_jump(self.fun().current_block, value_id)
+        } else {
+            self.add_instruction(
+                VirtualInstruction::Return { value: value_id },
+                CXType::unit()
+            )
+        }
+    }
+    
     pub(crate) fn add_defer_jump(
         &mut self,
-        block_id: ElementID,
+        block_id: BlockID,
         value_id: Option<ValueID>
-    ) {
-        self.add_instruction(
+    ) -> Option<ValueID> {
+        let inst = self.add_instruction(
             VirtualInstruction::GotoDefer,
             CXType::unit()
-        );
+        )?;
 
-        let Some(value_id) = value_id else {
-            return;
+        if let Some(value_id) = value_id {
+            self.add_defer_merge(block_id, value_id);
         };
-
-        self.add_defer_merge(block_id, value_id);
+        
+        Some(inst)
     }
     
     pub fn add_defer_merge(
         &mut self,
-        from_block: ElementID,
+        from_block: BlockID,
         value: ValueID
     ) {
         let first_defer_inst = &mut self.fun_mut()
@@ -270,7 +287,7 @@ impl BytecodeBuilder {
         
         Some(
             &block
-                .get(value_id.block_id as usize)?
+                .get(value_id.block_id.id as usize)?
                 .body
                 .get(value_id.value_id as usize)?
                 .value
@@ -305,7 +322,7 @@ impl BytecodeBuilder {
         Some(&value.type_)
     }
     
-    pub fn start_cont_point(&mut self) -> ElementID {
+    pub fn start_cont_point(&mut self) -> BlockID {
         let cond_block = self.create_block();
 
         let context = self.fun_mut();
@@ -316,7 +333,7 @@ impl BytecodeBuilder {
     
     pub fn setup_deferring_block(&mut self){
         self.in_deferred_block = true;
-        self.set_current_block(0);
+        self.set_current_block(BlockID { in_deferral: true, id: 0 });
         
         let context = self.fun_mut();
         
@@ -338,27 +355,34 @@ impl BytecodeBuilder {
     }
     
     pub fn enter_deferred_logic(&mut self) {
-        self.in_deferred_block = true;
-        
         if !self.function_defers() {
-            panic!("INTERNAL PANIC: Attempted to enter deferred logic without a deferred block set up: {}", self.fun().prototype.name);
+            self.setup_deferring_block();
         }
         
+        self.in_deferred_block = true;
+        
         let context = self.fun_mut();
-        let last_block = context.deferred_blocks.len() - 1;
-        self.set_current_block(last_block as ElementID);
+        let last_block = BlockID {
+            in_deferral: true,
+            id: context.deferred_blocks.len() as ElementID - 1
+        };
+        
+        self.set_current_block(last_block);
     }
     
     pub fn exit_deferred_logic(&mut self) {
         self.in_deferred_block = false;
 
         let context = self.fun_mut();
-        let last_block = context.blocks.len() - 1;
+        let last_block = BlockID {
+            in_deferral: false,
+            id: context.blocks.len() as ElementID - 1
+        };
         
-        self.set_current_block(last_block as ElementID);
+        self.set_current_block(last_block);
     }
 
-    pub fn start_scope(&mut self) -> ElementID {
+    pub fn start_scope(&mut self) -> BlockID {
         let merge_block = self.create_named_block("merge");
 
         let context = self.fun_mut();
@@ -367,13 +391,13 @@ impl BytecodeBuilder {
         merge_block
     }
 
-    pub fn get_merge(&mut self) -> Option<ElementID> {
+    pub fn get_merge(&mut self) -> Option<BlockID> {
         let context = self.fun_mut();
 
         context.merge_stack.last().cloned()
     }
 
-    pub fn get_continue(&mut self) -> Option<ElementID> {
+    pub fn get_continue(&mut self) -> Option<BlockID> {
         let context = self.fun_mut();
 
         context.continue_stack.last().cloned()
@@ -392,8 +416,9 @@ impl BytecodeBuilder {
         context.continue_stack.pop().unwrap();
     }
 
-    pub fn set_current_block(&mut self, block: ElementID) {
+    pub fn set_current_block(&mut self, block: BlockID) {
         self.fun_mut().current_block = block;
+        self.in_deferred_block = block.in_deferral;
     }
 
     pub fn create_global_string(&mut self, string: String) -> u32 {
@@ -401,11 +426,15 @@ impl BytecodeBuilder {
         self.global_strings.len() as u32 - 1
     }
     
-    pub fn current_block(&self) -> ElementID {
+    pub fn current_block(&self) -> BlockID {
         self.fun().current_block
     }
 
-    pub fn create_block(&mut self) -> ElementID {
+    pub fn create_block(&mut self) -> BlockID {
+        self.create_named_block("")
+    }
+    
+    pub fn create_named_block(&mut self, name: &str) -> BlockID {
         let in_deferred_block = self.in_deferred_block;
         let context = self.fun_mut();
 
@@ -420,18 +449,10 @@ impl BytecodeBuilder {
             body: Vec::new()
         });
 
-        (add_to.len() - 1) as ElementID
-    }
-    
-    pub fn create_named_block(&mut self, name: &str) -> ElementID {
-        let context = self.fun_mut();
-
-        context.blocks.push(FunctionBlock {
-            debug_name: name.to_owned(),
-            body: Vec::new()
-        });
-
-        (context.blocks.len() - 1) as ElementID
+        BlockID {
+            in_deferral: in_deferred_block,
+            id: (add_to.len() - 1) as ElementID
+        }
     }
 
     pub fn last_instruction(&self) -> Option<&BlockInstruction> {

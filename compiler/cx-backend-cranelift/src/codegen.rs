@@ -7,7 +7,7 @@ use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
 use std::collections::HashMap;
-use cx_data_bytecode::{BCFunctionPrototype, BytecodeFunction, FunctionBlock, ValueID};
+use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, ValueID};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
@@ -24,32 +24,17 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &B
 
 pub(crate) fn codegen_block(
     context: &mut FunctionState,
-    bc_func: &BytecodeFunction,
     fn_block: &FunctionBlock,
-    block_id: usize
+    block_id: BlockID
 ) {
     let block = context.get_block(block_id);
     context.builder.switch_to_block(block);
-
-    if block_id == 0 {
-        if bc_func.prototype.return_type.is_structure() {
-            context.builder.append_block_param(block, context.pointer_type);
-        }
-
-        for arg in bc_func.prototype.params.iter() {
-            let cranelift_type = get_cranelift_type(&arg.type_);
-            let arg = context.builder.append_block_param(block, cranelift_type);
-
-            context.fn_params.push(arg);
-        }
-    }
 
     for (value_id, instr) in fn_block.body.iter().enumerate() {
         if let Some(val) = codegen_instruction(context, instr) {
             context.variable_table.insert(
                 ValueID {
-                    in_deferral: context.in_defer,
-                    block_id: block_id as u32,
+                    block_id: block_id,
                     value_id: value_id as u32
                 },
                 val
@@ -97,15 +82,30 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     for _ in 0..bc_func.blocks.len() + bc_func.defer_blocks.len() {
         context.block_map.push(context.builder.create_block());
     }
+
+    let first_block = context.get_block(BlockID { in_deferral: false, id: 0 });
+    
+    if bc_func.prototype.return_type.is_structure() {
+        context.builder.append_block_param(first_block, context.pointer_type);
+    }
+
+    for arg in bc_func.prototype.params.iter() {
+        let cranelift_type = get_cranelift_type(&arg.type_);
+        let arg = context.builder.append_block_param(first_block, cranelift_type);
+
+        context.fn_params.push(arg);
+    }
+    
+    context.in_defer = false;
     
     for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
-        codegen_block(&mut context, bc_func, fn_block, block_id);
+        codegen_block(&mut context, fn_block, BlockID { in_deferral: false, id: block_id as u32 });
     }
     
     context.in_defer = true;
     
     for (block_id, fn_block) in bc_func.defer_blocks.iter().enumerate() {
-        codegen_block(&mut context, bc_func, fn_block, block_id + bc_func.blocks.len() - 1);
+        codegen_block(&mut context, fn_block, BlockID { in_deferral: true, id: block_id as u32 });
     }
     
     context.builder.seal_all_blocks();
@@ -119,6 +119,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     object_module
         .define_function(func_id, context)
         .unwrap_or_else(|err| {
+            // dump_data(&context.func);
             panic!("Failed to define function: {err:#?}");
         });
 

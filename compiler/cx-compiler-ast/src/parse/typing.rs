@@ -247,6 +247,35 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
     };
 
     match &next_tok.kind {
+        TokenKind::Keyword(KeywordType::Strong) => {
+            data.toks.next();
+            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            let specs = parse_specifier(data);
+            let acc_type = CXType {
+                specifiers: specs,
+                kind: CXTypeKind::StrongPointer { 
+                    inner: Box::new(acc_type)
+                }
+            };
+
+            parse_typemods(data, acc_type)
+        },
+        
+        TokenKind::Keyword(KeywordType::Weak) => {
+            data.toks.next();
+            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            let specs = parse_specifier(data);
+            let acc_type = CXType {
+                specifiers: specs,
+                kind: CXTypeKind::PointerTo { 
+                    inner: Box::new(acc_type),
+                    explicitly_weak: true
+                }
+            };
+
+            parse_typemods(data, acc_type)
+        },
+        
         TokenKind::Operator(OperatorType::Asterisk) => {
             data.toks.next();
             let specs = parse_specifier(data);

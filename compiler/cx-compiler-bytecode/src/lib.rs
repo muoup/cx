@@ -1,10 +1,10 @@
+use crate::aux_routines::allocate_variable;
+use crate::builder::BytecodeBuilder;
+use crate::instruction_gen::generate_instruction;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::value_type::CXType;
-use cx_data_bytecode::{ProgramBytecode, ValueID, VirtualInstruction};
 use cx_data_bytecode::node_type_map::TypeCheckData;
-use cx_data_bytecode::types::BCTypeKind;
-use crate::builder::BytecodeBuilder;
-use crate::instruction_gen::{generate_instruction, implicit_return};
+use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
 
 pub mod instruction_gen;
 mod builder;
@@ -26,15 +26,10 @@ pub fn generate_bytecode(ast: CXAST, type_check_data: TypeCheckData) -> Option<P
         builder.new_function(prototype);
 
         for (i, arg) in prototype.params.iter().enumerate() {
-            let bc_type = builder.convert_cx_type(&arg.type_)?;
-            
-            let memory = builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size: bc_type.size()
-                        .assert_fixed("Function argument type must be fixed size"),
-                    alignment: bc_type.alignment(),
-                },
-                BCTypeKind::Pointer.into()
+            let memory = allocate_variable(
+                &arg.name.as_ref().map(|n| n.as_string()).unwrap_or_else(|| format!("_fn_arg_{i}")),
+                &mut builder,
+                &arg.type_
             )?;
 
             let value = builder.add_instruction(

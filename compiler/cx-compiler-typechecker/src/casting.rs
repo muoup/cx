@@ -9,7 +9,7 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
     Some(
         match (from_type.intrinsic_type(env.type_map).cloned()?,
                to_type.intrinsic_type(env.type_map).cloned()?) {
-            (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. }) => {
+            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
                 Some(CXCastType::PtrToInt)
             },
             
@@ -21,7 +21,7 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
                 } else {
                     Some(CXCastType::BitCast)
                 },
-
+            
             (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => Some(CXCastType::IntegralCast),
 
             (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::FloatCast),
@@ -29,11 +29,14 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
             (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
-            (CXTypeKind::PointerTo(inner), CXTypeKind::PointerTo(inner2))
-                if valid_implicit_cast(env, inner.as_ref(), inner2.as_ref()).is_some()
-                    => Some(CXCastType::BitCast),
+            (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
+            (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
+                => Some(CXCastType::BitCast),
+            
+            (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. })
+                => Some(CXCastType::RemovePointerTag),
 
-            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo(inner))
+            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner, .. })
                 if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
             _ => None
@@ -47,18 +50,21 @@ pub fn valid_explicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
         match (from_type.intrinsic_type(env.type_map).cloned()?,
                to_type.intrinsic_type(env.type_map).cloned()?) {
 
-            (CXTypeKind::PointerTo(_), CXTypeKind::PointerTo(_))
+            (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
 
-            (CXTypeKind::PointerTo(_), CXTypeKind::Integer { bytes, .. })
+            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
                 if bytes == 8 => Some(CXCastType::BitCast),
 
-            (CXTypeKind::PointerTo(_), CXTypeKind::Integer { .. })
+            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
                 => Some(CXCastType::IntegralTrunc),
 
-            (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(_))
+            (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::IntToPtr),
 
+            (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. })
+                => Some(CXCastType::AddPointerTag),
+            
             _ => None
         }
     )
@@ -122,11 +128,11 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
     match (l_type.intrinsic_type(env.type_map).cloned()?,
            r_type.intrinsic_type(env.type_map).cloned()?) {
 
-        (CXTypeKind::PointerTo(l_inner), CXTypeKind::Integer { .. }) => {
+        (CXTypeKind::PointerTo { inner: l_inner, .. }, CXTypeKind::Integer { .. }) => {
             ptr_int_binop_coercion(env, op, l_inner.as_ref(), rhs)
         },
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo(r_inner)) => {
+        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { inner: r_inner, .. }) => {
             if matches!(op, CXBinOp::Subtract) {
                 log_error!("Invalid operation [integer] - [pointer] for types {l_type} and {r_type}");
             }

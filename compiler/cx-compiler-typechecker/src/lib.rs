@@ -6,7 +6,6 @@ use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
 use crate::importing::import_module_data;
 
-pub mod type_utils;
 pub mod checker;
 mod struct_typechecking;
 mod casting;

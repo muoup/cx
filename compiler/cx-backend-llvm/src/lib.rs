@@ -2,7 +2,7 @@ use crate::attributes::*;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, cx_llvm_prototype, bc_llvm_type};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BytecodeFunction, ElementID, FunctionBlock, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -49,11 +49,11 @@ impl<'a> FunctionState<'a> {
         self.value_map.get(id)
     }
     
-    pub(crate) fn get_block(&self, function_val: &FunctionValue<'a>, block_id: ElementID) -> Option<BasicBlock> {
-        let adjusted_id = if !self.in_defer {
-            block_id as usize
+    pub(crate) fn get_block(&self, function_val: &FunctionValue<'a>, block_id: BlockID) -> Option<BasicBlock> {
+        let adjusted_id = if !block_id.in_deferral {
+            block_id.id as usize
         } else {
-            block_id as usize + self.defer_block_offset
+            block_id.id as usize + self.defer_block_offset
         };
      
         function_val.get_basic_blocks().get(adjusted_id).cloned()
@@ -220,16 +220,16 @@ fn fn_aot_codegen(
         global_state.context.append_basic_block(func_val, format!("defer_block_{i}").as_str());
     }
 
+    function_state.in_defer = false;
+    
     for (block_id, block) in bytecode.blocks.iter().enumerate() {
-        function_state.in_defer = false;
-        
-        codegen_block(global_state, &mut function_state, &func_val, block_id, block);
+        codegen_block(global_state, &mut function_state, &func_val, BlockID { in_deferral: false, id: block_id as u32 }, block);
     }
+
+    function_state.in_defer = true;
     
     for (block_id, block) in bytecode.defer_blocks.iter().enumerate() {
-        function_state.in_defer = true;
-
-        codegen_block(global_state, &mut function_state, &func_val, block_id + bytecode.blocks.len() - 1, block);
+        codegen_block(global_state, &mut function_state, &func_val, BlockID { in_deferral: true, id: block_id as u32}, block);
     }
 
     Some(())
@@ -239,10 +239,10 @@ fn codegen_block<'a>(
     global_state: &GlobalState<'a>,
     function_state: &mut FunctionState<'a>,
     func_val: &FunctionValue<'a>,
-    block_id: usize,
+    block_id: BlockID,
     block: &FunctionBlock
 ) {
-    let block_val = function_state.get_block(func_val, block_id as ElementID)
+    let block_val = function_state.get_block(func_val, block_id)
         .unwrap_or_else(|| panic!("Block with ID {block_id} not found in function"));
     function_state.builder.position_at_end(block_val);
 
@@ -256,8 +256,7 @@ fn codegen_block<'a>(
 
         function_state.value_map.insert(
             ValueID { 
-                in_deferral: function_state.in_defer,
-                block_id: block_id as ElementID, 
+                block_id: block_id, 
                 value_id: value_id as ElementID 
             },
             value

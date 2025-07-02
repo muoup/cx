@@ -5,6 +5,7 @@ edition = "2024"
 autotests = false
 
 [features]
+default = []
 backend-llvm = []
 test = []
 

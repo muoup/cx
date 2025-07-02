@@ -36,24 +36,17 @@ pub enum TokenKind {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Plus, Minus,
-    Asterisk, Slash,
-    Percent,
-
+    Plus, Minus, Asterisk, Slash, Percent,
     NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
 
-    LAnd, LOr, LNot,
-    BAnd, BOr, BXor, BNot,
-    LShift, RShift,
+    LAnd, LOr, LNot, BAnd, BOr, BXor, BNot, LShift, RShift,
 
     Increment, Decrement,
 
-    Comma,
+    Comma, ArrayIndex,
+    Access, ScopeRes,
     
-    ArrayIndex,
-
-    Access,
-    ScopeRes
+    Move
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -84,7 +77,7 @@ pub enum KeywordType {
     Sizeof,
 
     // CX Specific
-    Import, Defer,
+    Import, Defer, Strong, Weak
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -147,6 +140,10 @@ impl TokenKind {
             "import" => TokenKind::Keyword(KeywordType::Import),
             "defer" => TokenKind::Keyword(KeywordType::Defer),
 
+            "strong" => TokenKind::Keyword(KeywordType::Strong),
+            "weak" => TokenKind::Keyword(KeywordType::Weak),
+            "move" => TokenKind::Operator(OperatorType::Move),
+            
             _ => TokenKind::Identifier(str),
         }
     }

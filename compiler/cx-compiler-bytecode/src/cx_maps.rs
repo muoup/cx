@@ -263,8 +263,9 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::Float { bytes } =>
                 BCTypeKind::Float { bytes: *bytes },
 
+            CXTypeKind::StrongPointer { .. } |
             CXTypeKind::Function { .. } |
-            CXTypeKind::PointerTo(_) =>
+            CXTypeKind::PointerTo { .. } =>
                 BCTypeKind::Pointer,
             
             CXTypeKind::Array { _type, size } =>

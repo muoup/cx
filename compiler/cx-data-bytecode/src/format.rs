@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -79,7 +79,13 @@ impl Display for VirtualValue {
 
 impl Display for ValueID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}@b{}{}", self.value_id, self.block_id, if self.in_deferral { "*" } else { "" })
+        write!(f, "v{}@{}", self.value_id, self.block_id)
+    }
+}
+
+impl Display for BlockID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "b{}{}", self.id, if self.in_deferral { "*" } else { "" })
     }
 }
 
@@ -216,6 +222,15 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::BitCast { value } => {
                 write!(f, "bit_cast {value}")
+            },
+            VirtualInstruction::AddPointerTag { value } => {
+                write!(f, "add_pointer_tag {value}")
+            },
+            VirtualInstruction::ClearPointerTag { value } => {
+                write!(f, "clear_pointer_tag {value}")
+            },
+            VirtualInstruction::HasPointerTag { value } => {
+                write!(f, "has_pointer_tag {value}")
             },
             VirtualInstruction::IntToFloat { from, value } => {
                 write!(f, "int_to_float ({from}) {value}")

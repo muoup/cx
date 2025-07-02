@@ -21,15 +21,22 @@ pub type ElementID = u32;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ValueID {
-    pub in_deferral: bool,
-    pub block_id: ElementID,
+    pub block_id: BlockID,
     pub value_id: ElementID
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct BlockID {
+    pub in_deferral: bool,
+    pub id: ElementID
 }
 
 impl ValueID {
     pub const NULL: Self = ValueID {
-        in_deferral: true,
-        block_id: u32::MAX,
+        block_id: BlockID {
+            in_deferral: true,
+            id: u32::MAX
+        },
         value_id: u32::MAX
     };
 }
@@ -72,6 +79,8 @@ pub struct BlockInstruction {
     pub instruction: VirtualInstruction,
     pub value: VirtualValue
 }
+
+pub const POINTER_TAG : usize = 0xF000_0000_0000_0000;
 
 #[derive(Debug)]
 pub enum VirtualInstruction {
@@ -130,7 +139,7 @@ pub enum VirtualInstruction {
     },
     
     Phi {
-        predecessors: Vec<(ValueID, ElementID)>,
+        predecessors: Vec<(ValueID, BlockID)>,
     },
 
     Trunc {
@@ -215,20 +224,20 @@ pub enum VirtualInstruction {
 
     Branch {
         condition: ValueID,
-        true_block: ElementID,
-        false_block: ElementID
+        true_block: BlockID,
+        false_block: BlockID
     },
 
     GotoDefer,
 
     Jump {
-        target: ElementID
+        target: BlockID
     },
     
     JumpTable {
         value: ValueID,
-        targets: Vec<(u64, ElementID)>,
-        default: ElementID
+        targets: Vec<(u64, BlockID)>,
+        default: BlockID
     },
 
     Return {
@@ -238,7 +247,19 @@ pub enum VirtualInstruction {
     BitCast {
         value: ValueID
     },
-
+    
+    AddPointerTag {
+        value: ValueID
+    },
+    
+    ClearPointerTag {
+        value: ValueID
+    },
+    
+    HasPointerTag {
+        value: ValueID
+    },
+    
     NOP
 }
 
@@ -259,7 +280,7 @@ pub enum BCPtrBinOp {
     ADD, SUB,
     
     EQ, NE,
-    LT, GT, LE, GE
+    LT, GT, LE, GE,
 }
 
 #[derive(Debug, Clone, Copy)]

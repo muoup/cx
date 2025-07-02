@@ -5,7 +5,7 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, ProgramBytecode, ValueID};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::routines::string_literal;
@@ -88,11 +88,11 @@ pub(crate) struct GlobalState<'a> {
 }
 
 impl FunctionState<'_> {
-    pub(crate) fn get_block(&mut self, block_id: usize) -> Block {
-        let id = if !self.in_defer {
-            block_id
+    pub(crate) fn get_block(&mut self, block_id: BlockID) -> Block {
+        let id = if !block_id.in_deferral {
+            block_id.id as usize
         } else {
-            block_id + self.defer_offset
+            block_id.id as usize + self.defer_offset
         };
         
         self.block_map.get(id)

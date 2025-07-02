@@ -9,7 +9,7 @@ use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
-use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp, BCFloatUnOp};
+use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp, BCFloatUnOp, POINTER_TAG};
 use cx_data_bytecode::types::BCTypeKind;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
@@ -404,8 +404,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             condition, true_block, false_block
         } => {
             let condition = context.variable_table.get(condition).unwrap().as_value();
-            let true_block = *context.block_map.get(*true_block as usize).unwrap();
-            let false_block = *context.block_map.get(*false_block as usize).unwrap();
+            let true_block = context.get_block(*true_block);
+            let false_block = context.get_block(*false_block);
 
             context.builder.ins()
                 .brif(condition,
@@ -427,7 +427,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Jump {
             target
         } => {
-            let target = context.get_block(*target as usize);
+            let target = context.get_block(*target);
 
             context.builder.ins().jump(target, &[]);
 
@@ -474,21 +474,18 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(CodegenValue::NULL)
         },
 
-        VirtualInstruction::Phi {
-            predecessors: from
-        } => {
+        VirtualInstruction::Phi { predecessors } => {
             let current_block = context.builder.current_block()?;
 
             context.builder
                 .append_block_param(current_block, get_cranelift_type(&instruction.value.type_));
 
-            for (from_value, from_block) in from {
+            for (from_value, from_block) in predecessors {
                 let value = context.variable_table.get(from_value)
                     .cloned()
                     .unwrap()
                     .as_value();
-                let block = *context.block_map.get(*from_block as usize)
-                    .expect("Invalid block ID in Phi instruction");
+                let block = context.get_block(*from_block);
 
                 // get last instruction in the block
                 let last_inst = context.builder.func.layout
@@ -497,6 +494,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     .unwrap();
 
                 unsafe {
+                    // code made with the worst of intentions, purely to spite the borrow checker
                     let value_pool : *mut _ = &mut context.builder.func.dfg.value_lists;
 
                     match context.builder.func.dfg.insts.index_mut(last_inst) {
@@ -506,10 +504,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                         InstructionData::Brif { blocks, .. } => {
                             if blocks.get_mut(0)?.block(&*value_pool) == current_block {
                                 blocks.get_mut(0)?.append_argument(value, &mut *value_pool);
-                            } else if blocks.get_mut(1)?.block(&*value_pool) == current_block {
+                            }
+                            if blocks.get_mut(1)?.block(&*value_pool) == current_block {
                                 blocks.get_mut(1)?.append_argument(value, &mut *value_pool);
-                            } else {
-                                panic!("Invalid block ID in Phi instruction");
                             }
                         },
                         _ => {
@@ -525,7 +522,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .expect("No block parameter found for Phi instruction");
 
             Some(CodegenValue::Value(val))
-        },
+        }
 
         VirtualInstruction::BoolExtend {
             value
@@ -729,49 +726,88 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
         
+        VirtualInstruction::AddPointerTag { value } => {
+            let val = context.variable_table
+                .get(value)
+                .cloned()
+                .unwrap();
+            
+            Some(
+                CodegenValue::Value(
+                    context.builder.ins()
+                        .bor_imm(
+                            val.as_value(),
+                            POINTER_TAG as i64
+                        )
+                )
+            )
+        },
+        
+        VirtualInstruction::ClearPointerTag { value } => {
+            let val = context.variable_table
+                .get(value)
+                .cloned()
+                .unwrap();
+            
+            Some(
+                CodegenValue::Value(
+                    context.builder.ins()
+                        .band_imm(
+                            val.as_value(),
+                            !POINTER_TAG as i64
+                        )
+                )
+            )
+        },
+
+        VirtualInstruction::HasPointerTag { value } => {
+            let val = context.variable_table
+                .get(value)
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("ERROR: HasPointerTag instruction with unbound value: {value:?}");
+                    eprintln!("Map:\n{:#?}", context.variable_table);
+                    
+                    panic!("Unbound value in HasPointerTag instruction");
+                });
+            
+            let masked = context.builder.ins()
+                .band_imm(
+                    val.as_value(),
+                    POINTER_TAG as i64
+                );
+
+            Some(
+                CodegenValue::Value(
+                    context.builder.ins()
+                        .icmp_imm(
+                            ir::condcodes::IntCC::Equal,
+                            masked,
+                            POINTER_TAG as i64
+                        )
+                )
+            )
+        },
+        
         VirtualInstruction::JumpTable { value, targets, default } => {
             let mut switch = Switch::new();
             
             for (value, block_id) in targets {
                 switch.set_entry(
                     *value as u128,
-                    *context.block_map.get(*block_id as usize).unwrap()
+                    context.get_block(*block_id)
                 );
             }
+            
+            let default_block = context.get_block(*default);
             
             switch.emit(
                 &mut context.builder,
                 context.variable_table.get(value).unwrap().as_value(),
-                *context.block_map.get(*default as usize).unwrap()
+                default_block
             );
             
             Some(CodegenValue::NULL)
         }
     }
-}
-
-fn generate_params(
-    context: &mut FunctionState,
-    prototype: &BCFunctionPrototype,
-    params: &[ValueID]
-) -> Option<Vec<Value>> {
-    let mut args = Vec::new();
-
-    if prototype.return_type.is_structure() {
-        let temp_buffer = allocate_variable(
-            context,
-            prototype.return_type.fixed_size() as u32,
-            None
-        )?;
-
-        args.push(temp_buffer);
-    }
-
-    for param in params.iter() {
-        args.push(
-            context.variable_table.get(param).unwrap().as_value()
-        );
-    }
-
-    Some(args)
 }

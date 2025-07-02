@@ -1,0 +1,5 @@
+import std::memory;
+
+int main() {
+    int strong* ptr = stdalloc(4);
+}

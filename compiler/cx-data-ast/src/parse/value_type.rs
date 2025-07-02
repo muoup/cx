@@ -32,7 +32,14 @@ pub enum CXTypeKind {
     },
     Unit,
 
-    PointerTo(Box<CXType>),
+    StrongPointer { 
+        inner: Box<CXType>
+    },
+
+    PointerTo {
+        inner: Box<CXType>,
+        explicitly_weak: bool
+    },
     MemoryAlias(Box<CXType>),
     Array {
         size: usize,
@@ -140,6 +147,10 @@ impl CXType {
         matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Structured { .. }))
     }
     
+    pub fn is_mem_ref(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::MemoryAlias(_)))
+    }
+    
     pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
         matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Integer { .. }))
     }
@@ -166,7 +177,7 @@ impl CXType {
     }
     
     pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::PointerTo(_)))
+        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::PointerTo { .. }))
     }
 
     pub fn is_void(&self, type_map: &CXTypeMap) -> bool {
@@ -176,7 +187,10 @@ impl CXType {
     pub fn pointer_to(self) -> Self {
         CXType {
             specifiers: 0,
-            kind: CXTypeKind::PointerTo(Box::new(self))
+            kind: CXTypeKind::PointerTo {
+                inner: Box::new(self),
+                explicitly_weak: false
+            }
         }
     }
 }
@@ -198,9 +212,13 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
          CXTypeKind::Array { _type: t2_type, .. }) =>
             same_type(type_map, t1_type, t2_type),
 
-        (CXTypeKind::PointerTo(t1_type),
-         CXTypeKind::PointerTo(t2_type)) =>
+        (CXTypeKind::PointerTo { inner: t1_type, .. },
+         CXTypeKind::PointerTo { inner: t2_type, .. }) =>
             same_type(type_map, t1_type, t2_type),
+
+        (CXTypeKind::StrongPointer { inner: t1_inner, .. },
+         CXTypeKind::StrongPointer { inner: t2_inner, .. }) =>
+            same_type(type_map, t1_inner, t2_inner),
 
         (CXTypeKind::Structured { fields: t1_fields, .. },
          CXTypeKind::Structured { fields: t2_fields, .. }) => {
@@ -235,7 +253,8 @@ pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Opt
     match &type_.kind {
         CXTypeKind::Identifier { name, .. }
             => type_map.get(name.as_str())
-                .and_then(|_type| get_intrinsic_type(type_map, _type)),
+                .and_then(|_type| get_intrinsic_type(type_map, _type))
+                .or_else(|| log_error!("Type not found: {}", name.as_str())),
 
         _ => Some(&type_.kind)
     }
