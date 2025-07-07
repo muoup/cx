@@ -144,14 +144,14 @@ fn allocation_side_effects(
                         self_ref = Some(memory(inner_builder)?);
                     }
                     
-                    let as_bc_type = inner_builder.convert_cx_type(field_type)?;
+                    let as_bc_type = inner_builder.convert_cx_type(var_type)?;
                     let access = get_struct_field(inner_builder, &as_bc_type, name)?;
                     
                     inner_builder.add_instruction(
                         VirtualInstruction::StructAccess {
                             field_offset: access.offset,
                             field_index: access.index,
-                            struct_type: access._type.clone(),
+                            struct_type: as_bc_type,
                             struct_: self_ref.unwrap(),
                         },
                         field_type.clone()

@@ -1,5 +1,13 @@
 import std::memory;
 
+struct strong_ptr_container {
+    int strong* ptr;
+};
+
 int main() {
     int strong* ptr = stdalloc(4);
+
+    strong_ptr_container container;
+    container.ptr = stdalloc(4);
+    
 }

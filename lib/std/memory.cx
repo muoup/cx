@@ -5,7 +5,7 @@ void strong* stdalloc(u64 size) {
 }
 
 void stdfree(void strong* ptr) {
-    printf("[stdfree] memory freed!");
+    printf("[stdfree] memory freed!\n");
     free(move ptr);
 }
 
