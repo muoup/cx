@@ -11,4 +11,7 @@ int main() {
 
     strong_ptr_container container;
     container.ptr = __stdalloc(4);
+
+    strong_ptr_container strong* container_ptr = __stdalloc(sizeof(strong_ptr_container));
+    strong_ptr_container strong[] container_array = __stdarrayalloc(sizeof(strong_ptr_container), 2);
 }

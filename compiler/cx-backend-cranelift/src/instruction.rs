@@ -57,10 +57,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             func, args, method_sig
         } => {
             let (val, params) = prepare_method_call(
-                context,
-                *func,
-                method_sig,
-                args
+                context, *func,
+                method_sig, args
             )?;
 
             let fn_ref = get_func_ref(

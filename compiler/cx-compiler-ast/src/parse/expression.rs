@@ -25,11 +25,10 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
         return parse_declaration(data);
     }
 
-    if let Some(TokenKind::Keyword(keyword)) = data.toks.peek().map(|t| &t.kind) {
-        let keyword = *keyword;
-        data.toks.next();
-
-        if let Some(expr) = parse_keyword_expr(data, keyword) {
+    if try_next!(data, TokenKind::Keyword(_)) {
+        data.toks.back();
+        
+        if let Some(expr) = parse_keyword_expr(data) {
             return Some(expr);
         }
     }
@@ -279,10 +278,14 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
     Some(())
 }
 
-pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) -> Option<CXExpr> {
+pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
     let start_index = data.toks.index;
     
-    match keyword {
+    let TokenKind::Keyword(keyword_type) = data.toks.next()?.kind else {
+        unreachable!("PANIC: parse_keyword_expr called with non-keyword token: {:#?}", data.toks.peek());
+    };
+    
+    match keyword_type {
         KeywordType::Return => {
             let val = parse_expr(data)?;
 
@@ -421,6 +424,9 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
             Some(CXExprKind::Defer { expr: Box::new(body) })
         },
 
-        _ => return None
+        _ => {
+            data.toks.back();
+            return None
+        }
     }.map(|e| e.into_expr(start_index, data.toks.index))
 }

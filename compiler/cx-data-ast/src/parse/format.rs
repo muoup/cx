@@ -100,7 +100,7 @@ impl Display for CXExprKind {
             },
 
             CXExprKind::BinOp { lhs, rhs, op } => {
-                fwrite!(f, "({} {} {})", lhs, op, rhs)
+                fwrite!(f, "{} {} {}", lhs, op, rhs)
             },
 
             CXExprKind::ImplicitCast { expr, to_type, .. } => {
@@ -196,6 +196,14 @@ impl Display for CXExprKind {
                 dedent();
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")
+            },
+
+            CXExprKind::Defer { expr } => {
+                fwrite!(f, "defer {}", expr)
+            },
+            
+            CXExprKind::SizeOf { expr } => {
+                fwrite!(f, "sizeof({})", expr)
             },
 
             _ => fwrite!(f, "{:?}", self)
