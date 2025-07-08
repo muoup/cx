@@ -200,6 +200,10 @@ pub enum CXExprKind {
         loaded_type: CXType
     },
     
+    New {
+        _type: CXType,
+        array_length: Option<Box<CXExpr>>
+    },
     Move {
         expr: Box<CXExpr>
     },

@@ -588,6 +588,7 @@ pub fn generate_instruction(
 
         CXExprKind::Move { expr } => {
             let memory = generate_instruction(builder, expr.as_ref())?;
+            
             let value = builder.add_instruction_bt(
                 VirtualInstruction::Load {
                     value: memory
@@ -610,8 +611,51 @@ pub fn generate_instruction(
 
             Some(value)
         },
-
-        _ => todo!("generate_instruction for {:?}", expr)
+        
+        CXExprKind::New { _type, array_length } => {
+            const STANDARD_ALLOC : &str = "__stdalloc";
+            const STANDARD_ARRAY_ALLOC : &str = "__stdallocarray";
+            
+            let type_as_bc = builder.convert_cx_type(_type)?;
+            let type_size = type_as_bc.fixed_size();
+            
+            let size_imm = builder.int_const(type_size as i32, 8, true)?;
+            
+            match array_length {
+                Some(len) => {
+                    let func = builder.fn_ref(STANDARD_ARRAY_ALLOC)?
+                        .expect("INTERNAL PANIC: Standard array alloc function not found");
+                    let len = generate_instruction(builder, len.as_ref())?;
+                    
+                    builder.add_instruction_bt(
+                        VirtualInstruction::DirectCall {
+                            func,
+                            args: vec![size_imm, len],
+                            method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
+                        },
+                        BCType::from(BCTypeKind::Pointer)
+                    )
+                },
+                
+                None => {
+                    let func = builder.fn_ref(STANDARD_ALLOC)?
+                        .expect("INTERNAL PANIC: Standard alloc function not found");
+                    
+                    builder.add_instruction_bt(
+                        VirtualInstruction::DirectCall {
+                            func,
+                            args: vec![size_imm],
+                            method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
+                        },
+                        BCType::from(BCTypeKind::Pointer)
+                    )
+                },
+            }
+        },
+        
+        CXExprKind::Taken => panic!("PANIC: Attempting to generate instruction for `Taken` expression, which should have been removed by the type checker."),
+        
+        CXExprKind::Unit | CXExprKind::InitializerList { .. } => todo!(),
     }
 }
 

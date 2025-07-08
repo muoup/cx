@@ -11,6 +11,14 @@ pub(crate) struct StructAccess {
     pub(crate) _type: BCType,
 }
 
+fn align_offset(current_offset: usize, alignment: usize) -> usize {
+    if current_offset % alignment != 0 {
+        current_offset + (alignment - (current_offset % alignment))
+    } else {
+        current_offset
+    }
+}
+
 pub(crate) fn get_struct_field(
     builder: &BytecodeBuilder,
     _type: &BCType,
@@ -23,22 +31,16 @@ pub(crate) fn get_struct_field(
     let mut offset = 0;
     
     for (index, (field_name, field_type)) in fields.iter().enumerate() {
-        let field_size = field_type.fixed_size();
-        
-        // Align offset to the field's alignment
-        if offset % field_type.alignment() as usize != 0 {
-            offset += field_type.alignment() as usize - (offset % field_type.alignment() as usize);
-        }
+        offset = align_offset(offset, field_type.alignment() as usize);
         
         if field_name == name {
             return Some(StructAccess {
-                offset,
-                index,
+                offset, index,
                 _type: field_type.clone()
             });
         }
         
-        offset += field_size;
+        offset += field_type.fixed_size();
     }
     
     None
@@ -57,11 +59,17 @@ pub(crate) fn get_cx_struct_field_by_index(
         bytecode_error_log!(builder, "PANIC: Index out of bounds for struct access by index {index}");
     }
     
+    let mut offset = 0;
+    
+    for (i, (_, t)) in fields.iter().enumerate() {
+        offset = align_offset(offset, t.alignment() as usize) + t.fixed_size();
+    }
+    
     let field_type = fields[index].1.clone();
+    offset -= field_type.fixed_size();
     
     Some(StructAccess {
-        offset: fields[..index].iter().map(|(_, t)| t.fixed_size()).sum(),
-        index,
+        offset, index,
         _type: field_type
     })
 }

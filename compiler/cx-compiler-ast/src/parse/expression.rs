@@ -4,6 +4,7 @@ use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error};
 use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
@@ -258,6 +259,33 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
             
             return_type
+        },
+        
+        TokenKind::Keyword(KeywordType::New) => {
+            let Some((None, _type)) = parse_initializer(data) else {
+                log_error!("PARSER ERROR: Failed to parse type declaration for new");
+            };
+            
+            match _type.kind {
+                CXTypeKind::Array { size, _type: inner_type } => {
+                    let length = CXExprKind::IntLiteral {
+                        bytes: 8,
+                        val: size as i64
+                    };
+                    
+                    CXExprKind::New {
+                        _type: *inner_type,
+                        array_length: Some(Box::new(length.into_expr(start_index, data.toks.index)))
+                    }
+                }
+                CXTypeKind::VariableLengthArray { size, _type: inner_type } => {
+                    CXExprKind::New {
+                        _type: *inner_type,
+                        array_length: Some(size)
+                    }
+                },
+                _ => CXExprKind::New { _type, array_length: None },
+            }
         },
 
         _ => {

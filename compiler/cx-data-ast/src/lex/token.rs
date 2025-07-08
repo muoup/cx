@@ -77,7 +77,7 @@ pub enum KeywordType {
     Sizeof,
 
     // CX Specific
-    Import, Defer, Strong, Weak
+    Import, Defer, Strong, Weak, New
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -143,6 +143,8 @@ impl TokenKind {
             "strong" => TokenKind::Keyword(KeywordType::Strong),
             "weak" => TokenKind::Keyword(KeywordType::Weak),
             "move" => TokenKind::Operator(OperatorType::Move),
+
+            "new" => TokenKind::Keyword(KeywordType::New),
             
             _ => TokenKind::Identifier(str),
         }

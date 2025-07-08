@@ -1,17 +1,16 @@
-import std::memory;
-
 struct strong_ptr_container {
     int other_data;
     int strong* ptr;
 };
 
 int main() {
-    int strong* ptr = __stdalloc(4);
-    int strong[] ptr2 = __stdarrayalloc(4, 2);
+    int strong* ptr = new int;
+    int strong[] ptr2 = new int[2];
+    int strong* ptr_moved = move ptr;
 
     strong_ptr_container container;
-    container.ptr = __stdalloc(4);
+    container.ptr = new int;
 
-    strong_ptr_container strong* container_ptr = __stdalloc(sizeof(strong_ptr_container));
-    strong_ptr_container strong[] container_array = __stdarrayalloc(sizeof(strong_ptr_container), 2);
+    strong_ptr_container strong* container_ptr = new strong_ptr_container;
+    strong_ptr_container strong[] container_array = new strong_ptr_container[2];
 }

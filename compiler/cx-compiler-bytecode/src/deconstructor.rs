@@ -8,7 +8,7 @@ use crate::aux_routines::get_cx_struct_field_by_index;
 
 const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
-const STANDARD_FREE_ARRAY_NOOP: &str = "__stdarrayfreearray_destructor_noop";
+const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
 fn deconstructor_name(type_: &CXType) -> String {
     format!("deconstruct_{}", type_.uuid)
@@ -71,7 +71,7 @@ fn if_tag_call(
     )?;
     
     builder.set_current_block(run);
-    
+
     if let Some(inner_type) = invoke_deconstructor {
         let remove_tag = builder.add_instruction_bt(
             VirtualInstruction::ClearPointerTag {
@@ -79,13 +79,13 @@ fn if_tag_call(
             },
             BCType::from(BCTypeKind::Pointer)
         )?;
-        
+
         try_invoke_deconstructor(builder, remove_tag, inner_type, false)?;
     }
-    
+
     let func = builder.fn_ref(function_name)?
-        .expect("INTERNAL PANIC: Function not found");
-    
+        .unwrap_or_else(|| panic!("INTERNAL PANIC: Function not found: {function_name}"));
+
     builder.add_instruction(
         VirtualInstruction::DirectCall {
             func, args,
@@ -114,7 +114,7 @@ pub fn try_invoke_deconstructor(
     match &intrinsic_type.kind {
         CXTypeKind::StrongPointer { inner, is_array: false, .. } => {
             let val = load_mem(builder, val, unloaded)?;
-            
+
             if_tag_call(
                 builder,
                 val,
@@ -220,7 +220,7 @@ pub fn generate_deconstructor(
         VirtualInstruction::FunctionParameter { param_index: 0 },
         BCType::from(BCTypeKind::Pointer)
     )?;
-    
+
     let as_bc = builder.convert_cx_type(&data._type)?;
 
     if let CXTypeKind::Structured { fields, .. } = &data._type.kind {

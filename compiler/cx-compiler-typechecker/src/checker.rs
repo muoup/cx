@@ -350,8 +350,8 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             let CXTypeKind::StrongPointer { .. } = inner.intrinsic_type_kind(env.type_map)? else {
                 log_error!("TYPE ERROR: Move operator can only be applied to lvalue strong pointers, found: {expr_type}");
             };
-         
-            Some(expr_type)
+            
+            Some(*inner.clone())
         },
         
         CXExprKind::For { init, condition, increment, body } => {
@@ -386,11 +386,23 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             Some(CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type())
         },
         
+        CXExprKind::New { _type, array_length } => {
+            if let Some(array_length) = array_length {
+                implicit_coerce(env, array_length, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
+            }
+
+            let _type = get_intrinsic_type(env.type_map, _type)?;
+            Some(CXType::new(_type.specifiers, CXTypeKind::StrongPointer {
+                inner: Box::new(_type.clone()),
+                is_array: array_length.is_some()
+            }))
+        },
+        
         CXExprKind::Unit |
         CXExprKind::Break |
         CXExprKind::Continue => Some(CXType::unit()),
-
-        _ => todo!("type_check_traverse: {expr}")
+        
+        CXExprKind::Taken => panic!("INTERNAL ERROR: Unexpected Taken expression in type checker"),
     }
 }
 

@@ -1,10 +1,10 @@
 public:
 
 void strong* __stdalloc(u64 size) {
-    return (void strong*) malloc(size);
+    return (void strong*) calloc(1, size);
 }
 
-void strong[] __stdarrayalloc(u64 elem_size, u64 elem_count) {
+void strong[] __stdallocarray(u64 elem_size, u64 elem_count) {
     void* data = malloc(elem_size * elem_count + 8);
     memset(data, 0, elem_size * elem_count + 8);
 
@@ -14,13 +14,13 @@ void strong[] __stdarrayalloc(u64 elem_size, u64 elem_count) {
 }
 
 void __stdfree(void strong* ptr) {
-    printf("__stdfree: %p\n", ptr);
+    printf("__stdfree\n", ptr);
     move ptr;
     free(ptr);
 }
 
 void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)) {
-    printf("__stdarrayfree: %p\n", ptr);
+    printf("__stdfreearray\n", ptr);
     move ptr; // 'leak' the strong pointer
     u64 length = *((long*) ptr - 1);
 
@@ -32,8 +32,8 @@ void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)
     free((u8*) ptr - 8);
 }
 
-void __stdarrayfreearray_destructor_noop(void strong[] ptr) {
-    printf("__stdarrayfreearray_destructor_noop: %p\n", ptr);
+void __stdfreearray_destructor_noop(void strong[] ptr) {
+    printf("__stdfreearray_destructor_noop\n", ptr);
     move ptr; // 'leak' the strong pointer
     free((u8*) ptr - 8);
 }

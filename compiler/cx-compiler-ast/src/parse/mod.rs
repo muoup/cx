@@ -4,7 +4,7 @@ use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
 use cx_data_ast::parse::parser::ParserData;
 use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
-use crate::parse::intrinsic_types::add_intrinsic_types;
+use crate::parse::intrinsic_types::{add_intrinsic_imports, add_intrinsic_types};
 use crate::parse::typing::parse_types;
 
 pub mod expression;
@@ -15,8 +15,12 @@ mod parsing_tools;
 pub mod intrinsic_types;
 
 pub fn parse_types_and_deps(mut data: ParserData) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
-    let (mut type_map, public_types, imports) = parse_types(&mut data)?;
+    let (mut type_map, public_types, mut imports) = parse_types(&mut data)?;
 
+    if !data.file_path.contains("/lib/std/") {
+        add_intrinsic_imports(&mut imports);
+    }
+    
     add_intrinsic_types(&mut type_map);
 
     Some((type_map, public_types, imports))

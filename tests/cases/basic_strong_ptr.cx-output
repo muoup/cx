@@ -1,2 +1,7 @@
+__stdfreearray_destructor_noop
 __stdfree
 __stdfree
+__stdfree
+__stdfreearray
+__stdfreearray: calling destructor for element 0
+__stdfreearray: calling destructor for element 1
