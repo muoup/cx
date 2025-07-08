@@ -5,6 +5,14 @@ pub struct BCType {
     pub kind: BCTypeKind
 }
 
+impl BCType {
+    pub fn unit() -> Self {
+        BCType {
+            kind: BCTypeKind::Unit
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum BCTypeKind {
     Opaque { bytes: usize },

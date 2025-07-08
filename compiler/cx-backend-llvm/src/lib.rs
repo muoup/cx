@@ -199,7 +199,7 @@ fn fn_aot_codegen(
     let func_val = global_state
         .module
         .get_function(bytecode.prototype.name.as_str())
-        .expect("Failed to get function from module");
+        .unwrap_or_else(|| panic!("Failed to get function from module: {}", bytecode.prototype.name));
     let builder = global_state.context.create_builder();
 
     let mut function_state = FunctionState {

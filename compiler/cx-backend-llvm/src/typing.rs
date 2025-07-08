@@ -134,7 +134,7 @@ pub(crate) fn cx_llvm_prototype<'a>(
     let mut arg_types = prototype
         .params
         .iter()
-        .map(|arg| bc_llvm_type(state, &arg.type_))
+        .map(|arg| bc_llvm_type(state, &arg._type))
         .collect::<Option<Vec<_>>>()?;
     
     if prototype.return_type.is_structure() {
@@ -157,7 +157,7 @@ pub(crate) fn bc_llvm_prototype<'a>(
     let arg_types = prototype
         .params
         .iter()
-        .map(|arg| bc_llvm_type(state, &arg.type_))
+        .map(|arg| bc_llvm_type(state, &arg._type))
         .collect::<Option<Vec<_>>>()?;
 
     create_fn_proto(

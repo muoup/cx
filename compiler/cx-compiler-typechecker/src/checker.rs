@@ -3,19 +3,23 @@ use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, same_type, CXTypeKind, CXType, CX_CONST};
 use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::typecheck_access;
-use crate::casting::{add_implicit_cast, alg_bin_op_coercion, explicit_cast, implicit_cast};
+use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
 use crate::TypeEnvironment;
 
-pub(crate) fn type_check_traverse<'a>(env: &'a mut TypeEnvironment, expr: &mut CXExpr) -> Option<&'a CXType> {
+pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXType> {
+    if let Some(_type) = env.typecheck_data.expr_type_test(expr.uuid) {
+        return Some(_type.clone());
+    }
+    
     let _type = type_check_inner(env, expr)?;
     
-    if matches!(_type.intrinsic_type(env.type_map), Some(CXTypeKind::StrongPointer { .. })) {
+    if matches!(_type.intrinsic_type_kind(env.type_map), Some(CXTypeKind::StrongPointer { .. })) {
         env.typecheck_data.set_deferring_function(
             env.current_prototype.as_ref()?.name.as_string()
         );
     } 
 
-    env.typecheck_data.insert(expr, _type.clone())
+    env.typecheck_data.insert(expr, _type.clone()).cloned()
 }
 
 fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXType> {
@@ -26,7 +30,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             }
 
             if let Some(value) = value {
-                return type_check_traverse(env, value.as_mut()).cloned();
+                return type_check_traverse(env, value.as_mut());
             }
 
             Some(CXType::unit())
@@ -40,7 +44,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     
                     if _type.is_integer(env.type_map) {
                         implicit_coerce(env, operand, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
-                        _type = type_check_traverse(env, operand.as_mut()).cloned()?;
+                        _type = type_check_traverse(env, operand.as_mut())?;
                     }
                     
                     Some(_type)
@@ -49,9 +53,9 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXUnOp::LNot => {
                     let mut _type = coerce_value(env, operand.as_mut())?;
                     
-                    if !matches!(_type.intrinsic_type(env.type_map)?, CXTypeKind::Integer { .. }) {
+                    if !matches!(_type.intrinsic_type_kind(env.type_map)?, CXTypeKind::Integer { .. }) {
                         implicit_coerce(env, operand, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
-                        _type = type_check_traverse(env, operand.as_mut()).cloned()?;
+                        _type = type_check_traverse(env, operand.as_mut())?;
                     }
                     
                     Some(
@@ -65,7 +69,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXUnOp::AddressOf => {
                     let operand_type = type_check_traverse(env, operand.as_mut())?.clone();
 
-                    match operand_type.intrinsic_type(env.type_map)? {
+                    match operand_type.intrinsic_type_kind(env.type_map)? {
                         CXTypeKind::MemoryAlias(inner) => Some(inner.clone().pointer_to()),
                         CXTypeKind::Function { .. } => coerce_value(env, operand.as_mut()),
 
@@ -75,7 +79,8 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXUnOp::Dereference => {
                     let operand_type = coerce_value(env, operand.as_mut())?;
                     
-                    let CXTypeKind::PointerTo { inner, .. }  = get_intrinsic_type(env.type_map, &operand_type).cloned()? else {
+                    let CXTypeKind::PointerTo { inner, .. } 
+                        = operand_type.intrinsic_type_kind(env.type_map)?.clone() else {
                         log_error!("TYPE ERROR: Dereference operator can only be applied to pointers, found {operand} of type {operand_type}");
                     };
                     
@@ -94,7 +99,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                         log_error!("TYPE ERROR: Increment operator can only be applied to memory references, found: {operand}");
                     };
                     
-                    match get_intrinsic_type(env.type_map, inner).cloned()? {
+                    match inner.intrinsic_type_kind(env.type_map)? {
                         CXTypeKind::Integer { .. } |
                         CXTypeKind::PointerTo { .. } => {},
 
@@ -142,11 +147,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
             let mut lhs_type = coerce_mem_ref(env, lhs)?;
 
-            if let Some(CXTypeKind::PointerTo { inner, .. }) = lhs_type.intrinsic_type(env.type_map) {
+            if let Some(CXTypeKind::PointerTo { inner, .. }) = lhs_type.intrinsic_type_kind(env.type_map) {
                 lhs_type = *inner.clone();
             }
 
-            let CXTypeKind::Function { prototype } = lhs_type.intrinsic_type(env.type_map).cloned()? else {
+            let CXTypeKind::Function { prototype } = lhs_type.intrinsic_type_kind(env.type_map).cloned()? else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
 
@@ -167,7 +172,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             for i in prototype.params.len()..args.len() {
                 let va_type = coerce_value(env, args[i])?;
 
-                match va_type.intrinsic_type(env.type_map)? {
+                match va_type.intrinsic_type_kind(env.type_map)? {
                     CXTypeKind::PointerTo { .. } => {
                         // Pointer types are already compatible with varargs, no need to cast
                     },
@@ -199,7 +204,13 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         }
 
         CXExprKind::BinOp { lhs, rhs, op } =>
-            alg_bin_op_coercion(env, op.clone(), lhs, rhs),
+            alg_bin_op_coercion(env, op.clone(), lhs, rhs)
+                .or_else(|| {
+                    let l_type = type_check_traverse(env, lhs)?.clone();
+                    let r_type = type_check_traverse(env, rhs)?.clone();
+                    
+                    expr_error_log!(env.tokens, expr.start_index, expr.end_index, "TYPE ERROR: Invalid binary operation {op} for {l_type} and {r_type}")
+                }),
 
         CXExprKind::VarDeclaration { name, type_ } => {
             if let CXTypeKind::VariableLengthArray { _type, size } = &mut type_.kind {
@@ -221,29 +232,12 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
         CXExprKind::Identifier(name) => {
             if let Some(record) = env.symbol_table.get(name.as_str()).cloned() {
-                return match record.intrinsic_type(env.type_map)? {
+                return match record.intrinsic_type_kind(env.type_map)? {
                     // Array variables are themselves memory aliases, so wrapping
                     // them in a memory alias ends up adding an extra load operation
                     // when using them
                     CXTypeKind::VariableLengthArray { .. } |
-                    CXTypeKind::Array { .. } => {
-                        Some(record)
-                    },
-                    
-                    CXTypeKind::StrongPointer { inner, .. } => {
-                        Some(
-                            CXType::new(
-                                record.specifiers,
-                                CXTypeKind::MemoryAlias(
-                                    Box::new(
-                                        CXTypeKind::StrongPointer {
-                                            inner: inner.clone(),
-                                        }.to_val_type()
-                                    )
-                                )
-                            )
-                        )
-                    },
+                    CXTypeKind::Array { .. } => Some(record),
                     
                     _ => {
                         Some(
@@ -349,15 +343,15 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::Move { expr } => {
             let expr_type = type_check_traverse(env, expr)?.clone();
             
-            let CXTypeKind::MemoryAlias(expr_type) = &expr_type.kind else {
+            let CXTypeKind::MemoryAlias(inner) = &expr_type.kind else {
                 log_error!("TYPE ERROR: Move operator can only be applied to memory references, found: {expr_type}");
             };
             
-            let CXTypeKind::StrongPointer { inner } = expr_type.intrinsic_type(env.type_map)? else {
+            let CXTypeKind::StrongPointer { .. } = inner.intrinsic_type_kind(env.type_map)? else {
                 log_error!("TYPE ERROR: Move operator can only be applied to lvalue strong pointers, found: {expr_type}");
             };
          
-            Some(CXTypeKind::StrongPointer { inner: inner.clone() }.to_val_type())
+            Some(expr_type)
         },
         
         CXExprKind::For { init, condition, increment, body } => {
@@ -371,17 +365,13 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             type_check_traverse(env, increment)?;
             type_check_traverse(env, body)?;
 
-            if matches!(get_intrinsic_type(env.type_map, &condition_type), Some(CXTypeKind::Integer { bytes: 1, signed: true })) {
-                log_error!("TYPE ERROR: For loop condition must have condition type, found: {condition_type}");
-            }
-
             Some(CXType::unit())
         },
 
         CXExprKind::While { condition, body, .. } => {
             let condition_type = type_check_traverse(env, condition)?.clone();
 
-            if !matches!(condition_type.intrinsic_type(env.type_map)?, CXTypeKind::Integer { .. }) {
+            if !matches!(condition_type.intrinsic_type_kind(env.type_map)?, CXTypeKind::Integer { .. }) {
                 implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.to_val_type())?;
             }
 
@@ -391,7 +381,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         },
 
         CXExprKind::SizeOf { expr } => {
-            type_check_traverse(env, expr)?;
+            coerce_value(env, expr)?;
             
             Some(CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type())
         },
@@ -429,11 +419,11 @@ fn coerce_mem_ref(
     let expr_type = type_check_traverse(env, expr)?.clone();
 
     let CXTypeKind::MemoryAlias(inner)
-        = expr_type.intrinsic_type(env.type_map).cloned()? else {
+        = expr_type.intrinsic_type_kind(env.type_map).cloned()? else {
         return Some(expr_type);
     };
     
-    match inner.intrinsic_type(env.type_map)? {
+    match inner.intrinsic_type_kind(env.type_map)? {
         CXTypeKind::Union { .. } |
         CXTypeKind::Structured { .. } => {},
         
@@ -449,7 +439,7 @@ fn coerce_mem_ref(
         }
     }
 
-    type_check_traverse(env, expr).cloned()
+    type_check_traverse(env, expr)
 }
 
 pub(crate) fn coerce_return_value(
@@ -457,9 +447,9 @@ pub(crate) fn coerce_return_value(
     expr: &mut CXExpr,
     return_type: &CXType,
 ) -> Option<()> {
-    let rvalue = !type_check_traverse(env, expr)?.clone().is_mem_ref(env.type_map);
+    let rvalue = !type_check_traverse(env, expr)?.clone().is_mem_ref();
     let value_type = coerce_mem_ref(env, expr)?;
-    let intrinsic_type = value_type.intrinsic_type(env.type_map)?;
+    let intrinsic_type = value_type.intrinsic_type_kind(env.type_map)?;
     
     match intrinsic_type {
         // The memory alias is not traditionally loadable (i.e. a struct), so it may be returned as-is
@@ -478,19 +468,49 @@ pub(crate) fn coerce_return_value(
     Some(())
 }
 
+fn modify_load(
+    env: &mut TypeEnvironment,
+    expr: &mut CXExpr,
+    load_instead: CXType
+) -> Option<CXType> {
+    let CXExprKind::ImplicitLoad { loaded_type, .. } = &mut expr.kind else {
+        log_error!("INTERNAL ERROR: Expected an implicit load expression, found: {expr}");
+    };
+    
+    *loaded_type = load_instead.clone();
+    env.typecheck_data.insert(expr, load_instead).cloned()
+}
+
 pub(crate) fn coerce_value(
     env: &mut TypeEnvironment,
     expr: &mut CXExpr,
 ) -> Option<CXType> {
-    let lvalue = type_check_traverse(env, expr)?.clone().is_mem_ref(env.type_map);
+    let expr_type = type_check_traverse(env, expr)?.clone();
+    if !expr_type.is_mem_ref() {
+        return Some(expr_type);   
+    }
+    
     let expr_type = coerce_mem_ref(env, expr)?;
 
-    match expr_type.intrinsic_type(env.type_map)? {
+    match expr_type.intrinsic_type_kind(env.type_map)? {
         // If used in a value context, any type of array is used as a pointer to its first element
         CXTypeKind::VariableLengthArray { _type, .. } |
-        CXTypeKind::Array { _type, .. } => Some(
-            _type.clone().pointer_to().add_specifier(expr_type.specifiers)
-        ),
+        CXTypeKind::Array { _type, .. } => 
+            modify_load(env, expr, _type.clone().pointer_to().add_specifier(expr_type.specifiers)),
+
+        // If the value is an already owned lvalue strong pointer,
+        // it should be semantically equivalent to a plain [weak] pointer
+        CXTypeKind::StrongPointer { inner, .. } => 
+            modify_load(
+                env, expr,
+                CXType::new(
+                    expr_type.specifiers,
+                    CXTypeKind::PointerTo {
+                        inner: inner.clone(),
+                        explicitly_weak: false
+                    }
+                )
+            ),
         
         CXTypeKind::Function { .. } => {
             let expr_temp = std::mem::take(expr);
@@ -500,22 +520,7 @@ pub(crate) fn coerce_value(
                 func_name: Box::new(expr_temp),
                 func_sig: expr_type.clone()
             }.into_expr(start_index, end_index);
-            type_check_traverse(env, expr).cloned()
-        },
-        
-        // If the value is an already owned lvalue strong pointer,
-        // it should be semantically equivalent to a plain [weak] pointer
-        CXTypeKind::StrongPointer { inner, .. } 
-            if lvalue => {
-            Some(
-                CXType::new(
-                    expr_type.specifiers,
-                    CXTypeKind::PointerTo {
-                        inner: inner.clone(),
-                        explicitly_weak: true
-                    }
-                )
-            )
+            type_check_traverse(env, expr)
         },
         
         _ => Some(expr_type)

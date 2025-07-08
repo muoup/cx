@@ -1,5 +1,7 @@
+use std::hash::{Hash, Hasher};
 use cx_util::log_error;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use crate::parse::ast::{CXExpr, CXFunctionPrototype, CXTypeMap};
 use crate::parse::identifier::CXIdent;
 
@@ -13,8 +15,15 @@ pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXType {
+    pub uuid: u64,
     pub specifiers: CXTypeSpecifier,
     pub kind: CXTypeKind
+}
+
+impl Hash for CXType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.uuid)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +42,8 @@ pub enum CXTypeKind {
     Unit,
 
     StrongPointer { 
-        inner: Box<CXType>
+        inner: Box<CXType>,
+        is_array: bool,
     },
 
     PointerTo {
@@ -101,6 +111,7 @@ impl CXTypeKind {
 impl CXType {
     pub fn unit() -> Self {
         CXType {
+            uuid: 0,
             specifiers: 0,
             kind: CXTypeKind::Unit
         }
@@ -108,6 +119,7 @@ impl CXType {
 
     pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers,
             kind: underlying_type
         }
@@ -115,6 +127,7 @@ impl CXType {
 
     pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: self.specifiers | specifier,
             kind: self.kind.clone()
         }
@@ -122,6 +135,7 @@ impl CXType {
 
     pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: self.specifiers & !specifier,
             kind: self.kind.clone()
         }
@@ -130,37 +144,45 @@ impl CXType {
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
     }
-
-    pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
+    
+    pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXType> {
         get_intrinsic_type(type_map, self)
+    }
+
+    pub fn intrinsic_type_kind<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
+        Some(&get_intrinsic_type(type_map, self)?.kind)
     }
     
     pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
             return false;
         };
           
         inner.is_structured(type_map)
     }
-    
-    pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Structured { .. }))
+
+    pub fn is_mem_ref(&self) -> bool {
+        matches!(self.kind, CXTypeKind::MemoryAlias(_))
     }
     
-    pub fn is_mem_ref(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::MemoryAlias(_)))
+    pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { .. }))
     }
     
     pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Integer { .. }))
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Integer { .. }))
+    }
+    
+    pub fn is_strong_ptr(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::StrongPointer { .. }))
     }
     
     pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
             return None;
         };
 
-        let intrin = inner.intrinsic_type(type_map);
+        let intrin = inner.intrinsic_type_kind(type_map);
         if matches!(intrin, Some(CXTypeKind::Structured { .. })) {
             intrin.cloned()
         } else {
@@ -169,23 +191,24 @@ impl CXType {
     }
     
     pub fn mem_ref_inner(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
             return None;
         };
         
-        inner.intrinsic_type(type_map).cloned()
+        inner.intrinsic_type_kind(type_map).cloned()
     }
     
     pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::PointerTo { .. }))
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::PointerTo { .. }))
     }
 
     pub fn is_void(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Unit))
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Unit))
     }
 
     pub fn pointer_to(self) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
             kind: CXTypeKind::PointerTo {
                 inner: Box::new(self),
@@ -249,14 +272,14 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
     }
 }
 
-pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Option<&'a CXTypeKind> {
+pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Option<&'a CXType> {
     match &type_.kind {
         CXTypeKind::Identifier { name, .. }
             => type_map.get(name.as_str())
                 .and_then(|_type| get_intrinsic_type(type_map, _type))
                 .or_else(|| log_error!("Type not found: {}", name.as_str())),
 
-        _ => Some(&type_.kind)
+        _ => Some(&type_)
     }
 }
 

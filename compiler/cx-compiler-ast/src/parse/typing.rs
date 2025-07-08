@@ -249,14 +249,25 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
     match &next_tok.kind {
         TokenKind::Keyword(KeywordType::Strong) => {
             data.toks.next();
-            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
-            let specs = parse_specifier(data);
-            let acc_type = CXType {
-                specifiers: specs,
-                kind: CXTypeKind::StrongPointer { 
-                    inner: Box::new(acc_type)
-                }
+            
+            let is_array = match data.toks.next()?.kind {
+                TokenKind::Operator(OperatorType::Asterisk) => false,
+                TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
+                    true
+                },
+                
+                _ => log_error!("PARSER ERROR: Expected '*' or '[]' after 'strong' keyword")
             };
+            
+            let specs = parse_specifier(data);
+            let acc_type = CXType::new(
+                specs,
+                CXTypeKind::StrongPointer { 
+                    inner: Box::new(acc_type),
+                    is_array
+                }
+            );
 
             parse_typemods(data, acc_type)
         },
@@ -264,14 +275,15 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
         TokenKind::Keyword(KeywordType::Weak) => {
             data.toks.next();
             assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            
             let specs = parse_specifier(data);
-            let acc_type = CXType {
-                specifiers: specs,
-                kind: CXTypeKind::PointerTo { 
+            let acc_type = CXType::new(
+                specs,
+                CXTypeKind::PointerTo { 
                     inner: Box::new(acc_type),
                     explicitly_weak: true
                 }
-            };
+            );
 
             parse_typemods(data, acc_type)
         },

@@ -94,7 +94,7 @@ pub enum CXInitIndex {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXExpr {
-    pub uuid: usize,
+    pub uuid: u64,
     pub kind: CXExprKind,
 
     pub start_index: usize,
@@ -217,7 +217,7 @@ pub enum CXExprKind {
 impl CXExprKind {
     pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpr {
         CXExpr {
-            uuid: Uuid::new_v4().as_u128() as usize,
+            uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
 
             start_index,

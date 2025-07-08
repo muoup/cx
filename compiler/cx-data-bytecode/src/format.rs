@@ -58,7 +58,7 @@ impl Display for BCFunctionPrototype {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", arg.type_)?;
+            write!(f, "{}", arg._type)?;
         }
 
         write!(f, ") -> {}", self.return_type)
@@ -144,7 +144,7 @@ impl Display for VirtualInstruction {
                 Ok(())
             },
             VirtualInstruction::Branch { condition, true_block, false_block } => {
-                write!(f, "branch on {condition}; true -> block{true_block}, false -> block{false_block}")
+                write!(f, "branch on {condition}; true -> {true_block}, false -> {false_block}")
             },
             VirtualInstruction::Phi { predecessors: from } => {
                 write!(f, "phi")?;
@@ -217,7 +217,7 @@ impl Display for VirtualInstruction {
             VirtualInstruction::FunctionReference { name } => {
                 write!(f, "function_reference {name}")
             },
-            VirtualInstruction::GetFunctionAddr { func_name } => {
+            VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             },
             VirtualInstruction::BitCast { value } => {

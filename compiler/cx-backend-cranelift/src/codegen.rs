@@ -90,7 +90,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     }
 
     for arg in bc_func.prototype.params.iter() {
-        let cranelift_type = get_cranelift_type(&arg.type_);
+        let cranelift_type = get_cranelift_type(&arg._type);
         let arg = context.builder.append_block_param(first_block, cranelift_type);
 
         context.fn_params.push(arg);

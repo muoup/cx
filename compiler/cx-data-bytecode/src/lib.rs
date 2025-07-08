@@ -49,7 +49,7 @@ pub struct VirtualValue {
 #[derive(Debug, Clone)]
 pub struct BCParameter {
     pub name: Option<String>,
-    pub type_: BCType
+    pub _type: BCType
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +66,8 @@ pub struct BytecodeFunction {
     
     pub blocks: Vec<FunctionBlock>,
     pub defer_blocks: Vec<FunctionBlock>,
+    
+    pub static_linkage: bool,
 }
 
 #[derive(Debug)]
@@ -201,7 +203,7 @@ pub enum VirtualInstruction {
     },
 
     GetFunctionAddr {
-        func_name: ValueID
+        func: ValueID
     },
 
     IntToFloat {

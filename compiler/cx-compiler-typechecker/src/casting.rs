@@ -1,14 +1,14 @@
 use crate::TypeEnvironment;
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
-use cx_util::log_error;
+use cx_util::{expr_error_log, log_error};
 use crate::checker::{coerce_value, type_check_traverse};
 
 pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
                            -> Option<Option<CXCastType>> {
     Some(
-        match (from_type.intrinsic_type(env.type_map).cloned()?,
-               to_type.intrinsic_type(env.type_map).cloned()?) {
+        match (from_type.intrinsic_type_kind(env.type_map).cloned()?,
+               to_type.intrinsic_type_kind(env.type_map).cloned()?) {
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
                 Some(CXCastType::PtrToInt)
             },
@@ -47,8 +47,8 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
 pub fn valid_explicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
                            -> Option<Option<CXCastType>> {
     Some(
-        match (from_type.intrinsic_type(env.type_map).cloned()?,
-               to_type.intrinsic_type(env.type_map).cloned()?) {
+        match (from_type.intrinsic_type_kind(env.type_map).cloned()?,
+               to_type.intrinsic_type_kind(env.type_map).cloned()?) {
 
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
@@ -125,8 +125,8 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         return binop_type(&op, None, &l_type);
     }
 
-    match (l_type.intrinsic_type(env.type_map).cloned()?,
-           r_type.intrinsic_type(env.type_map).cloned()?) {
+    match (l_type.intrinsic_type_kind(env.type_map).cloned()?,
+           r_type.intrinsic_type_kind(env.type_map).cloned()?) {
 
         (CXTypeKind::PointerTo { inner: l_inner, .. }, CXTypeKind::Integer { .. }) => {
             ptr_int_binop_coercion(env, op, l_inner.as_ref(), rhs)
@@ -164,7 +164,13 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) 
             => ptr_ptr_binop_coercion(env, op, &l_type, rhs),
 
-        _ => log_error!("Cannot perform binary operation on types {l_type} and {r_type}"),
+        (CXTypeKind::StrongPointer { .. }, _) |
+        (_, CXTypeKind::StrongPointer { .. }) => {
+            println!("R-value strong pointers must be assigned to an l-value before being used in binary operations, found '{op}' with types {l_type} and {r_type}");
+            None
+        },
+
+        _ => None,
     }
 }
 
@@ -222,10 +228,10 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
         
         CXBinOp::ArrayIndex => {
             Some(
-                CXType {
-                    specifiers: pointer_inner?.specifiers,
-                    kind: CXTypeKind::MemoryAlias(Box::new(pointer_inner?.clone()))
-                }
+                CXType::new(
+                    pointer_inner?.specifiers,
+                    CXTypeKind::MemoryAlias(Box::new(pointer_inner?.clone()))
+                )
             )
         },
         

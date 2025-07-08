@@ -1,4 +1,5 @@
-use crate::ProgramBytecode;
+use std::collections::HashSet;
+use crate::{BytecodeResult, ProgramBytecode};
 use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::ast::CXExprKind::Block;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
@@ -26,6 +27,7 @@ pub struct BytecodeBuilder {
 
     pub symbol_table: ScopedMap<ValueID>,
 
+    complex_types: HashSet<u64>,
     in_deferred_block: bool,
     function_context: Option<BytecodeFunctionContext>,
 }
@@ -59,12 +61,12 @@ impl BytecodeBuilder {
 
             symbol_table: ScopedMap::new(),
 
+            complex_types: HashSet::new(),
             function_context: None
         }
     }
 
-    pub fn new_function(&mut self, fn_prototype: &CXFunctionPrototype) {
-        let fn_prototype = self.convert_cx_prototype(fn_prototype).unwrap();
+    pub fn new_function(&mut self, fn_prototype: BCFunctionPrototype) {
         let defers = self.type_check_data.function_defers(&fn_prototype.name);
         
         self.in_deferred_block = false;
@@ -95,7 +97,7 @@ impl BytecodeBuilder {
         );
     }
 
-    pub fn finish_function(&mut self) {
+    pub fn finish_function(&mut self, static_linkage: bool) {
         let prototype = self.fun().prototype.clone();
         
         implicit_return(self, &prototype)
@@ -111,6 +113,8 @@ impl BytecodeBuilder {
                 
                 blocks: context.blocks,
                 defer_blocks: context.deferred_blocks,
+
+                static_linkage,
             }
         );
     }
@@ -176,6 +180,23 @@ impl BytecodeBuilder {
             instruction,
             value_type
         )
+    }
+    
+    pub fn fn_ref_unchecked(
+        &mut self, name: &str
+    ) -> BytecodeResult<ValueID> {
+        self.add_instruction_bt(
+            VirtualInstruction::FunctionReference { name: name.to_owned() },
+            BCType::from(BCTypeKind::Pointer)
+        )
+    }
+    
+    pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<Option<ValueID>> {
+        if self.fn_map.contains_key(name) {
+            self.fn_ref_unchecked(name).map(|opt| Some(opt))
+        } else {
+            Some(None)
+        }
     }
     
     pub(crate) fn add_return(
@@ -311,7 +332,7 @@ impl BytecodeBuilder {
             log_error!("INTERNAL PANIC: Failed to get intrinsic type for expression: {:?}", expr)
         };
         
-        cx_type.intrinsic_type(&self.cx_type_map).cloned()
+        cx_type.intrinsic_type_kind(&self.cx_type_map).cloned()
     }
     
     pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {

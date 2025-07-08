@@ -1,6 +1,7 @@
 import std::memory;
 
 struct strong_ptr_container {
+    int other_data;
     int strong* ptr;
 };
 

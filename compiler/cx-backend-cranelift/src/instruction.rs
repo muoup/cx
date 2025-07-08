@@ -96,7 +96,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             };
             sig.params = method_sig.params
                 .iter()
-                .map(|arg| get_cranelift_abi_type(&arg.type_))
+                .map(|arg| get_cranelift_abi_type(&arg._type))
                 .collect();
 
             for i in method_sig.params.len()..params.len() {
@@ -167,7 +167,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
 
         VirtualInstruction::GetFunctionAddr {
-            func_name
+            func: func_name
         } => {
             let CodegenValue::FunctionID { id, .. }
                 = context.variable_table.get(func_name).cloned().unwrap() else {

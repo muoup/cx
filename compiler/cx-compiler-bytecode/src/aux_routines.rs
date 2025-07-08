@@ -3,6 +3,7 @@ use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_util::bytecode_error_log;
 use crate::builder::BytecodeBuilder;
+use crate::deconstructor::try_invoke_deconstructor;
 
 pub(crate) struct StructAccess {
     pub(crate) offset: usize,
@@ -36,6 +37,28 @@ pub(crate) fn get_struct_field(
     None
 }
 
+pub(crate) fn get_cx_struct_field_by_index(
+    builder: &BytecodeBuilder,
+    _type: &BCType,
+    index: usize
+) -> Option<StructAccess> {
+    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+        bytecode_error_log!(builder, "PANIC: Expected struct type on access by index {index}, got: {:?}", _type);
+    };
+    
+    if index >= fields.len() {
+        bytecode_error_log!(builder, "PANIC: Index out of bounds for struct access by index {index}");
+    }
+    
+    let field_type = fields[index].1.clone();
+    
+    Some(StructAccess {
+        offset: fields[..index].iter().map(|(_, t)| t.fixed_size()).sum(),
+        index,
+        _type: field_type
+    })
+}
+
 pub(crate) fn allocate_variable(
     name: &str,
     builder: &mut BytecodeBuilder,
@@ -66,109 +89,15 @@ pub(crate) fn allocate_variable(
 
     builder.symbol_table.insert(name.to_owned(), memory);
     
-    allocation_side_effects(builder, var_type, name, &mut |_| Some(memory))?;
+    if builder.function_defers() {
+        let current_block = builder.current_block();
+        
+        builder.enter_deferred_logic();
+        try_invoke_deconstructor(builder, memory, var_type, true)?;
+        builder.exit_deferred_logic();
+        
+        builder.set_current_block(current_block);
+    }
 
     Some(memory)
-}
-
-fn allocation_side_effects(
-    builder: &mut BytecodeBuilder,
-    var_type: &CXType,
-    name: &str,
-    memory: &mut dyn FnMut(&mut BytecodeBuilder) -> Option<ValueID>,
-) -> Option<()> {
-    match var_type.intrinsic_type(&builder.cx_type_map).cloned()? {
-        CXTypeKind::StrongPointer { .. } => {
-            let memory = memory(builder).unwrap();
-            let previous_block = builder.current_block();
-            builder.enter_deferred_logic();
-
-            let true_block = builder.create_named_block(format!("free_{name}").as_str());
-            let false_block = builder.create_named_block(format!("free_{name}_merge").as_str());
-
-            let pointer_val = builder.add_instruction_bt(
-                VirtualInstruction::Load { value: memory },
-                BCTypeKind::Pointer.into()
-            )?;
-            let has_tag = builder.add_instruction_bt(
-                VirtualInstruction::HasPointerTag { value: pointer_val },
-                BCTypeKind::Bool.into()
-            )?;
-            
-            builder.add_instruction(
-                VirtualInstruction::Branch {
-                    condition: has_tag,
-                    true_block, false_block
-                },
-                CXType::unit()
-            )?;
-            
-            builder.set_current_block(true_block);
-            
-            let stdfree = builder.add_instruction_bt(
-                VirtualInstruction::FunctionReference {
-                    name: "stdfree".into(),
-                },
-                BCType::from(BCTypeKind::Pointer)
-            )?;
-            let method_sig = builder.fn_map.get("stdfree").unwrap().clone();
-            
-            builder.add_instruction(
-                VirtualInstruction::DirectCall {
-                    func: stdfree,
-                    args: vec![pointer_val],
-                    method_sig
-                },
-                CXType::unit()
-            )?;
-            
-            builder.add_instruction(
-                VirtualInstruction::Jump {
-                    target: false_block,
-                },
-                CXType::unit()
-            );
-            
-            builder.set_current_block(false_block);
-            
-            builder.exit_deferred_logic();
-            builder.set_current_block(previous_block);
-        },
-        
-        CXTypeKind::Structured { fields, .. } => {
-            let mut self_ref = None;
-            
-            for (name, field_type) in fields.iter() {
-                let mut getter = |inner_builder : &mut BytecodeBuilder| {
-                    if self_ref.is_none() {
-                        self_ref = Some(memory(inner_builder)?);
-                    }
-                    
-                    let as_bc_type = inner_builder.convert_cx_type(var_type)?;
-                    let access = get_struct_field(inner_builder, &as_bc_type, name)?;
-                    
-                    inner_builder.add_instruction(
-                        VirtualInstruction::StructAccess {
-                            field_offset: access.offset,
-                            field_index: access.index,
-                            struct_type: as_bc_type,
-                            struct_: self_ref.unwrap(),
-                        },
-                        field_type.clone()
-                    )
-                };
-                
-                allocation_side_effects(
-                    builder,
-                    field_type,
-                    &format!("{name}"),
-                    &mut getter
-                )?
-            }
-        },
-        
-        _ => {}
-    };
-    
-    Some(())
 }

@@ -38,7 +38,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<
             try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
         },
 
-        _ => unimplemented!("parse_access_mods: {:#?}", specifier)
+        _ => todo!("parse_access_mods: {:#?}", specifier)
     };
 
     Some(())

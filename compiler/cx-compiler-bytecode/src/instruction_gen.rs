@@ -19,7 +19,7 @@ pub fn generate_instruction(
             let right_id = generate_instruction(builder, rhs.as_ref())?;
             let lhs_type = builder.get_expr_type(lhs.as_ref())?
                 .clone();
-            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type(&builder.cx_type_map)?.clone()
+            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type_kind(&builder.cx_type_map)?.clone()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
             let inner_as_bc = builder.convert_cx_type(&inner)?;
@@ -126,7 +126,7 @@ pub fn generate_instruction(
                 },
                 CXTypeKind::PointerTo { inner, .. } => {
                     let Some(CXTypeKind::Function { prototype }) =
-                        inner.intrinsic_type(&builder.cx_type_map) else {
+                        inner.intrinsic_type_kind(&builder.cx_type_map) else {
                         log_error!("Invalid function pointer type: {inner}");
                     };
 
@@ -182,7 +182,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::GetFunctionAddr {
-                    func_name
+                    func: func_name
                 },
                 func_sig.clone()
             )
@@ -204,13 +204,8 @@ pub fn generate_instruction(
         CXExprKind::Identifier(val) => {
             if let Some(id) = builder.symbol_table.get(val.as_str()) {
                 Some(*id)
-            } else if builder.fn_map.contains_key(val.as_str()) {
-                builder.add_instruction_bt(
-                    VirtualInstruction::FunctionReference {
-                        name: val.as_string()
-                    },
-                    BCTypeKind::Pointer.into()
-                )
+            } else if let Some(val) = builder.fn_ref(val.as_str())? {
+                Some(val)
             } else {
                 log_error!("Unknown identifier {val}")
             }
@@ -295,7 +290,7 @@ pub fn generate_instruction(
                         inner.as_ref().clone()
                     )?;
 
-                    let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
+                    let bytes = match inner.as_ref().intrinsic_type_kind(&builder.cx_type_map)? {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
                         CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
@@ -335,7 +330,7 @@ pub fn generate_instruction(
                         inner.as_ref().clone()
                     )?;
 
-                    let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
+                    let bytes = match inner.as_ref().intrinsic_type_kind(&builder.cx_type_map)? {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
                         CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
@@ -753,8 +748,11 @@ pub(crate) fn generate_algebraic_binop(
 
         BCTypeKind::Pointer => {
             let CXTypeKind::PointerTo { inner: left_inner, .. }
-                = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
-            else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
+                = &cx_lhs_type.intrinsic_type_kind(&builder.cx_type_map)?
+            else { 
+                builder.dump_current_fn();
+                unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") 
+            };
 
             builder.add_instruction_bt(
                 VirtualInstruction::PointerBinOp {

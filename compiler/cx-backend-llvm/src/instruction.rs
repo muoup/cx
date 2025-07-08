@@ -705,7 +705,7 @@ pub(crate) fn generate_instruction<'a>(
                 )
             },
             
-            VirtualInstruction::GetFunctionAddr { func_name } => {
+            VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 let function_name = function_state
                     .get_val_ref(func_name)?
                     .get_function_ref();

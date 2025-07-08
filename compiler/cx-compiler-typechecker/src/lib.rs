@@ -4,12 +4,16 @@ use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
+use crate::deconstructed_types::generate_deconstructor_data;
 use crate::importing::import_module_data;
 
+pub mod deconstructed_types;
 pub mod checker;
 mod struct_typechecking;
 mod casting;
 mod importing;
+
+pub type TypeCheckResult<T> = Option<T>;
 
 pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
     import_module_data(ast);
@@ -46,6 +50,9 @@ pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
 
         type_environment.symbol_table.pop_scope();
     }
+    
+    type_environment.typecheck_data.deconstructor_data
+        = generate_deconstructor_data(&type_environment)?;
     
     Some(type_environment.typecheck_data)
 }
