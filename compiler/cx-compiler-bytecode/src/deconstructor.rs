@@ -47,6 +47,7 @@ fn load_mem(
 fn if_tag_call(
     builder: &mut BytecodeBuilder,
     pointer: ValueID,
+    invoke_deconstructor: Option<&CXType>,
     function_name: &str,
     args: Vec<ValueID>,
 ) -> BytecodeResult<()> {
@@ -70,6 +71,18 @@ fn if_tag_call(
     )?;
     
     builder.set_current_block(run);
+    
+    if let Some(inner_type) = invoke_deconstructor {
+        let remove_tag = builder.add_instruction_bt(
+            VirtualInstruction::ClearPointerTag {
+                value: pointer,
+            },
+            BCType::from(BCTypeKind::Pointer)
+        )?;
+        
+        try_invoke_deconstructor(builder, remove_tag, inner_type, false)?;
+    }
+    
     let func = builder.fn_ref(function_name)?
         .expect("INTERNAL PANIC: Function not found");
     
@@ -100,12 +113,12 @@ pub fn try_invoke_deconstructor(
 
     match &intrinsic_type.kind {
         CXTypeKind::StrongPointer { inner, is_array: false, .. } => {
-            try_invoke_deconstructor(builder, val, inner, false)?;
-
             let val = load_mem(builder, val, unloaded)?;
+            
             if_tag_call(
                 builder,
                 val,
+                Some(inner.as_ref()),
                 STANDARD_FREE,
                 vec![val]
             )?;
@@ -139,6 +152,7 @@ pub fn try_invoke_deconstructor(
                 if_tag_call(
                     builder,
                     val,
+                    None,
                     STANDARD_FREE_ARRAY,
                     vec![val, size_imm, ptr_to]
                 )?;
@@ -146,6 +160,7 @@ pub fn try_invoke_deconstructor(
                 if_tag_call(
                     builder,
                     val,
+                    None,
                     STANDARD_FREE_ARRAY_NOOP,
                     vec![val]
                 )?;
@@ -205,7 +220,7 @@ pub fn generate_deconstructor(
         VirtualInstruction::FunctionParameter { param_index: 0 },
         BCType::from(BCTypeKind::Pointer)
     )?;
-
+    
     let as_bc = builder.convert_cx_type(&data._type)?;
 
     if let CXTypeKind::Structured { fields, .. } = &data._type.kind {

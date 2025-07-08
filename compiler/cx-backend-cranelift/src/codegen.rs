@@ -52,7 +52,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         UserFuncName::user(0, func_id.as_u32()),
         func_sig
     );
-
+    
     let mut binding = FunctionBuilderContext::new();
     let builder = FunctionBuilder::new(&mut func, &mut binding);
 

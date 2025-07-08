@@ -20,7 +20,7 @@ void __stdfree(void strong* ptr) {
 }
 
 void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)) {
-    printf("__stdarrayfree\n");
+    printf("__stdarrayfree: %p\n", ptr);
     move ptr; // 'leak' the strong pointer
     u64 length = *((long*) ptr - 1);
 
