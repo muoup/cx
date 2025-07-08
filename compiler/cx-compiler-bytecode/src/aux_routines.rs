@@ -23,6 +23,13 @@ pub(crate) fn get_struct_field(
     let mut offset = 0;
     
     for (index, (field_name, field_type)) in fields.iter().enumerate() {
+        let field_size = field_type.fixed_size();
+        
+        // Align offset to the field's alignment
+        if offset % field_type.alignment() as usize != 0 {
+            offset += field_type.alignment() as usize - (offset % field_type.alignment() as usize);
+        }
+        
         if field_name == name {
             return Some(StructAccess {
                 offset,
@@ -31,7 +38,7 @@ pub(crate) fn get_struct_field(
             });
         }
         
-        offset += field_type.fixed_size();
+        offset += field_size;
     }
     
     None

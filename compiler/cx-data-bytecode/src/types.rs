@@ -70,9 +70,23 @@ impl BCType {
             BCTypeKind::Array { element, size } =>
                 element.fixed_size() * size,
             BCTypeKind::Struct { fields, .. }
-                => fields.iter()
-                        .map(|(_, field)| field.fixed_size())
-                        .sum(),
+                => {
+                let mut current_size = 0;
+                
+                for (_, field_type) in fields {
+                    let field_size = field_type.fixed_size();
+                    let field_alignment = field_type.alignment();
+                    
+                    // Align current size to the field's alignment
+                    if current_size % field_alignment as usize != 0 {
+                        current_size += field_alignment as usize - (current_size % field_alignment as usize);
+                    }
+                    
+                    current_size += field_size;
+                }
+                
+                current_size
+            },
             BCTypeKind::Union { fields, .. }
                 => fields.iter()
                         .map(|(_, field)| field.fixed_size())
