@@ -1,7 +1,15 @@
+#include <stdio.h>
+
 struct strong_ptr_container {
     int other_data;
     int strong* ptr;
+
+    +destructor;
 };
+
+~strong_ptr_container {
+    printf("~strong_ptr_container\n");
+}
 
 int main() {
     int strong* ptr = new int;

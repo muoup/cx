@@ -15,6 +15,8 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
         TokenKind::Keyword(KeywordType::Typedef) |
         TokenKind::Keyword(KeywordType::Import) => goto_statement_end(data),
         
+        TokenKind::Operator(OperatorType::Tilda) => parse_destructor(data, ast),
+        
         TokenKind::Punctuator(PunctuatorType::Semicolon) => {
             data.toks.next();
             Some(())
@@ -66,6 +68,23 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
     };
     
     Some(import_path)
+}
+
+pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+    assert_token_matches!(data, TokenKind::Operator(OperatorType::Tilda));
+    assert_token_matches!(data, TokenKind::Identifier(name));
+    
+    let name = name.clone();
+    let body = parse_body(data)?;
+    
+    ast.global_stmts.push(
+        CXGlobalStmt::DestructorDefinition {
+            type_name: name,
+            body: Box::new(body),
+        }
+    );
+    
+    Some(())
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {

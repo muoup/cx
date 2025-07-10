@@ -39,7 +39,7 @@ fn generate_deconstructor_data_for_type(
         CXTypeKind::StrongPointer { inner, .. } =>
             generate_deconstructor_data_for_type(type_env, data, inner),
 
-        CXTypeKind::Structured { fields, .. } => {
+        CXTypeKind::Structured { fields, has_destructor, .. } => {
             let mut deconstructor_data = DeconstructorData {
                 _type: type_.clone(),
                 
@@ -49,7 +49,7 @@ fn generate_deconstructor_data_for_type(
                 deallocations: Vec::new(),
             };
             
-            if fields.iter().any(|(_, field_type)| field_type.is_strong_ptr(type_env.type_map)) {
+            if *has_destructor || fields.iter().any(|(_, field_type)| field_type.is_strong_ptr(type_env.type_map)) {
                 data.generated_for.insert(type_.uuid);
             }
 

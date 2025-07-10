@@ -5,6 +5,7 @@ use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
 use crate::checker::type_check_traverse;
 use crate::deconstructed_types::generate_deconstructor_data;
+use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
 use crate::importing::import_module_data;
 
 pub mod deconstructed_types;
@@ -12,6 +13,7 @@ pub mod checker;
 mod struct_typechecking;
 mod casting;
 mod importing;
+mod global_stmts;
 
 pub type TypeCheckResult<T> = Option<T>;
 
@@ -29,26 +31,22 @@ pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
         current_prototype: None,
         typecheck_data: TypeCheckData::new(),
     };
+    
+    add_destructor_prototypes(
+        type_environment.type_map,
+        type_environment.fn_map,
+    )?;
 
-    // TODO: Global Variables
-
-    for function in &mut ast.global_stmts {
-        let CXGlobalStmt::FunctionDefinition { prototype, body } = function else {
-            continue;
-        };
-
-        type_environment.current_prototype = Some(prototype.clone());
-        type_environment.symbol_table.push_scope();
-
-        for CXParameter { type_, name } in prototype.params.iter() {
-            if let Some(name) = name {
-                type_environment.symbol_table.insert(name.as_string(), type_.clone());
-            }
+    for stmt in &mut ast.global_stmts {
+        match stmt {
+            CXGlobalStmt::FunctionDefinition { prototype, body } =>
+                typecheck_function(&mut type_environment, prototype, body)?,
+            CXGlobalStmt::DestructorDefinition { type_name, body } =>
+                typecheck_destructor(&mut type_environment, type_name, body)?,
+            
+            CXGlobalStmt::GlobalVariable { .. } =>
+                todo!("Global variable type checking is not implemented yet"),
         }
-
-        type_check_traverse(&mut type_environment, body)?;
-
-        type_environment.symbol_table.pop_scope();
     }
     
     type_environment.typecheck_data.deconstructor_data

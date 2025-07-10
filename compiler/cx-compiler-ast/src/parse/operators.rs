@@ -67,12 +67,12 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
     Some(
         match &data.toks.next()?.kind {
             TokenKind::Operator(op) => match op {
-                OperatorType::BAnd          => CXUnOp::AddressOf,
+                OperatorType::Ampersand => CXUnOp::AddressOf,
                 OperatorType::Asterisk      => CXUnOp::Dereference,
                 OperatorType::Increment     => CXUnOp::PreIncrement(1),
                 OperatorType::Decrement     => CXUnOp::PreIncrement(-1),
                 OperatorType::Minus         => CXUnOp::Negative,
-                OperatorType::LNot          => CXUnOp::LNot,
+                OperatorType::Exclamation => CXUnOp::LNot,
 
                 _ => {
                     data.toks.back();
@@ -147,12 +147,12 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
             OperatorType::LessEqual         => CXBinOp::LessEqual,
             OperatorType::GreaterEqual      => CXBinOp::GreaterEqual,
 
-            OperatorType::BAnd              => CXBinOp::LAnd,
-            OperatorType::LOr               => CXBinOp::LOr,
-            OperatorType::LAnd              => CXBinOp::LAnd,
+            OperatorType::Ampersand => CXBinOp::LAnd,
+            OperatorType::DoubleBar => CXBinOp::LOr,
+            OperatorType::DoubleAmpersand => CXBinOp::LAnd,
             
-            OperatorType::LShift            => CXBinOp::LShift,
-            OperatorType::RShift            => CXBinOp::RShift,
+            OperatorType::DoubleLT => CXBinOp::LShift,
+            OperatorType::DoubleGT => CXBinOp::RShift,
 
             _ => todo!("op_to_binop: {op:?}")
         }

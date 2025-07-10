@@ -139,7 +139,6 @@ pub(crate) fn cx_llvm_prototype<'a>(
     
     if prototype.return_type.is_structure() {
         arg_types.insert(0, state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum());
-        
     }
     
     create_fn_proto(

@@ -167,6 +167,7 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
 pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     assert_token_matches!(data, TokenKind::Keyword(KeywordType::Struct));
 
+    let mut has_destructor = false;
     let name = parse_std_ident(data);
     
     if !try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
@@ -176,7 +177,16 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     let mut fields = Vec::new();
 
     while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-        let (name, _type) = parse_initializer(data)?;
+        if try_next!(data, TokenKind::Operator(OperatorType::Plus)) {
+            assert_token_matches!(data, TokenKind::Keyword(KeywordType::Destructor));
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+            has_destructor = true;
+            continue;
+        }
+        
+        let Some((name, _type)) = parse_initializer(data) else {
+            point_log_error!(data, "PARSER ERROR: Failed to parse struct member type");
+        };
 
         let Some(name) = name else {
             point_log_error!(data, "UNSUPPORTED: Nameless struct member of type {}", _type);
@@ -186,12 +196,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
         assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
 
-    Some(
-        CXTypeKind::Structured {
-            name,
-            fields,
-        }
-    )
+    Some(CXTypeKind::Structured { name, fields, has_destructor })
 }
 
 pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {

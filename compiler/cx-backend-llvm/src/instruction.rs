@@ -10,6 +10,7 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
 use inkwell::Either;
 use std::sync::Mutex;
+use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;
 
 pub(crate) fn inst_num() -> String {

@@ -283,7 +283,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 }
             },
             
-            CXTypeKind::Structured { fields, name } =>
+            CXTypeKind::Structured { fields, name, .. } =>
                 BCTypeKind::Struct {
                     name: match name {
                         Some(name) => name.as_string(),

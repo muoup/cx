@@ -33,7 +33,8 @@ pub enum CXTypeKind {
     Bool,
     Structured {
         name: Option<CXIdent>,
-        fields: Vec<(String, CXType)>
+        fields: Vec<(String, CXType)>,
+        has_destructor: bool,
     },
     Union {
         name: Option<CXIdent>,

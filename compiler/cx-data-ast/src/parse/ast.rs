@@ -53,7 +53,12 @@ pub enum CXGlobalStmt {
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
-    }
+    },
+    
+    DestructorDefinition {
+        type_name: String,
+        body: Box<CXExpr>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

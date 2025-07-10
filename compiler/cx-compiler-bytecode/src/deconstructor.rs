@@ -4,6 +4,7 @@ use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::node_type_map::{AllocationType, DeconstructorData};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionPrototype, BCParameter, BCPtrBinOp, ValueID, VirtualInstruction};
+use cx_data_bytecode::mangling::mangle_destructor;
 use crate::aux_routines::get_cx_struct_field_by_index;
 
 const STANDARD_FREE: &str = "__stdfree";
@@ -80,7 +81,7 @@ fn if_tag_call(
             BCType::from(BCTypeKind::Pointer)
         )?;
 
-        try_invoke_deconstructor(builder, remove_tag, inner_type, false)?;
+        deconstruct_variable(builder, remove_tag, inner_type, false)?;
     }
 
     let func = builder.fn_ref(function_name)?
@@ -103,7 +104,7 @@ fn if_tag_call(
     Some(())
 }
 
-pub fn try_invoke_deconstructor(
+pub fn deconstruct_variable(
     builder: &mut BytecodeBuilder,
     val: ValueID,
     type_: &CXType,
@@ -170,6 +171,29 @@ pub fn try_invoke_deconstructor(
         },
 
         _ => {
+            let mut generated = false;
+            let deconstructor_prototype = deconstructor_prototype(type_);
+            
+            if let CXTypeKind::Structured { has_destructor: true, name, .. } = &intrinsic_type.kind {
+                let deconstructor = builder.add_instruction_bt(
+                    VirtualInstruction::FunctionReference {
+                        name: mangle_destructor(name.as_ref().unwrap().as_str()),
+                    },
+                    BCType::from(BCTypeKind::Pointer)
+                )?;
+                
+                builder.add_instruction(
+                    VirtualInstruction::DirectCall {
+                        func: deconstructor,
+                        args: vec![val],
+                        method_sig: deconstructor_prototype.clone(),
+                    },
+                    CXType::unit()
+                )?;
+                
+                generated = true;
+            }
+            
             if let Some(deconstructor_name) = get_deconstructor(builder, type_)? {
                 let func = builder.fn_ref(&deconstructor_name)?
                     .expect("INTERNAL PANIC: Deconstructor function not found");
@@ -178,15 +202,15 @@ pub fn try_invoke_deconstructor(
                     VirtualInstruction::DirectCall {
                         func,
                         args: vec![val],
-                        method_sig: builder.fn_map.get(&deconstructor_name).unwrap().clone(),
+                        method_sig: deconstructor_prototype
                     },
                     CXType::unit()
                 );
 
-                Some(true)
-            } else {
-                Some(false)
+                generated = true;
             }
+            
+            Some(generated)
         },
     };
 
@@ -214,12 +238,27 @@ pub fn generate_deconstructor(
     let deconstructor_prototype = deconstructor_prototype(&data._type);
 
     builder.fn_map.insert(deconstructor_prototype.name.clone(), deconstructor_prototype.clone());
-    builder.new_function(deconstructor_prototype);
+    builder.new_function(deconstructor_prototype.clone());
 
     let struct_val = builder.add_instruction_bt(
         VirtualInstruction::FunctionParameter { param_index: 0 },
         BCType::from(BCTypeKind::Pointer)
     )?;
+    
+    if let CXTypeKind::Structured { has_destructor: true, name, .. } = &data._type.intrinsic_type(&builder.cx_type_map)?.kind {
+        let deconstructor_name = mangle_destructor(name.as_ref().unwrap().as_str());
+        let deconstructor = builder.fn_ref(&deconstructor_name)?
+            .expect("INTERNAL PANIC: Deconstructor function not found");
+
+        builder.add_instruction(
+            VirtualInstruction::DirectCall {
+                func: deconstructor,
+                args: vec![struct_val],
+                method_sig: deconstructor_prototype.clone(),
+            },
+            CXType::unit()
+        )?;
+    }
 
     let as_bc = builder.convert_cx_type(&data._type)?;
 
@@ -240,7 +279,7 @@ pub fn generate_deconstructor(
                 access._type.clone()
             )?;
 
-            try_invoke_deconstructor(builder, field, &fields[dec_type.index].1, true)?;
+            deconstruct_variable(builder, field, &fields[dec_type.index].1, true)?;
         }
     }
 

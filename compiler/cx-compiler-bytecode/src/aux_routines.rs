@@ -3,7 +3,7 @@ use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_util::bytecode_error_log;
 use crate::builder::BytecodeBuilder;
-use crate::deconstructor::try_invoke_deconstructor;
+use crate::deconstructor::deconstruct_variable;
 
 pub(crate) struct StructAccess {
     pub(crate) offset: usize,
@@ -108,7 +108,7 @@ pub(crate) fn allocate_variable(
         let current_block = builder.current_block();
         
         builder.enter_deferred_logic();
-        try_invoke_deconstructor(builder, memory, var_type, true)?;
+        deconstruct_variable(builder, memory, var_type, true)?;
         builder.exit_deferred_logic();
         
         builder.set_current_block(current_block);

@@ -19,14 +19,14 @@ void __stdfree(void strong* ptr) {
     free(ptr);
 }
 
-void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)) {
+void __stdfreearray(void strong[] ptr, usize type_size, void(*_destructor)(void*)) {
     printf("__stdfreearray\n", ptr);
     move ptr; // 'leak' the strong pointer
     u64 length = *((long*) ptr - 1);
 
     for (u64 i = 0; i < length; i++) {
         printf("__stdfreearray: calling destructor for element %llu\n", i);
-        destructor((u8*) ptr + i * type_size);
+        _destructor((u8*) ptr + i * type_size);
     }
 
     free((u8*) ptr - 8);

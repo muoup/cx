@@ -29,6 +29,15 @@ impl Display for CXGlobalStmt {
                 fwrite!(f, "}}")?;
                 Ok(())
             },
+            CXGlobalStmt::DestructorDefinition { type_name, body } => {
+                indent();
+                fwriteln!(f, "destructor for {} {{", type_name)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "")?;
+                fwrite!(f, "}}")?;
+                Ok(())
+            },
         }
     }
 }
@@ -202,6 +211,14 @@ impl Display for CXExprKind {
                 fwrite!(f, "defer {}", expr)
             },
             
+            CXExprKind::New { _type, array_length } => {
+                if let Some(length) = array_length {
+                    fwrite!(f, "new {}[{}]", _type, length)
+                } else {
+                    fwrite!(f, "new {}", _type)
+                }
+            },
+            
             CXExprKind::SizeOf { expr } => {
                 fwrite!(f, "sizeof({})", expr)
             },
@@ -230,7 +247,7 @@ impl Display for CXTypeKind {
                 write!(f, "f{float_bytes}")
             },
             CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { fields, name } => {
+            CXTypeKind::Structured { fields, name, has_destructor } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
@@ -241,7 +258,12 @@ impl Display for CXTypeKind {
                     "".to_string()
                 };
 
-                write!(f, "struct {name_str} {{ {field_strs} }}")
+                write!(f, "struct {name_str} {{ {field_strs} }}")?;
+                if *has_destructor {
+                    write!(f, " (+destructor)")
+                } else {
+                    Ok(())
+                }
             },
             CXTypeKind::Union { fields, name } => {
                 let field_strs = fields.iter()

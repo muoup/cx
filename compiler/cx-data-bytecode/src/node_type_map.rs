@@ -30,7 +30,9 @@ pub struct TypeCheckData {
     expr_types: HashMap<u64, CXType>,
     deferring_functions: HashSet<String>,
     
-    pub has_deconstructor: HashSet<u64>,
+    // destructor -- user defined ~[type_name] function
+    // deconstructor -- compiler generated function for language-features (i.e. strong pointers)
+    pub has_destructor: Vec<String>,
     pub deconstructor_data: Vec<DeconstructorData>,
 }
 
@@ -49,8 +51,8 @@ impl TypeCheckData {
         TypeCheckData {
             expr_types: HashMap::new(),
             deferring_functions: HashSet::new(),
-            has_deconstructor: HashSet::new(),
             
+            has_destructor: Vec::new(),
             deconstructor_data: Vec::new(),
         }
     }
