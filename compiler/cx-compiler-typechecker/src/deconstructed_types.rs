@@ -23,11 +23,11 @@ pub(crate) fn generate_deconstructor_data(type_env: &TypeEnvironment) -> Option<
 }
 
 fn generate_deconstructor_data_for_type(
-    type_env: &TypeEnvironment,
+    env: &TypeEnvironment,
     data: &mut GenerationData,
     type_: &CXType
 ) -> TypeCheckResult<()> {
-    let _type = type_.intrinsic_type(&type_env.type_map)?;
+    let _type = type_.intrinsic_type(&env.type_map)?;
 
     if data.seen.contains(&type_.uuid) {
         return Some(());
@@ -37,9 +37,9 @@ fn generate_deconstructor_data_for_type(
 
     match &_type.kind {
         CXTypeKind::StrongPointer { inner, .. } =>
-            generate_deconstructor_data_for_type(type_env, data, inner),
+            generate_deconstructor_data_for_type(env, data, inner),
 
-        CXTypeKind::Structured { fields, has_destructor, .. } => {
+        CXTypeKind::Structured { fields, .. } => {
             let mut deconstructor_data = DeconstructorData {
                 _type: type_.clone(),
                 
@@ -49,14 +49,14 @@ fn generate_deconstructor_data_for_type(
                 deallocations: Vec::new(),
             };
             
-            if *has_destructor || fields.iter().any(|(_, field_type)| field_type.is_strong_ptr(type_env.type_map)) {
+            if _type.has_destructor(env.type_map) || fields.iter().any(|(_, field_type)| field_type.is_strong_ptr(env.type_map)) {
                 data.generated_for.insert(type_.uuid);
             }
 
             for (i, (_, field_type)) in fields.iter().enumerate() {
-                generate_deconstructor_data_for_type(type_env, data, field_type)?;
+                generate_deconstructor_data_for_type(env, data, field_type)?;
                 
-                let allocation_type = match field_type.intrinsic_type_kind(&type_env.type_map)? {
+                let allocation_type = match field_type.intrinsic_type_kind(&env.type_map)? {
                     CXTypeKind::StrongPointer { is_array: false, .. }
                         => AllocationType::Single,
                     CXTypeKind::StrongPointer { is_array: true, .. }
@@ -77,7 +77,7 @@ fn generate_deconstructor_data_for_type(
                     deconstructor_data.rec_deconstructor_calls.push(i);
                 }
 
-                if field_type.is_strong_ptr(&type_env.type_map) {
+                if field_type.is_strong_ptr(&env.type_map) {
                     deconstructor_data.free_indices.push(i);
                 }
             }

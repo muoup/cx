@@ -3,8 +3,6 @@
 struct strong_ptr_container {
     int other_data;
     int strong* ptr;
-
-    +destructor;
 };
 
 ~strong_ptr_container {

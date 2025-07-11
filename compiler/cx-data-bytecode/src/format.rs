@@ -107,6 +107,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Store { value, memory, type_ } => {
                 write!(f, "store {type_} {value} -> {memory}")
             },
+            VirtualInstruction::ZeroMemory { memory, _type } => {
+                write!(f, "zero_memory {memory} ({_type})")
+            },
             VirtualInstruction::Immediate { value } => {
                 write!(f, "immediate {value}")
             },
@@ -225,15 +228,6 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::BitCast { value } => {
                 write!(f, "bit_cast {value}")
-            },
-            VirtualInstruction::AddPointerTag { value } => {
-                write!(f, "add_pointer_tag {value}")
-            },
-            VirtualInstruction::ClearPointerTag { value } => {
-                write!(f, "clear_pointer_tag {value}")
-            },
-            VirtualInstruction::HasPointerTag { value } => {
-                write!(f, "has_pointer_tag {value}")
             },
             VirtualInstruction::IntToFloat { from, value } => {
                 write!(f, "int_to_float ({from}) {value}")

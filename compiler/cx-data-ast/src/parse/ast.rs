@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use crate::lex::token::Token;
@@ -14,14 +14,11 @@ pub struct CXAST {
 
     // Path to .cx file
     pub file_path: String,
-    
+
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
-    
     pub imports: Vec<String>,
-
     pub global_stmts: Vec<CXGlobalStmt>,
-    
     pub public_functions: Vec<String>,
 
     pub type_map: CXTypeMap,

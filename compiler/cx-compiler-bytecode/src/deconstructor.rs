@@ -54,7 +54,7 @@ fn if_owned_call(
 ) -> BytecodeResult<()> {
     let run = builder.create_named_block("free");
     let skip = builder.create_named_block("skip");
- 
+
     let zero = builder.int_const(0, 8, false)?;
     let zero_ptr = builder.add_instruction_bt(
         VirtualInstruction::IntToPtr {
@@ -62,7 +62,7 @@ fn if_owned_call(
         },
         BCType::from(BCTypeKind::Pointer)
     )?;
-    
+
     let nonnull = builder.add_instruction_bt(
         VirtualInstruction::PointerBinOp {
             left: pointer,
@@ -75,7 +75,7 @@ fn if_owned_call(
     
     builder.add_instruction_bt(
         VirtualInstruction::Branch {
-            condition: nonnull, 
+            condition: nonnull,
             true_block: run,
             false_block: skip,
         },
@@ -178,10 +178,10 @@ pub fn deconstruct_variable(
             let mut generated = false;
             let deconstructor_prototype = deconstructor_prototype(type_);
             
-            if let CXTypeKind::Structured { has_destructor: true, name, .. } = &intrinsic_type.kind {
+            if let Some(name) = intrinsic_type.get_destructor(&builder.cx_type_map) {
                 let deconstructor = builder.add_instruction_bt(
                     VirtualInstruction::FunctionReference {
-                        name: mangle_destructor(name.as_ref().unwrap().as_str()),
+                        name: mangle_destructor(name),
                     },
                     BCType::from(BCTypeKind::Pointer)
                 )?;
@@ -249,8 +249,8 @@ pub fn generate_deconstructor(
         BCType::from(BCTypeKind::Pointer)
     )?;
     
-    if let CXTypeKind::Structured { has_destructor: true, name, .. } = &data._type.intrinsic_type(&builder.cx_type_map)?.kind {
-        let deconstructor_name = mangle_destructor(name.as_ref().unwrap().as_str());
+    if let Some(name) = data._type.get_destructor(&builder.cx_type_map) {
+        let deconstructor_name = mangle_destructor(name);
         let deconstructor = builder.fn_ref(&deconstructor_name)?
             .expect("INTERNAL PANIC: Deconstructor function not found");
 

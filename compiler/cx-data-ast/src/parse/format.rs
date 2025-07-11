@@ -258,12 +258,7 @@ impl Display for CXTypeKind {
                     "".to_string()
                 };
 
-                write!(f, "struct {name_str} {{ {field_strs} }}")?;
-                if *has_destructor {
-                    write!(f, " (+destructor)")
-                } else {
-                    Ok(())
-                }
+                write!(f, "struct {name_str} {{ {field_strs} }} {{ has_destructor: {} }}", has_destructor)
             },
             CXTypeKind::Union { fields, name } => {
                 let field_strs = fields.iter()

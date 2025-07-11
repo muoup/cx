@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, serialize_type_data};
 use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
 use cx_data_ast::parse::parser::ParserData;
@@ -32,10 +32,8 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
         
         file_path: data.file_path.clone(),
         internal_path: internal_dir.to_string(),
-        
         imports,
         global_stmts: Vec::new(),
-
         public_functions: Vec::new(),
         
         type_map,

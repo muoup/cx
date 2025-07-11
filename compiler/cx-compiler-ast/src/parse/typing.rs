@@ -167,7 +167,6 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
 pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     assert_token_matches!(data, TokenKind::Keyword(KeywordType::Struct));
 
-    let mut has_destructor = false;
     let name = parse_std_ident(data);
     
     if !try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
@@ -180,7 +179,6 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
         if try_next!(data, TokenKind::Operator(OperatorType::Plus)) {
             assert_token_matches!(data, TokenKind::Keyword(KeywordType::Destructor));
             assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
-            has_destructor = true;
             continue;
         }
         
@@ -196,7 +194,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
         assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
 
-    Some(CXTypeKind::Structured { name, fields, has_destructor })
+    Some(CXTypeKind::Structured { name, fields, has_destructor: false })
 }
 
 pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {

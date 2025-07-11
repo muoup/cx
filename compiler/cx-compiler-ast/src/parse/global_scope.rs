@@ -3,6 +3,7 @@ use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Specifi
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
+use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::typing::parse_initializer;
 use cx_util::{log_error, point_log_error};
 use crate::parse::parsing_tools::goto_statement_end;
@@ -76,6 +77,16 @@ pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option
     
     let name = name.clone();
     let body = parse_body(data)?;
+    
+    let Some(type_) = ast.type_map.get_mut(&name) else {
+        point_log_error!(data, "PARSER ERROR: Destructor for {} must be in the same file as the type declaration!", name);
+    };
+    
+    let CXTypeKind::Structured { has_destructor, .. } = &mut type_.kind else {
+        point_log_error!(data, "PARSER ERROR: Destructor can only be defined for structured types!");
+    };
+    
+    *has_destructor = true;
     
     ast.global_stmts.push(
         CXGlobalStmt::DestructorDefinition {

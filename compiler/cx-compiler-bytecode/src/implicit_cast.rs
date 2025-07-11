@@ -186,20 +186,6 @@ pub(crate) fn implicit_cast(
             )
         },
         
-        CXCastType::AddPointerTag => {
-            builder.add_instruction(
-                VirtualInstruction::AddPointerTag { value },
-                to_type.clone()
-            )
-        },
-        
-        CXCastType::RemovePointerTag => {
-            builder.add_instruction(
-                VirtualInstruction::ClearPointerTag { value },
-                to_type.clone()
-            )
-        },
-        
         _ => todo!("implicit_cast({cast_type:?})")
     }
 }

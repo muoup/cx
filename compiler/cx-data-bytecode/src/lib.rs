@@ -125,6 +125,11 @@ pub enum VirtualInstruction {
         value: ValueID,
         type_: BCType
     },
+    
+    ZeroMemory {
+        memory: ValueID,
+        _type: BCType
+    },
 
     // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
     // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
@@ -252,18 +257,6 @@ pub enum VirtualInstruction {
     },
 
     BitCast {
-        value: ValueID
-    },
-    
-    AddPointerTag {
-        value: ValueID
-    },
-    
-    ClearPointerTag {
-        value: ValueID
-    },
-    
-    HasPointerTag {
         value: ValueID
     },
     

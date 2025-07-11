@@ -17,7 +17,7 @@ pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 pub struct CXType {
     pub uuid: u64,
     pub specifiers: CXTypeSpecifier,
-    pub kind: CXTypeKind
+    pub kind: CXTypeKind,
 }
 
 impl Hash for CXType {
@@ -34,7 +34,7 @@ pub enum CXTypeKind {
     Structured {
         name: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
-        has_destructor: bool,
+        has_destructor: bool
     },
     Union {
         name: Option<CXIdent>,
@@ -176,6 +176,19 @@ impl CXType {
     
     pub fn is_strong_ptr(&self, type_map: &CXTypeMap) -> bool {
         matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::StrongPointer { .. }))
+    }
+    
+    pub fn has_destructor(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { has_destructor: true, .. }))
+    }
+    
+    pub fn get_destructor<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a str> {
+        match self.intrinsic_type_kind(type_map)? {
+            CXTypeKind::Structured { has_destructor: true, name, .. } 
+                => Some(name.as_ref()?.as_str()),
+            
+            _ => None,
+        }
     }
     
     pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {

@@ -1,3 +1,4 @@
+use cx_data_ast::parse::ast::CXTypeMap;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
@@ -74,6 +75,17 @@ pub(crate) fn get_cx_struct_field_by_index(
     })
 }
 
+fn variable_requires_nulling(
+    type_map: &CXTypeMap,
+    cx_type: &CXType
+) -> Option<bool> {
+    match cx_type.intrinsic_type_kind(type_map)? {
+        CXTypeKind::StrongPointer { .. } => Some(true),
+        
+        _ => Some(cx_type.has_destructor(type_map)),
+    }
+}
+
 pub(crate) fn allocate_variable(
     name: &str,
     builder: &mut BytecodeBuilder,
@@ -112,6 +124,16 @@ pub(crate) fn allocate_variable(
         builder.exit_deferred_logic();
         
         builder.set_current_block(current_block);
+    }
+    
+    if variable_requires_nulling(&builder.cx_type_map, var_type)? {
+        builder.add_instruction_bt(
+            VirtualInstruction::ZeroMemory {
+                memory,
+                _type: bc_type.clone(),
+            },
+            BCType::unit()
+        )?;
     }
 
     Some(memory)

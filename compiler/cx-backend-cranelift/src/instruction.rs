@@ -10,7 +10,7 @@ use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
 use cranelift_module::Module;
 use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp, BCFloatUnOp, POINTER_TAG};
-use cx_data_bytecode::types::BCTypeKind;
+use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
@@ -475,6 +475,32 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             Some(CodegenValue::NULL)
         },
+        
+        VirtualInstruction::ZeroMemory {
+            memory, _type
+        } => {
+            let target = context.variable_table.get(memory)
+                .unwrap()
+                .as_value();
+            
+            let size_literal = match _type.size() {
+                BCTypeSize::Fixed(size) => context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64),
+                BCTypeSize::Variable(size_expr) => {
+                    let size_value = context.variable_table.get(&size_expr).cloned().unwrap();
+                    context.builder.ins().uextend(ir::Type::int(64).unwrap(), size_value.as_value())
+                }
+            };
+            
+            let zero = context.builder.ins()
+                .iconst(ir::Type::int(8).unwrap(), 0);
+
+            context.builder.call_memset(
+                *context.target_frontend_config, target,
+                zero, size_literal
+            );
+
+            Some(CodegenValue::NULL)
+        },
 
         VirtualInstruction::Phi { predecessors } => {
             let current_block = context.builder.current_block()?;
@@ -724,69 +750,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             Some(
                 CodegenValue::Value(
                     val
-                )
-            )
-        },
-        
-        VirtualInstruction::AddPointerTag { value } => {
-            let val = context.variable_table
-                .get(value)
-                .cloned()
-                .unwrap();
-            
-            Some(
-                CodegenValue::Value(
-                    context.builder.ins()
-                        .bor_imm(
-                            val.as_value(),
-                            POINTER_TAG as i64
-                        )
-                )
-            )
-        },
-        
-        VirtualInstruction::ClearPointerTag { value } => {
-            let val = context.variable_table
-                .get(value)
-                .cloned()
-                .unwrap();
-            
-            Some(
-                CodegenValue::Value(
-                    context.builder.ins()
-                        .band_imm(
-                            val.as_value(),
-                            !POINTER_TAG as i64
-                        )
-                )
-            )
-        },
-
-        VirtualInstruction::HasPointerTag { value } => {
-            let val = context.variable_table
-                .get(value)
-                .cloned()
-                .unwrap_or_else(|| {
-                    eprintln!("ERROR: HasPointerTag instruction with unbound value: {value:?}");
-                    eprintln!("Map:\n{:#?}", context.variable_table);
-                    
-                    panic!("Unbound value in HasPointerTag instruction");
-                });
-            
-            let masked = context.builder.ins()
-                .band_imm(
-                    val.as_value(),
-                    POINTER_TAG as i64
-                );
-
-            Some(
-                CodegenValue::Value(
-                    context.builder.ins()
-                        .icmp_imm(
-                            ir::condcodes::IntCC::Equal,
-                            masked,
-                            POINTER_TAG as i64
-                        )
                 )
             )
         },

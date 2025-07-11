@@ -7,6 +7,7 @@ use cx_util::log_error;
 use crate::aux_routines::{allocate_variable, get_struct_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_fixed_type_kind;
+use crate::deconstructor::deconstruct_variable;
 use crate::implicit_cast::implicit_cast;
 
 pub fn generate_instruction(
@@ -19,9 +20,16 @@ pub fn generate_instruction(
             let right_id = generate_instruction(builder, rhs.as_ref())?;
             let lhs_type = builder.get_expr_type(lhs.as_ref())?
                 .clone();
+            
             let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type_kind(&builder.cx_type_map)?.clone()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
+            if !matches!(lhs.as_ref().kind, CXExprKind::VarDeclaration { .. }) {
+                deconstruct_variable(
+                    builder, left_id, inner.as_ref(), true
+                )?;
+            }
+            
             let inner_as_bc = builder.convert_cx_type(&inner)?;
             
             builder.add_instruction(

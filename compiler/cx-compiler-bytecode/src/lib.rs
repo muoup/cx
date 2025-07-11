@@ -30,15 +30,15 @@ pub fn generate_bytecode(ast: CXAST, type_check_data: TypeCheckData) -> Option<P
     for deconstructor in deconstructors.iter() {
         generate_deconstructor(&mut builder, deconstructor);
     }
-    
+
     for stmt in ast.global_stmts.iter() {
         match stmt {
             CXGlobalStmt::FunctionDefinition { prototype, body } =>
                 generate_function(&mut builder, prototype, body)?,
-            
+
             CXGlobalStmt::DestructorDefinition { type_name, body } =>
                 generate_destructor(&mut builder, type_name, body)?,
-            
+
             _ => todo!("Global variables are not implemented yet"),
         }
     }

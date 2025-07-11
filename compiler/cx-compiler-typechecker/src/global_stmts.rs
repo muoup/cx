@@ -10,9 +10,9 @@ pub(crate) fn add_destructor_prototypes(
     type_map: &CXTypeMap,
     fn_map: &mut CXFunctionMap,
 ) -> Option<()> {
-    for (type_name, _type) in type_map.iter() {
-        if let CXTypeKind::Structured { has_destructor: true, name, .. } = _type.intrinsic_type_kind(type_map)? {
-            let destructor_name = mangle_destructor(name.as_ref().unwrap().as_str());
+    for _type in type_map.values() {
+        if let Some(name) = _type.get_destructor(type_map) {
+            let destructor_name = mangle_destructor(name);
             
             let prototype = CXFunctionPrototype {
                 name: CXIdent::from_owned(destructor_name.clone()),
@@ -57,7 +57,8 @@ pub(crate) fn typecheck_destructor(
 ) -> Option<()> {
     let destructor_name = mangle_destructor(type_name);
     let prototype = env.fn_map.get(&destructor_name)
-        .clone().expect("Failed to find destructor prototype in function map");
+        .clone()
+        .unwrap_or_else(|| panic!("Failed to find destructor prototype for {type_name} in function map"));
     let _type = env.type_map.get(type_name)?.clone();
     
     if !_type.is_structured(env.type_map) {

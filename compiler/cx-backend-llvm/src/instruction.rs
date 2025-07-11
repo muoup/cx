@@ -3,7 +3,7 @@ use crate::attributes::noundef;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_data_bytecode::types::BCTypeKind;
+use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, ElementID, VirtualInstruction, POINTER_TAG};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
@@ -396,6 +396,44 @@ pub(crate) fn generate_instruction<'a>(
                         .builder
                         .build_store(memory_val, basic_val)
                         .unwrap();
+                }
+                
+                CodegenValue::NULL
+            },
+            
+            VirtualInstruction::ZeroMemory { memory, _type } => {
+                let any_value = function_state
+                    .get_val_ref(memory)?
+                    .get_value()
+                    .into_pointer_value();
+                
+                let zero = global_state.context.i8_type().const_zero();
+                
+                match _type.size() {
+                    BCTypeSize::Fixed(size) => {
+                        let size_value = global_state.context.i32_type()
+                            .const_int(size as u64, false);
+                        
+                        function_state.builder
+                            .build_memset(
+                                any_value, 1,
+                                zero, size_value,
+                            )
+                            .unwrap();
+                    },
+                    BCTypeSize::Variable(size) => {
+                        let size_value = function_state
+                            .get_val_ref(&size)?
+                            .get_value()
+                            .into_int_value();
+                        
+                        function_state.builder
+                            .build_memset(
+                                any_value, 1,
+                                zero, size_value
+                            )
+                            .unwrap();
+                    },
                 }
                 
                 CodegenValue::NULL
@@ -842,94 +880,6 @@ pub(crate) fn generate_instruction<'a>(
                     function_state.builder
                         .build_float_cast(value, to_type, inst_num().as_str())
                         .unwrap()
-                        .as_any_value_enum()
-                )
-            },
-
-            VirtualInstruction::AddPointerTag { value } => {
-                let value = function_state
-                    .get_val_ref(value)?
-                    .get_value()
-                    .into_pointer_value();
-                let mask = global_state.context.i64_type()
-                    .const_int(POINTER_TAG as u64, false);
-
-                let as_int = function_state.builder
-                    .build_ptr_to_int(value, global_state.context.i64_type(), inst_num().as_str())
-                    .unwrap();
-
-                let tagged_value = function_state.builder
-                    .build_or(as_int, mask, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum();
-
-                let val = function_state.builder
-                    .build_int_to_ptr(
-                        tagged_value.into_int_value(),
-                        value.get_type(),
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
-
-                CodegenValue::Value(val)
-            },
-
-            VirtualInstruction::ClearPointerTag { value } => {
-                let value = function_state
-                    .get_val_ref(value)?
-                    .get_value()
-                    .into_pointer_value();
-                let mask = global_state.context.i64_type()
-                    .const_int(!POINTER_TAG as u64, false);
-
-                let as_int = function_state.builder
-                    .build_ptr_to_int(value, global_state.context.i64_type(), inst_num().as_str())
-                    .unwrap();
-
-                let cleared_value = function_state.builder
-                    .build_and(as_int, mask, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum();
-
-                let val = function_state.builder
-                    .build_int_to_ptr(
-                        cleared_value.into_int_value(),
-                        value.get_type(),
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
-
-                CodegenValue::Value(val)
-            },
-
-            VirtualInstruction::HasPointerTag { value } => {
-                let value = function_state
-                    .get_val_ref(value)
-                    .unwrap_or_else(|| panic!("Failed to get value for HasPointerTag"))
-                    .get_value()
-                    .into_pointer_value();
-                let mask = global_state.context.i64_type()
-                    .const_int(POINTER_TAG as u64, false);
-
-                let as_int = function_state.builder
-                    .build_ptr_to_int(value, global_state.context.i64_type(), inst_num().as_str())
-                    .unwrap();
-
-                let has_tag = function_state.builder
-                    .build_and(as_int, mask, inst_num().as_str())
-                    .expect("Failed to build AND operation for pointer tag check");
-
-                CodegenValue::Value(
-                    function_state.builder
-                        .build_int_compare(
-                            inkwell::IntPredicate::NE,
-                            has_tag,
-                            has_tag.get_type().const_int(0, false),
-                            inst_num().as_str()
-                        )
-                        .expect("Failed to build integer comparison for pointer tag check")
                         .as_any_value_enum()
                 )
             },
