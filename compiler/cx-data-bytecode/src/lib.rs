@@ -154,6 +154,10 @@ pub enum VirtualInstruction {
         ptr_type: BCType
     },
     
+    IntToPtr {
+        value: ValueID
+    },
+    
     PointerBinOp {
         op: BCPtrBinOp,
         ptr_type: BCType,

@@ -240,6 +240,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             CodegenValue::Value(ptr_diff).into()
         }, 
         
+        VirtualInstruction::IntToPtr { value } =>
+            context.variable_table.get(value)
+                .cloned(),
+        
         VirtualInstruction::PointerBinOp {
             op, left, right, ..
         } => {

@@ -15,13 +15,12 @@ void strong[] __stdallocarray(u64 elem_size, u64 elem_count) {
 
 void __stdfree(void strong* ptr) {
     printf("__stdfree\n", ptr);
-    move ptr;
     free(ptr);
+    move ptr;
 }
 
 void __stdfreearray(void strong[] ptr, usize type_size, void(*_destructor)(void*)) {
     printf("__stdfreearray\n", ptr);
-    move ptr; // 'leak' the strong pointer
     u64 length = *((long*) ptr - 1);
 
     for (u64 i = 0; i < length; i++) {
@@ -30,12 +29,13 @@ void __stdfreearray(void strong[] ptr, usize type_size, void(*_destructor)(void*
     }
 
     free((u8*) ptr - 8);
+    move ptr; // 'leak' the strong pointer
 }
 
 void __stdfreearray_destructor_noop(void strong[] ptr) {
     printf("__stdfreearray_destructor_noop\n", ptr);
-    move ptr; // 'leak' the strong pointer
     free((u8*) ptr - 8);
+    move ptr; // 'leak' the strong pointer
 }
 
 private:

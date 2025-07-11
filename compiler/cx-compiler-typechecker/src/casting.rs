@@ -30,11 +30,9 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
+            (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
-            
-            (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. })
-                => Some(CXCastType::RemovePointerTag),
 
             (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner, .. })
                 if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
@@ -63,7 +61,7 @@ pub fn valid_explicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
                 => Some(CXCastType::IntToPtr),
 
             (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. })
-                => Some(CXCastType::AddPointerTag),
+                => Some(CXCastType::BitCast),
             
             _ => None
         }

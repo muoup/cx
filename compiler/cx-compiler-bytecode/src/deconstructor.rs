@@ -45,7 +45,7 @@ fn load_mem(
     )
 }
 
-fn if_tag_call(
+fn if_owned_call(
     builder: &mut BytecodeBuilder,
     pointer: ValueID,
     invoke_deconstructor: Option<&CXType>,
@@ -55,16 +55,27 @@ fn if_tag_call(
     let run = builder.create_named_block("free");
     let skip = builder.create_named_block("skip");
  
-    let has_tag = builder.add_instruction_bt(
-        VirtualInstruction::HasPointerTag {
-            value: pointer,
+    let zero = builder.int_const(0, 8, false)?;
+    let zero_ptr = builder.add_instruction_bt(
+        VirtualInstruction::IntToPtr {
+            value: zero
+        },
+        BCType::from(BCTypeKind::Pointer)
+    )?;
+    
+    let nonnull = builder.add_instruction_bt(
+        VirtualInstruction::PointerBinOp {
+            left: pointer,
+            right: zero_ptr,
+            ptr_type: BCType::unit(),
+            op: BCPtrBinOp::NE,
         },
         BCType::from(BCTypeKind::Bool)
     )?;
     
     builder.add_instruction_bt(
         VirtualInstruction::Branch {
-            condition: has_tag, 
+            condition: nonnull, 
             true_block: run,
             false_block: skip,
         },
@@ -74,14 +85,7 @@ fn if_tag_call(
     builder.set_current_block(run);
 
     if let Some(inner_type) = invoke_deconstructor {
-        let remove_tag = builder.add_instruction_bt(
-            VirtualInstruction::ClearPointerTag {
-                value: pointer,
-            },
-            BCType::from(BCTypeKind::Pointer)
-        )?;
-
-        deconstruct_variable(builder, remove_tag, inner_type, false)?;
+        deconstruct_variable(builder, pointer, inner_type, false)?;
     }
 
     let func = builder.fn_ref(function_name)?
@@ -116,7 +120,7 @@ pub fn deconstruct_variable(
         CXTypeKind::StrongPointer { inner, is_array: false, .. } => {
             let val = load_mem(builder, val, unloaded)?;
 
-            if_tag_call(
+            if_owned_call(
                 builder,
                 val,
                 Some(inner.as_ref()),
@@ -150,7 +154,7 @@ pub fn deconstruct_variable(
                     BCType::from(BCTypeKind::Pointer)
                 )?;
                 
-                if_tag_call(
+                if_owned_call(
                     builder,
                     val,
                     None,
@@ -158,7 +162,7 @@ pub fn deconstruct_variable(
                     vec![val, size_imm, ptr_to]
                 )?;
             } else {
-                if_tag_call(
+                if_owned_call(
                     builder,
                     val,
                     None,

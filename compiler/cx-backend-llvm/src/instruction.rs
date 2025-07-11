@@ -8,14 +8,19 @@ use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstr
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
-use inkwell::Either;
+use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
 use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;
 
+static NUM: Mutex<usize> = Mutex::new(0);
+
+pub(crate) fn reset_num() {
+    let mut num = NUM.lock().unwrap();
+    *num = 0;
+}
+
 pub(crate) fn inst_num() -> String {
-    static NUM: Mutex<usize> = Mutex::new(0);
-    
     let mut num = NUM.lock().unwrap();
     *num += 1;
     
@@ -219,6 +224,24 @@ pub(crate) fn generate_instruction<'a>(
 
             VirtualInstruction::IntToPtrDiff { value, .. } => {
                 function_state.get_val_ref(value)?.clone()
+            },
+            
+            VirtualInstruction::IntToPtr { value } => {
+                let value = function_state
+                    .get_val_ref(value)?
+                    .get_value()
+                    .into_int_value();
+                
+                let to_type = global_state
+                    .context
+                    .ptr_type(AddressSpace::from(0));
+                
+                CodegenValue::Value(
+                    function_state.builder
+                        .build_int_to_ptr(value, to_type, inst_num().as_str())
+                        .unwrap()
+                        .as_any_value_enum()
+                )
             },
 
             VirtualInstruction::Immediate { value } => {

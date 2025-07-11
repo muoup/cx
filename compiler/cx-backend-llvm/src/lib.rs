@@ -17,6 +17,7 @@ use std::path::Path;
 use inkwell::basic_block::BasicBlock;
 use cx_exec_data::OptimizationLevel;
 use cx_util::format::dump_data;
+use crate::instruction::reset_num;
 
 pub(crate) mod typing;
 mod instruction;
@@ -196,6 +197,8 @@ fn fn_aot_codegen(
     bytecode: &BytecodeFunction,
     global_state: &GlobalState
 ) -> Option<()> {
+    reset_num();
+    
     let func_val = global_state
         .module
         .get_function(bytecode.prototype.name.as_str())

@@ -92,6 +92,8 @@ impl BCType {
                         .map(|(_, field)| field.fixed_size())
                         .max()
                         .unwrap(),
+            
+            BCTypeKind::Bool => 1,
             BCTypeKind::Unit => 0,
             
             _ => panic!("Invalid type for fixed size: {:?}", self.kind),

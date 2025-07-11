@@ -595,15 +595,19 @@ pub fn generate_instruction(
                 },
                 BCType::from(BCTypeKind::Pointer)
             )?;
-            let no_tag = builder.add_instruction_bt(
-                VirtualInstruction::ClearPointerTag { value },
-                BCType::from(BCTypeKind::Pointer)
+            
+            let zero = builder.int_const(0, 8, true)?;
+            let zero_as_ptr = builder.add_instruction(
+                VirtualInstruction::IntToPtr {
+                    value: zero
+                },
+                CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
             )?;
 
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory,
-                    value: no_tag,
+                    value: zero_as_ptr,
                     type_: BCType::from(BCTypeKind::Pointer)
                 },
                 CXType::unit()
