@@ -23,7 +23,7 @@ impl BytecodeBuilder {
         cx_type: &CXType
     ) -> Option<BCFunctionPrototype> {
         let Some(CXTypeKind::Function { prototype })
-            = cx_type.intrinsic_type(&self.cx_type_map) else {
+            = cx_type.intrinsic_type_kind(&self.cx_type_map) else {
             panic!("Expected function type, got: {cx_type:?}");
         };
         
@@ -178,7 +178,7 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
             params: cx_proto.params.iter()
                 .map(|param| BCParameter {
                     name: None,
-                    type_: convert_fixed_type(cx_type_map, &param.type_).unwrap()
+                    _type: convert_fixed_type(cx_type_map, &param.type_).unwrap()
                 })
                 .collect(),
             var_args: cx_proto.var_args
@@ -263,8 +263,9 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::Float { bytes } =>
                 BCTypeKind::Float { bytes: *bytes },
 
+            CXTypeKind::StrongPointer { .. } |
             CXTypeKind::Function { .. } |
-            CXTypeKind::PointerTo(_) =>
+            CXTypeKind::PointerTo { .. } =>
                 BCTypeKind::Pointer,
             
             CXTypeKind::Array { _type, size } =>
@@ -274,7 +275,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 },
             
             CXTypeKind::MemoryAlias(inner) => {
-                match inner.intrinsic_type(cx_type_map)? {
+                match inner.intrinsic_type_kind(cx_type_map)? {
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     
@@ -282,7 +283,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 }
             },
             
-            CXTypeKind::Structured { fields, name } =>
+            CXTypeKind::Structured { fields, name, .. } =>
                 BCTypeKind::Struct {
                     name: match name {
                         Some(name) => name.as_string(),

@@ -176,7 +176,15 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     let mut fields = Vec::new();
 
     while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-        let (name, _type) = parse_initializer(data)?;
+        if try_next!(data, TokenKind::Operator(OperatorType::Plus)) {
+            assert_token_matches!(data, TokenKind::Keyword(KeywordType::Destructor));
+            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+            continue;
+        }
+        
+        let Some((name, _type)) = parse_initializer(data) else {
+            point_log_error!(data, "PARSER ERROR: Failed to parse struct member type");
+        };
 
         let Some(name) = name else {
             point_log_error!(data, "UNSUPPORTED: Nameless struct member of type {}", _type);
@@ -186,12 +194,7 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
         assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
 
-    Some(
-        CXTypeKind::Structured {
-            name,
-            fields,
-        }
-    )
+    Some(CXTypeKind::Structured { name, fields, has_destructor: false })
 }
 
 pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {
@@ -247,6 +250,47 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
     };
 
     match &next_tok.kind {
+        TokenKind::Keyword(KeywordType::Strong) => {
+            data.toks.next();
+            
+            let is_array = match data.toks.next()?.kind {
+                TokenKind::Operator(OperatorType::Asterisk) => false,
+                TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
+                    true
+                },
+                
+                _ => log_error!("PARSER ERROR: Expected '*' or '[]' after 'strong' keyword")
+            };
+            
+            let specs = parse_specifier(data);
+            let acc_type = CXType::new(
+                specs,
+                CXTypeKind::StrongPointer { 
+                    inner: Box::new(acc_type),
+                    is_array
+                }
+            );
+
+            parse_typemods(data, acc_type)
+        },
+        
+        TokenKind::Keyword(KeywordType::Weak) => {
+            data.toks.next();
+            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            
+            let specs = parse_specifier(data);
+            let acc_type = CXType::new(
+                specs,
+                CXTypeKind::PointerTo { 
+                    inner: Box::new(acc_type),
+                    explicitly_weak: true
+                }
+            );
+
+            parse_typemods(data, acc_type)
+        },
+        
         TokenKind::Operator(OperatorType::Asterisk) => {
             data.toks.next();
             let specs = parse_specifier(data);

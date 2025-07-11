@@ -6,7 +6,7 @@ pub fn dump_data(data: &impl std::fmt::Display) {
     dump_write(&format!("{data}\n\n"));
 }
 
-pub fn dump_all(data: Vec<impl std::fmt::Display>) {
+pub fn dump_all(data: impl Iterator<Item = impl std::fmt::Display>) {
     let data = data
         .into_iter()
         .map(|d| format!("{d}\n"))

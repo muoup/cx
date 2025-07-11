@@ -2,11 +2,12 @@ use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCIntUnOp, BCPtrBinOp, ElementID, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
-use crate::aux_routines::{get_struct_field};
+use crate::aux_routines::{allocate_variable, get_struct_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_fixed_type_kind;
+use crate::deconstructor::deconstruct_variable;
 use crate::implicit_cast::implicit_cast;
 
 pub fn generate_instruction(
@@ -19,9 +20,16 @@ pub fn generate_instruction(
             let right_id = generate_instruction(builder, rhs.as_ref())?;
             let lhs_type = builder.get_expr_type(lhs.as_ref())?
                 .clone();
-            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type(&builder.cx_type_map)?.clone()
+            
+            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type_kind(&builder.cx_type_map)?.clone()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
+            if !matches!(lhs.as_ref().kind, CXExprKind::VarDeclaration { .. }) {
+                deconstruct_variable(
+                    builder, left_id, inner.as_ref(), true
+                )?;
+            }
+            
             let inner_as_bc = builder.convert_cx_type(&inner)?;
             
             builder.add_instruction(
@@ -33,33 +41,8 @@ pub fn generate_instruction(
                 CXType::unit()
             )
         },
-        CXExprKind::VarDeclaration { name, type_ } => {
-            let bc_type = builder.convert_cx_type(type_)?;
-            
-            let memory = match bc_type.size() {
-                BCTypeSize::Fixed(size) => {
-                    builder.add_instruction_bt(
-                        VirtualInstruction::Allocate {
-                            size,
-                            alignment: bc_type.alignment(),
-                        },
-                        BCTypeKind::Pointer.into()
-                    )?
-                },
-                BCTypeSize::Variable(size_expr) => {
-                    builder.add_instruction_bt(
-                        VirtualInstruction::VariableAllocate {
-                            size: size_expr,
-                            alignment: bc_type.alignment(),
-                        },
-                        BCTypeKind::Pointer.into()
-                    )?
-                }
-            };
-            
-            builder.symbol_table.insert(name.as_string(), memory);
-            Some(memory)
-        },
+        CXExprKind::VarDeclaration { name, type_ } =>
+            allocate_variable(name.as_str(), builder, type_),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
@@ -104,7 +87,7 @@ pub fn generate_instruction(
             let l_type = builder.get_expr_intrinsic_type(lhs.as_ref())?.clone();
 
             let lhs_inner = match l_type {
-                CXTypeKind::PointerTo(inner) => inner,
+                CXTypeKind::PointerTo { inner, .. } => inner,
                 
                 CXTypeKind::VariableLengthArray { _type, .. } |
                 CXTypeKind::Array { _type, .. } => _type,
@@ -149,9 +132,9 @@ pub fn generate_instruction(
                         prototype.return_type.clone()
                     )
                 },
-                CXTypeKind::PointerTo(inner) => {
+                CXTypeKind::PointerTo { inner, .. } => {
                     let Some(CXTypeKind::Function { prototype }) =
-                        inner.intrinsic_type(&builder.cx_type_map) else {
+                        inner.intrinsic_type_kind(&builder.cx_type_map) else {
                         log_error!("Invalid function pointer type: {inner}");
                     };
 
@@ -207,7 +190,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::GetFunctionAddr {
-                    func_name
+                    func: func_name
                 },
                 func_sig.clone()
             )
@@ -229,13 +212,8 @@ pub fn generate_instruction(
         CXExprKind::Identifier(val) => {
             if let Some(id) = builder.symbol_table.get(val.as_str()) {
                 Some(*id)
-            } else if builder.fn_map.contains_key(val.as_str()) {
-                builder.add_instruction_bt(
-                    VirtualInstruction::FunctionReference {
-                        name: val.as_string()
-                    },
-                    BCTypeKind::Pointer.into()
-                )
+            } else if let Some(val) = builder.fn_ref(val.as_str())? {
+                Some(val)
             } else {
                 log_error!("Unknown identifier {val}")
             }
@@ -247,35 +225,31 @@ pub fn generate_instruction(
                 None => None
             };
 
-            let final_block = builder.create_block();
-            builder.add_instruction(
-                VirtualInstruction::Jump { target: final_block },
-                CXType::unit()
-            );
-
-            builder.set_current_block(final_block);
-            builder.add_instruction(
-                VirtualInstruction::Return { value },
-                CXType::unit()
-            )
+            builder.add_return(value);
+            
+            Some(ValueID::NULL)
         },
+        
+        CXExprKind::Defer { expr } => {
+            let previous_block = builder.current_block();
+            
+            builder.enter_deferred_logic();
+            generate_instruction(builder, expr.as_ref())?;
+            builder.exit_deferred_logic();
+            
+            builder.set_current_block(previous_block);
+            
+            Some(ValueID::NULL)
+        }
 
         CXExprKind::StringLiteral { val, .. } => {
             let string_id = builder.create_global_string(val.clone());
 
-            builder.add_instruction(
+            builder.add_instruction_bt(
                 VirtualInstruction::StringLiteral {
                     str_id: string_id,
                 },
-
-                CXTypeKind::PointerTo(
-                    Box::new(
-                        CXType::new(
-                            CX_CONST,
-                            "char".into()
-                        )
-                    )
-                ).to_val_type()
+                BCType::from(BCTypeKind::Pointer)
             )
         },
 
@@ -324,9 +298,9 @@ pub fn generate_instruction(
                         inner.as_ref().clone()
                     )?;
 
-                    let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
+                    let bytes = match inner.as_ref().intrinsic_type_kind(&builder.cx_type_map)? {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
-                        CXTypeKind::PointerTo(_) => 8,
+                        CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
@@ -364,9 +338,9 @@ pub fn generate_instruction(
                         inner.as_ref().clone()
                     )?;
 
-                    let bytes = match inner.as_ref().intrinsic_type(&builder.cx_type_map)? {
+                    let bytes = match inner.as_ref().intrinsic_type_kind(&builder.cx_type_map)? {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
-                        CXTypeKind::PointerTo(_) => 8,
+                        CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
@@ -619,8 +593,81 @@ pub fn generate_instruction(
                     => Some(size_expr)
             }
         },
+
+        CXExprKind::Move { expr } => {
+            let memory = generate_instruction(builder, expr.as_ref())?;
+            
+            let value = builder.add_instruction_bt(
+                VirtualInstruction::Load {
+                    value: memory
+                },
+                BCType::from(BCTypeKind::Pointer)
+            )?;
+            
+            let zero = builder.int_const(0, 8, true)?;
+            let zero_as_ptr = builder.add_instruction(
+                VirtualInstruction::IntToPtr {
+                    value: zero
+                },
+                CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+            )?;
+
+            builder.add_instruction(
+                VirtualInstruction::Store {
+                    memory,
+                    value: zero_as_ptr,
+                    type_: BCType::from(BCTypeKind::Pointer)
+                },
+                CXType::unit()
+            )?;
+
+            Some(value)
+        },
         
-        _ => todo!("generate_instruction for {:?}", expr)
+        CXExprKind::New { _type, array_length } => {
+            const STANDARD_ALLOC : &str = "__stdalloc";
+            const STANDARD_ARRAY_ALLOC : &str = "__stdallocarray";
+            
+            let type_as_bc = builder.convert_cx_type(_type)?;
+            let type_size = type_as_bc.fixed_size();
+            
+            let size_imm = builder.int_const(type_size as i32, 8, true)?;
+            
+            match array_length {
+                Some(len) => {
+                    let func = builder.fn_ref(STANDARD_ARRAY_ALLOC)?
+                        .expect("INTERNAL PANIC: Standard array alloc function not found");
+                    let len = generate_instruction(builder, len.as_ref())?;
+                    
+                    builder.add_instruction_bt(
+                        VirtualInstruction::DirectCall {
+                            func,
+                            args: vec![size_imm, len],
+                            method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
+                        },
+                        BCType::from(BCTypeKind::Pointer)
+                    )
+                },
+                
+                None => {
+                    let func = builder.fn_ref(STANDARD_ALLOC)?
+                        .expect("INTERNAL PANIC: Standard alloc function not found");
+                    
+                    builder.add_instruction_bt(
+                        VirtualInstruction::DirectCall {
+                            func,
+                            args: vec![size_imm],
+                            method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
+                        },
+                        BCType::from(BCTypeKind::Pointer)
+                    )
+                },
+            }
+        },
+        
+        CXExprKind::Taken => panic!("PANIC: Attempting to generate instruction for `Taken` expression, which should have been removed by the type checker."),
+        
+        CXExprKind::Unit | CXExprKind::InitializerList { .. } => todo!(),
     }
 }
 
@@ -689,7 +736,7 @@ pub(crate) fn generate_binop(
             builder.add_instruction_bt(
                 VirtualInstruction::Phi {
                     predecessors: vec![
-                        (left_cmp, previous_block as ElementID),
+                        (left_cmp, previous_block),
                         (right_cmp, no_short_circuit_block),
                     ]
                 },
@@ -756,8 +803,12 @@ pub(crate) fn generate_algebraic_binop(
         },
 
         BCTypeKind::Pointer => {
-            let CXTypeKind::PointerTo(left_inner) = &cx_lhs_type.intrinsic_type(&builder.cx_type_map)?
-            else { unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") };
+            let CXTypeKind::PointerTo { inner: left_inner, .. }
+                = &cx_lhs_type.intrinsic_type_kind(&builder.cx_type_map)?
+            else { 
+                builder.dump_current_fn();
+                unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") 
+            };
 
             builder.add_instruction_bt(
                 VirtualInstruction::PointerBinOp {
@@ -788,13 +839,22 @@ pub(crate) fn generate_algebraic_binop(
 
 pub(crate) fn implicit_return(
     builder: &mut BytecodeBuilder,
-    prototype: &CXFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<()> {
     let last_instruction = builder.last_instruction();
 
     if let Some(last_instruction) = last_instruction {
-        if let VirtualInstruction::Return { .. } = last_instruction.instruction {
-            return Some(());
+        match last_instruction.instruction {
+            VirtualInstruction::Return { .. } => {
+                // If the last instruction is already a return, do nothing
+                return Some(());
+            },
+            VirtualInstruction::GotoDefer { .. } => {
+                // If the last instruction is a goto defer, we can also ignore it
+                return Some(());
+            },
+            
+            _ => {}
         }
     }
 
@@ -807,7 +867,7 @@ pub(crate) fn implicit_return(
     );
     builder.set_current_block(return_block);
 
-    if prototype.name.data == "main" {
+    if prototype.name == "main" {
         let zero = builder.add_instruction(
             VirtualInstruction::Immediate {
                 value: 0
@@ -815,23 +875,46 @@ pub(crate) fn implicit_return(
             CXTypeKind::Integer { bytes: 4, signed: true }.to_val_type()
         )?;
 
-        builder.add_instruction(
-            VirtualInstruction::Return {
-                value: Some(zero)
-            },
-            CXType::unit()
-        );
-    } else if prototype.return_type.is_void(&builder.cx_type_map) {
-        builder.add_instruction(
-            VirtualInstruction::Return {
-                value: None
-            },
-            CXType::unit()
-        )?;
+        builder.add_return(Some(zero));
+    } else if prototype.return_type.is_void() {
+        builder.add_return(None);
     } else {
         let last_instruction = builder.last_instruction();
+        builder.dump_current_fn();
         log_error!("Function {} has a return type but no return statement\nLast Statement found: {:?}", prototype.name, last_instruction);
     }
 
+    Some(())
+}
+
+pub(crate) fn implicit_defer_return(
+    builder: &mut BytecodeBuilder,
+    prototype: &BCFunctionPrototype,
+) -> Option<()> {
+    if builder.function_defers() {
+        let return_value = if prototype.return_type.is_void() {
+            None
+        } else {
+            // Phi node for the return value
+            Some(
+                ValueID {
+                    block_id: BlockID {
+                        id: 0,
+                        in_deferral: true
+                    },
+                    value_id: 0
+                }
+            )
+        };
+
+        builder.enter_deferred_logic();
+        builder.add_instruction(
+            VirtualInstruction::Return {
+                value: return_value,
+            },
+            CXType::unit()
+        )?;
+    }
+    
     Some(())
 }

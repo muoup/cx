@@ -3,6 +3,7 @@ use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, Specifi
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
+use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::typing::parse_initializer;
 use cx_util::{log_error, point_log_error};
 use crate::parse::parsing_tools::goto_statement_end;
@@ -14,6 +15,8 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
 
         TokenKind::Keyword(KeywordType::Typedef) |
         TokenKind::Keyword(KeywordType::Import) => goto_statement_end(data),
+        
+        TokenKind::Operator(OperatorType::Tilda) => parse_destructor(data, ast),
         
         TokenKind::Punctuator(PunctuatorType::Semicolon) => {
             data.toks.next();
@@ -38,7 +41,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<
             try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
         },
 
-        _ => unimplemented!("parse_access_mods: {:#?}", specifier)
+        _ => todo!("parse_access_mods: {:#?}", specifier)
     };
 
     Some(())
@@ -66,6 +69,33 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
     };
     
     Some(import_path)
+}
+
+pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+    assert_token_matches!(data, TokenKind::Operator(OperatorType::Tilda));
+    assert_token_matches!(data, TokenKind::Identifier(name));
+    
+    let name = name.clone();
+    let body = parse_body(data)?;
+    
+    let Some(type_) = ast.type_map.get_mut(&name) else {
+        point_log_error!(data, "PARSER ERROR: Destructor for {} must be in the same file as the type declaration!", name);
+    };
+    
+    let CXTypeKind::Structured { has_destructor, .. } = &mut type_.kind else {
+        point_log_error!(data, "PARSER ERROR: Destructor can only be defined for structured types!");
+    };
+    
+    *has_destructor = true;
+    
+    ast.global_stmts.push(
+        CXGlobalStmt::DestructorDefinition {
+            type_name: name,
+            body: Box::new(body),
+        }
+    );
+    
+    Some(())
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {

@@ -293,6 +293,7 @@ dependencies = [
  "cx-data-bytecode",
  "cx-exec-data",
  "cx-util",
+ "uuid",
 ]
 
 [[package]]

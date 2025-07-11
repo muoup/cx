@@ -36,24 +36,20 @@ pub enum TokenKind {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Plus, Minus,
-    Asterisk, Slash,
-    Percent,
-
+    Plus, Minus, Asterisk, Slash, Percent,
     NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
 
-    LAnd, LOr, LNot,
-    BAnd, BOr, BXor, BNot,
-    LShift, RShift,
+    DoubleAmpersand, DoubleBar,
+    Exclamation, Ampersand,
+    Bar, Caret, Tilda,
+    DoubleLT, DoubleGT,
 
     Increment, Decrement,
 
-    Comma,
+    Comma, ArrayIndex,
+    Access, ScopeRes,
     
-    ArrayIndex,
-
-    Access,
-    ScopeRes
+    Move
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -84,7 +80,7 @@ pub enum KeywordType {
     Sizeof,
 
     // CX Specific
-    Import,
+    Import, Defer, Strong, Weak, New, Destructor
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -120,6 +116,7 @@ impl TokenKind {
             "enum" => TokenKind::Keyword(KeywordType::Enum),
             "union" => TokenKind::Keyword(KeywordType::Union),
             "typedef" => TokenKind::Keyword(KeywordType::Typedef),
+            
             "int" => TokenKind::Intrinsic(IntrinsicType::Int),
             "long" => TokenKind::Intrinsic(IntrinsicType::Long),
             "short" => TokenKind::Intrinsic(IntrinsicType::Short),
@@ -141,9 +138,18 @@ impl TokenKind {
             "restrict" => TokenKind::Specifier(SpecifierType::Restrict),
             "const" => TokenKind::Specifier(SpecifierType::Const),
             "thread_local" => TokenKind::Specifier(SpecifierType::ThreadLocal),
-
+            
+            // CX Extensions
             "import" => TokenKind::Keyword(KeywordType::Import),
+            "defer" => TokenKind::Keyword(KeywordType::Defer),
 
+            "strong" => TokenKind::Keyword(KeywordType::Strong),
+            "weak" => TokenKind::Keyword(KeywordType::Weak),
+            "move" => TokenKind::Operator(OperatorType::Move),
+
+            "new" => TokenKind::Keyword(KeywordType::New),
+            "destructor" => TokenKind::Keyword(KeywordType::Destructor),
+            
             _ => TokenKind::Identifier(str),
         }
     }

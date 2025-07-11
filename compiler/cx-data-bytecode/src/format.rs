@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -20,6 +20,15 @@ impl Display for BytecodeFunction {
 
         for (i, block) in self.blocks.iter().enumerate() {
             write!(f, "block{i}")?;
+            if !block.debug_name.is_empty() {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
+            writeln!(f, "{block}")?;
+        }
+        
+        for (i, block) in self.defer_blocks.iter().enumerate() {
+            write!(f, "defer_block{i}")?;
             if !block.debug_name.is_empty() {
                 write!(f, "  // {}", block.debug_name)?;
             }
@@ -49,7 +58,7 @@ impl Display for BCFunctionPrototype {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", arg.type_)?;
+            write!(f, "{}", arg._type)?;
         }
 
         write!(f, ") -> {}", self.return_type)
@@ -70,7 +79,13 @@ impl Display for VirtualValue {
 
 impl Display for ValueID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}@b{}", self.value_id, self.block_id)
+        write!(f, "v{}@{}", self.value_id, self.block_id)
+    }
+}
+
+impl Display for BlockID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "b{}{}", self.id, if self.in_deferral { "*" } else { "" })
     }
 }
 
@@ -91,6 +106,9 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::Store { value, memory, type_ } => {
                 write!(f, "store {type_} {value} -> {memory}")
+            },
+            VirtualInstruction::ZeroMemory { memory, _type } => {
+                write!(f, "zero_memory {memory} ({_type})")
             },
             VirtualInstruction::Immediate { value } => {
                 write!(f, "immediate {value}")
@@ -119,6 +137,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
                 write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             },
+            VirtualInstruction::IntToPtr { value } => {
+                write!(f, "int_to_ptr {value}")
+            },
             VirtualInstruction::Return { value } => {
                 write!(f, "return")?;
 
@@ -129,7 +150,7 @@ impl Display for VirtualInstruction {
                 Ok(())
             },
             VirtualInstruction::Branch { condition, true_block, false_block } => {
-                write!(f, "branch on {condition}; true -> block{true_block}, false -> block{false_block}")
+                write!(f, "branch on {condition}; true -> {true_block}, false -> {false_block}")
             },
             VirtualInstruction::Phi { predecessors: from } => {
                 write!(f, "phi")?;
@@ -148,6 +169,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
             },
+            VirtualInstruction::GotoDefer => {
+                write!(f, "goto defer")
+            }
             VirtualInstruction::JumpTable { value, targets, default } => {
                 write!(f, "jump_table {value} -> [")?;
                 for (i, (key, block_id)) in targets.iter().enumerate() {
@@ -199,7 +223,7 @@ impl Display for VirtualInstruction {
             VirtualInstruction::FunctionReference { name } => {
                 write!(f, "function_reference {name}")
             },
-            VirtualInstruction::GetFunctionAddr { func_name } => {
+            VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             },
             VirtualInstruction::BitCast { value } => {

@@ -29,6 +29,15 @@ impl Display for CXGlobalStmt {
                 fwrite!(f, "}}")?;
                 Ok(())
             },
+            CXGlobalStmt::DestructorDefinition { type_name, body } => {
+                indent();
+                fwriteln!(f, "destructor for {} {{", type_name)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "")?;
+                fwrite!(f, "}}")?;
+                Ok(())
+            },
         }
     }
 }
@@ -70,10 +79,6 @@ impl Display for CXExprKind {
                 Ok(())
             },
 
-            CXExprKind::Identifier(ident) => {
-                fwrite!(f, "{}", ident)
-            },
-
             CXExprKind::IntLiteral { val, .. } => fwrite!(f, "{}", val),
             CXExprKind::FloatLiteral { val, .. } => fwrite!(f, "{}", val),
             CXExprKind::StringLiteral { val, .. } => {
@@ -104,7 +109,7 @@ impl Display for CXExprKind {
             },
 
             CXExprKind::BinOp { lhs, rhs, op } => {
-                fwrite!(f, "({} {} {})", lhs, op, rhs)
+                fwrite!(f, "{} {} {}", lhs, op, rhs)
             },
 
             CXExprKind::ImplicitCast { expr, to_type, .. } => {
@@ -117,6 +122,10 @@ impl Display for CXExprKind {
 
             CXExprKind::GetFunctionAddr { func_name, func_sig } => {
                 fwrite!(f, "{}#fn_addr({})", func_name, func_sig)
+            },
+
+            CXExprKind::Move { expr } => {
+                fwrite!(f, "(move {})", expr)
             },
 
             CXExprKind::InitializerList { indices } => {
@@ -198,6 +207,22 @@ impl Display for CXExprKind {
                 fwrite!(f, "}}")
             },
 
+            CXExprKind::Defer { expr } => {
+                fwrite!(f, "defer {}", expr)
+            },
+            
+            CXExprKind::New { _type, array_length } => {
+                if let Some(length) = array_length {
+                    fwrite!(f, "new {}[{}]", _type, length)
+                } else {
+                    fwrite!(f, "new {}", _type)
+                }
+            },
+            
+            CXExprKind::SizeOf { expr } => {
+                fwrite!(f, "sizeof({})", expr)
+            },
+
             _ => fwrite!(f, "{:?}", self)
         }
     }
@@ -222,7 +247,7 @@ impl Display for CXTypeKind {
                 write!(f, "f{float_bytes}")
             },
             CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { fields, name } => {
+            CXTypeKind::Structured { fields, name, has_destructor } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
@@ -233,7 +258,7 @@ impl Display for CXTypeKind {
                     "".to_string()
                 };
 
-                write!(f, "struct {name_str} {{ {field_strs} }}")
+                write!(f, "struct {name_str} {{ {field_strs} }} {{ has_destructor: {} }}", has_destructor)
             },
             CXTypeKind::Union { fields, name } => {
                 let field_strs = fields.iter()
@@ -249,8 +274,14 @@ impl Display for CXTypeKind {
                 write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo(inner) => {
-                write!(f, "*{inner}")
+            CXTypeKind::PointerTo { inner, explicitly_weak: false } => {
+                write!(f, "{inner}*")
+            },
+            CXTypeKind::PointerTo { inner, explicitly_weak: true } => {
+                write!(f, "{inner} weak*")
+            },
+            CXTypeKind::StrongPointer { inner, .. } => {
+                write!(f, "{inner} strong*")
             },
             CXTypeKind::Array { size, _type } => {
                 write!(f, "[{size}; {_type}]")

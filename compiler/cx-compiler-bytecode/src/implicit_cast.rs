@@ -2,7 +2,7 @@ use crate::builder::BytecodeBuilder;
 use cx_data_ast::parse::ast::CXCastType;
 use cx_data_ast::parse::value_type::{get_intrinsic_type, CXType, CXTypeKind};
 use cx_data_bytecode::VirtualInstruction::IntToPtrDiff;
-use cx_data_bytecode::{ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCPtrBinOp, ValueID, VirtualInstruction};
 
 pub(crate) fn implicit_cast(
     builder: &mut BytecodeBuilder,
@@ -22,11 +22,11 @@ pub(crate) fn implicit_cast(
         },
         
         CXCastType::PtrToInt => {
-            let CXTypeKind::PointerTo(_) =
-                from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
+            let CXTypeKind::PointerTo { .. } =
+                from_type.intrinsic_type_kind(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid pointer type")
                 };
-            
+
             builder.add_instruction(
                 VirtualInstruction::PtrToInt {
                     value
@@ -37,7 +37,7 @@ pub(crate) fn implicit_cast(
         
         CXCastType::IntToPtr => {
             let CXTypeKind::Integer { bytes, signed } =
-                from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
+                from_type.intrinsic_type_kind(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid integer type")
                 };
             
@@ -70,13 +70,13 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::IntToPtrDiff => {
-            let CXTypeKind::PointerTo(inner) =
-                to_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
+            let CXTypeKind::PointerTo { inner, .. } =
+                to_type.intrinsic_type_kind(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid pointer type")
                 };
             
             let CXTypeKind::Integer { bytes, signed } =
-                from_type.intrinsic_type(&builder.cx_type_map)?.clone() else {
+                from_type.intrinsic_type_kind(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid integer type")
                 };
             
@@ -121,7 +121,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::IntegralCast => {
-            match get_intrinsic_type(&builder.cx_type_map, from_type)? {
+            match from_type.intrinsic_type_kind(&builder.cx_type_map)? {
                 CXTypeKind::Integer { signed: true, .. } =>
                     builder.add_instruction(
                         VirtualInstruction::SExtend {
@@ -151,7 +151,7 @@ pub(crate) fn implicit_cast(
         CXCastType::FunctionToPointerDecay => {
             builder.add_instruction(
                 VirtualInstruction::GetFunctionAddr {
-                    func_name: value,
+                    func: value,
                 },
                 to_type.clone()
             )
@@ -185,7 +185,7 @@ pub(crate) fn implicit_cast(
                 to_type.clone()
             )
         },
-
+        
         _ => todo!("implicit_cast({cast_type:?})")
     }
 }

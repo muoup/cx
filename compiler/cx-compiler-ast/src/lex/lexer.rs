@@ -269,27 +269,27 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '|' => match iter.peek() {
             Some('|') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::LOr))
+                Some(TokenKind::Operator(OperatorType::DoubleBar))
             },
-            _ => Some(TokenKind::Operator(OperatorType::BOr))
+            _ => Some(TokenKind::Operator(OperatorType::Bar))
         },
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::LAnd))
+                Some(TokenKind::Operator(OperatorType::DoubleAmpersand))
             },
-            _ => Some(TokenKind::Operator(OperatorType::BAnd))
+            _ => Some(TokenKind::Operator(OperatorType::Ampersand))
         },
-        '^' => Some(TokenKind::Operator(OperatorType::BXor)),
+        '^' => Some(TokenKind::Operator(OperatorType::Caret)),
         '!' => {
             if Some('=') == iter.peek() {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::NotEqual))
             } else {
-                Some(TokenKind::Operator(OperatorType::LNot))
+                Some(TokenKind::Operator(OperatorType::Exclamation))
             }
         },
-        '~' => Some(TokenKind::Operator(OperatorType::BNot)),
+        '~' => Some(TokenKind::Operator(OperatorType::Tilda)),
 
         ':' => {
             if Some(':') == iter.peek() {
@@ -304,7 +304,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '>' => match iter.peek() {
             Some('>') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::RShift))
+                Some(TokenKind::Operator(OperatorType::DoubleGT))
             },
             Some('=') => {
                 iter.next();
@@ -315,7 +315,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '<' => match iter.peek() {
             Some('<') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::LShift))
+                Some(TokenKind::Operator(OperatorType::DoubleLT))
             },
             Some('=') => {
                 iter.next();

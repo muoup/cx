@@ -24,7 +24,7 @@ pub(crate) fn prepare_function_sig(
         }
     }
 
-    for BCParameter { type_, .. } in prototype.params.iter() {
+    for BCParameter { _type: type_, .. } in prototype.params.iter() {
         sig.params.push(get_cranelift_abi_type(type_));
     }
 

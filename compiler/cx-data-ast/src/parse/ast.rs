@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use crate::lex::token::Token;
-use crate::parse::value_type::{CXType};
+use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::parse::identifier::CXIdent;
 
 pub type CXTypeMap = HashMap<String, CXType>;
@@ -14,14 +14,11 @@ pub struct CXAST {
 
     // Path to .cx file
     pub file_path: String,
-    
+
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
-    
     pub imports: Vec<String>,
-
     pub global_stmts: Vec<CXGlobalStmt>,
-    
     pub public_functions: Vec<String>,
 
     pub type_map: CXTypeMap,
@@ -53,7 +50,12 @@ pub enum CXGlobalStmt {
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
-    }
+    },
+    
+    DestructorDefinition {
+        type_name: String,
+        body: Box<CXExpr>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +96,7 @@ pub enum CXInitIndex {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXExpr {
-    pub uuid: usize,
+    pub uuid: u64,
     pub kind: CXExprKind,
 
     pub start_index: usize,
@@ -183,6 +185,10 @@ pub enum CXExprKind {
     Return {
         value: Option<Box<CXExpr>>
     },
+    
+    Defer {
+        expr: Box<CXExpr>
+    },
 
     ImplicitCast {
         expr: Box<CXExpr>,
@@ -194,6 +200,14 @@ pub enum CXExprKind {
     ImplicitLoad {
         expr: Box<CXExpr>,
         loaded_type: CXType
+    },
+    
+    New {
+        _type: CXType,
+        array_length: Option<Box<CXExpr>>
+    },
+    Move {
+        expr: Box<CXExpr>
     },
 
     GetFunctionAddr {
@@ -209,7 +223,7 @@ pub enum CXExprKind {
 impl CXExprKind {
     pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpr {
         CXExpr {
-            uuid: Uuid::new_v4().as_u128() as usize,
+            uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
 
             start_index,
@@ -230,4 +244,7 @@ pub enum CXCastType {
     PtrToInt,
     IntToPtr,
     FunctionToPointerDecay,
+    
+    AddPointerTag,
+    RemovePointerTag
 }
