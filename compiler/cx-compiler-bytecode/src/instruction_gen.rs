@@ -249,7 +249,7 @@ pub fn generate_instruction(
                 VirtualInstruction::StringLiteral {
                     str_id: string_id,
                 },
-                BCType::from(BCTypeKind::Pointer { nullable: false })
+                BCType::default_pointer()
             )
         },
 
@@ -601,7 +601,7 @@ pub fn generate_instruction(
                 VirtualInstruction::Load {
                     value: memory
                 },
-                BCType::from(BCTypeKind::Pointer { nullable: false })
+                BCType::default_pointer()
             )?;
             
             let zero = builder.int_const(0, 8, true)?;
@@ -616,7 +616,7 @@ pub fn generate_instruction(
                 VirtualInstruction::Store {
                     memory,
                     value: zero_as_ptr,
-                    type_: BCType::from(BCTypeKind::Pointer { nullable: false })
+                    type_: BCType::default_pointer()
                 },
                 CXType::unit()
             )?;
@@ -645,7 +645,7 @@ pub fn generate_instruction(
                             args: vec![size_imm, len],
                             method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
                         },
-                        BCType::from(BCTypeKind::Pointer { nullable: false })
+                        BCType::default_pointer()
                     )
                 },
                 
@@ -659,7 +659,7 @@ pub fn generate_instruction(
                             args: vec![size_imm],
                             method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
                         },
-                        BCType::from(BCTypeKind::Pointer { nullable: false })
+                        BCType::default_pointer()
                     )
                 },
             }

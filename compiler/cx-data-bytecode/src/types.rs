@@ -11,6 +11,12 @@ impl BCType {
             kind: BCTypeKind::Unit
         }
     }
+    
+    pub fn default_pointer() -> Self {
+        BCType {
+            kind: BCTypeKind::Pointer { nullable: false, dereferenceable: 0 }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -20,7 +26,7 @@ pub enum BCTypeKind {
     Unsigned { bytes: u8 },
     Bool,
     Float { bytes: u8 },
-    Pointer { nullable: bool },
+    Pointer { nullable: bool, dereferenceable: u32 },
 
     Array { element: Box<BCType>, size: usize },
     Struct { name: String, fields: Vec<(String, BCType)> },

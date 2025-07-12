@@ -1,5 +1,5 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::noundef;
+use crate::attributes::attr_noundef;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
@@ -124,7 +124,7 @@ pub(crate) fn generate_instruction<'a>(
                 for i in 0..args.len() {
                     val.add_attribute(
                         AttributeLoc::Param(i as u32),
-                        noundef(global_state.context)
+                        attr_noundef(global_state.context)
                     )
                 }
 

@@ -17,12 +17,13 @@ fn deconstructor_name(type_: &CXType) -> String {
 
 fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
     let deconstructor_name = deconstructor_name(type_);
+    let this_param_type = BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 });
 
     BCFunctionPrototype {
         name: deconstructor_name,
         return_type: BCType::unit(),
         params: vec![
-            BCParameter { name: None, _type: BCType::from(BCTypeKind::Pointer { nullable: false }) }
+            BCParameter { name: None, _type: this_param_type },
         ],
         var_args: false,
     }
@@ -41,7 +42,7 @@ fn load_mem(
         VirtualInstruction::Load {
             value: val,
         },
-        BCType::from(BCTypeKind::Pointer { nullable: false })
+        BCType::default_pointer()
     )
 }
 
@@ -60,7 +61,7 @@ fn if_owned_call(
         VirtualInstruction::IntToPtr {
             value: zero
         },
-        BCType::from(BCTypeKind::Pointer { nullable: false })
+        BCType::default_pointer()
     )?;
 
     let nonnull = builder.add_instruction_bt(
@@ -151,7 +152,7 @@ pub fn deconstruct_variable(
                     VirtualInstruction::GetFunctionAddr {
                         func: deconstructor,
                     },
-                    BCType::from(BCTypeKind::Pointer { nullable: false })
+                    BCType::default_pointer()
                 )?;
                 
                 if_owned_call(
@@ -183,7 +184,7 @@ pub fn deconstruct_variable(
                     VirtualInstruction::FunctionReference {
                         name: mangle_destructor(name),
                     },
-                    BCType::from(BCTypeKind::Pointer { nullable: false })
+                    BCType::default_pointer()
                 )?;
                 
                 builder.add_instruction(
@@ -246,7 +247,7 @@ pub fn generate_deconstructor(
 
     let struct_val = builder.add_instruction_bt(
         VirtualInstruction::FunctionParameter { param_index: 0 },
-        BCType::from(BCTypeKind::Pointer { nullable: false })
+        BCType::default_pointer()
     )?;
     
     if let Some(name) = data._type.get_destructor(&builder.cx_type_map) {
