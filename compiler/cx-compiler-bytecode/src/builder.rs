@@ -187,7 +187,7 @@ impl BytecodeBuilder {
     ) -> BytecodeResult<ValueID> {
         self.add_instruction_bt(
             VirtualInstruction::FunctionReference { name: name.to_owned() },
-            BCType::from(BCTypeKind::Pointer)
+            BCType::default_pointer()
         )
     }
     

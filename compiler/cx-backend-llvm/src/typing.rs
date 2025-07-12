@@ -41,29 +41,6 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> Option<BasicValueEnum
     }
 }
 
-pub(crate) fn create_fn_proto<'a>(return_type: AnyTypeEnum<'a>, args: &[AnyTypeEnum<'a>], var_args: bool) -> Option<FunctionType<'a>> {
-    let args = args
-        .iter()
-        .map(|arg| {
-            let basic_type = any_to_basic_type(*arg)?;
-            
-            unsafe { Some(BasicMetadataTypeEnum::new(basic_type.as_type_ref())) }
-        })
-        .collect::<Option<Vec<_>>>()?;
-    
-    Some(
-        match return_type {
-            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), var_args),
-            AnyTypeEnum::FloatType(float_type) => float_type.fn_type(args.as_slice(), var_args),
-            AnyTypeEnum::PointerType(ptr_type) => ptr_type.fn_type(args.as_slice(), var_args),
-            AnyTypeEnum::StructType(struct_type) => struct_type.fn_type(args.as_slice(), var_args),
-            AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), var_args),
-            
-            _ => panic!("Invalid return type, found: {return_type:?}")
-        }
-    )
-}
-
 pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
     Some(
         match &_type.kind {
@@ -83,7 +60,11 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
 
-            BCTypeKind::Pointer => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+            BCTypeKind::Pointer { .. } => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+            // BCTypeKind::Pointer { nullable: false } => {
+            //     state.context.ptr_type(AddressSpace::from(0))
+            //         .as_any_type_enum()
+            // }
 
             BCTypeKind::Struct { name, fields } => {
                 if let Some(_type) = state.context.get_struct_type(name.as_str()) {
@@ -104,11 +85,14 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
                     false
                 );
 
-                if !name.is_empty() {
-                    let anonymous_name = anonymous_struct_name();
-                    let anonymous_struct_type = state.context.opaque_struct_type(&anonymous_name);
-                    anonymous_struct_type.set_body(_types.as_slice(), false);
-                }
+                let struct_name = if name.is_empty() {
+                    anonymous_struct_name()
+                } else {
+                    name.clone()
+                };
+                
+                let struct_def = state.context.opaque_struct_type(struct_name.as_str());
+                struct_def.set_body(_types.as_slice(), false);
 
                 return Some(struct_type.as_any_type_enum());
             }
@@ -122,46 +106,34 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
     )
 }
 
-pub(crate) fn cx_llvm_prototype<'a>(
-    state: &GlobalState<'a>,
-    prototype: &BCFunctionPrototype
-) -> Option<FunctionType<'a>> {
-    let return_type = match bc_llvm_type(state, &prototype.return_type)? {
-        AnyTypeEnum::StructType(_) => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
-        any_type => any_type,
-    };
-    
-    let mut arg_types = prototype
-        .params
-        .iter()
-        .map(|arg| bc_llvm_type(state, &arg._type))
-        .collect::<Option<Vec<_>>>()?;
-    
-    if prototype.return_type.is_structure() {
-        arg_types.insert(0, state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum());
-    }
-    
-    create_fn_proto(
-        return_type,
-        &arg_types,
-        prototype.var_args
-    )
-}
-
 pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
     let return_type = bc_llvm_type(state, &prototype.return_type)?;
-    let arg_types = prototype
+    let args = prototype
         .params
         .iter()
-        .map(|arg| bc_llvm_type(state, &arg._type))
+        .map(|arg| {
+            let bc_arg = bc_llvm_type(state, &arg._type)?;
+            let basic_type = any_to_basic_type(bc_arg)?;
+            
+            let md_type = 
+                unsafe { BasicMetadataTypeEnum::new(basic_type.as_type_ref()) };
+            
+            Some(md_type)
+        })
         .collect::<Option<Vec<_>>>()?;
+    
+    Some(
+        match return_type {
+            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
+            AnyTypeEnum::FloatType(float_type) => float_type.fn_type(args.as_slice(), prototype.var_args),
+            AnyTypeEnum::PointerType(ptr_type) => ptr_type.fn_type(args.as_slice(), prototype.var_args),
+            AnyTypeEnum::StructType(struct_type) => struct_type.fn_type(args.as_slice(), prototype.var_args),
+            AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), prototype.var_args),
 
-    create_fn_proto(
-        return_type,
-        &arg_types,
-        prototype.var_args
+            _ => panic!("Invalid return type, found: {return_type:?}")
+        }
     )
 }

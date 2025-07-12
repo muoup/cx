@@ -263,10 +263,19 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::Float { bytes } =>
                 BCTypeKind::Float { bytes: *bytes },
 
-            CXTypeKind::StrongPointer { .. } |
+            CXTypeKind::StrongPointer { is_array: true, .. } |
+            CXTypeKind::PointerTo { nullable: false, .. } =>
+                BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
+            
+            CXTypeKind::StrongPointer { is_array: false, inner, .. } => {
+                let inner_as_bc = convert_fixed_type(cx_type_map, inner)?;
+                
+                BCTypeKind::Pointer { nullable: false, dereferenceable: inner_as_bc.fixed_size() as u32 }
+            },
+
             CXTypeKind::Function { .. } |
-            CXTypeKind::PointerTo { .. } =>
-                BCTypeKind::Pointer,
+            CXTypeKind::PointerTo { nullable: true, .. } =>
+                BCTypeKind::Pointer { nullable: true, dereferenceable: 0 },
             
             CXTypeKind::Array { _type, size } =>
                 BCTypeKind::Array {
@@ -279,7 +288,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     
-                    _ => BCTypeKind::Pointer
+                    _ => BCTypeKind::Pointer { nullable: true, dereferenceable: 0 }
                 }
             },
             

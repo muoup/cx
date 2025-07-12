@@ -23,7 +23,7 @@ pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
         BCTypeKind::Float { bytes: 16 }        => ir::types::F128,
         
         BCTypeKind::Struct { .. } |
-        BCTypeKind::Pointer                    => ir::Type::int(64).unwrap(),
+        BCTypeKind::Pointer { .. }             => ir::Type::int(64).unwrap(),
         
         _ => panic!("PANIC: Unsupported type for Cranelift: {val_type:?}"),
     }

@@ -274,11 +274,20 @@ impl Display for CXTypeKind {
                 write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo { inner, explicitly_weak: false } => {
-                write!(f, "{inner}*")
-            },
-            CXTypeKind::PointerTo { inner, explicitly_weak: true } => {
-                write!(f, "{inner} weak*")
+            CXTypeKind::PointerTo { inner, explicitly_weak, nullable } => {
+                write!(f, "{inner} ")?;
+                
+                if *explicitly_weak {
+                    write!(f, "weak")?;
+                }
+                
+                write!(f, "*")?;
+                
+                if *nullable {
+                    write!(f, " (nonnull)")
+                } else {
+                    Ok(())
+                }
             },
             CXTypeKind::StrongPointer { inner, .. } => {
                 write!(f, "{inner} strong*")

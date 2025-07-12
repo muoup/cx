@@ -519,7 +519,9 @@ pub(crate) fn coerce_value(
                     expr_type.specifiers,
                     CXTypeKind::PointerTo {
                         inner: inner.clone(),
-                        explicitly_weak: false
+                        
+                        explicitly_weak: false,
+                        nullable: true,
                     }
                 )
             ),

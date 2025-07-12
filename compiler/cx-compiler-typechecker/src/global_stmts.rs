@@ -14,9 +14,18 @@ pub(crate) fn add_destructor_prototypes(
         if let Some(name) = _type.get_destructor(type_map) {
             let destructor_name = mangle_destructor(name);
             
+            let this_type = CXType::new(
+                0,
+                CXTypeKind::PointerTo {
+                    inner: Box::new(_type.clone()),
+                    explicitly_weak: true,
+                    nullable: false,
+                },
+            );
+            
             let prototype = CXFunctionPrototype {
                 name: CXIdent::from_owned(destructor_name.clone()),
-                params: vec![CXParameter { name: None, type_: _type.clone().pointer_to() }],
+                params: vec![CXParameter { name: None, type_: this_type }],
                 return_type: CXType::unit(),
                 var_args: false
             };
