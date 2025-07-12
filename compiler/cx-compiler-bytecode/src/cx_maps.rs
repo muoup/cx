@@ -263,10 +263,13 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::Float { bytes } =>
                 BCTypeKind::Float { bytes: *bytes },
 
-            CXTypeKind::StrongPointer { .. } |
+            CXTypeKind::PointerTo { nullable: false, .. } |
+            CXTypeKind::StrongPointer { .. } =>
+                BCTypeKind::Pointer { nullable: false },
+            
             CXTypeKind::Function { .. } |
-            CXTypeKind::PointerTo { .. } =>
-                BCTypeKind::Pointer,
+            CXTypeKind::PointerTo { nullable: true, .. } =>
+                BCTypeKind::Pointer { nullable: true },
             
             CXTypeKind::Array { _type, size } =>
                 BCTypeKind::Array {
@@ -279,7 +282,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     
-                    _ => BCTypeKind::Pointer
+                    _ => BCTypeKind::Pointer { nullable: true }
                 }
             },
             

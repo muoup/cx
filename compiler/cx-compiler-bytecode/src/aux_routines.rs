@@ -100,7 +100,7 @@ pub(crate) fn allocate_variable(
                     size,
                     alignment: bc_type.alignment(),
                 },
-                BCTypeKind::Pointer.into()
+                BCType::from(BCTypeKind::Pointer { nullable: false })
             )?
         },
         BCTypeSize::Variable(size_expr) => {
@@ -109,7 +109,7 @@ pub(crate) fn allocate_variable(
                     size: size_expr,
                     alignment: bc_type.alignment(),
                 },
-                BCTypeKind::Pointer.into()
+                BCType::from(BCTypeKind::Pointer { nullable: false })
             )?
         }
     };

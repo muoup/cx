@@ -49,7 +49,9 @@ pub enum CXTypeKind {
 
     PointerTo {
         inner: Box<CXType>,
-        explicitly_weak: bool
+        
+        explicitly_weak: bool,
+        nullable: bool
     },
     MemoryAlias(Box<CXType>),
     Array {
@@ -226,7 +228,9 @@ impl CXType {
             specifiers: 0,
             kind: CXTypeKind::PointerTo {
                 inner: Box::new(self),
-                explicitly_weak: false
+                
+                explicitly_weak: false,
+                nullable: true
             }
         }
     }

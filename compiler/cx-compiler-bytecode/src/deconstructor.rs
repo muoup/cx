@@ -22,7 +22,7 @@ fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
         name: deconstructor_name,
         return_type: BCType::unit(),
         params: vec![
-            BCParameter { name: None, _type: BCType::from(BCTypeKind::Pointer) }
+            BCParameter { name: None, _type: BCType::from(BCTypeKind::Pointer { nullable: false }) }
         ],
         var_args: false,
     }
@@ -41,7 +41,7 @@ fn load_mem(
         VirtualInstruction::Load {
             value: val,
         },
-        BCType::from(BCTypeKind::Pointer)
+        BCType::from(BCTypeKind::Pointer { nullable: false })
     )
 }
 
@@ -60,7 +60,7 @@ fn if_owned_call(
         VirtualInstruction::IntToPtr {
             value: zero
         },
-        BCType::from(BCTypeKind::Pointer)
+        BCType::from(BCTypeKind::Pointer { nullable: false })
     )?;
 
     let nonnull = builder.add_instruction_bt(
@@ -151,7 +151,7 @@ pub fn deconstruct_variable(
                     VirtualInstruction::GetFunctionAddr {
                         func: deconstructor,
                     },
-                    BCType::from(BCTypeKind::Pointer)
+                    BCType::from(BCTypeKind::Pointer { nullable: false })
                 )?;
                 
                 if_owned_call(
@@ -183,7 +183,7 @@ pub fn deconstruct_variable(
                     VirtualInstruction::FunctionReference {
                         name: mangle_destructor(name),
                     },
-                    BCType::from(BCTypeKind::Pointer)
+                    BCType::from(BCTypeKind::Pointer { nullable: false })
                 )?;
                 
                 builder.add_instruction(
@@ -246,7 +246,7 @@ pub fn generate_deconstructor(
 
     let struct_val = builder.add_instruction_bt(
         VirtualInstruction::FunctionParameter { param_index: 0 },
-        BCType::from(BCTypeKind::Pointer)
+        BCType::from(BCTypeKind::Pointer { nullable: false })
     )?;
     
     if let Some(name) = data._type.get_destructor(&builder.cx_type_map) {

@@ -46,7 +46,7 @@ pub(crate) fn generate_destructor(
         VirtualInstruction::FunctionParameter {
             param_index: 0,
         },
-        BCType::from(BCTypeKind::Pointer)
+        BCType::from(BCTypeKind::Pointer { nullable: false })
     )?;
 
     builder.symbol_table.insert("this".to_string(), this);

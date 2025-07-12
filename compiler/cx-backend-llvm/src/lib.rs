@@ -1,6 +1,6 @@
 use crate::attributes::*;
 use crate::mangling::string_literal_name;
-use crate::typing::{any_to_basic_type, cx_llvm_prototype, bc_llvm_type};
+use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
@@ -13,6 +13,7 @@ use inkwell::types::{AnyType, FunctionType};
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
 
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::Path;
 use inkwell::basic_block::BasicBlock;
 use cx_exec_data::OptimizationLevel;
@@ -299,7 +300,7 @@ fn cache_prototype<'a>(
     global_state: &mut GlobalState<'a>,
     prototype: &'a BCFunctionPrototype,
 ) -> Option<()> {
-    let llvm_prototype = cx_llvm_prototype(
+    let llvm_prototype = bc_llvm_prototype(
         global_state,
         prototype
     ).unwrap();
@@ -309,12 +310,13 @@ fn cache_prototype<'a>(
         llvm_prototype,
         None
     );
-
-    for i in 0..prototype.params.len() {
-        func.add_attribute(
-            AttributeLoc::Param(i as u32),
-            noundef(global_state.context)
-        )
+    
+    for (i, _type) in prototype.params.iter().enumerate() {
+        get_type_attributes(global_state.context, &_type._type)
+            .into_iter()
+            .for_each(|attr| {
+                func.add_attribute(AttributeLoc::Param(i as u32), attr);
+            });
     }
 
     global_state.functions.insert(

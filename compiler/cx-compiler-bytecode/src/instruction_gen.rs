@@ -249,7 +249,7 @@ pub fn generate_instruction(
                 VirtualInstruction::StringLiteral {
                     str_id: string_id,
                 },
-                BCType::from(BCTypeKind::Pointer)
+                BCType::from(BCTypeKind::Pointer { nullable: false })
             )
         },
 
@@ -601,7 +601,7 @@ pub fn generate_instruction(
                 VirtualInstruction::Load {
                     value: memory
                 },
-                BCType::from(BCTypeKind::Pointer)
+                BCType::from(BCTypeKind::Pointer { nullable: false })
             )?;
             
             let zero = builder.int_const(0, 8, true)?;
@@ -616,7 +616,7 @@ pub fn generate_instruction(
                 VirtualInstruction::Store {
                     memory,
                     value: zero_as_ptr,
-                    type_: BCType::from(BCTypeKind::Pointer)
+                    type_: BCType::from(BCTypeKind::Pointer { nullable: false })
                 },
                 CXType::unit()
             )?;
@@ -645,7 +645,7 @@ pub fn generate_instruction(
                             args: vec![size_imm, len],
                             method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
                         },
-                        BCType::from(BCTypeKind::Pointer)
+                        BCType::from(BCTypeKind::Pointer { nullable: false })
                     )
                 },
                 
@@ -659,7 +659,7 @@ pub fn generate_instruction(
                             args: vec![size_imm],
                             method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
                         },
-                        BCType::from(BCTypeKind::Pointer)
+                        BCType::from(BCTypeKind::Pointer { nullable: false })
                     )
                 },
             }
@@ -802,7 +802,7 @@ pub(crate) fn generate_algebraic_binop(
             )
         },
 
-        BCTypeKind::Pointer => {
+        BCTypeKind::Pointer { .. } => {
             let CXTypeKind::PointerTo { inner: left_inner, .. }
                 = &cx_lhs_type.intrinsic_type_kind(&builder.cx_type_map)?
             else { 

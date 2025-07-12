@@ -354,8 +354,10 @@ impl Display for BCTypeKind {
             BCTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
             BCTypeKind::Bool => write!(f, "bool"),
             BCTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
-            BCTypeKind::Pointer => write!(f, "*"),
-
+            
+            BCTypeKind::Pointer { nullable: false } => write!(f, "!*"),
+            BCTypeKind::Pointer { nullable: true } => write!(f, "*"),
+            
             BCTypeKind::Array { element, size } => {
                 write!(f, "[{element}; {size}]")
             },

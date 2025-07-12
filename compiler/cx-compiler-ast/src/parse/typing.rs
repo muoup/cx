@@ -278,7 +278,9 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
                 specs,
                 CXTypeKind::PointerTo { 
                     inner: Box::new(acc_type),
-                    explicitly_weak: true
+                    
+                    explicitly_weak: true,
+                    nullable: true
                 }
             );
 
