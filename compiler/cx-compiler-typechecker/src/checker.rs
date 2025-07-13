@@ -1,5 +1,5 @@
 use cx_compiler_ast::parse::operators::{comma_separated_mut};
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, same_type, CXTypeKind, CXType, CX_CONST};
 use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::typecheck_access;
@@ -255,6 +255,25 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     CXTypeKind::Function { prototype: Box::new(func.clone()) }.to_val_type()
                 );
             };
+            
+            if let Some(glob) = env.global_variables.get(name.as_str()) {
+                return match glob {
+                    CXGlobalVariable::GlobalConstant(global_constant) => {
+                        *expr = match global_constant {
+                            CXGlobalConstant::Int(i) => {
+                                CXExprKind::IntLiteral {
+                                    bytes: 4,
+                                    val: *i as i64,
+                                }.into_expr(expr.start_index, expr.end_index)
+                            },
+                            
+                            _ => log_error!("TYPE ERROR: Global constant expected, found: {glob:?}"),
+                        };
+                        
+                        Some(CXTypeKind::Integer { bytes: 4, signed: true }.to_val_type())
+                    }
+                };
+            }
 
             log_error!("TYPE ERROR: Unknown identifier {name}");
         },

@@ -23,6 +23,8 @@ pub struct CXAST {
 
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
+    
+    pub global_variables: HashMap<String, CXGlobalVariable>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +94,16 @@ pub enum CXBinOp {
 pub enum CXInitIndex {
     Named(CXIdent, Box<CXExpr>),
     Unnamed(Box<CXExpr>)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CXGlobalVariable {
+    GlobalConstant(CXGlobalConstant),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CXGlobalConstant {
+    Int(i32)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
