@@ -1,7 +1,7 @@
 use crate::lex::token::Token;
 use crate::parse::value_type::{CXType};
 use cx_util::scoped_map::ScopedMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub type VarTable = ScopedMap<CXType>;
 
@@ -15,10 +15,11 @@ pub enum VisibilityMode {
 #[derive(Debug, Clone)]
 pub struct ParserData<'a> {
     pub file_path: String,
-    pub type_symbols: HashSet<String>,
     pub toks: TokenIter<'a>,
     pub visibility: VisibilityMode,
     pub expr_commas: Vec<bool>,
+
+    pub type_symbols: HashSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,10 +32,11 @@ impl<'a> ParserData<'a> {
     pub fn new(file_path: String, toks: &'a [Token]) -> Self {
         ParserData {
             file_path,
-            type_symbols: HashSet::new(),
             toks: TokenIter { slice: toks, index: 0 },
             visibility: VisibilityMode::Package,
             expr_commas: vec![true],
+
+            type_symbols: HashSet::new(),
         }
     }
 
