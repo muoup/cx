@@ -302,6 +302,7 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
                 CXTypeKind::PointerTo { 
                     inner: Box::new(acc_type),
                     
+                    sizeless_array: false,
                     explicitly_weak: true,
                     nullable: true
                 }
@@ -355,7 +356,13 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
 
             let _type = match data.toks.peek()?.kind {
                 TokenKind::Punctuator(PunctuatorType::CloseBracket) => {
-                    acc_type.pointer_to()
+                    CXTypeKind::PointerTo {
+                        inner: Box::new(acc_type),
+                        
+                        sizeless_array: true,
+                        nullable: true,
+                        explicitly_weak: false,
+                    }.to_val_type()
                 },
                 TokenKind::IntLiteral(size) => {
                     data.toks.next();

@@ -274,14 +274,18 @@ impl Display for CXTypeKind {
                 write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo { inner, explicitly_weak, nullable } => {
+            CXTypeKind::PointerTo { inner, explicitly_weak, nullable, sizeless_array } => {
                 write!(f, "{inner} ")?;
                 
                 if *explicitly_weak {
                     write!(f, "weak")?;
                 }
                 
-                write!(f, "*")?;
+                if *sizeless_array {
+                    write!(f, "[]")?;
+                } else {
+                    write!(f, "*")?;
+                }
                 
                 if *nullable {
                     write!(f, " (nonnull)")
@@ -361,13 +365,10 @@ impl Display for CXBinOp {
 
 impl Display for CXInitIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CXInitIndex::Unnamed(index) => {
-                fwrite!(f, "{}", index)
-            },
-            CXInitIndex::Named(name, index) => {
-                fwrite!(f, ".{} = {}", name, index.as_ref())
-            },
+        if let Some(name) = &self.name {
+            write!(f, "{}: {}", name, self.value)
+        } else {
+            write!(f, "{}", self.value)
         }
     }
 }

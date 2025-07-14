@@ -1,6 +1,4 @@
-public:
-
-int putchar(int c);
+#include <stdio.h>
 
 struct Inner {
     int a;
@@ -21,29 +19,21 @@ int main() {
 }
 
 void struct_parameter(Test t, int c) {
-    putchar(t.inner.a + '0');
-    putchar(t.inner.b + '0');
-    putchar(t.c + '0');
-    putchar(t.d + '0');
-    putchar(c + '0');
-    putchar('\n');
+    printf("Struct Parameter:\n");
+    printf("t.inner.a: %d\n", t.inner.a);
+    printf("t.inner.b: %d\n", t.inner.b);
+    printf("t.c: %d\n", t.c);
+    printf("t.d: %d\n", t.d);
     return;
 }
 
 Test struct_return() {
-    Test t;
-    t.inner.a = 1;
-    t.inner.b = 2;
-    t.c = 3;
-    t.d = 4;
-    return t;
-
-//    return {
-//        .inner = {
-//            .a = 1,
-//            .b = 2
-//        },
-//        .c = 3,
-//        .d = 4
-//    };
+    return {
+        .inner = {
+            .a = 1,
+            .b = 2
+        },
+        .c = 3,
+        .d = 4
+    };
 }

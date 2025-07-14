@@ -50,6 +50,7 @@ pub enum CXTypeKind {
     PointerTo {
         inner: Box<CXType>,
         
+        sizeless_array: bool,
         explicitly_weak: bool,
         nullable: bool
     },
@@ -229,6 +230,7 @@ impl CXType {
             kind: CXTypeKind::PointerTo {
                 inner: Box::new(self),
                 
+                sizeless_array: false,
                 explicitly_weak: false,
                 nullable: true
             }

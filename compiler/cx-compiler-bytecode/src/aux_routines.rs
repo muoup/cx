@@ -1,10 +1,11 @@
-use cx_data_ast::parse::ast::CXTypeMap;
+use cx_data_ast::parse::ast::{CXExpr, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_util::bytecode_error_log;
 use crate::builder::BytecodeBuilder;
 use crate::deconstructor::deconstruct_variable;
+use crate::instruction_gen::generate_instruction;
 
 pub(crate) struct StructAccess {
     pub(crate) offset: usize,

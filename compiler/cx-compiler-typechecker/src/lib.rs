@@ -15,6 +15,7 @@ mod struct_typechecking;
 mod casting;
 mod importing;
 mod global_stmts;
+mod structured_initialization;
 
 pub type TypeCheckResult<T> = Option<T>;
 

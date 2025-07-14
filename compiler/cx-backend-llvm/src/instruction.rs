@@ -379,7 +379,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_pointer_value();
                 
-                if basic_type.is_struct_type() {
+                if type_.is_structure() {
                     function_state
                         .builder
                         .build_memcpy(

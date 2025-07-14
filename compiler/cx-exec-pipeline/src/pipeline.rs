@@ -3,7 +3,7 @@ use cx_compiler_ast::parse::{parse_ast, CXTypesAndDeps};
 use cx_compiler_ast::{lex, preprocessor, LexContents, ParseContents, PreprocessContents};
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
-use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
@@ -177,7 +177,7 @@ impl CompilerPipeline {
     }
     
     pub fn emit_type_defs(self) -> Self {
-        let PipelineStage::TypesAndDependences(lexed, types_and_deps) = &self.pipeline_stage else {
+        let PipelineStage::TypesAndDependences(_, types_and_deps) = &self.pipeline_stage else {
             panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!");
         };
 

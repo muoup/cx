@@ -4,7 +4,7 @@ use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
-use crate::aux_routines::{allocate_variable, get_struct_field};
+use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_fixed_type_kind;
 use crate::deconstructor::deconstruct_variable;
@@ -16,11 +16,11 @@ pub fn generate_instruction(
 ) -> Option<ValueID> {
     match &expr.kind {
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Assign(_) } => {
-            let left_id = generate_instruction(builder, lhs.as_ref())?;
-            let right_id = generate_instruction(builder, rhs.as_ref())?;
-            let lhs_type = builder.get_expr_type(lhs.as_ref())?
+            let left_id = generate_instruction(builder, lhs)?;
+            let right_id = generate_instruction(builder, rhs)?;
+            let lhs_type = builder.get_expr_type(lhs)?
                 .clone();
-            
+
             let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type_kind(&builder.cx_type_map)?.clone()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
@@ -30,13 +30,13 @@ pub fn generate_instruction(
                 )?;
             }
             
-            let inner_as_bc = builder.convert_cx_type(&inner)?;
-            
+            let inner_type = builder.convert_fixed_cx_type(inner.as_ref())?;
+
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: left_id,
                     value: right_id,
-                    type_: inner_as_bc,
+                    type_: inner_type,
                 },
                 CXType::unit()
             )
@@ -114,8 +114,35 @@ pub fn generate_instruction(
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let rhs = comma_separated(rhs.as_ref());
-
+            
+            let (prototype, direct_call) = match builder.get_expr_intrinsic_type(lhs.as_ref())? {
+                CXTypeKind::Function { prototype } => (*prototype, true),
+                CXTypeKind::PointerTo { inner, .. } => {
+                    let Some(CXTypeKind::Function { prototype }) =
+                        inner.intrinsic_type_kind(&builder.cx_type_map) else {
+                        log_error!("Invalid function pointer type: {inner}");
+                    };
+                    (*prototype.clone(), false)
+                },
+                type_ => log_error!("Invalid function pointer type: {type_}"),
+            };
+            
             let mut args = vec![];
+            
+            if prototype.return_type.is_structured(&builder.cx_type_map) {
+                let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
+                
+                let buffer = builder.add_instruction_bt(
+                    VirtualInstruction::Allocate {
+                        size: buffer_type.fixed_size(),
+                        alignment: buffer_type.alignment(),
+                    },
+                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: buffer_type.fixed_size() as u32 })
+                )?;
+                
+                args.push(buffer);
+            }
+
             for arg in rhs {
                 let arg_id = generate_instruction(builder, arg)?;
                 args.push(arg_id);
@@ -220,12 +247,37 @@ pub fn generate_instruction(
         },
 
         CXExprKind::Return { value } => {
-            let value = match value {
-                Some(value) => generate_instruction(builder, value.as_ref()),
-                None => None
-            };
-
-            builder.add_return(value);
+            if value.is_none() {
+                builder.add_return(None);
+                return Some(ValueID::NULL);
+            }
+            
+            let value = value.as_ref().unwrap().as_ref();
+            let value_id = generate_instruction(builder, value)?;
+            let returned_type = builder.get_expr_type(value)?
+                .clone();
+            
+            if returned_type.is_structured(&builder.cx_type_map) {
+                let first_param = builder.add_instruction_bt(
+                    VirtualInstruction::FunctionParameter {
+                        param_index: 0,
+                    },
+                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 })
+                )?;
+                
+                builder.add_instruction(
+                    VirtualInstruction::Store {
+                        memory: first_param,
+                        value: value_id,
+                        type_: builder.convert_fixed_cx_type(&returned_type)?
+                    },
+                    CXType::unit()
+                )?;
+                
+                builder.add_return(Some(first_param));
+            } else {
+                builder.add_return(Some(value_id));
+            }
             
             Some(ValueID::NULL)
         },
@@ -665,9 +717,62 @@ pub fn generate_instruction(
             }
         },
         
-        CXExprKind::Taken => panic!("PANIC: Attempting to generate instruction for `Taken` expression, which should have been removed by the type checker."),
+        CXExprKind::InitializerList { indices } => {
+            let generated_type = builder.get_expr_type(expr)?;
+            let as_bc = builder.convert_cx_type(&generated_type)?;
+            
+            let alloc = builder.add_instruction_bt(
+                VirtualInstruction::Allocate {
+                    size: as_bc.fixed_size(),
+                    alignment: as_bc.alignment(),
+                },
+                BCType::default_pointer()
+            )?;
+            
+            builder.add_instruction(
+                VirtualInstruction::ZeroMemory {
+                    memory: alloc,
+                    _type: as_bc.clone(),
+                },
+                CXType::unit()
+            );
+            
+            for index in indices.iter() {
+                let value = generate_instruction(builder, &index.value)?;
+             
+                let access = get_cx_struct_field_by_index(
+                    builder,
+                    &as_bc,
+                    index.index
+                ).unwrap_or_else(|| {
+                    panic!("PANIC: Attempting to access non-existent field at index {} in struct {as_bc:?}", index.index);
+                });
+             
+                let struct_access = builder.add_instruction_bt(
+                    VirtualInstruction::StructAccess {
+                        struct_: alloc,
+                        struct_type: as_bc.clone(),
+                        field_offset: access.offset,
+                        field_index: access.index,
+                    },
+                    BCType::default_pointer()
+                )?;
+                
+                builder.add_instruction_bt(
+                    VirtualInstruction::Store {
+                        memory: struct_access,
+                        value,
+                        type_: access._type.clone()
+                    },
+                    BCType::unit()
+                )?;
+            }
+            
+            Some(alloc)
+        },
         
-        CXExprKind::Unit | CXExprKind::InitializerList { .. } => todo!(),
+        CXExprKind::Taken => panic!("PANIC: Attempting to generate instruction for `Taken` expression, which should have been removed by the type checker."),
+        CXExprKind::Unit => panic!("PANIC: Attempting to generate instruction for `Unit` expression, which should have been removed by the type checker."),
     }
 }
 

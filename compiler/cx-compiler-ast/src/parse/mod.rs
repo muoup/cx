@@ -13,6 +13,7 @@ pub mod typing;
 pub mod operators;
 mod parsing_tools;
 pub mod intrinsic_types;
+mod structured_initialization;
 
 #[derive(Debug)]
 pub struct CXTypesAndDeps {

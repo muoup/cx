@@ -29,6 +29,9 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
             (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
+            (CXTypeKind::MemoryAlias(inner), CXTypeKind::Structured { .. })
+                if same_type(env.type_map, inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
+
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
