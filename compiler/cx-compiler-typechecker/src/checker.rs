@@ -258,7 +258,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             
             if let Some(glob) = env.global_variables.get(name.as_str()) {
                 return match glob {
-                    CXGlobalVariable::GlobalConstant(global_constant) => {
+                    CXGlobalVariable::GlobalConstant { constant: global_constant, .. } => {
                         *expr = match global_constant {
                             CXGlobalConstant::Int(i) => {
                                 CXExprKind::IntLiteral {

@@ -98,7 +98,14 @@ pub enum CXInitIndex {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXGlobalVariable {
-    GlobalConstant(CXGlobalConstant),
+    GlobalConstant {
+        // if the constant cannot be addressed (e.g. intrinsic generated constants like enum values),
+        // these values do not need to be generated in the final binary
+        //
+        // anonymous - true if the constant fits this criteria, false if it can be addressed
+        anonymous: bool,
+        constant: CXGlobalConstant
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

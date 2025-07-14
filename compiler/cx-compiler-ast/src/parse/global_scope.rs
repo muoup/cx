@@ -125,9 +125,10 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Op
         
         ast.global_variables.insert(
             enum_name.as_str().into(),
-            CXGlobalVariable::GlobalConstant(
-                CXGlobalConstant::Int(counter)
-            )
+            CXGlobalVariable::GlobalConstant {
+                anonymous: true,
+                constant: CXGlobalConstant::Int(counter)
+            }
         );
 
         counter += 1;
