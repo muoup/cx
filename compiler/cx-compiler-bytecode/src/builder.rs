@@ -9,8 +9,9 @@ use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::format::{dump_all, dump_data};
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
+use crate::aux_routines::deconstruct_scope;
 use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
-use crate::instruction_gen::{implicit_defer_return, implicit_return};
+use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 
 #[derive(Debug)]
 pub struct BytecodeBuilder {
@@ -24,10 +25,10 @@ pub struct BytecodeBuilder {
     pub fn_map: BCFunctionMap,
     
     pub type_check_data: TypeCheckData,
-
-    pub symbol_table: ScopedMap<ValueID>,
-
-    complex_types: HashSet<u64>,
+    
+    declaration_scope: Vec<Vec<DeclarationLifetime>>,
+    symbol_table: ScopedMap<ValueID>,
+    
     in_deferred_block: bool,
     function_context: Option<BytecodeFunctionContext>,
 }
@@ -42,6 +43,12 @@ pub struct BytecodeFunctionContext {
 
     blocks: Vec<FunctionBlock>,
     deferred_blocks: Vec<FunctionBlock>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeclarationLifetime {
+    pub value_id: ValueID,
+    pub _type: CXType
 }
 
 impl BytecodeBuilder {
@@ -60,8 +67,8 @@ impl BytecodeBuilder {
             in_deferred_block: false,
 
             symbol_table: ScopedMap::new(),
+            declaration_scope: Vec::new(),
 
-            complex_types: HashSet::new(),
             function_context: None
         }
     }
@@ -132,6 +139,40 @@ impl BytecodeBuilder {
     fn fun(&self) -> &BytecodeFunctionContext {
         self.function_context.as_ref()
             .expect("Attempted to access function context with no current function selected")
+    }
+    
+    pub fn push_scope(&mut self) {
+        self.symbol_table.push_scope();
+        self.declaration_scope.push(Vec::new());
+    }
+    
+    pub fn pop_scope(&mut self) -> Option<()> {
+        self.symbol_table.pop_scope();
+        let decls = self.declaration_scope.pop();
+    
+        deconstruct_scope(self, decls?.as_slice())
+    }
+    
+    pub fn generate_scoped(&mut self, expr: &CXExpr) -> BytecodeResult<ValueID> {
+        self.push_scope();
+        let val = generate_instruction(self, expr)?;
+        self.pop_scope()?;
+        
+        Some(val)
+    }
+    
+    pub fn insert_declaration(&mut self, declaration: DeclarationLifetime) {
+        self.declaration_scope.last_mut()
+            .expect("INTERNAL PANIC: Attempted to insert declaration with no current scope")
+            .push(declaration);
+    }
+    
+    pub fn insert_symbol(&mut self, name: String, value_id: ValueID) {
+        self.symbol_table.insert(name, value_id);
+    }
+    
+    pub fn get_symbol(&self, name: &str) -> Option<ValueID> {
+        self.symbol_table.get(name).cloned()
     }
     
     pub fn function_defers(&self) -> bool {
@@ -344,6 +385,7 @@ impl BytecodeBuilder {
     }
     
     pub fn start_cont_point(&mut self) -> BlockID {
+        self.push_scope();
         let cond_block = self.create_block();
 
         let context = self.fun_mut();
@@ -404,6 +446,7 @@ impl BytecodeBuilder {
     }
 
     pub fn start_scope(&mut self) -> BlockID {
+        self.push_scope();
         let merge_block = self.create_named_block("merge");
 
         let context = self.fun_mut();
@@ -425,6 +468,7 @@ impl BytecodeBuilder {
     }
 
     pub fn end_scope(&mut self) {
+        self.pop_scope();
         let context = self.fun_mut();
 
         let merge_block = context.merge_stack.pop().unwrap();
@@ -432,6 +476,7 @@ impl BytecodeBuilder {
     }
 
     pub fn end_cond(&mut self) {
+        self.pop_scope();
         let context = self.fun_mut();
 
         context.continue_stack.pop().unwrap();

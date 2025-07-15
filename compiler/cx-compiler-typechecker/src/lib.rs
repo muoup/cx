@@ -65,7 +65,7 @@ pub(crate) struct TypeEnvironment<'a> {
     fn_map: &'a mut CXFunctionMap,
     symbol_table: ScopedMap<CXType>,
     typecheck_data: TypeCheckData,
-    
+
     global_variables: &'a HashMap<String, CXGlobalVariable>,
     
     current_prototype: Option<CXFunctionPrototype>,
