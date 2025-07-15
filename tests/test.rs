@@ -29,15 +29,15 @@ fn run_tests() {
             let expected_output = std::fs::read_to_string(&expected_output_path).unwrap_or_else(|_|
                 panic!("Could not read expected output file: {expected_output_path:?}")
             );
-
+            
             debug_compile(path.to_str().unwrap(), "a.out", CompilerBackend::Cranelift, Default::default());
             assert_eq!(expected_output, get_output(), "Cranelift output does not match expected output for {}", path.display());
-
+            
             if cfg!(feature = "backend-llvm") {
                 debug_compile(path.to_str().unwrap(), "a.out", CompilerBackend::LLVM, Default::default());
                 assert_eq!(expected_output, get_output(), "LLVM output does not match expected output for {}", path.display());
             }
-
+            
             println!("[{}] Output matches expected output.", path.display());
 
             std::fs::remove_file("a.out").unwrap_or_else(|_| {

@@ -41,7 +41,8 @@ pub fn generate_instruction(
                 CXType::unit()
             )
         },
-        CXExprKind::VarDeclaration { name, type_ } =>
+        
+        CXExprKind::VarDeclaration { name, type_ } => 
             allocate_variable(name.as_str(), builder, type_),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } => {

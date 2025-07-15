@@ -62,13 +62,20 @@ pub(crate) fn get_cx_struct_field_by_index(
     }
     
     let mut offset = 0;
+    let mut field_iter = fields.iter().peekable();
     
-    for (i, (_, t)) in fields.iter().enumerate() {
-        offset = align_offset(offset, t.alignment() as usize) + t.fixed_size();
+    for _ in 0..index {
+        let (_, field_type) = field_iter.next()?;
+
+        offset += field_type.fixed_size();
+        
+        let alignment = field_iter.peek()
+            .map(|(_, next_type)| next_type.alignment() as usize)
+            .expect("get_cx_struct_field_by_index: Out of bounds access");
+        offset = align_offset(offset, alignment);
     }
     
     let field_type = fields[index].1.clone();
-    offset -= field_type.fixed_size();
     
     Some(StructAccess {
         offset, index,

@@ -128,23 +128,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             match value {
                 Some(value) => {
                     let return_value = context.variable_table.get(value).cloned().unwrap();
-
-                    if context.function_prototype.return_type.is_structure() {
-                        let size = context.function_prototype.return_type.fixed_size();
-                        let size_literal = context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64);
-                        let callee_buffer = Value::from_u32(0);
-
-                        context.builder.call_memcpy(
-                            *context.target_frontend_config,
-                            callee_buffer,
-                            return_value.as_value(),
-                            size_literal
-                        );
-
-                        context.builder.ins().return_(&[callee_buffer]);
-                    } else {
-                        context.builder.ins().return_(&[return_value.as_value()]);
-                    }
+                    context.builder.ins().return_(&[return_value.as_value()]);
                 },
                 None => {
                     context.builder.ins().return_(&[]);
