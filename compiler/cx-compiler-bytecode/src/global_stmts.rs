@@ -12,7 +12,7 @@ pub(crate) fn generate_function(
     prototype: &CXFunctionPrototype,
     body: &CXExpr
 ) -> Option<()> {
-    builder.symbol_table.push_scope();
+    builder.push_scope();
 
     let bc_prototype = builder.convert_cx_prototype(prototype).unwrap();
     builder.new_function(bc_prototype.clone());
@@ -23,7 +23,7 @@ pub(crate) fn generate_function(
         panic!("Failed to generate body for function: {}", prototype.name);
     };
 
-    builder.symbol_table.pop_scope();
+    builder.pop_scope();
     builder.finish_function(false);
 
     Some(())
@@ -39,7 +39,7 @@ pub(crate) fn generate_destructor(
         .cloned()
         .expect("Failed to find destructor prototype in function map");
 
-    builder.symbol_table.push_scope();
+    builder.push_scope();
     builder.new_function(prototype);
 
     let this = builder.add_instruction_bt(
@@ -49,13 +49,13 @@ pub(crate) fn generate_destructor(
         BCType::default_pointer()
     )?;
 
-    builder.symbol_table.insert("this".to_string(), this);
+    builder.insert_symbol("this".to_string(), this);
 
     let Some(_) = generate_instruction(builder, body) else {
         panic!("Failed to generate body for destructor: {}", type_name);
     };
 
-    builder.symbol_table.pop_scope();
+    builder.pop_scope();
     builder.finish_function(false);
 
     Some(())

@@ -3,7 +3,8 @@ use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_util::bytecode_error_log;
-use crate::builder::BytecodeBuilder;
+use crate::builder::{BytecodeBuilder, DeclarationLifetime};
+use crate::BytecodeResult;
 use crate::deconstructor::deconstruct_variable;
 use crate::instruction_gen::generate_instruction;
 
@@ -122,17 +123,13 @@ pub(crate) fn allocate_variable(
         }
     };
 
-    builder.symbol_table.insert(name.to_owned(), memory);
-    
-    if builder.function_defers() {
-        let current_block = builder.current_block();
-        
-        builder.enter_deferred_logic();
-        deconstruct_variable(builder, memory, var_type, true)?;
-        builder.exit_deferred_logic();
-        
-        builder.set_current_block(current_block);
-    }
+    builder.insert_symbol(name.to_owned(), memory);
+    builder.insert_declaration(
+        DeclarationLifetime {
+            value_id: memory,
+            _type: var_type.clone()
+        }
+    );
     
     if variable_requires_nulling(&builder.cx_type_map, var_type)? {
         builder.add_instruction_bt(
@@ -145,4 +142,15 @@ pub(crate) fn allocate_variable(
     }
 
     Some(memory)
+}
+
+pub(crate) fn deconstruct_scope(
+    builder: &mut BytecodeBuilder,
+    scope: &[DeclarationLifetime]
+) -> BytecodeResult<()> {
+    for lifetime in scope {
+        deconstruct_variable(builder, lifetime.value_id.clone(), &lifetime._type, true)?;
+    }
+    
+    Some(())
 }
