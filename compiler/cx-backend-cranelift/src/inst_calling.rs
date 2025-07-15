@@ -18,10 +18,6 @@ pub(crate) fn prepare_function_sig(
 
     if !prototype.return_type.is_void() {
         sig.returns.push(get_cranelift_abi_type(&prototype.return_type));
-
-        if prototype.return_type.is_structure() {
-            sig.params.push(get_cranelift_abi_type(&prototype.return_type));
-        }
     }
 
     for BCParameter { _type: type_, .. } in prototype.params.iter() {

@@ -1,10 +1,11 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable, CXParameter, CXAST};
+use cx_data_ast::parse::identifier::parse_std_ident;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::CXTypeKind;
-use crate::parse::typing::parse_initializer;
+use crate::parse::typing::{parse_enum, parse_initializer};
 use cx_util::{log_error, point_log_error};
 use crate::parse::parsing_tools::goto_statement_end;
 
@@ -17,6 +18,8 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
         TokenKind::Keyword(KeywordType::Import) => goto_statement_end(data),
         
         TokenKind::Operator(OperatorType::Tilda) => parse_destructor(data, ast),
+        
+        TokenKind::Keyword(KeywordType::Enum) => parse_enum_constants(data, ast),
         
         TokenKind::Punctuator(PunctuatorType::Semicolon) => {
             data.toks.next();
@@ -95,6 +98,48 @@ pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option
         }
     );
     
+    Some(())
+}
+
+pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Enum));
+
+    let Some(name) = parse_std_ident(data) else {
+        point_log_error!(data, "PARSER ERROR: Failed to parse enum name");
+    };
+
+    if !try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
+        return Some(());
+    }
+
+    let mut counter = 0;
+
+    loop {
+        assert_token_matches!(data, TokenKind::Identifier(enum_name));
+        let enum_name = enum_name.clone();
+        
+        if try_next!(data, TokenKind::Assignment(None)) {
+            assert_token_matches!(data, TokenKind::IntLiteral(value));
+            counter = *value as i32;
+        }
+        
+        ast.global_variables.insert(
+            enum_name.as_str().into(),
+            CXGlobalVariable::GlobalConstant {
+                anonymous: true,
+                constant: CXGlobalConstant::Int(counter)
+            }
+        );
+
+        counter += 1;
+
+        if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) {
+            break;
+        }
+    }
+    
+    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace));
+
     Some(())
 }
 

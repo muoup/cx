@@ -18,6 +18,8 @@ pub(crate) fn add_destructor_prototypes(
                 0,
                 CXTypeKind::PointerTo {
                     inner: Box::new(_type.clone()),
+                    
+                    sizeless_array: false,
                     explicitly_weak: true,
                     nullable: false,
                 },

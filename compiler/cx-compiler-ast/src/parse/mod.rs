@@ -13,8 +13,16 @@ pub mod typing;
 pub mod operators;
 mod parsing_tools;
 pub mod intrinsic_types;
+mod structured_initialization;
 
-pub fn parse_types_and_deps(mut data: ParserData) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
+#[derive(Debug)]
+pub struct CXTypesAndDeps {
+    pub type_map: CXTypeMap,
+    pub public_types: Vec<String>,
+    pub imports: Vec<String>,
+}
+
+pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXTypesAndDeps> {
     let (mut type_map, public_types, mut imports) = parse_types(&mut data)?;
 
     if !data.file_path.contains("/lib/std/") {
@@ -23,7 +31,11 @@ pub fn parse_types_and_deps(mut data: ParserData) -> Option<(CXTypeMap, Vec<Stri
     
     add_intrinsic_types(&mut type_map);
 
-    Some((type_map, public_types, imports))
+    Some(CXTypesAndDeps {
+        type_map,
+        public_types,
+        imports,
+    })
 }
 
 pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, imports: Vec<String>) -> Option<CXAST> {
@@ -38,6 +50,8 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
         
         type_map,
         function_map: HashMap::new(),
+        
+        global_variables: HashMap::new(),
     };
 
     data.reset();

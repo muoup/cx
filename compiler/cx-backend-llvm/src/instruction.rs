@@ -104,19 +104,6 @@ pub(crate) fn generate_instruction<'a>(
                     })
                     .collect::<Option<Vec<_>>>()?;
 
-                if method_sig.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(global_state, &method_sig.return_type)?;
-                    let temp_buffer = function_state
-                        .builder
-                        .build_alloca(
-                            any_to_basic_type(llvm_type)?,
-                            inst_num().as_str()
-                        )
-                        .unwrap();
-
-                    arg_vals.insert(0, temp_buffer.into());
-                }
-
                 let val = function_state.builder
                     .build_direct_call(function_val, arg_vals.as_slice(), inst_num().as_str())
                     .unwrap();
@@ -154,19 +141,6 @@ pub(crate) fn generate_instruction<'a>(
                         Some(basic_val.into())
                     })
                     .collect::<Option<Vec<_>>>()?;
-
-                if method_sig.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(global_state, &method_sig.return_type)?;
-                    let temp_buffer = function_state
-                        .builder
-                        .build_alloca(
-                            any_to_basic_type(llvm_type)?,
-                            inst_num().as_str()
-                        )
-                        .unwrap();
-
-                    args.insert(0, temp_buffer.into());
-                }
                 
                 let val = function_state.builder
                     .build_indirect_call(
@@ -350,14 +324,8 @@ pub(crate) fn generate_instruction<'a>(
                     .get(function_state.current_function.as_str())
                     .unwrap();
                 
-                let param_index = if function.return_type.is_structure() {
-                    *param_index + 1 // Skip the first parameter for the return type
-                } else {
-                    *param_index
-                };
-                
                 let param = function_val
-                    .get_nth_param(param_index)
+                    .get_nth_param(*param_index)
                     .unwrap();
                 
                 CodegenValue::Value(param.as_any_value_enum())
@@ -379,7 +347,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_pointer_value();
                 
-                if basic_type.is_struct_type() {
+                if type_.is_structure() {
                     function_state
                         .builder
                         .build_memcpy(

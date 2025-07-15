@@ -135,6 +135,21 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
             )
         },
         
+        TokenKind::Keyword(KeywordType::Enum) => {
+            data.toks.next();
+            
+            let TokenKind::Identifier(name) = &data.toks.peek()?.kind else {
+                return Some(TypeRecord { name: None, type_: CXType::unit() });
+            };
+            let name = name.clone();
+            
+            data.toks.back();
+            
+            let type_ = parse_enum(data)?;
+            
+            Some(TypeRecord { name: Some(name.to_string()), type_: type_.to_val_type() })
+        },
+        
         TokenKind::Keyword(KeywordType::Union) => {
             let type_ = parse_union(data)?;
             
@@ -189,6 +204,14 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     }
 
     Some(CXTypeKind::Structured { name, fields, has_destructor: false })
+}
+
+pub(crate) fn parse_enum(data: &mut ParserData) -> Option<CXTypeKind> {
+    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Enum));
+    
+    goto_statement_end(data);
+    
+    Some(CXTypeKind::Integer { signed: true, bytes: 4})
 }
 
 pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {
@@ -279,6 +302,7 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
                 CXTypeKind::PointerTo { 
                     inner: Box::new(acc_type),
                     
+                    sizeless_array: false,
                     explicitly_weak: true,
                     nullable: true
                 }
@@ -332,7 +356,13 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
 
             let _type = match data.toks.peek()?.kind {
                 TokenKind::Punctuator(PunctuatorType::CloseBracket) => {
-                    acc_type.pointer_to()
+                    CXTypeKind::PointerTo {
+                        inner: Box::new(acc_type),
+                        
+                        sizeless_array: true,
+                        nullable: true,
+                        explicitly_weak: false,
+                    }.to_val_type()
                 },
                 TokenKind::IntLiteral(size) => {
                     data.toks.next();
@@ -365,6 +395,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
                 predeclaration: PredeclarationType::None
             }.to_val_type()
         ),
+        
         TokenKind::Intrinsic(_) => Some(
             CXTypeKind::Identifier {
                 name: parse_intrinsic(data)?,
@@ -376,6 +407,10 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
             parse_struct(data)?.to_val_type()
         ),
         
+        TokenKind::Keyword(KeywordType::Enum) => Some(
+            parse_enum(data)?.to_val_type()
+        ),
+         
         TokenKind::Keyword(KeywordType::Union) => Some(
             parse_union(data)?.to_val_type()
         ),

@@ -7,6 +7,7 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error};
+use crate::parse::structured_initialization::parse_structured_initialization;
 use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
@@ -220,6 +221,13 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
             expr.kind
         },
+        
+        TokenKind::Punctuator(PunctuatorType::OpenBrace) => {
+            data.toks.back();
+            
+            parse_structured_initialization(data)?.kind
+        }
+        
         TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
             if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket)) {
                 expr_stack.push(CXExprKind::Unit.into_expr(start_index, data.toks.index));

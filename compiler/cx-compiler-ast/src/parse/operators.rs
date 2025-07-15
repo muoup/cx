@@ -166,6 +166,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
                 if data.get_comma_mode() {
                     op_to_binop(OperatorType::Comma)?
                 } else {
+                    data.toks.back();
                     return None;
                 }
             },

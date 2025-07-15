@@ -1,9 +1,10 @@
 use cx_compiler_ast::parse::operators::{comma_separated_mut};
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
 use cx_data_ast::parse::value_type::{get_intrinsic_type, same_type, CXTypeKind, CXType, CX_CONST};
 use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::typecheck_access;
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
+use crate::structured_initialization::coerce_initializer_list;
 use crate::TypeEnvironment;
 
 pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXType> {
@@ -255,6 +256,25 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     CXTypeKind::Function { prototype: Box::new(func.clone()) }.to_val_type()
                 );
             };
+            
+            if let Some(glob) = env.global_variables.get(name.as_str()) {
+                return match glob {
+                    CXGlobalVariable::GlobalConstant { constant: global_constant, .. } => {
+                        *expr = match global_constant {
+                            CXGlobalConstant::Int(i) => {
+                                CXExprKind::IntLiteral {
+                                    bytes: 4,
+                                    val: *i as i64,
+                                }.into_expr(expr.start_index, expr.end_index)
+                            },
+                            
+                            _ => log_error!("TYPE ERROR: Global constant expected, found: {glob:?}"),
+                        };
+                        
+                        Some(CXTypeKind::Integer { bytes: 4, signed: true }.to_val_type())
+                    }
+                };
+            }
 
             log_error!("TYPE ERROR: Unknown identifier {name}");
         },
@@ -332,10 +352,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             
             Some(CXType::unit())
         },
-
-        CXExprKind::InitializerList { indices } =>
-            log_error!("Bare initializer list {indices:?} found in expression context"),
-
+        
         CXExprKind::ImplicitCast { to_type, .. } => Some(to_type.clone()),
         CXExprKind::ImplicitLoad { loaded_type, .. } => Some(loaded_type.clone()),
         CXExprKind::GetFunctionAddr { func_sig, .. } => Some(func_sig.clone().pointer_to()),
@@ -398,6 +415,10 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             }))
         },
         
+        CXExprKind::InitializerList { indices } =>
+            Some(CXType::unit()),
+            // log_error!("Bare initializer list {indices:?} found in expression context"),
+        
         CXExprKind::Unit |
         CXExprKind::Break |
         CXExprKind::Continue => Some(CXType::unit()),
@@ -411,6 +432,10 @@ pub(crate) fn implicit_coerce(
     expr: &mut CXExpr,
     to_type: CXType
 ) -> Option<()> {
+    if matches!(expr.kind, CXExprKind::InitializerList { .. }) {
+        coerce_initializer_list(env, expr, &to_type)?;
+    }
+    
     let from_type = coerce_value(env, expr)?;
 
     if same_type(env.type_map, &from_type, &to_type) {
@@ -520,6 +545,7 @@ pub(crate) fn coerce_value(
                     CXTypeKind::PointerTo {
                         inner: inner.clone(),
                         
+                        sizeless_array: false,
                         explicitly_weak: false,
                         nullable: true,
                     }

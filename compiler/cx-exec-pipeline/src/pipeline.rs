@@ -1,9 +1,9 @@
 use crate::{request_compile, request_type_compilation};
-use cx_compiler_ast::parse::parse_ast;
+use cx_compiler_ast::parse::{parse_ast, CXTypesAndDeps};
 use cx_compiler_ast::{lex, preprocessor, LexContents, ParseContents, PreprocessContents};
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
-use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
@@ -36,7 +36,7 @@ pub enum PipelineStage {
     FileRead(String),
     Preprocessed(PreprocessContents),
     Lexed(LexContents),
-    TypesAndDependences(LexContents, CXTypeMap, Vec<String>, Vec<String>),
+    TypesAndDependences(LexContents, CXTypesAndDeps),
     Parsed(ParseContents),
     Typechecked(CXAST, TypeCheckData),
     Bytecode(ProgramBytecode),
@@ -151,38 +151,37 @@ impl CompilerPipeline {
 
         let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let (mut type_map, public_types, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data)
+        let mut types_and_deps = cx_compiler_ast::parse::parse_types_and_deps(parser_data)
             .expect("Failed to parse types and dependencies");
 
-        let recursive_imports = request_type_compilation(imports.as_slice())
+        let recursive_imports = request_type_compilation(types_and_deps.imports.as_slice())
             .expect("Failed to request compile for imports");
-        imports.extend(recursive_imports);
-        
-        for import in imports.iter() {
+        types_and_deps.imports.extend(recursive_imports);
+
+        for import in types_and_deps.imports.iter() {
             let deserialized = cx_compiler_modules::deserialize_type_data(import)
                 .unwrap_or_else(|| panic!("Failed to deserialize module data for import: {import}"));
             
             for (type_name, cx_type) in deserialized {
-                if type_map.contains_key(&type_name) {
+                if types_and_deps.type_map.contains_key(&type_name) {
                     eprintln!("WARNING: Type {type_name} already exists in the type map, skipping import.");
                 } else {
-                    type_map.insert(type_name, cx_type);
+                    types_and_deps.type_map.insert(type_name, cx_type);
                 }
             }
         }
 
-        self.imports = imports;
-        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, type_map, public_types, self.imports.clone());
+        self.imports = types_and_deps.imports.clone();
+        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, types_and_deps);
         self
     }
     
     pub fn emit_type_defs(self) -> Self {
-        let (_, types, public_types, _) = match &self.pipeline_stage {
-            PipelineStage::TypesAndDependences(lexed, types, public_types, dependencies) => (lexed, types, public_types, dependencies),
-            _ => panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!"),
+        let PipelineStage::TypesAndDependences(_, types_and_deps) = &self.pipeline_stage else {
+            panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!");
         };
 
-        cx_compiler_modules::serialize_type_data(self.internal_dir.as_str(), types, public_types.iter())
+        cx_compiler_modules::serialize_type_data(self.internal_dir.as_str(), &types_and_deps.type_map, types_and_deps.public_types.iter())
             .expect("Failed to serialize type data to header file");
 
         self
@@ -201,21 +200,20 @@ impl CompilerPipeline {
     }
 
     pub fn parse(mut self) -> Self {
-        let (lexed, types, _, dependencies) = match std::mem::take(&mut self.pipeline_stage) {
-            PipelineStage::TypesAndDependences(lexed, types, public_types, dependencies) => (lexed, types, public_types, dependencies),
-            _ => panic!("PIPELINE ERROR: Cannot parse without types and dependencies! Found stage: {:?}", self.pipeline_stage),
+        let PipelineStage::TypesAndDependences(lexed, types_and_deps) = std::mem::take(&mut self.pipeline_stage) else {
+            panic!("PIPELINE ERROR: Cannot parse without types and dependencies!");
         };
         
         let mut parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
         
-        for name in types.keys() {
+        for name in types_and_deps.type_map.keys() {
             parser_data.type_symbols.insert(name.clone());
         }
         
-        request_compile(dependencies.as_slice(), self.backend, self.optimization_level)
+        request_compile(types_and_deps.imports.as_slice(), self.backend, self.optimization_level)
             .expect("Failed to request compile for dependencies");
 
-        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types, dependencies) else {
+        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types_and_deps.type_map, types_and_deps.imports) else {
             panic!("ERROR: Failed to parse AST");
         };
         

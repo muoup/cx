@@ -23,6 +23,8 @@ pub struct CXAST {
 
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
+    
+    pub global_variables: HashMap<String, CXGlobalVariable>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,9 +91,27 @@ pub enum CXBinOp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CXInitIndex {
-    Named(CXIdent, Box<CXExpr>),
-    Unnamed(Box<CXExpr>)
+pub struct CXInitIndex {
+    pub name: Option<String>,
+    pub value: CXExpr,
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CXGlobalVariable {
+    GlobalConstant {
+        // if the constant cannot be addressed (e.g. intrinsic generated constants like enum values),
+        // these values do not need to be generated in the final binary
+        //
+        // anonymous - true if the constant fits this criteria, false if it can be addressed
+        anonymous: bool,
+        constant: CXGlobalConstant
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CXGlobalConstant {
+    Int(i32)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,6 +264,12 @@ pub enum CXCastType {
     PtrToInt,
     IntToPtr,
     FunctionToPointerDecay,
+    
+    // The difference between a memory reference and a bare type is that a memory reference
+    // is stored in memory. A structured type is itself a memory reference despite this
+    // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
+    // used to create an explicit no-op to appease the typechecker.
+    FauxLoad,
     
     AddPointerTag,
     RemovePointerTag

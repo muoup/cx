@@ -186,6 +186,10 @@ pub(crate) fn implicit_cast(
             )
         },
         
+        CXCastType::FauxLoad => {
+            Some(value)
+        },
+        
         _ => todo!("implicit_cast({cast_type:?})")
     }
 }

@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use cx_data_ast::lex::token::Token;
-use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXParameter, CXTypeMap, CXAST};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
@@ -14,6 +15,7 @@ mod struct_typechecking;
 mod casting;
 mod importing;
 mod global_stmts;
+mod structured_initialization;
 
 pub type TypeCheckResult<T> = Option<T>;
 
@@ -27,6 +29,7 @@ pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
         fn_map: &mut ast.function_map,
         
         symbol_table: ScopedMap::new(),
+        global_variables: &ast.global_variables,
         
         current_prototype: None,
         typecheck_data: TypeCheckData::new(),
@@ -62,6 +65,8 @@ pub(crate) struct TypeEnvironment<'a> {
     fn_map: &'a mut CXFunctionMap,
     symbol_table: ScopedMap<CXType>,
     typecheck_data: TypeCheckData,
+    
+    global_variables: &'a HashMap<String, CXGlobalVariable>,
     
     current_prototype: Option<CXFunctionPrototype>,
 }

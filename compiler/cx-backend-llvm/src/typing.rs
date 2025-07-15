@@ -110,7 +110,14 @@ pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &BCFunctionPrototype
 ) -> Option<FunctionType<'a>> {
-    let return_type = bc_llvm_type(state, &prototype.return_type)?;
+    let return_type = match bc_llvm_type(state, &prototype.return_type)? {
+        AnyTypeEnum::StructType(struct_type) =>
+            state.context.ptr_type(AddressSpace::from(0))
+                .as_any_type_enum(),
+        
+        any_type => any_type
+    };
+    
     let args = prototype
         .params
         .iter()
