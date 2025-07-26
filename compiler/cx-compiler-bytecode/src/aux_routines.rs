@@ -7,7 +7,7 @@ use crate::builder::BytecodeBuilder;
 use crate::deconstructor::deconstruct_variable;
 use crate::instruction_gen::generate_instruction;
 
-pub(crate) struct StructAccess {
+pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
     pub(crate) index: usize,
     pub(crate) _type: BCType,
@@ -25,7 +25,7 @@ pub(crate) fn get_struct_field(
     builder: &BytecodeBuilder,
     _type: &BCType,
     name: &str
-) -> Option<StructAccess> {
+) -> Option<CXStructAccess> {
     let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(builder, "PANIC: Expected struct type on access {name}, got: {:?}", _type);
     };
@@ -36,7 +36,7 @@ pub(crate) fn get_struct_field(
         offset = align_offset(offset, field_type.alignment() as usize);
         
         if field_name == name {
-            return Some(StructAccess {
+            return Some(CXStructAccess {
                 offset, index,
                 _type: field_type.clone()
             });
@@ -52,7 +52,7 @@ pub(crate) fn get_cx_struct_field_by_index(
     builder: &BytecodeBuilder,
     _type: &BCType,
     index: usize
-) -> Option<StructAccess> {
+) -> Option<CXStructAccess> {
     let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(builder, "PANIC: Expected struct type on access by index {index}, got: {:?}", _type);
     };
@@ -77,7 +77,7 @@ pub(crate) fn get_cx_struct_field_by_index(
     
     let field_type = fields[index].1.clone();
     
-    Some(StructAccess {
+    Some(CXStructAccess {
         offset, index,
         _type: field_type
     })
