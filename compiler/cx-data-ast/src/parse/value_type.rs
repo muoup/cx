@@ -20,6 +20,14 @@ pub struct CXType {
     pub kind: CXTypeKind,
 }
 
+impl PartialEq<Self> for CXType {
+    fn eq(&self, other: &Self) -> bool {
+        self.uuid == other.uuid
+    }
+}
+
+impl Eq for CXType {}
+
 impl Hash for CXType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u64(self.uuid)

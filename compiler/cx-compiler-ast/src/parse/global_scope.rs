@@ -6,25 +6,31 @@ use cx_data_ast::parse::identifier::parse_std_ident;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::typing::{parse_enum, parse_initializer};
-use cx_util::{log_error, point_log_error};
+use cx_util::{log_error, point_log_error, CXResult};
 use crate::parse::parsing_tools::goto_statement_end;
+use crate::parse::template::parse_templated_expr;
 
-pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> CXResult<Option<CXGlobalStmt>> {
     match data.toks.peek()
         .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!")
         .kind {
-
+        
         TokenKind::Keyword(KeywordType::Typedef) |
-        TokenKind::Keyword(KeywordType::Import) => goto_statement_end(data),
+        TokenKind::Keyword(KeywordType::Import) => {
+            goto_statement_end(data);
+            Some(None)
+        },
+        
+        TokenKind::Punctuator(PunctuatorType::Semicolon) => {
+            data.toks.next();
+            Some(None)
+        },
         
         TokenKind::Operator(OperatorType::Tilda) => parse_destructor(data, ast),
         
         TokenKind::Keyword(KeywordType::Enum) => parse_enum_constants(data, ast),
+        TokenKind::Keyword(KeywordType::Template) => parse_templated_expr(data, ast),
         
-        TokenKind::Punctuator(PunctuatorType::Semicolon) => {
-            data.toks.next();
-            Some(())
-        },
         TokenKind::Specifier(_) => parse_access_mods(data, ast),
 
         _ => parse_global_expr(data, ast)
@@ -74,7 +80,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
     Some(import_path)
 }
 
-pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data, TokenKind::Operator(OperatorType::Tilda));
     assert_token_matches!(data, TokenKind::Identifier(name));
     
@@ -91,17 +97,17 @@ pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option
     
     *has_destructor = true;
     
-    ast.global_stmts.push(
-        CXGlobalStmt::DestructorDefinition {
-            type_name: name,
-            body: Box::new(body),
-        }
-    );
-    
-    Some(())
+    Some(
+        Some(
+            CXGlobalStmt::DestructorDefinition {
+                type_name: name,
+                body: Box::new(body),
+            }
+        )
+    )
 }
 
-pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Option<Option<CXGlobalStmt>> {
     assert_token_matches!(data, TokenKind::Keyword(KeywordType::Enum));
 
     let Some(name) = parse_std_ident(data) else {
@@ -109,7 +115,7 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Op
     };
 
     if !try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
-        return Some(());
+        return Some(None);
     }
 
     let mut counter = 0;
@@ -140,17 +146,17 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Op
     
     assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace));
 
-    Some(())
+    Some(None)
 }
 
-pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> CXResult<Option<CXGlobalStmt>> {
     let Some((name, return_type)) = parse_initializer(data) else {
         point_log_error!(data, "PARSER ERROR: Failed to parse initializer in global expression!");
     };
     
     let Some(name) = name else {
         goto_statement_end(data);
-        return Some(());
+        return Some(None);
     };
     
     if !data.toks.has_next() {
@@ -169,26 +175,26 @@ pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Optio
                 var_args: result.var_args,
             };
             
-            ast.function_map.insert(prototype.name.as_string(), prototype.clone());
+            ast.function_map.insert(
+                prototype.name.to_string(),
+                prototype.clone()
+            );
             
-            if data.visibility == VisibilityMode::Public {
-                ast.public_functions.push(prototype.name.as_string());
-            }
-
-            if !try_next!(data, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
+            if try_next!(data, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
+                Some(Some(CXGlobalStmt::FunctionPrototype { prototype }))
+            } else {
                 let body = Box::new(parse_body(data)?);
-                ast.global_stmts.push(CXGlobalStmt::FunctionDefinition { prototype, body })
+                Some(Some(CXGlobalStmt::FunctionDefinition { prototype, body }))
             }
-
-            Some(())
         },
 
         TokenKind::Punctuator(PunctuatorType::Semicolon)
         | TokenKind::Assignment(_) => todo!("Global variables"),
+        
 
         _ => {
             goto_statement_end(data);
-            Some(())
+            Some(None)
         },
     }
 }

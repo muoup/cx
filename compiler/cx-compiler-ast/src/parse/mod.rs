@@ -14,6 +14,7 @@ pub mod operators;
 mod parsing_tools;
 pub mod intrinsic_types;
 mod structured_initialization;
+mod template;
 
 #[derive(Debug)]
 pub struct CXTypesAndDeps {
@@ -28,7 +29,7 @@ pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXTypesAndDeps> {
     if !data.file_path.contains("/lib/std/") {
         add_intrinsic_imports(&mut imports);
     }
-    
+
     add_intrinsic_types(&mut type_map);
 
     Some(CXTypesAndDeps {
@@ -57,9 +58,13 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
     data.reset();
 
     while data.toks.has_next() {
-        let Some(_) = parse_global_stmt(&mut data, &mut cx_ast) else {
+        let Some(expr) = parse_global_stmt(&mut data, &mut cx_ast) else {
             point_log_error!(data, "PARSER ERROR: Failed to parse global statement");
         };
+        
+        match expr {
+            _ => ()
+        }
     }
     
     Some(cx_ast)

@@ -27,6 +27,12 @@ pub struct CXAST {
     pub global_variables: HashMap<String, CXGlobalVariable>,
 }
 
+#[derive(Debug)]
+pub struct CXTemplate {
+    pub generic_types: Vec<String>,
+    pub body: CXGlobalStmt
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXParameter {
     pub name: Option<CXIdent>,
@@ -43,12 +49,21 @@ pub struct CXFunctionPrototype {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CXGlobalStmt {
+    TypeDecl {
+        name: Option<String>,
+        type_: CXType
+    },
+
     GlobalVariable {
         name: CXIdent,
         type_: CXType,
         initializer: Option<CXExpr>
     },
 
+    FunctionPrototype {
+        prototype: CXFunctionPrototype,
+    },
+    
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,

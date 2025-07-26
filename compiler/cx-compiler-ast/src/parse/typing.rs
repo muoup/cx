@@ -39,7 +39,7 @@ pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>, Vec
     let mut type_map = CXTypeMap::new();
     let mut public_types = Vec::new();
     let mut imports = Vec::new();
-
+    
     while let Some(token) = data.toks.peek() {
         let type_record = match &token.kind {
             TokenKind::Keyword(KeywordType::Typedef) =>

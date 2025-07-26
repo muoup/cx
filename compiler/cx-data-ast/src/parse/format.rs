@@ -17,9 +17,22 @@ impl Display for CXAST {
 impl Display for CXGlobalStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            CXGlobalStmt::TypeDecl { name, type_ } => {
+                if let Some(name) = name {
+                    fwriteln!(f, "type {} = {}", name, type_)
+                } else {
+                    fwriteln!(f, "type {}", type_)
+                }
+            },
+            
             CXGlobalStmt::GlobalVariable { name, type_, .. } => {
                 fwriteln!(f, "{}: {}", name, type_)
             },
+            
+            CXGlobalStmt::FunctionPrototype { prototype } => {
+                fwriteln!(f, "{};", prototype)
+            },
+            
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
                 indent();
                 fwriteln!(f, "{} {{", prototype)?;
@@ -29,6 +42,7 @@ impl Display for CXGlobalStmt {
                 fwrite!(f, "}}")?;
                 Ok(())
             },
+            
             CXGlobalStmt::DestructorDefinition { type_name, body } => {
                 indent();
                 fwriteln!(f, "destructor for {} {{", type_name)?;

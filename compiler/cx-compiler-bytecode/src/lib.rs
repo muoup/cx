@@ -39,7 +39,9 @@ pub fn generate_bytecode(ast: CXAST, type_check_data: TypeCheckData) -> Option<P
             CXGlobalStmt::DestructorDefinition { type_name, body } =>
                 generate_destructor(&mut builder, type_name, body)?,
 
-            _ => todo!("Global variables are not implemented yet"),
+            CXGlobalStmt::GlobalVariable { .. } => todo!("Global variables are not implemented yet"),
+        
+            _ => continue
         }
     }
 

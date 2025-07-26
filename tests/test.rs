@@ -30,6 +30,8 @@ fn run_tests() {
                 panic!("Could not read expected output file: {expected_output_path:?}")
             );
             
+            println!("[{}] Compiling...", path.display());
+            
             debug_compile(path.to_str().unwrap(), "a.out", CompilerBackend::Cranelift, Default::default());
             assert_eq!(expected_output, get_output(), "Cranelift output does not match expected output for {}", path.display());
             
