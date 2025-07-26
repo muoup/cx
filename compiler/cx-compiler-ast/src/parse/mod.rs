@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, serialize_type_data};
-use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXAST};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::parser::ParserData;
 use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
@@ -46,11 +47,11 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
         file_path: data.file_path.clone(),
         internal_path: internal_dir.to_string(),
         imports,
+        
         global_stmts: Vec::new(),
-        public_functions: Vec::new(),
         
         type_map,
-        function_map: HashMap::new(),
+        function_map: CXFunctionMap::new(),
         
         global_variables: HashMap::new(),
     };
@@ -58,12 +59,8 @@ pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, 
     data.reset();
 
     while data.toks.has_next() {
-        let Some(expr) = parse_global_stmt(&mut data, &mut cx_ast) else {
-            point_log_error!(data, "PARSER ERROR: Failed to parse global statement");
-        };
-        
-        match expr {
-            _ => ()
+        if let Some(expr) = parse_global_stmt(&mut data, &mut cx_ast)? {
+            cx_ast.global_stmts.push(expr);
         }
     }
     

@@ -1,5 +1,6 @@
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionMap, CXFunctionPrototype, CXParameter, CXTypeMap};
+use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;

@@ -1,12 +1,11 @@
-use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 use crate::lex::token::Token;
-use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::parse::identifier::CXIdent;
-
-pub type CXTypeMap = HashMap<String, CXType>;
-pub type CXFunctionMap = HashMap<String, CXFunctionPrototype>;
+use crate::parse::value_type::CXType;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use uuid::Uuid;
+use crate::parse::maps::{CXFunctionMap, CXTypeMap};
+use crate::parse::template::CXTemplateTypeGen;
 
 #[derive(Debug)]
 pub struct CXAST {
@@ -17,20 +16,14 @@ pub struct CXAST {
 
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
+    
     pub imports: Vec<String>,
     pub global_stmts: Vec<CXGlobalStmt>,
-    pub public_functions: Vec<String>,
-
+    
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
     
     pub global_variables: HashMap<String, CXGlobalVariable>,
-}
-
-#[derive(Debug)]
-pub struct CXTemplate {
-    pub generic_types: Vec<String>,
-    pub body: CXGlobalStmt
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +65,11 @@ pub enum CXGlobalStmt {
     DestructorDefinition {
         type_name: String,
         body: Box<CXExpr>,
+    },
+    
+    TemplatedFunction {
+        fn_name: CXIdent,
+        body: Box<CXExpr>
     },
 }
 

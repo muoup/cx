@@ -2,8 +2,9 @@ use std::hash::{Hash, Hasher};
 use cx_util::log_error;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::parse::ast::{CXExpr, CXFunctionPrototype, CXTypeMap};
+use crate::parse::ast::{CXExpr, CXFunctionPrototype};
 use crate::parse::identifier::CXIdent;
+use crate::parse::maps::CXTypeMap;
 
 pub type CXTypeSpecifier = u8;
 

@@ -1,20 +1,13 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXTemplate, CXAST};
+use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::parser::ParserData;
+use cx_data_ast::parse::template::CXTemplateTypeGen;
 use cx_util::{point_log_error, CXResult};
 use crate::parse::global_scope::{parse_global_expr, parse_global_stmt};
 use crate::parse::typing::parse_initializer;
 
-pub(crate) fn parse_templated_type(data: &mut ParserData, ast: &mut CXAST) -> CXResult<CXGlobalStmt> {
-
-}
-
-pub(crate) fn parse_templated_generator(data: &mut ParserData, ast: &mut CXAST) -> CXResult<CXGlobalStmt> {
-
-}
-
-pub(crate) fn parse_templated_expr(data: &mut ParserData, ast: &mut CXAST) -> CXResult<CXTemplate> {
+pub(crate) fn parse_template(data: &mut ParserData, ast: &mut CXAST) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data, TokenKind::Keyword(KeywordType::Template));
     assert_token_matches!(data, TokenKind::Operator(OperatorType::Less));
 
@@ -25,15 +18,10 @@ pub(crate) fn parse_templated_expr(data: &mut ParserData, ast: &mut CXAST) -> CX
     loop {
         assert_token_matches!(data, TokenKind::Identifier(template_name));
         let template_name = template_name.clone();
-        assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
-
-        let initializer = parse_initializer(data)
-            .expect("PARSER ERROR: Failed to parse initializer in template declaration!");
-
-        let (None, return_type) = initializer else {
-            point_log_error!(data, "PARSER ERROR: Template type must be anonymous! Found: {:#?}", initializer.1);
-        };
-
+        assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Colon));
+        assert_token_matches!(data, TokenKind::Keyword(KeywordType::Type));
+        
+        generic_params.push(template_name.clone());
         if !data.type_symbols.insert(template_name.clone()) {
             temp_typedefs.push(template_name);
         }
@@ -45,16 +33,38 @@ pub(crate) fn parse_templated_expr(data: &mut ParserData, ast: &mut CXAST) -> CX
 
     assert_token_matches!(data, TokenKind::Operator(OperatorType::Greater));
 
-    let global_expr = parse_global_stmt(data)?;
+    let global_expr = parse_global_stmt(data, ast)?
+        .expect("PARSER ERROR: Failed to parse global expression in template declaration!");
 
     for template_name in temp_typedefs {
         data.type_symbols.remove(template_name.as_str());
     }
-
-    Some(
-        CXTemplate {
-            generic_types: generic_params,
-            body: global_expr,
-        }
-    )
+    
+    match global_expr {
+        CXGlobalStmt::FunctionDefinition { prototype, body } => {
+            let template = CXTemplateTypeGen::function_template(generic_params.clone(), prototype.clone());
+            let prototype_name = prototype.name.clone();
+            
+            ast.function_map.insert_template(prototype_name.to_string(), template.clone());
+            
+            Some(
+                Some(
+                    CXGlobalStmt::TemplatedFunction {
+                        fn_name: prototype_name,
+                        body,
+                    }
+                )
+            )
+        },
+        
+        CXGlobalStmt::TypeDecl { .. } => todo!(),
+        CXGlobalStmt::DestructorDefinition { .. } => todo!(),
+        
+        CXGlobalStmt::TemplatedFunction { .. } =>
+            point_log_error!(data, "PARSER ERROR: Nested templated generators are not supported!"),
+        CXGlobalStmt::GlobalVariable { .. } =>
+            point_log_error!(data, "PARSER ERROR: Templated global variables are not supported!"),
+        CXGlobalStmt::FunctionPrototype { .. } =>
+            point_log_error!(data, "PARSER ERROR: Templated functions must be declared with a function definition!"),
+    }
 }

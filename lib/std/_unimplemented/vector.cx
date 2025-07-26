@@ -2,13 +2,15 @@ import std::optional;
 
 public:
 
-struct vector<T> {
+template <T : type>
+struct vector {
     T* data;
     usize length;
     usize capacity;
 }
 
-vector<T> vector::new<T>() {
+template <T : type>
+vector<T> vector<T>::new() {
     return vector<T> {
         .data = 0,
         .length = 0,
@@ -16,7 +18,8 @@ vector<T> vector::new<T>() {
     };
 }
 
-vector<T> vector::with_capacity<T>(usize capacity) {
+template <T : type>
+vector<T> vector<T>::with_capacity(usize capacity) {
     return vector<T> {
         .data = malloc(capacity * sizeof(T)),
         .length = 0,
@@ -24,6 +27,7 @@ vector<T> vector::with_capacity<T>(usize capacity) {
     }
 }
 
+template <T : type>
 void vector<T>::push(this, T object) {
     if (this->length < this->capacity) {
         this->data[this->length] = object;
@@ -35,6 +39,7 @@ void vector<T>::push(this, T object) {
     this->data = realloc(this->data, this->capacity * sizeof(T));
 }
 
+template <T : type>
 T* vector<T>::at(this, usize index) -> @optional(none = NULL) {
     if (index >= this->length) {
         return None;

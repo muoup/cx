@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXExpr, CXTypeMap};
+use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};

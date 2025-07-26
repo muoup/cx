@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use crate::{BytecodeResult, ProgramBytecode};
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::ast::CXExprKind::Block;
+use cx_data_ast::parse::ast::{CXExpr};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap, BlockID};

@@ -1,7 +1,8 @@
 use cx_data_ast::{assert_token_matches, next_kind, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap};
+use cx_data_ast::parse::ast::CXFunctionPrototype;
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
+use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
 use cx_util::{log_error, point_log_error};

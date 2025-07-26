@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXAST};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::CXType;
 
 pub struct ModuleData {
@@ -32,7 +33,7 @@ pub fn serialize_type_data<'a>(internal_path: &str, type_map: &CXTypeMap, types:
     Some(())
 }
 
-pub fn serialize_function_data<'a>(internal_path: &str, function_map: &CXFunctionMap, functions: impl Iterator<Item = &'a String>) -> Option<()> {
+pub fn serialize_function_data<'a>(internal_path: &str, global_stmts: impl Iterator<Item = &'a CXGlobalStmt>) -> Option<()> {
     let directory = Path::new(internal_path);
     std::fs::create_dir_all(directory.parent()?)
         .expect("Failed to create internal directory");
@@ -40,16 +41,20 @@ pub fn serialize_function_data<'a>(internal_path: &str, function_map: &CXFunctio
     let mut function_file = File::create(format!("{internal_path}/.cx-functions"))
         .expect("Failed to create function file");
     
-    for fn_name in functions {
-        let function = function_map.get(fn_name)
-            .expect("Function not found in function map");
-        
-        let serialized = serde_json::to_string(function)
-            .expect("Failed to serialize function");
-        
-        function_file.write_all(serialized.as_bytes())
-            .and_then(|_| function_file.write_all(b"\n"))
-            .expect("Failed to write function to file");
+    for global_stmt in global_stmts {
+        match global_stmt {
+            CXGlobalStmt::FunctionDefinition { prototype, .. } |
+            CXGlobalStmt::FunctionPrototype { prototype, .. } => {
+                let serialized = serde_json::to_string(prototype)
+                    .expect("Failed to serialize function prototype");
+                
+                function_file.write_all(serialized.as_bytes())
+                    .and_then(|_| function_file.write_all(b"\n"))
+                    .expect("Failed to write function prototype to file");
+            },
+            
+            _ => continue
+        }
     }
     
     Some(())
@@ -99,7 +104,7 @@ pub fn serialize_module_data(ast: &CXAST) -> Option<()> {
     let mut type_file = File::create(format!("{}/.cx-types", ast.internal_path))
         .expect("Failed to create type file");
     
-    for (type_name, cx_type) in &ast.type_map {
+    for (type_name, cx_type) in ast.type_map.iter() {
         let serialized = serde_json::to_string(&(type_name, cx_type))
             .expect("Failed to serialize type");
         

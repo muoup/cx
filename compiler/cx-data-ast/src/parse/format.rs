@@ -1,5 +1,5 @@
 use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
-use crate::parse::value_type::{CXTypeKind, CXType};
+use crate::parse::value_type::{CXType, CXTypeKind};
 use cx_util::format::{dedent, indent};
 use cx_util::{fwrite, fwriteln};
 use std::fmt::{Display, Formatter};
@@ -50,6 +50,15 @@ impl Display for CXGlobalStmt {
                 dedent();
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")?;
+                Ok(())
+            },
+            
+            CXGlobalStmt::TemplatedFunction { fn_name, body } => {
+                indent();
+                fwriteln!(f, "templated function {} {{\n", fn_name)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "")?;
                 Ok(())
             },
         }

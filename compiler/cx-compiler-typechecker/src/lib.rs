@@ -2,11 +2,12 @@ use crate::deconstructed_types::generate_deconstructor_data;
 use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
 use crate::importing::import_module_data;
 use cx_data_ast::lex::token::Token;
-use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::HashMap;
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 
 pub mod deconstructed_types;
 pub mod checker;

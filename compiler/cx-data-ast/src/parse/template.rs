@@ -1,33 +1,58 @@
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use cx_util::CXResult;
 use crate::parse::ast::CXFunctionPrototype;
 use crate::parse::value_type::{CXType, CXTypeKind};
 
-#[derive(Debug)]
-pub struct CXTemplate {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CXTemplateTypeGen {
     pub generic_types: Vec<String>,
     pub generator: CXTemplateGenerator,
     pub generated: HashMap<CXTemplateInput, CXTemplateOutput>
 }
 
-#[derive(Debug)]
+impl CXTemplateTypeGen {
+    pub fn function_template( 
+        generic_types: Vec<String>,
+        prototype: CXFunctionPrototype
+    ) -> Self {
+        CXTemplateTypeGen {
+            generic_types,
+            generator: CXTemplateGenerator::FunctionGen(prototype),
+            generated: HashMap::new()
+        }
+    }
+    
+    pub fn type_template(
+        generic_types: Vec<String>,
+        ty: CXType
+    ) -> Self {
+        CXTemplateTypeGen {
+            generic_types,
+            generator: CXTemplateGenerator::TypeGen(ty),
+            generated: HashMap::new()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXTemplateGenerator {
     TypeGen(CXType),
     FunctionGen(CXFunctionPrototype)
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct CXTemplateInput {
     pub types: Vec<CXType>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXTemplateOutput {
     Type(CXType),
     FunctionPrototype(CXFunctionPrototype)
 }
 
-impl CXTemplate {
+impl CXTemplateTypeGen {
     pub fn generate(&mut self, input: CXTemplateInput) -> CXResult<CXTemplateOutput> {
         if let Some(output) = self.generated.get(&input) {
             return Some(output.clone());

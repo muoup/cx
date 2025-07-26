@@ -193,7 +193,7 @@ impl CompilerPipeline {
             _ => panic!("PIPELINE ERROR: Cannot emit function definitions without types and dependencies!"),
         };
 
-        cx_compiler_modules::serialize_function_data(self.internal_dir.as_str(), &parsed.function_map, parsed.public_functions.iter())
+        cx_compiler_modules::serialize_function_data(self.internal_dir.as_str(), parsed.global_stmts.iter())
             .expect("Failed to serialize function data to header file");
 
         self

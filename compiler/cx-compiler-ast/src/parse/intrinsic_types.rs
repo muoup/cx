@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::CXTypeMap;
+use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::value_type::CXTypeKind;
 
 pub fn add_intrinsic_imports(imports: &mut Vec<String>) {
