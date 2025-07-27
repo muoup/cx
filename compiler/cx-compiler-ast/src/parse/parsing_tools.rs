@@ -20,7 +20,7 @@ pub fn goto_statement_end(data: &mut ParserData) -> Option<()> {
 }
 
 pub fn goto_block_end(data: &mut ParserData) -> Option<()> {
-    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenBrace));
 
     let mut brace_counter = 1;
 

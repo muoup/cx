@@ -94,7 +94,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                     return None;
                 };
 
-                assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+                assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
 
                 return Some(CXUnOp::ExplicitCast(type_));
             },

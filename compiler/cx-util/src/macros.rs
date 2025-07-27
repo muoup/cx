@@ -41,12 +41,25 @@ macro_rules! bytecode_error_log {
 
 #[macro_export]
 macro_rules! point_log_error {
-    ($data:ident, $($arg:tt)*) => {
+    ($toks:expr, $($arg:tt)*) => {
         {
             use cx_data_ast::parse::macros::error_pointer;
             use cx_util::log_error;
             
-            eprintln!("{}", error_pointer(&$data.toks));
+            eprintln!("{}", error_pointer(&$toks));
+            log_error!($($arg)*);
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! point_log_error2 {
+    ($toks:ident, $($arg:tt)*) => {
+        {
+            use cx_data_ast::parse::macros::error_pointer;
+            use cx_util::log_error;
+
+            eprintln!("{}", error_pointer(&$toks));
             log_error!($($arg)*);
         }
     }

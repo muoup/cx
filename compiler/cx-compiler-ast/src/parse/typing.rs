@@ -92,13 +92,14 @@ pub fn parse_pre_ast_data(data: &mut ParserData) -> CXResult<CXPreASTInfo> {
         CXPreASTInfo {
             type_map,
             public_types,
-            imports
+            imports,
+            templated_identifiers: vec![]
         }
     )
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {
-    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Typedef));
+    assert_token_matches!(data.toks, TokenKind::Keyword(KeywordType::Typedef));
     
     let (name, type_) = parse_initializer(data)?;
 
@@ -106,7 +107,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {
         log_error!("PARSER ERROR: Invalid typedef declaration with no name!");
     }
 
-    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
 
     Some(
         TypeRecord {
@@ -188,7 +189,7 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
 }
 
 pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
-    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Struct));
+    assert_token_matches!(data.toks, TokenKind::Keyword(KeywordType::Struct));
 
     let name = parse_std_ident(data);
     
@@ -200,22 +201,22 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
 
     while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
         let Some((name, _type)) = parse_initializer(data) else {
-            point_log_error!(data, "PARSER ERROR: Failed to parse struct member type");
+            point_log_error!(data.toks, "PARSER ERROR: Failed to parse struct member type");
         };
 
         let Some(name) = name else {
-            point_log_error!(data, "UNSUPPORTED: Nameless struct member of type {}", _type);
+            point_log_error!(data.toks, "UNSUPPORTED: Nameless struct member of type {}", _type);
         };
 
         fields.push((name.data, _type));
-        assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+        assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
 
     Some(CXTypeKind::Structured { name, fields, has_destructor: false })
 }
 
 pub(crate) fn parse_enum(data: &mut ParserData) -> Option<CXTypeKind> {
-    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Enum));
+    assert_token_matches!(data.toks, TokenKind::Keyword(KeywordType::Enum));
     
     goto_statement_end(data);
     
@@ -223,7 +224,7 @@ pub(crate) fn parse_enum(data: &mut ParserData) -> Option<CXTypeKind> {
 }
 
 pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {
-    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Union));
+    assert_token_matches!(data.toks, TokenKind::Keyword(KeywordType::Union));
 
     let name = parse_std_ident(data);
     
@@ -237,11 +238,11 @@ pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {
         let (name, _type) = parse_initializer(data)?;
 
         let Some(name) = name else {
-            point_log_error!(data, "UNSUPPORTED: Nameless union member of type {}", _type);
+            point_log_error!(data.toks, "UNSUPPORTED: Nameless union member of type {}", _type);
         };
 
         fields.push((name.data, _type));
-        assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+        assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
 
     Some(
@@ -281,7 +282,7 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
             let is_array = match data.toks.next()?.kind {
                 TokenKind::Operator(OperatorType::Asterisk) => false,
                 TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
-                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
+                    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBracket));
                     true
                 },
                 
@@ -302,7 +303,7 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
         
         TokenKind::Keyword(KeywordType::Weak) => {
             data.toks.next();
-            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            assert_token_matches!(data.toks, TokenKind::Operator(OperatorType::Asterisk));
             
             let specs = parse_specifier(data);
             let acc_type = CXType::new(
@@ -329,9 +330,9 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             data.toks.next();
-            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            assert_token_matches!(data.toks, TokenKind::Operator(OperatorType::Asterisk));
             let name = parse_std_ident(data);
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
             let ParseParamsResult { params, var_args } = parse_params(data)?;
 
             let prototype = CXFunctionPrototype {
@@ -386,7 +387,7 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
                 }
             };
             
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBracket));
 
             Some(_type)
         },

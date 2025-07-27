@@ -1,5 +1,7 @@
 pub mod ast;
 pub mod maps;
+
+pub mod intrinsic_types;
 pub mod value_type;
 pub mod identifier;
 pub mod parser;

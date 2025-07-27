@@ -6,15 +6,15 @@ use crate::parse::expression::parse_expr;
 
 pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<CXExpr> {
     let init_index = data.toks.index;
-    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenBrace));
     
     let mut inits = Vec::new();
     
     while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
         let field_name = if try_next!(data, TokenKind::Operator(OperatorType::Access)) {
-            assert_token_matches!(data, TokenKind::Identifier(field_name));
+            assert_token_matches!(data.toks, TokenKind::Identifier(field_name));
             let field_name = field_name.clone();
-            assert_token_matches!(data, TokenKind::Assignment(None));
+            assert_token_matches!(data.toks, TokenKind::Assignment(None));
             Some(field_name)
         } else { None };
         
@@ -26,7 +26,7 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<C
         
         if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) {
             // If we didn't find a comma, it must be the end of the initializer list
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBrace));
             break;
         }
     }

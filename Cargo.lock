@@ -316,7 +316,10 @@ dependencies = [
 name = "cx-exec-altdata"
 version = "0.1.0"
 dependencies = [
+ "cx-data-ast",
  "cx-exec-data",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

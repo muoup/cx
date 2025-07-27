@@ -3,10 +3,9 @@ pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, se
 use cx_data_ast::parse::ast::{CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::parser::ParserData;
-use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
 use crate::parse::intrinsic_types::{add_intrinsic_imports, add_intrinsic_types};
-use crate::parse::typing::{parse_pre_ast_data, ParseTypesResult};
+use crate::parse::typing::parse_pre_ast_data;
 
 pub mod expression;
 pub mod global_scope;

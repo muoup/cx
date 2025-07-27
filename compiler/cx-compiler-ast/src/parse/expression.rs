@@ -217,7 +217,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
             data.pop_comma_mode();
 
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
 
             expr.kind
         },
@@ -235,13 +235,13 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             }
 
             let index = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBracket));
 
             index.kind
         },
         
         TokenKind::Keyword(KeywordType::Sizeof) => {
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
             
             let return_type = if is_type_decl(data) {
                 let Some((None, _type)) = parse_initializer(data) else {
@@ -264,7 +264,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
                 }
             };
             
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
             
             return_type
         },
@@ -336,9 +336,9 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             )
         },
         KeywordType::If => {
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
             let expr = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
             let then_body = parse_body(data)?;
             let else_body =
                 if try_next!(data, TokenKind::Keyword(KeywordType::Else)) {
@@ -356,10 +356,10 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             )
         },
         KeywordType::Switch => {
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
             let expr = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenBrace));
             
             let mut block = Vec::new();
             let mut cases = Vec::new();
@@ -368,13 +368,13 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             
             while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
                 if try_next!(data, TokenKind::Keyword(KeywordType::Case)) {
-                    assert_token_matches!(data, TokenKind::IntLiteral(case_value));
+                    assert_token_matches!(data.toks, TokenKind::IntLiteral(case_value));
                     cases.push((*case_value as u64, index));
                     
-                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Colon));
+                    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Colon));
                     continue;
                 } else if try_next!(data, TokenKind::Keyword(KeywordType::Default)) {
-                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Colon));
+                    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Colon));
                     if default_case.is_some() {
                         log_error!("PARSER ERROR: Multiple default cases in switch statement");
                     }
@@ -385,7 +385,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                 let expr = parse_expr(data)?;
                 index += 1;
                 if requires_semicolon(&expr) {
-                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+                    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
                 }
                 block.push(expr);
             }
@@ -401,11 +401,11 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
         },
         KeywordType::Do => {
             let body = parse_body(data)?;
-            assert_token_matches!(data, TokenKind::Keyword(KeywordType::While));
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            assert_token_matches!(data.toks, TokenKind::Keyword(KeywordType::While));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
             let expr = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
 
             Some(
                 CXExprKind::While {
@@ -416,9 +416,9 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             )
         },
         KeywordType::While => {
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
             let expr = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
             let body = parse_body(data)?;
 
             Some(
@@ -432,16 +432,16 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
         KeywordType::Break => Some(CXExprKind::Break),
         KeywordType::Continue => Some(CXExprKind::Continue),
         KeywordType::For => {
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
 
             let init = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
 
             let condition = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Semicolon));
 
             let increment = parse_expr(data)?;
-            assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
 
             let body = parse_body(data)?;
 

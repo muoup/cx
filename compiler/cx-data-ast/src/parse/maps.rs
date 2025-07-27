@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use cx_util::CXResult;
 use crate::parse::ast::CXFunctionPrototype;
 use crate::parse::template::{CXTemplateTypeGen, CXTemplateInput, CXTemplateOutput};
 use crate::parse::value_type::CXType;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CXMap<Output> {
     types: HashMap<String, Output>,
     templated_types: HashMap<String, CXTemplateTypeGen>
