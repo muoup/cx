@@ -1,6 +1,6 @@
 use crate::lex::token::Token;
 use crate::parse::value_type::{CXType};
-use cx_util::scoped_map::ScopedMap;
+use cx_util::scoped_map::{ScopedMap, ScopedSet};
 use std::collections::{HashMap, HashSet};
 
 pub type VarTable = ScopedMap<CXType>;
@@ -19,7 +19,7 @@ pub struct ParserData<'a> {
     pub visibility: VisibilityMode,
     pub expr_commas: Vec<bool>,
 
-    pub type_symbols: HashSet<String>,
+    pub type_symbols: HashSet<String>
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +32,7 @@ impl<'a> ParserData<'a> {
     pub fn new(file_path: String, toks: &'a [Token]) -> Self {
         ParserData {
             file_path,
+            
             toks: TokenIter { slice: toks, index: 0 },
             visibility: VisibilityMode::Package,
             expr_commas: vec![true],
@@ -53,7 +54,7 @@ impl<'a> ParserData<'a> {
     pub fn reset(&mut self) {
         self.toks.index = 0;
     }
-
+    
     pub fn change_comma_mode(&mut self, expr_comma: bool) {
         self.expr_commas.push(expr_comma);
     }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "compiler/cx",
+    "compiler/cx", "compiler/cx-exec-altdata", "compiler/cx-exec-altpipeline",
     "tests"
 ]

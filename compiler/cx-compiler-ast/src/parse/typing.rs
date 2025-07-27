@@ -5,7 +5,8 @@ use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
-use cx_util::{log_error, point_log_error};
+use cx_util::{log_error, point_log_error, CXResult};
+use crate::parse::CXPreASTInfo;
 use crate::parse::expression::parse_expr;
 use crate::parse::global_scope::{parse_import, parse_params, ParseParamsResult};
 use crate::parse::parsing_tools::goto_statement_end;
@@ -36,7 +37,7 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
     }
 }
 
-pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>, Vec<String>)> {
+pub fn parse_pre_ast_data(data: &mut ParserData) -> CXResult<CXPreASTInfo> {
     let mut type_map = CXTypeMap::new();
     let mut public_types = Vec::new();
     let mut imports = Vec::new();
@@ -87,7 +88,13 @@ pub fn parse_types(data: &mut ParserData) -> Option<(CXTypeMap, Vec<String>, Vec
         }
     }
 
-    Some((type_map, public_types, imports))
+    Some(
+        CXPreASTInfo {
+            type_map,
+            public_types,
+            imports
+        }
+    )
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> Option<TypeRecord> {

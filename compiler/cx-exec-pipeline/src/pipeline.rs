@@ -1,5 +1,5 @@
 use crate::{request_compile, request_type_compilation};
-use cx_compiler_ast::parse::{parse_ast, CXTypesAndDeps};
+use cx_compiler_ast::parse::{parse_ast, CXPreASTInfo};
 use cx_compiler_ast::{lex, preprocessor, LexContents, ParseContents, PreprocessContents};
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
@@ -36,7 +36,7 @@ pub enum PipelineStage {
     FileRead(String),
     Preprocessed(PreprocessContents),
     Lexed(LexContents),
-    TypesAndDependences(LexContents, CXTypesAndDeps),
+    TypesAndDependences(LexContents, CXPreASTInfo),
     Parsed(ParseContents),
     Typechecked(CXAST, TypeCheckData),
     Bytecode(ProgramBytecode),
@@ -143,7 +143,7 @@ impl CompilerPipeline {
         self
     }
 
-    pub fn parse_types_and_deps(mut self) -> Self {
+    pub fn parse_pre_ast_info(mut self) -> Self {
         let lexed = match std::mem::take(&mut self.pipeline_stage) {
             PipelineStage::Lexed(lexed) => lexed,
             _ => panic!("PIPELINE ERROR: Cannot parse types and dependencies without lexing!"),

@@ -313,6 +313,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-exec-altdata"
+version = "0.1.0"
+dependencies = [
+ "cx-exec-data",
+]
+
+[[package]]
+name = "cx-exec-altpipeline"
+version = "0.1.0"
+dependencies = [
+ "cx-exec-data",
+]
+
+[[package]]
 name = "cx-exec-data"
 version = "0.1.0"
 

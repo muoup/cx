@@ -6,7 +6,7 @@ use cx_data_ast::parse::parser::ParserData;
 use cx_util::point_log_error;
 use global_scope::parse_global_stmt;
 use crate::parse::intrinsic_types::{add_intrinsic_imports, add_intrinsic_types};
-use crate::parse::typing::parse_types;
+use crate::parse::typing::{parse_pre_ast_data, ParseTypesResult};
 
 pub mod expression;
 pub mod global_scope;
@@ -18,26 +18,27 @@ mod structured_initialization;
 mod template;
 
 #[derive(Debug)]
-pub struct CXTypesAndDeps {
+pub struct CXPreASTInfo {
     pub type_map: CXTypeMap,
     pub public_types: Vec<String>,
     pub imports: Vec<String>,
+    pub templated_identifiers: Vec<String>
 }
 
-pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXTypesAndDeps> {
-    let (mut type_map, public_types, mut imports) = parse_types(&mut data)?;
+pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXPreASTInfo> {
+    let mut info = parse_pre_ast_data(&mut data)?;
 
     if !data.file_path.contains("/lib/std/") {
-        add_intrinsic_imports(&mut imports);
+        add_intrinsic_imports(&mut info.imports);
     }
 
-    add_intrinsic_types(&mut type_map);
+    add_intrinsic_types(&mut info.type_map);
 
-    Some(CXTypesAndDeps {
-        type_map,
-        public_types,
-        imports,
-    })
+    Some(info)
+}
+
+pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> {
+    None
 }
 
 pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, imports: Vec<String>) -> Option<CXAST> {
