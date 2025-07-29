@@ -2,7 +2,8 @@ use cx_data_ast::{assert_token_matches, next_kind};
 use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
-use crate::parse::typing::{is_type_decl, parse_initializer};
+use crate::parse::typing::is_type_decl;
+use crate::preparse::typing::parse_initializer;
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {
@@ -89,7 +90,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                     return None;
                 }
 
-                let Some((None, type_)) = parse_initializer(data) else {
+                let Some((None, type_)) = parse_initializer(&mut data.toks) else {
                     data.toks.index = pre_index;
                     return None;
                 };
@@ -161,7 +162,7 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
 
 pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
     Some(
-        match next_kind!(data) {
+        match next_kind!(data.toks) {
             Some(TokenKind::Operator(OperatorType::Comma)) => {
                 if data.get_comma_mode() {
                     op_to_binop(OperatorType::Comma)?

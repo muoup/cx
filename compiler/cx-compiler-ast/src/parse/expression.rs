@@ -8,7 +8,8 @@ use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error};
 use crate::parse::structured_initialization::parse_structured_initialization;
-use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
+use crate::parse::typing::is_type_decl;
+use crate::preparse::typing::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr.kind {
@@ -27,7 +28,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
         return parse_declaration(data);
     }
 
-    if try_next!(data, TokenKind::Keyword(_)) {
+    if try_next!(data.toks, TokenKind::Keyword(_)) {
         data.toks.back();
         
         if let Some(expr) = parse_keyword_expr(data) {
@@ -60,19 +61,19 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
 pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     let start_index = data.toks.index;
     
-    let specifiers = parse_specifier(data);
-    let base_type = parse_type_base(data)?.add_specifier(specifiers);
+    let specifiers = parse_specifier(&mut data.toks);
+    let base_type = parse_type_base(&mut data.toks)?.add_specifier(specifiers);
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);
 
     loop {
-        let (Some(name), mut _type) = parse_base_mods(data, base_type.clone())? else {
+        let (Some(name), mut _type) = parse_base_mods(&mut data.toks, base_type.clone())? else {
             log_error!("PARSER ERROR: Failed to parse type declaration");
         };
         _type.specifiers = specifiers;
 
-        if try_next!(data, TokenKind::Assignment(None)) {
+        if try_next!(data.toks, TokenKind::Assignment(None)) {
             let lhs_end_index = data.toks.index;
             let expr = parse_expr(data)?;
             decls.push(
@@ -91,7 +92,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
             );
         }
 
-        if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) {
+        if !try_next!(data.toks, TokenKind::Operator(OperatorType::Comma)) {
             break;
         }
     }
@@ -195,9 +196,9 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             CXExprKind::StringLiteral { val: value.clone() },
 
         TokenKind::Intrinsic(_) =>
-            CXExprKind::Identifier(parse_intrinsic(data.back())?),
+            CXExprKind::Identifier(parse_intrinsic(&mut data.back().toks)?),
         TokenKind::Identifier(_) =>
-            CXExprKind::Identifier(parse_std_ident(data.back())?),
+            CXExprKind::Identifier(parse_std_ident(&mut data.back().toks)?),
         
         TokenKind::Operator(OperatorType::Move) => {
             let expr = parse_expr(data)?;
@@ -206,7 +207,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
         },
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
-            if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
+            if try_next!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
                 expr_stack.push(CXExprKind::Unit.into_expr(0, 0));
                 return Some(());
             }
@@ -229,7 +230,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
         }
         
         TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
-            if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket)) {
+            if try_next!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBracket)) {
                 expr_stack.push(CXExprKind::Unit.into_expr(start_index, data.toks.index));
                 return Some(());
             }
@@ -244,7 +245,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenParen));
             
             let return_type = if is_type_decl(data) {
-                let Some((None, _type)) = parse_initializer(data) else {
+                let Some((None, _type)) = parse_initializer(&mut data.toks) else {
                     log_error!("PARSER ERROR: Failed to parse type declaration for sizeof");
                 };
 
@@ -270,7 +271,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
         },
         
         TokenKind::Keyword(KeywordType::New) => {
-            let Some((None, _type)) = parse_initializer(data) else {
+            let Some((None, _type)) = parse_initializer(&mut data.toks) else {
                 log_error!("PARSER ERROR: Failed to parse type declaration for new");
             };
             
@@ -341,7 +342,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseParen));
             let then_body = parse_body(data)?;
             let else_body =
-                if try_next!(data, TokenKind::Keyword(KeywordType::Else)) {
+                if try_next!(data.toks, TokenKind::Keyword(KeywordType::Else)) {
                     parse_body(data)
                 } else {
                     None
@@ -366,14 +367,14 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             let mut default_case = None;
             let mut index = 0;
             
-            while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-                if try_next!(data, TokenKind::Keyword(KeywordType::Case)) {
+            while !try_next!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+                if try_next!(data.toks, TokenKind::Keyword(KeywordType::Case)) {
                     assert_token_matches!(data.toks, TokenKind::IntLiteral(case_value));
                     cases.push((*case_value as u64, index));
                     
                     assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Colon));
                     continue;
-                } else if try_next!(data, TokenKind::Keyword(KeywordType::Default)) {
+                } else if try_next!(data.toks, TokenKind::Keyword(KeywordType::Default)) {
                     assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::Colon));
                     if default_case.is_some() {
                         log_error!("PARSER ERROR: Multiple default cases in switch statement");

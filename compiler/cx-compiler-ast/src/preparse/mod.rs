@@ -1,24 +1,20 @@
+pub mod typing;
+
 mod preparser;
 mod macros;
+mod importing;
 
-use crate::preparse::preparser::preparse_type_tokens;
+use crate::preparse::preparser::preparse_stmt;
 use cx_data_ast::parse::parser::TokenIter;
-use std::collections::HashMap;
+use cx_data_ast::PreparseContents;
 
-pub enum PreparseTokenType {
-    TypeName,
-    FunctionName,
-    TemplatedTypeName,
-    TemplatedFunctionName,
-}
+pub fn preparse(tokens: &mut TokenIter) -> Option<PreparseContents> {
+    let mut pp_contents = PreparseContents::default();
 
-pub type PreparseMap = HashMap<String, PreparseTokenType>;
+    while tokens.has_next() {
+        preparse_stmt(tokens, &mut pp_contents)?;
+    }
 
-pub fn generate_preparse_map(mut tokens: TokenIter) -> Option<PreparseMap> {
-    let mut map = PreparseMap::new();
-
-    preparse_type_tokens(&mut tokens, &mut map)?;
-    
-    Some(map)
+    Some(pp_contents)
 }
 

@@ -35,6 +35,16 @@ impl Hash for CXType {
     }
 }
 
+impl Default for CXType {
+    fn default() -> Self {
+        CXType {
+            uuid: 0,
+            specifiers: 0,
+            kind: CXTypeKind::Unit
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXTypeKind {
     Integer { bytes: u8, signed: bool },

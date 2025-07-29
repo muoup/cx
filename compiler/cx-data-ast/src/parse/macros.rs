@@ -67,9 +67,9 @@ macro_rules! try_token_matches {
 
 #[macro_export]
 macro_rules! try_next {
-    ($data:ident, $pattern:pat) => {
-        if let Some($pattern) = $data.toks.peek().map(|k| &k.kind) {
-            $data.toks.next();
+    ($data:expr, $pattern:pat) => {
+        if let Some($pattern) = $data.peek().map(|k| &k.kind) {
+            $data.next();
             true
         } else {
             false
@@ -79,7 +79,7 @@ macro_rules! try_next {
 
 #[macro_export]
 macro_rules! next_kind {
-    ($data:ident) => {
-        $data.toks.next().cloned().map(|k| k.kind);
+    ($data:expr) => {
+        $data.next().cloned().map(|k| k.kind);
     }
 }

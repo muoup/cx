@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::Path;
 use inkwell::basic_block::BasicBlock;
-use cx_exec_data::OptimizationLevel;
+use cx_data_pipeline::OptimizationLevel;
 use cx_util::format::dump_data;
 use crate::instruction::reset_num;
 

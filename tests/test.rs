@@ -1,5 +1,5 @@
 use std::process::Command;
-use cx_exec_data::CompilerBackend;
+use cx_data_pipeline::CompilerBackend;
 use cx_exec_pipeline::debug_compile;
 
 fn get_output() -> String {

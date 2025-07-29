@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::exit;
 use cx_compiler_modules::deserialize_module_data;
 use cx_data_ast::parse::ast::CXAST;
-use cx_exec_data::cx_path_str;
+use cx_data_pipeline::cx_path_str;
 
 pub(crate) fn import_module_data(cxast: &mut CXAST) {
     for import_path in cxast.imports.iter() {

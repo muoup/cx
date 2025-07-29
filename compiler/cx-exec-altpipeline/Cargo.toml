@@ -1,7 +1,0 @@
-[package]
-name = "cx-exec-altpipeline"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-cx-exec-data = { path = "../cx-exec-data" }

@@ -16,6 +16,34 @@ pub struct Token {
     pub end_index: usize,
 }
 
+#[macro_export]
+macro_rules! keyword {
+    ($($name:ident),+) => {
+        $(TokenKind::Keyword(cx_data_ast::lex::token::KeywordType::$name))|+
+    };
+}
+
+#[macro_export]
+macro_rules! intrinsic {
+    ($name:ident) => {
+        TokenKind::Intrinsic(cx_data_ast::lex::token::IntrinsicType::$name)
+    }
+}
+
+#[macro_export]
+macro_rules! operator {
+    ($name:ident) => {
+        TokenKind::Operator(cx_data_ast::lex::token::OperatorType::$name)
+    }
+}
+
+#[macro_export]
+macro_rules! punctuator {
+    ($name:ident) => {
+        TokenKind::Punctuator(cx_data_ast::lex::token::PunctuatorType::$name)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     Ignore,

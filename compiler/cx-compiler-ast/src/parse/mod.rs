@@ -4,8 +4,6 @@ use cx_data_ast::parse::ast::{CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::parser::ParserData;
 use global_scope::parse_global_stmt;
-use crate::parse::intrinsic_types::{add_intrinsic_imports, add_intrinsic_types};
-use crate::parse::typing::parse_pre_ast_data;
 
 pub mod expression;
 pub mod global_scope;
@@ -24,17 +22,17 @@ pub struct CXPreASTInfo {
     pub templated_identifiers: Vec<String>
 }
 
-pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXPreASTInfo> {
-    let mut info = parse_pre_ast_data(&mut data)?;
-
-    if !data.file_path.contains("/lib/std/") {
-        add_intrinsic_imports(&mut info.imports);
-    }
-
-    add_intrinsic_types(&mut info.type_map);
-
-    Some(info)
-}
+// pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXPreASTInfo> {
+//     let mut info = parse_pre_ast_data(&mut data)?;
+//
+//     if !data.file_path.contains("/lib/std/") {
+//         add_intrinsic_imports(&mut info.imports);
+//     }
+//
+//     add_intrinsic_types(&mut info.type_map);
+//
+//     Some(info)
+// }
 
 pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> {
     None

@@ -1,3 +1,24 @@
+pub mod jobs;
+pub mod db;
+
+use crate::db::ModuleData;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::Mutex;
+
+pub type CompilationUnit = Rc<str>;
+
+pub struct GlobalCompilationContext {
+    pub config: CompilerConfig,
+    pub module_db: Mutex<ModuleData>
+}
+
+pub struct CompilerConfig {
+    pub backend: CompilerBackend,
+    pub optimization_level: OptimizationLevel,
+    pub output: PathBuf,
+}
+
 #[derive(Default, Debug, Copy, Clone)]
 pub enum OptimizationLevel {
     #[default]
@@ -33,7 +54,7 @@ pub fn libary_path_prefix() -> String {
         .to_str()
         .expect("Failed to convert path to string")
         .to_string();
-    
+
     if cfg!(feature = "test") {
         format!("{path}/../../../lib/")
     } else {
@@ -45,7 +66,7 @@ pub fn cx_path_str(path: &str) -> String {
     if path.starts_with("std") {
         let current_exe = std::env::current_exe()
             .expect("Failed to get current executable path");
-        
+
         if cfg!(feature = "test") {
             format!("{}/../../../lib/{}.cx", current_exe.parent().unwrap().display(), &path)
         } else {

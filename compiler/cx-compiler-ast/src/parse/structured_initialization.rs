@@ -10,8 +10,8 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<C
     
     let mut inits = Vec::new();
     
-    while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-        let field_name = if try_next!(data, TokenKind::Operator(OperatorType::Access)) {
+    while !try_next!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+        let field_name = if try_next!(data.toks, TokenKind::Operator(OperatorType::Access)) {
             assert_token_matches!(data.toks, TokenKind::Identifier(field_name));
             let field_name = field_name.clone();
             assert_token_matches!(data.toks, TokenKind::Assignment(None));
@@ -24,7 +24,7 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<C
         
         inits.push(CXInitIndex { name: field_name, value: val, index: 0 });
         
-        if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) {
+        if !try_next!(data.toks, TokenKind::Operator(OperatorType::Comma)) {
             // If we didn't find a comma, it must be the end of the initializer list
             assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBrace));
             break;

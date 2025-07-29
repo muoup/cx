@@ -4,8 +4,7 @@ use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::template::CXTemplateTypeGen;
 use cx_util::{point_log_error, CXResult};
-use crate::parse::global_scope::{parse_global_expr, parse_global_stmt};
-use crate::parse::typing::parse_initializer;
+use crate::parse::global_scope::parse_global_stmt;
 
 pub(crate) fn parse_template(data: &mut ParserData, ast: &mut CXAST) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.toks, TokenKind::Keyword(KeywordType::Template));
@@ -26,7 +25,7 @@ pub(crate) fn parse_template(data: &mut ParserData, ast: &mut CXAST) -> CXResult
             temp_typedefs.push(template_name);
         }
 
-        if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) {
+        if !try_next!(data.toks, TokenKind::Operator(OperatorType::Comma)) {
             break;
         }
     }
