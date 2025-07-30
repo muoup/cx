@@ -129,6 +129,8 @@ pub(crate) fn perform_job(
                 }
             ).unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
 
+            context.module_db.lex_tokens
+                .insert(job.unit.clone(), tokens);
             context.module_db.import_data
                 .insert(job.unit.clone(), output.imports);
             context.module_db.naive_type_data
@@ -138,12 +140,12 @@ pub(crate) fn perform_job(
         },
 
         CompilationStep::ASTParse => {
-            let lexemes = get_lexemes(&job.unit);
-            
             let mut self_type_map = context.module_db.naive_type_data
                 .get_cloned(&job.unit);
             let self_function_map = context.module_db.function_data
                 .get_cloned(&job.unit);
+            let lexemes = context.module_db.lex_tokens
+                .take(&job.unit);
             
             let imports = context.module_db.import_data
                 .get(&job.unit);
@@ -169,6 +171,7 @@ pub(crate) fn perform_job(
             let parsed_ast = parse_ast(TokenIter::new(&lexemes), base_ast)
                 .expect("AST parsing failed");
 
+            context.module_db.lex_tokens.insert(job.unit.clone(), lexemes);
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
 

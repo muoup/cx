@@ -2,6 +2,7 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use cx_data_ast::lex::token::Token;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
@@ -10,6 +11,8 @@ use cx_data_bytecode::ProgramBytecode;
 
 #[derive(Debug)]
 pub struct ModuleData {
+    pub lex_tokens: ModuleMap<Vec<Token>>,
+    
     pub naive_type_data: ModuleMap<CXTypeMap>,
     pub full_type_data: ModuleMap<CXTypeMap>,
     
@@ -26,6 +29,8 @@ pub struct ModuleData {
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
+            lex_tokens: ModuleMap::new(".cx-tokens"),
+            
             naive_type_data: ModuleMap::new(".cx-types"),
             full_type_data: ModuleMap::new(".cx-full-types"),
             
