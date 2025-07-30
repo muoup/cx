@@ -184,13 +184,13 @@ pub(crate) fn perform_job(
             let import_type_maps = context.module_db.import_data.get(&job.unit)
                 .iter()
                 .map(|import| {
-                    context.module_db.naive_type_data.get_cloned(&CompilationUnit::new(import.as_str()))
+                    context.module_db.naive_type_data.get(&CompilationUnit::new(import.as_str()))
                 })
                 .collect::<Vec<_>>();
             let import_function_maps = context.module_db.import_data.get_cloned(&job.unit)
                 .into_iter()
                 .map(|import| {
-                    context.module_db.function_data.get_cloned(&CompilationUnit::new(import.as_str()))
+                    context.module_db.function_data.get(&CompilationUnit::new(import.as_str()))
                 })
                 .collect::<Vec<_>>();
             
@@ -210,8 +210,8 @@ pub(crate) fn perform_job(
         },
 
         CompilationStep::BytecodeGen => {
-            let self_ast = context.module_db.typechecked_ast.get_cloned(&job.unit);
-            let typecheck_data = context.module_db.typecheck_data.get_cloned(&job.unit);
+            let self_ast = context.module_db.typechecked_ast.take(&job.unit);
+            let typecheck_data = context.module_db.typecheck_data.take(&job.unit);
 
             let bytecode = generate_bytecode(self_ast, typecheck_data)
                 .expect("Bytecode generation failed");
@@ -220,7 +220,7 @@ pub(crate) fn perform_job(
         },
 
         CompilationStep::Codegen => {
-            let bytecode = context.module_db.bytecode_data.get_cloned(&job.unit);
+            let bytecode = context.module_db.bytecode_data.take(&job.unit);
             let mut internal_directory = internal_directory(&PathBuf::from(job.unit.to_string()));
             internal_directory.set_extension("o");
             

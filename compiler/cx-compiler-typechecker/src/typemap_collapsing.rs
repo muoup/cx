@@ -1,7 +1,9 @@
 use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 
-pub fn collapse_typemap(self_map: &CXTypeMap, import_maps: &[CXTypeMap]) -> Option<CXTypeMap> {
+pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<CXTypeMap> 
+    where MapRef: AsRef<CXTypeMap>
+{
     let mut new_map = CXTypeMap::new();
     
     for (name, _type) in self_map.iter() {
@@ -13,14 +15,16 @@ pub fn collapse_typemap(self_map: &CXTypeMap, import_maps: &[CXTypeMap]) -> Opti
     Some(new_map)
 }
 
-fn collapse_type(_type: &mut CXType, self_map: &CXTypeMap, import_maps: &[CXTypeMap]) -> Option<()> {
+fn collapse_type<MapRef>(_type: &mut CXType, self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<()> 
+    where MapRef: AsRef<CXTypeMap>
+{
     match &mut _type.kind {
         CXTypeKind::Identifier { name, .. } => {
             if let Some(self_type) = self_map.get(name.as_str()) {
                 *_type = self_type.clone();
             } else {
                 for import_map in import_maps {
-                    if let Some(import_type) = import_map.get(name.as_str()) {
+                    if let Some(import_type) = import_map.as_ref().get(name.as_str()) {
                         *_type = import_type.clone();
                         break;
                     }
