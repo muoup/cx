@@ -126,7 +126,7 @@ pub fn bytecode_aot_codegen(
             None,
             string_literal_name(i).as_str()
         );
-
+        
         global.set_linkage(Linkage::Private);
         global.set_initializer(&val);
         global.set_unnamed_addr(true);

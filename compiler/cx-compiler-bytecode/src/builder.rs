@@ -206,6 +206,15 @@ impl BytecodeBuilder {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
+            let return_block = self.create_named_block("return");
+            
+            self.add_instruction_bt(
+                VirtualInstruction::Jump { target: return_block },
+                BCType::unit()
+            );
+            
+            self.set_current_block(return_block);
+            
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
                 CXType::unit()

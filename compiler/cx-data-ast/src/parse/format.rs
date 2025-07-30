@@ -310,7 +310,7 @@ impl Display for CXTypeKind {
                     write!(f, "*")?;
                 }
                 
-                if *nullable {
+                if !*nullable {
                     write!(f, " (nonnull)")
                 } else {
                     Ok(())
@@ -334,8 +334,8 @@ impl Display for CXTypeKind {
             CXTypeKind::Function { prototype } => {
                 write!(f, "fn {prototype}")
             },
-            CXTypeKind::MemoryAlias(inner) => {
-                write!(f, "mem({inner})")
+            CXTypeKind::MemoryReference(inner) => {
+                write!(f, "&{inner}")
             },
         }
     }
@@ -345,9 +345,9 @@ impl Display for CXTypeKind {
 impl Display for CXParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.name {
-            write!(f, "{}: {}", name, self.type_)
+            write!(f, "{}: {}", name, self._type)
         } else {
-            write!(f, "{}", self.type_)
+            write!(f, "{}", self._type)
         }
     }
 }

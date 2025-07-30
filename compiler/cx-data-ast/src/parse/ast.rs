@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::parse::maps::{CXFunctionMap, CXTypeMap};
 use crate::parse::template::CXTemplateTypeGen;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct CXAST {
     pub tokens: Vec<Token>,
 
@@ -29,10 +29,10 @@ pub struct CXAST {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXParameter {
     pub name: Option<CXIdent>,
-    pub type_: CXType,
+    pub _type: CXType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CXFunctionPrototype {
     pub name: CXIdent,
     pub return_type: CXType,
@@ -40,7 +40,7 @@ pub struct CXFunctionPrototype {
     pub var_args: bool
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXGlobalStmt {
     TypeDecl {
         name: Option<String>,

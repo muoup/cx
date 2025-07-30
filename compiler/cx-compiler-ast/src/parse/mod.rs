@@ -2,7 +2,7 @@ use std::collections::HashMap;
 pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, serialize_type_data};
 use cx_data_ast::parse::ast::{CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::parser::ParserData;
+use cx_data_ast::parse::parser::{ParserData, TokenIter};
 use global_scope::parse_global_stmt;
 
 pub mod expression;
@@ -38,30 +38,20 @@ pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> 
     None
 }
 
-pub fn parse_ast(mut data: ParserData, internal_dir: &str, type_map: CXTypeMap, imports: Vec<String>) -> Option<CXAST> {
-    let mut cx_ast = CXAST {
-        tokens: data.toks.slice.to_vec(),
-        
-        file_path: data.file_path.clone(),
-        internal_path: internal_dir.to_string(),
-        imports,
-        
-        global_stmts: Vec::new(),
-        
-        type_map,
-        function_map: CXFunctionMap::new(),
-        
-        global_variables: HashMap::new(),
+pub fn parse_ast(mut iter: TokenIter, base_ast: CXAST) -> Option<CXAST> {
+    let mut data = ParserData {
+        tokens: iter,
+        visibility: cx_data_ast::parse::parser::VisibilityMode::Package,
+        expr_commas: vec![true],
+        ast: base_ast,
     };
-
-    data.reset();
-
-    while data.toks.has_next() {
-        if let Some(expr) = parse_global_stmt(&mut data, &mut cx_ast)? {
-            cx_ast.global_stmts.push(expr);
+    
+    while data.tokens.has_next() {
+        if let Some(expr) = parse_global_stmt(&mut data)? {
+            data.ast.global_stmts.push(expr);
         }
     }
     
-    Some(cx_ast)
+    Some(data.ast)
 }
 

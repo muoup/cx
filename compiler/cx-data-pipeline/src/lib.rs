@@ -1,18 +1,49 @@
 pub mod jobs;
 pub mod db;
+pub mod directories;
 
+use std::fmt::Display;
 use crate::db::ModuleData;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
+use crate::directories::file_path;
 
-pub type CompilationUnit = Rc<str>;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct CompilationUnit {
+    data: Rc<String>
+}
+
+impl Display for CompilationUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.data)
+    }
+}
+
+impl CompilationUnit {
+    pub fn new(path: &str) -> Self {
+        CompilationUnit {
+            data: Rc::from(file_path(path))
+        }
+    }
+    
+    pub fn to_string(&self) -> String {
+        self.data.to_string()
+    }
+    
+    pub fn as_str(&self) -> &str {
+        self.data.as_str()
+    }
+}
 
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
-    pub module_db: Mutex<ModuleData>
+    pub module_db: RwLock<ModuleData>,
+    
+    pub linking_files: Mutex<Vec<PathBuf>>
 }
 
+#[derive(Debug, Clone)]
 pub struct CompilerConfig {
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,

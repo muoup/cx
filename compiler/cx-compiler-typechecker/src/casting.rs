@@ -29,7 +29,7 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
             (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
-            (CXTypeKind::MemoryAlias(inner), CXTypeKind::Structured { .. })
+            (CXTypeKind::MemoryReference(inner), CXTypeKind::Structured { .. })
                 if same_type(env.type_map, inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
 
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
@@ -231,7 +231,7 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
             Some(
                 CXType::new(
                     pointer_inner?.specifiers,
-                    CXTypeKind::MemoryAlias(Box::new(pointer_inner?.clone()))
+                    CXTypeKind::MemoryReference(Box::new(pointer_inner?.clone()))
                 )
             )
         },

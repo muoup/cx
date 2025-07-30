@@ -190,7 +190,7 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                     .into_iter()
                     .chain(cx_proto.params.iter().map(|param| BCParameter {
                         name: None,
-                        _type: convert_argument_type(cx_type_map, &param.type_).unwrap()
+                        _type: convert_argument_type(cx_type_map, &param._type).unwrap()
                     }))
                     .collect(),
                 var_args: cx_proto.var_args
@@ -204,7 +204,7 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                 params: cx_proto.params.iter()
                     .map(|param| BCParameter {
                         name: None,
-                        _type: convert_argument_type(cx_type_map, &param.type_).unwrap()
+                        _type: convert_argument_type(cx_type_map, &param._type).unwrap()
                     })
                     .collect(),
                 var_args: cx_proto.var_args
@@ -310,7 +310,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                     size: *size
                 },
             
-            CXTypeKind::MemoryAlias(inner) => {
+            CXTypeKind::MemoryReference(inner) => {
                 match inner.intrinsic_type_kind(cx_type_map)? {
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,

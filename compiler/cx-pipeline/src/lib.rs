@@ -1,10 +1,13 @@
 mod scheduler;
+mod backends;
+mod linker;
 
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use cx_data_pipeline::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
 use cx_data_pipeline::db::ModuleData;
 use cx_data_pipeline::jobs::{CompilationJob, CompilationStep};
+use crate::linker::link;
 use crate::scheduler::scheduling_loop;
 
 pub fn standard_compilation(
@@ -13,15 +16,18 @@ pub fn standard_compilation(
 ) -> Option<()> {
     let compiler_context = GlobalCompilationContext {
         config,
-        module_db: Mutex::new(ModuleData::new()),
+        module_db: RwLock::new(ModuleData::new()),
+        linking_files: Mutex::new(vec![]),
     };
+
     let initial_job = CompilationJob::new(
         vec![],
-        CompilationStep::PreParseStage1,
-        CompilationUnit::from(base_file.to_str().unwrap()),
+        CompilationStep::PreParse,
+        CompilationUnit::new(base_file.to_str()?),
     );
 
     scheduling_loop(&compiler_context, initial_job)?;
+    link(&compiler_context)?;
 
     Some(())
 }

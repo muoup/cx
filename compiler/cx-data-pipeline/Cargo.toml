@@ -14,3 +14,4 @@ serde_json = "1.0"
 uuid = { version = "1.16.0", features = ["v4"] }
 
 cx-data-ast  = { path = "../cx-data-ast" }
+cx-data-bytecode = { path = "../cx-data-bytecode" }

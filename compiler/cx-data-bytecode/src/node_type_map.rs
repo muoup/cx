@@ -25,7 +25,7 @@ pub struct DeconstructorData {
     pub deallocations: Vec<DeconstructionType>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeCheckData {
     expr_types: HashMap<u64, CXType>,
     deferring_functions: HashSet<String>,

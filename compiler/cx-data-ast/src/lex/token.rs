@@ -24,6 +24,13 @@ macro_rules! keyword {
 }
 
 #[macro_export]
+macro_rules! specifier {
+    ($($name:ident),+) => {
+        $(TokenKind::Specifier(cx_data_ast::lex::token::SpecifierType::$name))|+
+    }
+}
+
+#[macro_export]
 macro_rules! intrinsic {
     ($name:ident) => {
         TokenKind::Intrinsic(cx_data_ast::lex::token::IntrinsicType::$name)

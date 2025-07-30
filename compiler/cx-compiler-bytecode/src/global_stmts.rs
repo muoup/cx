@@ -68,12 +68,12 @@ fn generate_params(
     let is_structured_return = prototype.return_type.is_structured(&builder.cx_type_map);
     
     for (i, arg) in prototype.params.iter().enumerate() {
-        let bc_type = builder.convert_cx_type(&arg.type_)?;
+        let bc_type = builder.convert_cx_type(&arg._type)?;
         
         let memory = allocate_variable(
             &arg.name.as_ref().map(|n| n.to_string()).unwrap_or_else(|| format!("_fn_arg_{i}")),
             builder,
-            &arg.type_
+            &arg._type
         )?;
 
         let i = if is_structured_return {

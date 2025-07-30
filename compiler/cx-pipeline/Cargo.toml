@@ -5,10 +5,15 @@ edition = "2024"
 
 [features]
 default = []
-backend-llvm = []
+backend-llvm = ["cx-backend-llvm"]
 
 [dependencies]
 cx-compiler-ast = { path = "../cx-compiler-ast" }
+cx-compiler-typechecker = { path = "../cx-compiler-typechecker" }
+cx-compiler-bytecode = { path = "../cx-compiler-bytecode" }
+cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
+cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
 cx-data-pipeline = { path = "../cx-data-pipeline" }
 cx-data-ast = { path = "../cx-data-ast" }
+cx-data-bytecode = { path = "../cx-data-bytecode" }

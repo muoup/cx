@@ -21,7 +21,7 @@ pub fn generate_instruction(
             let lhs_type = builder.get_expr_type(lhs)?
                 .clone();
 
-            let CXTypeKind::MemoryAlias(inner) = lhs_type.intrinsic_type_kind(&builder.cx_type_map)?.clone()
+            let CXTypeKind::MemoryReference(inner) = lhs_type.intrinsic_type_kind(&builder.cx_type_map)?.clone()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
 
             if !matches!(lhs.as_ref().kind, CXExprKind::VarDeclaration { .. }) {
@@ -107,7 +107,7 @@ pub fn generate_instruction(
                 },
                 CXType::new(
                     0,
-                    CXTypeKind::MemoryAlias(lhs_inner)
+                    CXTypeKind::MemoryReference(lhs_inner)
                 )
             )
         },
@@ -341,7 +341,7 @@ pub fn generate_instruction(
                     let val_type = builder.get_expr_intrinsic_type(operand)?
                         .clone();
 
-                    let CXTypeKind::MemoryAlias(inner) = val_type
+                    let CXTypeKind::MemoryReference(inner) = val_type
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
                     let loaded_val = builder.add_instruction(
@@ -381,7 +381,7 @@ pub fn generate_instruction(
                     let val_type = builder.get_expr_intrinsic_type(operand)?
                         .clone();
 
-                    let CXTypeKind::MemoryAlias(inner) = val_type
+                    let CXTypeKind::MemoryReference(inner) = val_type
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
                     let loaded_val = builder.add_instruction(

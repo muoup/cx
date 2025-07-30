@@ -5,7 +5,7 @@ use crate::parse::ast::CXFunctionPrototype;
 use crate::parse::template::{CXTemplateTypeGen, CXTemplateInput, CXTemplateOutput};
 use crate::parse::value_type::CXType;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CXMap<Output> {
     types: HashMap<String, Output>,
     templated_types: HashMap<String, CXTemplateTypeGen>
@@ -41,6 +41,10 @@ impl<Output> CXMap<Output> {
     
     pub fn insert(&mut self, name: String, ty: Output) -> Option<Output> {
         self.types.insert(name, ty)
+    }
+    
+    pub fn remove(&mut self, name: &str) -> Option<Output> {
+        self.types.remove(name)
     }
 
     pub fn get(&self, name: &str) -> Option<&Output> {

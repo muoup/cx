@@ -87,7 +87,7 @@ impl CXTemplateTypeGen {
     
     fn resolve_prototype_generics(&self, prototype: &mut CXFunctionPrototype, input: &CXTemplateInput) -> CXResult<()> {
         for param in &mut prototype.params {
-            self.resolve_type_generics(&mut param.type_, input)?;
+            self.resolve_type_generics(&mut param._type, input)?;
         }
         
         self.resolve_type_generics(&mut prototype.return_type, input)?;

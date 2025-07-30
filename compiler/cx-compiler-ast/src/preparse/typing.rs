@@ -1,4 +1,4 @@
-use cx_data_ast::{assert_token_matches, keyword, next_kind, punctuator, try_next};
+use cx_data_ast::{assert_token_matches, keyword, next_kind, peek_next_kind, punctuator, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
@@ -8,18 +8,17 @@ use cx_util::{log_error, point_log_error};
 use crate::parse::global_scope::ParseParamsResult;
 use crate::preparse::preparser::goto_statement_end;
 
-pub(crate) struct TypeRecord {
-    pub(crate) name: Option<String>,
-    pub(crate) type_: CXType,
+fn predeclaration_identifier(name: Option<CXIdent>, predeclaration: PredeclarationType) -> Option<(Option<CXIdent>, CXTypeKind)> {
+    Some((name.clone(), CXTypeKind::Identifier { name: name.unwrap(), predeclaration }))
 }
 
-pub(crate) fn parse_struct(tokens: &mut TokenIter) -> Option<CXTypeKind> {
+pub(crate) fn parse_struct(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXTypeKind)> {
     assert_token_matches!(tokens, keyword!(Struct));
 
     let name = parse_std_ident(tokens);
 
     if !try_next!(tokens, punctuator!(OpenBrace)) {
-        return Some(name?.as_str().into());
+        return predeclaration_identifier(name, PredeclarationType::Struct);
     }
 
     let mut fields = Vec::new();
@@ -37,24 +36,36 @@ pub(crate) fn parse_struct(tokens: &mut TokenIter) -> Option<CXTypeKind> {
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
-    Some(CXTypeKind::Structured { name, fields, has_destructor: false })
+    Some((name.clone(), CXTypeKind::Structured { name, fields, has_destructor: false }))
 }
 
-pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<CXTypeKind> {
+pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXTypeKind)> {
     assert_token_matches!(tokens, keyword!(Enum));
+    
+    let name = if let Some(TokenKind::Identifier(name)) = peek_next_kind!(tokens) {
+        let ident = CXIdent::from(name.as_str());
+        tokens.next();
+        Some(ident)
+    } else {
+        None
+    };
+    
+    if !try_next!(tokens, punctuator!(OpenBrace)) {
+        return predeclaration_identifier(name, PredeclarationType::Enum);
+    }
 
+    tokens.back();
     goto_statement_end(tokens);
-
-    Some(CXTypeKind::Integer { signed: true, bytes: 4})
+    Some((name, CXTypeKind::Integer { signed: true, bytes: 4 }))
 }
 
-pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<CXTypeKind> {
+pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXTypeKind)> {
     assert_token_matches!(tokens, keyword!(Union));
 
     let name = parse_std_ident(tokens);
 
     if !try_next!(tokens, punctuator!(OpenBrace)) {
-        return Some(name?.as_str().into());
+        return predeclaration_identifier(name, PredeclarationType::Union);
     }
 
     let mut fields = Vec::new();
@@ -70,12 +81,13 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<CXTypeKind> {
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
-    Some(
+    Some((
+        name.clone(),
         CXTypeKind::Union {
             name,
             fields,
         }
-    )
+    ))
 }
 
 pub(crate) fn parse_params(tokens: &mut TokenIter) -> Option<ParseParamsResult> {
@@ -92,9 +104,9 @@ pub(crate) fn parse_params(tokens: &mut TokenIter) -> Option<ParseParamsResult> 
         if let Some((name, type_)) = parse_initializer(tokens) {
             let name = name;
 
-            params.push(CXParameter { name, type_ });
+            params.push(CXParameter { name, _type: type_ });
         } else {
-            log_error!("Failed to parse parameter in function call: {:#?}", tokens.peek());
+            point_log_error!(tokens, "Failed to parse parameter in function call");
         }
 
         if !try_next!(tokens, TokenKind::Operator(OperatorType::Comma)) { assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
@@ -260,15 +272,15 @@ pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXType> {
         ),
 
         TokenKind::Keyword(KeywordType::Struct) => Some(
-            parse_struct(tokens)?.to_val_type()
+            parse_struct(tokens)?.1.to_val_type()
         ),
 
         TokenKind::Keyword(KeywordType::Enum) => Some(
-            parse_enum(tokens)?.to_val_type()
+            parse_enum(tokens)?.1.to_val_type()
         ),
 
         TokenKind::Keyword(KeywordType::Union) => Some(
-            parse_union(tokens)?.to_val_type()
+            parse_union(tokens)?.1.to_val_type()
         ),
 
         _ => return None

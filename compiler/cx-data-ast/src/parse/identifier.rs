@@ -10,6 +10,14 @@ pub struct CXIdent {
     pub data: String
 }
 
+impl Default for CXIdent {
+    fn default() -> Self {
+        CXIdent {
+            data: String::new()
+        }
+    }
+}
+
 impl CXIdent {
     pub fn as_str(&self) -> &str {
         self.data.as_str()

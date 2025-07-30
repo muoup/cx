@@ -37,7 +37,7 @@ pub fn typecheck_access(
                 .map(|(_, field_type)| {
                     CXType::new(
                         0,
-                        CXTypeKind::MemoryAlias(Box::new(field_type.clone()))
+                        CXTypeKind::MemoryReference(Box::new(field_type.clone()))
                     )
                 })
                 .or_else(|| log_error!("TYPE ERROR: Invalid union accessor {accessor} for type {lhs_type}"))

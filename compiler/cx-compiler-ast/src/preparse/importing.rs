@@ -18,13 +18,11 @@ pub(crate) fn parse_import(tokens: &mut TokenIter, contents: &mut PreparseConten
             TokenKind::Operator(OperatorType::ScopeRes) => import_path.push('/'),
             TokenKind::Identifier(ident) => import_path.push_str(ident),
 
-            _ => {
-                log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
-            }
+            _ => log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok)
         }
     };
     
-    assert_token_matches!(tokens, punctuator!(Semicolon));
+    import_path.push_str(".cx");
     
     contents.imports.push(import_path);
     Some(())

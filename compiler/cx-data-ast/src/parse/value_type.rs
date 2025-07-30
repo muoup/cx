@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::parse::ast::{CXExpr, CXFunctionPrototype};
 use crate::parse::identifier::CXIdent;
 use crate::parse::maps::CXTypeMap;
+use crate::parse::parser::VisibilityMode;
 
 pub type CXTypeSpecifier = u8;
 
@@ -17,6 +18,7 @@ pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXType {
     pub uuid: u64,
+    pub visibility_mode: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
     pub kind: CXTypeKind,
 }
@@ -39,6 +41,7 @@ impl Default for CXType {
     fn default() -> Self {
         CXType {
             uuid: 0,
+            visibility_mode: VisibilityMode::Private,
             specifiers: 0,
             kind: CXTypeKind::Unit
         }
@@ -73,7 +76,7 @@ pub enum CXTypeKind {
         explicitly_weak: bool,
         nullable: bool
     },
-    MemoryAlias(Box<CXType>),
+    MemoryReference(Box<CXType>),
     Array {
         size: usize,
         _type: Box<CXType>
@@ -136,6 +139,7 @@ impl CXType {
         CXType {
             uuid: 0,
             specifiers: 0,
+            visibility_mode: VisibilityMode::Private,
             kind: CXTypeKind::Unit
         }
     }
@@ -143,14 +147,21 @@ impl CXType {
     pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
+            visibility_mode: VisibilityMode::Private, 
             specifiers,
             kind: underlying_type
         }
+    }
+    
+    pub fn set_visibility_mode(&mut self, visibility: VisibilityMode) -> &mut Self {
+        self.visibility_mode = visibility;
+        self
     }
 
     pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
+            visibility_mode: self.visibility_mode,
             specifiers: self.specifiers | specifier,
             kind: self.kind.clone()
         }
@@ -159,6 +170,7 @@ impl CXType {
     pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
+            visibility_mode: self.visibility_mode,
             specifiers: self.specifiers & !specifier,
             kind: self.kind.clone()
         }
@@ -177,7 +189,7 @@ impl CXType {
     }
     
     pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
+        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
             return false;
         };
           
@@ -185,7 +197,7 @@ impl CXType {
     }
 
     pub fn is_mem_ref(&self) -> bool {
-        matches!(self.kind, CXTypeKind::MemoryAlias(_))
+        matches!(self.kind, CXTypeKind::MemoryReference(_))
     }
     
     pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
@@ -214,7 +226,7 @@ impl CXType {
     }
     
     pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
+        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
             return None;
         };
 
@@ -227,7 +239,7 @@ impl CXType {
     }
     
     pub fn mem_ref_inner(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
+        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
             return None;
         };
         
@@ -246,6 +258,7 @@ impl CXType {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
+            visibility_mode: VisibilityMode::Private,
             kind: CXTypeKind::PointerTo {
                 inner: Box::new(self),
                 
@@ -293,7 +306,7 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
          CXTypeKind::Function { prototype: p2 }) =>
             same_type(type_map, &p1.return_type, &p2.return_type) &&
                 p1.params.iter().zip(p2.params.iter())
-                    .all(|(a1, a2)| same_type(type_map, &a1.type_, &a2.type_)),
+                    .all(|(a1, a2)| same_type(type_map, &a1._type, &a2._type)),
 
         (CXTypeKind::Integer { bytes: t1_bytes, signed: t1_signed },
             CXTypeKind::Integer { bytes: t2_bytes, signed: t2_signed }) =>

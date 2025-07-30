@@ -9,7 +9,7 @@ mod format;
 pub type BCTypeMap = HashMap<String, BCType>;
 pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProgramBytecode {
     pub fn_map: BCFunctionMap,
     pub type_map: BCTypeMap,
@@ -61,7 +61,7 @@ pub struct BCFunctionPrototype {
     pub var_args: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BytecodeFunction {
     pub prototype: BCFunctionPrototype,
     
@@ -71,13 +71,13 @@ pub struct BytecodeFunction {
     pub static_linkage: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionBlock {
     pub debug_name: String,
     pub body: Vec<BlockInstruction>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockInstruction {
     pub instruction: VirtualInstruction,
     pub value: VirtualValue
@@ -85,7 +85,7 @@ pub struct BlockInstruction {
 
 pub const POINTER_TAG : usize = 0xF000_0000_0000_0000;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VirtualInstruction {
     FunctionParameter {
         param_index: u32

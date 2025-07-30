@@ -5,16 +5,16 @@ use cx_data_ast::parse::parser::ParserData;
 use crate::parse::expression::parse_expr;
 
 pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<CXExpr> {
-    let init_index = data.toks.index;
-    assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+    let init_index = data.tokens.index;
+    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenBrace));
     
     let mut inits = Vec::new();
     
-    while !try_next!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-        let field_name = if try_next!(data.toks, TokenKind::Operator(OperatorType::Access)) {
-            assert_token_matches!(data.toks, TokenKind::Identifier(field_name));
+    while !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+        let field_name = if try_next!(data.tokens, TokenKind::Operator(OperatorType::Access)) {
+            assert_token_matches!(data.tokens, TokenKind::Identifier(field_name));
             let field_name = field_name.clone();
-            assert_token_matches!(data.toks, TokenKind::Assignment(None));
+            assert_token_matches!(data.tokens, TokenKind::Assignment(None));
             Some(field_name)
         } else { None };
         
@@ -24,9 +24,9 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<C
         
         inits.push(CXInitIndex { name: field_name, value: val, index: 0 });
         
-        if !try_next!(data.toks, TokenKind::Operator(OperatorType::Comma)) {
+        if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {
             // If we didn't find a comma, it must be the end of the initializer list
-            assert_token_matches!(data.toks, TokenKind::Punctuator(PunctuatorType::CloseBrace));
+            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace));
             break;
         }
     }
@@ -35,7 +35,7 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<C
         CXExprKind::InitializerList { indices: inits, }
             .into_expr(
                 init_index,
-                data.toks.index,
+                data.tokens.index,
             )
     )
 }

@@ -2,24 +2,26 @@ use crate::lex::token::Token;
 use crate::parse::value_type::{CXType};
 use cx_util::scoped_map::{ScopedMap, ScopedSet};
 use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
+use crate::parse::ast::CXAST;
+use crate::parse::maps::CXTypeMap;
 
 pub type VarTable = ScopedMap<CXType>;
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq, Copy, Deserialize, Serialize)]
 pub enum VisibilityMode {
     Package,
     Public,
     Private,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ParserData<'a> {
-    pub file_path: String,
-    pub toks: TokenIter<'a>,
+    pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
     pub expr_commas: Vec<bool>,
-
-    pub type_symbols: HashSet<String>
+    
+    pub ast: CXAST,
 }
 
 #[derive(Debug, Clone)]
@@ -28,31 +30,28 @@ pub struct TokenIter<'a> {
     pub index: usize,
 }
 
-impl<'a> ParserData<'a> {
-    pub fn new(file_path: String, toks: &'a [Token]) -> Self {
-        ParserData {
-            file_path,
-            
-            toks: TokenIter { slice: toks, index: 0 },
-            visibility: VisibilityMode::Package,
-            expr_commas: vec![true],
-
-            type_symbols: HashSet::new(),
+impl<'a> TokenIter<'a> {
+    pub fn new(slice: &'a [Token]) -> Self {
+        TokenIter {
+            slice,
+            index: 0,
         }
     }
+}
 
+impl<'a> ParserData<'a> {
     pub fn back(&mut self) -> &mut Self {
-        self.toks.back();
+        self.tokens.back();
         self
     }
 
     pub fn skip(&mut self) -> &mut Self {
-        self.toks.next();
+        self.tokens.next();
         self
     }
 
     pub fn reset(&mut self) {
-        self.toks.index = 0;
+        self.tokens.index = 0;
     }
     
     pub fn change_comma_mode(&mut self, expr_comma: bool) {

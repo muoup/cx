@@ -157,7 +157,5 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     std::fs::create_dir_all(output_path.parent().unwrap()).expect("Failed to create output directory");
     std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
 
-    println!("Successfully generated object file to {output}");
-
     Some(())
 }

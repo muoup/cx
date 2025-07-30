@@ -9,7 +9,7 @@ pub(crate) struct TypeRecord {
 }
 
 pub fn is_type_decl(data: &mut ParserData) -> bool {
-    let tok = data.toks.peek();
+    let tok = data.tokens.peek();
 
     if tok.is_none() {
         return false;
@@ -20,7 +20,7 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
         TokenKind::Specifier(_) |
         keyword!(Struct, Union, Enum) => true,
 
-        TokenKind::Identifier(name) => data.type_symbols.contains(name),
+        TokenKind::Identifier(name) => data.ast.type_map.contains_key(name),
 
         _ => false
     }

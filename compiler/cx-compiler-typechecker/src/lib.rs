@@ -9,6 +9,7 @@ use cx_util::scoped_map::ScopedMap;
 use std::collections::HashMap;
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 
+pub mod typemap_collapsing;
 pub mod deconstructed_types;
 pub mod checker;
 mod struct_typechecking;

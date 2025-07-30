@@ -83,3 +83,10 @@ macro_rules! next_kind {
         $data.next().cloned().map(|k| k.kind);
     }
 }
+
+#[macro_export]
+macro_rules! peek_next_kind {
+    ($data:expr) => {
+        $data.peek().map(|k| &k.kind)
+    }
+}

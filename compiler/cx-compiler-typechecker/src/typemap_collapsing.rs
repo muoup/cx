@@ -1,0 +1,66 @@
+use cx_data_ast::parse::maps::CXTypeMap;
+use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+
+pub fn collapse_typemap(self_map: &CXTypeMap, import_maps: &[CXTypeMap]) -> Option<CXTypeMap> {
+    let mut new_map = CXTypeMap::new();
+    
+    for (name, _type) in self_map.iter() {
+        let mut cloned = _type.clone();
+        collapse_type(&mut cloned, self_map, import_maps)?;
+        new_map.insert(name.clone(), cloned);
+    }
+    
+    Some(new_map)
+}
+
+fn collapse_type(_type: &mut CXType, self_map: &CXTypeMap, import_maps: &[CXTypeMap]) -> Option<()> {
+    match &mut _type.kind {
+        CXTypeKind::Identifier { name, .. } => {
+            if let Some(self_type) = self_map.get(name.as_str()) {
+                *_type = self_type.clone();
+            } else {
+                for import_map in import_maps {
+                    if let Some(import_type) = import_map.get(name.as_str()) {
+                        *_type = import_type.clone();
+                        break;
+                    }
+                }
+                
+                todo!()
+            }
+        },
+        
+        CXTypeKind::Array { _type: inner, .. } |
+        CXTypeKind::StrongPointer { inner, .. } |
+        CXTypeKind::PointerTo { inner, .. } 
+            => collapse_type(inner.as_mut(), self_map, import_maps)?,
+        
+        CXTypeKind::Union { fields, .. } |
+        CXTypeKind::Structured { fields, .. } =>
+            for (_, _type) in fields.iter_mut() {
+                collapse_type(_type, self_map, import_maps)?;
+            },
+        
+        CXTypeKind::Function { prototype, .. } => {
+            collapse_type(&mut prototype.return_type, self_map, import_maps)?;
+            
+            for param in prototype.params.iter_mut() {
+                collapse_type(&mut param._type, self_map, import_maps)?;
+            }
+        },
+
+        CXTypeKind::VariableLengthArray { .. } |
+        CXTypeKind::MemoryReference(_) 
+            => unreachable!("Unexpected type encountered in collapse_type: {:?}", _type.kind),
+        
+        CXTypeKind::Opaque { .. } => todo!("Opaque types"),
+        
+        CXTypeKind::Integer { .. } |
+        CXTypeKind::Float { .. } |
+        CXTypeKind::Bool { .. } |
+        CXTypeKind::Unit { .. }
+            => {}, // Primitive types do not need collapsing
+    }
+    
+    Some(())
+}

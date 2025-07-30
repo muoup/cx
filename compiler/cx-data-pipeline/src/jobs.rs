@@ -31,49 +31,41 @@ pub enum CompilationStep {
     // preprocessing and lexing are done for now whenever the source code is needed.
 
     /**
-     *  Determine the special type identifiers for the compilation unit. This step should be
-     *  relatively short, but even for trying to determine what is a function for the next step,
-     *  the C grammar requires that you are aware of the names of types that are defined in the
-     *  compilation unit. This stage will collect the names of types as well as the direct imports
-     *  of the file.
+     *  Parses all type and function definitions from the source compilation unit. This will produce
+     *  a (most of the time) incomplete type and function map, which can contain unresolved references
+     *  to types and functions that are defined in imported modules. This must be done separate from
+     *  the main parsing step as the C grammar necessitates that type symbols are known before parsing
+     *  expressions inside a function body (e.g. a * b is an ambiguous multiplication or pointer
+     *  variable declaration unless the compiler knows if "a" is a type)
      *
-     *  Requires: The source code of the compilation unit.
-     *  Outputs:  A preparse map containing type identifiers and the imports of the compilation unit.
+     *  Requires: Lexed and preprocessed source code. This is done when-needed for now as it is not
+     *            too computationally expensive.
+     *  
      */
-    PreParseStage1 = 1 << 0,
+    PreParse = 1 << 0,
     
-    /**
-     *  The second step of the pre-parsing phase, which is responsible for determining the names of
-     *  functions in the compilation unit. This is mostly only needed for templates, as expressions
-     *  when parsing the AST will need to differentiate between val < ... and val<... (..>) where the
-     *  latter is a templated function call and the former is a binary operator.
-     * 
-     *  Requires: PreParseTypes identifiers to be available.
-     *
-     *  Outputs:  An updated preparse map containing function names as well.
-     */
-    PreParseStage2 = 1 << 1,
-
     /**
      *  Parse the AST from the source code. This is the main parsing step that converts the source
      *  code into an abstract syntax tree (AST) representation. In the process, a type map and
      *  function map is also created to be used later for typechecking purposes.
      *
-     *  Requires: CX identifier information for each import and itself.
+     *  Requires: CX type and function definitions from the preparse step for both the current
+     *            compilation unit and all imports, as well as the lexed and preprocessed source code.
+     *            
      *
-     *  Outputs:  An AST, a .cx-types file and a .cx-fns file containing the type map and function map.
+     *  Outputs:  A naively parsed AST.
      */
-    ASTParse = 1 << 2,
+    ASTParse = 1 << 1,
 
     /**
      *  Typecheck the AST. This step validates expressions, statements, and declarations, as well
      *  as adding implicit type conversions and checking for type errors.
      *
-     *  Requires: An AST, along with type and function definitions of imports and the current unit.
+     *  Requires: The AST, along with the type and function definitions of imports and self.
      *
      *  Outputs:  A type-checked AST.
      */
-    TypeCheck = 1 << 3,
+    TypeCheck = 1 << 2,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -82,23 +74,27 @@ pub enum CompilationStep {
      *
      *  Requires: A type-checked AST. Along with the type and function definitions of imports and self.
      *
-     *  Outputs:  A bytecode representation of the type-checked AST along with a .cx-impl file containing
-     *            implementations of templates, and potentially small always-inline functions in the future,
-     *            to allow for more context-aware (and necessary in the case of templates) code generation.
+     *  Outputs:  A bytecode representation of the type-checked AST along with publicly accessible
+     *            implementations of templated functions, types, and potentially in the future small
+     *            always-inlined functions.
      */
-    BytecodeGen = 1 << 4,
+    BytecodeGen = 1 << 3,
 
     /**
-     *  Generate object files from the bytecode representation. Because templated and non-templated functions
-     *  are handled separately in this IR, this step will also require access to the .cx-impl files of the
-     *  imports and the current unit to ensure that all required implementations are available in the binary.
+     *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
+     *  will consist of combining the bytecode of the current compilation unit along with all needed
+     *  implementations of templates and types from itself and its imports.
      *
      *  Requires: Bytecode representation of the type-checked AST, along with the .cx-impl files of imports
      *            and the current unit.
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 5
+    Codegen = 1 << 4
+    
+    // For now, linking is a single step that is done after all compilation above is done. This 
+    // could be abstracted into a CompilationStep, but seeing as it is not specified to a single compilation
+    // unit, it is just handled separately for now.
 }
 
 impl CompilationJob {
@@ -133,7 +129,7 @@ impl JobProgressMap {
         Some(())
     }
 
-    pub fn get_progress(
+    pub fn step_complete(
         &self,
         unit: &CompilationUnit,
         step: CompilationStep
@@ -145,10 +141,10 @@ impl JobProgressMap {
         (entry & (step as CompilationStepRepr)) != 0
     }
 
-    pub fn get_job_progress(
+    pub fn job_complete(
         &self,
         job: &CompilationJob
     ) -> bool {
-        self.get_progress(&job.unit, job.step)
+        self.step_complete(&job.unit, job.step)
     }
 }

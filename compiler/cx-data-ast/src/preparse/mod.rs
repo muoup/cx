@@ -10,9 +10,10 @@ pub enum PreparseTokenType {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CXPreparseToken {
-    pub identifier: String,
     pub token_type: PreparseTokenType
 }
+
+pub type PreparseTokenMap = HashMap<String, CXPreparseToken>;
 
 pub type CXPreparseTokens = Vec<CXPreparseToken>;
 
