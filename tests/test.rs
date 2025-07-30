@@ -27,7 +27,7 @@ fn run_tests() {
     };
     let llvm_config = CompilerConfig {
         backend: CompilerBackend::LLVM,
-        optimization_level: cx_data_pipeline::OptimizationLevel::O0,
+        optimization_level: cx_data_pipeline::OptimizationLevel::O1,
         output: "a.out".into(),
     };
 

@@ -4,7 +4,6 @@ use cx_data_pipeline::GlobalCompilationContext;
 pub(crate) fn link(context: &GlobalCompilationContext) -> Option<()> {
     let mut cmd = Command::new("gcc");
     cmd
-        .arg("-no-pie")
         .arg("-o")
         .arg(context.config.output.to_str().expect("Output path invalid"));
     

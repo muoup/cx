@@ -157,7 +157,7 @@ pub fn bytecode_aot_codegen(
             "generic",
             "",
             inkwell_optimization_level,
-            RelocMode::Default,
+            RelocMode::PIC,
             CodeModel::Default
         )
         .expect("Failed to create target machine");
