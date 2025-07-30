@@ -167,7 +167,7 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
 
         (CXTypeKind::StrongPointer { .. }, _) |
         (_, CXTypeKind::StrongPointer { .. }) => {
-            println!("R-value strong pointers must be assigned to an l-value before being used in binary operations, found '{op}' with types {l_type} and {r_type}");
+            eprintln!("R-value strong pointers must be assigned to an l-value before being used in binary operations, found '{op}' with types {l_type} and {r_type}");
             None
         },
 

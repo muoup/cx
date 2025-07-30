@@ -2,6 +2,7 @@ mod scheduler;
 mod backends;
 mod linker;
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Mutex, RwLock};
 use cx_data_pipeline::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
@@ -16,8 +17,8 @@ pub fn standard_compilation(
 ) -> Option<()> {
     let compiler_context = GlobalCompilationContext {
         config,
-        module_db: RwLock::new(ModuleData::new()),
-        linking_files: Mutex::new(vec![]),
+        module_db: ModuleData::new(),
+        linking_files: Mutex::new(HashSet::new()),
     };
 
     let initial_job = CompilationJob::new(

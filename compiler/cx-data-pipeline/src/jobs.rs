@@ -1,19 +1,24 @@
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::ops::{BitAnd, BitOr};
-use uuid::Uuid;
 use crate::CompilationUnit;
+use std::cmp::PartialEq;
+use std::collections::{HashMap, VecDeque};
+use std::hash::Hash;
 
-pub struct JobProgressMap {
-    data: HashMap<CompilationUnit, CompilationStepRepr>
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum JobState {
+    InQueue,
+    Completed
+}
+
+pub struct JobQueue {
+    progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
+    data: VecDeque<CompilationJob>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilationJob {
-    pub uuid: Uuid,
-    pub requirements: Vec<CompilationJobRequirement>,
     pub step: CompilationStep,
     pub unit: CompilationUnit,
+    pub requirements: Vec<CompilationJobRequirement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,47 +109,74 @@ impl CompilationJob {
         unit: CompilationUnit
     ) -> Self {
         CompilationJob {
-            uuid: Uuid::new_v4(),
             requirements,
             step,
             unit
         }
     }
+    
+    pub fn as_requirement(&self) -> CompilationJobRequirement {
+        CompilationJobRequirement {
+            step: self.step,
+            unit: self.unit.clone()
+        }
+    }
 }
 
-impl JobProgressMap {
+impl Hash for CompilationJob {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.unit.hash(state);
+        self.step.hash(state);
+    }
+}
+
+impl JobQueue {
     pub fn new() -> Self {
-        JobProgressMap {
-            data: HashMap::new()
+        JobQueue {
+            progress_map: HashMap::new(),
+            data: VecDeque::new()
         }
     }
 
-    pub fn insert_progress(
-        &mut self,
-        unit: CompilationUnit,
-        step: CompilationStep
-    ) -> Option<()> {
-        let entry = self.data.entry(unit).or_insert(0);
-        *entry = *entry | (step as CompilationStepRepr);
-        Some(())
+    pub fn push_new_job(&mut self, job: CompilationJob) {
+        let pair = (job.unit.clone(), job.step);
+        
+        if !self.progress_map.contains_key(&pair) {
+            self.data.push_back(job);
+            self.progress_map.insert(pair, JobState::InQueue);
+        }
+    }
+    
+    pub fn push_job(&mut self, job: CompilationJob) {
+        let pair = (job.unit.clone(), job.step);
+        
+        self.data.push_back(job);
+        self.progress_map.insert(pair, JobState::InQueue);
     }
 
-    pub fn step_complete(
-        &self,
-        unit: &CompilationUnit,
-        step: CompilationStep
-    ) -> bool {
-        let Some(entry) = self.data.get(unit) else {
-            return false;
-        };
-
-        (entry & (step as CompilationStepRepr)) != 0
+    pub fn pop_job(&mut self) -> Option<CompilationJob> {
+        self.data.pop_front()
+    }
+    
+    pub fn complete_job(&mut self, job: &CompilationJob) {
+        self.progress_map.insert((job.unit.clone(), job.step), JobState::Completed);
+    }
+    
+    pub fn job_complete(&self, job: &CompilationJob) -> bool {
+        self.progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
+    }
+    
+    pub fn requirements_complete(&self, job: &CompilationJob) -> bool {
+        job.requirements.iter().all(|req| {
+            self.progress_map.get(&(req.unit.clone(), req.step)) == Some(&JobState::Completed)
+        })
+    }
+    
+    pub fn finish_job(&mut self, job: &CompilationJob) {
+        self.progress_map.insert((job.unit.clone(), job.step), JobState::Completed);
     }
 
-    pub fn job_complete(
-        &self,
-        job: &CompilationJob
-    ) -> bool {
-        self.step_complete(&job.unit, job.step)
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }

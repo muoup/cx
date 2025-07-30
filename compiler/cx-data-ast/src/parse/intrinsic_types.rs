@@ -1,5 +1,9 @@
 use crate::parse::value_type::{CXType, CXTypeKind};
 
+pub const INTRINSIC_IMPORTS: &[&str] = &[
+    "std/intrinsic/memory.cx"
+];
+
 pub const INTRINSIC_TYPES: &[(&str, CXTypeKind)] = &[
     ("void",                CXTypeKind::Unit),
     ("bool",                CXTypeKind::Bool),

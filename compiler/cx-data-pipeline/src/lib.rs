@@ -2,6 +2,7 @@ pub mod jobs;
 pub mod db;
 pub mod directories;
 
+use std::collections::HashSet;
 use std::fmt::Display;
 use crate::db::ModuleData;
 use std::path::PathBuf;
@@ -38,9 +39,9 @@ impl CompilationUnit {
 
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
-    pub module_db: RwLock<ModuleData>,
+    pub module_db: ModuleData,
     
-    pub linking_files: Mutex<Vec<PathBuf>>
+    pub linking_files: Mutex<HashSet<PathBuf>>
 }
 
 #[derive(Debug, Clone)]

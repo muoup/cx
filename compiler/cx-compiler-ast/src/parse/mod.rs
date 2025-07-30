@@ -10,7 +10,6 @@ pub mod global_scope;
 pub mod typing;
 pub mod operators;
 mod parsing_tools;
-pub mod intrinsic_types;
 mod structured_initialization;
 mod template;
 

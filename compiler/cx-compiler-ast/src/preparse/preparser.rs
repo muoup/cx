@@ -16,6 +16,14 @@ pub(crate) fn preparse_stmt(data: &mut PreparseData, contents: &mut PreparseCont
         keyword!(Struct, Enum, Union) => parse_plain_typedef(data, contents)?,
         keyword!(Typedef) => parse_typedef(&mut data.tokens, contents)?,
         
+        operator!(Tilda) => {
+            data.tokens.next();
+            assert_token_matches!(data.tokens, TokenKind::Identifier(name));
+            
+            data.destructors.push(name.to_string());
+            goto_statement_end(&mut data.tokens);
+        },
+        
         specifier!(Public, Private) => {
             data.tokens.next(); // Consume the public specifier
             try_next!(data.tokens, punctuator!(Colon));

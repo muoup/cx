@@ -1,58 +1,12 @@
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use std::collections::HashMap;
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
-
-impl GlobalCompilationContext {
-    pub fn request_access_mut(&self) -> RwLockWriteGuard<ModuleData> {
-        self.module_db.write().expect("Deadlock detected")
-    }
-    
-    pub fn request_access(&self) -> RwLockReadGuard<ModuleData> {
-        self.module_db.read().expect("Deadlock detected")
-    }
-    
-    pub fn take_resource<Getter, Resource>(&self, module: &CompilationUnit, getter: Getter) 
-                                           -> Option<Resource>
-        where Getter: Fn(&mut ModuleData) -> Option<&mut ModuleMap<Resource>>
-    {
-        let mut module_data = self.request_access_mut();
-        
-        getter(&mut module_data)
-            .and_then(|map| map.loaded_data.remove(module))
-    }
-    
-    pub fn give_resource<Getter, Resource>(&self, module: CompilationUnit, getter: Getter, resource: Resource) 
-                                         -> Option<()>
-        where Getter: Fn(&mut ModuleData) -> Option<&mut ModuleMap<Resource>>
-    {
-        let mut module_data = self.request_access_mut();
-        
-        getter(&mut module_data)
-            .and_then(|map| {
-                map.insert(module, resource);
-                Some(())
-            })
-    }
-    
-    pub fn request_resource<Getter, Mapping, Resource>(&self, module: &CompilationUnit, getter: Getter, mapping: Mapping)
-                                         -> Option<()> 
-        where Getter: Fn(&mut ModuleData) -> Option<&mut ModuleMap<Mapping>>,
-              Mapping: Fn(Resource) -> Resource
-    {
-        Some(())
-    }
-    
-    pub fn request_imports(&self, module: &CompilationUnit) -> Option<Vec<String>> {
-        let mut module_data = self.request_access_mut();
-        module_data.import_data.get(module).cloned()
-    }
-}
 
 #[derive(Debug)]
 pub struct ModuleData {
@@ -90,33 +44,50 @@ impl ModuleData {
 #[derive(Debug)]
 pub struct ModuleMap<Data> {
     _storage_extension: String,
-    loaded_data: HashMap<CompilationUnit, Data>
+    loaded_data: RwLock<HashMap<CompilationUnit, Arc<Data>>>
 }
 
 impl<'a, Data> ModuleMap<Data> {
     pub fn new(data_suffix: &str) -> Self {
         ModuleMap {
             _storage_extension: data_suffix.to_string(),
-            loaded_data: HashMap::new()
+            loaded_data: RwLock::new(HashMap::new())
         }
     }
     
-    pub fn get(&mut self, unit: &CompilationUnit) -> Option<&Data> {
-        if !self.loaded_data.contains_key(unit) {
-            todo!("Lazy data reloading is not implemented yet");
-            // self.load(unit)?;
-        }
-      
-        self.loaded_data.get(unit)
+    pub fn take(&self, unit: &CompilationUnit) -> Data {
+        let mut lock = self.loaded_data.write()
+            .expect("Failed to acquire write lock on loaded data");
+
+        let removed = lock.remove(unit)
+            .expect("Data not found in the module map");
+     
+        Arc::try_unwrap(removed)
+            .ok()
+            .expect("Failed to unwrap Arc, data is still shared")
     }
-    
-    pub fn get_cloned(&mut self, unit: &CompilationUnit) -> Option<Data>
+
+    pub fn get(&self, unit: &CompilationUnit) -> Arc<Data> {
+        let lock = self.loaded_data.read()
+            .expect("Failed to acquire read lock on loaded data");
+
+        lock.get(unit)
+            .expect("Data not found in the module map")
+            .clone()
+    }
+
+    pub fn get_cloned(&self, unit: &CompilationUnit) -> Data
         where Data: Clone {
-        self.get(unit).cloned()
+        self.get(unit)
+            .as_ref()
+            .clone()
     }
     
-    pub fn insert(&mut self, unit: CompilationUnit, data: Data) {
-        self.loaded_data.insert(unit, data);
+    pub fn insert(&self, unit: CompilationUnit, data: Data) {
+        let mut lock = self.loaded_data.write()
+            .expect("Failed to acquire write lock on loaded data");
+
+        lock.insert(unit, Arc::from(data));
     }
     
     // fn load(&mut self, unit: &CompilationUnit) -> Option<()> {

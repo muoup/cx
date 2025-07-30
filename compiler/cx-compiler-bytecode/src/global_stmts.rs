@@ -2,7 +2,7 @@ use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::mangling::mangle_destructor;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, VirtualInstruction};
 use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -35,9 +35,18 @@ pub(crate) fn generate_destructor(
     body: &CXExpr
 ) -> Option<()> {
     let destructor_name = mangle_destructor(type_name);
-    let prototype = builder.fn_map.get(&destructor_name)
-        .cloned()
-        .expect("Failed to find destructor prototype in function map");
+    let prototype = BCFunctionPrototype {
+        return_type: BCType::unit(),
+        name: destructor_name,
+        params: vec![BCParameter {
+            name: Some("this".to_string()),
+            _type: BCType::from(BCTypeKind::Pointer {
+                nullable: false,
+                dereferenceable: 0,
+            }),
+        }],
+        var_args: false
+    };
 
     builder.symbol_table.push_scope();
     builder.new_function(prototype);
