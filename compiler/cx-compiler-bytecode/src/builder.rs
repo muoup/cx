@@ -113,8 +113,6 @@ impl BytecodeBuilder {
                 
                 blocks: context.blocks,
                 defer_blocks: context.deferred_blocks,
-
-                static_linkage,
             }
         );
     }

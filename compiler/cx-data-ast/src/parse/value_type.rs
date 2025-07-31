@@ -335,24 +335,6 @@ pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Opt
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TypeSize {
-    Fixed(usize),
-    Variable {
-        elem_size: Box<TypeSize>,
-        size_expr: Box<CXExpr>
-    }
-}
-
-impl TypeSize {
-    pub fn assert_fixed(&self, msg: &str) -> usize {
-        match self {
-            TypeSize::Fixed(size) => *size,
-            TypeSize::Variable { .. } => panic!("{msg}: Expected fixed size, found variable size"),
-        }
-    }
-}
-
 pub fn struct_field_type(
     type_map: &CXTypeMap,
     type_: &CXType,

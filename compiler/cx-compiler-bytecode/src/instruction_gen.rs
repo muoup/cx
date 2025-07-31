@@ -874,8 +874,8 @@ pub(crate) fn generate_algebraic_binop(
     return_type: BCType,
     op: &CXBinOp
 ) -> Option<ValueID> {
-    match return_type.kind {
-        BCTypeKind::Signed { .. } => {
+    match cx_lhs_type.intrinsic_type_kind(&builder.cx_type_map)? {
+        CXTypeKind::Integer { signed: true, .. } => {
             builder.add_instruction_bt(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
@@ -886,7 +886,7 @@ pub(crate) fn generate_algebraic_binop(
             )
         },
 
-        BCTypeKind::Unsigned { .. } => {
+        CXTypeKind::Integer { signed: false, .. } => {
             builder.add_instruction_bt(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
@@ -897,7 +897,7 @@ pub(crate) fn generate_algebraic_binop(
             )
         },
         
-        BCTypeKind::Bool => {
+        CXTypeKind::Bool => {
             builder.add_instruction_bt(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
@@ -908,7 +908,7 @@ pub(crate) fn generate_algebraic_binop(
             )
         },
 
-        BCTypeKind::Pointer { .. } => {
+        CXTypeKind::PointerTo { .. } => {
             let CXTypeKind::PointerTo { inner: left_inner, .. }
                 = &cx_lhs_type.intrinsic_type_kind(&builder.cx_type_map)?
             else { 
@@ -927,7 +927,7 @@ pub(crate) fn generate_algebraic_binop(
             )
         },
 
-        BCTypeKind::Float { .. } => {
+        CXTypeKind::Float { .. } => {
             builder.add_instruction_bt(
                 VirtualInstruction::FloatBinOp {
                     left: left_id,

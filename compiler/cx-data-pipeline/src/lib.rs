@@ -5,6 +5,7 @@ pub mod internal_storage;
 
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::hash::Hash;
 use crate::db::ModuleData;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -12,9 +13,10 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use crate::directories::file_path;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct CompilationUnit {
-    data: PathBuf
+    identifier: Rc<String>,
+    path: Rc<Path>
 }
 
 impl Serialize for CompilationUnit {
@@ -37,39 +39,48 @@ impl<'de> Deserialize<'de> for CompilationUnit {
     }
 }
 
+impl Hash for CompilationUnit {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+    }
+}
+
 impl Display for CompilationUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.data.to_str().unwrap())
+        write!(f, "{}", self.path.to_str().unwrap())
     }
 }
 
 impl CompilationUnit {
     pub fn from_str(path: &str) -> Self {
-        Self::from_path(PathBuf::from(file_path(path)))
-    }
-    
-    pub fn from_path(path: PathBuf) -> Self {
-        CompilationUnit { 
-            data: path.with_extension("") 
+        let path = if path.ends_with(".cx") {
+            &path[..path.len() - 3]
+        } else {
+            path
+        };
+        
+        let path_buf = PathBuf::from(file_path(path)).with_extension("");
+        
+        Self {
+            identifier: Rc::new(path.to_string()),
+            path: path_buf.into_boxed_path().into()
         }
     }
-    
+
     pub fn to_string(&self) -> String {
-        self.data.to_str().unwrap().to_string()
+        self.path.to_str().unwrap().to_string()
     }
     
     pub fn as_str(&self) -> &str {
-        self.data.to_str().unwrap()
+        self.path.to_str().unwrap()
     }
     
     pub fn to_path(&self) -> &Path {
-        &self.data
+        &self.path
     }
     
-    pub fn with_extension(&self, extension: &str) -> Self {
-        let mut new_path = self.data.clone();
-        new_path.set_extension(extension);
-        CompilationUnit { data: new_path }
+    pub fn with_extension(&self, extension: &str) -> PathBuf {
+        self.path.with_extension(extension)
     }
 }
 

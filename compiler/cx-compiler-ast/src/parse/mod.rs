@@ -37,12 +37,12 @@ pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> 
     None
 }
 
-pub fn parse_ast(mut iter: TokenIter, base_ast: CXAST) -> Option<CXAST> {
+pub fn parse_ast(iter: TokenIter, base_ast: CXAST) -> Option<CXAST> {
     let mut data = ParserData {
+        ast: base_ast,
         tokens: iter,
         visibility: cx_data_ast::parse::parser::VisibilityMode::Package,
         expr_commas: vec![true],
-        ast: base_ast,
     };
     
     while data.tokens.has_next() {

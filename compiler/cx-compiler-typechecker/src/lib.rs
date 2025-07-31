@@ -20,11 +20,11 @@ mod structured_initialization;
 
 pub type TypeCheckResult<T> = Option<T>;
 
-pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
+pub fn type_check(tokens: &[Token], ast: &mut CXAST) -> Option<TypeCheckData> {
     import_module_data(ast);
 
     let mut type_environment = TypeEnvironment {
-        tokens: &ast.tokens,
+        tokens,
         
         type_map: &mut ast.type_map,
         fn_map: &mut ast.function_map,

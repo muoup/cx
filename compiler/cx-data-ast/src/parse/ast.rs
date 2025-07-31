@@ -9,8 +9,6 @@ use crate::parse::template::CXTemplateTypeGen;
 
 #[derive(Debug, Clone, Default)]
 pub struct CXAST {
-    pub tokens: Vec<Token>,
-
     // Path to .cx file
     pub file_path: String,
 

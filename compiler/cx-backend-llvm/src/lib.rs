@@ -2,7 +2,7 @@ use crate::attributes::*;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -310,7 +310,14 @@ fn cache_prototype<'a>(
     let func = global_state.module.add_function(
         prototype.name.as_str(),
         llvm_prototype,
-        None
+        Some(
+            match prototype.linkage {
+                LinkageType::ODR => Linkage::LinkOnceODR,
+                LinkageType::Static => Linkage::Internal,
+                LinkageType::Public => Linkage::External,
+                LinkageType::Private => Linkage::Private,
+            }
+        )
     );
     
     for (i, _type) in prototype.params.iter().enumerate() {

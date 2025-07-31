@@ -15,14 +15,14 @@ use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, Compilat
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use cx_util::format::{dump_all, dump_data};
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
     let mut queue = JobQueue::new();
 
-    let mut seen = HashSet::new();
-    let mut seen_compilation_required = HashSet::new();
+    let mut compilation_exists = HashMap::new();
 
     queue.push_job(initial_job);
     
@@ -30,33 +30,39 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
     'queue: while !queue.is_empty() {
         let mut job = queue.pop_job().unwrap();
         
-        seen.insert(job.unit.clone());
+        compilation_exists.insert(job.unit.clone(), job.compilation_exists);
         
         if job.compilation_exists {
-            if !seen_compilation_required.contains(&job.unit) {
-                seen_compilation_required.insert(job.unit.clone());
+            if load_precompiled_data(context, &job.unit).is_none() {
+                job.compilation_exists = false;
                 queue.push_job(job);
                 continue;
-            } else {
-                for req in job.requirements.iter() {
-                    if seen_compilation_required.contains(&req.unit) {
+            }
+            
+            for req in job.requirements.iter() {
+                match compilation_exists.get(&req.unit) {
+                    // previous compilation does not exist for a dependency, so this job must be recompiled
+                    Some(false) => {
                         job.compilation_exists = false;
                         queue.push_job(job);
                         continue 'queue;
-                    }
+                    },
                     
-                    if !seen.contains(&req.unit) {
+                    // previous compilation exists for a dependency, if all other dependencies are the same
+                    // we may skip this job
+                    Some(true) => {},
+                    
+                    // all dependencies have not been processed yet, so we must check again later
+                    _ => {
                         queue.push_job(job);
                         continue 'queue;
-                    }
+                    },
                 }
-
-                context.linking_files.lock()
-                    .expect("Deadlock on linking files mutex")
-                    .insert(resource_path(context, &job.unit, ".o"));
-                load_precompiled_data(context, &job.unit);
-                continue;
             }
+            
+            println!("Skipping job: {} at step: {:?} as it has already been compiled", job.unit, job.step);
+            queue.complete_all_unit_jobs(&job.unit);
+            continue;
         }
 
         if !queue.requirements_complete(&job) {
@@ -66,7 +72,7 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
         
         queue.complete_job(&job);
         
-        println!("Handling job: {:?}, {:?}", job.step, job.unit);
+        println!("Handling job: {} at step: {:?}", job.unit, job.step);
         for new_jobs in handle_job(context, job)?.into_iter() {
             queue.push_new_job(new_jobs);
         }
@@ -142,18 +148,23 @@ pub(crate) fn handle_job(
     }
 }
 
-fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationUnit) {
-    fn retrieve_map_data<T>(context: &GlobalCompilationContext, map: &ModuleMap<T>, unit: &CompilationUnit)
+fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationUnit) -> Option<()> {
+    fn retrieve_map_data<T>(context: &GlobalCompilationContext, map: &ModuleMap<T>, unit: &CompilationUnit) -> Option<()>
         where T: Clone + DeserializeOwned + Serialize,
     {
-        let data = retrieve_data::<T>(context, unit, &map.storage_extension)
-            .unwrap_or_else(|| panic!("Failed to retrieve precompiled data for unit: {} with extension {}", unit, map.storage_extension));
-        
-        map.insert(unit.clone(), data);
+        if let Some(data) = retrieve_data::<T>(context, unit, &map.storage_extension) {
+            map.insert(unit.clone(), data);
+            Some(())
+        } else {
+            println!("Failed to retrieve data for unit: {} with storage extension: {}", unit, map.storage_extension);
+            None
+        }
     }
     
-    retrieve_map_data(context, &context.module_db.naive_type_data, unit);
-    retrieve_map_data(context, &context.module_db.function_data, unit);
+    retrieve_map_data(context, &context.module_db.naive_type_data, unit)?;
+    retrieve_map_data(context, &context.module_db.function_data, unit)?;
+    
+    Some(())
 }
 
 pub(crate) enum JobResult {
@@ -167,7 +178,7 @@ pub(crate) fn perform_job(
 ) -> Option<JobResult> {
     match job.step {
         CompilationStep::PreParse => {
-            let file_path = file_path(job.unit.with_extension("cx").as_str());
+            let file_path = job.unit.with_extension("cx");
             let file_contents = std::fs::read_to_string(file_path)
                 .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
 
@@ -179,8 +190,6 @@ pub(crate) fn perform_job(
                 .unwrap_or(String::new());
             
             let identical_hash = previous_hash == current_hash;
-            
-            println!("Previous hash: {} | Current Hash: {}", previous_hash, current_hash);
             
             store_text(context, &job.unit, ".hash", &current_hash);
             
@@ -242,11 +251,15 @@ pub(crate) fn perform_job(
             let parsed_ast = parse_ast(TokenIter::new(&lexemes), base_ast)
                 .expect("AST parsing failed");
 
+            dump_data(&parsed_ast);
+            
             context.module_db.lex_tokens.insert(job.unit.clone(), lexemes);
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
 
         CompilationStep::TypeCheck => {
+            let lexemes = context.module_db.lex_tokens
+                .take(&job.unit);
             let mut self_ast = context.module_db.naive_ast
                 .take(&job.unit);
             let self_type_map = context.module_db.naive_type_data
@@ -273,8 +286,10 @@ pub(crate) fn perform_job(
                 }
             }
             
-            let data = type_check(&mut self_ast)
+            let data = type_check(&lexemes, &mut self_ast)
                 .expect("Type checking failed");
+            
+            dump_data(&self_ast);
 
             context.module_db.typechecked_ast.insert(job.unit.clone(), self_ast);
             context.module_db.typecheck_data.insert(job.unit.clone(), data);
@@ -286,13 +301,15 @@ pub(crate) fn perform_job(
 
             let bytecode = generate_bytecode(self_ast, typecheck_data)
                 .expect("Bytecode generation failed");
+            
+            dump_data(&bytecode);
 
             context.module_db.bytecode_data.insert(job.unit.clone(), bytecode);
         },
 
         CompilationStep::Codegen => {
             let bytecode = context.module_db.bytecode_data.take(&job.unit);
-            let mut internal_directory = internal_directory(context, job.unit.to_path());
+            let mut internal_directory = internal_directory(context, &job.unit);
             internal_directory.push(".o");
             
             match context.config.backend {

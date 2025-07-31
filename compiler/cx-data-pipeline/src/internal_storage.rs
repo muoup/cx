@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::directories::internal_directory;
 
 pub fn resource_path(context: &GlobalCompilationContext, unit: &CompilationUnit, data_suffix: &str) -> PathBuf {
-    let mut path = internal_directory(context, unit.to_path());
+    let mut path = internal_directory(context, unit);
     path.push(data_suffix);
     path
 }

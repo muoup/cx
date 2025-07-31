@@ -2,7 +2,7 @@ use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::mangling::mangle_destructor;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, LinkageType, VirtualInstruction};
 use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -45,7 +45,8 @@ pub(crate) fn generate_destructor(
                 dereferenceable: 0,
             }),
         }],
-        var_args: false
+        var_args: false,
+        linkage: LinkageType::Public
     };
 
     builder.symbol_table.push_scope();

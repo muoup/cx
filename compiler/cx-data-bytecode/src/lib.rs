@@ -18,6 +18,14 @@ pub struct ProgramBytecode {
     pub fn_defs: Vec<BytecodeFunction>,
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum LinkageType {
+    ODR,
+    Static,
+    Public,
+    Private
+}
+
 pub type ElementID = u32;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -59,6 +67,7 @@ pub struct BCFunctionPrototype {
     pub return_type: BCType,
     pub params: Vec<BCParameter>,
     pub var_args: bool,
+    pub linkage: LinkageType,
 }
 
 #[derive(Debug, Clone)]
@@ -67,8 +76,6 @@ pub struct BytecodeFunction {
     
     pub blocks: Vec<FunctionBlock>,
     pub defer_blocks: Vec<FunctionBlock>,
-    
-    pub static_linkage: bool,
 }
 
 #[derive(Debug, Clone)]

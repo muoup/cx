@@ -164,6 +164,14 @@ impl JobQueue {
         self.progress_map.insert((job.unit.clone(), job.step), JobState::Completed);
     }
     
+    pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
+        self.progress_map.insert((unit.clone(), CompilationStep::PreParse), JobState::Completed);
+        self.progress_map.insert((unit.clone(), CompilationStep::ASTParse), JobState::Completed);
+        self.progress_map.insert((unit.clone(), CompilationStep::TypeCheck), JobState::Completed);
+        self.progress_map.insert((unit.clone(), CompilationStep::BytecodeGen), JobState::Completed);
+        self.progress_map.insert((unit.clone(), CompilationStep::Codegen), JobState::Completed);
+    }
+    
     pub fn job_complete(&self, job: &CompilationJob) -> bool {
         self.progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
     }

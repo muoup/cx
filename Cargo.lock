@@ -336,6 +336,7 @@ dependencies = [
  "cx-data-ast",
  "cx-data-bytecode",
  "cx-data-pipeline",
+ "cx-util",
  "serde",
  "serde_json",
 ]

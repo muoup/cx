@@ -1,4 +1,5 @@
 use cx_data_ast::parse::maps::CXTypeMap;
+use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 
 pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<CXTypeMap> 
@@ -10,6 +11,15 @@ pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) ->
         let mut cloned = _type.clone();
         collapse_type(&mut cloned, self_map, import_maps)?;
         new_map.insert(name.clone(), cloned);
+    }
+    
+    for map in import_maps {
+        for (name, _type) in map.as_ref().iter() {
+            if _type.visibility_mode == VisibilityMode::Private { continue; }
+            if new_map.contains_key(name) { continue; }
+            
+            new_map.insert(name.clone(), _type.clone());
+        }
     }
     
     Some(new_map)

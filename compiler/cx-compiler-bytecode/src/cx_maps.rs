@@ -1,7 +1,7 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap, VirtualInstruction};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap, LinkageType, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -193,7 +193,8 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                         _type: convert_argument_type(cx_type_map, &param._type).unwrap()
                     }))
                     .collect(),
-                var_args: cx_proto.var_args
+                var_args: cx_proto.var_args,
+                linkage: LinkageType::Public
             }
         )
     } else {
@@ -207,7 +208,8 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                         _type: convert_argument_type(cx_type_map, &param._type).unwrap()
                     })
                     .collect(),
-                var_args: cx_proto.var_args
+                var_args: cx_proto.var_args,
+                linkage: LinkageType::Public
             }
         )
     }
