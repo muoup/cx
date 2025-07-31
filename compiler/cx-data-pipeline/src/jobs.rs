@@ -19,6 +19,8 @@ pub struct CompilationJob {
     pub step: CompilationStep,
     pub unit: CompilationUnit,
     pub requirements: Vec<CompilationJobRequirement>,
+    
+    pub compilation_exists: bool
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,9 +111,9 @@ impl CompilationJob {
         unit: CompilationUnit
     ) -> Self {
         CompilationJob {
-            requirements,
-            step,
-            unit
+            requirements, step, unit,
+            
+            compilation_exists: false
         }
     }
     

@@ -30,15 +30,6 @@ pub struct TokenIter<'a> {
     pub index: usize,
 }
 
-impl<'a> TokenIter<'a> {
-    pub fn new(slice: &'a [Token]) -> Self {
-        TokenIter {
-            slice,
-            index: 0,
-        }
-    }
-}
-
 impl<'a> ParserData<'a> {
     pub fn back(&mut self) -> &mut Self {
         self.tokens.back();
@@ -71,7 +62,14 @@ impl<'a> ParserData<'a> {
     }
 }
 
-impl<'a> TokenIter<'_> {
+impl<'a> TokenIter<'a> {
+    pub fn new(slice: &'a [Token]) -> Self {
+        TokenIter {
+            slice,
+            index: 0,
+        }
+    }
+    
     pub fn next(&mut self) -> Option<&Token> {
         let next = self.slice.get(self.index)?;
         self.index += 1;
@@ -91,6 +89,10 @@ impl<'a> TokenIter<'_> {
             return None;
         }
         self.slice.get(self.index - 1)
+    }
+    
+    pub fn reset(&mut self) {
+        self.index = 0;
     }
 
     pub fn has_next(&self) -> bool {

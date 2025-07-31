@@ -2,14 +2,14 @@ mod scheduler;
 mod backends;
 mod linker;
 
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::{Mutex, RwLock};
-use cx_data_pipeline::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
-use cx_data_pipeline::db::ModuleData;
-use cx_data_pipeline::jobs::{CompilationJob, CompilationStep};
 use crate::linker::link;
 use crate::scheduler::scheduling_loop;
+use cx_data_pipeline::db::ModuleData;
+use cx_data_pipeline::jobs::{CompilationJob, CompilationStep};
+use cx_data_pipeline::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Mutex;
 
 pub fn standard_compilation(
     config: CompilerConfig,
@@ -24,7 +24,7 @@ pub fn standard_compilation(
     let initial_job = CompilationJob::new(
         vec![],
         CompilationStep::PreParse,
-        CompilationUnit::new(base_file.to_str()?),
+        CompilationUnit::from_str(base_file.to_str()?),
     );
 
     scheduling_loop(&compiler_context, initial_job)?;

@@ -9,7 +9,7 @@ use cx_data_ast::parse::intrinsic_types::{INTRINSIC_IMPORTS, INTRINSIC_TYPES};
 use cx_data_ast::parse::parser::TokenIter;
 use cx_data_ast::parse::value_type::CXTypeKind;
 use cx_data_ast::PreparseContents;
-use cx_util::log_error;
+use cx_util::{log_error, point_log_error};
 
 pub(crate) struct PreparseData<'a> {
     tokens: TokenIter<'a>,
@@ -17,16 +17,20 @@ pub(crate) struct PreparseData<'a> {
     template_definition: bool,
 }
 
-pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
+pub fn preparse(mut tokens: TokenIter) -> Option<PreparseContents> {
+    tokens.reset();
+    
     let mut data = PreparseData {
-        tokens: tokens.clone(),
+        tokens: tokens,
         destructors: Vec::new(),
         template_definition: false
     };
     let mut pp_contents = PreparseContents::default();
 
     while data.tokens.has_next() {
-        preparse_stmt(&mut data, &mut pp_contents)?;
+        let Some(_) = preparse_stmt(&mut data, &mut pp_contents) else {
+            point_log_error!(data.tokens, "Failed to preparse statement")
+        };
     }
     
     for destructor in data.destructors {

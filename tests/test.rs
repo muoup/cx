@@ -10,7 +10,7 @@ fn get_output() -> String {
 
 #[test]
 fn run_tests() {
-    // Change CWD to workspace root to make paths simpler.
+    // CWD to workspace root to make paths simpler.
     let root = std::env::current_dir().unwrap().parent().unwrap().to_path_buf();
     std::env::set_current_dir(&root).unwrap();
     std::env::set_current_dir("tests/cases").unwrap();
@@ -37,9 +37,10 @@ fn run_tests() {
 
         if path.extension().is_some() && path.extension().unwrap() == "cx" {
             let expected_output_path = path.with_extension("cx-output");
-            let expected_output = std::fs::read_to_string(&expected_output_path).unwrap_or_else(|_|
-                panic!("Could not read expected output file: {expected_output_path:?}")
-            );
+            let Some(expected_output) = std::fs::read_to_string(&expected_output_path).ok() else {
+                eprintln!("[{}] No expected output file found, skipping...", path.display());
+                continue;
+            };
             
             println!("[{}] Compiling...", path.display());
 

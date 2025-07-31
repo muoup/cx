@@ -22,8 +22,6 @@ pub(crate) fn parse_import(tokens: &mut TokenIter, contents: &mut PreparseConten
         }
     };
     
-    import_path.push_str(".cx");
-    
     contents.imports.push(import_path);
     Some(())
 }

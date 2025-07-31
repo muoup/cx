@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 #[derive(Debug, PartialEq)]
 pub struct TokenData {
     pub line_number: u32,

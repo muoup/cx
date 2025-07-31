@@ -1,11 +1,14 @@
+use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use cx_data_ast::lex::token::Token;
 use cx_data_ast::parse::ast::CXAST;
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
@@ -44,18 +47,23 @@ impl ModuleData {
             bytecode_data: ModuleMap::new(".cx-bytecode")
         }
     }
+    
+    pub fn store_data(&self, context: &GlobalCompilationContext) {
+        self.naive_type_data.store_all_data(context);
+        self.function_data.store_all_data(context);
+    }
 }
 
 #[derive(Debug)]
 pub struct ModuleMap<Data> {
-    _storage_extension: String,
+    pub storage_extension: String,
     loaded_data: RwLock<HashMap<CompilationUnit, Arc<Data>>>
 }
 
 impl<'a, Data> ModuleMap<Data> {
     pub fn new(data_suffix: &str) -> Self {
         ModuleMap {
-            _storage_extension: data_suffix.to_string(),
+            storage_extension: data_suffix.to_string(),
             loaded_data: RwLock::new(HashMap::new())
         }
     }
@@ -77,7 +85,7 @@ impl<'a, Data> ModuleMap<Data> {
             .expect("Failed to acquire read lock on loaded data");
 
         lock.get(unit)
-            .expect("Data not found in the module map")
+            .unwrap_or_else(|| panic!("Data not found in the module map for unit: {}", unit))
             .clone()
     }
 
@@ -94,16 +102,40 @@ impl<'a, Data> ModuleMap<Data> {
 
         lock.insert(unit, Arc::from(data));
     }
+
+    pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<CompilationUnit, Arc<Data>>> {
+        self.loaded_data.read()
+            .expect("Failed to acquire read lock on loaded data")
+    }
+
+    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, HashMap<CompilationUnit, Arc<Data>>> {
+        self.loaded_data.write()
+            .expect("Failed to acquire write lock on loaded data")
+    }
+}
+
+impl <Data: DeserializeOwned + Serialize + Clone> ModuleMap<Data> {
+    pub fn load_data(&self, context: &GlobalCompilationContext, unit: &CompilationUnit) -> Option<()> {
+        let data = retrieve_data::<HashMap<CompilationUnit, Data>>(context, unit, &self.storage_extension)?;
+        let mut lock = self.loaded_data.write()
+            .expect("Failed to acquire write lock on loaded data");
+
+        lock.extend(data.into_iter().map(|(k, v)| (k, Arc::new(v))));
+
+        Some(())
+    }
     
-    // fn load(&mut self, unit: &CompilationUnit) -> Option<()> {
-    //     let path = format!("{}.{}", unit, self.data_suffix);
-    //     let file_contents = std::fs::read_to_string(&path).ok()
-    //         .unwrap_or_else(|| panic!("File not found: {}", path));
-    //     
-    //     let data: Data = serde_json::from_str(&file_contents).ok()?;
-    //     
-    //     self.loaded_data.insert(unit.clone(), data);
-    //     
-    //     Some(())
-    // }
+    pub fn store_all_data(&self, context: &GlobalCompilationContext) {
+        let lock = self.loaded_data.read()
+            .expect("Failed to acquire read lock on loaded data");
+        
+        for unit in lock.keys() {
+            self.store_data(context, unit);
+        }
+    }
+
+    pub fn store_data(&self, context: &GlobalCompilationContext, unit: &CompilationUnit) {
+        let data_copy = self.get_cloned(unit);
+        store_data(context, unit, &self.storage_extension, data_copy);
+    }
 }

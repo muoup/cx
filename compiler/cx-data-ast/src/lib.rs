@@ -16,7 +16,7 @@ pub type LexContents = Vec<Token>;
 pub struct PreparseContents {
     pub type_definitions: CXTypeMap,
     pub function_definitions: CXFunctionMap,
-    pub imports: Vec<String>
+    pub imports: Vec<String>,
 }
 
 pub type ParseContents = CXAST;

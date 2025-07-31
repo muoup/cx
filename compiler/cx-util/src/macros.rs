@@ -53,19 +53,6 @@ macro_rules! point_log_error {
 }
 
 #[macro_export]
-macro_rules! point_log_error2 {
-    ($toks:ident, $($arg:tt)*) => {
-        {
-            use cx_data_ast::parse::macros::error_pointer;
-            use cx_util::log_error;
-
-            eprintln!("{}", error_pointer(&$toks));
-            log_error!($($arg)*);
-        }
-    }
-}
-
-#[macro_export]
 macro_rules! try_routine {
     ($iter:ident, $routine:expr) => {
         let iter_save = $iter.clone();

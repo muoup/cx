@@ -187,9 +187,11 @@ pub fn bytecode_aot_codegen(
     
     dump_data(&String::from_utf8_lossy(asm.as_slice()));
 
+    // println!("[LLVM] Exporting module to file: {}", output_path);
+    
     target_machine
         .write_to_file(&global_state.module, inkwell::targets::FileType::Object, Path::new(output_path))
-        .expect("Failed to add analysis passes");
+        .expect("Failed to export module to file");
 
     Some(())
 }
