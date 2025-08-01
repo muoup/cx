@@ -6,13 +6,15 @@ use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 use speedy::{LittleEndian, Readable, Writable};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
 #[derive(Debug)]
 pub struct ModuleData {
+    pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
+    
     pub lex_tokens: ModuleMap<Vec<Token>>,
     
     pub naive_type_data: ModuleMap<CXTypeMap>,
@@ -31,6 +33,8 @@ pub struct ModuleData {
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
+            do_not_reexport: RwLock::new(HashSet::new()),
+            
             lex_tokens: ModuleMap::new(".cx-tokens"),
             
             naive_type_data: ModuleMap::new(".cx-types"),
@@ -50,6 +54,18 @@ impl ModuleData {
     pub fn store_data(&self, context: &GlobalCompilationContext) {
         self.naive_type_data.store_all_data(context);
         self.function_data.store_all_data(context);
+    }
+    
+    pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {
+        self.do_not_reexport.read()
+            .expect("no_reexport: Deadlock detected")
+            .contains(unit)
+    }
+    
+    pub fn set_no_reexport(&self, unit: &CompilationUnit) {
+        self.do_not_reexport.write()
+            .expect("set_no_reexport: Deadlock detected")
+            .insert(unit.clone());
     }
 }
 
@@ -129,6 +145,10 @@ impl <'a, Data: Readable<'a, LittleEndian> + Writable<LittleEndian> + Clone> Mod
             .expect("Failed to acquire read lock on loaded data");
         
         for unit in lock.keys() {
+            if context.module_db.no_reexport(unit) {
+                continue;
+            }
+            
             self.store_data(context, unit);
         }
     }

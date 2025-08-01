@@ -61,6 +61,7 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
 
             println!("Skipping job: {} at step: {:?} as it has already been compiled", job.unit, job.step);
             queue.complete_all_unit_jobs(&job.unit);
+            context.module_db.set_no_reexport(&job.unit);
             context.linking_files.lock()
                 .expect("Deadlock on linking files mutex")
                 .insert(resource_path(context, &job.unit, ".o"));
