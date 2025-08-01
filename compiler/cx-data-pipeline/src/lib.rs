@@ -10,7 +10,7 @@ use crate::db::ModuleData;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{LazyLock, Mutex};
-use serde::{Deserialize, Serialize};
+use speedy::{Context, Readable, Writable};
 use crate::directories::file_path;
 
 /*
@@ -18,14 +18,14 @@ use crate::directories::file_path;
  */
 pub fn compilation_hash() -> u64 {
     struct PlaceHolder;
-    
+
     static lazy_static: LazyLock<u64> = LazyLock::new(|| {
         let type_id = std::any::TypeId::of::<PlaceHolder>();
         let mut hasher = DefaultHasher::new();
         type_id.hash(&mut hasher);
         hasher.finish()
     });
-    
+
     *lazy_static
 }
 
@@ -35,25 +35,31 @@ pub struct CompilationUnit {
     path: Rc<Path>
 }
 
-impl Serialize for CompilationUnit {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.as_str())
+impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
+    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let identifier: String = String::read_from(reader)?;
+        let path: PathBuf = PathBuf::from(String::read_from(reader)?);
+
+        Ok(
+            Self {
+                identifier: identifier.into(),
+                path: path.into_boxed_path().into()
+            }
+        )
     }
 }
 
-impl<'de> Deserialize<'de> for CompilationUnit {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl <C: Context> Writable<C> for CompilationUnit {
+    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
     where
-        D: serde::Deserializer<'de>,
+        W: ?Sized + speedy::Writer<C> 
     {
-        let data = String::deserialize(deserializer)?;
-        
-        Ok(CompilationUnit::from_str(&data))
+        self.identifier.as_str().write_to(writer)?;
+        self.path.to_str().unwrap().write_to(writer)?;
+        Ok(())
     }
 }
+
 
 impl Hash for CompilationUnit {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -74,9 +80,9 @@ impl CompilationUnit {
         } else {
             path
         };
-        
+
         let path_buf = PathBuf::from(file_path(path)).with_extension("");
-        
+
         Self {
             identifier: Rc::new(path.to_string()),
             path: path_buf.into_boxed_path().into()

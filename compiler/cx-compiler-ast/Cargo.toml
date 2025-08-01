@@ -10,5 +10,3 @@ cx-util = { path = "../cx-util" }
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
 cx-data-pipeline = { path = "../cx-data-pipeline" }
-
-cx-compiler-modules = { path = "../cx-compiler-modules" }

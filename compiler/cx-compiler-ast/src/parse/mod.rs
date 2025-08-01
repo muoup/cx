@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-pub use cx_compiler_modules::{serialize_function_data, serialize_module_data, serialize_type_data};
 use cx_data_ast::parse::ast::{CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::parser::{ParserData, TokenIter};
@@ -20,18 +18,6 @@ pub struct CXPreASTInfo {
     pub imports: Vec<String>,
     pub templated_identifiers: Vec<String>
 }
-
-// pub fn parse_types_and_deps(mut data: ParserData) -> Option<CXPreASTInfo> {
-//     let mut info = parse_pre_ast_data(&mut data)?;
-//
-//     if !data.file_path.contains("/lib/std/") {
-//         add_intrinsic_imports(&mut info.imports);
-//     }
-//
-//     add_intrinsic_types(&mut info.type_map);
-//
-//     Some(info)
-// }
 
 pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> {
     None

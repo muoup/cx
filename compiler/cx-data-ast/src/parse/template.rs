@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
+use speedy::{Readable, Writable};
 use cx_util::CXResult;
 use crate::parse::ast::CXFunctionPrototype;
 use crate::parse::value_type::{CXType, CXTypeKind};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct CXTemplateTypeGen {
     pub generic_types: Vec<String>,
     pub generator: CXTemplateGenerator,
@@ -35,18 +35,18 @@ impl CXTemplateTypeGen {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXTemplateGenerator {
     TypeGen(CXType),
     FunctionGen(CXFunctionPrototype)
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Readable, Writable)]
 pub struct CXTemplateInput {
     pub types: Vec<CXType>
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXTemplateOutput {
     Type(CXType),
     FunctionPrototype(CXFunctionPrototype)

@@ -1,6 +1,5 @@
 use crate::deconstructed_types::generate_deconstructor_data;
 use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
-use crate::importing::import_module_data;
 use cx_data_ast::lex::token::Token;
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
 use cx_data_ast::parse::value_type::CXType;
@@ -14,15 +13,12 @@ pub mod deconstructed_types;
 pub mod checker;
 mod struct_typechecking;
 mod casting;
-mod importing;
 mod global_stmts;
 mod structured_initialization;
 
 pub type TypeCheckResult<T> = Option<T>;
 
 pub fn type_check(tokens: &[Token], ast: &mut CXAST) -> Option<TypeCheckData> {
-    import_module_data(ast);
-
     let mut type_environment = TypeEnvironment {
         tokens,
         

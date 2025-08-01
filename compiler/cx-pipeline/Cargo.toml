@@ -8,8 +8,7 @@ default = []
 backend-llvm = ["cx-backend-llvm"]
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+speedy = { version = "0.8.7" }
 
 cx-compiler-ast = { path = "../cx-compiler-ast" }
 cx-compiler-typechecker = { path = "../cx-compiler-typechecker" }

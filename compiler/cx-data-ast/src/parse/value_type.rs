@@ -1,6 +1,6 @@
 use std::hash::{Hash, Hasher};
 use cx_util::log_error;
-use serde::{Deserialize, Serialize};
+use speedy::{Readable, Writable};
 use uuid::Uuid;
 use crate::parse::ast::{CXExpr, CXFunctionPrototype};
 use crate::parse::identifier::CXIdent;
@@ -15,7 +15,7 @@ pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
 pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
 pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {
     pub uuid: u64,
     pub visibility_mode: VisibilityMode,
@@ -48,7 +48,7 @@ impl Default for CXType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXTypeKind {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
@@ -117,7 +117,7 @@ impl From<CXIdent> for CXTypeKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum PredeclarationType {
     None,
     Struct,

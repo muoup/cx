@@ -1,11 +1,11 @@
 use std::fmt::{Display, Formatter};
-use serde::{Deserialize, Serialize};
+use speedy::{Readable, Writable};
 use cx_util::log_error;
 use crate::lex::token::{OperatorType, TokenKind};
 use crate::parse::parser::{ParserData, TokenIter};
 use crate::try_next;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Readable, Writable)]
 pub struct CXIdent {
     pub data: String
 }

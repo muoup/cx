@@ -5,8 +5,7 @@ use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
@@ -114,7 +113,7 @@ impl<'a, Data> ModuleMap<Data> {
     }
 }
 
-impl <Data: DeserializeOwned + Serialize + Clone> ModuleMap<Data> {
+impl <'a, Data: Readable<'a, LittleEndian> + Writable<LittleEndian> + Clone> ModuleMap<Data> {
     pub fn load_data(&self, context: &GlobalCompilationContext, unit: &CompilationUnit) -> Option<()> {
         let data = retrieve_data::<HashMap<CompilationUnit, Data>>(context, unit, &self.storage_extension)?;
         let mut lock = self.loaded_data.write()
