@@ -1,11 +1,11 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXParameter, CXAST};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable, CXParameter, CXAST};
+use cx_data_ast::parse::identifier::parse_std_ident;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
-use crate::parse::typing::{parse_initializer, parse_plain_typedef};
+use cx_data_ast::parse::value_type::CXTypeKind;
+use crate::parse::typing::{parse_enum, parse_initializer};
 use cx_util::{log_error, point_log_error};
 use crate::parse::parsing_tools::goto_statement_end;
 
@@ -16,6 +16,10 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData, ast: &mut CXAST) -> Optio
 
         TokenKind::Keyword(KeywordType::Typedef) |
         TokenKind::Keyword(KeywordType::Import) => goto_statement_end(data),
+        
+        TokenKind::Operator(OperatorType::Tilda) => parse_destructor(data, ast),
+        
+        TokenKind::Keyword(KeywordType::Enum) => parse_enum_constants(data, ast),
         
         TokenKind::Punctuator(PunctuatorType::Semicolon) => {
             data.toks.next();
@@ -40,7 +44,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData, _: &mut CXAST) -> Option<
             try_next!(data, TokenKind::Punctuator(PunctuatorType::Colon));
         },
 
-        _ => unimplemented!("parse_access_mods: {:#?}", specifier)
+        _ => todo!("parse_access_mods: {:#?}", specifier)
     };
 
     Some(())
@@ -59,7 +63,7 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
         match &tok.kind {
             TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
             TokenKind::Operator(OperatorType::ScopeRes) => import_path.push('/'),
-            TokenKind::Identifier(ident) => import_path.push_str(&ident),
+            TokenKind::Identifier(ident) => import_path.push_str(ident),
 
             _ => {
                 log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok);
@@ -68,6 +72,75 @@ pub(crate) fn parse_import(data: &mut ParserData) -> Option<String> {
     };
     
     Some(import_path)
+}
+
+pub(crate) fn parse_destructor(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+    assert_token_matches!(data, TokenKind::Operator(OperatorType::Tilda));
+    assert_token_matches!(data, TokenKind::Identifier(name));
+    
+    let name = name.clone();
+    let body = parse_body(data)?;
+    
+    let Some(type_) = ast.type_map.get_mut(&name) else {
+        point_log_error!(data, "PARSER ERROR: Destructor for {} must be in the same file as the type declaration!", name);
+    };
+    
+    let CXTypeKind::Structured { has_destructor, .. } = &mut type_.kind else {
+        point_log_error!(data, "PARSER ERROR: Destructor can only be defined for structured types!");
+    };
+    
+    *has_destructor = true;
+    
+    ast.global_stmts.push(
+        CXGlobalStmt::DestructorDefinition {
+            type_name: name,
+            body: Box::new(body),
+        }
+    );
+    
+    Some(())
+}
+
+pub(crate) fn parse_enum_constants(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
+    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Enum));
+
+    let Some(name) = parse_std_ident(data) else {
+        point_log_error!(data, "PARSER ERROR: Failed to parse enum name");
+    };
+
+    if !try_next!(data, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
+        return Some(());
+    }
+
+    let mut counter = 0;
+
+    loop {
+        assert_token_matches!(data, TokenKind::Identifier(enum_name));
+        let enum_name = enum_name.clone();
+        
+        if try_next!(data, TokenKind::Assignment(None)) {
+            assert_token_matches!(data, TokenKind::IntLiteral(value));
+            counter = *value as i32;
+        }
+        
+        ast.global_variables.insert(
+            enum_name.as_str().into(),
+            CXGlobalVariable::GlobalConstant {
+                anonymous: true,
+                constant: CXGlobalConstant::Int(counter)
+            }
+        );
+
+        counter += 1;
+
+        if !try_next!(data, TokenKind::Operator(OperatorType::Comma)) {
+            break;
+        }
+    }
+    
+    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace));
+
+    Some(())
 }
 
 pub(crate) fn parse_global_expr(data: &mut ParserData, ast: &mut CXAST) -> Option<()> {
@@ -137,7 +210,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> Option<ParseParamsResult> {
         }
 
         if let Some((name, type_)) = parse_initializer(data) {
-            let name = name.map(|name| name);
+            let name = name;
 
             params.push(CXParameter { name, type_ });
         } else {

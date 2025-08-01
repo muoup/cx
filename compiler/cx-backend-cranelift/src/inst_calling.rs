@@ -18,13 +18,9 @@ pub(crate) fn prepare_function_sig(
 
     if !prototype.return_type.is_void() {
         sig.returns.push(get_cranelift_abi_type(&prototype.return_type));
-
-        if prototype.return_type.is_structure() {
-            sig.params.push(get_cranelift_abi_type(&prototype.return_type));
-        }
     }
 
-    for BCParameter { type_, .. } in prototype.params.iter() {
+    for BCParameter { _type: type_, .. } in prototype.params.iter() {
         sig.params.push(get_cranelift_abi_type(type_));
     }
 
@@ -43,7 +39,7 @@ pub(crate) fn prepare_method_call<'a>(
         .collect::<Vec<_>>();
 
     if prototype.return_type.is_structure() {
-        let type_size = prototype.return_type.size();
+        let type_size = prototype.return_type.fixed_size();
         let temp_buffer = allocate_variable(context, type_size as u32, None)?;
 
         params.insert(0, temp_buffer);
@@ -59,7 +55,7 @@ pub(crate) fn get_method_return(
     context.builder.inst_results(inst)
         .first()
         .cloned()
-        .map(|res| CodegenValue::Value(res))
+        .map(CodegenValue::Value)
 }
 
 pub(crate) fn get_func_ref(

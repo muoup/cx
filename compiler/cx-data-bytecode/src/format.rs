@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -19,12 +19,21 @@ impl Display for BytecodeFunction {
         writeln!(f, "{}:", self.prototype)?;
 
         for (i, block) in self.blocks.iter().enumerate() {
-            write!(f, "block{}", i)?;
-            if block.debug_name != "" {
+            write!(f, "block{i}")?;
+            if !block.debug_name.is_empty() {
                 write!(f, "  // {}", block.debug_name)?;
             }
             writeln!(f, ":")?;
-            writeln!(f, "{}", block)?;
+            writeln!(f, "{block}")?;
+        }
+        
+        for (i, block) in self.defer_blocks.iter().enumerate() {
+            write!(f, "defer_block{i}")?;
+            if !block.debug_name.is_empty() {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
+            writeln!(f, "{block}")?;
         }
 
         Ok(())
@@ -34,7 +43,7 @@ impl Display for BytecodeFunction {
 impl Display for FunctionBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (i, instruction) in self.body.iter().enumerate() {
-            writeln!(f, "    v{i} = {}", instruction)?;
+            writeln!(f, "    v{i} = {instruction}")?;
         }
 
         Ok(())
@@ -49,7 +58,7 @@ impl Display for BCFunctionPrototype {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", arg.type_)?;
+            write!(f, "{}", arg._type)?;
         }
 
         write!(f, ") -> {}", self.return_type)
@@ -70,18 +79,24 @@ impl Display for VirtualValue {
 
 impl Display for ValueID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}@b{}", self.value_id, self.block_id)
+        write!(f, "v{}@{}", self.value_id, self.block_id)
+    }
+}
+
+impl Display for BlockID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "b{}{}", self.id, if self.in_deferral { "*" } else { "" })
     }
 }
 
 impl Display for VirtualInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            VirtualInstruction::Allocate { size } => {
-                write!(f, "alloca {size}")
+            VirtualInstruction::Allocate { size, alignment } => {
+                write!(f, "alloca {size} (alignment: {alignment})")
             },
-            VirtualInstruction::VariableAllocate { size } => {
-                write!(f, "variable_alloca {size}")
+            VirtualInstruction::VariableAllocate { size, alignment } => {
+                write!(f, "variable_alloca {size} (alignment: {alignment})")
             },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
@@ -92,14 +107,20 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Store { value, memory, type_ } => {
                 write!(f, "store {type_} {value} -> {memory}")
             },
+            VirtualInstruction::ZeroMemory { memory, _type } => {
+                write!(f, "zero_memory {memory} ({_type})")
+            },
             VirtualInstruction::Immediate { value } => {
-                write!(f, "immediate {}", value)
+                write!(f, "immediate {value}")
             },
             VirtualInstruction::FloatImmediate { value } => {
-                write!(f, "float_immediate {}", value)
+                write!(f, "float_immediate {value}")
             },
             VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
-                write!(f, "struct_access {} ({})[index: {}; offset: {}]", struct_, struct_type, field_index, field_offset)
+                write!(f, "struct_access {struct_} ({struct_type})[index: {field_index}; offset: {field_offset}]")
+            },
+            VirtualInstruction::BoolExtend { value } => {
+                write!(f, "bool_extend {value}")
             },
             VirtualInstruction::ZExtend { value } => {
                 write!(f, "zextend {value}")
@@ -116,6 +137,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
                 write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             },
+            VirtualInstruction::IntToPtr { value } => {
+                write!(f, "int_to_ptr {value}")
+            },
             VirtualInstruction::Return { value } => {
                 write!(f, "return")?;
 
@@ -126,11 +150,28 @@ impl Display for VirtualInstruction {
                 Ok(())
             },
             VirtualInstruction::Branch { condition, true_block, false_block } => {
-                write!(f, "branch on {condition}; true -> block{true_block}, false -> block{false_block}")
+                write!(f, "branch on {condition}; true -> {true_block}, false -> {false_block}")
+            },
+            VirtualInstruction::Phi { predecessors: from } => {
+                write!(f, "phi")?;
+                if !from.is_empty() {
+                    write!(f, " from [")?;
+                    for (i, (value, block_id)) in from.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{value} @ b{block_id}")?;
+                    }
+                    write!(f, "]")?;
+                }
+                Ok(())
             },
             VirtualInstruction::Jump { target } => {
                 write!(f, "jump {target}")
             },
+            VirtualInstruction::GotoDefer => {
+                write!(f, "goto defer")
+            }
             VirtualInstruction::JumpTable { value, targets, default } => {
                 write!(f, "jump_table {value} -> [")?;
                 for (i, (key, block_id)) in targets.iter().enumerate() {
@@ -182,7 +223,7 @@ impl Display for VirtualInstruction {
             VirtualInstruction::FunctionReference { name } => {
                 write!(f, "function_reference {name}")
             },
-            VirtualInstruction::GetFunctionAddr { func_name } => {
+            VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             },
             VirtualInstruction::BitCast { value } => {
@@ -311,29 +352,49 @@ impl Display for BCTypeKind {
             BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
             BCTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
             BCTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
+            BCTypeKind::Bool => write!(f, "bool"),
             BCTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
-            BCTypeKind::Pointer => write!(f, "*"),
-
+            
+            BCTypeKind::Pointer { nullable, dereferenceable } => {
+                if !*nullable {
+                    write!(f, "!")?;
+                }
+                
+                write!(f, "*")?;
+                
+                if *dereferenceable > 0 {
+                    write!(f, " (deref: {dereferenceable})")
+                } else {
+                    Ok(())
+                }
+            },
+            
+            BCTypeKind::Array { element, size } => {
+                write!(f, "[{element}; {size}]")
+            },
             BCTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
-                    .map(|(name, _type)| format!("{}: {}", name, _type))
+                    .map(|(name, _type)| format!("{name}: {_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                write!(f, "struct {{ {} }}", fields)
+                write!(f, "struct {{ {fields} }}")
             },
             BCTypeKind::Union { fields, .. } => {
                 let fields = fields
                     .iter()
-                    .map(|(name, _type)| format!("{}: {}", name, _type))
+                    .map(|(name, _type)| format!("{name}: {_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                write!(f, "union {{ {} }}", fields)
+                write!(f, "union {{ {fields} }}")
             },
 
             BCTypeKind::Unit => write!(f, "()"),
+            BCTypeKind::VariableSized { size, alignment } => {
+                write!(f, "variable_sized (size: {size}, alignment: {alignment})")
+            },
         }
     }
 }

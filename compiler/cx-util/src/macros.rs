@@ -2,7 +2,6 @@
 macro_rules! log_error {
     ($($arg:tt)*) => {
         {
-            eprintln!("Error in file {} at line {}: ", file!(), line!());
             eprintln!($($arg)*);
 
             // If in debug mode, panic on error

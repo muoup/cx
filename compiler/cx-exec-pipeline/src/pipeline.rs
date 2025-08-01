@@ -1,11 +1,11 @@
 use crate::{request_compile, request_type_compilation};
-use cx_compiler_ast::parse::parse_ast;
+use cx_compiler_ast::parse::{parse_ast, CXTypesAndDeps};
 use cx_compiler_ast::{lex, preprocessor, LexContents, ParseContents, PreprocessContents};
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
-use cx_data_ast::parse::ast::{CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_bytecode::node_type_map::ExprTypeMap;
+use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 use cx_util::format::{dump_data, dump_write};
 use std::collections::HashSet;
@@ -36,9 +36,9 @@ pub enum PipelineStage {
     FileRead(String),
     Preprocessed(PreprocessContents),
     Lexed(LexContents),
-    TypesAndDependences(LexContents, CXTypeMap, Vec<String>, Vec<String>),
+    TypesAndDependences(LexContents, CXTypesAndDeps),
     Parsed(ParseContents),
-    Typechecked(CXAST, ExprTypeMap),
+    Typechecked(CXAST, TypeCheckData),
     Bytecode(ProgramBytecode),
     Codegen,
     Linked
@@ -64,7 +64,7 @@ impl PipelineStage {
                 dump_data(bytecode);
             },
             _ => {
-                dump_write(format!("Pipeline stage has no dump implementation: {:?}", self).as_str())
+                dump_write(format!("Pipeline stage has no dump implementation: {self:?}").as_str())
             }
         }
     }
@@ -75,7 +75,7 @@ impl CompilerPipeline {
         let extensionless = source.replace(".cx", "");
         let el_as_path = Path::new(&extensionless);
 
-        let internal = format!(".internal/{}{}", 
+        let internal = format!(".internal/{}/{}", 
                                el_as_path.parent().unwrap().to_str().unwrap(),
                                el_as_path.file_stem().unwrap().to_str().unwrap());
 
@@ -112,8 +112,8 @@ impl CompilerPipeline {
     }
 
     pub fn read_file(mut self) -> Self {
-        let file_contents = std::fs::read_to_string(format!("{}", self.source_dir.as_str()))
-            .expect(format!("PIPELINE ERROR: Failed to read source file \"{}\"", self.source_dir).as_str());
+        let file_contents = std::fs::read_to_string(self.source_dir.as_str())
+            .unwrap_or_else(|_| panic!("PIPELINE ERROR: Failed to read source file \"{}\"", self.source_dir));
 
         self.pipeline_stage = PipelineStage::FileRead(file_contents);
         self
@@ -151,44 +151,43 @@ impl CompilerPipeline {
 
         let parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
 
-        let (mut type_map, public_types, mut imports) = cx_compiler_ast::parse::parse_types_and_deps(parser_data, self.internal_dir.as_str())
+        let mut types_and_deps = cx_compiler_ast::parse::parse_types_and_deps(parser_data)
             .expect("Failed to parse types and dependencies");
 
-        let recursive_imports = request_type_compilation(imports.as_slice())
+        let recursive_imports = request_type_compilation(types_and_deps.imports.as_slice())
             .expect("Failed to request compile for imports");
-        imports.extend(recursive_imports);
-        
-        for import in imports.iter() {
+        types_and_deps.imports.extend(recursive_imports);
+
+        for import in types_and_deps.imports.iter() {
             let deserialized = cx_compiler_modules::deserialize_type_data(import)
-                .expect(format!("Failed to deserialize module data for import: {}", import).as_str());
+                .unwrap_or_else(|| panic!("Failed to deserialize module data for import: {import}"));
             
             for (type_name, cx_type) in deserialized {
-                if type_map.contains_key(&type_name) {
-                    eprintln!("WARNING: Type {} already exists in the type map, skipping import.", type_name);
+                if types_and_deps.type_map.contains_key(&type_name) {
+                    eprintln!("WARNING: Type {type_name} already exists in the type map, skipping import.");
                 } else {
-                    type_map.insert(type_name, cx_type);
+                    types_and_deps.type_map.insert(type_name, cx_type);
                 }
             }
         }
 
-        self.imports = imports;
-        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, type_map, public_types, self.imports.clone());
+        self.imports = types_and_deps.imports.clone();
+        self.pipeline_stage = PipelineStage::TypesAndDependences(lexed, types_and_deps);
         self
     }
     
-    pub fn emit_type_defs(mut self) -> Self {
-        let (_, types, public_types, _) = match &self.pipeline_stage {
-            PipelineStage::TypesAndDependences(lexed, types, public_types, dependencies) => (lexed, types, public_types, dependencies),
-            _ => panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!"),
+    pub fn emit_type_defs(self) -> Self {
+        let PipelineStage::TypesAndDependences(_, types_and_deps) = &self.pipeline_stage else {
+            panic!("PIPELINE ERROR: Cannot emit type definitions without types and dependencies!");
         };
 
-        cx_compiler_modules::serialize_type_data(self.internal_dir.as_str(), types, public_types.iter())
+        cx_compiler_modules::serialize_type_data(self.internal_dir.as_str(), &types_and_deps.type_map, types_and_deps.public_types.iter())
             .expect("Failed to serialize type data to header file");
 
         self
     }
     
-    pub fn emit_function_defs(mut self) -> Self {
+    pub fn emit_function_defs(self) -> Self {
         let parsed = match &self.pipeline_stage {
             PipelineStage::Parsed(parsed) => parsed,
             _ => panic!("PIPELINE ERROR: Cannot emit function definitions without types and dependencies!"),
@@ -201,21 +200,20 @@ impl CompilerPipeline {
     }
 
     pub fn parse(mut self) -> Self {
-        let (lexed, types, _, dependencies) = match std::mem::take(&mut self.pipeline_stage) {
-            PipelineStage::TypesAndDependences(lexed, types, public_types, dependencies) => (lexed, types, public_types, dependencies),
-            _ => panic!("PIPELINE ERROR: Cannot parse without types and dependencies! Found stage: {:?}", self.pipeline_stage),
+        let PipelineStage::TypesAndDependences(lexed, types_and_deps) = std::mem::take(&mut self.pipeline_stage) else {
+            panic!("PIPELINE ERROR: Cannot parse without types and dependencies!");
         };
         
         let mut parser_data = ParserData::new(self.source_dir.clone(), lexed.as_slice());
         
-        for name in types.keys() {
+        for name in types_and_deps.type_map.keys() {
             parser_data.type_symbols.insert(name.clone());
         }
         
-        request_compile(dependencies.as_slice(), self.backend, self.optimization_level)
+        request_compile(types_and_deps.imports.as_slice(), self.backend, self.optimization_level)
             .expect("Failed to request compile for dependencies");
 
-        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types, dependencies) else {
+        let Some(ast) = parse_ast(parser_data, self.internal_dir.as_str(), types_and_deps.type_map, types_and_deps.imports) else {
             panic!("ERROR: Failed to parse AST");
         };
         
@@ -235,7 +233,6 @@ impl CompilerPipeline {
         };
 
         self.pipeline_stage = PipelineStage::Typechecked(ast, expr_type_map);
-
         self
     }
 
@@ -262,7 +259,7 @@ impl CompilerPipeline {
         Some(ast)
     }
     
-    pub fn codegen(mut self) -> Self {
+    pub fn codegen(self) -> Self {
         match self.backend {
             CompilerBackend::LLVM => self.llvm_codegen(),
             CompilerBackend::Cranelift => self.cranelift_codegen(),
@@ -290,7 +287,7 @@ impl CompilerPipeline {
     }
 
     #[cfg(not(feature = "backend-llvm"))]
-    fn llvm_codegen(mut self) -> Self {
+    fn llvm_codegen(self) -> Self {
         panic!("LLVM backend is not enabled, but was selected!")
     }
 
@@ -325,9 +322,9 @@ impl CompilerPipeline {
         let mut imports = HashSet::new();
         
         for import in &self.imports {
-            let import_path = format!(".internal/{}/.o", import);
+            let import_path = format!(".internal/{import}/.o");
             if !Path::new(&import_path).exists() {
-                eprintln!("ERROR: Import path does not exist: {}", import_path);
+                eprintln!("ERROR: Import path does not exist: {import_path}");
                 exit(1);
             }
             
@@ -346,12 +343,12 @@ impl CompilerPipeline {
             cmd.arg(import);
         }
         
-        println!("Linking with command: {:?}", cmd);
+        // println!("Linking with command: {cmd:?}");
         
         let status = cmd.status().expect("Failed to execute linker command");
 
         if !status.success() {
-            eprintln!("ERROR: Linking failed with status: {}", status);
+            eprintln!("ERROR: Linking failed with status: {status}");
             exit(1);
         }
         

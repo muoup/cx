@@ -34,10 +34,10 @@ pub fn print_help() {
 pub fn parse_args() -> Result<AppArgs, String> {
     let args = std::env::args().collect::<Vec<String>>();
     let mut input_file = None;
-    let mut output_file = None;
-    let mut backend = CompilerBackend::Cranelift;
-    let mut optimization_level = OptimizationLevel::O0;
-
+    let mut output_file = "a.out".to_string(); // Default output file
+    let mut backend = Default::default();
+    let mut optimization_level = Default::default();
+    
     let mut args_iter = args.iter().skip(1);
 
     if args_iter.len() == 0 {
@@ -62,17 +62,17 @@ pub fn parse_args() -> Result<AppArgs, String> {
             "-Ofast" => optimization_level = OptimizationLevel::Ofast,
             "-o" => {
                 if let Some(path) = args_iter.next() {
-                    output_file = Some(path.clone());
+                    output_file = path.clone();
                 } else {
                     return Err("-o flag requires an output file path".to_string());
                 }
             }
             _ if arg.starts_with('-') => {
-                return Err(format!("Unknown flag: {}", arg));
+                return Err(format!("Unknown flag: {arg}"));
             }
             _ => {
                 if input_file.is_some() {
-                    return Err("Multiple input files specified".to_string());
+                    return Err("Multiple input files not current supported".to_string());
                 }
                 input_file = Some(arg.clone());
             }
@@ -84,9 +84,6 @@ pub fn parse_args() -> Result<AppArgs, String> {
     if !input_file.ends_with(".cx") {
         return Err("Input file must have a .cx extension".to_string());
     }
-
-    let default_output_file = String::from("a.out");
-    let output_file = output_file.unwrap_or(default_output_file);
 
     Ok(AppArgs {
         input_file,

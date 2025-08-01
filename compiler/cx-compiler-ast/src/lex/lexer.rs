@@ -105,7 +105,7 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
     while let Some(c) = iter.peek() {
         if c == '.' {
             dot = true;
-        } else if !c.is_digit(10) {
+        } else if !c.is_ascii_digit() {
             break;
         }
         iter.next();
@@ -114,7 +114,7 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
     let kind = if dot {
         TokenKind::FloatLiteral(num.parse().unwrap())
     } else {
-        TokenKind::IntLiteral(num.parse().expect(&format!("Invalid number: {}\n", num)))
+        TokenKind::IntLiteral(num.parse().unwrap_or_else(|_| panic!("Invalid number: {num}\n")))
     };
     
     Some(
@@ -185,7 +185,7 @@ fn char_lex(iter: &mut CharIter) -> Option<Token> {
             assert_eq!(iter.next(), Some('\''));
             TokenKind::IntLiteral('\r' as i64)
         },
-        _ => panic!("Invalid character literal: '{}'", c)
+        _ => panic!("Invalid character literal: '{c}'")
     };
     
     Some(
@@ -269,27 +269,27 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '|' => match iter.peek() {
             Some('|') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::LOr))
+                Some(TokenKind::Operator(OperatorType::DoubleBar))
             },
-            _ => Some(TokenKind::Operator(OperatorType::BOr))
+            _ => Some(TokenKind::Operator(OperatorType::Bar))
         },
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::LAnd))
+                Some(TokenKind::Operator(OperatorType::DoubleAmpersand))
             },
-            _ => Some(TokenKind::Operator(OperatorType::BAnd))
+            _ => Some(TokenKind::Operator(OperatorType::Ampersand))
         },
-        '^' => Some(TokenKind::Operator(OperatorType::BXor)),
+        '^' => Some(TokenKind::Operator(OperatorType::Caret)),
         '!' => {
             if Some('=') == iter.peek() {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::NotEqual))
             } else {
-                Some(TokenKind::Operator(OperatorType::LNot))
+                Some(TokenKind::Operator(OperatorType::Exclamation))
             }
         },
-        '~' => Some(TokenKind::Operator(OperatorType::BNot)),
+        '~' => Some(TokenKind::Operator(OperatorType::Tilda)),
 
         ':' => {
             if Some(':') == iter.peek() {
@@ -304,7 +304,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '>' => match iter.peek() {
             Some('>') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::RShift))
+                Some(TokenKind::Operator(OperatorType::DoubleGT))
             },
             Some('=') => {
                 iter.next();
@@ -315,7 +315,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         '<' => match iter.peek() {
             Some('<') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::LShift))
+                Some(TokenKind::Operator(OperatorType::DoubleLT))
             },
             Some('=') => {
                 iter.next();

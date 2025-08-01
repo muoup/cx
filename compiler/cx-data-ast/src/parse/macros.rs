@@ -4,7 +4,7 @@ pub fn token_string(toks: &TokenIter, start_index: usize, end_index: usize) -> S
     let mut tokens = String::new();
     
     for tok in &toks.slice[start_index..end_index] {
-        tokens.push_str(&format!("{} ", tok));
+        tokens.push_str(&format!("{tok} "));
     }
 
     tokens.push('\n');
@@ -19,19 +19,19 @@ pub fn error_pointer(toks: &TokenIter) -> String {
     let mut error_tokens = String::new();
 
     for tok in &toks.slice[toks.index - previous_tokens.. toks.index] {
-        error_tokens.push_str(&format!("{} ", tok));
+        error_tokens.push_str(&format!("{tok} "));
     }
 
     let mut error_pointer = String::new();
 
     for _ in 0..error_tokens.len() {
-        error_pointer.push_str(" ");
+        error_pointer.push(' ');
     }
 
     error_pointer.push_str("^ ");
 
     for tok in &toks.slice[toks.index..toks.index + next_tokens] {
-        error_tokens.push_str(&format!("{} ", tok));
+        error_tokens.push_str(&format!("{tok} "));
     }
 
     error_tokens.push('\n');

@@ -1,6 +1,6 @@
 use cx_data_ast::{assert_token_matches, next_kind, try_next};
 use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, CXTypeMap};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
@@ -135,6 +135,21 @@ pub(crate) fn parse_plain_typedef(data: &mut ParserData) -> Option<TypeRecord> {
             )
         },
         
+        TokenKind::Keyword(KeywordType::Enum) => {
+            data.toks.next();
+            
+            let TokenKind::Identifier(name) = &data.toks.peek()?.kind else {
+                return Some(TypeRecord { name: None, type_: CXType::unit() });
+            };
+            let name = name.clone();
+            
+            data.toks.back();
+            
+            let type_ = parse_enum(data)?;
+            
+            Some(TypeRecord { name: Some(name.to_string()), type_: type_.to_val_type() })
+        },
+        
         TokenKind::Keyword(KeywordType::Union) => {
             let type_ = parse_union(data)?;
             
@@ -176,7 +191,9 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
     let mut fields = Vec::new();
 
     while !try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-        let (name, _type) = parse_initializer(data)?;
+        let Some((name, _type)) = parse_initializer(data) else {
+            point_log_error!(data, "PARSER ERROR: Failed to parse struct member type");
+        };
 
         let Some(name) = name else {
             point_log_error!(data, "UNSUPPORTED: Nameless struct member of type {}", _type);
@@ -186,12 +203,15 @@ pub(crate) fn parse_struct(data: &mut ParserData) -> Option<CXTypeKind> {
         assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::Semicolon));
     }
 
-    Some(
-        CXTypeKind::Structured {
-            name,
-            fields,
-        }
-    )
+    Some(CXTypeKind::Structured { name, fields, has_destructor: false })
+}
+
+pub(crate) fn parse_enum(data: &mut ParserData) -> Option<CXTypeKind> {
+    assert_token_matches!(data, TokenKind::Keyword(KeywordType::Enum));
+    
+    goto_statement_end(data);
+    
+    Some(CXTypeKind::Integer { signed: true, bytes: 4})
 }
 
 pub(crate) fn parse_union(data: &mut ParserData) -> Option<CXTypeKind> {
@@ -247,6 +267,50 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
     };
 
     match &next_tok.kind {
+        TokenKind::Keyword(KeywordType::Strong) => {
+            data.toks.next();
+            
+            let is_array = match data.toks.next()?.kind {
+                TokenKind::Operator(OperatorType::Asterisk) => false,
+                TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
+                    assert_token_matches!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket));
+                    true
+                },
+                
+                _ => log_error!("PARSER ERROR: Expected '*' or '[]' after 'strong' keyword")
+            };
+            
+            let specs = parse_specifier(data);
+            let acc_type = CXType::new(
+                specs,
+                CXTypeKind::StrongPointer { 
+                    inner: Box::new(acc_type),
+                    is_array
+                }
+            );
+
+            parse_typemods(data, acc_type)
+        },
+        
+        TokenKind::Keyword(KeywordType::Weak) => {
+            data.toks.next();
+            assert_token_matches!(data, TokenKind::Operator(OperatorType::Asterisk));
+            
+            let specs = parse_specifier(data);
+            let acc_type = CXType::new(
+                specs,
+                CXTypeKind::PointerTo { 
+                    inner: Box::new(acc_type),
+                    
+                    sizeless_array: false,
+                    explicitly_weak: true,
+                    nullable: true
+                }
+            );
+
+            parse_typemods(data, acc_type)
+        },
+        
         TokenKind::Operator(OperatorType::Asterisk) => {
             data.toks.next();
             let specs = parse_specifier(data);
@@ -265,7 +329,7 @@ pub(crate) fn parse_typemods(data: &mut ParserData, acc_type: CXType) -> Option<
             let prototype = CXFunctionPrototype {
                 name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
                 return_type: acc_type,
-                params: params,
+                params,
                 var_args
             };
 
@@ -292,7 +356,13 @@ pub(crate) fn parse_suffix_typemod(data: &mut ParserData, acc_type: CXType) -> O
 
             let _type = match data.toks.peek()?.kind {
                 TokenKind::Punctuator(PunctuatorType::CloseBracket) => {
-                    acc_type.pointer_to()
+                    CXTypeKind::PointerTo {
+                        inner: Box::new(acc_type),
+                        
+                        sizeless_array: true,
+                        nullable: true,
+                        explicitly_weak: false,
+                    }.to_val_type()
                 },
                 TokenKind::IntLiteral(size) => {
                     data.toks.next();
@@ -321,10 +391,11 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
     let _type = match data.toks.peek()?.kind {
         TokenKind::Identifier(_) => Some(
             CXTypeKind::Identifier {
-                name: parse_std_ident(data)?.into(),
+                name: parse_std_ident(data)?,
                 predeclaration: PredeclarationType::None
             }.to_val_type()
         ),
+        
         TokenKind::Intrinsic(_) => Some(
             CXTypeKind::Identifier {
                 name: parse_intrinsic(data)?,
@@ -336,6 +407,10 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> Option<CXType> {
             parse_struct(data)?.to_val_type()
         ),
         
+        TokenKind::Keyword(KeywordType::Enum) => Some(
+            parse_enum(data)?.to_val_type()
+        ),
+         
         TokenKind::Keyword(KeywordType::Union) => Some(
             parse_union(data)?.to_val_type()
         ),

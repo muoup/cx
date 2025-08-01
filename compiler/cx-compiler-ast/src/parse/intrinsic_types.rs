@@ -1,6 +1,16 @@
 use cx_data_ast::parse::ast::CXTypeMap;
 use cx_data_ast::parse::value_type::CXTypeKind;
 
+pub fn add_intrinsic_imports(imports: &mut Vec<String>) {
+    macro_rules! add {
+        ($name:expr) => {
+            imports.push($name.to_string());
+        };
+    }
+
+    add!("std/intrinsic/memory");
+}
+
 pub fn add_intrinsic_types(type_map: &mut CXTypeMap) {
     macro_rules! add {
         ($name:expr, $type_:expr) => {

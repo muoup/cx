@@ -1,68 +1,46 @@
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::value_type::{get_type_size, CXType};
-use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
-use cx_data_bytecode::node_type_map::ExprTypeMap;
-use cx_data_bytecode::types::BCTypeKind;
+use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
-use crate::instruction_gen::{generate_instruction, implicit_return};
+use crate::instruction_gen::generate_instruction;
+use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
+use cx_data_ast::parse::value_type::CXType;
+use cx_data_bytecode::node_type_map::TypeCheckData;
+use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
+use crate::cx_maps::convert_cx_prototype;
+use crate::deconstructor::generate_deconstructor;
+use crate::global_stmts::{generate_destructor, generate_function};
 
 pub mod instruction_gen;
 mod builder;
 mod implicit_cast;
 mod cx_maps;
 mod aux_routines;
+mod deconstructor;
+mod global_stmts;
 
-pub fn generate_bytecode(ast: CXAST, env_type_map: ExprTypeMap) -> Option<ProgramBytecode> {
-    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map, env_type_map);
+pub type BytecodeResult<T> = Option<T>;
+
+pub fn generate_bytecode(ast: CXAST, type_check_data: TypeCheckData) -> Option<ProgramBytecode> {
+    // this shouldn't be necessary, but this is again because of the coupling of type information
+    // and the bytecode builder
+    // (TODO)
+    let deconstructors = type_check_data.deconstructor_data.clone();
+    
+    let mut builder = BytecodeBuilder::new(ast.type_map, ast.function_map, type_check_data);
+    
+    for deconstructor in deconstructors.iter() {
+        generate_deconstructor(&mut builder, deconstructor);
+    }
 
     for stmt in ast.global_stmts.iter() {
-        let CXGlobalStmt::FunctionDefinition {
-            prototype, body
-        } = stmt else {
-            continue;
-        };
+        match stmt {
+            CXGlobalStmt::FunctionDefinition { prototype, body } =>
+                generate_function(&mut builder, prototype, body)?,
 
-        builder.symbol_table.push_scope();
-        builder.new_function(prototype);
+            CXGlobalStmt::DestructorDefinition { type_name, body } =>
+                generate_destructor(&mut builder, type_name, body)?,
 
-        for (i, arg) in prototype.params.iter().enumerate() {
-            let memory = builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size: get_type_size(&builder.cx_type_map, &arg.type_)?
-                        .assert_fixed("Function argument type must be fixed size"),
-                },
-                BCTypeKind::Pointer.into()
-            )?;
-
-            let value = builder.add_instruction(
-                VirtualInstruction::FunctionParameter {
-                    param_index: i as u32,
-                },
-                arg.type_.clone()
-            )?;
-
-            builder.add_instruction(
-                VirtualInstruction::Store {
-                    value,
-                    memory,
-                    type_: builder.convert_cx_type(&arg.type_)?,
-                },
-                CXType::unit()
-            )?;
-
-            if let Some(name) = &arg.name {
-                builder.symbol_table.insert(name.as_string(), memory);
-            }
+            _ => todo!("Global variables are not implemented yet"),
         }
-
-        let Some(_) = generate_instruction(&mut builder, body) else {
-            panic!("Failed to generate body for function: {}", prototype.name);
-        };
-        
-        implicit_return(&mut builder, prototype)?;
-
-        builder.symbol_table.pop_scope();
-        builder.finish_function();
     }
 
     builder.finish()

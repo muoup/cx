@@ -1,0 +1,17 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["cx-exec-data/test", "cx-exec-data/test"]
+backend-llvm = ["cx-exec-pipeline/backend-llvm"]
+
+[[test]]
+name = "integration_tests"
+path = "test.rs"
+harness = true
+
+[dependencies]
+cx-exec-pipeline = { path = "../compiler/cx-exec-pipeline" }
+cx-exec-data = { path = "../compiler/cx-exec-data" }

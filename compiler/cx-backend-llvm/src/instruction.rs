@@ -1,19 +1,26 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::noundef;
+use crate::attributes::attr_noundef;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_data_bytecode::types::BCTypeKind;
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockInstruction, VirtualInstruction};
+use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, ElementID, VirtualInstruction, POINTER_TAG};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
-use inkwell::Either;
+use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
+use cx_data_bytecode::mangling::mangle_destructor;
+use cx_util::log_error;
+
+static NUM: Mutex<usize> = Mutex::new(0);
+
+pub(crate) fn reset_num() {
+    let mut num = NUM.lock().unwrap();
+    *num = 0;
+}
 
 pub(crate) fn inst_num() -> String {
-    static NUM: Mutex<usize> = Mutex::new(0);
-    
     let mut num = NUM.lock().unwrap();
     *num += 1;
     
@@ -28,19 +35,25 @@ pub(crate) fn generate_instruction<'a>(
 ) -> Option<CodegenValue<'a>> {
     Some(
         match &block_instruction.instruction {
-            VirtualInstruction::Allocate { size } =>
-                CodegenValue::Value(
-                    function_state
-                        .builder
-                        .build_alloca(
-                            global_state.context.i8_type().array_type(*size as u32),
-                            inst_num().as_str()
-                        )
-                        .ok()?
-                        .as_any_value_enum()
-                ),
+            VirtualInstruction::Allocate { size, alignment } => {
+                let inst = function_state.builder
+                    .build_alloca(
+                        global_state.context.i8_type().array_type(*size as u32),
+                        inst_num().as_str()
+                    )
+                    .unwrap()
+                    .as_any_value_enum();
+                
+                function_state.builder
+                    .get_insert_block()?
+                    .get_last_instruction()?
+                    .set_alignment(*alignment as u32)
+                    .unwrap();
+                
+                CodegenValue::Value(inst)
+            },
             
-            VirtualInstruction::VariableAllocate { size } => {
+            VirtualInstruction::VariableAllocate { size, alignment } => {
                 let size = function_state
                     .get_val_ref(size)?
                     .get_value()
@@ -52,23 +65,26 @@ pub(crate) fn generate_instruction<'a>(
                         size,
                         inst_num().as_str()
                     )
-                    .ok()?
+                    .unwrap()
                     .as_any_value_enum();
                 
                 function_state.builder
                     .get_insert_block()?
                     .get_last_instruction()?
-                    .set_alignment(8)
-                    .ok()?;
+                    .set_alignment(*alignment as u32)
+                    .unwrap();
                 
                 CodegenValue::Value(allocation)
             },
             
             VirtualInstruction::DirectCall { func, args, method_sig } => {
-                let function_name =
+                let Some(function_name) =
                     function_state
-                        .get_val_ref(func)?
-                        .get_function_ref();
+                        .get_val_ref(func)
+                        .map(|val| val.get_function_ref()) else {
+                    
+                    log_error!("Function reference not found for {func:?}");
+                };
                 
                 let function_val = global_state
                     .module
@@ -88,27 +104,14 @@ pub(crate) fn generate_instruction<'a>(
                     })
                     .collect::<Option<Vec<_>>>()?;
 
-                if method_sig.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(global_state, &method_sig.return_type)?;
-                    let temp_buffer = function_state
-                        .builder
-                        .build_alloca(
-                            any_to_basic_type(llvm_type)?,
-                            inst_num().as_str()
-                        )
-                        .ok()?;
-
-                    arg_vals.insert(0, temp_buffer.into());
-                }
-
                 let val = function_state.builder
-                    .build_direct_call(function_val.clone(), arg_vals.as_slice(), inst_num().as_str())
-                    .ok()?;
+                    .build_direct_call(function_val, arg_vals.as_slice(), inst_num().as_str())
+                    .unwrap();
                 
                 for i in 0..args.len() {
                     val.add_attribute(
                         AttributeLoc::Param(i as u32),
-                        noundef(global_state.context)
+                        attr_noundef(global_state.context)
                     )
                 }
 
@@ -138,19 +141,6 @@ pub(crate) fn generate_instruction<'a>(
                         Some(basic_val.into())
                     })
                     .collect::<Option<Vec<_>>>()?;
-
-                if method_sig.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(global_state, &method_sig.return_type)?;
-                    let temp_buffer = function_state
-                        .builder
-                        .build_alloca(
-                            any_to_basic_type(llvm_type)?,
-                            inst_num().as_str()
-                        )
-                        .ok()?;
-
-                    args.insert(0, temp_buffer.into());
-                }
                 
                 let val = function_state.builder
                     .build_indirect_call(
@@ -159,7 +149,7 @@ pub(crate) fn generate_instruction<'a>(
                         args.as_slice(),
                         inst_num().as_str()
                     )
-                    .ok()?;
+                    .unwrap();
                 
                 match val.try_as_basic_value() {
                     Either::Left(val) 
@@ -201,13 +191,31 @@ pub(crate) fn generate_instruction<'a>(
                             basic_type,
                             inst_num().as_str()
                         )
-                        .ok()?
+                        .unwrap()
                         .as_any_value_enum()
                 )
             },
 
             VirtualInstruction::IntToPtrDiff { value, .. } => {
                 function_state.get_val_ref(value)?.clone()
+            },
+            
+            VirtualInstruction::IntToPtr { value } => {
+                let value = function_state
+                    .get_val_ref(value)?
+                    .get_value()
+                    .into_int_value();
+                
+                let to_type = global_state
+                    .context
+                    .ptr_type(AddressSpace::from(0));
+                
+                CodegenValue::Value(
+                    function_state.builder
+                        .build_int_to_ptr(value, to_type, inst_num().as_str())
+                        .unwrap()
+                        .as_any_value_enum()
+                )
             },
 
             VirtualInstruction::Immediate { value } => {
@@ -228,16 +236,26 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(imm_type.const_float(*value).as_any_value_enum())
             },
             
+            VirtualInstruction::GotoDefer => {
+                let defer_block = function_state
+                    .get_block(function_val, BlockID { in_deferral: true, id: 0 })
+                    .unwrap();
+                
+                function_state.builder
+                    .build_unconditional_branch(defer_block)
+                    .unwrap();
+                
+                CodegenValue::NULL
+            },
+            
             VirtualInstruction::Jump { target } => {
                 function_state
                     .builder
                     .build_unconditional_branch(
-                        function_val
-                            .get_basic_blocks()
-                            .get(*target as usize)
+                        function_state
+                            .get_block(function_val, *target)
                             .unwrap()
-                            .clone()
-                    ).ok()?;
+                    ).unwrap();
                 
                 CodegenValue::NULL
             },
@@ -247,7 +265,7 @@ pub(crate) fn generate_instruction<'a>(
                     function_state
                         .builder
                         .build_return(None)
-                        .ok()?;
+                        .unwrap();
                     
                     return Some(CodegenValue::NULL);
                 };
@@ -287,14 +305,14 @@ pub(crate) fn generate_instruction<'a>(
                     function_state
                         .builder
                         .build_return(Some(&return_param.as_basic_value_enum()))
-                        .ok()?;
+                        .unwrap();
                 } else {
                     let basic_val = any_to_basic_val(value.get_value())?;
 
                     function_state
                         .builder
                         .build_return(Some(&basic_val))
-                        .ok()?;   
+                        .unwrap();   
                 }
                 
                 CodegenValue::NULL
@@ -306,14 +324,8 @@ pub(crate) fn generate_instruction<'a>(
                     .get(function_state.current_function.as_str())
                     .unwrap();
                 
-                let param_index = if function.return_type.is_structure() {
-                    *param_index + 1 // Skip the first parameter for the return type
-                } else {
-                    *param_index
-                };
-                
                 let param = function_val
-                    .get_nth_param(param_index)
+                    .get_nth_param(*param_index)
                     .unwrap();
                 
                 CodegenValue::Value(param.as_any_value_enum())
@@ -327,7 +339,7 @@ pub(crate) fn generate_instruction<'a>(
                 let any_type = bc_llvm_type(global_state, type_).unwrap();
 
                 let basic_val = any_to_basic_val(any_value)
-                    .expect(format!("Failed to convert value {any_value:?} to basic value").as_str());
+                    .unwrap_or_else(|| panic!("Failed to convert value {any_value:?} to basic value"));
                 let basic_type = any_to_basic_type(any_type).unwrap();
                 
                 let memory_val = function_state
@@ -335,7 +347,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_pointer_value();
                 
-                if basic_type.is_struct_type() {
+                if type_.is_structure() {
                     function_state
                         .builder
                         .build_memcpy(
@@ -346,12 +358,50 @@ pub(crate) fn generate_instruction<'a>(
                             basic_type.size_of()
                                 .expect("Failed to get size of type")
                         )
-                        .ok()?;
+                        .unwrap();
                 } else {
                     function_state
                         .builder
                         .build_store(memory_val, basic_val)
                         .unwrap();
+                }
+                
+                CodegenValue::NULL
+            },
+            
+            VirtualInstruction::ZeroMemory { memory, _type } => {
+                let any_value = function_state
+                    .get_val_ref(memory)?
+                    .get_value()
+                    .into_pointer_value();
+                
+                let zero = global_state.context.i8_type().const_zero();
+                
+                match _type.size() {
+                    BCTypeSize::Fixed(size) => {
+                        let size_value = global_state.context.i32_type()
+                            .const_int(size as u64, false);
+                        
+                        function_state.builder
+                            .build_memset(
+                                any_value, 1,
+                                zero, size_value,
+                            )
+                            .unwrap();
+                    },
+                    BCTypeSize::Variable(size) => {
+                        let size_value = function_state
+                            .get_val_ref(&size)?
+                            .get_value()
+                            .into_int_value();
+                        
+                        function_state.builder
+                            .build_memset(
+                                any_value, 1,
+                                zero, size_value
+                            )
+                            .unwrap();
+                    },
                 }
                 
                 CodegenValue::NULL
@@ -372,7 +422,7 @@ pub(crate) fn generate_instruction<'a>(
                 let val = function_state
                     .builder
                     .build_load(basic_type, any_value, inst_num().as_str())
-                    .ok()?;
+                    .unwrap();
                 
                 CodegenValue::Value(val.as_any_value_enum())
             },
@@ -402,15 +452,25 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value()
                     .into_int_value();
                 
+                let signed = match block_instruction.value.type_.kind {
+                    BCTypeKind::Signed { .. } => true,
+                    BCTypeKind::Unsigned { .. } => false,
+                    _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp
+                };
+                
                 CodegenValue::Value(
                     match op {
+                        BCIntUnOp::NEG if signed => function_state.builder
+                            .build_int_nsw_neg(value, inst_num().as_str())
+                            .unwrap()
+                            .as_any_value_enum(),
                         BCIntUnOp::NEG => function_state.builder
                             .build_int_neg(value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                         BCIntUnOp::BNOT => function_state.builder
                             .build_not(value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                         BCIntUnOp::LNOT => function_state.builder
                             .build_int_compare(
@@ -419,9 +479,8 @@ pub(crate) fn generate_instruction<'a>(
                                 value.get_type().const_int(0, false),
                                 inst_num().as_str()
                             )
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
-                        _ => return None, // Unsupported operation for IntegerUnOp
                     }
                 )
             },
@@ -429,13 +488,23 @@ pub(crate) fn generate_instruction<'a>(
             VirtualInstruction::IntegerBinOp { left, right, op } => {
                 let left = function_state
                     .get_val_ref(left)?
-                    .get_value();
+                    .get_value()
+                    .into_int_value();
                 
                 let right = function_state
                     .get_val_ref(right)?
-                    .get_value();
+                    .get_value()
+                    .into_int_value();
+                
+                let signed = match block_instruction.value.type_.kind {
+                    BCTypeKind::Signed { .. } => true,
+                    BCTypeKind::Unsigned { .. } => false,
+                    BCTypeKind::Bool => false,
 
-                generate_int_binop(global_state, function_state, left, right, *op)?
+                    _ => log_error!("Unsupported type for IntegerBinOp"),
+                };
+
+                generate_int_binop(global_state, function_state, left, right, *op, signed)?
             },
             
             VirtualInstruction::FloatUnOp { value, op } => {
@@ -448,7 +517,7 @@ pub(crate) fn generate_instruction<'a>(
                     match op {
                         BCFloatUnOp::NEG => function_state.builder
                             .build_float_neg(value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                     }
                 )
@@ -469,25 +538,54 @@ pub(crate) fn generate_instruction<'a>(
                     match op {
                         BCFloatBinOp::ADD => function_state.builder
                             .build_float_add(left_value, right_value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                         
                         BCFloatBinOp::SUB => function_state.builder
                             .build_float_sub(left_value, right_value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                         
                         BCFloatBinOp::FMUL => function_state.builder
                             .build_float_mul(left_value, right_value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                         
                         BCFloatBinOp::FDIV => function_state.builder
                             .build_float_div(left_value, right_value, inst_num().as_str())
-                            .ok()?
+                            .unwrap()
                             .as_any_value_enum(),
                     }
                 )
+            },
+
+            VirtualInstruction::Phi { predecessors: from } => {
+                let val_type = bc_llvm_type(
+                    global_state,
+                    &block_instruction.value.type_
+                )?;
+                let as_basic_type = any_to_basic_type(val_type)
+                    .expect("Failed to convert value type to basic type");
+
+                let phi_node = function_state.builder
+                    .build_phi(as_basic_type, inst_num().as_str())
+                    .unwrap();
+
+                for (value_id, block_id) in from {
+                    let value = function_state
+                        .get_val_ref(value_id)?
+                        .get_value();
+                    let value = any_to_basic_val(value)
+                        .expect("Failed to convert value to basic value");
+
+                    let block = function_state
+                        .get_block(function_val, *block_id)
+                        .unwrap();
+
+                    phi_node.add_incoming(&[(&value, block)]);
+                }
+
+                CodegenValue::Value(phi_node.as_any_value_enum())
             },
             
             VirtualInstruction::Branch { condition, true_block, false_block } => {
@@ -503,20 +601,16 @@ pub(crate) fn generate_instruction<'a>(
                             global_state.context.bool_type(), 
                             inst_num().as_str()
                         )
-                        .ok()?;
+                        .unwrap();
                 }
                 
-                let true_block_val = function_val
-                    .get_basic_blocks()
-                    .get(*true_block as usize)
-                    .unwrap()
-                    .clone();
+                let true_block_val = function_state
+                    .get_block(function_val, *true_block)
+                    .unwrap();
                 
-                let false_block_val = function_val
-                    .get_basic_blocks()
-                    .get(*false_block as usize)
-                    .unwrap()
-                    .clone();
+                let false_block_val = function_state
+                    .get_block(function_val, *false_block)
+                    .unwrap();
                 
                 function_state.builder
                     .build_conditional_branch(
@@ -524,7 +618,7 @@ pub(crate) fn generate_instruction<'a>(
                         true_block_val,
                         false_block_val,
                     )
-                    .ok()?;
+                    .unwrap();
                 
                 CodegenValue::NULL
             },
@@ -539,12 +633,10 @@ pub(crate) fn generate_instruction<'a>(
                     .iter()
                     .map(|(value, block)| {
                         let value = global_state.context.i32_type()
-                            .const_int(*value as u64, false);
-                        let block = function_val
-                            .get_basic_blocks()
-                            .get(*block as usize)
-                            .unwrap()
-                            .clone();
+                            .const_int(*value, false);
+                        let block = function_state
+                            .get_block(function_val, *block)
+                            .unwrap();
                         
                         (value, block)
                     })
@@ -553,16 +645,17 @@ pub(crate) fn generate_instruction<'a>(
                 function_state.builder
                     .build_switch(
                         value,
-                        function_val.get_basic_blocks().get(*default as usize)
-                            .unwrap()
-                            .clone(),
+                        function_state
+                            .get_block(function_val, *default)
+                            .unwrap(),
                         targets.as_slice()
                     )
-                    .ok()?;
+                    .unwrap();
                 
                 CodegenValue::NULL
             },
             
+            VirtualInstruction::BoolExtend { value } |
             VirtualInstruction::ZExtend { value } => {
                 let value = function_state
                     .get_val_ref(value)?
@@ -576,7 +669,7 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(
                     function_state.builder
                         .build_int_z_extend(value, to_type, inst_num().as_str())
-                        .ok()?
+                        .unwrap()
                         .as_any_value_enum()
                 )
             },
@@ -594,7 +687,7 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(
                     function_state.builder
                         .build_int_s_extend(value, to_type, inst_num().as_str())
-                        .ok()?
+                        .unwrap()
                         .as_any_value_enum()
                 )
             },
@@ -637,12 +730,12 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(
                     function_state.builder
                         .build_int_truncate(value, to_type, inst_num().as_str())
-                        .ok()?
+                        .unwrap()
                         .as_any_value_enum()
                 )
             },
             
-            VirtualInstruction::GetFunctionAddr { func_name } => {
+            VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 let function_name = function_state
                     .get_val_ref(func_name)?
                     .get_function_ref();
@@ -677,13 +770,13 @@ pub(crate) fn generate_instruction<'a>(
                         BCTypeKind::Signed { .. } =>
                             function_state.builder
                                 .build_signed_int_to_float(value, to_type, inst_num().as_str())
-                                .ok()?
+                                .unwrap()
                                 .as_any_value_enum(),
                         
                         BCTypeKind::Unsigned { .. } =>
                             function_state.builder
                                 .build_unsigned_int_to_float(value, to_type, inst_num().as_str())
-                                .ok()?
+                                .unwrap()
                                 .as_any_value_enum(),
 
                         _ => unreachable!()
@@ -707,13 +800,13 @@ pub(crate) fn generate_instruction<'a>(
                         BCTypeKind::Signed { .. } =>
                             function_state.builder
                                 .build_float_to_signed_int(value, to_type, inst_num().as_str())
-                                .ok()?
+                                .unwrap()
                                 .as_any_value_enum(),
                         
                         BCTypeKind::Unsigned { .. } =>
                             function_state.builder
                                 .build_float_to_unsigned_int(value, to_type, inst_num().as_str())
-                                .ok()?
+                                .unwrap()
                                 .as_any_value_enum(),
                         
                         _ => unreachable!()
@@ -735,7 +828,7 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(
                     function_state.builder
                         .build_ptr_to_int(value, to_type, inst_num().as_str())
-                        .ok()?
+                        .unwrap()
                         .as_any_value_enum()
                 )
             },
@@ -754,7 +847,7 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(
                     function_state.builder
                         .build_float_cast(value, to_type, inst_num().as_str())
-                        .ok()?
+                        .unwrap()
                         .as_any_value_enum()
                 )
             },

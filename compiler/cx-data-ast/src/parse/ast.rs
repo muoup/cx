@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use crate::lex::token::{TokenKind, Token};
-use crate::parse::value_type::{CXType};
+use crate::lex::token::Token;
+use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::parse::identifier::CXIdent;
 
 pub type CXTypeMap = HashMap<String, CXType>;
@@ -14,18 +14,17 @@ pub struct CXAST {
 
     // Path to .cx file
     pub file_path: String,
-    
+
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
-    
     pub imports: Vec<String>,
-
     pub global_stmts: Vec<CXGlobalStmt>,
-    
     pub public_functions: Vec<String>,
 
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
+    
+    pub global_variables: HashMap<String, CXGlobalVariable>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +52,12 @@ pub enum CXGlobalStmt {
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
-    }
+    },
+    
+    DestructorDefinition {
+        type_name: String,
+        body: Box<CXExpr>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,14 +91,32 @@ pub enum CXBinOp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CXInitIndex {
-    Named(CXIdent, Box<CXExpr>),
-    Unnamed(Box<CXExpr>)
+pub struct CXInitIndex {
+    pub name: Option<String>,
+    pub value: CXExpr,
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CXGlobalVariable {
+    GlobalConstant {
+        // if the constant cannot be addressed (e.g. intrinsic generated constants like enum values),
+        // these values do not need to be generated in the final binary
+        //
+        // anonymous - true if the constant fits this criteria, false if it can be addressed
+        anonymous: bool,
+        constant: CXGlobalConstant
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CXGlobalConstant {
+    Int(i32)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXExpr {
-    pub uuid: usize,
+    pub uuid: u64,
     pub kind: CXExprKind,
 
     pub start_index: usize,
@@ -183,6 +205,10 @@ pub enum CXExprKind {
     Return {
         value: Option<Box<CXExpr>>
     },
+    
+    Defer {
+        expr: Box<CXExpr>
+    },
 
     ImplicitCast {
         expr: Box<CXExpr>,
@@ -194,6 +220,14 @@ pub enum CXExprKind {
     ImplicitLoad {
         expr: Box<CXExpr>,
         loaded_type: CXType
+    },
+    
+    New {
+        _type: CXType,
+        array_length: Option<Box<CXExpr>>
+    },
+    Move {
+        expr: Box<CXExpr>
     },
 
     GetFunctionAddr {
@@ -209,7 +243,7 @@ pub enum CXExprKind {
 impl CXExprKind {
     pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpr {
         CXExpr {
-            uuid: Uuid::new_v4().as_u128() as usize,
+            uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
 
             start_index,
@@ -230,4 +264,13 @@ pub enum CXCastType {
     PtrToInt,
     IntToPtr,
     FunctionToPointerDecay,
+    
+    // The difference between a memory reference and a bare type is that a memory reference
+    // is stored in memory. A structured type is itself a memory reference despite this
+    // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
+    // used to create an explicit no-op to appease the typechecker.
+    FauxLoad,
+    
+    AddPointerTag,
+    RemovePointerTag
 }

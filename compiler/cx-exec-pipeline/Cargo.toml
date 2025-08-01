@@ -2,10 +2,10 @@
 name = "cx-exec-pipeline"
 version = "0.0.0"
 edition = "2021"
+autotests = false
 
 [features]
 backend-llvm = ["dep:cx-backend-llvm"]
-backend-cranelift = ["dep:cx-backend-cranelift"]
 
 [dependencies]
 
@@ -19,5 +19,5 @@ cx-exec-data = { path = "../cx-exec-data" }
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
-cx-backend-cranelift = { path = "../cx-backend-cranelift", optional = true }
+cx-backend-cranelift = { path = "../cx-backend-cranelift"}
 cx-util = { path = "../cx-util" }

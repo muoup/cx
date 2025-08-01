@@ -1,6 +1,8 @@
+use std::hash::{Hash, Hasher};
 use cx_util::log_error;
 use serde::{Deserialize, Serialize};
-use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXTypeMap};
+use uuid::Uuid;
+use crate::parse::ast::{CXExpr, CXFunctionPrototype, CXTypeMap};
 use crate::parse::identifier::CXIdent;
 
 pub type CXTypeSpecifier = u8;
@@ -13,17 +15,26 @@ pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CXType {
+    pub uuid: u64,
     pub specifiers: CXTypeSpecifier,
-    pub kind: CXTypeKind
+    pub kind: CXTypeKind,
+}
+
+impl Hash for CXType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.uuid)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CXTypeKind {
     Integer { bytes: u8, signed: bool },
     Float { bytes: u8 },
+    Bool,
     Structured {
         name: Option<CXIdent>,
-        fields: Vec<(String, CXType)>
+        fields: Vec<(String, CXType)>,
+        has_destructor: bool
     },
     Union {
         name: Option<CXIdent>,
@@ -31,7 +42,18 @@ pub enum CXTypeKind {
     },
     Unit,
 
-    PointerTo(Box<CXType>),
+    StrongPointer { 
+        inner: Box<CXType>,
+        is_array: bool,
+    },
+
+    PointerTo {
+        inner: Box<CXType>,
+        
+        sizeless_array: bool,
+        explicitly_weak: bool,
+        nullable: bool
+    },
     MemoryAlias(Box<CXType>),
     Array {
         size: usize,
@@ -93,6 +115,7 @@ impl CXTypeKind {
 impl CXType {
     pub fn unit() -> Self {
         CXType {
+            uuid: 0,
             specifiers: 0,
             kind: CXTypeKind::Unit
         }
@@ -100,6 +123,7 @@ impl CXType {
 
     pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers,
             kind: underlying_type
         }
@@ -107,6 +131,7 @@ impl CXType {
 
     pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: self.specifiers | specifier,
             kind: self.kind.clone()
         }
@@ -114,6 +139,7 @@ impl CXType {
 
     pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: self.specifiers & !specifier,
             kind: self.kind.clone()
         }
@@ -122,33 +148,58 @@ impl CXType {
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
     }
-
-    pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
+    
+    pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXType> {
         get_intrinsic_type(type_map, self)
+    }
+
+    pub fn intrinsic_type_kind<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
+        Some(&get_intrinsic_type(type_map, self)?.kind)
     }
     
     pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
             return false;
         };
           
         inner.is_structured(type_map)
     }
+
+    pub fn is_mem_ref(&self) -> bool {
+        matches!(self.kind, CXTypeKind::MemoryAlias(_))
+    }
     
     pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Structured { .. }))
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { .. }))
     }
     
     pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Integer { .. }))
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Integer { .. }))
+    }
+    
+    pub fn is_strong_ptr(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::StrongPointer { .. }))
+    }
+    
+    pub fn has_destructor(&self, type_map: &CXTypeMap) -> bool {
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { has_destructor: true, .. }))
+    }
+    
+    pub fn get_destructor<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a str> {
+        match self.intrinsic_type_kind(type_map)? {
+            CXTypeKind::Structured { has_destructor: true, name, .. } 
+                => Some(name.as_ref()?.as_str()),
+            
+            _ => None,
+        }
     }
     
     pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
             return None;
         };
 
-        let intrin = inner.intrinsic_type(type_map);
+        let intrin = inner.intrinsic_type_kind(type_map);
         if matches!(intrin, Some(CXTypeKind::Structured { .. })) {
             intrin.cloned()
         } else {
@@ -157,37 +208,32 @@ impl CXType {
     }
     
     pub fn mem_ref_inner(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type(type_map) else {
+        let Some(CXTypeKind::MemoryAlias(inner)) = self.intrinsic_type_kind(type_map) else {
             return None;
         };
         
-        inner.intrinsic_type(type_map).cloned()
+        inner.intrinsic_type_kind(type_map).cloned()
     }
     
     pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::PointerTo(_)))
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::PointerTo { .. }))
     }
 
     pub fn is_void(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type(type_map), Some(CXTypeKind::Unit))
-    }
-
-    pub fn intrin_eq(&self, other: &CXType, type_map: &CXTypeMap) -> bool {
-        same_type(type_map, self, other)
-    }
-
-    pub fn is_intrinsic(&self, intrin: &CXTypeKind, type_map: &CXTypeMap) -> bool {
-        matches!(get_intrinsic_type(type_map, self), intrin)
-    }
-
-    pub fn size(&self, type_map: &CXTypeMap) -> Option<TypeSize> {
-        get_type_size(type_map, self)
+        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Unit))
     }
 
     pub fn pointer_to(self) -> Self {
         CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
-            kind: CXTypeKind::PointerTo(Box::new(self))
+            kind: CXTypeKind::PointerTo {
+                inner: Box::new(self),
+                
+                sizeless_array: false,
+                explicitly_weak: false,
+                nullable: true
+            }
         }
     }
 }
@@ -200,18 +246,22 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
             true,
 
         (CXTypeKind::Identifier { name: name1, .. }, _) =>
-            same_type(type_map, &type_map.get(name1.as_str()).unwrap(), t2),
+            same_type(type_map, type_map.get(name1.as_str()).unwrap(), t2),
 
         (_, CXTypeKind::Identifier { name: name2, .. }) =>
-            same_type(type_map, t1, &type_map.get(name2.as_str()).expect(format!("Type not found: {name2}").as_str())),
+            same_type(type_map, t1, type_map.get(name2.as_str()).unwrap_or_else(|| panic!("Type not found: {name2}"))),
 
         (CXTypeKind::Array { _type: t1_type, .. },
          CXTypeKind::Array { _type: t2_type, .. }) =>
             same_type(type_map, t1_type, t2_type),
 
-        (CXTypeKind::PointerTo(t1_type),
-         CXTypeKind::PointerTo(t2_type)) =>
+        (CXTypeKind::PointerTo { inner: t1_type, .. },
+         CXTypeKind::PointerTo { inner: t2_type, .. }) =>
             same_type(type_map, t1_type, t2_type),
+
+        (CXTypeKind::StrongPointer { inner: t1_inner, .. },
+         CXTypeKind::StrongPointer { inner: t2_inner, .. }) =>
+            same_type(type_map, t1_inner, t2_inner),
 
         (CXTypeKind::Structured { fields: t1_fields, .. },
          CXTypeKind::Structured { fields: t2_fields, .. }) => {
@@ -234,6 +284,7 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
             CXTypeKind::Float { bytes: t2_bytes }) =>
             t1_bytes == t2_bytes,
 
+        (CXTypeKind::Bool, CXTypeKind::Bool) |
         (CXTypeKind::Unit, CXTypeKind::Unit) =>
             true,
 
@@ -241,13 +292,14 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
     }
 }
 
-pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Option<&'a CXTypeKind> {
+pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Option<&'a CXType> {
     match &type_.kind {
         CXTypeKind::Identifier { name, .. }
             => type_map.get(name.as_str())
-                .and_then(|_type| get_intrinsic_type(type_map, _type)),
+                .and_then(|_type| get_intrinsic_type(type_map, _type))
+                .or_else(|| log_error!("Type not found: {}", name.as_str())),
 
-        _ => Some(&type_.kind)
+        _ => Some(&type_)
     }
 }
 
@@ -267,108 +319,6 @@ impl TypeSize {
             TypeSize::Variable { .. } => panic!("{msg}: Expected fixed size, found variable size"),
         }
     }
-}
-
-pub fn get_type_size(type_map: &CXTypeMap, type_: &CXType) -> Option<TypeSize> {
-    Some(
-        match &type_.kind {
-            CXTypeKind::Unit => TypeSize::Fixed(0),
-
-            CXTypeKind::Float { bytes } |
-            CXTypeKind::Integer { bytes, .. } => TypeSize::Fixed(*bytes as usize),
-
-            CXTypeKind::MemoryAlias(inner) =>
-                get_type_size(type_map, inner.as_ref())?,
-
-            CXTypeKind::Array { _type, size } => {
-                let elem_size = get_type_size(type_map, _type)?;
-                
-                match elem_size {
-                    TypeSize::Fixed(field_size) 
-                        => TypeSize::Fixed(field_size * size),
-
-                    TypeSize::Variable { .. } => {
-                        let size_literal = CXExprKind::IntLiteral {
-                            val: *size as i64,
-                            bytes: 8
-                        }.into_expr(0, 0);
-                        
-                        TypeSize::Variable {
-                            elem_size: Box::new(elem_size),
-                            size_expr: Box::new(size_literal)
-                        }
-                    }
-                }
-            },
-
-            CXTypeKind::Structured { fields, .. } =>
-                TypeSize::Fixed(
-                    fields.iter()
-                        .map(|field|
-                            get_type_size(type_map, &field.1).unwrap().assert_fixed("Structured type field size"))
-                        .sum()
-                ),
-            CXTypeKind::Union { fields, .. } =>
-                TypeSize::Fixed(
-                    fields.iter()
-                        .map(|field|
-                            get_type_size(type_map, &field.1).unwrap().assert_fixed("Union type field size"))
-                        .max()?
-                ),
-
-            CXTypeKind::PointerTo(_) |
-            CXTypeKind::Function { .. } => TypeSize::Fixed(8),
-
-            CXTypeKind::Opaque { size, .. } => TypeSize::Fixed(*size),
-            CXTypeKind::Identifier { name, .. } =>
-                type_map.get(name.as_str())
-                    .map(|_type| get_type_size(type_map, _type))
-                    .flatten()?,
-
-            CXTypeKind::VariableLengthArray { _type, size } => {
-                TypeSize::Variable {
-                    elem_size: Box::new(get_type_size(type_map, _type)?),
-                    size_expr: size.clone()
-                }
-            }
-        }
-    )
-}
-
-pub struct StructAccessRecord {
-    pub field_type: CXType,
-    pub field_offset: usize,
-    pub field_index: usize,
-    pub field_name: String
-}
-
-pub fn struct_field_access(
-    type_map: &CXTypeMap,
-    type_: &CXType,
-    field: &str
-) -> Option<StructAccessRecord> {
-    let CXTypeKind::Structured { fields, .. } = get_intrinsic_type(type_map, type_)? else {
-        log_error!("Cannot access field {field} of non-structured type {type_}");
-    };
-
-    let mut offset = 0;
-
-    for (i, (name, ty)) in fields.iter().enumerate() {
-        if name == field {
-            return Some(
-                StructAccessRecord {
-                    field_type: ty.clone(),
-                    field_offset: offset,
-                    field_index: i,
-                    field_name: name.clone()
-                }
-            );
-        }
-
-        offset += get_type_size(type_map, ty)?.assert_fixed("Structured type field size");
-    }
-
-    None
 }
 
 pub fn struct_field_type(

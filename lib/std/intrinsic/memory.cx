@@ -1,0 +1,45 @@
+public:
+
+void strong* __stdalloc(u64 size) {
+    return (void strong*) calloc(1, size);
+}
+
+void strong[] __stdallocarray(u64 elem_size, u64 elem_count) {
+    void* data = malloc(elem_size * elem_count + 8);
+    memset(data, 0, elem_size * elem_count + 8);
+
+    *((long*) data) = elem_count;
+
+    return (void strong[]) ((long*) data + 1);
+}
+
+void __stdfree(void strong* ptr) {
+    printf("__stdfree\n", ptr);
+    free(ptr);
+    move ptr;
+}
+
+void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)) {
+    printf("__stdfreearray\n", ptr);
+    u64 length = *((long*) ptr - 1);
+
+    for (u64 i = 0; i < length; i++) {
+        printf("__stdfreearray: calling destructor for element %llu\n", i);
+        destructor((u8*) ptr + i * type_size);
+    }
+
+    free((u8*) ptr - 8);
+    move ptr; // 'leak' the strong pointer
+}
+
+void __stdfreearray_destructor_noop(void strong[] ptr) {
+    printf("__stdfreearray_destructor_noop\n", ptr);
+    free((u8*) ptr - 8);
+    move ptr; // 'leak' the strong pointer
+}
+
+private:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>

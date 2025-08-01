@@ -3,13 +3,13 @@ use std::io::Write;
 use std::sync::Mutex;
 
 pub fn dump_data(data: &impl std::fmt::Display) {
-    dump_write(&format!("{}\n\n", data));
+    dump_write(&format!("{data}\n\n"));
 }
 
-pub fn dump_all(data: Vec<impl std::fmt::Display>) {
+pub fn dump_all(data: impl Iterator<Item = impl std::fmt::Display>) {
     let data = data
         .into_iter()
-        .map(|d| format!("{}\n", d))
+        .map(|d| format!("{d}\n"))
         .collect::<Vec<String>>()
         .join("\n");
 
@@ -18,8 +18,12 @@ pub fn dump_all(data: Vec<impl std::fmt::Display>) {
     dump_write("\n\n\n//////////////\n\n\n\n");
 }
 
+
 pub fn dump_write(str: &str) {
     const DUMP_PATH: &str = ".internal/compiler-dump.data";
+    
+    let path = std::path::Path::new(DUMP_PATH);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     
     let mut dump_file =
         OpenOptions::new()

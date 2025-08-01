@@ -1,8 +1,8 @@
 use crate::attributes::*;
 use crate::mangling::string_literal_name;
-use crate::typing::{any_to_basic_type, cx_llvm_prototype, bc_llvm_type};
+use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BytecodeFunction, ElementID, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -10,12 +10,15 @@ use inkwell::module::{Linkage, Module};
 use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{AnyType, FunctionType};
-use inkwell::values::{AnyValue, AnyValueEnum, AsValueRef, BasicValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
 
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::Path;
+use inkwell::basic_block::BasicBlock;
 use cx_exec_data::OptimizationLevel;
 use cx_util::format::dump_data;
+use crate::instruction::reset_num;
 
 pub(crate) mod typing;
 mod instruction;
@@ -36,6 +39,9 @@ pub(crate) struct GlobalState<'a> {
 pub(crate) struct FunctionState<'a> {
     current_function: String,
     
+    defer_block_offset: usize,
+    in_defer: bool,
+    
     builder: Builder<'a>,
     value_map: HashMap<ValueID, CodegenValue<'a>>,
 }
@@ -43,6 +49,16 @@ pub(crate) struct FunctionState<'a> {
 impl<'a> FunctionState<'a> {
     pub(crate) fn get_val_ref(&self, id: &ValueID) -> Option<&CodegenValue<'a>> {
         self.value_map.get(id)
+    }
+    
+    pub(crate) fn get_block(&self, function_val: &FunctionValue<'a>, block_id: BlockID) -> Option<BasicBlock> {
+        let adjusted_id = if !block_id.in_deferral {
+            block_id.id as usize
+        } else {
+            block_id.id as usize + self.defer_block_offset
+        };
+     
+        function_val.get_basic_blocks().get(adjusted_id).cloned()
     }
 }
 
@@ -56,9 +72,9 @@ pub(crate) enum CodegenValue<'a> {
 impl<'a> CodegenValue<'a> {
     pub fn get_value(&self) -> AnyValueEnum<'a> {
         match self {
-            CodegenValue::Value(value) => value.clone(),
+            CodegenValue::Value(value) => *value,
 
-            _ => panic!("Expected a value, found: {:?}", self)
+            _ => panic!("Expected a value, found: {self:?}")
         }
     }
 
@@ -66,7 +82,7 @@ impl<'a> CodegenValue<'a> {
         match self {
             CodegenValue::FunctionRef(name) => name,
 
-            _ => panic!("Expected a function reference, found: {:?}", self)
+            _ => panic!("Expected a function reference, found: {self:?}")
         }
     }
 }
@@ -119,7 +135,7 @@ pub fn bytecode_aot_codegen(
 
     for func in bytecode.fn_defs.iter() {
         fn_aot_codegen(func, &global_state)
-            .expect(format!("Failed to generate function code for function: {}", func.prototype.name).as_str());
+            .unwrap_or_else(|| panic!("Failed to generate function code for function: {}", func.prototype.name));
     }
 
     let target = Target::from_triple(
@@ -146,10 +162,10 @@ pub fn bytecode_aot_codegen(
         )
         .expect("Failed to create target machine");
     
-    global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {:#?}", err));
-    global_state.module.set_triple(&TargetMachine::get_default_triple());
+    dump_data(&format!("{}", global_state.module.print_to_string().to_string_lossy()));
     
-    // println!("{}", global_state.module.print_to_string().to_string_lossy());
+    global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {err:#?}"));
+    global_state.module.set_triple(&TargetMachine::get_default_triple());
     
     global_state.module
         .run_passes(
@@ -182,56 +198,85 @@ fn fn_aot_codegen(
     bytecode: &BytecodeFunction,
     global_state: &GlobalState
 ) -> Option<()> {
+    reset_num();
+    
     let func_val = global_state
         .module
         .get_function(bytecode.prototype.name.as_str())
-        .expect("Failed to get function from module");
+        .unwrap_or_else(|| panic!("Failed to get function from module: {}", bytecode.prototype.name));
     let builder = global_state.context.create_builder();
 
     let mut function_state = FunctionState {
         current_function: bytecode.prototype.name.clone(),
+        
+        defer_block_offset: bytecode.blocks.len(),
+        in_defer: false,
         
         builder,
         value_map: HashMap::new(),
     };
 
     for i in 0..bytecode.blocks.len() {
-        global_state.context.append_basic_block(func_val, format!("block_{}", i).as_str());
+        global_state.context.append_basic_block(func_val, format!("block_{i}").as_str());
+    }
+    
+    for i in 0..bytecode.defer_blocks.len() {
+        global_state.context.append_basic_block(func_val, format!("defer_block_{i}").as_str());
     }
 
+    function_state.in_defer = false;
+    
     for (block_id, block) in bytecode.blocks.iter().enumerate() {
-        let block_val = func_val.get_basic_blocks().get(block_id).unwrap().clone();
-        function_state.builder.position_at_end(block_val);
+        codegen_block(global_state, &mut function_state, &func_val, BlockID { in_deferral: false, id: block_id as u32 }, block);
+    }
 
-        for (value_id, inst) in block.body.iter().enumerate() {
-            let value = instruction::generate_instruction(
-                &global_state,
-                &function_state,
-                &func_val,
-                inst
-            ).expect(format!(
-                "Failed to generate instruction {}", inst
-            ).as_str());
-
-            function_state.value_map.insert(
-                ValueID { block_id: block_id as ElementID, value_id: value_id as ElementID },
-                value
-            );
-            
-            if inst.instruction.is_block_terminating() {
-                break;
-            }
-        }
+    function_state.in_defer = true;
+    
+    for (block_id, block) in bytecode.defer_blocks.iter().enumerate() {
+        codegen_block(global_state, &mut function_state, &func_val, BlockID { in_deferral: true, id: block_id as u32}, block);
     }
 
     Some(())
+}
+
+fn codegen_block<'a>(
+    global_state: &GlobalState<'a>,
+    function_state: &mut FunctionState<'a>,
+    func_val: &FunctionValue<'a>,
+    block_id: BlockID,
+    block: &FunctionBlock
+) {
+    let block_val = function_state.get_block(func_val, block_id)
+        .unwrap_or_else(|| panic!("Block with ID {block_id} not found in function"));
+    function_state.builder.position_at_end(block_val);
+
+    for (value_id, inst) in block.body.iter().enumerate() {
+        let value = instruction::generate_instruction(
+            global_state,
+            &function_state,
+            &func_val,
+            inst
+        ).unwrap_or_else(|| panic!("Failed to generate instruction {inst}"));
+
+        function_state.value_map.insert(
+            ValueID { 
+                block_id: block_id, 
+                value_id: value_id as ElementID 
+            },
+            value
+        );
+        
+        if inst.instruction.is_block_terminating() {
+            break;
+        }
+    }
 }
 
 fn cache_type<'a>(
     global_state: &GlobalState<'a>,
     _type: &BCType
 ) -> Option<()> {
-    let BCTypeKind::Struct { fields, name } = &_type.kind else {
+    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         return Some(());
     };
 
@@ -255,7 +300,7 @@ fn cache_prototype<'a>(
     global_state: &mut GlobalState<'a>,
     prototype: &'a BCFunctionPrototype,
 ) -> Option<()> {
-    let llvm_prototype = cx_llvm_prototype(
+    let llvm_prototype = bc_llvm_prototype(
         global_state,
         prototype
     ).unwrap();
@@ -265,12 +310,13 @@ fn cache_prototype<'a>(
         llvm_prototype,
         None
     );
-
-    for i in 0..prototype.params.len() {
-        func.add_attribute(
-            AttributeLoc::Param(i as u32),
-            noundef(global_state.context)
-        )
+    
+    for (i, _type) in prototype.params.iter().enumerate() {
+        get_type_attributes(global_state.context, &_type._type)
+            .into_iter()
+            .for_each(|attr| {
+                func.add_attribute(AttributeLoc::Param(i as u32), attr);
+            });
     }
 
     global_state.functions.insert(

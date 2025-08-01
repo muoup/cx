@@ -5,8 +5,7 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_ast::parse::ast::{CXFunctionMap, CXTypeMap};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, ProgramBytecode, ValueID};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::routines::string_literal;
@@ -32,7 +31,7 @@ impl CodegenValue {
         match self {
             CodegenValue::Value(value) => *value,
 
-            _ => panic!("Expected Value, got: {:?}", self)
+            _ => panic!("Expected Value, got: {self:?}")
         }
     }
 
@@ -40,14 +39,14 @@ impl CodegenValue {
         match self {
             CodegenValue::FunctionID { id, .. } => *id,
 
-            _ => panic!("Expected FunctionID, got: {:?}", self)
+            _ => panic!("Expected FunctionID, got: {self:?}")
         }
     }
 
     pub(crate) fn as_func_name(&self) -> &str {
         match self {
             CodegenValue::FunctionID { fn_name, .. } => fn_name.as_str(),
-            _ => panic!("Expected FunctionID, got: {:?}", self)
+            _ => panic!("Expected FunctionID, got: {self:?}")
         }
     }
 }
@@ -61,22 +60,19 @@ pub struct FunctionState<'a> {
     pub(crate) function_ids: &'a HashMap<String, FuncId>,
     pub(crate) global_strs: &'a Vec<DataId>,
 
-    pub(crate) type_map: &'a BCTypeMap,
     pub(crate) fn_map: &'a BCFunctionMap,
 
     pub(crate) block_map: Vec<Block>,
-
     pub(crate) builder: FunctionBuilder<'a>,
-    pub(crate) local_defined_functions: HashMap<String, FuncRef>,
-
     pub(crate) fn_params: Vec<Value>,
+    
+    pub(crate) defer_offset: usize,
+    pub(crate) in_defer: bool,
 
     pub(crate) function_prototype: &'a BCFunctionPrototype,
     pub(crate) variable_table: VariableTable,
 
     pub(crate) pointer_type: ir::Type,
-
-    pub(crate) current_block_exited: bool,
 }
 
 pub(crate) struct GlobalState<'a> {
@@ -85,12 +81,24 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
     pub(crate) fn_map: &'a BCFunctionMap,
-    pub(crate) type_map: &'a BCTypeMap,
-
     pub(crate) global_strs: Vec<DataId>,
 
     pub(crate) function_ids: HashMap<String, FuncId>,
     pub(crate) function_sigs: &'a mut HashMap<String, ir::Signature>,
+}
+
+impl FunctionState<'_> {
+    pub(crate) fn get_block(&mut self, block_id: BlockID) -> Block {
+        let id = if !block_id.in_deferral {
+            block_id.id as usize
+        } else {
+            block_id.id as usize + self.defer_offset
+        };
+        
+        self.block_map.get(id)
+            .cloned()
+            .unwrap_or_else(|| panic!("Block with ID {id} not found in block map"))
+    }
 }
 
 pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
@@ -110,7 +118,6 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
         ),
 
         fn_map: &ast.fn_map,
-        type_map: &ast.type_map,
 
         context: Context::new(),
         target_frontend_config: isa.frontend_config(),
@@ -125,7 +132,7 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
         global_state.global_strs.push(global_val);
     }
 
-    for (_, fn_prototype) in &ast.fn_map {
+    for fn_prototype in ast.fn_map.values() {
         codegen_fn_prototype(&mut global_state, fn_prototype);
     }
 
@@ -150,7 +157,7 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
     std::fs::create_dir_all(output_path.parent().unwrap()).expect("Failed to create output directory");
     std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
 
-    println!("Successfully generated object file to {}", output);
+    println!("Successfully generated object file to {output}");
 
     Some(())
 }

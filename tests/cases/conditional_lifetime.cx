@@ -1,0 +1,9 @@
+int main() {
+    int cond = 1;
+
+    if (cond) {
+        int x = 10;
+    } else {
+        int strong* y = new int;
+    }
+}

@@ -1,6 +1,7 @@
 use crate::types::BCType;
 use std::collections::HashMap;
 
+pub mod mangling;
 pub mod node_type_map;
 pub mod types;
 mod format;
@@ -21,13 +22,22 @@ pub type ElementID = u32;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ValueID {
-    pub block_id: ElementID,
+    pub block_id: BlockID,
     pub value_id: ElementID
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct BlockID {
+    pub in_deferral: bool,
+    pub id: ElementID
 }
 
 impl ValueID {
     pub const NULL: Self = ValueID {
-        block_id: u32::MAX,
+        block_id: BlockID {
+            in_deferral: true,
+            id: u32::MAX
+        },
         value_id: u32::MAX
     };
 }
@@ -40,7 +50,7 @@ pub struct VirtualValue {
 #[derive(Debug, Clone)]
 pub struct BCParameter {
     pub name: Option<String>,
-    pub type_: BCType
+    pub _type: BCType
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +64,11 @@ pub struct BCFunctionPrototype {
 #[derive(Debug)]
 pub struct BytecodeFunction {
     pub prototype: BCFunctionPrototype,
-    pub blocks: Vec<FunctionBlock>
+    
+    pub blocks: Vec<FunctionBlock>,
+    pub defer_blocks: Vec<FunctionBlock>,
+    
+    pub static_linkage: bool,
 }
 
 #[derive(Debug)]
@@ -69,6 +83,8 @@ pub struct BlockInstruction {
     pub value: VirtualValue
 }
 
+pub const POINTER_TAG : usize = 0xF000_0000_0000_0000;
+
 #[derive(Debug)]
 pub enum VirtualInstruction {
     FunctionParameter {
@@ -76,11 +92,13 @@ pub enum VirtualInstruction {
     },
     
     VariableAllocate {
-        size: ValueID
+        size: ValueID,
+        alignment: u8,
     },
 
     Allocate {
-        size: usize
+        size: usize,
+        alignment: u8,
     },
 
     Load {
@@ -107,13 +125,29 @@ pub enum VirtualInstruction {
         value: ValueID,
         type_: BCType
     },
+    
+    ZeroMemory {
+        memory: ValueID,
+        _type: BCType
+    },
 
+    // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
+    // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
+    // an error,
+    BoolExtend {
+        value: ValueID,
+    },
+    
     ZExtend {
         value: ValueID,
     },
 
     SExtend {
         value: ValueID,
+    },
+    
+    Phi {
+        predecessors: Vec<(ValueID, BlockID)>,
     },
 
     Trunc {
@@ -123,6 +157,10 @@ pub enum VirtualInstruction {
     IntToPtrDiff {
         value: ValueID,
         ptr_type: BCType
+    },
+    
+    IntToPtr {
+        value: ValueID
     },
     
     PointerBinOp {
@@ -175,7 +213,7 @@ pub enum VirtualInstruction {
     },
 
     GetFunctionAddr {
-        func_name: ValueID
+        func: ValueID
     },
 
     IntToFloat {
@@ -198,18 +236,20 @@ pub enum VirtualInstruction {
 
     Branch {
         condition: ValueID,
-        true_block: ElementID,
-        false_block: ElementID
+        true_block: BlockID,
+        false_block: BlockID
     },
 
+    GotoDefer,
+
     Jump {
-        target: ElementID
+        target: BlockID
     },
     
     JumpTable {
         value: ValueID,
-        targets: Vec<(u64, ElementID)>,
-        default: ElementID
+        targets: Vec<(u64, BlockID)>,
+        default: BlockID
     },
 
     Return {
@@ -219,7 +259,7 @@ pub enum VirtualInstruction {
     BitCast {
         value: ValueID
     },
-
+    
     NOP
 }
 
@@ -240,7 +280,7 @@ pub enum BCPtrBinOp {
     ADD, SUB,
     
     EQ, NE,
-    LT, GT, LE, GE
+    LT, GT, LE, GE,
 }
 
 #[derive(Debug, Clone, Copy)]

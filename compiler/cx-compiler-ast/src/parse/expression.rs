@@ -4,12 +4,15 @@ use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error};
-use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base, parse_typemods};
+use crate::parse::structured_initialization::parse_structured_initialization;
+use crate::parse::typing::{is_type_decl, parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr.kind {
+        CXExprKind::Defer { .. }    |
         CXExprKind::If { .. }       |
         CXExprKind::While { .. }    |
         CXExprKind::For { .. }      |
@@ -24,11 +27,10 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
         return parse_declaration(data);
     }
 
-    if let Some(TokenKind::Keyword(keyword)) = data.toks.peek().map(|t| &t.kind) {
-        let keyword = keyword.clone();
-        data.toks.next();
-
-        if let Some(expr) = parse_keyword_expr(data, keyword) {
+    if try_next!(data, TokenKind::Keyword(_)) {
+        data.toks.back();
+        
+        if let Some(expr) = parse_keyword_expr(data) {
             return Some(expr);
         }
     }
@@ -186,9 +188,9 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
     let acc = match &data.toks.next()?.kind {
         TokenKind::IntLiteral(value) =>
-            CXExprKind::IntLiteral { bytes: 4, val: value.clone() },
+            CXExprKind::IntLiteral { bytes: 4, val: *value },
         TokenKind::FloatLiteral(value) =>
-            CXExprKind::FloatLiteral { bytes: 4, val: value.clone() },
+            CXExprKind::FloatLiteral { bytes: 4, val: *value },
         TokenKind::StringLiteral(value) =>
             CXExprKind::StringLiteral { val: value.clone() },
 
@@ -196,6 +198,12 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             CXExprKind::Identifier(parse_intrinsic(data.back())?),
         TokenKind::Identifier(_) =>
             CXExprKind::Identifier(parse_std_ident(data.back())?),
+        
+        TokenKind::Operator(OperatorType::Move) => {
+            let expr = parse_expr(data)?;
+            
+            CXExprKind::Move { expr: Box::new(expr) }
+        },
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
@@ -213,6 +221,13 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
             expr.kind
         },
+        
+        TokenKind::Punctuator(PunctuatorType::OpenBrace) => {
+            data.toks.back();
+            
+            parse_structured_initialization(data)?.kind
+        }
+        
         TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
             if try_next!(data, TokenKind::Punctuator(PunctuatorType::CloseBracket)) {
                 expr_stack.push(CXExprKind::Unit.into_expr(start_index, data.toks.index));
@@ -253,6 +268,33 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             
             return_type
         },
+        
+        TokenKind::Keyword(KeywordType::New) => {
+            let Some((None, _type)) = parse_initializer(data) else {
+                log_error!("PARSER ERROR: Failed to parse type declaration for new");
+            };
+            
+            match _type.kind {
+                CXTypeKind::Array { size, _type: inner_type } => {
+                    let length = CXExprKind::IntLiteral {
+                        bytes: 8,
+                        val: size as i64
+                    };
+                    
+                    CXExprKind::New {
+                        _type: *inner_type,
+                        array_length: Some(Box::new(length.into_expr(start_index, data.toks.index)))
+                    }
+                }
+                CXTypeKind::VariableLengthArray { size, _type: inner_type } => {
+                    CXExprKind::New {
+                        _type: *inner_type,
+                        array_length: Some(size)
+                    }
+                },
+                _ => CXExprKind::New { _type, array_length: None },
+            }
+        },
 
         _ => {
             data.back();
@@ -272,10 +314,14 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
     Some(())
 }
 
-pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) -> Option<CXExpr> {
+pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
     let start_index = data.toks.index;
     
-    match keyword {
+    let TokenKind::Keyword(keyword_type) = data.toks.next()?.kind else {
+        unreachable!("PANIC: parse_keyword_expr called with non-keyword token: {:#?}", data.toks.peek());
+    };
+    
+    match keyword_type {
         KeywordType::Return => {
             let val = parse_expr(data)?;
 
@@ -305,7 +351,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
                 CXExprKind::If {
                     condition: Box::new(expr),
                     then_branch: Box::new(then_body),
-                    else_branch: else_body.map(|b| Box::new(b))
+                    else_branch: else_body.map(Box::new)
                 }
             )
         },
@@ -408,17 +454,15 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData, keyword: KeywordType) ->
                 }
             )
         },
+        
+        KeywordType::Defer => {
+            let body = parse_body(data)?;
+            Some(CXExprKind::Defer { expr: Box::new(body) })
+        },
 
-        _ => log_error!("Unsupported keyword: {:#?}", keyword)
+        _ => {
+            data.toks.back();
+            return None
+        }
     }.map(|e| e.into_expr(start_index, data.toks.index))
-}
-
-pub(crate) fn parse_braced_expr(data: &mut ParserData) -> Option<CXExpr> {
-    todo!()
-}
-
-pub(crate) fn parse_name(data: &mut ParserData) -> Option<String> {
-    assert_token_matches!(data, TokenKind::Identifier(identifier));
-
-    Some(identifier.clone())
 }

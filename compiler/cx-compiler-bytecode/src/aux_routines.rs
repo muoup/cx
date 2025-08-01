@@ -1,12 +1,25 @@
-use cx_data_ast::parse::ast::CXExpr;
-use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_ast::parse::ast::{CXExpr, CXTypeMap};
+use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
+use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_util::bytecode_error_log;
-use crate::builder::BytecodeBuilder;
+use crate::builder::{BytecodeBuilder, DeclarationLifetime};
+use crate::BytecodeResult;
+use crate::deconstructor::deconstruct_variable;
+use crate::instruction_gen::generate_instruction;
 
 pub(crate) struct StructAccess {
     pub(crate) offset: usize,
     pub(crate) index: usize,
     pub(crate) _type: BCType,
+}
+
+fn align_offset(current_offset: usize, alignment: usize) -> usize {
+    if current_offset % alignment != 0 {
+        current_offset + (alignment - (current_offset % alignment))
+    } else {
+        current_offset
+    }
 }
 
 pub(crate) fn get_struct_field(
@@ -21,33 +34,123 @@ pub(crate) fn get_struct_field(
     let mut offset = 0;
     
     for (index, (field_name, field_type)) in fields.iter().enumerate() {
+        offset = align_offset(offset, field_type.alignment() as usize);
+        
         if field_name == name {
             return Some(StructAccess {
-                offset,
-                index,
+                offset, index,
                 _type: field_type.clone()
             });
         }
         
-        offset += field_type.size();
+        offset += field_type.fixed_size();
     }
     
     None
 }
 
-pub(crate) fn get_union_field(
+pub(crate) fn get_cx_struct_field_by_index(
     builder: &BytecodeBuilder,
     _type: &BCType,
-    name: &str
-) -> Option<BCType> {
-    let BCTypeKind::Union { fields, .. } = &_type.kind else {
-        bytecode_error_log!(builder, "PANIC: Expected union type on access {name}, got: {:?}", _type);
+    index: usize
+) -> Option<StructAccess> {
+    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+        bytecode_error_log!(builder, "PANIC: Expected struct type on access by index {index}, got: {:?}", _type);
     };
     
-    fields.iter()
-        .find(|(field_name, _)| field_name == name)
-        .map(|(_, field_type)| field_type.clone())
-        .or_else(|| {
-            bytecode_error_log!(builder, "PANIC: Invalid union accessor {name} for type {:?}", _type);
-        })
+    if index >= fields.len() {
+        bytecode_error_log!(builder, "PANIC: Index out of bounds for struct access by index {index}");
+    }
+    
+    let mut offset = 0;
+    let mut field_iter = fields.iter().peekable();
+    
+    for _ in 0..index {
+        let (_, field_type) = field_iter.next()?;
+
+        offset += field_type.fixed_size();
+        
+        let alignment = field_iter.peek()
+            .map(|(_, next_type)| next_type.alignment() as usize)
+            .expect("get_cx_struct_field_by_index: Out of bounds access");
+        offset = align_offset(offset, alignment);
+    }
+    
+    let field_type = fields[index].1.clone();
+    
+    Some(StructAccess {
+        offset, index,
+        _type: field_type
+    })
+}
+
+fn variable_requires_nulling(
+    type_map: &CXTypeMap,
+    cx_type: &CXType
+) -> Option<bool> {
+    match cx_type.intrinsic_type_kind(type_map)? {
+        CXTypeKind::StrongPointer { .. } => Some(true),
+        
+        _ => Some(cx_type.has_destructor(type_map)),
+    }
+}
+
+pub(crate) fn allocate_variable(
+    name: &str,
+    builder: &mut BytecodeBuilder,
+    var_type: &CXType,
+) -> Option<ValueID> {
+    let bc_type = builder.convert_cx_type(var_type)?;
+
+    let memory = match bc_type.size() {
+        BCTypeSize::Fixed(size) => {
+            builder.add_instruction_bt(
+                VirtualInstruction::Allocate {
+                    size,
+                    alignment: bc_type.alignment(),
+                },
+                BCType::default_pointer()
+            )?
+        },
+        BCTypeSize::Variable(size_expr) => {
+            builder.add_instruction_bt(
+                VirtualInstruction::VariableAllocate {
+                    size: size_expr,
+                    alignment: bc_type.alignment(),
+                },
+                BCType::default_pointer()
+            )?
+        }
+    };
+
+    builder.insert_symbol(name.to_owned(), memory);
+    builder.insert_declaration(
+        DeclarationLifetime {
+            value_id: memory,
+            _type: var_type.clone()
+        }
+    );
+    
+    if variable_requires_nulling(&builder.cx_type_map, var_type)? {
+        builder.add_instruction_bt(
+            VirtualInstruction::ZeroMemory {
+                memory,
+                _type: bc_type.clone(),
+            },
+            BCType::unit()
+        )?;
+    }
+
+    Some(memory)
+}
+
+pub(crate) fn deconstruct_scope(
+    builder: &mut BytecodeBuilder,
+    scope: &[DeclarationLifetime]
+) -> BytecodeResult<()> {
+    for lifetime in scope {
+        deconstruct_variable(builder, lifetime.value_id.clone(), &lifetime._type, true)?;
+    }
+    
+    Some(())
 }

@@ -2,15 +2,5 @@
 resolver = "2"
 members = [
     "compiler/cx",
-    "compiler/cx-exec-pipeline",
-    "compiler/cx-data-ast",
-    "compiler/cx-data-bytecode",
-    "compiler/cx-compiler-ast",
-    "compiler/cx-compiler-modules",
-    "compiler/cx-compiler-bytecode",
-    "compiler/cx-compiler-typechecker",
-    "compiler/cx-backend-cranelift",
-    "compiler/cx-backend-llvm",
-    "compiler/cx-lsp",
-    "compiler/cx-util", "compiler/cx-exec-data",
+    "tests"
 ]
