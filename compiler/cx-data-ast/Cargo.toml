@@ -7,5 +7,4 @@ autotests = false
 [dependencies]
 cx-util = { path = "../cx-util" }
 uuid = { version = "1.16.0", features = ["v4"] }
-
-serde = { version = "1.0", features = ["derive"] }
+speedy = { version = "0.8.7" }

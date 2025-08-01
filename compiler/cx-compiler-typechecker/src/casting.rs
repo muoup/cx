@@ -29,7 +29,7 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
             (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
-            (CXTypeKind::MemoryAlias(inner), CXTypeKind::Structured { .. })
+            (CXTypeKind::MemoryReference(inner), CXTypeKind::Structured { .. })
                 if same_type(env.type_map, inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
 
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
@@ -37,6 +37,9 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
 
+            (CXTypeKind::Array { _type, .. }, CXTypeKind::PointerTo { inner, .. })
+                if same_type(env.type_map, &_type, &inner) => Some(CXCastType::BitCast),
+            
             (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner, .. })
                 if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
@@ -167,7 +170,7 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
 
         (CXTypeKind::StrongPointer { .. }, _) |
         (_, CXTypeKind::StrongPointer { .. }) => {
-            println!("R-value strong pointers must be assigned to an l-value before being used in binary operations, found '{op}' with types {l_type} and {r_type}");
+            eprintln!("R-value strong pointers must be assigned to an l-value before being used in binary operations, found '{op}' with types {l_type} and {r_type}");
             None
         },
 
@@ -231,7 +234,7 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
             Some(
                 CXType::new(
                     pointer_inner?.specifiers,
-                    CXTypeKind::MemoryAlias(Box::new(pointer_inner?.clone()))
+                    CXTypeKind::MemoryReference(Box::new(pointer_inner?.clone()))
                 )
             )
         },

@@ -1,13 +1,21 @@
 use std::fmt::{Display, Formatter};
-use serde::{Deserialize, Serialize};
+use speedy::{Readable, Writable};
 use cx_util::log_error;
 use crate::lex::token::{OperatorType, TokenKind};
-use crate::parse::parser::ParserData;
+use crate::parse::parser::{ParserData, TokenIter};
 use crate::try_next;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Readable, Writable)]
 pub struct CXIdent {
     pub data: String
+}
+
+impl Default for CXIdent {
+    fn default() -> Self {
+        CXIdent {
+            data: String::new()
+        }
+    }
 }
 
 impl CXIdent {
@@ -55,32 +63,32 @@ impl CXTypedIdent {
     }
 }
 
-pub fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
-    if matches!(data.toks.peek()?.kind, TokenKind::Intrinsic(_)) {
+pub fn parse_identifier(tokens: &mut TokenIter) -> Option<CXTypedIdent> {
+    if matches!(tokens.peek()?.kind, TokenKind::Intrinsic(_)) {
         return Some(
             CXTypedIdent::Intrinsic(
-                parse_intrinsic(data)?
+                parse_intrinsic(tokens)?
             )
         );
     }
 
-    let TokenKind::Identifier(ident) = data.toks.peek().cloned()?.kind else {
+    let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
         return None;
     };
-    data.toks.next();
+    tokens.next();
 
     let mut idents = vec![CXIdent::from_owned(ident)];
 
-    while try_next!(data, TokenKind::Operator(OperatorType::ScopeRes)) {
-        let TokenKind::Identifier(ident) = data.toks.peek().cloned()?.kind else {
-            log_error!("Invalid token in namespace identifier: {:?}", data.toks.prev());
+    while try_next!(tokens, TokenKind::Operator(OperatorType::ScopeRes)) {
+        let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
+            log_error!("Invalid token in namespace identifier: {:?}", tokens.prev());
         };
-        data.toks.next();
+        tokens.next();
 
         idents.push(CXIdent::from_owned(ident));
     }
 
-    data.toks.back();
+    tokens.back();
 
     match idents.len() {
         1 => Some(
@@ -96,12 +104,12 @@ pub fn parse_identifier(data: &mut ParserData) -> Option<CXTypedIdent> {
     }
 }
 
-pub fn parse_intrinsic(data: &mut ParserData) -> Option<CXIdent> {
+pub fn parse_intrinsic(tokens: &mut TokenIter) -> Option<CXIdent> {
     let mut ss = String::new();
 
-    while let Some(TokenKind::Intrinsic(ident)) = data.toks.peek().map(|tok| &tok.kind) {
+    while let Some(TokenKind::Intrinsic(ident)) = tokens.peek().map(|tok| &tok.kind) {
         ss.push_str(format!("{ident:?}").to_lowercase().as_str());
-        data.toks.next();
+        tokens.next();
     }
 
     if ss.is_empty() {
@@ -115,12 +123,12 @@ pub fn parse_intrinsic(data: &mut ParserData) -> Option<CXIdent> {
     )
 }
 
-pub fn parse_std_ident(data: &mut ParserData) -> Option<CXIdent> {
-    let TokenKind::Identifier(ident) = data.toks.peek().cloned()?.kind else {
+pub fn parse_std_ident(tokens: &mut TokenIter) -> Option<CXIdent> {
+    let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
         return None;
     };
 
-    data.toks.next();
+    tokens.next();
 
     Some(
         CXIdent {

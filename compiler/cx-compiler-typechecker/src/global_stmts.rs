@@ -1,5 +1,6 @@
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionMap, CXFunctionPrototype, CXParameter, CXTypeMap};
+use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;
@@ -27,7 +28,7 @@ pub(crate) fn add_destructor_prototypes(
             
             let prototype = CXFunctionPrototype {
                 name: CXIdent::from_owned(destructor_name.clone()),
-                params: vec![CXParameter { name: None, type_: this_type }],
+                params: vec![CXParameter { name: None, _type: this_type }],
                 return_type: CXType::unit(),
                 var_args: false
             };
@@ -47,7 +48,7 @@ pub(crate) fn typecheck_function(
     env.current_prototype = Some(prototype.clone());
     env.symbol_table.push_scope();
 
-    for CXParameter { type_, name } in prototype.params.iter() {
+    for CXParameter { _type: type_, name } in prototype.params.iter() {
         if let Some(name) = name {
             env.symbol_table.insert(name.as_string(), type_.clone());
         }

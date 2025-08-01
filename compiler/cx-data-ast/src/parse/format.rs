@@ -1,5 +1,5 @@
 use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalStmt, CXInitIndex, CXParameter, CXUnOp, CXAST};
-use crate::parse::value_type::{CXTypeKind, CXType};
+use crate::parse::value_type::{CXType, CXTypeKind};
 use cx_util::format::{dedent, indent};
 use cx_util::{fwrite, fwriteln};
 use std::fmt::{Display, Formatter};
@@ -17,9 +17,22 @@ impl Display for CXAST {
 impl Display for CXGlobalStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            CXGlobalStmt::TypeDecl { name, type_ } => {
+                if let Some(name) = name {
+                    fwriteln!(f, "type {} = {}", name, type_)
+                } else {
+                    fwriteln!(f, "type {}", type_)
+                }
+            },
+            
             CXGlobalStmt::GlobalVariable { name, type_, .. } => {
                 fwriteln!(f, "{}: {}", name, type_)
             },
+            
+            CXGlobalStmt::FunctionPrototype { prototype } => {
+                fwriteln!(f, "{};", prototype)
+            },
+            
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
                 indent();
                 fwriteln!(f, "{} {{", prototype)?;
@@ -29,6 +42,7 @@ impl Display for CXGlobalStmt {
                 fwrite!(f, "}}")?;
                 Ok(())
             },
+            
             CXGlobalStmt::DestructorDefinition { type_name, body } => {
                 indent();
                 fwriteln!(f, "destructor for {} {{", type_name)?;
@@ -36,6 +50,15 @@ impl Display for CXGlobalStmt {
                 dedent();
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")?;
+                Ok(())
+            },
+            
+            CXGlobalStmt::TemplatedFunction { fn_name, body } => {
+                indent();
+                fwriteln!(f, "templated function {} {{\n", fn_name)?;
+                fwrite!(f, "{}", body)?;
+                dedent();
+                fwriteln!(f, "")?;
                 Ok(())
             },
         }
@@ -287,7 +310,7 @@ impl Display for CXTypeKind {
                     write!(f, "*")?;
                 }
                 
-                if *nullable {
+                if !*nullable {
                     write!(f, " (nonnull)")
                 } else {
                     Ok(())
@@ -311,8 +334,8 @@ impl Display for CXTypeKind {
             CXTypeKind::Function { prototype } => {
                 write!(f, "fn {prototype}")
             },
-            CXTypeKind::MemoryAlias(inner) => {
-                write!(f, "mem({inner})")
+            CXTypeKind::MemoryReference(inner) => {
+                write!(f, "&{inner}")
             },
         }
     }
@@ -322,9 +345,9 @@ impl Display for CXTypeKind {
 impl Display for CXParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.name {
-            write!(f, "{}: {}", name, self.type_)
+            write!(f, "{}: {}", name, self._type)
         } else {
-            write!(f, "{}", self.type_)
+            write!(f, "{}", self._type)
         }
     }
 }

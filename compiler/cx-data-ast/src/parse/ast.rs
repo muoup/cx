@@ -1,39 +1,34 @@
-use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use crate::lex::token::Token;
-use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::parse::identifier::CXIdent;
+use crate::parse::maps::{CXFunctionMap, CXTypeMap};
+use crate::parse::value_type::CXType;
+use std::collections::HashMap;
+use speedy::{Readable, Writable};
+use uuid::Uuid;
 
-pub type CXTypeMap = HashMap<String, CXType>;
-pub type CXFunctionMap = HashMap<String, CXFunctionPrototype>;
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct CXAST {
-    pub tokens: Vec<Token>,
-
     // Path to .cx file
     pub file_path: String,
 
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
+    
     pub imports: Vec<String>,
     pub global_stmts: Vec<CXGlobalStmt>,
-    pub public_functions: Vec<String>,
-
+    
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
     
     pub global_variables: HashMap<String, CXGlobalVariable>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct CXParameter {
     pub name: Option<CXIdent>,
-    pub type_: CXType,
+    pub _type: CXType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Readable, Writable)]
 pub struct CXFunctionPrototype {
     pub name: CXIdent,
     pub return_type: CXType,
@@ -41,14 +36,23 @@ pub struct CXFunctionPrototype {
     pub var_args: bool
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalStmt {
+    TypeDecl {
+        name: Option<String>,
+        type_: CXType
+    },
+
     GlobalVariable {
         name: CXIdent,
         type_: CXType,
         initializer: Option<CXExpr>
     },
 
+    FunctionPrototype {
+        prototype: CXFunctionPrototype,
+    },
+    
     FunctionDefinition {
         prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
@@ -58,9 +62,14 @@ pub enum CXGlobalStmt {
         type_name: String,
         body: Box<CXExpr>,
     },
+    
+    TemplatedFunction {
+        fn_name: CXIdent,
+        body: Box<CXExpr>
+    },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
@@ -74,7 +83,7 @@ pub enum CXUnOp {
     PostIncrement(i8),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXBinOp {
     Add, Subtract, Multiply, Divide, Modulus,
     Less, Greater, LessEqual, GreaterEqual,
@@ -90,14 +99,14 @@ pub enum CXBinOp {
     Access, MethodCall, ArrayIndex
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct CXInitIndex {
     pub name: Option<String>,
     pub value: CXExpr,
     pub index: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalVariable {
     GlobalConstant {
         // if the constant cannot be addressed (e.g. intrinsic generated constants like enum values),
@@ -109,12 +118,12 @@ pub enum CXGlobalVariable {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalConstant {
     Int(i32)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct CXExpr {
     pub uuid: u64,
     pub kind: CXExprKind,
@@ -135,7 +144,7 @@ impl Default for CXExpr {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXExprKind {
     Taken,
     Unit,
@@ -252,7 +261,7 @@ impl CXExprKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum CXCastType {
     IntegralCast,
     FloatCast,

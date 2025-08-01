@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use crate::{BytecodeResult, ProgramBytecode};
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::ast::CXExprKind::Block;
+use cx_data_ast::parse::ast::{CXExpr};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap, BlockID};
@@ -120,8 +120,6 @@ impl BytecodeBuilder {
                 
                 blocks: context.blocks,
                 defer_blocks: context.deferred_blocks,
-
-                static_linkage,
             }
         );
     }
@@ -247,6 +245,15 @@ impl BytecodeBuilder {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
+            let return_block = self.create_named_block("return");
+            
+            self.add_instruction_bt(
+                VirtualInstruction::Jump { target: return_block },
+                BCType::unit()
+            );
+            
+            self.set_current_block(return_block);
+            
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
                 CXType::unit()

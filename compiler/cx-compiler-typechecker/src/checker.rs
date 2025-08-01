@@ -71,7 +71,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     let operand_type = type_check_traverse(env, operand.as_mut())?.clone();
 
                     match operand_type.intrinsic_type_kind(env.type_map)? {
-                        CXTypeKind::MemoryAlias(inner) => Some(inner.clone().pointer_to()),
+                        CXTypeKind::MemoryReference(inner) => Some(inner.clone().pointer_to()),
                         CXTypeKind::Function { .. } => coerce_value(env, operand.as_mut()),
 
                         _ => log_error!("TYPE ERROR: Cannot take address of expr: {operand_type}"),
@@ -88,7 +88,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     Some(
                         CXType::new(
                             0,
-                            CXTypeKind::MemoryAlias(inner)
+                            CXTypeKind::MemoryReference(inner)
                         )
                     )
                 },
@@ -96,7 +96,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXUnOp::PreIncrement(_) => {
                     let operand_type = type_check_traverse(env, operand.as_mut())?.clone();
                     
-                    let CXTypeKind::MemoryAlias(inner) = &operand_type.kind else {
+                    let CXTypeKind::MemoryReference(inner) = &operand_type.kind else {
                         log_error!("TYPE ERROR: Increment operator can only be applied to memory references, found: {operand}");
                     };
                     
@@ -129,7 +129,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             
             let lhs_type = type_check_traverse(env, lhs)?.clone();
             
-            let CXTypeKind::MemoryAlias(lhs_type) = &lhs_type.kind else {
+            let CXTypeKind::MemoryReference(lhs_type) = &lhs_type.kind else {
                 log_error!("TYPE ERROR: Assignment operator can only be applied to memory references, found: {lhs_type}");
             };
 
@@ -167,7 +167,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 .iter_mut()
                 .zip(prototype.params.iter())
             {
-                implicit_coerce(env, arg, expected_type.type_.clone())?;
+                implicit_coerce(env, arg, expected_type._type.clone())?;
             }
 
             for i in prototype.params.len()..args.len() {
@@ -244,7 +244,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                         Some(
                             CXType::new(
                                 record.specifiers,
-                                CXTypeKind::MemoryAlias(Box::new(record))
+                                CXTypeKind::MemoryReference(Box::new(record))
                             )
                         )
                     },
@@ -360,7 +360,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::Move { expr } => {
             let expr_type = type_check_traverse(env, expr)?.clone();
             
-            let CXTypeKind::MemoryAlias(inner) = &expr_type.kind else {
+            let CXTypeKind::MemoryReference(inner) = &expr_type.kind else {
                 log_error!("TYPE ERROR: Move operator can only be applied to memory references, found: {expr_type}");
             };
             
@@ -455,7 +455,7 @@ fn coerce_mem_ref(
 ) -> Option<CXType> {
     let expr_type = type_check_traverse(env, expr)?.clone();
 
-    let CXTypeKind::MemoryAlias(inner)
+    let CXTypeKind::MemoryReference(inner)
         = expr_type.intrinsic_type_kind(env.type_map).cloned()? else {
         return Some(expr_type);
     };
@@ -490,7 +490,7 @@ pub(crate) fn coerce_return_value(
     
     match intrinsic_type {
         // The memory alias is not traditionally loadable (i.e. a struct), so it may be returned as-is
-        CXTypeKind::MemoryAlias(_) => (),
+        CXTypeKind::MemoryReference(_) => (),
         
         // In most cases, a strong pointer is implicitly converted to a regular pointer for standard
         // C semantics, however in the case of returning, it is import to maintain the strongness

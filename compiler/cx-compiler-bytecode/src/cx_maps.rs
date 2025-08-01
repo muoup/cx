@@ -1,6 +1,7 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXFunctionMap, CXFunctionPrototype, CXTypeMap, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap, VirtualInstruction};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap, LinkageType, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -189,10 +190,11 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                     .into_iter()
                     .chain(cx_proto.params.iter().map(|param| BCParameter {
                         name: None,
-                        _type: convert_argument_type(cx_type_map, &param.type_).unwrap()
+                        _type: convert_argument_type(cx_type_map, &param._type).unwrap()
                     }))
                     .collect(),
-                var_args: cx_proto.var_args
+                var_args: cx_proto.var_args,
+                linkage: LinkageType::Public
             }
         )
     } else {
@@ -203,10 +205,11 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                 params: cx_proto.params.iter()
                     .map(|param| BCParameter {
                         name: None,
-                        _type: convert_argument_type(cx_type_map, &param.type_).unwrap()
+                        _type: convert_argument_type(cx_type_map, &param._type).unwrap()
                     })
                     .collect(),
-                var_args: cx_proto.var_args
+                var_args: cx_proto.var_args,
+                linkage: LinkageType::Public
             }
         )
     }
@@ -309,7 +312,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                     size: *size
                 },
             
-            CXTypeKind::MemoryAlias(inner) => {
+            CXTypeKind::MemoryReference(inner) => {
                 match inner.intrinsic_type_kind(cx_type_map)? {
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,

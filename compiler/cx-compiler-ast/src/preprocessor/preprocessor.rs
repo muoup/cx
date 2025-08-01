@@ -1,4 +1,4 @@
-use cx_exec_data::libary_path_prefix;
+use cx_data_pipeline::libary_path_prefix;
 use crate::preprocessor::Preprocessor;
 
 fn handle_non_directive(preprocessor: &mut Preprocessor, string: &str) -> String {

@@ -2,7 +2,7 @@ use crate::attributes::*;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::Path;
 use inkwell::basic_block::BasicBlock;
-use cx_exec_data::OptimizationLevel;
+use cx_data_pipeline::OptimizationLevel;
 use cx_util::format::dump_data;
 use crate::instruction::reset_num;
 
@@ -126,7 +126,7 @@ pub fn bytecode_aot_codegen(
             None,
             string_literal_name(i).as_str()
         );
-
+        
         global.set_linkage(Linkage::Private);
         global.set_initializer(&val);
         global.set_unnamed_addr(true);
@@ -157,7 +157,7 @@ pub fn bytecode_aot_codegen(
             "generic",
             "",
             inkwell_optimization_level,
-            RelocMode::Default,
+            RelocMode::PIC,
             CodeModel::Default
         )
         .expect("Failed to create target machine");
@@ -187,9 +187,11 @@ pub fn bytecode_aot_codegen(
     
     dump_data(&String::from_utf8_lossy(asm.as_slice()));
 
+    // println!("[LLVM] Exporting module to file: {}", output_path);
+    
     target_machine
         .write_to_file(&global_state.module, inkwell::targets::FileType::Object, Path::new(output_path))
-        .expect("Failed to add analysis passes");
+        .expect("Failed to export module to file");
 
     Some(())
 }
@@ -308,7 +310,14 @@ fn cache_prototype<'a>(
     let func = global_state.module.add_function(
         prototype.name.as_str(),
         llvm_prototype,
-        None
+        Some(
+            match prototype.linkage {
+                LinkageType::ODR => Linkage::LinkOnceODR,
+                LinkageType::Static => Linkage::Internal,
+                LinkageType::Public => Linkage::External,
+                LinkageType::Private => Linkage::Private,
+            }
+        )
     );
     
     for (i, _type) in prototype.params.iter().enumerate() {

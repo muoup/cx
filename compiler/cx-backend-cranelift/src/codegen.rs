@@ -7,13 +7,19 @@ use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
 use std::collections::HashMap;
-use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, ValueID};
+use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, ValueID};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
+    let linkage = match prototype.linkage {
+        LinkageType::ODR => Linkage::Local,
+        LinkageType::Static => Linkage::Local,
+        LinkageType::Public => Linkage::Export,
+        LinkageType::Private => Linkage::Local,
+    };
 
     let id = global_state.object_module
-        .declare_function(prototype.name.as_str(), Linkage::Preemptible, &sig)
+        .declare_function(prototype.name.as_str(), linkage, &sig)
         .unwrap();
 
     global_state.function_ids.insert(prototype.name.to_owned(), id);
@@ -34,7 +40,7 @@ pub(crate) fn codegen_block(
         if let Some(val) = codegen_instruction(context, instr) {
             context.variable_table.insert(
                 ValueID {
-                    block_id: block_id,
+                    block_id,
                     value_id: value_id as u32
                 },
                 val

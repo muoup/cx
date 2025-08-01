@@ -3,7 +3,7 @@ use crate::BytecodeResult;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::node_type_map::{AllocationType, DeconstructorData};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, BCPtrBinOp, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, BCPtrBinOp, LinkageType, ValueID, VirtualInstruction};
 use cx_data_bytecode::mangling::mangle_destructor;
 use crate::aux_routines::get_cx_struct_field_by_index;
 
@@ -26,6 +26,7 @@ fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
             BCParameter { name: None, _type: this_param_type },
         ],
         var_args: false,
+        linkage: LinkageType::ODR
     }
 }
 

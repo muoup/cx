@@ -2,7 +2,7 @@ use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::mangling::mangle_destructor;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, LinkageType, VirtualInstruction};
 use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -35,9 +35,19 @@ pub(crate) fn generate_destructor(
     body: &CXExpr
 ) -> Option<()> {
     let destructor_name = mangle_destructor(type_name);
-    let prototype = builder.fn_map.get(&destructor_name)
-        .cloned()
-        .expect("Failed to find destructor prototype in function map");
+    let prototype = BCFunctionPrototype {
+        return_type: BCType::unit(),
+        name: destructor_name,
+        params: vec![BCParameter {
+            name: Some("this".to_string()),
+            _type: BCType::from(BCTypeKind::Pointer {
+                nullable: false,
+                dereferenceable: 0,
+            }),
+        }],
+        var_args: false,
+        linkage: LinkageType::Public
+    };
 
     builder.push_scope();
     builder.new_function(prototype);
@@ -68,12 +78,12 @@ fn generate_params(
     let is_structured_return = prototype.return_type.is_structured(&builder.cx_type_map);
     
     for (i, arg) in prototype.params.iter().enumerate() {
-        let bc_type = builder.convert_cx_type(&arg.type_)?;
+        let bc_type = builder.convert_cx_type(&arg._type)?;
         
         let memory = allocate_variable(
             &arg.name.as_ref().map(|n| n.to_string()).unwrap_or_else(|| format!("_fn_arg_{i}")),
             builder,
-            &arg.type_
+            &arg._type
         )?;
 
         let i = if is_structured_return {

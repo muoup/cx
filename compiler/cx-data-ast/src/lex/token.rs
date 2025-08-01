@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 #[derive(Debug, PartialEq)]
 pub struct TokenData {
     pub line_number: u32,
@@ -14,6 +16,41 @@ pub struct Token {
     pub line: u32,
     pub start_index: usize,
     pub end_index: usize,
+}
+
+#[macro_export]
+macro_rules! keyword {
+    ($($name:ident),+) => {
+        $(TokenKind::Keyword(cx_data_ast::lex::token::KeywordType::$name))|+
+    };
+}
+
+#[macro_export]
+macro_rules! specifier {
+    ($($name:ident),+) => {
+        $(TokenKind::Specifier(cx_data_ast::lex::token::SpecifierType::$name))|+
+    }
+}
+
+#[macro_export]
+macro_rules! intrinsic {
+    ($name:ident) => {
+        TokenKind::Intrinsic(cx_data_ast::lex::token::IntrinsicType::$name)
+    }
+}
+
+#[macro_export]
+macro_rules! operator {
+    ($name:ident) => {
+        TokenKind::Operator(cx_data_ast::lex::token::OperatorType::$name)
+    }
+}
+
+#[macro_export]
+macro_rules! punctuator {
+    ($name:ident) => {
+        TokenKind::Punctuator(cx_data_ast::lex::token::PunctuatorType::$name)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -80,7 +117,8 @@ pub enum KeywordType {
     Sizeof,
 
     // CX Specific
-    Import, Defer, Strong, Weak, New
+    Import, Defer, Strong, Weak, New, 
+    Template, Type
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -148,6 +186,9 @@ impl TokenKind {
             "move" => TokenKind::Operator(OperatorType::Move),
 
             "new" => TokenKind::Keyword(KeywordType::New),
+
+            "template" => TokenKind::Keyword(KeywordType::Template),
+            "type" => TokenKind::Keyword(KeywordType::Type),
             
             _ => TokenKind::Identifier(str),
         }

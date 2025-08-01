@@ -1,29 +1,26 @@
-use std::collections::HashMap;
+use crate::deconstructed_types::generate_deconstructor_data;
+use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
 use cx_data_ast::lex::token::Token;
-use cx_data_ast::parse::ast::{CXFunctionMap, CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXParameter, CXTypeMap, CXAST};
+use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
-use crate::checker::type_check_traverse;
-use crate::deconstructed_types::generate_deconstructor_data;
-use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
-use crate::importing::import_module_data;
+use std::collections::HashMap;
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 
+pub mod typemap_collapsing;
 pub mod deconstructed_types;
 pub mod checker;
 mod struct_typechecking;
 mod casting;
-mod importing;
 mod global_stmts;
 mod structured_initialization;
 
 pub type TypeCheckResult<T> = Option<T>;
 
-pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
-    import_module_data(ast);
-
+pub fn type_check(tokens: &[Token], ast: &mut CXAST) -> Option<TypeCheckData> {
     let mut type_environment = TypeEnvironment {
-        tokens: &ast.tokens,
+        tokens,
         
         type_map: &mut ast.type_map,
         fn_map: &mut ast.function_map,
@@ -39,16 +36,17 @@ pub fn type_check(ast: &mut CXAST) -> Option<TypeCheckData> {
         type_environment.type_map,
         type_environment.fn_map,
     )?;
-
+    
     for stmt in &mut ast.global_stmts {
         match stmt {
             CXGlobalStmt::FunctionDefinition { prototype, body } =>
                 typecheck_function(&mut type_environment, prototype, body)?,
             CXGlobalStmt::DestructorDefinition { type_name, body } =>
                 typecheck_destructor(&mut type_environment, type_name, body)?,
-            
             CXGlobalStmt::GlobalVariable { .. } =>
                 todo!("Global variable type checking is not implemented yet"),
+            
+            _ => continue,
         }
     }
     

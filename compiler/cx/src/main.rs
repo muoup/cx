@@ -1,7 +1,8 @@
 mod args;
 
-use std::path::Path;
-use cx_exec_pipeline::debug_compile;
+use std::path::{Path, PathBuf};
+use cx_pipeline::standard_compilation;
+use cx_data_pipeline::CompilerConfig;
 
 fn main() {
     let args = match args::parse_args() {
@@ -19,15 +20,26 @@ fn main() {
                 .expect("Failed to set current directory");
         }
     }
-
-    let file_name = path.file_name().unwrap().to_str().unwrap();
+    let file_name = path.file_name()
+        .expect("Failed to get file name from path")
+        .to_str()
+        .expect("Failed to convert file name to string");
 
     std::fs::create_dir_all(".internal")
         .expect("Failed to create internal directory");
     std::fs::write(".internal/compiler-dump.data", "")
         .expect("Failed to clear dump file");
+    
+    let compiler_config = CompilerConfig {
+        backend: args.backend,
+        optimization_level: args.optimization_level,
+        output: PathBuf::from(&args.output_file),
+    };
 
-    debug_compile(file_name, &args.output_file, args.backend, args.optimization_level);
+    standard_compilation(
+        compiler_config,
+        PathBuf::from(file_name).as_path(),
+    ).expect("Compilation failed");
 
     println!("Compilation complete!");
 }

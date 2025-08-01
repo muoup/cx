@@ -10,15 +10,17 @@ impl CharIter<'_> {
             self.line += 1;
         }
         
-        if let Some(c) = self.source.chars().nth(self.current_iter) {
+        if let Some(c) = self.peek() {
             self.current_iter += 1;
             Some(c)
         } else {
             None
         }
     }
+    
     pub fn peek(&self) -> Option<char> {
-        self.source.chars().nth(self.current_iter)
+        self.source.as_bytes().get(self.current_iter)
+            .map(|&c| c as char)
     }
 
     pub fn back(&mut self) {
@@ -26,6 +28,6 @@ impl CharIter<'_> {
     }
 
     pub fn has_next(&self) -> bool {
-        self.source.chars().nth(self.current_iter).is_some()
+        self.source.len() > self.current_iter
     }
 }

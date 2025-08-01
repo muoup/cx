@@ -9,13 +9,21 @@ mod format;
 pub type BCTypeMap = HashMap<String, BCType>;
 pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProgramBytecode {
     pub fn_map: BCFunctionMap,
     pub type_map: BCTypeMap,
 
     pub global_strs: Vec<String>,
     pub fn_defs: Vec<BytecodeFunction>,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum LinkageType {
+    ODR,
+    Static,
+    Public,
+    Private
 }
 
 pub type ElementID = u32;
@@ -59,25 +67,24 @@ pub struct BCFunctionPrototype {
     pub return_type: BCType,
     pub params: Vec<BCParameter>,
     pub var_args: bool,
+    pub linkage: LinkageType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BytecodeFunction {
     pub prototype: BCFunctionPrototype,
     
     pub blocks: Vec<FunctionBlock>,
     pub defer_blocks: Vec<FunctionBlock>,
-    
-    pub static_linkage: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionBlock {
     pub debug_name: String,
     pub body: Vec<BlockInstruction>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockInstruction {
     pub instruction: VirtualInstruction,
     pub value: VirtualValue
@@ -85,7 +92,7 @@ pub struct BlockInstruction {
 
 pub const POINTER_TAG : usize = 0xF000_0000_0000_0000;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VirtualInstruction {
     FunctionParameter {
         param_index: u32
