@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
-use crate::{CompilationUnit, GlobalCompilationContext};
+use crate::{compilation_hash, CompilationUnit, GlobalCompilationContext};
 
 pub fn file_path(path: &str) -> String {
     if path.starts_with("std") {
@@ -21,7 +21,7 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     let mut profile_hash = DefaultHasher::new();
     context.config.backend.hash(&mut profile_hash);
     context.config.optimization_level.hash(&mut profile_hash);
-    
+    compilation_hash().hash(&mut profile_hash);
     let profile_hash = profile_hash.finish().to_string();
 
     let mut complete_path = PathBuf::from(".internal");

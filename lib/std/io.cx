@@ -5,9 +5,7 @@ private:
 public:
 
 void print(char* str) {
-    for (char* ptr = str; *ptr; ptr++) {
-        putchar(*ptr);
-    }
+    while (*str) putchar(*str++);
 }
 
 void println(char* str) {

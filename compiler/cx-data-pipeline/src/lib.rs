@@ -5,13 +5,29 @@ pub mod internal_storage;
 
 use std::collections::HashSet;
 use std::fmt::Display;
-use std::hash::Hash;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::db::ModuleData;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use serde::{Deserialize, Serialize};
 use crate::directories::file_path;
+
+/*
+ *  Returns a unique identifier for each time this program is compiled.
+ */
+pub fn compilation_hash() -> u64 {
+    struct PlaceHolder;
+    
+    static lazy_static: LazyLock<u64> = LazyLock::new(|| {
+        let type_id = std::any::TypeId::of::<PlaceHolder>();
+        let mut hasher = DefaultHasher::new();
+        type_id.hash(&mut hasher);
+        hasher.finish()
+    });
+    
+    *lazy_static
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct CompilationUnit {

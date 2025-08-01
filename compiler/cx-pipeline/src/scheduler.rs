@@ -32,7 +32,7 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
         
         compilation_exists.insert(job.unit.clone(), job.compilation_exists);
         
-        if job.compilation_exists {
+        if !cfg!(debug_assertions) && job.compilation_exists {
             if load_precompiled_data(context, &job.unit).is_none() {
                 job.compilation_exists = false;
                 queue.push_job(job);
@@ -62,6 +62,9 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
             
             println!("Skipping job: {} at step: {:?} as it has already been compiled", job.unit, job.step);
             queue.complete_all_unit_jobs(&job.unit);
+            context.linking_files.lock()
+                .expect("Deadlock on linking files mutex")
+                .insert(resource_path(context, &job.unit, ".o"));
             continue;
         }
 
@@ -72,7 +75,6 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
         
         queue.complete_job(&job);
         
-        println!("Handling job: {} at step: {:?}", job.unit, job.step);
         for new_jobs in handle_job(context, job)?.into_iter() {
             queue.push_new_job(new_jobs);
         }
