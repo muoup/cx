@@ -132,13 +132,14 @@ pub fn generate_instruction(
             
             if prototype.return_type.is_structured(&builder.cx_type_map) {
                 let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
+                let dereferenceable = buffer_type.fixed_size() as u32;
                 
                 let buffer = builder.add_instruction_bt(
                     VirtualInstruction::Allocate {
-                        size: buffer_type.fixed_size(),
                         alignment: buffer_type.alignment(),
+                        _type: buffer_type,
                     },
-                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: buffer_type.fixed_size() as u32 })
+                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable })
                 )?;
                 
                 args.push(buffer);
@@ -724,8 +725,8 @@ pub fn generate_instruction(
             
             let alloc = builder.add_instruction_bt(
                 VirtualInstruction::Allocate {
-                    size: as_bc.fixed_size(),
                     alignment: as_bc.alignment(),
+                    _type: as_bc.clone(),
                 },
                 BCType::default_pointer()
             )?;

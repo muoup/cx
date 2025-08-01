@@ -90,21 +90,14 @@ pub struct BlockInstruction {
     pub value: VirtualValue
 }
 
-pub const POINTER_TAG : usize = 0xF000_0000_0000_0000;
-
 #[derive(Debug, Clone)]
 pub enum VirtualInstruction {
     FunctionParameter {
         param_index: u32
     },
-    
-    VariableAllocate {
-        size: ValueID,
-        alignment: u8,
-    },
 
     Allocate {
-        size: usize,
+        _type: BCType,
         alignment: u8,
     },
 

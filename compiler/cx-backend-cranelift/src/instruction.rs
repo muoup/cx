@@ -1,29 +1,33 @@
-use std::ops::IndexMut;
 use crate::inst_calling::{get_func_ref, get_method_return, prepare_method_call};
-use crate::routines::allocate_variable;
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
-use cranelift::codegen::ir::InstructionData;
 use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
-use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Value};
+use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_data_bytecode::{BCFloatBinOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BCFunctionPrototype, ValueID, VirtualInstruction, BCPtrBinOp, BCFloatUnOp, POINTER_TAG};
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
+use std::ops::IndexMut;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
         VirtualInstruction::Allocate {
-            size, alignment
+            _type, alignment
         } => {
-            let slot = context.builder.create_sized_stack_slot(
-                StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    StackSize::from(*size as u32),
-                    *alignment
-                )
-            );
+            let slot = match _type.size() {
+                BCTypeSize::Fixed(size) => 
+                    context.builder.create_sized_stack_slot(
+                        StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            StackSize::from(size as u16),
+                            *alignment
+                        )
+                    ),
+                BCTypeSize::Variable(_) =>
+                    panic!("Cranelift does not support variable sized stack slots, use LLVM instead")
+            };
 
             Some(
                 CodegenValue::Value(
@@ -35,11 +39,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 )
             )
         },
-
-        VirtualInstruction::VariableAllocate {
-            ..
-        } => unimplemented!("The Cranelift backend does not currently support dynamic stack allocation, \
-                             use the LLVM backend if this feature is desired."),
 
         VirtualInstruction::StringLiteral { str_id } => {
             let global_id = context.global_strs.get(*str_id as usize).cloned().unwrap();

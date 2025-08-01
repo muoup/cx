@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use cx_util::CXResult;
 use crate::parse::ast::CXFunctionPrototype;
-use crate::parse::template::{CXTemplateTypeGen, CXTemplateInput, CXTemplateOutput};
+use crate::parse::template::{CXTemplateTypeGen, CXTemplateInput, CXTemplateOutput, CXTemplateGenerator};
 use crate::parse::value_type::CXType;
 
 #[derive(Debug, Clone, Default, Readable, Writable)]
@@ -55,8 +55,8 @@ impl<Output> CXMap<Output> {
         self.types.get_mut(name)
     }
     
-    pub fn insert_template(&mut self, name: String, template: CXTemplateTypeGen) -> Option<CXTemplateTypeGen> {
-        self.templated_types.insert(name, template)
+    pub fn insert_template(&mut self, name: String, template: CXTemplateTypeGen) {
+        self.templated_types.insert(name, template);
     }
 }
 

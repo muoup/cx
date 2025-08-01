@@ -2,8 +2,9 @@ use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::{assert_token_matches, keyword, punctuator, PreparseContents};
 use cx_data_ast::parse::parser::{ParserData, TokenIter};
 use cx_util::log_error;
+use crate::preparse::preparser::PreparseResult;
 
-pub(crate) fn parse_import(tokens: &mut TokenIter, contents: &mut PreparseContents) -> Option<()> {
+pub(crate) fn parse_import(tokens: &mut TokenIter) -> Option<PreparseResult> {
     assert_token_matches!(tokens, keyword!(Import));
 
     let mut import_path = String::new();
@@ -22,6 +23,5 @@ pub(crate) fn parse_import(tokens: &mut TokenIter, contents: &mut PreparseConten
         }
     };
     
-    contents.imports.push(import_path);
-    Some(())
+    Some(PreparseResult::Import(import_path))
 }

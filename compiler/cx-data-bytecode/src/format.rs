@@ -92,11 +92,8 @@ impl Display for BlockID {
 impl Display for VirtualInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            VirtualInstruction::Allocate { size, alignment } => {
-                write!(f, "alloca {size} (alignment: {alignment})")
-            },
-            VirtualInstruction::VariableAllocate { size, alignment } => {
-                write!(f, "variable_alloca {size} (alignment: {alignment})")
+            VirtualInstruction::Allocate { _type, alignment } => {
+                write!(f, "alloca {_type} (alignment: {alignment})")
             },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")

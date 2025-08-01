@@ -100,27 +100,13 @@ pub(crate) fn allocate_variable(
     var_type: &CXType,
 ) -> Option<ValueID> {
     let bc_type = builder.convert_cx_type(var_type)?;
-
-    let memory = match bc_type.size() {
-        BCTypeSize::Fixed(size) => {
-            builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size,
-                    alignment: bc_type.alignment(),
-                },
-                BCType::default_pointer()
-            )?
+    let memory = builder.add_instruction_bt(
+        VirtualInstruction::Allocate {
+            _type: bc_type.clone(),
+            alignment: bc_type.alignment(),
         },
-        BCTypeSize::Variable(size_expr) => {
-            builder.add_instruction_bt(
-                VirtualInstruction::VariableAllocate {
-                    size: size_expr,
-                    alignment: bc_type.alignment(),
-                },
-                BCType::default_pointer()
-            )?
-        }
-    };
+        BCType::default_pointer()
+    )?;
 
     builder.symbol_table.insert(name.to_owned(), memory);
     

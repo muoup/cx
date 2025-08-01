@@ -4,13 +4,12 @@ use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, ElementID, VirtualInstruction, POINTER_TAG};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
-use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;
 
 static NUM: Mutex<usize> = Mutex::new(0);
@@ -35,14 +34,35 @@ pub(crate) fn generate_instruction<'a>(
 ) -> Option<CodegenValue<'a>> {
     Some(
         match &block_instruction.instruction {
-            VirtualInstruction::Allocate { size, alignment } => {
-                let inst = function_state.builder
-                    .build_alloca(
-                        global_state.context.i8_type().array_type(*size as u32),
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
+            VirtualInstruction::Allocate { _type, alignment } => {
+                let inst = match _type.size() {
+                    BCTypeSize::Fixed(_) => {
+                        function_state.builder
+                            .build_alloca(
+                                any_to_basic_type(
+                                bc_llvm_type(global_state, _type)?
+                                )?,
+                                inst_num().as_str()
+                            )
+                            .unwrap()
+                            .as_any_value_enum()
+                    },
+                    BCTypeSize::Variable(size) => {
+                        let size = function_state
+                            .get_val_ref(&size)?
+                            .get_value()
+                            .into_int_value();
+
+                        function_state.builder
+                            .build_array_alloca(
+                                global_state.context.i8_type(),
+                                size,
+                                inst_num().as_str()
+                            )
+                            .unwrap()
+                            .as_any_value_enum()
+                    }
+                };
                 
                 function_state.builder
                     .get_insert_block()?
@@ -51,30 +71,6 @@ pub(crate) fn generate_instruction<'a>(
                     .unwrap();
                 
                 CodegenValue::Value(inst)
-            },
-            
-            VirtualInstruction::VariableAllocate { size, alignment } => {
-                let size = function_state
-                    .get_val_ref(size)?
-                    .get_value()
-                    .into_int_value();
-                
-                let allocation = function_state.builder
-                    .build_array_alloca(
-                        global_state.context.i8_type(),
-                        size,
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
-                
-                function_state.builder
-                    .get_insert_block()?
-                    .get_last_instruction()?
-                    .set_alignment(*alignment as u32)
-                    .unwrap();
-                
-                CodegenValue::Value(allocation)
             },
             
             VirtualInstruction::DirectCall { func, args, method_sig } => {
