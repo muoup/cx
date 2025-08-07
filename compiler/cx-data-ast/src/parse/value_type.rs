@@ -6,6 +6,7 @@ use crate::parse::ast::{CXExpr, CXFunctionPrototype};
 use crate::parse::identifier::CXIdent;
 use crate::parse::maps::CXTypeMap;
 use crate::parse::parser::VisibilityMode;
+use crate::parse::template::CXTemplateInput;
 
 pub type CXTypeSpecifier = u8;
 
@@ -93,6 +94,11 @@ pub enum CXTypeKind {
         prototype: Box<CXFunctionPrototype>,
     },
 
+    TemplatedIdentifier {
+        name: CXIdent,
+        template_input: CXTemplateInput
+    },
+    
     Identifier {
         name: CXIdent,
         predeclaration: PredeclarationType
@@ -188,30 +194,6 @@ impl CXType {
         Some(&get_intrinsic_type(type_map, self)?.kind)
     }
     
-    pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
-        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
-            return false;
-        };
-          
-        inner.is_structured(type_map)
-    }
-
-    pub fn is_mem_ref(&self) -> bool {
-        matches!(self.kind, CXTypeKind::MemoryReference(_))
-    }
-    
-    pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { .. }))
-    }
-    
-    pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Integer { .. }))
-    }
-    
-    pub fn is_strong_ptr(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::StrongPointer { .. }))
-    }
-    
     pub fn has_destructor(&self, type_map: &CXTypeMap) -> bool {
         matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { has_destructor: true, .. }))
     }
@@ -245,14 +227,6 @@ impl CXType {
         
         inner.intrinsic_type_kind(type_map).cloned()
     }
-    
-    pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::PointerTo { .. }))
-    }
-
-    pub fn is_void(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Unit))
-    }
 
     pub fn pointer_to(self) -> Self {
         CXType {
@@ -277,6 +251,16 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
         if name1 == name2 =>
             true,
 
+        (CXTypeKind::TemplatedIdentifier { name: name1, template_input: t1_template },
+         CXTypeKind::TemplatedIdentifier { name: name2, template_input: t2_template }) =>
+            name1 == name2 && t1_template == t2_template,
+
+        (CXTypeKind::TemplatedIdentifier { .. }, CXTypeKind::Identifier { name, .. }) =>
+            same_type(type_map, type_map.get(name.as_str()).unwrap_or_else(|| panic!("Type not found: {name}")), t2),
+
+        (CXTypeKind::Identifier { name, .. }, CXTypeKind::TemplatedIdentifier { .. }) =>
+            same_type(type_map, t1, type_map.get(name.as_str()).unwrap_or_else(|| panic!("Type not found: {name}"))),
+        
         (CXTypeKind::Identifier { name: name1, .. }, _) =>
             same_type(type_map, type_map.get(name1.as_str()).unwrap(), t2),
 

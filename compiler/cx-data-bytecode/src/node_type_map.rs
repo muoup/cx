@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
 use cx_data_ast::parse::ast::CXExpr;
+use cx_data_ast::parse::maps::{CXTemplateRequest, CXTypeMap};
 use cx_data_ast::parse::value_type::CXType;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub enum AllocationType {
@@ -25,7 +26,7 @@ pub struct DeconstructorData {
     pub deallocations: Vec<DeconstructionType>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TypeCheckData {
     expr_types: HashMap<u64, CXType>,
     deferring_functions: HashSet<String>,
@@ -34,12 +35,10 @@ pub struct TypeCheckData {
     // deconstructor -- compiler generated function for language-features (i.e. strong pointers)
     pub has_destructor: Vec<String>,
     pub deconstructor_data: Vec<DeconstructorData>,
-}
-
-impl Default for TypeCheckData {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub requests: Vec<CXTemplateRequest>,
+    
+    pub full_type_map: CXTypeMap,
+    pub full_fn_map: CXTypeMap
 }
 
 impl TypeCheckData {
@@ -49,12 +48,16 @@ impl TypeCheckData {
 
     pub fn new() -> Self {
         TypeCheckData {
-            expr_types: HashMap::new(),
-            deferring_functions: HashSet::new(),
-            
-            has_destructor: Vec::new(),
-            deconstructor_data: Vec::new(),
+            ..Default::default()
         }
+    }
+    
+    pub fn extend(&mut self, other: Self) {
+        self.expr_types.extend(other.expr_types);
+        self.deferring_functions.extend(other.deferring_functions);
+        
+        self.has_destructor.extend(other.has_destructor);
+        self.deconstructor_data.extend(other.deconstructor_data);
     }
     
     pub fn insert(&mut self, expr: &CXExpr, cx_type: CXType) -> Option<&CXType> {

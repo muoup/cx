@@ -9,7 +9,7 @@ pub fn typecheck_access(
     lhs: &mut CXExpr,
     rhs: &CXExpr
 ) -> Option<CXType> {
-    let mut lhs_type = coerce_value(env, lhs)?.clone();
+    let mut lhs_type = coerce_value(env, lhs).unwrap().clone();
     
     if lhs_type.is_pointer(env.type_map) {
         let lhs_temp = std::mem::take(lhs);
@@ -29,7 +29,12 @@ pub fn typecheck_access(
         log_error!("TYPE ERROR: Invalid struct accessor: {rhs}");
     };
     
-    match lhs_type.mem_ref_inner(env.type_map)? {
+    let CXTypeKind::MemoryReference(inner) = &lhs_type.kind else {
+        log_error!("TYPE ERROR: Cannot access field on {accessor} type {lhs_type}\n\
+                    Variable returned a type of {}, expected a memory reference type", lhs_type.kind);
+    };
+    
+    match &inner.kind {
         CXTypeKind::Union { fields, .. } |
         CXTypeKind::Structured { fields, .. } => {
             fields.iter()

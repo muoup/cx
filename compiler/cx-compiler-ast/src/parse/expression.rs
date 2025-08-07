@@ -1,4 +1,5 @@
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
+use std::collections::HashMap;
+use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use crate::parse::global_scope::{parse_body};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
@@ -8,6 +9,7 @@ use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error};
 use crate::parse::structured_initialization::parse_structured_initialization;
+use crate::parse::template::parse_template_args;
 use crate::parse::typing::is_type_decl;
 use crate::preparse::typing::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 
@@ -197,8 +199,10 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
         TokenKind::Intrinsic(_) =>
             CXExprKind::Identifier(parse_intrinsic(&mut data.back().tokens)?),
-        TokenKind::Identifier(_) =>
-            CXExprKind::Identifier(parse_std_ident(&mut data.back().tokens)?),
+        TokenKind::Identifier(_) => {
+            data.back();
+            parse_expr_identifier(data)?
+        },
         
         TokenKind::Operator(OperatorType::Move) => {
             let expr = parse_expr(data)?;
@@ -313,6 +317,23 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
     }
 
     Some(())
+}
+
+pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind> {
+    let ident = parse_std_ident(&mut data.tokens)?;
+    
+    if data.ast.function_map.has_template(ident.as_str()) {
+        let args = parse_template_args(&mut data.tokens)?;
+        
+        return Some(
+            CXExprKind::TemplatedFnIdent {
+                fn_name: ident,
+                template_input: args
+            }
+        );
+    }
+    
+    Some(CXExprKind::Identifier(ident))
 }
 
 pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {

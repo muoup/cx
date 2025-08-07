@@ -17,6 +17,7 @@ use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContex
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use cx_util::format::{dump_all, dump_data};
+use crate::template_realizing::realize_templates;
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
     let mut queue = JobQueue::new();
@@ -164,7 +165,7 @@ fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationU
     }
     
     retrieve_map_data(context, &context.module_db.naive_type_data, unit)?;
-    retrieve_map_data(context, &context.module_db.function_data, unit)?;
+    retrieve_map_data(context, &context.module_db.naive_function_data, unit)?;
 
     Some(())
 }
@@ -211,7 +212,7 @@ pub(crate) fn perform_job(
                 .insert(job.unit.clone(), output.imports);
             context.module_db.naive_type_data
                 .insert(job.unit.clone(), output.type_definitions);
-            context.module_db.function_data
+            context.module_db.naive_function_data
                 .insert(job.unit.clone(), output.function_definitions);
             
             return if identical_hash {
@@ -224,10 +225,10 @@ pub(crate) fn perform_job(
         CompilationStep::ASTParse => {
             let mut self_type_map = context.module_db.naive_type_data
                 .get_cloned(&job.unit);
-            let self_function_map = context.module_db.function_data
+            let self_function_map = context.module_db.naive_function_data
                 .get_cloned(&job.unit);
             let lexemes = context.module_db.lex_tokens
-                .take(&job.unit);
+                .get(&job.unit);
             
             let imports = context.module_db.import_data
                 .get(&job.unit);
@@ -255,13 +256,12 @@ pub(crate) fn perform_job(
 
             dump_data(&parsed_ast);
 
-            context.module_db.lex_tokens.insert(job.unit.clone(), lexemes);
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
 
         CompilationStep::TypeCheck => {
             let lexemes = context.module_db.lex_tokens
-                .take(&job.unit);
+                .get(&job.unit);
             let mut self_ast = context.module_db.naive_ast
                 .take(&job.unit);
             let self_type_map = context.module_db.naive_type_data
@@ -276,7 +276,7 @@ pub(crate) fn perform_job(
             let import_function_maps = context.module_db.import_data.get_cloned(&job.unit)
                 .into_iter()
                 .map(|import| {
-                    context.module_db.function_data.get(&CompilationUnit::from_str(import.as_str()))
+                    context.module_db.naive_function_data.get(&CompilationUnit::from_str(import.as_str()))
                 })
                 .collect::<Vec<_>>();
             
@@ -298,9 +298,12 @@ pub(crate) fn perform_job(
         },
 
         CompilationStep::BytecodeGen => {
+            realize_templates(context, &job.unit)
+                .expect("Template realizing failed");
+            
             let self_ast = context.module_db.typechecked_ast.take(&job.unit);
             let typecheck_data = context.module_db.typecheck_data.take(&job.unit);
-
+            
             let bytecode = generate_bytecode(self_ast, typecheck_data)
                 .expect("Bytecode generation failed");
 

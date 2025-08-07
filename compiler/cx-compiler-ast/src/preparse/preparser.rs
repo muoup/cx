@@ -1,11 +1,13 @@
+use cx_data_lexer::token::KeywordType;
+use cx_data_ast::{assert_token_matches, peek_next_kind, try_next};
 use crate::preparse::typing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_union};
-use cx_data_ast::lex::token::TokenKind;
-use cx_data_ast::parse::parser::{TokenIter, VisibilityMode};
+use cx_data_lexer::token::TokenKind;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_ast::{assert_token_matches, keyword, next_kind, operator, peek_next_kind, punctuator, specifier, try_next, PreparseContents};
 use cx_data_ast::parse::ast::CXFunctionPrototype;
-use cx_data_ast::parse::template::{CXTemplateGenerator, CXTemplateInput, CXTemplateTypeGen};
-use cx_data_bytecode::mangling::mangle_destructor;
+use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::parser::VisibilityMode;
+use cx_data_ast::parse::template::CXTemplateTypeGen;
+use cx_data_lexer::{keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::point_log_error;
 use crate::parse::global_scope::{parse_global_expr, parse_global_stmt};
 use crate::preparse::importing::parse_import;
@@ -65,7 +67,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
     
     let mut type_decls = Vec::new();
     
-    while !try_next!(data.tokens, operator!(Comma)) {
+    loop {
         assert_token_matches!(data.tokens, TokenKind::Identifier(template_name));
         let template_name = template_name.clone();
         
@@ -73,6 +75,10 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
         assert_token_matches!(data.tokens, keyword!(Type));
     
         type_decls.push(template_name);
+        
+        if !try_next!(data.tokens, operator!(Comma)) {
+            break;
+        }
     }
     
     assert_token_matches!(data.tokens, operator!(Greater));
@@ -86,6 +92,12 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             let prototype_name = signature.name.to_string();
             
             Some(PreparseResult::TemplateDefinition(prototype_name, template))
+        },
+        
+        PreparseResult::TypeDefinition(name, type_) => {
+            let template = CXTemplateTypeGen::type_template(type_decls, type_);
+            
+            Some(PreparseResult::TemplateDefinition(name, template))
         },
         
         _ => todo!()
@@ -110,12 +122,10 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> Option<PreparseRes
     
     try_next!(data.tokens, punctuator!(Semicolon));
     
-    let mut full_type = type_.to_val_type();
-    
     Some(
         PreparseResult::TypeDefinition(
             name.unwrap().as_string(), 
-            full_type
+            type_.to_val_type()
         )
     )
 }
@@ -184,4 +194,37 @@ pub fn goto_statement_end(tokens: &mut TokenIter) -> Option<()> {
     }
 
     Some(())
+}
+
+pub fn parse_intrinsic(tokens: &mut TokenIter) -> Option<CXIdent> {
+    let mut ss = String::new();
+
+    while let Some(TokenKind::Intrinsic(ident)) = tokens.peek().map(|tok| &tok.kind) {
+        ss.push_str(format!("{ident:?}").to_lowercase().as_str());
+        tokens.next();
+    }
+
+    if ss.is_empty() {
+        return None;
+    }
+
+    Some(
+        CXIdent {
+            data: ss
+        }
+    )
+}
+
+pub fn parse_std_ident(tokens: &mut TokenIter) -> Option<CXIdent> {
+    let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
+        return None;
+    };
+
+    tokens.next();
+
+    Some(
+        CXIdent {
+            data: ident
+        }
+    )
 }

@@ -1,6 +1,6 @@
 use crate::ValueID;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct BCType {
     pub kind: BCTypeKind
 }
@@ -19,7 +19,7 @@ impl BCType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub enum BCTypeKind {
     Opaque { bytes: usize },
     Signed { bytes: u8 },

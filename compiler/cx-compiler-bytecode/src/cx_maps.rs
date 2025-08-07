@@ -181,7 +181,7 @@ fn convert_argument_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BC
 }
 
 pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
-    if cx_proto.return_type.is_structured(cx_type_map) {
+    if matches!(cx_proto.return_type.intrinsic_type_kind(cx_type_map)?, CXTypeKind::Structured { .. }) {
         Some(
             BCFunctionPrototype {
                 name: cx_proto.name.as_string(),
@@ -277,7 +277,13 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                     .expect("PANIC: Identifier not found in type map");
 
                 convert_fixed_type_kind(cx_type_map, &inner.kind)?
-            }
+            },
+            CXTypeKind::TemplatedIdentifier { name, template_input, .. } => {
+                let inner = cx_type_map.get_existing_template(name.as_str(), template_input)
+                    .expect("PANIC: Templated identifier not found in type map");
+             
+                convert_fixed_type_kind(cx_type_map, &inner.kind)?
+            },
 
             CXTypeKind::Opaque { size, .. } =>
                 BCTypeKind::Opaque { bytes: *size },
@@ -343,7 +349,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 },
 
             CXTypeKind::Unit => BCTypeKind::Unit,
-            
+
             CXTypeKind::VariableLengthArray { .. } =>
                 panic!("Variable length arrays are not supported in bytecode generation"),
         }

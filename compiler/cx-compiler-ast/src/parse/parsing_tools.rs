@@ -1,6 +1,6 @@
 use cx_util::log_error;
 use cx_data_ast::assert_token_matches;
-use cx_data_ast::lex::token::{PunctuatorType, TokenKind};
+use cx_data_lexer::token::{PunctuatorType, TokenKind};
 use cx_data_ast::parse::parser::ParserData;
 
 pub fn goto_block_end(data: &mut ParserData) -> Option<()> {

@@ -1,5 +1,3 @@
-use std::hash::Hash;
-
 #[derive(Debug, PartialEq)]
 pub struct TokenData {
     pub line_number: u32,
@@ -21,35 +19,35 @@ pub struct Token {
 #[macro_export]
 macro_rules! keyword {
     ($($name:ident),+) => {
-        $(TokenKind::Keyword(cx_data_ast::lex::token::KeywordType::$name))|+
+        $(TokenKind::Keyword(cx_data_lexer::token::KeywordType::$name))|+
     };
 }
 
 #[macro_export]
 macro_rules! specifier {
     ($($name:ident),+) => {
-        $(TokenKind::Specifier(cx_data_ast::lex::token::SpecifierType::$name))|+
+        $(TokenKind::Specifier(cx_data_lexer::token::SpecifierType::$name))|+
     }
 }
 
 #[macro_export]
 macro_rules! intrinsic {
     ($name:ident) => {
-        TokenKind::Intrinsic(cx_data_ast::lex::token::IntrinsicType::$name)
+        TokenKind::Intrinsic(cx_data_lexer::token::IntrinsicType::$name)
     }
 }
 
 #[macro_export]
 macro_rules! operator {
     ($name:ident) => {
-        TokenKind::Operator(cx_data_ast::lex::token::OperatorType::$name)
+        TokenKind::Operator(cx_data_lexer::token::OperatorType::$name)
     }
 }
 
 #[macro_export]
 macro_rules! punctuator {
     ($name:ident) => {
-        TokenKind::Punctuator(cx_data_ast::lex::token::PunctuatorType::$name)
+        TokenKind::Punctuator(cx_data_lexer::token::PunctuatorType::$name)
     }
 }
 

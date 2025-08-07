@@ -9,7 +9,7 @@ pub mod typing;
 pub mod operators;
 mod parsing_tools;
 mod structured_initialization;
-mod template;
+pub mod template;
 
 #[derive(Debug)]
 pub struct CXPreASTInfo {

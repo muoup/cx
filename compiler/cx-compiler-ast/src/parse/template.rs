@@ -1,11 +1,12 @@
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::template::CXTemplateTypeGen;
+use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
+use cx_data_ast::parse::ast::{CXExpr, CXGlobalStmt, CXAST};
+use cx_data_ast::parse::parser::{ParserData, TokenIter};
+use cx_data_ast::parse::template::{CXTemplateInput, CXTemplateTypeGen};
 use cx_data_ast::parse::value_type::CXType;
 use cx_util::{point_log_error, CXResult};
 use crate::parse::global_scope::parse_global_stmt;
+use crate::preparse::typing::parse_initializer;
 
 pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::Template));
@@ -35,8 +36,9 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
 
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Greater));
 
-    let global_expr = parse_global_stmt(data)?
-        .expect("PARSER ERROR: Failed to parse global expression in template declaration!");
+    let Some(global_expr) = parse_global_stmt(data)? else {
+        return Some(None);
+    };
 
     for template_name in temp_typedefs {
         data.ast.type_map.remove(template_name.as_str());
@@ -69,4 +71,26 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         CXGlobalStmt::FunctionPrototype { .. } =>
             point_log_error!(data.tokens, "PARSER ERROR: Templated functions must be declared with a function definition!"),
     }
+}
+
+pub fn parse_template_args(tokens: &mut TokenIter) -> CXResult<CXTemplateInput> {
+    assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Less));
+
+    let mut input_types = Vec::new();
+
+    loop {
+        let Some((None, _type)) = parse_initializer(tokens) else {
+            point_log_error!(tokens, "PARSER ERROR: Expected type declaration in template arguments!");
+        };
+        
+        input_types.push(_type);
+        
+        if !try_next!(tokens, TokenKind::Operator(OperatorType::Comma)) {
+            break;
+        }
+    }
+
+    assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Greater));
+
+    Some(CXTemplateInput { types: input_types })
 }

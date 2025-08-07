@@ -1,7 +1,5 @@
 use crate::types::BCType;
 use std::collections::HashMap;
-
-pub mod mangling;
 pub mod node_type_map;
 pub mod types;
 mod format;
@@ -15,7 +13,7 @@ pub struct ProgramBytecode {
     pub type_map: BCTypeMap,
 
     pub global_strs: Vec<String>,
-    pub fn_defs: Vec<BytecodeFunction>,
+    pub fn_defs: Vec<BytecodeFunction>
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -207,7 +205,7 @@ pub enum VirtualInstruction {
         args: Vec<ValueID>,
         method_sig: BCFunctionPrototype
     },
-
+    
     FunctionReference {
         name: String
     },

@@ -4,6 +4,7 @@ use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
+use cx_util::mangling::mangle_templated_fn;
 use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::convert_fixed_type_kind;
@@ -128,12 +129,13 @@ pub fn generate_instruction(
                 type_ => log_error!("Invalid function pointer type: {type_}"),
             };
             
+            let bc_prototype = builder.convert_cx_prototype(&prototype)?;
             let mut args = vec![];
             
-            if prototype.return_type.is_structured(&builder.cx_type_map) {
+            if bc_prototype.return_type.is_structure() {
                 let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
                 let dereferenceable = buffer_type.fixed_size() as u32;
-                
+
                 let buffer = builder.add_instruction_bt(
                     VirtualInstruction::Allocate {
                         alignment: buffer_type.alignment(),
@@ -238,6 +240,22 @@ pub fn generate_instruction(
             )
         },
 
+        CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+            let _type = builder.get_expr_type(expr)?;
+            let pointer_type = builder.convert_fixed_cx_type(&_type)?;
+            let function_name = mangle_templated_fn(
+                fn_name.as_str(),
+                &template_input.types
+            );
+            
+            builder.add_instruction_bt(
+                VirtualInstruction::FunctionReference {
+                    name: function_name
+                },
+                pointer_type
+            )
+        },
+        
         CXExprKind::Identifier(val) => {
             if let Some(id) = builder.symbol_table.get(val.as_str()) {
                 Some(*id)
@@ -256,10 +274,10 @@ pub fn generate_instruction(
             
             let value = value.as_ref().unwrap().as_ref();
             let value_id = generate_instruction(builder, value)?;
-            let returned_type = builder.get_expr_type(value)?
+            let returned_type = builder.get_expr_bc_type(value)?
                 .clone();
             
-            if returned_type.is_structured(&builder.cx_type_map) {
+            if returned_type.is_structure() {
                 let first_param = builder.add_instruction_bt(
                     VirtualInstruction::FunctionParameter {
                         param_index: 0,
@@ -271,7 +289,7 @@ pub fn generate_instruction(
                     VirtualInstruction::Store {
                         memory: first_param,
                         value: value_id,
-                        type_: builder.convert_fixed_cx_type(&returned_type)?
+                        type_: returned_type
                     },
                     CXType::unit()
                 )?;

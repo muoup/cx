@@ -1,11 +1,7 @@
-use std::collections::HashMap;
-use crate::lex::token::Token;
+use cx_data_lexer::token::Token;
 use crate::parse::ast::CXAST;
 use crate::parse::maps::{CXFunctionMap, CXTypeMap};
-use crate::parse::value_type::CXType;
-use crate::preparse::{CXPreparseToken, PreparseTokenMap};
 
-pub mod lex;
 pub mod parse;
 pub mod preparse;
 

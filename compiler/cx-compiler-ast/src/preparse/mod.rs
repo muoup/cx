@@ -10,7 +10,7 @@ use cx_data_ast::parse::parser::{TokenIter, VisibilityMode};
 use cx_data_ast::parse::template::CXTemplateGenerator;
 use cx_data_ast::parse::value_type::CXTypeKind;
 use cx_data_ast::PreparseContents;
-use cx_data_bytecode::mangling::mangle_destructor;
+use cx_util::mangling::mangle_destructor;
 use cx_util::{log_error, point_log_error};
 
 pub(crate) struct PreparseData<'a> {
@@ -23,6 +23,7 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
         tokens,
         visibility_mode: VisibilityMode::Private,
     };
+    
     let mut contents = PreparseContents::default();
 
     while data.tokens.has_next() {

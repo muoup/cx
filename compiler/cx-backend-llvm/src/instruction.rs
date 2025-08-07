@@ -10,6 +10,7 @@ use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
+use cx_util::mangling::mangle_templated_fn;
 use cx_util::log_error;
 
 static NUM: Mutex<usize> = Mutex::new(0);
@@ -82,10 +83,11 @@ pub(crate) fn generate_instruction<'a>(
                     log_error!("Function reference not found for {func:?}");
                 };
                 
-                let function_val = global_state
+                let Some(function_val) = global_state
                     .module
-                    .get_function(function_name)
-                    .unwrap();
+                    .get_function(function_name) else {
+                    log_error!("Function not found in module: {function_name}");
+                };
 
                 let mut arg_vals = args
                     .iter()
@@ -154,7 +156,7 @@ pub(crate) fn generate_instruction<'a>(
                         => CodegenValue::NULL
                 }
             },
-
+            
             VirtualInstruction::FunctionReference { name } =>
                 CodegenValue::FunctionRef(name.clone()),
 

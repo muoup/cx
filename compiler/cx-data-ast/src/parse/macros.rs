@@ -1,4 +1,4 @@
-use crate::parse::parser::TokenIter;
+use cx_data_lexer::TokenIter;
 
 pub fn token_string(toks: &TokenIter, start_index: usize, end_index: usize) -> String {
     let mut tokens = String::new();
@@ -74,6 +74,13 @@ macro_rules! try_next {
         } else {
             false
         }
+    }
+}
+
+#[macro_export]
+macro_rules! peek_next {
+    ($data:expr, $pattern:pat) => {
+        matches!($data.peek().map(|k| &k.kind), Some($pattern))
     }
 }
 

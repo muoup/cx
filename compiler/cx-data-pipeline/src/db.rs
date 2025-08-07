@@ -1,6 +1,6 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_data_ast::lex::token::Token;
+use cx_data_lexer::token::Token;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::node_type_map::TypeCheckData;
@@ -8,6 +8,7 @@ use cx_data_bytecode::ProgramBytecode;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
@@ -18,15 +19,14 @@ pub struct ModuleData {
     pub lex_tokens: ModuleMap<Vec<Token>>,
     
     pub naive_type_data: ModuleMap<CXTypeMap>,
-    pub full_type_data: ModuleMap<CXTypeMap>,
+    pub naive_function_data: ModuleMap<CXFunctionMap>,
     
-    pub function_data: ModuleMap<CXFunctionMap>,
     pub import_data: ModuleMap<Vec<String>>,
 
     pub naive_ast: ModuleMap<CXAST>,
     pub typechecked_ast: ModuleMap<CXAST>,
     pub typecheck_data: ModuleMap<TypeCheckData>,
-
+    
     pub bytecode_data: ModuleMap<ProgramBytecode>
 }
 
@@ -38,9 +38,8 @@ impl ModuleData {
             lex_tokens: ModuleMap::new(".cx-tokens"),
             
             naive_type_data: ModuleMap::new(".cx-types"),
-            full_type_data: ModuleMap::new(".cx-full-types"),
+            naive_function_data: ModuleMap::new(".cx-fns"),
             
-            function_data: ModuleMap::new(".cx-fns"),
             import_data: ModuleMap::new(".cx-imports"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
@@ -53,7 +52,7 @@ impl ModuleData {
     
     pub fn store_data(&self, context: &GlobalCompilationContext) {
         self.naive_type_data.store_all_data(context);
-        self.function_data.store_all_data(context);
+        self.naive_function_data.store_all_data(context);
     }
     
     pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {
@@ -94,13 +93,31 @@ impl<'a, Data> ModuleMap<Data> {
             .ok()
             .expect("Failed to unwrap Arc, data is still shared")
     }
+    
+    pub fn take_lock(&self, unit: &CompilationUnit) -> (RwLockWriteGuard<'_, HashMap<CompilationUnit, Arc<Data>>>, Data) {
+        let mut lock = self.lock_mut();
+
+        let data = lock.remove(unit)
+            .expect("Data not found in the module map");
+
+        // wait until data has only one reference
+        while Arc::strong_count(&data) > 1 {
+            std::thread::yield_now();
+        }
+        
+        (lock, Arc::try_unwrap(data).ok().unwrap())
+    }
 
     pub fn get(&self, unit: &CompilationUnit) -> Arc<Data> {
         let lock = self.loaded_data.read()
             .expect("Failed to acquire read lock on loaded data");
 
         lock.get(unit)
-            .unwrap_or_else(|| panic!("Data not found in the module map for unit: {}", unit))
+            .unwrap_or_else(|| {
+                println!("Data with suffix {} does not contain information for unit: {}", self.storage_extension, unit);
+                println!("Keys in map: {:?}", lock.keys().collect::<Vec<_>>());
+                panic!("Data not found in the module map")
+            })
             .clone()
     }
 

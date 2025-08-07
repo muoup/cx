@@ -29,83 +29,6 @@ pub fn compilation_hash() -> u64 {
     *lazy_static
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
-pub struct CompilationUnit {
-    identifier: Rc<String>,
-    path: Rc<Path>
-}
-
-impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
-    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let identifier: String = String::read_from(reader)?;
-        let path: PathBuf = PathBuf::from(String::read_from(reader)?);
-
-        Ok(
-            Self {
-                identifier: identifier.into(),
-                path: path.into_boxed_path().into()
-            }
-        )
-    }
-}
-
-impl <C: Context> Writable<C> for CompilationUnit {
-    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
-    where
-        W: ?Sized + speedy::Writer<C> 
-    {
-        self.identifier.as_str().write_to(writer)?;
-        self.path.to_str().unwrap().write_to(writer)?;
-        Ok(())
-    }
-}
-
-
-impl Hash for CompilationUnit {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.path.hash(state);
-    }
-}
-
-impl Display for CompilationUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.path.to_str().unwrap())
-    }
-}
-
-impl CompilationUnit {
-    pub fn from_str(path: &str) -> Self {
-        let path = if path.ends_with(".cx") {
-            &path[..path.len() - 3]
-        } else {
-            path
-        };
-
-        let path_buf = PathBuf::from(file_path(path)).with_extension("");
-
-        Self {
-            identifier: Rc::new(path.to_string()),
-            path: path_buf.into_boxed_path().into()
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        self.path.to_str().unwrap().to_string()
-    }
-    
-    pub fn as_str(&self) -> &str {
-        self.path.to_str().unwrap()
-    }
-    
-    pub fn to_path(&self) -> &Path {
-        &self.path
-    }
-    
-    pub fn with_extension(&self, extension: &str) -> PathBuf {
-        self.path.with_extension(extension)
-    }
-}
-
 #[derive(Debug)]
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
@@ -152,6 +75,87 @@ pub enum CompilerBackend {
     #[default]
     Cranelift,
     LLVM
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
+pub struct CompilationUnit {
+    identifier: Rc<String>,
+    path: Rc<Path>
+}
+
+impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
+    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let identifier: String = String::read_from(reader)?;
+        let path: PathBuf = PathBuf::from(String::read_from(reader)?);
+
+        Ok(
+            Self {
+                identifier: identifier.into(),
+                path: path.into_boxed_path().into()
+            }
+        )
+    }
+}
+
+impl <C: Context> Writable<C> for CompilationUnit {
+    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
+    where
+        W: ?Sized + speedy::Writer<C>
+    {
+        self.identifier.as_str().write_to(writer)?;
+        self.path.to_str().unwrap().write_to(writer)?;
+        Ok(())
+    }
+}
+
+
+impl Hash for CompilationUnit {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+    }
+}
+
+impl Display for CompilationUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.path.to_str().unwrap())
+    }
+}
+
+impl CompilationUnit {
+    pub fn from_str(path: &str) -> Self {
+        let path = if path.ends_with(".cx") {
+            &path[..path.len() - 3]
+        } else {
+            path
+        };
+
+        let path_buf = PathBuf::from(file_path(path)).with_extension("");
+
+        Self {
+            identifier: Rc::new(path.to_string()),
+            path: path_buf.into_boxed_path().into()
+        }
+    }
+    
+    pub fn identifier(&self) -> &str {
+        self.identifier.as_str()
+    }
+
+    pub fn to_string(&self) -> String {
+        self.path.to_str().unwrap().to_string()
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.path.to_str().unwrap()
+    }
+
+    pub fn to_path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn with_extension(&self, extension: &str) -> PathBuf {
+        self.path.with_extension(extension)
+    }
 }
 
 pub fn libary_path_prefix() -> String {

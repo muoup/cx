@@ -4,6 +4,7 @@ use crate::parse::value_type::CXType;
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
+use crate::parse::template::CXTemplateInput;
 
 #[derive(Debug, Clone, Default)]
 pub struct CXAST {
@@ -19,7 +20,7 @@ pub struct CXAST {
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
     
-    pub global_variables: HashMap<String, CXGlobalVariable>,
+    pub global_variables: HashMap<String, CXGlobalVariable>
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -123,13 +124,25 @@ pub enum CXGlobalConstant {
     Int(i32)
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Readable, Writable)]
 pub struct CXExpr {
     pub uuid: u64,
     pub kind: CXExprKind,
 
     pub start_index: usize,
     pub end_index: usize,
+}
+
+impl Clone for CXExpr {
+    fn clone(&self) -> Self {
+        CXExpr {
+            uuid: Uuid::new_v4().as_u128() as u64,
+            kind: self.kind.clone(),
+
+            start_index: self.start_index,
+            end_index: self.end_index,
+        }
+    }
 }
 
 impl Default for CXExpr {
@@ -148,7 +161,11 @@ impl Default for CXExpr {
 pub enum CXExprKind {
     Taken,
     Unit,
-
+    
+    TemplatedFnIdent {
+        fn_name: CXIdent,
+        template_input: CXTemplateInput
+    },
     Identifier(CXIdent),
 
     IntLiteral {

@@ -331,6 +331,9 @@ impl Display for CXTypeKind {
             CXTypeKind::Identifier { name, .. } => {
                 write!(f, "{name}")
             },
+            CXTypeKind::TemplatedIdentifier { name, template_input } => {
+                write!(f, "{name}<..>")
+            },
             CXTypeKind::Function { prototype } => {
                 write!(f, "fn {prototype}")
             },

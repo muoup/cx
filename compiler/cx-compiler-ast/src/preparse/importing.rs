@@ -1,6 +1,7 @@
-use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::{assert_token_matches, keyword, punctuator, PreparseContents};
+use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
+use cx_data_ast::{assert_token_matches, PreparseContents};
 use cx_data_ast::parse::parser::{ParserData, TokenIter};
+use cx_data_lexer::keyword;
 use cx_util::log_error;
 use crate::preparse::preparser::PreparseResult;
 

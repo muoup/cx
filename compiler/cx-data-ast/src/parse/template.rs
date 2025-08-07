@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use cx_util::CXResult;
-use crate::parse::ast::CXFunctionPrototype;
+use cx_util::mangling::mangle_templated_fn;
+use crate::parse::ast::{CXFunctionPrototype, CXAST};
+use crate::parse::maps::CXTemplateRequest;
 use crate::parse::value_type::{CXType, CXTypeKind};
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXTemplateTypeGen {
+    pub module_origin: Option<String>,
+    
     pub generic_types: Vec<String>,
     pub generator: CXTemplateGenerator,
     pub generated: HashMap<CXTemplateInput, CXTemplateOutput>
@@ -18,6 +22,8 @@ impl CXTemplateTypeGen {
     ) -> Self {
         CXTemplateTypeGen {
             generic_types,
+            
+            module_origin: None,
             generator: CXTemplateGenerator::FunctionGen(prototype),
             generated: HashMap::new()
         }
@@ -29,6 +35,8 @@ impl CXTemplateTypeGen {
     ) -> Self {
         CXTemplateTypeGen {
             generic_types,
+            
+            module_origin: None,
             generator: CXTemplateGenerator::TypeGen(ty),
             generated: HashMap::new()
         }
@@ -53,15 +61,26 @@ pub enum CXTemplateOutput {
 }
 
 impl CXTemplateTypeGen {
-    pub fn generate(&mut self, input: CXTemplateInput) -> CXResult<CXTemplateOutput> {
-        if let Some(output) = self.generated.get(&input) {
-            return Some(output.clone());
+    pub fn generate(&mut self, name: &str, input: &CXTemplateInput) -> CXResult<(Option<CXTemplateRequest>, &CXTemplateOutput)> {
+        if !self.generated.contains_key(&input) {
+            let output = self.generate_unresolved(input)?;
+            
+            self.generated.insert(input.clone(), output);
+            
+            let request = CXTemplateRequest {
+                template_name: name.to_string(),
+                input: input.clone()
+            };
+            
+            return Some((Some(request), self.generated.get(input).unwrap()));
         }
-        
-        let output = self.generate_unresolved(&input)?;
-        self.generated.insert(input, output.clone());
-        
-        return Some(output);
+
+        self.get_existing(input)
+            .map(|output| (None, output))
+    }
+    
+    pub fn get_existing(&self, input: &CXTemplateInput) -> Option<&CXTemplateOutput> {
+        self.generated.get(input)
     }
     
     fn generate_unresolved(&mut self, input: &CXTemplateInput) -> CXResult<CXTemplateOutput> {

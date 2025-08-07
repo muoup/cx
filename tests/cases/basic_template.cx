@@ -9,8 +9,8 @@ int main() {
     int ix = 5;
     int iy = 10;
 
-    float fx = 5.5f;
-    float fy = 10.5f;
+    float fx = 5.5;
+    float fy = 10.5;
 
     printf("Integer addition: %d + %d = %d\n", ix, iy, add<int>(ix, iy));
     printf("Float addition: %.2f + %.2f = %.2f\n", fx, fy, add<float>(fx, fy));

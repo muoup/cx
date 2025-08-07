@@ -23,7 +23,7 @@ pub(crate) fn generate_deconstructor_data(type_env: &TypeEnvironment) -> Option<
 }
 
 fn generate_deconstructor_data_for_type(
-    env: &TypeEnvironment,
+    env: &mut TypeEnvironment,
     data: &mut GenerationData,
     type_: &CXType
 ) -> TypeCheckResult<()> {
@@ -49,7 +49,8 @@ fn generate_deconstructor_data_for_type(
                 deallocations: Vec::new(),
             };
             
-            if _type.has_destructor(env.type_map) || fields.iter().any(|(_, field_type)| field_type.is_strong_ptr(env.type_map)) {
+            if _type.has_destructor(env.type_map) || 
+                fields.iter().any(|(_, field_type)| env.is_strong_ptr(&field_type)) {
                 data.generated_for.insert(type_.uuid);
             }
 
@@ -76,8 +77,8 @@ fn generate_deconstructor_data_for_type(
                 if data.generated_for.contains(&field_type.uuid) {
                     deconstructor_data.rec_deconstructor_calls.push(i);
                 }
-
-                if field_type.is_strong_ptr(&env.type_map) {
+                
+                if env.is_strong_ptr(&field_type) {
                     deconstructor_data.free_indices.push(i);
                 }
             }

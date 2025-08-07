@@ -1,11 +1,12 @@
-use cx_data_ast::{assert_token_matches, keyword, next_kind, peek_next_kind, punctuator, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use cx_data_ast::{assert_token_matches, keyword, next_kind, peek_next, peek_next_kind, punctuator, try_next};
+use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::TokenIter;
 use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
 use cx_util::{log_error, point_log_error};
 use crate::parse::global_scope::ParseParamsResult;
+use crate::parse::template::parse_template_args;
 use crate::preparse::preparser::goto_statement_end;
 
 fn predeclaration_identifier(name: Option<CXIdent>, predeclaration: PredeclarationType) -> Option<(Option<CXIdent>, CXTypeKind)> {
@@ -257,12 +258,27 @@ pub(crate) fn parse_suffix_typemod(tokens: &mut TokenIter, acc_type: CXType) -> 
 
 pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXType> {
     let _type = match tokens.peek()?.kind {
-        TokenKind::Identifier(_) => Some(
-            CXTypeKind::Identifier {
-                name: parse_std_ident(tokens)?,
-                predeclaration: PredeclarationType::None
-            }.to_val_type()
-        ),
+        TokenKind::Identifier(_) => {
+            let ident = parse_std_ident(tokens)?;
+            
+            if peek_next!(tokens, TokenKind::Operator(OperatorType::Less)) {
+                let params = parse_template_args(tokens)?;
+             
+                Some(
+                    CXTypeKind::TemplatedIdentifier {
+                        name: ident,
+                        template_input: params,
+                    }.to_val_type()
+                )
+            } else {
+                Some(
+                    CXTypeKind::Identifier {
+                        name: ident,
+                        predeclaration: PredeclarationType::None
+                    }.to_val_type()
+                )
+            }
+        },
 
         TokenKind::Intrinsic(_) => Some(
             CXTypeKind::Identifier {

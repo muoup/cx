@@ -1,4 +1,4 @@
-use cx_data_ast::lex::token::TokenKind;
+use cx_data_lexer::token::TokenKind;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_ast::keyword;
@@ -19,8 +19,9 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
         TokenKind::Intrinsic(_) |
         TokenKind::Specifier(_) |
         keyword!(Struct, Union, Enum) => true,
-
-        TokenKind::Identifier(name) => data.ast.type_map.contains_key(name),
+        
+        TokenKind::Identifier(name) if data.ast.type_map.has_template(name) => true,
+        TokenKind::Identifier(name) if data.ast.type_map.contains_key(name) => true,
 
         _ => false
     }

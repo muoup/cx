@@ -1,10 +1,9 @@
-use std::collections::HashSet;
 use crate::{BytecodeResult, ProgramBytecode};
 use cx_data_ast::parse::ast::{CXExpr};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap, BlockID};
+use cx_data_bytecode::*;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::format::{dump_all, dump_data};
 use cx_util::log_error;
@@ -27,9 +26,8 @@ pub struct BytecodeBuilder {
 
     pub symbol_table: ScopedMap<ValueID>,
 
-    complex_types: HashSet<u64>,
     in_deferred_block: bool,
-    function_context: Option<BytecodeFunctionContext>,
+    function_context: Option<BytecodeFunctionContext>
 }
 
 #[derive(Debug)]
@@ -60,8 +58,6 @@ impl BytecodeBuilder {
             in_deferred_block: false,
 
             symbol_table: ScopedMap::new(),
-
-            complex_types: HashSet::new(),
             function_context: None
         }
     }
@@ -500,7 +496,7 @@ impl BytecodeBuilder {
                 type_map: self.type_map,
 
                 global_strs: self.global_strings,
-                fn_defs: self.functions,
+                fn_defs: self.functions
             }
         )
     }
