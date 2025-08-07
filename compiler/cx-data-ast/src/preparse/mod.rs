@@ -1,20 +1,11 @@
 use std::collections::HashMap;
+use crate::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXTypeTemplate};
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub enum PreparseTokenType {
-    TypeName,
-    FunctionName,
-    TemplatedTypeName,
-    TemplatedFunctionName,
-}
+pub mod pp_type;
+mod format;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct CXPreparseToken {
-    pub token_type: PreparseTokenType
-}
+pub type CXNaiveTypeMap = HashMap<String, CXNaiveType>;
+pub type CXNaiveFunctionMap = Vec<(String, CXNaivePrototype)>;
 
-pub type PreparseTokenMap = HashMap<String, CXPreparseToken>;
-
-pub type CXPreparseTokens = Vec<CXPreparseToken>;
-
-pub type PreparseMap = HashMap<String, PreparseTokenType>;
+pub type CXNaiveTypeTemplates = Vec<CXTypeTemplate>;
+pub type CXNaiveFunctionTemplates = Vec<CXFunctionTemplate>;

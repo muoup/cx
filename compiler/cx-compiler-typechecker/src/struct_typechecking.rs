@@ -11,7 +11,7 @@ pub fn typecheck_access(
 ) -> Option<CXType> {
     let mut lhs_type = coerce_value(env, lhs).unwrap().clone();
     
-    if lhs_type.is_pointer(env.type_map) {
+    if lhs_type.is_pointer() {
         let lhs_temp = std::mem::take(lhs);
         let start_index = lhs_temp.start_index;
         let end_index = lhs_temp.end_index;

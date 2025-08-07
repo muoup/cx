@@ -7,6 +7,7 @@ use cx_data_ast::parse::ast::CXFunctionPrototype;
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::parse::template::CXTemplateTypeGen;
+use cx_data_ast::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeTemplate};
 use cx_data_lexer::{keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::point_log_error;
 use crate::parse::global_scope::{parse_global_expr, parse_global_stmt};
@@ -14,13 +15,14 @@ use crate::preparse::importing::parse_import;
 use crate::preparse::PreparseData;
 
 pub(crate) enum PreparseResult {
-    TypeDefinition(String, CXType),
-    FunctionDefinition(CXFunctionPrototype),
+    TypeDefinition(String, CXNaiveType),
+    FunctionDefinition(CXNaivePrototype),
+    TypeTemplate(CXTypeTemplate),
+    FunctionTemplate(CXFunctionTemplate),
     DestructorDefinition(String),
     
     Import(String),
-    TemplateDefinition(String, CXTemplateTypeGen),
-    
+
     Nothing
 }
 
@@ -88,16 +90,27 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
     
     match stmt {
         PreparseResult::FunctionDefinition(signature) => {
-            let template = CXTemplateTypeGen::function_template(type_decls, signature.clone());
-            let prototype_name = signature.name.to_string();
-            
-            Some(PreparseResult::TemplateDefinition(prototype_name, template))
+            Some(
+                PreparseResult::FunctionTemplate(
+                    CXFunctionTemplate {
+                        name: signature.name.clone(),
+                        inputs: type_decls,
+                        shell: signature
+                    }
+                )
+            )
         },
         
         PreparseResult::TypeDefinition(name, type_) => {
-            let template = CXTemplateTypeGen::type_template(type_decls, type_);
-            
-            Some(PreparseResult::TemplateDefinition(name, template))
+            Some(
+                PreparseResult::TypeTemplate(
+                    CXTypeTemplate {
+                        name: CXIdent { data: name.clone() },
+                        inputs: type_decls,
+                        shell: type_
+                    }
+                )
+            )
         },
         
         _ => todo!()
@@ -114,8 +127,8 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> Option<PreparseRes
 
         tok => todo!("parse_plain_typedef: {tok:?}")
     };
-    
-    if matches!(type_, CXTypeKind::Identifier { .. }) {
+
+    if matches!(type_, CXNaiveTypeKind::Identifier { .. }) {
         data.tokens.index = starting_index; // Reset to the start if we didn't parse a type declaration
         return preparse_global_expr(data);
     }
@@ -125,7 +138,7 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> Option<PreparseRes
     Some(
         PreparseResult::TypeDefinition(
             name.unwrap().as_string(), 
-            type_.to_val_type()
+            type_.to_type()
         )
     )
 }
@@ -156,9 +169,9 @@ pub(crate) fn preparse_global_expr(data: &mut PreparseData) -> Option<PreparseRe
         punctuator!(OpenParen) => {
             // We are parsing a function declaration
             let params = parse_params(&mut data.tokens)?;
-            let signature = CXFunctionPrototype {
+            let signature = CXNaivePrototype {
                 name, return_type,
-                params: params.params, 
+                params: params.params,
                 var_args: params.var_args
             };
 

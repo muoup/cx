@@ -23,7 +23,7 @@ pub(crate) fn generate_deconstructor_data(type_env: &TypeEnvironment) -> Option<
 }
 
 fn generate_deconstructor_data_for_type(
-    env: &mut TypeEnvironment,
+    env: &TypeEnvironment,
     data: &mut GenerationData,
     type_: &CXType
 ) -> TypeCheckResult<()> {
@@ -50,14 +50,14 @@ fn generate_deconstructor_data_for_type(
             };
             
             if _type.has_destructor(env.type_map) || 
-                fields.iter().any(|(_, field_type)| env.is_strong_ptr(&field_type)) {
+                fields.iter().any(|(_, field_type)| field_type.is_strong_pointer()) {
                 data.generated_for.insert(type_.uuid);
             }
 
             for (i, (_, field_type)) in fields.iter().enumerate() {
                 generate_deconstructor_data_for_type(env, data, field_type)?;
                 
-                let allocation_type = match field_type.intrinsic_type_kind(&env.type_map)? {
+                let allocation_type = match field_type.kind {
                     CXTypeKind::StrongPointer { is_array: false, .. }
                         => AllocationType::Single,
                     CXTypeKind::StrongPointer { is_array: true, .. }
@@ -78,7 +78,7 @@ fn generate_deconstructor_data_for_type(
                     deconstructor_data.rec_deconstructor_calls.push(i);
                 }
                 
-                if env.is_strong_ptr(&field_type) {
+                if field_type.is_strong_pointer() {
                     deconstructor_data.free_indices.push(i);
                 }
             }

@@ -75,7 +75,7 @@ fn generate_params(
     builder: &mut BytecodeBuilder,
     prototype: &CXFunctionPrototype
 ) -> Option<()> {
-    let is_structured_return = prototype.return_type.is_structured(&builder.cx_type_map);
+    let is_structured_return = prototype.return_type.is_structured();
     
     for (i, arg) in prototype.params.iter().enumerate() {
         let bc_type = builder.convert_cx_type(&arg._type)?;

@@ -1,6 +1,6 @@
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
-use cx_data_ast::parse::value_type::{CXTypeKind, CXType, CX_CONST};
+use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ElementID, ValueID, VirtualInstruction};
 use cx_util::log_error;
@@ -50,7 +50,7 @@ pub fn generate_instruction(
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let lhs_type = builder.get_expr_intrinsic_type(lhs.as_ref())?
                 .clone();
-            let ltype = builder.convert_cx_type(&lhs_type.to_val_type())?;
+            let ltype = builder.convert_cx_type(&lhs_type.into())?;
 
             let CXExprKind::Identifier(field_name) = &rhs.as_ref().kind else {
                 panic!("PANIC: Attempting to access struct field with rhs: {rhs:?}");
@@ -89,10 +89,10 @@ pub fn generate_instruction(
             let l_type = builder.get_expr_intrinsic_type(lhs.as_ref())?.clone();
 
             let lhs_inner = match l_type {
-                CXTypeKind::PointerTo { inner, .. } => inner,
+                CXTypeKind::PointerTo { inner_type: inner, .. } => inner,
                 
                 CXTypeKind::VariableLengthArray { _type, .. } |
-                CXTypeKind::Array { _type, .. } => _type,
+                CXTypeKind::Array { inner_type: _type, .. } => _type,
                 
                 _ => panic!("Invalid array index type: {l_type}"),
             };
@@ -119,7 +119,7 @@ pub fn generate_instruction(
             
             let (prototype, direct_call) = match builder.get_expr_intrinsic_type(lhs.as_ref())? {
                 CXTypeKind::Function { prototype } => (*prototype, true),
-                CXTypeKind::PointerTo { inner, .. } => {
+                CXTypeKind::PointerTo { inner_type: inner, .. } => {
                     let Some(CXTypeKind::Function { prototype }) =
                         inner.intrinsic_type_kind(&builder.cx_type_map) else {
                         log_error!("Invalid function pointer type: {inner}");
@@ -163,7 +163,7 @@ pub fn generate_instruction(
                         prototype.return_type.clone()
                     )
                 },
-                CXTypeKind::PointerTo { inner, .. } => {
+                CXTypeKind::PointerTo { inner_type: inner, .. } => {
                     let Some(CXTypeKind::Function { prototype }) =
                         inner.intrinsic_type_kind(&builder.cx_type_map) else {
                         log_error!("Invalid function pointer type: {inner}");
@@ -236,7 +236,7 @@ pub fn generate_instruction(
                 VirtualInstruction::FloatImmediate {
                     value: *val
                 },
-                CXTypeKind::Float { bytes: *bytes }.to_val_type()
+                CXTypeKind::Float { bytes: *bytes }.into()
             )
         },
 
@@ -245,7 +245,7 @@ pub fn generate_instruction(
             let pointer_type = builder.convert_fixed_cx_type(&_type)?;
             let function_name = mangle_templated_fn(
                 fn_name.as_str(),
-                &template_input.types
+                &template_input.params
             );
             
             builder.add_instruction_bt(
@@ -681,7 +681,7 @@ pub fn generate_instruction(
                 VirtualInstruction::IntToPtr {
                     value: zero
                 },
-                CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                CXTypeKind::Integer { bytes: 8, signed: true }.into()
             )?;
 
             builder.add_instruction(
@@ -872,7 +872,7 @@ pub(crate) fn generate_binop(
         _ => {
             let left_id = generate_instruction(builder, lhs)?;
             let right_id = generate_instruction(builder, rhs)?;
-            let cx_lhs_type = builder.get_expr_intrinsic_type(lhs)?.to_val_type();
+            let cx_lhs_type = builder.get_expr_intrinsic_type(lhs)?.into();
             
             generate_algebraic_binop(
                 builder,
@@ -928,7 +928,7 @@ pub(crate) fn generate_algebraic_binop(
         },
 
         CXTypeKind::PointerTo { .. } => {
-            let CXTypeKind::PointerTo { inner: left_inner, .. }
+            let CXTypeKind::PointerTo { inner_type: left_inner, .. }
                 = &cx_lhs_type.intrinsic_type_kind(&builder.cx_type_map)?
             else { 
                 builder.dump_current_fn();
@@ -997,7 +997,7 @@ pub(crate) fn implicit_return(
             VirtualInstruction::Immediate {
                 value: 0
             },
-            CXTypeKind::Integer { bytes: 4, signed: true }.to_val_type()
+            CXTypeKind::Integer { bytes: 4, signed: true }.into()
         )?;
 
         builder.add_return(Some(zero));

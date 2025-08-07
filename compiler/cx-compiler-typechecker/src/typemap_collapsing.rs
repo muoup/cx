@@ -33,24 +33,9 @@ pub fn collapse_type<MapRef>(_type: &mut CXType, self_map: &mut CXTypeMap, impor
     where MapRef: AsRef<CXTypeMap>
 {
     match &mut _type.kind {
-        CXTypeKind::Identifier { name, .. } => {
-            let Some(self_type) = self_map.get(name.as_str()) else {
-                log_error!("Unknown type identifier: {}", name);
-            };
-
-            *_type = self_type.clone();
-        },
-        CXTypeKind::TemplatedIdentifier { name, template_input, .. } => {
-            let Some(self_type) = self_map.get_template(name.as_str(), template_input) else {
-                log_error!("Unknown templated type identifier: {}", name);
-            };
-            
-            *_type = self_type.clone();
-        },
-        
-        CXTypeKind::Array { _type: inner, .. } |
+        CXTypeKind::Array { inner_type: inner, .. } |
         CXTypeKind::StrongPointer { inner, .. } |
-        CXTypeKind::PointerTo { inner, .. } 
+        CXTypeKind::PointerTo { inner_type: inner, .. }
             => collapse_type(inner.as_mut(), self_map, import_maps)?,
         
         CXTypeKind::Union { fields, .. } |

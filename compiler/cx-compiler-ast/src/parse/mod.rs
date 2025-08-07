@@ -1,6 +1,7 @@
 use cx_data_ast::parse::ast::{CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::parser::{ParserData, TokenIter};
+use cx_data_ast::parse::parser::ParserData;
+use cx_data_lexer::TokenIter;
 use global_scope::parse_global_stmt;
 
 pub mod expression;

@@ -1,57 +1,47 @@
-use std::collections::HashMap;
-use speedy::{Readable, Writable};
+use crate::parse::ast::CXFunctionPrototype;
+use crate::parse::value_type::CXType;
+use crate::preparse::pp_type::{CXFunctionTemplate, CXNaiveType, CXNaiveTypeKind, CXTypeTemplate};
+use cx_util::rwlockser::RwLockSer;
 use cx_util::CXResult;
-use cx_util::mangling::mangle_templated_fn;
-use crate::parse::ast::{CXFunctionPrototype, CXAST};
-use crate::parse::maps::CXTemplateRequest;
-use crate::parse::value_type::{CXType, CXTypeKind};
+use speedy::{Readable, Writable};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct CXTemplateTypeGen {
+pub struct CXTemplateTypeGen<Generator> {
     pub module_origin: Option<String>,
-    
     pub generic_types: Vec<String>,
-    pub generator: CXTemplateGenerator,
-    pub generated: HashMap<CXTemplateInput, CXTemplateOutput>
+    pub generator: Generator
 }
 
-impl CXTemplateTypeGen {
-    pub fn function_template( 
-        generic_types: Vec<String>,
-        prototype: CXFunctionPrototype
-    ) -> Self {
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct CXTypeGenerator {
+    template: CXTypeTemplate,
+    generated: RwLockSer<HashMap<CXTemplateInput, CXTemplateOutput>>
+}
+
+impl From<CXTypeTemplate> for CXTemplateTypeGen<CXTypeGenerator> {
+    fn from(template: CXTypeTemplate) -> Self {
         CXTemplateTypeGen {
-            generic_types,
-            
             module_origin: None,
-            generator: CXTemplateGenerator::FunctionGen(prototype),
-            generated: HashMap::new()
-        }
-    }
-    
-    pub fn type_template(
-        generic_types: Vec<String>,
-        ty: CXType
-    ) -> Self {
-        CXTemplateTypeGen {
             generic_types,
-            
-            module_origin: None,
-            generator: CXTemplateGenerator::TypeGen(ty),
-            generated: HashMap::new()
+            generator: CXTypeGenerator {
+                template,
+
+                ..Default::default()
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub enum CXTemplateGenerator {
-    TypeGen(CXType),
-    FunctionGen(CXFunctionPrototype)
+pub struct CXFunctionGenerator {
+    template: CXFunctionTemplate,
+    generated: RwLockSer<HashMap<CXTemplateInput, CXTemplateOutput>>
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Readable, Writable)]
 pub struct CXTemplateInput {
-    pub types: Vec<CXType>
+    pub params: Vec<CXType>
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -61,29 +51,26 @@ pub enum CXTemplateOutput {
 }
 
 impl CXTemplateTypeGen {
-    pub fn generate(&mut self, name: &str, input: &CXTemplateInput) -> CXResult<(Option<CXTemplateRequest>, &CXTemplateOutput)> {
-        if !self.generated.contains_key(&input) {
-            let output = self.generate_unresolved(input)?;
-            
-            self.generated.insert(input.clone(), output);
-            
-            let request = CXTemplateRequest {
-                template_name: name.to_string(),
-                input: input.clone()
-            };
-            
-            return Some((Some(request), self.generated.get(input).unwrap()));
+    pub fn generate(&self, name: &str, input: &CXTemplateInput) -> CXResult<CXTemplateOutput> {
+        let read_lock = self.generated.read()
+            .unwrap_or_else(|_| panic!("Dead lock occurred while reading template data"));
+
+        if let Some(output) = read_lock.get(input) {
+            return Some(output.clone());
         }
 
-        self.get_existing(input)
-            .map(|output| (None, output))
+        drop(read_lock);
+
+        let mut write_lock = self.generated.write()
+            .unwrap_or_else(|_| panic!("Dead lock occurred while writing template data"));
+
+        let output = self.generate_unresolved(input)?;
+        write_lock.insert(input.clone(), output);
+
+        Some(write_lock.get(input).expect("Failed to retrieve generated template output").clone())
     }
     
-    pub fn get_existing(&self, input: &CXTemplateInput) -> Option<&CXTemplateOutput> {
-        self.generated.get(input)
-    }
-    
-    fn generate_unresolved(&mut self, input: &CXTemplateInput) -> CXResult<CXTemplateOutput> {
+    fn generate_unresolved(&self, input: &CXTemplateInput) -> CXResult<CXTemplateOutput> {
         match &self.generator {
             CXTemplateGenerator::TypeGen(ty) => {
                 let mut generated_type = ty.clone();
@@ -114,8 +101,8 @@ impl CXTemplateTypeGen {
         Some(())
     }
     
-    fn resolve_type_generics(&self, ty: &mut CXType, input: &CXTemplateInput) -> CXResult<()> {
-        let generic_map = input.types.iter()
+    fn resolve_type_generics(&self, ty: &mut CXNaiveType, input: &CXTemplateInput) -> CXResult<()> {
+        let generic_map = input.params.iter()
             .zip(self.generic_types.iter())
             .map(|(ty, name)| (name.clone(), ty.clone()))
             .collect::<HashMap<String, CXType>>();
@@ -123,15 +110,11 @@ impl CXTemplateTypeGen {
         Self::rtg_recursive(ty, &generic_map)
     }
     
-    fn rtg_recursive(ty: &mut CXType, generic_map: &HashMap<String, CXType>) -> CXResult<()> {
-        match ty.kind {
-            CXTypeKind::Identifier { ref name, .. } =>
-                if let Some(replacement) = generic_map.get(name.as_str()) {
-                    *ty = replacement.clone();
-                },
-            
-            CXTypeKind::Array { _type: ref mut inner, .. } |
-            CXTypeKind::PointerTo { ref mut inner, .. } =>
+    fn rtg_recursive(ty: &mut CXNaiveType, generic_map: &HashMap<String, CXType>) -> CXResult<()> {
+        match &mut ty.kind {
+            CXNaiveTypeKind::ExplicitSizedArray(inner, ..) |
+            CXNaiveTypeKind::ImplicitSizedArray(inner) |
+            CXNaiveTypeKind::PointerTo { inner_type: ref mut inner, .. } =>
                 Self::rtg_recursive(inner, generic_map)?,
 
             _ => todo!()

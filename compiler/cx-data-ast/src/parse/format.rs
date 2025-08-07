@@ -297,7 +297,7 @@ impl Display for CXTypeKind {
                 write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo { inner, explicitly_weak, nullable, sizeless_array } => {
+            CXTypeKind::PointerTo { inner_type: inner, weak: explicitly_weak, nullable, sizeless_array } => {
                 write!(f, "{inner} ")?;
                 
                 if *explicitly_weak {
@@ -319,7 +319,7 @@ impl Display for CXTypeKind {
             CXTypeKind::StrongPointer { inner, .. } => {
                 write!(f, "{inner} strong*")
             },
-            CXTypeKind::Array { size, _type } => {
+            CXTypeKind::Array { size, inner_type: _type } => {
                 write!(f, "[{size}; {_type}]")
             },
             CXTypeKind::VariableLengthArray { _type, .. } => {
@@ -327,12 +327,6 @@ impl Display for CXTypeKind {
             },
             CXTypeKind::Opaque { name, size } => {
                 write!(f, "OPAQUE_{size}(\"{name}\")")
-            },
-            CXTypeKind::Identifier { name, .. } => {
-                write!(f, "{name}")
-            },
-            CXTypeKind::TemplatedIdentifier { name, template_input } => {
-                write!(f, "{name}<..>")
             },
             CXTypeKind::Function { prototype } => {
                 write!(f, "fn {prototype}")

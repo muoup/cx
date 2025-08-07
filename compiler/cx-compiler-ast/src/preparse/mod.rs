@@ -6,11 +6,11 @@ mod importing;
 
 use crate::preparse::preparser::{preparse_stmt, PreparseResult};
 use cx_data_ast::parse::intrinsic_types::{INTRINSIC_IMPORTS, INTRINSIC_TYPES};
-use cx_data_ast::parse::parser::{TokenIter, VisibilityMode};
+use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::parse::template::CXTemplateGenerator;
 use cx_data_ast::parse::value_type::CXTypeKind;
 use cx_data_ast::PreparseContents;
-use cx_util::mangling::mangle_destructor;
+use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};
 
 pub(crate) struct PreparseData<'a> {
@@ -38,7 +38,7 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
             },
 
             PreparseResult::FunctionDefinition(signature) => {
-                contents.function_definitions.insert(signature.name.to_string(), signature);
+                contents.function_definitions.push((signature.name.to_string(), signature));
             },
 
             PreparseResult::DestructorDefinition(name) => {
@@ -49,37 +49,16 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
                 contents.imports.push(path);
             },
 
-            PreparseResult::TemplateDefinition(name, generator) => {
-                match &generator.generator {
-                    CXTemplateGenerator::FunctionGen(_) =>
-                        contents.function_definitions.insert_template(name, generator),
-                    CXTemplateGenerator::TypeGen(_) =>
-                        contents.type_definitions.insert_template(name, generator)
-                }
+            PreparseResult::TypeTemplate(template) => {
+                contents.type_templates.push(template);
+            },
+
+            PreparseResult::FunctionTemplate(template) => {
+                contents.function_templates.push(template);
             },
 
             PreparseResult::Nothing => {}
         } 
-    }
-    
-    for destructor in contents.destructor_definitions.iter() {
-        let CXTypeKind::Structured { has_destructor, .. } = &mut contents.type_definitions
-            .get_mut(&destructor)
-            .unwrap_or_else(|| panic!("Destructor defined for unknown type: {}", destructor))
-            .kind
-        else {
-            log_error!("Destructor defined for non-structured type: {}", destructor);
-        };
-        
-        *has_destructor = true;
-    }
-    
-    for (name, _type) in INTRINSIC_TYPES.iter() {
-        contents.type_definitions.insert(name.to_string(), _type.clone().to_val_type());
-    }
-    
-    for name in INTRINSIC_IMPORTS.iter() {
-        contents.imports.push(name.to_string());
     }
 
     Some(contents)

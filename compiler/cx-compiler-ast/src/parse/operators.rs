@@ -2,6 +2,7 @@ use cx_data_ast::{assert_token_matches, next_kind};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
+use cx_data_ast::parse::type_mapping::contextualize_type;
 use crate::parse::typing::is_type_decl;
 use crate::preparse::typing::parse_initializer;
 
@@ -94,10 +95,12 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                     data.tokens.index = pre_index;
                     return None;
                 };
+                let cx_type = contextualize_type(&data.ast.type_map, &type_)
+                    .expect("CRITICAL: Failed to contextualize type in pre_unop parsing!");
 
                 assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
 
-                return Some(CXUnOp::ExplicitCast(type_));
+                return Some(CXUnOp::ExplicitCast(cx_type));
             },
 
             _ => {

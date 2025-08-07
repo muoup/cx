@@ -6,7 +6,7 @@ use speedy::{Readable, Writable};
 use uuid::Uuid;
 use crate::parse::template::CXTemplateInput;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct CXAST {
     // Path to .cx file
     pub file_path: String,

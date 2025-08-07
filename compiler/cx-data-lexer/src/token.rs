@@ -18,6 +18,10 @@ pub struct Token {
 
 #[macro_export]
 macro_rules! keyword {
+    () => {
+        TokenKind::Keyword(cx_data_lexer::token::KeywordType::If)
+    };
+
     ($($name:ident),+) => {
         $(TokenKind::Keyword(cx_data_lexer::token::KeywordType::$name))|+
     };
@@ -25,6 +29,10 @@ macro_rules! keyword {
 
 #[macro_export]
 macro_rules! specifier {
+    () => {
+        TokenKind::Specifier(cx_data_lexer::token::SpecifierType::Inline)
+    };
+
     ($($name:ident),+) => {
         $(TokenKind::Specifier(cx_data_lexer::token::SpecifierType::$name))|+
     }
@@ -32,13 +40,21 @@ macro_rules! specifier {
 
 #[macro_export]
 macro_rules! intrinsic {
+    () => {
+        TokenKind::Intrinsic(_)
+    };
+
     ($name:ident) => {
         TokenKind::Intrinsic(cx_data_lexer::token::IntrinsicType::$name)
-    }
+    };
 }
 
 #[macro_export]
 macro_rules! operator {
+    () => {
+        TokenKind::Operator(cx_data_lexer::token::OperatorType::Plus)
+    };
+
     ($name:ident) => {
         TokenKind::Operator(cx_data_lexer::token::OperatorType::$name)
     }
@@ -46,8 +62,23 @@ macro_rules! operator {
 
 #[macro_export]
 macro_rules! punctuator {
+    () => {
+        TokenKind::Punctuator(cx_data_lexer::token::PunctuatorType::OpenParen)
+    };
+
     ($name:ident) => {
         TokenKind::Punctuator(cx_data_lexer::token::PunctuatorType::$name)
+    }
+}
+
+#[macro_export]
+macro_rules! identifier {
+    () => {
+        TokenKind::Identifier(_)
+    };
+
+    ($name:ident) => {
+        TokenKind::Identifier($name)
     }
 }
 

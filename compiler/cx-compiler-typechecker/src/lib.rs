@@ -1,6 +1,5 @@
 use crate::deconstructed_types::generate_deconstructor_data;
 use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
-use cx_data_lexer::token::Token;
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTemplateRequest, CXTypeMap};
 use cx_data_ast::parse::template::{CXTemplateInput, CXTemplateOutput};
@@ -8,6 +7,7 @@ use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::HashMap;
+use cx_data_lexer::token::Token;
 use cx_util::mangling::mangle_templated_fn;
 
 pub mod typemap_collapsing;
@@ -67,14 +67,14 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, request: CXTemplateR
             panic!("Template generator not found in type map for {}", request.template_name)
         });
     
-    for (name, _type) in generator.generic_types.iter().zip(&request.input.types) {
+    for (name, _type) in generator.generic_types.iter().zip(&request.input.params) {
         type_map.insert(name.clone(), _type.clone());
     }
     
     let generator = fn_map.get_generator_mut(&request.template_name)
         .expect("Template generator not found in type map");
     
-    let (None, CXTemplateOutput::FunctionPrototype(prototype)) = generator.generate(&request.template_name, &request.input)? else {
+    let CXTemplateOutput::FunctionPrototype(prototype) = generator.generate(&request.template_name, &request.input)? else {
         unreachable!("Invalid generator.generate output for function template");
     };
     let mut prototype = prototype.clone();
@@ -110,7 +110,7 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, request: CXTemplateR
     typecheck_function(&mut env, &prototype, &mut body)?;
     prototype.name.data = mangle_templated_fn(
         prototype.name.as_str(),
-        &request.input.types
+        &request.input.params
     );
     
     Some((env.typecheck_data, prototype.clone(), CXGlobalStmt::FunctionDefinition {
@@ -133,60 +133,7 @@ pub(crate) struct TypeEnvironment<'a> {
 }
 
 impl<'a> TypeEnvironment<'a> {
-    pub fn function_template_prototype(&mut self, name: &str, template_input: &CXTemplateInput) -> Option<&CXFunctionPrototype> {
-        let (request, _type) = self.fn_map.get_template(name, template_input)
-            .expect("Function template not found in function map");
-        
-        if let Some(request) = request {
-            self.typecheck_data.requests.push(request);
-        }
-        
-        Some(_type)
-    }
-    
-    pub fn intrinsic_kind(&mut self, _type: &CXType) -> Option<CXTypeKind> {
-        match _type.intrinsic_type_kind(self.type_map)?.clone() {
-            CXTypeKind::TemplatedIdentifier { name, template_input } => {
-                let _type = self.type_map.get_template(name.as_str(), &template_input)
-                    .expect("Intrinsic type template not found in type map")
-                    .clone();
-             
-                self.intrinsic_kind(&_type)
-            },
-            
-            _ => Some(_type.kind.clone()),
-        }
-    }
-
-    pub fn is_structure_ref(&mut self, _type: &CXType) -> bool {
-        let CXTypeKind::MemoryReference(inner) = &_type.kind else {
-            return false;
-        };
-
-        self.is_structured(inner.as_ref())
-    }
-
-    pub fn is_mem_ref(&mut self, _type: &CXType) -> bool {
-        matches!(_type.kind, CXTypeKind::MemoryReference(_))
-    }
-
-    pub fn is_structured(&mut self, _type: &CXType) -> bool {
-        matches!(self.intrinsic_kind(_type), Some(CXTypeKind::Structured { .. }))
-    }
-
-    pub fn is_integer(&mut self, _type: &CXType) -> bool {
-        matches!(self.intrinsic_kind(_type), Some(CXTypeKind::Integer { .. }))
-    }
-
-    pub fn is_strong_ptr(&mut self, _type: &CXType) -> bool {
-        matches!(self.intrinsic_kind(_type), Some(CXTypeKind::StrongPointer { .. }))
-    }
-
-    pub fn is_pointer(&mut self, _type: &CXType) -> bool {
-        matches!(self.intrinsic_kind(_type), Some(CXTypeKind::PointerTo { .. }))
-    }
-
-    pub fn is_void(&mut self, _type: &CXType) -> bool {
-        matches!(self.intrinsic_kind(_type), Some(CXTypeKind::Unit))
+    pub fn function_template_prototype(&mut self, name: &str, template_input: &CXTemplateInput) -> Option<CXFunctionPrototype> {
+        self.fn_map.get_template(name, template_input)
     }
 }

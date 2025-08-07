@@ -37,10 +37,10 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
 
-            (CXTypeKind::Array { _type, .. }, CXTypeKind::PointerTo { inner, .. })
+            (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
                 if same_type(env.type_map, &_type, &inner) => Some(CXCastType::BitCast),
             
-            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner, .. })
+            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
                 if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
             _ => None
@@ -132,11 +132,11 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
     match (l_type.intrinsic_type_kind(env.type_map).cloned()?,
            r_type.intrinsic_type_kind(env.type_map).cloned()?) {
 
-        (CXTypeKind::PointerTo { inner: l_inner, .. }, CXTypeKind::Integer { .. }) => {
+        (CXTypeKind::PointerTo { inner_type: l_inner, .. }, CXTypeKind::Integer { .. }) => {
             ptr_int_binop_coercion(env, op, l_inner.as_ref(), rhs)
         },
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { inner: r_inner, .. }) => {
+        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { inner_type: r_inner, .. }) => {
             if matches!(op, CXBinOp::Subtract) {
                 log_error!("Invalid operation [integer] - [pointer] for types {l_type} and {r_type}");
             }
@@ -242,7 +242,7 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
         CXBinOp::LAnd | CXBinOp::LOr |
         CXBinOp::Less | CXBinOp::Greater | 
         CXBinOp::LessEqual | CXBinOp::GreaterEqual |
-        CXBinOp::Equal | CXBinOp::NotEqual => Some(CXTypeKind::Bool.to_val_type()),
+        CXBinOp::Equal | CXBinOp::NotEqual => Some(CXTypeKind::Bool.into()),
 
         _ => panic!("Invalid binary operation {op} for type {lhs}")
     }

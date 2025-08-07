@@ -18,10 +18,10 @@ pub(crate) fn add_destructor_prototypes(
             let this_type = CXType::new(
                 0,
                 CXTypeKind::PointerTo {
-                    inner: Box::new(_type.clone()),
+                    inner_type: Box::new(_type.clone()),
                     
                     sizeless_array: false,
-                    explicitly_weak: true,
+                    weak: true,
                     nullable: false,
                 },
             );
@@ -74,7 +74,7 @@ pub(crate) fn typecheck_destructor(
         .clone();
     let _type = env.type_map.get(type_name)?.clone();
     
-    if !env.is_structured(&_type) {
+    if !_type.is_structured() {
         log_error!("Destructor can only be defined for structured types, found: {}", type_name);
     }
     

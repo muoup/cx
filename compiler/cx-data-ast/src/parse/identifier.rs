@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use speedy::{Readable, Writable};
 
-#[derive(Debug, Clone, PartialEq, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXIdent {
     pub data: String
 }

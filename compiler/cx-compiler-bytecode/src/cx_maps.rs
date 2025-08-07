@@ -272,19 +272,6 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
 pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
     Some(
         match cx_type_kind {
-            CXTypeKind::Identifier { name, .. } => {
-                let inner = cx_type_map.get(name.as_str())
-                    .expect("PANIC: Identifier not found in type map");
-
-                convert_fixed_type_kind(cx_type_map, &inner.kind)?
-            },
-            CXTypeKind::TemplatedIdentifier { name, template_input, .. } => {
-                let inner = cx_type_map.get_existing_template(name.as_str(), template_input)
-                    .expect("PANIC: Templated identifier not found in type map");
-             
-                convert_fixed_type_kind(cx_type_map, &inner.kind)?
-            },
-
             CXTypeKind::Opaque { size, .. } =>
                 BCTypeKind::Opaque { bytes: *size },
             
@@ -312,7 +299,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::PointerTo { nullable: true, .. } =>
                 BCTypeKind::Pointer { nullable: true, dereferenceable: 0 },
             
-            CXTypeKind::Array { _type, size } =>
+            CXTypeKind::Array { inner_type: _type, size } =>
                 BCTypeKind::Array {
                     element: Box::new(convert_fixed_type(cx_type_map, _type)?),
                     size: *size

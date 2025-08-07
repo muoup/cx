@@ -1,6 +1,5 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_data_lexer::token::Token;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::node_type_map::TypeCheckData;
@@ -8,7 +7,8 @@ use cx_data_bytecode::ProgramBytecode;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
+use cx_data_ast::PreparseContents;
+use cx_data_lexer::token::Token;
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
@@ -17,7 +17,8 @@ pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
     
     pub lex_tokens: ModuleMap<Vec<Token>>,
-    
+
+    pub preparse_contents: ModuleMap<PreparseContents>,
     pub naive_type_data: ModuleMap<CXTypeMap>,
     pub naive_function_data: ModuleMap<CXFunctionMap>,
     

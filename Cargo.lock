@@ -283,6 +283,11 @@ dependencies = [
 [[package]]
 name = "cx-compiler-lexer"
 version = "0.1.0"
+dependencies = [
+ "cx-data-lexer",
+ "cx-data-pipeline",
+ "cx-util",
+]
 
 [[package]]
 name = "cx-compiler-typechecker"
@@ -291,7 +296,7 @@ dependencies = [
  "cx-compiler-ast",
  "cx-data-ast",
  "cx-data-bytecode",
- "cx-data-pipeline",
+ "cx-data-lexer",
  "cx-util",
  "uuid",
 ]
@@ -318,6 +323,9 @@ dependencies = [
 [[package]]
 name = "cx-data-lexer"
 version = "0.1.0"
+dependencies = [
+ "cx-util",
+]
 
 [[package]]
 name = "cx-data-pipeline"
@@ -325,6 +333,7 @@ version = "0.1.0"
 dependencies = [
  "cx-data-ast",
  "cx-data-bytecode",
+ "cx-data-lexer",
  "speedy",
 ]
 
@@ -336,9 +345,11 @@ dependencies = [
  "cx-backend-llvm",
  "cx-compiler-ast",
  "cx-compiler-bytecode",
+ "cx-compiler-lexer",
  "cx-compiler-typechecker",
  "cx-data-ast",
  "cx-data-bytecode",
+ "cx-data-lexer",
  "cx-data-pipeline",
  "cx-util",
  "speedy",

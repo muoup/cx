@@ -1,14 +1,12 @@
 use speedy::{LittleEndian, Readable, Writable};
 use crate::backends::{cranelift_compile, llvm_compile};
-use cx_compiler_ast::lex::lex;
 use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_ast::preparse::preparse;
-use cx_compiler_ast::preprocessor::preprocess;
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
 use cx_compiler_typechecker::typemap_collapsing::collapse_typemap;
 use cx_data_ast::parse::ast::CXAST;
-use cx_data_ast::parse::parser::{TokenIter, VisibilityMode};
+use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_pipeline::db::ModuleMap;
 use cx_data_pipeline::directories::{file_path, internal_directory};
 use cx_data_pipeline::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
@@ -16,6 +14,9 @@ use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, Compilat
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use cx_compiler_lexer::lex::lex;
+use cx_compiler_lexer::preprocessor::preprocess;
+use cx_data_lexer::TokenIter;
 use cx_util::format::{dump_all, dump_data};
 use crate::template_realizing::realize_templates;
 
@@ -208,12 +209,8 @@ pub(crate) fn perform_job(
 
             context.module_db.lex_tokens
                 .insert(job.unit.clone(), tokens);
-            context.module_db.import_data
-                .insert(job.unit.clone(), output.imports);
-            context.module_db.naive_type_data
-                .insert(job.unit.clone(), output.type_definitions);
-            context.module_db.naive_function_data
-                .insert(job.unit.clone(), output.function_definitions);
+            context.module_db.preparse_contents
+                .insert(job.unit.clone(), output);
             
             return if identical_hash {
                 Some(JobResult::UnchangedSinceLastCompilation)
@@ -223,24 +220,23 @@ pub(crate) fn perform_job(
         },
 
         CompilationStep::ASTParse => {
-            let mut self_type_map = context.module_db.naive_type_data
-                .get_cloned(&job.unit);
-            let self_function_map = context.module_db.naive_function_data
+            let mut pp_data = context.module_db.preparse_contents
                 .get_cloned(&job.unit);
             let lexemes = context.module_db.lex_tokens
                 .get(&job.unit);
             
-            let imports = context.module_db.import_data
-                .get(&job.unit);
-            
-            for import in imports.iter() {
-                let import_types = context.module_db.naive_type_data
+            for import in pp_data.imports.iter() {
+                let other_pp_data = context.module_db.preparse_contents
                     .get(&CompilationUnit::from_str(import.as_str()));
 
-                for (name, _type) in import_types.iter() {
-                    if _type.visibility_mode != VisibilityMode::Public { continue; };
+                for (name, _type) in other_pp_data.type_definitions.iter() {
+                    if _type.visibility != VisibilityMode::Public { continue; };
 
-                    self_type_map.insert(name.clone(), _type.clone());
+                    pp_data.type_definitions.insert(name.clone(), _type.clone());
+                }
+
+                for (name, _type) in other_pp_data.function_definitions.iter() {
+                    pp_data.function_definitions.insert(name.clone(), _type.clone());
                 }
             }
 

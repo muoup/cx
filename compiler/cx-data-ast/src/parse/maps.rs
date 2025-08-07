@@ -1,15 +1,18 @@
 use std::collections::HashMap;
+use std::sync::RwLock;
 use speedy::{Readable, Writable};
 use cx_util::CXResult;
 use cx_util::mangling::{mangle_templated_fn, mangle_templated_type};
+use cx_util::rwlockser::RwLockSer;
 use crate::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXAST};
 use crate::parse::template::{CXTemplateTypeGen, CXTemplateInput, CXTemplateOutput, CXTemplateGenerator};
 use crate::parse::value_type::CXType;
 
-#[derive(Debug, Clone, Default, Readable, Writable)]
-pub struct CXMap<Output> {
+#[derive(Debug, Default, Clone, Readable, Writable)]
+pub struct CXMap<Output, Generator> {
     types: HashMap<String, Output>,
-    pub templated_types: HashMap<String, CXTemplateTypeGen>
+
+    pub templated_types: HashMap<String, Generator>
 }
 
 pub type GlobalExpressionContainer = Vec<CXGlobalStmt>;
@@ -48,7 +51,7 @@ impl<Output> CXMap<Output> {
                 module_origin: template.module_origin.clone(),
                 generic_types: template.generic_types.clone(),
                 generator: template.generator.clone(),
-                generated: HashMap::new()
+                generated: RwLockSer::new(HashMap::new())
             };
             
             self.templated_types.insert(name.clone(), new_template);
@@ -107,39 +110,30 @@ pub struct CXTemplateRequest {
 }
 
 impl CXTypeMap {
-    pub fn get_template(&mut self, name: &str, template_input: &CXTemplateInput) -> CXResult<&CXType> {
-        let template = self.templated_types.get_mut(name)?;
-        let (request, output) = template.generate(name, template_input)?;
-        
-        match output {
-            CXTemplateOutput::Type(ty) => {
-                let mangled_name = mangle_templated_type(name, &template_input.types);
+    pub fn get_template(&self, name: &str, template_input: &CXTemplateInput) -> CXResult<CXType> {
+        let template = self.templated_types.get(name)?;
+        let output = template.generate(name, template_input)?;
 
-                if request.is_some() {
-                    let ty = ty.clone();
-                    self.insert(mangled_name.clone(), ty);
-                    Some(self.get(&mangled_name).unwrap())
-                } else {
-                    self.get(&name)
-                }
-            },
-            _ => None   
+        match output {
+            CXTemplateOutput::Type(ty) => Some(ty),
+
+            _ => unreachable!("Expected a type output from template generation, found a different type"),
         }
     }
     
     pub fn get_existing_template(&self, name: &str, template_input: &CXTemplateInput) -> Option<&CXType> {
-        let mangled_name = mangle_templated_type(name, &template_input.types);
+        let mangled_name = mangle_templated_type(name, &template_input.params);
         
         self.get(&mangled_name)
     }
 }
 
 impl CXFunctionMap {
-    pub fn get_template(&mut self, name: &str, template_input: &CXTemplateInput) -> CXResult<(Option<CXTemplateRequest>, &CXFunctionPrototype)> {
-        self.templated_types.get_mut(name)
+    pub fn get_template(&mut self, name: &str, template_input: &CXTemplateInput) -> CXResult<CXFunctionPrototype> {
+        self.templated_types.get(name)
             .and_then(|template| template.generate(name, template_input))
-            .and_then(|(request, output)| match output {
-                CXTemplateOutput::FunctionPrototype(fn_proto) => Some((request, fn_proto)),
+            .and_then(|output| match output {
+                CXTemplateOutput::FunctionPrototype(fn_proto) => Some(fn_proto),
                 _ => None,
             })
     }

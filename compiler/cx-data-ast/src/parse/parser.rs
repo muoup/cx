@@ -6,7 +6,7 @@ use cx_data_lexer::TokenIter;
 
 pub type VarTable = ScopedMap<CXType>;
 
-#[derive(Debug, Clone, PartialEq, Copy, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Readable, Writable)]
 pub enum VisibilityMode {
     Package,
     Public,

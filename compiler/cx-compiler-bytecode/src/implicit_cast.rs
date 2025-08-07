@@ -1,6 +1,6 @@
 use crate::builder::BytecodeBuilder;
 use cx_data_ast::parse::ast::CXCastType;
-use cx_data_ast::parse::value_type::{get_intrinsic_type, CXType, CXTypeKind};
+use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::VirtualInstruction::IntToPtrDiff;
 use cx_data_bytecode::{BCPtrBinOp, ValueID, VirtualInstruction};
 
@@ -47,14 +47,14 @@ pub(crate) fn implicit_cast(
                         VirtualInstruction::SExtend {
                             value,
                         },
-                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: true }.into()
                     )?
                 } else {
                     builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
-                        CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: false }.into()
                     )?
                 }
             } else {
@@ -70,7 +70,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::IntToPtrDiff => {
-            let CXTypeKind::PointerTo { inner, .. } =
+            let CXTypeKind::PointerTo { inner_type: inner, .. } =
                 to_type.intrinsic_type_kind(&builder.cx_type_map)?.clone() else {
                     panic!("INTERNAL PANIC: Invalid pointer type")
                 };
@@ -86,14 +86,14 @@ pub(crate) fn implicit_cast(
                         VirtualInstruction::SExtend {
                             value,
                         },
-                        CXTypeKind::Integer { bytes: 8, signed: true }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: true }.into()
                     )?
                 } else {
                     builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
-                        CXTypeKind::Integer { bytes: 8, signed: false }.to_val_type()
+                        CXTypeKind::Integer { bytes: 8, signed: false }.into()
                     )?
                 }
             } else {

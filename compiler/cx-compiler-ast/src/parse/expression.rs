@@ -1,17 +1,17 @@
-use std::collections::HashMap;
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use crate::parse::global_scope::{parse_body};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::type_mapping::{contextualize_template_args, contextualize_type};
 use cx_data_ast::parse::value_type::CXTypeKind;
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
-use cx_util::{log_error};
+use cx_util::{log_error, point_log_error};
 use crate::parse::structured_initialization::parse_structured_initialization;
-use crate::parse::template::parse_template_args;
 use crate::parse::typing::is_type_decl;
-use crate::preparse::typing::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
+use crate::preparse::preparser::{parse_intrinsic, parse_std_ident};
+use crate::preparse::typing::{parse_base_mods, parse_initializer, parse_specifier, parse_template_args, parse_type_base};
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr.kind {
@@ -75,12 +75,15 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
         };
         _type.specifiers = specifiers;
 
+        let cx_type = contextualize_type(&data.ast.type_map, &_type)
+            .expect("PARSER ERROR: Failed to contextualize type in declaration");
+
         if try_next!(data.tokens, TokenKind::Assignment(None)) {
             let lhs_end_index = data.tokens.index;
             let expr = parse_expr(data)?;
             decls.push(
                 CXExprKind::BinOp {
-                    lhs: Box::new(CXExprKind::VarDeclaration { type_: _type, name }.into_expr(start_index, lhs_end_index)),
+                    lhs: Box::new(CXExprKind::VarDeclaration { type_: cx_type, name }.into_expr(start_index, lhs_end_index)),
                     rhs: Box::new(expr),
                     op: CXBinOp::Assign(None)
                 }.into_expr(start_index, data.tokens.index)
@@ -88,7 +91,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
         } else {
             decls.push(
                 CXExprKind::VarDeclaration { 
-                    type_: _type.clone(), 
+                    type_: cx_type,
                     name: name.clone() 
                 }.into_expr(start_index, data.tokens.index)
             );
@@ -252,12 +255,14 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
                 let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
                     log_error!("PARSER ERROR: Failed to parse type declaration for sizeof");
                 };
+                let cx_type = contextualize_type(&data.ast.type_map, &_type)
+                    .expect("PARSER ERROR: Failed to contextualize type in sizeof declaration");
 
                 CXExprKind::SizeOf {
                     expr: Box::new(
                         CXExprKind::VarDeclaration {
                             name: CXIdent::from("__internal_sizeof_dummy_decl"),
-                            type_: _type
+                            type_: cx_type
                         }.into_expr(start_index, data.tokens.index)
                     )
                 }
@@ -278,9 +283,11 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
                 log_error!("PARSER ERROR: Failed to parse type declaration for new");
             };
+            let cx_type = contextualize_type(&data.ast.type_map, &_type)
+                .expect("PARSER ERROR: Failed to contextualize type in new declaration");
             
-            match _type.kind {
-                CXTypeKind::Array { size, _type: inner_type } => {
+            match cx_type.kind {
+                CXTypeKind::Array { size, inner_type: inner_type } => {
                     let length = CXExprKind::IntLiteral {
                         bytes: 8,
                         val: size as i64
@@ -297,7 +304,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
                         array_length: Some(size)
                     }
                 },
-                _ => CXExprKind::New { _type, array_length: None },
+                _ => CXExprKind::New { _type: cx_type, array_length: None },
             }
         },
 
@@ -323,12 +330,17 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind>
     let ident = parse_std_ident(&mut data.tokens)?;
     
     if data.ast.function_map.has_template(ident.as_str()) {
-        let args = parse_template_args(&mut data.tokens)?;
-        
+        let Some(args) = parse_template_args(&mut data.tokens) else {
+            point_log_error!(data.tokens, "PARSER ERROR: Failed to parse template arguments for function identifier: {:#?}", ident);
+        };
+        let Some(contextualized) = contextualize_template_args(&data.ast.type_map, &args) else {
+            point_log_error!(data.tokens, "PARSER ERROR: Failed to contextualize template arguments for function identifier: {:#?}", ident);
+        };
+
         return Some(
             CXExprKind::TemplatedFnIdent {
                 fn_name: ident,
-                template_input: args
+                template_input: contextualized
             }
         );
     }

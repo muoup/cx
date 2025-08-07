@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+cx-data-lexer = { path = "../cx-data-lexer" }
+cx-data-pipeline = { path = "../cx-data-pipeline" }
+
+cx-util = { path = "../cx-util" }
