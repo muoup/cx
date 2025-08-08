@@ -276,7 +276,7 @@ pub(crate) fn parse_template_args(tokens: &mut TokenIter) -> Option<CXNaiveTempl
 
     assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Greater));
 
-    Some(CXNaiveTemplateInput { parameters: input_types })
+    Some(CXNaiveTemplateInput { params: input_types })
 }
 
 pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXNaiveType> {

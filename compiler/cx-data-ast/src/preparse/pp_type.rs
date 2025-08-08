@@ -59,7 +59,7 @@ pub struct CXNaiveParameter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveTemplateInput {
-    pub parameters: Vec<CXNaiveType>
+    pub params: Vec<CXNaiveType>
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]

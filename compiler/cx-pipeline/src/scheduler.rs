@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
+use cx_data_ast::parse::type_mapping::{contextualize_fn_map, contextualize_type_map};
 use cx_data_lexer::TokenIter;
 use cx_util::format::{dump_all, dump_data};
 use crate::template_realizing::realize_templates;
@@ -119,10 +120,10 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let imports = context.module_db.import_data
+            let pp_data = context.module_db.preparse_contents
                 .get_cloned(&job.unit);
-
-            let mut new_jobs = imports.iter()
+            
+            let mut new_jobs = pp_data.imports.iter()
                 .map(|import| {
                     CompilationJob::new(
                         vec![],
@@ -165,8 +166,8 @@ fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationU
         }
     }
     
-    retrieve_map_data(context, &context.module_db.naive_type_data, unit)?;
-    retrieve_map_data(context, &context.module_db.naive_function_data, unit)?;
+    // retrieve_map_data(context, &context.module_db.naive_type_data, unit)?;
+    // retrieve_map_data(context, &context.module_db.naive_function_data, unit)?;
 
     Some(())
 }
@@ -236,13 +237,20 @@ pub(crate) fn perform_job(
                 }
 
                 for (name, _type) in other_pp_data.function_definitions.iter() {
-                    pp_data.function_definitions.insert(name.clone(), _type.clone());
+                    pp_data.function_definitions.push((name.clone(), _type.clone()));
                 }
             }
+            
+            let cx_type_map = contextualize_type_map(
+                &pp_data.type_definitions, &pp_data.type_templates
+            ).expect("Type map contextualization failed");
+            let cx_fn_map = contextualize_fn_map(
+                &cx_type_map, &pp_data.function_definitions, &pp_data.function_templates
+            ).expect("Function map contextualization failed");
 
             let base_ast = CXAST {
-                type_map: self_type_map,
-                function_map: self_function_map,
+                type_map: cx_type_map, 
+                function_map: cx_fn_map,
 
                 ..Default::default()
             };
@@ -260,29 +268,8 @@ pub(crate) fn perform_job(
                 .get(&job.unit);
             let mut self_ast = context.module_db.naive_ast
                 .take(&job.unit);
-            let self_type_map = context.module_db.naive_type_data
-                .get_cloned(&job.unit);
-
-            let import_type_maps = context.module_db.import_data.get(&job.unit)
-                .iter()
-                .map(|import| {
-                    context.module_db.naive_type_data.get(&CompilationUnit::from_str(import.as_str()))
-                })
-                .collect::<Vec<_>>();
-            let import_function_maps = context.module_db.import_data.get_cloned(&job.unit)
-                .into_iter()
-                .map(|import| {
-                    context.module_db.naive_function_data.get(&CompilationUnit::from_str(import.as_str()))
-                })
-                .collect::<Vec<_>>();
             
-            self_ast.type_map = collapse_typemap(&self_type_map, &import_type_maps)?;
-
-            for fn_map in import_function_maps {
-                for (name, function) in fn_map.iter() {
-                    self_ast.function_map.insert(name.clone(), function.clone());
-                }
-            }
+            // TODO: Get templates from other imported modules
             
             let data = type_check(&lexemes, &mut self_ast)
                 .expect("Type checking failed");

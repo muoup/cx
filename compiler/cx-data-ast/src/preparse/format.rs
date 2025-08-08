@@ -47,7 +47,7 @@ impl Display for CXNaivePrototype {
 
 impl Display for CXNaiveTemplateInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let params_str = self.parameters.iter()
+        let params_str = self.params.iter()
             .map(|param| param.to_string())
             .collect::<Vec<_>>()
             .join(", ");

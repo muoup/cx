@@ -10,3 +10,4 @@ pub mod macros;
 pub mod template;
 
 mod format;
+mod precontextualizing;

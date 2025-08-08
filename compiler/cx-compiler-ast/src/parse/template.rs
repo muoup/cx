@@ -49,15 +49,10 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
 
     match global_expr {
         CXGlobalStmt::FunctionDefinition { prototype, body } => {
-            let template = CXTemplateTypeGen::function_template(generic_params.clone(), prototype.clone());
-            let prototype_name = prototype.name.clone();
-
-            data.ast.function_map.insert_template(prototype_name.to_string(), template.clone());
-
             Some(
                 Some(
                     CXGlobalStmt::TemplatedFunction {
-                        fn_name: prototype_name,
+                        fn_name: prototype.name.clone(),
                         body,
                     }
                 )

@@ -5,10 +5,7 @@ mod macros;
 mod importing;
 
 use crate::preparse::preparser::{preparse_stmt, PreparseResult};
-use cx_data_ast::parse::intrinsic_types::{INTRINSIC_IMPORTS, INTRINSIC_TYPES};
 use cx_data_ast::parse::parser::VisibilityMode;
-use cx_data_ast::parse::template::CXTemplateGenerator;
-use cx_data_ast::parse::value_type::CXTypeKind;
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};

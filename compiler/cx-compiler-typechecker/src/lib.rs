@@ -2,13 +2,13 @@ use crate::deconstructed_types::generate_deconstructor_data;
 use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTemplateRequest, CXTypeMap};
-use cx_data_ast::parse::template::{CXTemplateInput, CXTemplateOutput};
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_ast::parse::template::CXTemplateInput;
+use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::TypeCheckData;
-use cx_util::scoped_map::ScopedMap;
-use std::collections::HashMap;
 use cx_data_lexer::token::Token;
 use cx_util::mangling::mangle_templated_fn;
+use cx_util::scoped_map::ScopedMap;
+use std::collections::HashMap;
 
 pub mod typemap_collapsing;
 pub mod deconstructed_types;
@@ -62,22 +62,22 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, request: CXTemplateR
     let mut type_map = ast.type_map.clone();
     let mut fn_map = ast.function_map.clone();
     
-    let generator = ast.function_map.get_generator(&request.template_name)
+    let args = ast.function_map
+        .template_args(&request.template_name)
         .unwrap_or_else(|| {
             panic!("Template generator not found in type map for {}", request.template_name)
         });
     
-    for (name, _type) in generator.generic_types.iter().zip(&request.input.params) {
+    for (name, _type) in args.iter().zip(&request.input.params) {
         type_map.insert(name.clone(), _type.clone());
     }
     
-    let generator = fn_map.get_generator_mut(&request.template_name)
+    let mangled_name = mangle_templated_fn(
+        &request.template_name,
+        &request.input.params
+    );
+    let mut prototype = fn_map.get_template(&ast.type_map, &request.template_name, request.input)
         .expect("Template generator not found in type map");
-    
-    let CXTemplateOutput::FunctionPrototype(prototype) = generator.generate(&request.template_name, &request.input)? else {
-        unreachable!("Invalid generator.generate output for function template");
-    };
-    let mut prototype = prototype.clone();
     
     let mut env = TypeEnvironment {
         tokens,
@@ -108,10 +108,7 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, request: CXTemplateR
         .clone();
     
     typecheck_function(&mut env, &prototype, &mut body)?;
-    prototype.name.data = mangle_templated_fn(
-        prototype.name.as_str(),
-        &request.input.params
-    );
+    prototype.name.data = mangled_name;
     
     Some((env.typecheck_data, prototype.clone(), CXGlobalStmt::FunctionDefinition {
         prototype,
@@ -132,8 +129,8 @@ pub(crate) struct TypeEnvironment<'a> {
     current_prototype: Option<CXFunctionPrototype>,
 }
 
-impl<'a> TypeEnvironment<'a> {
-    pub fn function_template_prototype(&mut self, name: &str, template_input: &CXTemplateInput) -> Option<CXFunctionPrototype> {
-        self.fn_map.get_template(name, template_input)
+impl TypeEnvironment<'_> {
+    pub fn function_template_prototype(&self, name: &str, input: CXTemplateInput) -> Option<CXFunctionPrototype> {
+        self.fn_map.get_template(self.type_map, name, input)
     }
 }

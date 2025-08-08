@@ -1,39 +1,56 @@
+use std::collections::HashMap;
+use cx_util::{log_error, CXResult};
 use crate::parse::ast::{CXFunctionPrototype, CXParameter};
-use crate::parse::maps::CXTypeMap;
-use crate::parse::template::{CXTemplateInput, CXTemplateTypeGen};
+use crate::parse::maps::{CXFunctionMap, CXTypeMap};
+use crate::parse::precontextualizing::precontextualize_type;
+use crate::parse::template::{CXTemplateInput, CXTemplateTypeGen, CXTypeGenerator};
 use crate::parse::value_type::{CXType, CXTypeKind};
-use crate::preparse::{CXNaiveTypeMap, CXNaiveTypeTemplates};
+use crate::preparse::{CXNaiveFunctionMap, CXNaiveFunctionTemplates, CXNaiveTypeMap, CXNaiveTypeTemplates};
 use crate::preparse::pp_type::{CXNaiveType, CXNaiveTypeKind, CXNaivePrototype, CXNaiveParameter, CXNaiveTemplateInput};
 
-pub fn contextualize_type_map(type_map: &CXNaiveTypeMap, type_templates: &CXNaiveTypeTemplates) -> CXTypeMap {
+pub fn contextualize_type_map(type_map: &CXNaiveTypeMap, type_templates: &CXNaiveTypeTemplates) -> CXResult<CXTypeMap> {
     let mut cx_type_map = CXTypeMap::default();
 
     for template in type_templates.iter() {
         cx_type_map.insert_template(
             template.name.as_string(),
-            CXTemplateTypeGen::from(template)
-        )
+            CXTemplateTypeGen::from(template.clone())
+        );
     }
 
     for (name, naive_type) in type_map.iter() {
+        let Some(cx_type) = precontextualize_type(&cx_type_map, type_map, naive_type) else {
+            log_error!("Failed to contextualize type: {name}");
+        };
 
+        cx_type_map.insert(name.clone(), cx_type);
     }
 
-    cx_type_map
+    Some(cx_type_map)
 }
 
-fn intrinsic_kind<'a>(type_map: &CXNaiveType, naive_type: &'a CXNaiveType) -> Option<&'a CXNaiveType> {
-    match type_map {
-        CXNaiveTypeKind::Identifier { name, .. } => {
-            intrinsic_kind(type_map, type_map.get(name.as_str())?)
-        },
+pub fn contextualize_fn_map(type_map: &CXTypeMap, naive_fn_map: &CXNaiveFunctionMap, function_templates: &CXNaiveFunctionTemplates) -> CXResult<CXFunctionMap> {
+    let mut cx_fn_map = CXFunctionMap::new();
 
-        _ => Some(naive_type)
+    for (name, naive_prototype) in naive_fn_map.iter() {
+        let Some(cx_prototype) = contextualize_fn_prototype(type_map, naive_prototype) else {
+            log_error!("Failed to contextualize function prototype: {name}");
+        };
+
+        cx_fn_map.insert(name.clone(), cx_prototype);
     }
+    
+    for template in function_templates.iter() {
+        let template_gen = CXTemplateTypeGen::from(template.clone());
+        
+        cx_fn_map.insert_template(template.name.to_string(), template_gen);
+    }
+
+    Some(cx_fn_map)
 }
 
 pub fn contextualize_template_args(type_map: &CXTypeMap, template_args: &CXNaiveTemplateInput) -> Option<CXTemplateInput> {
-    let args = template_args.parameters.iter()
+    let args = template_args.params.iter()
         .map(|arg| contextualize_type(type_map, arg))
         .collect::<Option<Vec<_>>>()?;
 
@@ -53,7 +70,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
             let input = contextualize_template_args(type_map, input)?;
 
-            type_map.get_template(name.as_str(), &input)
+            type_map.get_template(type_map, name.as_str(), input)
                 .map(|template| template.clone())
         },
 
@@ -169,7 +186,6 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         },
     }
 }
-
 
 pub fn contextualize_fn_prototype(type_map: &CXTypeMap, prototype: &CXNaivePrototype)
     -> Option<CXFunctionPrototype> {

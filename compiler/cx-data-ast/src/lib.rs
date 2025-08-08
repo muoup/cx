@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-use cx_data_lexer::token::Token;
 use crate::parse::ast::CXAST;
-use crate::parse::maps::{CXFunctionMap, CXTypeMap};
 use crate::preparse::{CXNaiveFunctionMap, CXNaiveFunctionTemplates, CXNaiveTypeMap, CXNaiveTypeTemplates};
-use crate::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType};
+use cx_data_lexer::token::Token;
 
 pub mod parse;
 pub mod preparse;

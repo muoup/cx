@@ -34,7 +34,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 log_error!("TYPE ERROR: Unknown template function {fn_name}");
             }
             
-            let Some(template) = env.function_template_prototype(fn_name.as_str(), template_input) else {
+            let Some(template) = env.function_template_prototype(fn_name.as_str(), template_input.clone()) else {
                 log_error!("TYPE ERROR: Could not generate template for {fn_name} with input {template_input:?}");
             };
             

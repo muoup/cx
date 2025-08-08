@@ -17,17 +17,12 @@ pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
     
     pub lex_tokens: ModuleMap<Vec<Token>>,
-
     pub preparse_contents: ModuleMap<PreparseContents>,
-    pub naive_type_data: ModuleMap<CXTypeMap>,
-    pub naive_function_data: ModuleMap<CXFunctionMap>,
-    
-    pub import_data: ModuleMap<Vec<String>>,
 
     pub naive_ast: ModuleMap<CXAST>,
     pub typechecked_ast: ModuleMap<CXAST>,
-    pub typecheck_data: ModuleMap<TypeCheckData>,
     
+    pub typecheck_data: ModuleMap<TypeCheckData>,
     pub bytecode_data: ModuleMap<ProgramBytecode>
 }
 
@@ -37,11 +32,7 @@ impl ModuleData {
             do_not_reexport: RwLock::new(HashSet::new()),
             
             lex_tokens: ModuleMap::new(".cx-tokens"),
-            
-            naive_type_data: ModuleMap::new(".cx-types"),
-            naive_function_data: ModuleMap::new(".cx-fns"),
-            
-            import_data: ModuleMap::new(".cx-imports"),
+            preparse_contents: ModuleMap::new(".cx-preparse"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
             typechecked_ast: ModuleMap::new(".cx-ast"),
@@ -52,8 +43,7 @@ impl ModuleData {
     }
     
     pub fn store_data(&self, context: &GlobalCompilationContext) {
-        self.naive_type_data.store_all_data(context);
-        self.naive_function_data.store_all_data(context);
+        // TODO: Re-implement data storage
     }
     
     pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {
