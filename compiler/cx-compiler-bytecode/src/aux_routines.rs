@@ -84,13 +84,13 @@ pub(crate) fn get_cx_struct_field_by_index(
 }
 
 fn variable_requires_nulling(
-    type_map: &CXTypeMap,
+    builder: &BytecodeBuilder,
     cx_type: &CXType
 ) -> Option<bool> {
-    match cx_type.intrinsic_type_kind(type_map)? {
+    match cx_type.intrinsic_type_kind(&builder.cx_type_map)? {
         CXTypeKind::StrongPointer { .. } => Some(true),
         
-        _ => Some(cx_type.has_destructor(type_map)),
+        _ => Some(builder.type_check_data.destructor_exists(cx_type))
     }
 }
 
@@ -120,7 +120,7 @@ pub(crate) fn allocate_variable(
         builder.set_current_block(current_block);
     }
     
-    if variable_requires_nulling(&builder.cx_type_map, var_type)? {
+    if variable_requires_nulling(&builder, var_type)? {
         builder.add_instruction_bt(
             VirtualInstruction::ZeroMemory {
                 memory,

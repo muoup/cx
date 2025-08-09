@@ -18,18 +18,6 @@ impl BytecodeBuilder {
     pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
         convert_cx_prototype(&self.cx_type_map, cx_proto)
     }
-    
-    pub(crate) fn cx_type_to_prototype(
-        &self,
-        cx_type: &CXType
-    ) -> Option<BCFunctionPrototype> {
-        let Some(CXTypeKind::Function { prototype })
-            = cx_type.intrinsic_type_kind(&self.cx_type_map) else {
-            panic!("Expected function type, got: {cx_type:?}");
-        };
-        
-        self.convert_cx_prototype(prototype)
-    }
 
     pub(crate) fn cx_ptr_binop(
         &self,
@@ -289,7 +277,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::PointerTo { nullable: false, .. } =>
                 BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
-            CXTypeKind::StrongPointer { is_array: false, inner, .. } => {
+            CXTypeKind::StrongPointer { is_array: false, inner_type: inner, .. } => {
                 let inner_as_bc = convert_fixed_type(cx_type_map, inner)?;
                 
                 BCTypeKind::Pointer { nullable: false, dereferenceable: inner_as_bc.fixed_size() as u32 }

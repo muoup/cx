@@ -16,6 +16,8 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
+use cx_data_ast::parse::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_data_ast::parse::maps::CXDestructorMap;
 use cx_data_ast::parse::type_mapping::{contextualize_fn_map, contextualize_type_map};
 use cx_data_lexer::TokenIter;
 use cx_util::format::{dump_all, dump_data};
@@ -201,13 +203,20 @@ pub(crate) fn perform_job(
             let preprocess = preprocess(file_contents.as_str());
             let tokens = lex(preprocess.as_str());
 
-            let output = preparse(
+            let mut output = preparse(
                 TokenIter {
                     slice: &tokens,
                     index: 0,
                 }
             ).unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
 
+            if !job.unit.as_str().contains("std") {
+                output.imports
+                    .extend(
+                        INTRINSIC_IMPORTS.iter().map(|s| s.to_string())
+                    );
+            }
+            
             context.module_db.lex_tokens
                 .insert(job.unit.clone(), tokens);
             context.module_db.preparse_contents
@@ -250,11 +259,17 @@ pub(crate) fn perform_job(
             let cx_fn_map = contextualize_fn_map(
                 &cx_type_map, &pp_data.function_definitions, &pp_data.function_templates
             ).expect("Function map contextualization failed");
+            
+            let cx_destructor_defs = pp_data.destructor_definitions
+                .iter()
+                .filter_map(|name| Some((cx_type_map.get(name.as_str()).cloned()?, name.clone())))
+                .collect::<CXDestructorMap>();
 
             let base_ast = CXAST {
                 type_map: cx_type_map, 
                 function_map: cx_fn_map,
-
+                destructor_map: cx_destructor_defs,
+                
                 ..Default::default()
             };
 

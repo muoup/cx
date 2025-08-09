@@ -135,7 +135,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
                 CXType::new(
                     0,
                     CXTypeKind::StrongPointer {
-                        inner: Box::new(inner_type),
+                        inner_type: Box::new(inner_type),
                         is_array: *is_array,
                     }
                 )
@@ -156,7 +156,6 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
                     CXTypeKind::Structured {
                         name: name.clone(),
                         fields,
-                        has_destructor: false
                     }
                 )
             )

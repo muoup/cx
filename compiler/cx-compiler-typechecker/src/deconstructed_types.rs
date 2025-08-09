@@ -6,8 +6,6 @@ use crate::{TypeCheckResult, TypeEnvironment};
 #[derive(Default)]
 struct GenerationData {
     seen: HashSet<u64>,
-    generated_for: HashSet<u64>,
-
     deconstructors: Vec<DeconstructorData>,
 }
 
@@ -26,40 +24,24 @@ fn generate_deconstructor_data_for_type(
     data: &mut GenerationData,
     type_: &CXType
 ) -> TypeCheckResult<()> {
-    let _type = type_.intrinsic_type(&env.type_map)?;
-
     if data.seen.contains(&type_.uuid) {
         return Some(());
     }
 
     data.seen.insert(type_.uuid);
 
-    match &_type.kind {
-        CXTypeKind::StrongPointer { inner, is_array } => {
+    match &type_.kind {
+        CXTypeKind::StrongPointer { inner_type: inner, .. } =>
             generate_deconstructor_data_for_type(env, data, inner),
 
-            let allocation_type = match is_array {
-                
-            };
-            
-            
-        },
-
-        CXTypeKind::Structured { fields , .. } => {
+        CXTypeKind::Structured { fields, .. } => {
             let mut deconstructor_data = DeconstructorData {
                 _type: type_.clone(),
-                
-                rec_deconstructor_calls: Vec::new(),
-                free_indices: Vec::new(),
-                
-                deallocations: Vec::new(),
+                deconstructions: Vec::new(),
             };
             
-            if _type.has_destructor(env.type_map) || 
-                fields.iter().any(|(_, field_type)| field_type.is_strong_pointer()) {
-                data.generated_for.insert(type_.uuid);
-            }
-
+            let mut deconstructor_needed = env.typecheck_data.destructor_exists(type_);
+            
             for (i, (_, field_type)) in fields.iter().enumerate() {
                 generate_deconstructor_data_for_type(env, data, field_type)?;
                 
@@ -74,24 +56,23 @@ fn generate_deconstructor_data_for_type(
                 
                 let deconstruction_type = DeconstructionType {
                     index: i,
-                    has_deconstructor: data.generated_for.contains(&field_type.uuid),
+                    has_destructor: env.destructor_exists(field_type),
                     allocation_type,
                 };
                 
-                deconstructor_data.deallocations.push(deconstruction_type);
-
-                if data.generated_for.contains(&field_type.uuid) {
-                    deconstructor_data.rec_deconstructor_calls.push(i);
-                }
+                deconstructor_needed |= 
+                       deconstruction_type.has_destructor 
+                    || !matches!(deconstruction_type.allocation_type, AllocationType::None);
                 
-                if field_type.is_strong_pointer() {
-                    deconstructor_data.free_indices.push(i);
-                }
+                deconstructor_data.deconstructions.push(deconstruction_type);
             }
             
-            if deconstructor_data.deallocations.is_empty() {
+            if !deconstructor_needed {
                 return Some(());
             }
+            
+            println!("[deconstructor] generated for type: {}", type_);
+            println!("[deconstructor] data:\n{:#?}", deconstructor_data);
 
             data.deconstructors.push(deconstructor_data);
             Some(())

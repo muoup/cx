@@ -26,6 +26,10 @@ impl<Generator: TemplateGenerator> CXMap<Generator> {
     pub fn values(&self) -> impl Iterator<Item = &Generator::Output> {
         self.types.values()
     }
+    
+    pub fn templates(&self) -> impl Iterator<Item = &CXTemplateTypeGen<Generator>> {
+        self.templated_types.values()
+    }
 
     pub fn keys(&self) -> impl Iterator<Item = &String> {
         self.types.keys()
@@ -90,6 +94,7 @@ impl<Generator: TemplateGenerator> Default for CXMap<Generator> {
 
 pub type CXTypeMap = CXMap<CXTypeGenerator>;
 pub type CXFunctionMap = CXMap<CXFunctionGenerator>;
+pub type CXDestructorMap = HashMap<CXType, String>;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXTemplateRequest {

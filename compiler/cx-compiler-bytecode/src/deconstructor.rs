@@ -124,10 +124,8 @@ pub fn deconstruct_variable(
     type_: &CXType,
     unloaded: bool,
 ) -> BytecodeResult<bool> {
-    let intrinsic_type = type_.intrinsic_type(&builder.cx_type_map)?.clone();
-
-    match &intrinsic_type.kind {
-        CXTypeKind::StrongPointer { inner, is_array: false, .. } => {
+    match &type_.kind {
+        CXTypeKind::StrongPointer { inner_type: inner, is_array: false, .. } => {
             let val = load_mem(builder, val, unloaded)?;
 
             if_owned_call(
@@ -141,7 +139,7 @@ pub fn deconstruct_variable(
             Some(true)
         },
 
-        CXTypeKind::StrongPointer { inner, is_array: true, .. } => {
+        CXTypeKind::StrongPointer { inner_type: inner, is_array: true, .. } => {
             let deconstructor_opt = get_deconstructor(builder, inner.as_ref())?;
 
             let val = load_mem(builder, val, unloaded)?;
@@ -188,11 +186,9 @@ pub fn deconstruct_variable(
             let mut generated = false;
             let deconstructor_prototype = deconstructor_prototype(type_);
             
-            if let Some(name) = intrinsic_type.get_destructor(&builder.cx_type_map) {
+            if let Some(name) = builder.type_check_data.destructor_name(type_) {
                 let deconstructor = builder.add_instruction_bt(
-                    VirtualInstruction::FunctionReference {
-                        name: mangle_destructor(name),
-                    },
+                    VirtualInstruction::FunctionReference { name },
                     BCType::default_pointer()
                 )?;
                 
@@ -235,8 +231,7 @@ fn get_deconstructor(
     builder: &mut BytecodeBuilder,
     type_: &CXType
 ) -> BytecodeResult<Option<String>> {
-    let intrinsic_type = type_.intrinsic_type(&builder.cx_type_map)?;
-    let deconstructor_name = deconstructor_name(intrinsic_type);
+    let deconstructor_name = deconstructor_name(type_);
 
     if builder.fn_map.contains_key(&deconstructor_name) {
         Some(Some(deconstructor_name))
@@ -259,14 +254,13 @@ pub fn generate_deconstructor(
         BCType::default_pointer()
     )?;
     
-    if let Some(name) = data._type.get_destructor(&builder.cx_type_map) {
-        let deconstructor_name = mangle_destructor(name);
-        let deconstructor = builder.fn_ref(&deconstructor_name)?
+    if let Some(destructor_name) = builder.type_check_data.destructor_name(&data._type) {
+        let destructor = builder.fn_ref(&destructor_name)?
             .expect("INTERNAL PANIC: Deconstructor function not found");
 
         builder.add_instruction(
             VirtualInstruction::DirectCall {
-                func: deconstructor,
+                func: destructor,
                 args: vec![struct_val],
                 method_sig: deconstructor_prototype.clone(),
             },
@@ -277,8 +271,8 @@ pub fn generate_deconstructor(
     let as_bc = builder.convert_cx_type(&data._type)?;
 
     if let CXTypeKind::Structured { fields, .. } = &data._type.kind {
-        for dec_type in data.deallocations.iter() {
-            if !dec_type.has_deconstructor && matches!(dec_type.allocation_type, AllocationType::None) {
+        for dec_type in data.deconstructions.iter() {
+            if !dec_type.has_destructor && matches!(dec_type.allocation_type, AllocationType::None) {
                 continue;
             }
 

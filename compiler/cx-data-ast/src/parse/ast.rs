@@ -1,7 +1,7 @@
 use crate::parse::identifier::CXIdent;
-use crate::parse::maps::{CXFunctionMap, CXTypeMap};
+use crate::parse::maps::{CXDestructorMap, CXFunctionMap, CXTypeMap};
 use crate::parse::value_type::CXType;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 use crate::parse::template::CXTemplateInput;
@@ -19,6 +19,7 @@ pub struct CXAST {
     
     pub type_map: CXTypeMap,
     pub function_map: CXFunctionMap,
+    pub destructor_map: CXDestructorMap,
     
     pub global_variables: HashMap<String, CXGlobalVariable>
 }

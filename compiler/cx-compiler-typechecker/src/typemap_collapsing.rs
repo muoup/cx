@@ -34,7 +34,7 @@ pub fn collapse_type<MapRef>(_type: &mut CXType, self_map: &mut CXTypeMap, impor
 {
     match &mut _type.kind {
         CXTypeKind::Array { inner_type: inner, .. } |
-        CXTypeKind::StrongPointer { inner, .. } |
+        CXTypeKind::StrongPointer { inner_type: inner, .. } |
         CXTypeKind::PointerTo { inner_type: inner, .. }
             => collapse_type(inner.as_mut(), self_map, import_maps)?,
         

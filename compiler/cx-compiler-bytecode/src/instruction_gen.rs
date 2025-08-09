@@ -129,10 +129,9 @@ pub fn generate_instruction(
                 type_ => log_error!("Invalid function pointer type: {type_}"),
             };
             
-            let bc_prototype = builder.convert_cx_prototype(&prototype)?;
             let mut args = vec![];
             
-            if bc_prototype.return_type.is_structure() {
+            if prototype.return_type.is_structured() {
                 let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
                 let dereferenceable = buffer_type.fixed_size() as u32;
 

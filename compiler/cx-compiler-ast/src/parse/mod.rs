@@ -12,14 +12,6 @@ mod parsing_tools;
 mod structured_initialization;
 pub mod template;
 
-#[derive(Debug)]
-pub struct CXPreASTInfo {
-    pub type_map: CXTypeMap,
-    pub public_types: Vec<String>,
-    pub imports: Vec<String>,
-    pub templated_identifiers: Vec<String>
-}
-
 pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> {
     None
 }

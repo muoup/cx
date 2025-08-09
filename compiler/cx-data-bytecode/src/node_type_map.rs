@@ -1,7 +1,8 @@
-use cx_data_ast::parse::ast::CXExpr;
-use cx_data_ast::parse::maps::{CXTemplateRequest, CXTypeMap};
+use cx_data_ast::parse::ast::{CXExpr, CXAST};
+use cx_data_ast::parse::maps::{CXDestructorMap, CXTemplateRequest, CXTypeMap};
 use cx_data_ast::parse::value_type::CXType;
 use std::collections::{HashMap, HashSet};
+use cx_util::mangling::mangle_destructor;
 
 #[derive(Clone, Debug)]
 pub enum AllocationType {
@@ -13,17 +14,14 @@ pub enum AllocationType {
 #[derive(Clone, Debug)]
 pub struct DeconstructionType {
     pub index: usize,
-    pub has_deconstructor: bool,
+    pub has_destructor: bool,
     pub allocation_type: AllocationType
 }
 
 #[derive(Clone, Debug)]
 pub struct DeconstructorData {
     pub _type: CXType,
-    pub rec_deconstructor_calls: Vec<usize>,
-    pub free_indices: Vec<usize>,
-    
-    pub deallocations: Vec<DeconstructionType>
+    pub deconstructions: Vec<DeconstructionType>
 }
 
 #[derive(Debug, Default, Clone)]
@@ -34,6 +32,7 @@ pub struct TypeCheckData {
     // destructor -- user defined ~[type_name] function
     // deconstructor -- compiler generated function for language-features (i.e. strong pointers)
     pub deconstructor_data: Vec<DeconstructorData>,
+    pub destructor_map: CXDestructorMap,
     pub requests: Vec<CXTemplateRequest>,
     
     pub full_type_map: CXTypeMap,
@@ -45,8 +44,10 @@ impl TypeCheckData {
         expr.uuid
     }
 
-    pub fn new() -> Self {
+    pub fn new(destructor_map: &CXDestructorMap) -> Self {
         TypeCheckData {
+            destructor_map: destructor_map.clone(),
+            
             ..Default::default()
         }
     }
@@ -80,5 +81,14 @@ impl TypeCheckData {
     
     pub fn function_defers(&self, name: &str) -> bool {
         self.deferring_functions.contains(name)
+    }
+    
+    pub fn destructor_name(&self, _type: &CXType) -> Option<String> {
+        self.destructor_map.get(_type)
+            .map(|name| mangle_destructor(name))
+    }
+    
+    pub fn destructor_exists(&self, _type: &CXType) -> bool {
+        self.destructor_map.contains_key(_type)
     }
 }

@@ -33,7 +33,7 @@ pub(crate) fn realize_templates(
                 .get(&CompilationUnit::from_str(&source));
 
             let (data, prototype, stmt) = template_fn_typecheck(&lex, &other_ast, request)?;
-            
+
             new_methods.push((prototype, stmt));
             typecheck_data.extend(data);
         }

@@ -431,7 +431,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 CXType::new(
                     _type.specifiers,
                     CXTypeKind::StrongPointer {
-                        inner: Box::new(_type.clone()),
+                        inner_type: Box::new(_type.clone()),
                         is_array: array_length.is_some()
                     }
                 )
@@ -562,7 +562,7 @@ pub(crate) fn coerce_value(
 
         // If the value is an already owned lvalue strong pointer,
         // it should be semantically equivalent to a plain [weak] pointer
-        CXTypeKind::StrongPointer { inner, .. } => 
+        CXTypeKind::StrongPointer { inner_type: inner, .. } => 
             modify_load(
                 env, expr,
                 CXType::new(

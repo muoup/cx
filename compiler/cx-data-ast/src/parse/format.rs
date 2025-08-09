@@ -270,7 +270,7 @@ impl Display for CXTypeKind {
                 write!(f, "f{float_bytes}")
             },
             CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { fields, name, has_destructor } => {
+            CXTypeKind::Structured { fields, name } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
@@ -281,7 +281,7 @@ impl Display for CXTypeKind {
                     "".to_string()
                 };
 
-                write!(f, "struct {name_str} {{ {field_strs} }} {{ has_destructor: {} }}", has_destructor)
+                write!(f, "struct {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Union { fields, name } => {
                 let field_strs = fields.iter()
@@ -316,7 +316,7 @@ impl Display for CXTypeKind {
                     Ok(())
                 }
             },
-            CXTypeKind::StrongPointer { inner, .. } => {
+            CXTypeKind::StrongPointer { inner_type: inner, .. } => {
                 write!(f, "{inner} strong*")
             },
             CXTypeKind::Array { size, inner_type: _type } => {

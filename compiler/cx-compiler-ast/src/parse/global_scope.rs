@@ -1,10 +1,9 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable, CXParameter, CXAST};
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable, CXParameter, CXAST};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::parse::type_mapping::{contextualize_fn_prototype, contextualize_type};
-use cx_data_ast::parse::value_type::CXTypeKind;
 use cx_data_ast::preparse::pp_type::CXNaivePrototype;
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::parse::template::parse_template;
@@ -62,17 +61,7 @@ pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGloba
     
     let name = name.clone();
     let body = parse_body(data)?;
-    
-    let Some(type_) = data.ast.type_map.get_mut(&name) else {
-        point_log_error!(data.tokens, "PARSER ERROR: Destructor for {} must be in the same file as the type declaration!", name);
-    };
-    
-    let CXTypeKind::Structured { has_destructor, .. } = &mut type_.kind else {
-        point_log_error!(data.tokens, "PARSER ERROR: Destructor can only be defined for structured types!");
-    };
-    
-    *has_destructor = true;
-    
+
     Some(
         Some(
             CXGlobalStmt::DestructorDefinition {

@@ -80,11 +80,9 @@ pub(crate) fn precontextualize_type(
             
             Some(
                 CXType::from(
-                    CXTypeKind::PointerTo {
+                    CXTypeKind::StrongPointer {
                         inner_type: Box::new(inner_type),
-                        sizeless_array: *is_array,
-                        weak: false,
-                        nullable: true,
+                        is_array: *is_array,
                     }
                 )
             )
@@ -144,7 +142,6 @@ pub(crate) fn precontextualize_type(
                     CXTypeKind::Structured {
                         name: name.clone(),
                         fields,
-                        has_destructor: false
                     }
                 )
             )
