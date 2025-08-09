@@ -77,7 +77,7 @@ fn generate_params(
 ) -> Option<()> {
     let is_structured_return = prototype.return_type.is_structured();
     
-    for (i, arg) in prototype.params.iter().enumerate() {
+    for (mut i, arg) in prototype.params.iter().enumerate() {
         let bc_type = builder.convert_cx_type(&arg._type)?;
         
         let memory = allocate_variable(
@@ -86,11 +86,7 @@ fn generate_params(
             &arg._type
         )?;
 
-        let i = if is_structured_return {
-            i + 1
-        } else {
-            i
-        };
+        if is_structured_return { i += 1; };
 
         let value = builder.add_instruction_bt(
             VirtualInstruction::FunctionParameter {

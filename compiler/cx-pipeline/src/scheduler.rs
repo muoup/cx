@@ -236,14 +236,17 @@ pub(crate) fn perform_job(
                     pp_data.type_definitions.insert(name.clone(), _type.clone());
                 }
 
-                for (name, _type) in other_pp_data.function_definitions.iter() {
-                    pp_data.function_definitions.push((name.clone(), _type.clone()));
+                for (name, visibility, func) in other_pp_data.function_definitions.iter() {
+                    if visibility != &VisibilityMode::Public { continue; };
+                    
+                    pp_data.function_definitions.push((name.clone(), VisibilityMode::Private, func.clone()));
                 }
             }
             
             let cx_type_map = contextualize_type_map(
                 &pp_data.type_definitions, &pp_data.type_templates
             ).expect("Type map contextualization failed");
+            
             let cx_fn_map = contextualize_fn_map(
                 &cx_type_map, &pp_data.function_definitions, &pp_data.function_templates
             ).expect("Function map contextualization failed");

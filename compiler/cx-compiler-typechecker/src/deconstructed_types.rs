@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::node_type_map::{AllocationType, DeconstructionType, DeconstructorData};
-use uuid::uuid;
 use crate::{TypeCheckResult, TypeEnvironment};
 
 #[derive(Default)]
@@ -36,10 +35,17 @@ fn generate_deconstructor_data_for_type(
     data.seen.insert(type_.uuid);
 
     match &_type.kind {
-        CXTypeKind::StrongPointer { inner, .. } =>
+        CXTypeKind::StrongPointer { inner, is_array } => {
             generate_deconstructor_data_for_type(env, data, inner),
 
-        CXTypeKind::Structured { fields, .. } => {
+            let allocation_type = match is_array {
+                
+            };
+            
+            
+        },
+
+        CXTypeKind::Structured { fields , .. } => {
             let mut deconstructor_data = DeconstructorData {
                 _type: type_.clone(),
                 

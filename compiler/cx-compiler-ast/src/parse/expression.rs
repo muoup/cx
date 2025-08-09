@@ -156,7 +156,7 @@ fn compress_one_expr(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperat
 
             let start_index = lhs.start_index;
             let end_index = rhs.end_index;
-            
+
             let acc = CXExprKind::BinOp {
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),

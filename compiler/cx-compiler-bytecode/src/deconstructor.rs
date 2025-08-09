@@ -19,6 +19,14 @@ fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
     let deconstructor_name = deconstructor_name(type_);
     let this_param_type = BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 });
 
+    let mut name = match &type_.kind {
+        CXTypeKind::Structured { name: Some(name), .. } => format!("deconstruct_{}", name.as_string()),
+        
+        _ => "deconstruct".to_string(),
+    };
+    
+    name.push_str(&type_.uuid.to_string());
+    
     BCFunctionPrototype {
         name: deconstructor_name,
         return_type: BCType::unit(),

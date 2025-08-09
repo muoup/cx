@@ -19,6 +19,10 @@ pub(crate) fn precontextualize_type(
     match &ty.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
             let Some(inner) = naive_type_map.get(name.as_str()) else {
+                if let Some(_type) = incomplete_type_map.get(name.as_str()) {
+                    return Some(_type.clone());
+                }
+                
                 log_error!("Type not found: {name}");
             };
             

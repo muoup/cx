@@ -146,14 +146,14 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> Option<PreparseRes
 pub(crate) fn parse_typedef(tokens: &mut TokenIter) -> Option<PreparseResult> {
     assert_token_matches!(tokens, keyword!(Typedef));
     
-    let (Some(name), mut type_) = parse_initializer(tokens)? else {
+    let (Some(name), type_) = parse_initializer(tokens)? else {
         point_log_error!(tokens, "Expected name for typedef expression");    
     };
     
     assert_token_matches!(tokens, punctuator!(Semicolon));
     
     Some(
-        PreparseResult::TypeDefinition(
+        PreparseResult::TypeDefinition (
             name.data,
             type_
         )

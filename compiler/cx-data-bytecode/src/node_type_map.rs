@@ -33,7 +33,6 @@ pub struct TypeCheckData {
     
     // destructor -- user defined ~[type_name] function
     // deconstructor -- compiler generated function for language-features (i.e. strong pointers)
-    pub has_destructor: Vec<String>,
     pub deconstructor_data: Vec<DeconstructorData>,
     pub requests: Vec<CXTemplateRequest>,
     
@@ -55,8 +54,6 @@ impl TypeCheckData {
     pub fn extend(&mut self, other: Self) {
         self.expr_types.extend(other.expr_types);
         self.deferring_functions.extend(other.deferring_functions);
-        
-        self.has_destructor.extend(other.has_destructor);
         self.deconstructor_data.extend(other.deconstructor_data);
     }
     

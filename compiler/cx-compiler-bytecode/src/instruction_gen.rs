@@ -117,7 +117,7 @@ pub fn generate_instruction(
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let rhs = comma_separated(rhs.as_ref());
             
-            let (prototype, direct_call) = match builder.get_expr_intrinsic_type(lhs.as_ref())? {
+            let (prototype, _) = match builder.get_expr_intrinsic_type(lhs.as_ref())? {
                 CXTypeKind::Function { prototype } => (*prototype, true),
                 CXTypeKind::PointerTo { inner_type: inner, .. } => {
                     let Some(CXTypeKind::Function { prototype }) =

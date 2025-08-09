@@ -188,7 +188,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 implicit_coerce(env, arg, expected_type._type.clone())?;
             }
 
-            for i in prototype.params.len()..args.len() {
+            for i in prototype.params.len() .. args.len() {
                 let va_type = coerce_value(env, args[i])?;
 
                 match va_type.intrinsic_type_kind(env.type_map)? {
@@ -318,6 +318,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 env.type_map.get("char")
                     .expect("INTERNAL ERROR: Expected char type to be present in type map")
                     .clone()
+                    .pointer_to()
                     .add_specifier(CX_CONST)
             )
         },
@@ -546,7 +547,8 @@ pub(crate) fn coerce_value(
     expr: &mut CXExpr,
 ) -> Option<CXType> {
     let expr_type = type_check_traverse(env, expr)?.clone();
-    if expr_type.is_memory_reference() {
+    
+    if !expr_type.is_memory_reference() {
         return Some(expr_type);   
     }
     

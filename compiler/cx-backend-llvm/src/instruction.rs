@@ -274,44 +274,12 @@ pub(crate) fn generate_instruction<'a>(
                     .cloned()
                     .unwrap();
                 
-                let current_prototype = global_state.function_map
-                    .get(&function_state.current_function)
-                    .unwrap();
-                
-                if current_prototype.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(
-                        global_state, 
-                        &current_prototype.return_type
-                    )?;
-                    let type_size = any_to_basic_type(llvm_type)?
-                        .size_of()
-                        .expect("Failed to get size of type");
-                    
-                    let return_param = function_val
-                        .get_nth_param(0)
-                        .unwrap()
-                        .into_pointer_value();
-                    
-                    function_state.builder
-                        .build_memcpy(
-                            return_param, 1,
-                            value.get_value().into_pointer_value(), 1,
-                            type_size
-                        )
-                        .unwrap();
-                    
-                    function_state
-                        .builder
-                        .build_return(Some(&return_param.as_basic_value_enum()))
-                        .unwrap();
-                } else {
-                    let basic_val = any_to_basic_val(value.get_value())?;
+                let basic_val = any_to_basic_val(value.get_value())?;
 
-                    function_state
-                        .builder
-                        .build_return(Some(&basic_val))
-                        .unwrap();   
-                }
+                function_state
+                    .builder
+                    .build_return(Some(&basic_val))
+                    .unwrap();   
                 
                 CodegenValue::NULL
             },

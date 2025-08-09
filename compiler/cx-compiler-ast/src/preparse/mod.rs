@@ -35,7 +35,7 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
             },
 
             PreparseResult::FunctionDefinition(signature) => {
-                contents.function_definitions.push((signature.name.to_string(), signature));
+                contents.function_definitions.push((signature.name.to_string(), data.visibility_mode, signature));
             },
 
             PreparseResult::DestructorDefinition(name) => {

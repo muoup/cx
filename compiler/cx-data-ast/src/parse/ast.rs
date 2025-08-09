@@ -268,6 +268,12 @@ pub enum CXExprKind {
 
 impl CXExprKind {
     pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpr {
+        let (start_index, end_index) = if start_index > end_index {
+            (0, 0)
+        } else {
+            (start_index, end_index)
+        };
+        
         CXExpr {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use cx_util::{log_error, CXResult};
 use crate::parse::ast::{CXFunctionPrototype, CXParameter};
+use crate::parse::intrinsic_types::INTRINSIC_TYPES;
 use crate::parse::maps::{CXFunctionMap, CXTypeMap};
 use crate::parse::precontextualizing::precontextualize_type;
 use crate::parse::template::{CXTemplateInput, CXTemplateTypeGen, CXTypeGenerator};
@@ -18,6 +19,10 @@ pub fn contextualize_type_map(type_map: &CXNaiveTypeMap, type_templates: &CXNaiv
         );
     }
 
+    for (name, _type) in INTRINSIC_TYPES.iter() {
+        cx_type_map.insert(name.to_string(), _type.clone().into());
+    }
+
     for (name, naive_type) in type_map.iter() {
         let Some(cx_type) = precontextualize_type(&cx_type_map, type_map, naive_type) else {
             log_error!("Failed to contextualize type: {name}");
@@ -32,7 +37,7 @@ pub fn contextualize_type_map(type_map: &CXNaiveTypeMap, type_templates: &CXNaiv
 pub fn contextualize_fn_map(type_map: &CXTypeMap, naive_fn_map: &CXNaiveFunctionMap, function_templates: &CXNaiveFunctionTemplates) -> CXResult<CXFunctionMap> {
     let mut cx_fn_map = CXFunctionMap::new();
 
-    for (name, naive_prototype) in naive_fn_map.iter() {
+    for (name, _, naive_prototype) in naive_fn_map.iter() {
         let Some(cx_prototype) = contextualize_fn_prototype(type_map, naive_prototype) else {
             log_error!("Failed to contextualize function prototype: {name}");
         };
@@ -64,7 +69,11 @@ pub fn contextualize_template_args(type_map: &CXTypeMap, template_args: &CXNaive
 pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Option<CXType> {
     match &naive_type.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
-            type_map.get(name.as_str()).cloned()
+            let Some(_type) = type_map.get(name.as_str()).cloned() else {
+                log_error!("Unknown type: {name}");
+            };
+
+            Some(_type)
         },
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
