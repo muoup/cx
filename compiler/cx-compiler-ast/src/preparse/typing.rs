@@ -58,6 +58,7 @@ pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXN
 
     tokens.back();
     goto_statement_end(tokens);
+    
     Some((name, CXNaiveTypeKind::Identifier { name: CXIdent::from("int"), predeclaration: PredeclarationType::None }))
 }
 

@@ -71,9 +71,6 @@ fn generate_deconstructor_data_for_type(
                 return Some(());
             }
             
-            println!("[deconstructor] generated for type: {}", type_);
-            println!("[deconstructor] data:\n{:#?}", deconstructor_data);
-
             data.deconstructors.push(deconstructor_data);
             Some(())
         },

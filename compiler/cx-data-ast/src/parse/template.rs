@@ -122,12 +122,14 @@ impl CXTypeGenerator {
     pub(crate) fn get_shell(&self) -> &CXNaiveType {
         &self.template.shell
     }
-    
-    pub fn types(&self) -> Vec<CXType> {
+}
+
+impl CXFunctionGenerator {
+    pub fn get_generated(&self) -> Vec<(CXTemplateInput, CXFunctionPrototype)> {
         self.generated.read()
-            .unwrap_or_else(|_| panic!("Deadlock detected"))
+            .unwrap()
             .iter()
-            .map(|(_, ty)| ty.clone())
-            .collect::<Vec<_>>()
+            .map(|(input, prototype)| (input.clone(), prototype.clone()))
+            .collect()
     }
 }

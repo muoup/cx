@@ -7,7 +7,7 @@ use cx_data_ast::parse::ast::CXFunctionPrototype;
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::parse::template::CXTemplateTypeGen;
-use cx_data_ast::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeTemplate};
+use cx_data_ast::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeTemplate, PredeclarationType};
 use cx_data_lexer::{keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::point_log_error;
 use crate::parse::global_scope::{parse_global_expr, parse_global_stmt};
@@ -56,6 +56,11 @@ pub(crate) fn preparse_stmt(data: &mut PreparseData) -> Option<PreparseResult> {
             data.visibility_mode = VisibilityMode::Private;
             try_next!(data.tokens, punctuator!(Colon));
             
+            Some(PreparseResult::Nothing)
+        },
+        
+        punctuator!(Semicolon) => {
+            data.tokens.next();
             Some(PreparseResult::Nothing)
         },
 
@@ -128,7 +133,8 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> Option<PreparseRes
         tok => todo!("parse_plain_typedef: {tok:?}")
     };
 
-    if matches!(type_, CXNaiveTypeKind::Identifier { .. }) {
+    if matches!(type_, CXNaiveTypeKind::Identifier { predeclaration, .. } 
+            if predeclaration != PredeclarationType::None) {
         data.tokens.index = starting_index; // Reset to the start if we didn't parse a type declaration
         return preparse_global_expr(data);
     }

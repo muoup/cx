@@ -26,7 +26,7 @@ impl<Generator: TemplateGenerator> CXMap<Generator> {
     pub fn values(&self) -> impl Iterator<Item = &Generator::Output> {
         self.types.values()
     }
-    
+
     pub fn templates(&self) -> impl Iterator<Item = &CXTemplateTypeGen<Generator>> {
         self.templated_types.values()
     }

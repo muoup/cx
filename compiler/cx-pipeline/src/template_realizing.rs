@@ -11,29 +11,21 @@ pub(crate) fn realize_templates(
 
     let mut typecheck_data = context.module_db
         .typecheck_data
-        .take(&unit);
-
+        .take(unit);
+    
+    let lex = context.module_db
+        .lex_tokens
+        .get(unit);
+    
     let mut new_methods = Vec::new();
-
-    while !typecheck_data.requests.is_empty() {
-        let take = std::mem::take(&mut typecheck_data.requests);
-        let requests = take.into_iter()
-            .map(|request| match ast.function_map.template_source(&request.template_name) {
-                Some(source) => (source, request),
-                None => (unit.identifier().to_string(), request)
-            })
-            .collect::<Vec<_>>();
-
-        for (source, request) in requests {
-            let other_ast = context.module_db
-                .typechecked_ast
-                .get(&CompilationUnit::from_str(&source));
-            let lex = context.module_db
-                .lex_tokens
-                .get(&CompilationUnit::from_str(&source));
-
-            let (data, prototype, stmt) = template_fn_typecheck(&lex, &other_ast, request)?;
-
+    
+    for template in ast.function_map.templates() {
+        let requests = template.generator.get_generated();
+        
+        for (input, prototype) in requests {
+            let (data, prototype, stmt) 
+                = template_fn_typecheck(&lex, &ast, input, prototype)?;
+            
             new_methods.push((prototype, stmt));
             typecheck_data.extend(data);
         }

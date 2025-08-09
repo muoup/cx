@@ -59,26 +59,21 @@ pub fn type_check(tokens: &[Token], ast: &mut CXAST) -> Option<TypeCheckData> {
     Some(type_environment.typecheck_data)
 }
 
-pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, request: CXTemplateRequest) -> Option<(TypeCheckData, CXFunctionPrototype, CXGlobalStmt)> {
+pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, input: CXTemplateInput, mut prototype: CXFunctionPrototype) -> Option<(TypeCheckData, CXFunctionPrototype, CXGlobalStmt)> {
     let mut type_map = ast.type_map.clone();
     let mut fn_map = ast.function_map.clone();
     
     let args = ast.function_map
-        .template_args(&request.template_name)
+        .template_args(prototype.name.as_str())
         .unwrap_or_else(|| {
-            panic!("Template generator not found in type map for {}", request.template_name)
+            panic!("Template generator not found in type map for {}", prototype.name)
         });
     
-    for (name, _type) in args.iter().zip(&request.input.params) {
+    for (name, _type) in args.iter().zip(&input.params) {
         type_map.insert(name.clone(), _type.clone());
     }
     
-    let mangled_name = mangle_templated_fn(
-        &request.template_name,
-        &request.input.params
-    );
-    let mut prototype = fn_map.get_template(&ast.type_map, &request.template_name, request.input)
-        .expect("Template generator not found in type map");
+    let mangled_name = mangle_templated_fn(prototype.name.as_str(), &input.params);
     
     let mut env = TypeEnvironment {
         tokens,
