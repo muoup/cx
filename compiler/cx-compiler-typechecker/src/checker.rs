@@ -3,7 +3,7 @@ use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalC
 use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
 use cx_data_ast::preparse::pp_type::CX_CONST;
-use cx_util::{expr_error_log, log_error};
+use cx_util::{expr_error_log, log_error, point_log_error};
 use crate::struct_typechecking::typecheck_access;
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
 use crate::structured_initialization::coerce_initializer_list;
@@ -132,7 +132,8 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     let mut operand_type = coerce_value(env, operand.as_mut())?;
 
                     let Some(_) = explicit_cast(env, operand, &mut operand_type, to_type) else {
-                        log_error!("TYPE ERROR: Invalid cast from {operand_type} to {to_type}");
+                        expr_error_log!(env.tokens, expr.start_index, expr.end_index,
+                            "TYPE ERROR: Invalid cast from {operand_type} to {to_type}");
                     };
 
                     Some(to_type.clone())
@@ -438,7 +439,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             )
         },
         
-        CXExprKind::InitializerList { indices } =>
+        CXExprKind::InitializerList { .. } =>
             Some(CXType::unit()),
         
         CXExprKind::Unit |

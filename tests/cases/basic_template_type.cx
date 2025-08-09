@@ -1,0 +1,23 @@
+import std::io;
+
+template <T : type>
+typedef T* Ptr;
+
+template <T : type>
+struct Data {
+    Ptr<T> ptr;
+};
+
+void access(Data<int> *data) {
+    *data.ptr = 42;
+}
+
+int main() {
+    int val;
+    Data<int> data = (Data<int>) {
+        .ptr = &val
+    };
+
+    access(&data);
+    printf("data: %d\n", *data.ptr); //Output: data: 42
+}

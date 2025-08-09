@@ -3,9 +3,9 @@ use crate::parse::maps::CXTypeMap;
 use crate::parse::type_mapping::{contextualize_fn_prototype, contextualize_type};
 use crate::parse::value_type::CXType;
 use crate::preparse::pp_type::{CXFunctionTemplate, CXNaiveType, CXTypeTemplate};
-use cx_util::rwlockser::RwLockSer;
 use speedy::{Readable, Writable};
 use std::collections::HashMap;
+use cx_util::rwlockser::RwLockSer;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXTemplateTypeGen<Generator: TemplateGenerator> {
