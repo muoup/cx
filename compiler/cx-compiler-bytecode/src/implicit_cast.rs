@@ -2,7 +2,7 @@ use crate::builder::BytecodeBuilder;
 use cx_data_ast::parse::ast::CXCastType;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::VirtualInstruction::IntToPtrDiff;
-use cx_data_bytecode::{BCPtrBinOp, ValueID, VirtualInstruction};
+use cx_data_bytecode::{ValueID, VirtualInstruction};
 
 pub(crate) fn implicit_cast(
     builder: &mut BytecodeBuilder,

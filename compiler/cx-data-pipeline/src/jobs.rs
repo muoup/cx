@@ -132,6 +132,12 @@ impl Hash for CompilationJob {
     }
 }
 
+impl Default for JobQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JobQueue {
     pub fn new() -> Self {
         JobQueue {

@@ -11,7 +11,7 @@ pub fn coerce_initializer_list(
 ) -> Option<()> {
     match &to_type.intrinsic_type_kind(env.type_map)?.clone() {
         CXTypeKind::Array { inner_type: _type, size } =>
-            organize_array_initializer(env, initializer, &_type, Some(*size)),
+            organize_array_initializer(env, initializer, _type, Some(*size)),
         
         CXTypeKind::PointerTo { inner_type: inner, sizeless_array: true, .. } =>
             organize_array_initializer(env, initializer, inner.as_ref(), None),

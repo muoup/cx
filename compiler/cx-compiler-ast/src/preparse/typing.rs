@@ -1,17 +1,13 @@
 use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::template::CXTemplateInput;
-use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use cx_data_ast::preparse::pp_type::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
 use cx_data_lexer::{keyword, punctuator, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};
-use crate::parse::typing::parse_contextualized_initializer;
 use crate::preparse::preparser::{goto_statement_end, parse_intrinsic, parse_std_ident};
 
 fn predeclaration_identifier(name: Option<CXIdent>, predeclaration: PredeclarationType) -> Option<(Option<CXIdent>, CXNaiveTypeKind)> {
-    Some((name.clone(), CXNaiveTypeKind::Identifier { name: name.unwrap(), predeclaration: predeclaration }))
+    Some((name.clone(), CXNaiveTypeKind::Identifier { name: name.unwrap(), predeclaration }))
 }
 
 pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<(Option<CXIdent>, CXNaiveTypeKind)> {
@@ -207,7 +203,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
             let prototype = CXNaivePrototype {
                 name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
                 return_type: acc_type,
-                params: params,
+                params,
                 var_args
             };
 

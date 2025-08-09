@@ -1,6 +1,6 @@
 use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::maps::{CXDestructorMap, CXFunctionMap, CXTypeMap};
+use cx_data_ast::parse::maps::{CXDestructorMap, CXFunctionMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_util::mangling::mangle_destructor;
 use cx_util::log_error;
@@ -66,7 +66,6 @@ pub(crate) fn typecheck_destructor(
 ) -> Option<()> {
     let destructor_name = mangle_destructor(type_name);
     let prototype = env.fn_map.get(&destructor_name)
-        .clone()
         .unwrap_or_else(|| panic!("Failed to find destructor prototype for {type_name} in function map"))
         .clone();
     let _type = env.type_map.get(type_name)?.clone();

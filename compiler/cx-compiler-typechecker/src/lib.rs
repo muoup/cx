@@ -1,14 +1,14 @@
 use crate::deconstructed_types::generate_deconstructor_data;
 use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
-use cx_data_ast::parse::maps::{CXDestructorMap, CXFunctionMap, CXTemplateRequest, CXTypeMap};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::template::CXTemplateInput;
 use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_lexer::token::Token;
 use cx_util::mangling::mangle_templated_fn;
 use cx_util::scoped_map::ScopedMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub mod typemap_collapsing;
 pub mod deconstructed_types;
@@ -45,7 +45,7 @@ pub fn type_check(tokens: &[Token], ast: &mut CXAST) -> Option<TypeCheckData> {
         }
     }
 
-    add_destructor_prototypes(&type_environment.typecheck_data.destructor_map, &mut type_environment.fn_map)?;
+    add_destructor_prototypes(&type_environment.typecheck_data.destructor_map, type_environment.fn_map)?;
     type_environment.typecheck_data.deconstructor_data = generate_deconstructor_data(&type_environment)?;
 
     for stmt in &mut ast.global_stmts {

@@ -7,10 +7,9 @@ use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
+use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
-use cx_util::mangling::mangle_templated_fn;
 use cx_util::log_error;
 
 static NUM: Mutex<usize> = Mutex::new(0);
@@ -89,7 +88,7 @@ pub(crate) fn generate_instruction<'a>(
                     log_error!("Function not found in module: {function_name}");
                 };
 
-                let mut arg_vals = args
+                let arg_vals = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
@@ -127,7 +126,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value();
                 let fn_type = bc_llvm_prototype(global_state, method_sig)
                     .unwrap();
-                let mut args = args
+                let args = args
                     .iter()
                     .map(|arg| {
                         let val = function_state

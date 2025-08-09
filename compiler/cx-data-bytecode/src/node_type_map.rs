@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXExpr, CXAST};
+use cx_data_ast::parse::ast::CXExpr;
 use cx_data_ast::parse::maps::{CXDestructorMap, CXTemplateRequest, CXTypeMap};
 use cx_data_ast::parse::value_type::CXType;
 use std::collections::{HashMap, HashSet};

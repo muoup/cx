@@ -2,17 +2,11 @@ use std::fmt::{Display, Formatter};
 use speedy::{Readable, Writable};
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Default)]
 pub struct CXIdent {
     pub data: String
 }
 
-impl Default for CXIdent {
-    fn default() -> Self {
-        CXIdent {
-            data: String::new()
-        }
-    }
-}
 
 impl CXIdent {
     pub fn as_str(&self) -> &str {

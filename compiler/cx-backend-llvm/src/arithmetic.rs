@@ -16,7 +16,7 @@ pub(crate) fn generate_ptr_binop<'a>(
             match op {
                 BCPtrBinOp::ADD => unsafe {
                     let basic_type = any_to_basic_type(ptr_type)
-                        .unwrap_or_else(|| panic!("Expected a basic type for pointer addition, found: {:?}", ptr_type));
+                        .unwrap_or_else(|| panic!("Expected a basic type for pointer addition, found: {ptr_type:?}"));
 
                     function_state.builder
                         .build_in_bounds_gep(
@@ -29,7 +29,7 @@ pub(crate) fn generate_ptr_binop<'a>(
                 }
                 BCPtrBinOp::SUB => unsafe {
                     let basic_type = any_to_basic_type(ptr_type)
-                        .unwrap_or_else(|| panic!("Expected a basic type for pointer subtraction, found: {:?}", ptr_type));
+                        .unwrap_or_else(|| panic!("Expected a basic type for pointer subtraction, found: {ptr_type:?}"));
 
                     let negative = function_state.builder
                         .build_int_neg(right_value.into_int_value(), crate::instruction::inst_num().as_str())

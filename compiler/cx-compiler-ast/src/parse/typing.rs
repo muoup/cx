@@ -1,5 +1,4 @@
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_lexer::token::TokenKind;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::parse::type_mapping::contextualize_type;

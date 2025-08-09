@@ -1,7 +1,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 pub fn mangle_destructor(type_name: &str) -> String {
-    format!("__destructor_{}", type_name)
+    format!("__destructor_{type_name}")
 }
 
 pub fn mangle_templated_fn<ArgType: Hash>(fn_name: &str, template_args: &[ArgType]) -> String {

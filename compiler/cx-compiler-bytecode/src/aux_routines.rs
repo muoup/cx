@@ -1,11 +1,9 @@
-use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
-use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
+use cx_data_bytecode::{ValueID, VirtualInstruction};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::bytecode_error_log;
 use crate::builder::BytecodeBuilder;
 use crate::deconstructor::deconstruct_variable;
-use crate::instruction_gen::generate_instruction;
 
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
@@ -120,7 +118,7 @@ pub(crate) fn allocate_variable(
         builder.set_current_block(current_block);
     }
     
-    if variable_requires_nulling(&builder, var_type)? {
+    if variable_requires_nulling(builder, var_type)? {
         builder.add_instruction_bt(
             VirtualInstruction::ZeroMemory {
                 memory,

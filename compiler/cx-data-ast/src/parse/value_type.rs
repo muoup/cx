@@ -6,8 +6,7 @@ use crate::parse::ast::{CXExpr, CXFunctionPrototype};
 use crate::parse::identifier::CXIdent;
 use crate::parse::maps::CXTypeMap;
 use crate::parse::parser::VisibilityMode;
-use crate::parse::template::CXTemplateInput;
-use crate::preparse::pp_type::{CXTypeSpecifier, PredeclarationType};
+use crate::preparse::pp_type::CXTypeSpecifier;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {

@@ -6,7 +6,6 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
-use std::collections::HashMap;
 use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, ValueID};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {

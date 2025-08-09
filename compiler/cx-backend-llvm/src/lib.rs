@@ -13,7 +13,6 @@ use inkwell::types::{AnyType, FunctionType};
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
 
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::path::Path;
 use inkwell::basic_block::BasicBlock;
 use cx_data_pipeline::OptimizationLevel;
@@ -255,14 +254,14 @@ fn codegen_block<'a>(
     for (value_id, inst) in block.body.iter().enumerate() {
         let value = instruction::generate_instruction(
             global_state,
-            &function_state,
-            &func_val,
+            function_state,
+            func_val,
             inst
         ).unwrap_or_else(|| panic!("Failed to generate instruction {inst}"));
 
         function_state.value_map.insert(
             ValueID { 
-                block_id: block_id, 
+                block_id, 
                 value_id: value_id as ElementID 
             },
             value

@@ -1,12 +1,11 @@
-use std::collections::{HashMap, HashSet};
 use crate::{BytecodeResult, ProgramBytecode};
 use cx_data_ast::parse::ast::{CXExpr};
-use cx_data_ast::parse::maps::{CXDestructorMap, CXFunctionMap, CXTypeMap};
+use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::*;
 use cx_data_bytecode::node_type_map::TypeCheckData;
-use cx_util::format::{dump_all, dump_data};
+use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
 use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
@@ -188,7 +187,7 @@ impl BytecodeBuilder {
     
     pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<Option<ValueID>> {
         if self.fn_map.contains_key(name) {
-            self.fn_ref_unchecked(name).map(|opt| Some(opt))
+            self.fn_ref_unchecked(name).map(Some)
         } else {
             Some(None)
         }
@@ -249,7 +248,7 @@ impl BytecodeBuilder {
             .instruction;
         
         let VirtualInstruction::Phi { predecessors } = first_defer_inst else {
-            let fdi = format!("{}", first_defer_inst);
+            let fdi = format!("{first_defer_inst}");
             
             self.dump_current_fn();
             

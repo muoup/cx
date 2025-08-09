@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use cx_util::log_error;
 use crate::parse::ast::{CXFunctionPrototype, CXParameter};
 use crate::parse::maps::CXTypeMap;
-use crate::parse::template::{CXFunctionGenerator, CXTemplateTypeGen, CXTypeGenerator, TemplateGenerator};
+use crate::parse::template::TemplateGenerator;
 use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::preparse::CXNaiveTypeMap;
 use crate::preparse::pp_type::{CXNaiveType, CXNaiveTypeKind};

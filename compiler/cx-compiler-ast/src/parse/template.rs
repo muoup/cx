@@ -1,15 +1,10 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::parse::ast::{CXExpr, CXGlobalStmt, CXAST};
-use cx_data_ast::parse::maps::CXTypeMap;
+use cx_data_ast::parse::ast::CXGlobalStmt;
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::template::{CXTemplateInput, CXTemplateTypeGen};
 use cx_data_ast::parse::value_type::CXType;
-use cx_data_lexer::TokenIter;
 use cx_util::{point_log_error, CXResult};
 use crate::parse::global_scope::parse_global_stmt;
-use crate::parse::typing::parse_contextualized_initializer;
-use crate::preparse::typing::parse_initializer;
 
 pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::Template));

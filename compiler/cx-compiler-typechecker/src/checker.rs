@@ -1,14 +1,12 @@
 use cx_compiler_ast::parse::operators::{comma_separated_mut};
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
-use cx_data_ast::parse::maps::CXTypeMap;
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
 use cx_data_ast::preparse::pp_type::CX_CONST;
-use cx_util::{expr_error_log, log_error, point_log_error};
+use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::typecheck_access;
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
 use crate::structured_initialization::coerce_initializer_list;
 use crate::TypeEnvironment;
-use crate::typemap_collapsing::{collapse_type, collapse_typemap};
 
 pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXType> {
     if let Some(_type) = env.typecheck_data.expr_type_test(expr.uuid) {

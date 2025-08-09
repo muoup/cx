@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt};
+use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype};
 use cx_data_ast::parse::value_type::CXType;
 use cx_util::mangling::mangle_destructor;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
@@ -62,7 +62,7 @@ pub(crate) fn generate_destructor(
     builder.symbol_table.insert("this".to_string(), this);
 
     let Some(_) = generate_instruction(builder, body) else {
-        panic!("Failed to generate body for destructor: {}", type_name);
+        panic!("Failed to generate body for destructor: {type_name}");
     };
 
     builder.symbol_table.pop_scope();

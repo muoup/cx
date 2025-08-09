@@ -3,7 +3,6 @@ use speedy::{Readable, Writable};
 use uuid::Uuid;
 use crate::parse::identifier::CXIdent;
 use crate::parse::parser::VisibilityMode;
-use crate::parse::template::CXTemplateInput;
 
 pub type CXTypeSpecifier = u8;
 

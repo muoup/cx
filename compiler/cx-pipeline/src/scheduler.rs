@@ -4,15 +4,14 @@ use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_ast::preparse::preparse;
 use cx_compiler_bytecode::generate_bytecode;
 use cx_compiler_typechecker::type_check;
-use cx_compiler_typechecker::typemap_collapsing::collapse_typemap;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_pipeline::db::ModuleMap;
-use cx_data_pipeline::directories::{file_path, internal_directory};
+use cx_data_pipeline::directories::internal_directory;
 use cx_data_pipeline::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue};
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
@@ -20,7 +19,7 @@ use cx_data_ast::parse::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_ast::parse::maps::CXDestructorMap;
 use cx_data_ast::parse::type_mapping::{contextualize_fn_map, contextualize_type_map};
 use cx_data_lexer::TokenIter;
-use cx_util::format::{dump_all, dump_data};
+use cx_util::format::dump_data;
 use crate::template_realizing::realize_templates;
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
@@ -194,7 +193,7 @@ pub(crate) fn perform_job(
             
             let current_hash = hasher.finish().to_string();
             let previous_hash = retrieve_text(context, &job.unit, ".hash")
-                .unwrap_or(String::new());
+                .unwrap_or_default();
             
             let identical_hash = previous_hash == current_hash;
             

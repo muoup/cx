@@ -1,7 +1,6 @@
 use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_util::log_error;
 
 pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<CXTypeMap> 
     where MapRef: AsRef<CXTypeMap>
@@ -60,8 +59,8 @@ pub fn collapse_type<MapRef>(_type: &mut CXType, self_map: &mut CXTypeMap, impor
         
         CXTypeKind::Integer { .. } |
         CXTypeKind::Float { .. } |
-        CXTypeKind::Bool { .. } |
-        CXTypeKind::Unit { .. }
+        CXTypeKind::Bool |
+        CXTypeKind::Unit
             => {}, // Primitive types do not need collapsing
     }
     

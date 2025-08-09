@@ -1,7 +1,7 @@
 use crate::parse::identifier::CXIdent;
 use crate::parse::maps::{CXDestructorMap, CXFunctionMap, CXTypeMap};
 use crate::parse::value_type::CXType;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 use crate::parse::template::CXTemplateInput;

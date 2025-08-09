@@ -10,7 +10,6 @@ use cranelift_module::Module;
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
 use std::ops::IndexMut;
-use cx_util::mangling::mangle_templated_fn;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {

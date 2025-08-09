@@ -1,7 +1,7 @@
 use crate::TypeEnvironment;
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
-use cx_util::{expr_error_log, log_error};
+use cx_util::log_error;
 use crate::checker::{coerce_value, type_check_traverse};
 use crate::structured_initialization::coerce_initializer_list;
 
@@ -82,7 +82,7 @@ pub fn implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
     }
 
     if matches!(expr.kind, CXExprKind::InitializerList { .. }) {
-        coerce_initializer_list(env, expr, &to_type)?;
+        coerce_initializer_list(env, expr, to_type)?;
         return Some(Some(()));
     }
 

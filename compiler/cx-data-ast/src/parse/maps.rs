@@ -1,4 +1,3 @@
-use crate::parse::ast::{CXFunctionPrototype, CXGlobalStmt};
 use crate::parse::template::{CXFunctionGenerator, CXTemplateInput, CXTemplateTypeGen, CXTypeGenerator, TemplateGenerator};
 use crate::parse::value_type::CXType;
 use speedy::{Readable, Writable};

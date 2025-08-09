@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
-use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, ValueID};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::routines::string_literal;

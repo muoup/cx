@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use cx_util::{log_error, CXResult};
 use crate::parse::ast::{CXFunctionPrototype, CXParameter};
 use crate::parse::intrinsic_types::INTRINSIC_TYPES;
 use crate::parse::maps::{CXFunctionMap, CXTypeMap};
 use crate::parse::precontextualizing::precontextualize_type;
-use crate::parse::template::{CXTemplateInput, CXTemplateTypeGen, CXTypeGenerator};
+use crate::parse::template::{CXTemplateInput, CXTemplateTypeGen};
 use crate::parse::value_type::{CXType, CXTypeKind};
 use crate::preparse::{CXNaiveFunctionMap, CXNaiveFunctionTemplates, CXNaiveTypeMap, CXNaiveTypeTemplates};
 use crate::preparse::pp_type::{CXNaiveType, CXNaiveTypeKind, CXNaivePrototype, CXNaiveParameter, CXNaiveTemplateInput};
@@ -80,7 +79,6 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
             let input = contextualize_template_args(type_map, input)?;
 
             type_map.get_template(type_map, name.as_str(), input)
-                .map(|template| template.clone())
         },
 
         CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {

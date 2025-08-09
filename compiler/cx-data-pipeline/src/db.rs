@@ -1,7 +1,6 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_data_ast::parse::ast::CXAST;
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 use speedy::{LittleEndian, Readable, Writable};
@@ -26,6 +25,12 @@ pub struct ModuleData {
     pub bytecode_data: ModuleMap<ProgramBytecode>
 }
 
+impl Default for ModuleData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
@@ -43,7 +48,7 @@ impl ModuleData {
     }
     
     pub fn store_data(&self, context: &GlobalCompilationContext) {
-        // TODO: Re-implement data storage
+        self.preparse_contents.store_all_data(context);
     }
     
     pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {

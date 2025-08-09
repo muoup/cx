@@ -16,7 +16,7 @@ fn run_tests() {
     std::env::set_current_dir("tests/cases").unwrap();
     
     std::fs::remove_dir_all(".internal")
-        .unwrap_or({});
+        .unwrap_or(());
     
     let cases_dir = std::fs::read_dir("./").unwrap();
     

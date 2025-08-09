@@ -287,7 +287,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
                 .expect("PARSER ERROR: Failed to contextualize type in new declaration");
             
             match cx_type.kind {
-                CXTypeKind::Array { size, inner_type: inner_type } => {
+                CXTypeKind::Array { size, inner_type } => {
                     let length = CXExprKind::IntLiteral {
                         bytes: 8,
                         val: size as i64

@@ -1,8 +1,8 @@
 use cx_compiler_ast::parse::operators::comma_separated;
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionPrototype, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ElementID, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ValueID, VirtualInstruction};
 use cx_util::log_error;
 use cx_util::mangling::mangle_templated_fn;
 use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field};
@@ -973,7 +973,7 @@ pub(crate) fn implicit_return(
                 // If the last instruction is already a return, do nothing
                 return Some(());
             },
-            VirtualInstruction::GotoDefer { .. } => {
+            VirtualInstruction::GotoDefer => {
                 // If the last instruction is a goto defer, we can also ignore it
                 return Some(());
             },
