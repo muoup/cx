@@ -3,10 +3,9 @@ use cx_util::{log_error, CXResult};
 use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
 use cx_data_ast::parse::intrinsic_types::INTRINSIC_TYPES;
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::template::{CXTemplateTypeGen, TemplateGenerator};
-use cx_data_ast::parse::type_mapping::contextualize_fn_prototype;
+use cx_data_ast::parse::template::CXTemplateTypeGen;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_ast::preparse::{CXNaiveFunctionMap, CXNaiveFunctionTemplates, CXNaiveTypeMap, CXNaiveTypeTemplates};
+use cx_data_ast::preparse::{CXNaiveTypeMap, CXNaiveTypeTemplates};
 use cx_data_ast::preparse::pp_type::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource};
 use cx_data_ast::PreparseContents;
 use cx_data_pipeline::CompilationUnit;
@@ -82,7 +81,7 @@ pub fn precontextualize_type(
 
             let Some(template) = naive_type_templates.get(name.as_str()) else {
                 log_error!("Template not found: {name}<{}>", input.params.iter()
-                    .map(|param| format!("{}", param))
+                    .map(|param| format!("{param}"))
                     .collect::<Vec<_>>()
                     .join(", "));
             };
@@ -320,7 +319,7 @@ pub fn contextualize_fn_map(module_data: &ModuleData, type_map: &mut CXTypeMap, 
 
     for (name, naive_prototype) in pp_data.function_definitions.iter() {
         let Some(cx_prototype)
-            = precontextualize_prototype(module_data, type_map, &pp_data, naive_prototype) else {
+            = precontextualize_prototype(module_data, type_map, pp_data, naive_prototype) else {
             log_error!("Failed to contextualize function prototype: {name}");
         };
 

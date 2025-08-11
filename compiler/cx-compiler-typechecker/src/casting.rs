@@ -38,7 +38,7 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
                 => Some(CXCastType::BitCast),
 
             (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(env.type_map, &_type, &inner) => Some(CXCastType::BitCast),
+                if same_type(env.type_map, _type, inner) => Some(CXCastType::BitCast),
             
             (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
                 if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),

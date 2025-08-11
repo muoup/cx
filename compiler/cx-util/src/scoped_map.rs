@@ -10,7 +10,7 @@ pub struct ScopedMap<T> {
 #[derive(Debug, Clone)]
 pub struct ScopedSet<T: Eq + Hash + Clone> {
     data: HashSet<T>,
-    overwrites: Vec<Vec<T>>
+    writes: Vec<Vec<T>>
 }
 
 impl<T> Default for ScopedMap<T> {
@@ -71,36 +71,33 @@ impl<T: Eq + Hash + Clone> ScopedSet<T> {
     pub fn new() -> Self {
         Self {
             data: HashSet::new(),
-            overwrites: vec![]
+            writes: vec![]
         }
     }
 
     pub fn push_scope(&mut self) {
-        self.overwrites.push(Vec::new());
+        self.writes.push(Vec::new());
     }
 
     pub fn pop_scope(&mut self) {
-        if self.overwrites.is_empty() {
+        if self.writes.is_empty() {
             panic!("Scope table has uneven push/pop");
         }
 
-        for name in self.overwrites.pop().unwrap() {
+        for name in self.writes.pop().unwrap() {
             self.data.remove(&name);
         }
     }
 
     pub fn insert(&mut self, name: T) {
-        if let Some(old_value) = self.data.get(&name) {
-            if self.overwrites.is_empty() {
-                panic!("Scope table has uneven push/pop");
-            }
-
-            self.overwrites
-                .last_mut().unwrap()
+        if !self.data.contains(&name) {
+            self.data.insert(name.clone());
+            
+            self.writes
+                .last_mut()
+                .expect("Uneven push/pop in ScopedSet")
                 .push(name.clone());
         }
-
-        self.data.insert(name);
     }
     
     pub fn contains(&self, name: &T) -> bool {

@@ -187,8 +187,8 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 implicit_coerce(env, arg, expected_type._type.clone())?;
             }
 
-            for i in prototype.params.len() .. args.len() {
-                let va_type = coerce_value(env, args[i])?;
+            for arg in args.into_iter().skip(prototype.params.len()) {
+                let va_type = coerce_value(env, arg)?;
 
                 match &va_type.kind {
                     CXTypeKind::PointerTo { .. } => {
@@ -198,23 +198,23 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                     CXTypeKind::Integer { bytes, signed } => {
                         if *bytes != 8 {
                             let to_type = CXTypeKind::Integer { bytes: 8, signed: *signed }.into();
-                            implicit_cast(env, args[i], &va_type, &to_type)?;
+                            implicit_cast(env, arg, &va_type, &to_type)?;
                         }
                     },
 
                     CXTypeKind::Float { bytes } => {
                         if *bytes != 8 {
                             let to_type = CXTypeKind::Float { bytes: 8 }.into();
-                            implicit_cast(env, args[i], &va_type, &to_type)?;
+                            implicit_cast(env, arg, &va_type, &to_type)?;
                         }
                     },
                     
                     CXTypeKind::Bool => {
                         let to_type = CXTypeKind::Integer { bytes: 8, signed: false }.into();
-                        implicit_cast(env, args[i], &va_type, &to_type)?;
+                        implicit_cast(env, arg, &va_type, &to_type)?;
                     },
 
-                    _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", args[i]),
+                    _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", arg),
                 }
             }
 

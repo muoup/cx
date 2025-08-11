@@ -50,7 +50,7 @@ pub fn generate_instruction(
             let left_id = generate_instruction(builder, lhs.as_ref())?;
             let lhs_type = builder.get_expr_type(lhs.as_ref())?
                 .clone();
-            let ltype = builder.convert_cx_type(&lhs_type.into())?;
+            let ltype = builder.convert_cx_type(&lhs_type)?;
 
             let CXExprKind::Identifier(field_name) = &rhs.as_ref().kind else {
                 panic!("PANIC: Attempting to access struct field with rhs: {rhs:?}");
@@ -873,7 +873,7 @@ pub(crate) fn generate_binop(
         _ => {
             let left_id = generate_instruction(builder, lhs)?;
             let right_id = generate_instruction(builder, rhs)?;
-            let cx_lhs_type = builder.get_expr_type(lhs)?.into();
+            let cx_lhs_type = builder.get_expr_type(lhs)?;
             
             generate_algebraic_binop(
                 builder,

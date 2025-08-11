@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use crate::parse::parser::VisibilityMode;
 use crate::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXTypeTemplate, ModuleResource};
 
 pub mod pp_type;

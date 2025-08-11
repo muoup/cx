@@ -1,7 +1,6 @@
 use std::hash::Hash;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
-use crate::parse::ast::CXFunctionPrototype;
 use crate::parse::identifier::CXIdent;
 use crate::parse::parser::VisibilityMode;
 

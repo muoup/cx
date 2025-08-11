@@ -170,8 +170,8 @@ fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationU
         }
     }
     
-    // retrieve_map_data(context, &context.module_db.naive_type_data, unit)?;
-    // retrieve_map_data(context, &context.module_db.naive_function_data, unit)?;
+    retrieve_map_data(context, &context.module_db.preparse_incomplete, unit)?;
+    retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
 
     Some(())
 }
