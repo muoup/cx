@@ -13,11 +13,11 @@ use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, Compilat
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use cx_compiler_ast::parse::precontextualizing::{contextualize_fn_map, contextualize_type_map};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
 use cx_data_ast::parse::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_ast::parse::maps::CXDestructorMap;
-use cx_data_ast::parse::type_mapping::{contextualize_fn_map, contextualize_type_map};
 use cx_data_lexer::TokenIter;
 use cx_util::format::dump_data;
 use crate::template_realizing::realize_templates;
@@ -121,8 +121,8 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_contents
-                .get_cloned(&job.unit);
+            let pp_data = context.module_db.preparse_incomplete
+                .get(&job.unit);
             
             let mut new_jobs = pp_data.imports.iter()
                 .map(|import| {
@@ -134,10 +134,13 @@ pub(crate) fn handle_job(
                 })
                 .collect::<Vec<_>>();
             
-            job.step = CompilationStep::ASTParse;
+            job.step = CompilationStep::ImportCombine;
             new_jobs.push(job);
 
             Some(new_jobs.into())
+        },
+        CompilationStep::ImportCombine => {
+            map_reqs_new_stage(job, CompilationStep::ASTParse)
         },
         CompilationStep::ASTParse => {
             map_reqs_new_stage(job, CompilationStep::TypeCheck)
@@ -208,6 +211,7 @@ pub(crate) fn perform_job(
                     index: 0,
                 }
             ).unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
+            output.module = job.unit.to_string();
 
             if !job.unit.as_str().contains("std") {
                 output.imports
@@ -218,7 +222,7 @@ pub(crate) fn perform_job(
             
             context.module_db.lex_tokens
                 .insert(job.unit.clone(), tokens);
-            context.module_db.preparse_contents
+            context.module_db.preparse_incomplete
                 .insert(job.unit.clone(), output);
             
             return if identical_hash {
@@ -227,36 +231,56 @@ pub(crate) fn perform_job(
                 Some(JobResult::StandardSuccess)
             };
         },
-
-        CompilationStep::ASTParse => {
-            let mut pp_data = context.module_db.preparse_contents
+        
+        CompilationStep::ImportCombine => {
+            let mut pp_data = context.module_db.preparse_incomplete
                 .get_cloned(&job.unit);
-            let lexemes = context.module_db.lex_tokens
-                .get(&job.unit);
-            
+
             for import in pp_data.imports.iter() {
-                let other_pp_data = context.module_db.preparse_contents
+                let other_pp_data = context.module_db.preparse_incomplete
                     .get(&CompilationUnit::from_str(import.as_str()));
 
                 for (name, _type) in other_pp_data.type_definitions.iter() {
                     if _type.visibility != VisibilityMode::Public { continue; };
 
-                    pp_data.type_definitions.insert(name.clone(), _type.clone());
+                    pp_data.type_definitions.insert(name.clone(), _type.transfer(import));
                 }
 
-                for (name, visibility, func) in other_pp_data.function_definitions.iter() {
-                    if visibility != &VisibilityMode::Public { continue; };
+                for (name, _template) in other_pp_data.type_templates.iter() {
+                    if _template.visibility != VisibilityMode::Public { continue; };
                     
-                    pp_data.function_definitions.push((name.clone(), VisibilityMode::Private, func.clone()));
+                    pp_data.type_templates.insert(name.clone(), _template.transfer(import));
+                }
+
+                for (name, prototype) in other_pp_data.function_definitions.iter() {
+                    if prototype.visibility != VisibilityMode::Public { continue; };
+
+                    pp_data.function_definitions.push((name.clone(), prototype.transfer(import)));
+                }
+                
+                for template in other_pp_data.function_templates.iter() {
+                    pp_data.function_templates.push(template.transfer(import));
                 }
             }
             
-            let cx_type_map = contextualize_type_map(
+            context.module_db.preparse_full
+                .insert(job.unit.clone(), pp_data);
+        },
+
+        CompilationStep::ASTParse => {
+            let pp_data = context.module_db.preparse_full
+                .get(&job.unit);
+            let lexemes = context.module_db.lex_tokens
+                .get(&job.unit);
+            
+            let mut cx_type_map = contextualize_type_map(
+                &context.module_db,
                 &pp_data.type_definitions, &pp_data.type_templates
             ).expect("Type map contextualization failed");
             
             let cx_fn_map = contextualize_fn_map(
-                &cx_type_map, &pp_data.function_definitions, &pp_data.function_templates
+                &context.module_db,
+                &mut cx_type_map, &pp_data
             ).expect("Function map contextualization failed");
             
             let cx_destructor_defs = pp_data.destructor_definitions

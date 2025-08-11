@@ -119,7 +119,7 @@ impl TemplateGenerator for CXFunctionGenerator {
 }
 
 impl CXTypeGenerator {
-    pub(crate) fn get_shell(&self) -> &CXNaiveType {
+    pub fn get_shell(&self) -> &CXNaiveType {
         &self.template.shell
     }
 }

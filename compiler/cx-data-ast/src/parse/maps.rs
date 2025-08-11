@@ -51,7 +51,7 @@ impl<Generator: TemplateGenerator> CXMap<Generator> {
         self.types.remove(name)
     }
 
-    pub(crate) fn get_generator(&self, name: &str) -> Option<&CXTemplateTypeGen<Generator>> {
+    pub fn get_generator(&self, name: &str) -> Option<&CXTemplateTypeGen<Generator>> {
         self.templated_types.get(name)
     }
 

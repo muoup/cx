@@ -267,6 +267,7 @@ version = "0.0.0"
 dependencies = [
  "cx-data-ast",
  "cx-data-lexer",
+ "cx-data-pipeline",
  "cx-util",
 ]
 

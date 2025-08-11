@@ -6,6 +6,7 @@ mod importing;
 
 use crate::preparse::preparser::{preparse_stmt, PreparseResult};
 use cx_data_ast::parse::parser::VisibilityMode;
+use cx_data_ast::preparse::pp_type::ModuleResource;
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};
@@ -29,13 +30,12 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
         };
 
         match result {
-            PreparseResult::TypeDefinition(name, mut type_) => {
-                type_.set_visibility_mode(data.visibility_mode);
-                contents.type_definitions.insert(name, type_);
+            PreparseResult::TypeDefinition(name, type_) => {
+                contents.type_definitions.insert(name, ModuleResource::with_visibility(type_, data.visibility_mode));
             },
 
             PreparseResult::FunctionDefinition(signature) => {
-                contents.function_definitions.push((signature.name.to_string(), data.visibility_mode, signature));
+                contents.function_definitions.push((signature.name.to_string(), ModuleResource::with_visibility(signature, data.visibility_mode)));
             },
 
             PreparseResult::DestructorDefinition(name) => {
@@ -47,11 +47,11 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
             },
 
             PreparseResult::TypeTemplate(template) => {
-                contents.type_templates.push(template);
+                contents.type_templates.insert(template.name.to_string(), ModuleResource::with_visibility(template, data.visibility_mode));
             },
 
             PreparseResult::FunctionTemplate(template) => {
-                contents.function_templates.push(template);
+                contents.function_templates.push(ModuleResource::with_visibility(template, data.visibility_mode));
             },
 
             PreparseResult::Nothing => {}

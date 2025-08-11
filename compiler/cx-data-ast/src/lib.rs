@@ -11,6 +11,8 @@ pub type LexContents = Vec<Token>;
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct PreparseContents {
+    pub module: String,
+    
     pub destructor_definitions: Vec<String>,
     pub imports: Vec<String>,
 

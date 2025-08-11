@@ -1,6 +1,7 @@
 use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::preparse::pp_type::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
 use cx_data_lexer::{keyword, punctuator, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};

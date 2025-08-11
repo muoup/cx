@@ -9,3 +9,4 @@ cx-util = { path = "../cx-util" }
 
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-lexer = { path = "../cx-data-lexer" }
+cx-data-pipeline = { path = "../cx-data-pipeline" }

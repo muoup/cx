@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXAST};
+use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::maps::CXFunctionMap;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_lexer::TokenIter;
@@ -8,9 +8,10 @@ pub mod expression;
 pub mod global_scope;
 pub mod typing;
 pub mod operators;
+pub mod precontextualizing;
+pub mod template;
 mod parsing_tools;
 mod structured_initialization;
-pub mod template;
 
 pub fn parse_function_prototypes(data: ParserData) -> Option<CXFunctionMap> {
     None

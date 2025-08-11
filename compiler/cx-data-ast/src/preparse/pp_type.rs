@@ -1,6 +1,7 @@
 use std::hash::Hash;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
+use crate::parse::ast::CXFunctionPrototype;
 use crate::parse::identifier::CXIdent;
 use crate::parse::parser::VisibilityMode;
 
@@ -13,10 +14,17 @@ pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
 pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+pub struct ModuleResource<Resource> {
+    pub visibility: VisibilityMode,
+    pub external_module: Option<String>,
+    
+    pub resource: Resource
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveType {
     pub uuid: u64,
     pub kind: CXNaiveTypeKind,
-    pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
 }
 
@@ -102,7 +110,6 @@ impl CXNaiveType {
     pub fn new(specifiers: CXTypeSpecifier, kind: CXNaiveTypeKind) -> Self {
         Self {
             uuid: Uuid::new_v4().as_u64_pair().0,
-            visibility: VisibilityMode::Private,
             kind,
             specifiers,
         }
@@ -110,7 +117,7 @@ impl CXNaiveType {
 
     pub fn pointer_to(self, weak: bool, specifier: CXTypeSpecifier) -> Self {
         Self::new(
-            0,
+            specifier,
           CXNaiveTypeKind::PointerTo {
                 inner_type: Box::new(self),
                 weak,
@@ -118,23 +125,41 @@ impl CXNaiveType {
         )
     }
 
-    pub fn add_specifier(self, specifier: CXTypeSpecifier) -> Self {
-        Self {
-            uuid: self.uuid,
-            kind: self.kind,
-            visibility: self.visibility,
-            specifiers: self.specifiers | specifier,
-        }
-    }
-
-    pub fn set_visibility_mode(&mut self, visibility: VisibilityMode) {
-        self.visibility = visibility;
+    pub fn add_specifier(mut self, specifier: CXTypeSpecifier) -> Self {
+        self.specifiers |= specifier;
+        self
     }
 }
 
 impl CXNaiveTypeKind {
     pub fn to_type(self) -> CXNaiveType {
         CXNaiveType::new(0, self)
+    }
+}
+
+impl<T: Clone> ModuleResource<T> {
+    pub fn transfer(&self, from_module: &str) -> ModuleResource<T> {
+        ModuleResource {
+            visibility: VisibilityMode::Private,
+            external_module: Some(from_module.to_string()),
+            resource: self.resource.clone(),
+        }
+    }
+    
+    pub fn standard(resource: T) -> ModuleResource<T> {
+        ModuleResource {
+            visibility: VisibilityMode::Private,
+            external_module: None,
+            resource,
+        }
+    }
+    
+    pub fn with_visibility(resource: T, visibility: VisibilityMode) -> ModuleResource<T> {
+        ModuleResource {
+            visibility,
+            external_module: None,
+            resource,
+        }
     }
 }
 
