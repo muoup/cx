@@ -8,8 +8,7 @@ use crate::structured_initialization::coerce_initializer_list;
 pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
                            -> Option<Option<CXCastType>> {
     Some(
-        match (from_type.intrinsic_type_kind(env.type_map).cloned()?,
-               to_type.intrinsic_type_kind(env.type_map).cloned()?) {
+        match (&from_type.kind, &to_type.kind) {
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
                 Some(CXCastType::PtrToInt)
             },
@@ -49,17 +48,14 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
     )
 }
 
-pub fn valid_explicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
-                           -> Option<Option<CXCastType>> {
+pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<Option<CXCastType>> {
     Some(
-        match (from_type.intrinsic_type_kind(env.type_map).cloned()?,
-               to_type.intrinsic_type_kind(env.type_map).cloned()?) {
-
+        match (&from_type.kind, &to_type.kind) {
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
 
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
-                if bytes == 8 => Some(CXCastType::BitCast),
+                if *bytes == 8 => Some(CXCastType::BitCast),
 
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
                 => Some(CXCastType::IntegralTrunc),
@@ -101,7 +97,7 @@ pub fn explicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
         return Some(())
     }
 
-    let Some(expl_cast_type) = valid_explicit_cast(env, from_type, to_type)? else {
+    let Some(expl_cast_type) = valid_explicit_cast(from_type, to_type)? else {
         return None;
     };
 
@@ -135,9 +131,7 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         return binop_type(&op, None, &l_type);
     }
 
-    match (l_type.intrinsic_type_kind(env.type_map).cloned()?,
-           r_type.intrinsic_type_kind(env.type_map).cloned()?) {
-
+    match (&l_type.kind, &r_type.kind) {
         (CXTypeKind::PointerTo { inner_type: l_inner, .. }, CXTypeKind::Integer { .. }) => {
             ptr_int_binop_coercion(env, op, l_inner.as_ref(), rhs)
         },

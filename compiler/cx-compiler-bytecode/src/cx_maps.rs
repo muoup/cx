@@ -1,7 +1,7 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap, LinkageType, VirtualInstruction};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -160,16 +160,17 @@ fn convert_fixed_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCTyp
 }
 
 fn convert_argument_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCType> {
-    match cx_type.intrinsic_type_kind(cx_type_map)? {
+    match &cx_type.kind {
         CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } => {
             Some(BCType::default_pointer())
         },
+        
         _ => convert_fixed_type(cx_type_map, cx_type)
     }
 }
 
 pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
-    if matches!(cx_proto.return_type.intrinsic_type_kind(cx_type_map)?, CXTypeKind::Structured { .. }) {
+    if cx_proto.return_type.is_structured() {
         Some(
             BCFunctionPrototype {
                 name: cx_proto.name.as_string(),
@@ -201,14 +202,6 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
             }
         )
     }
-}
-
-pub(crate) fn convert_cx_type_map(cx_type_map: &CXTypeMap) -> BCTypeMap {
-    cx_type_map.iter()
-        .map(|(name, cx_type)| {
-            (name.clone(), convert_fixed_type(cx_type_map, cx_type).unwrap())
-        })
-        .collect::<BCTypeMap>()
 }
 
 pub(crate) fn convert_cx_func_map(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionMap) -> BCFunctionMap {
@@ -294,7 +287,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 },
             
             CXTypeKind::MemoryReference(inner) => {
-                match inner.intrinsic_type_kind(cx_type_map)? {
+                match &inner.kind {
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     

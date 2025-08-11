@@ -4,16 +4,14 @@ pub mod node_type_map;
 pub mod types;
 mod format;
 
-pub type BCTypeMap = HashMap<String, BCType>;
 pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
 
 #[derive(Debug, Clone)]
 pub struct ProgramBytecode {
     pub fn_map: BCFunctionMap,
-    pub type_map: BCTypeMap,
-
+    pub fn_defs: Vec<BytecodeFunction>,
+    
     pub global_strs: Vec<String>,
-    pub fn_defs: Vec<BytecodeFunction>
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

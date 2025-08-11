@@ -9,7 +9,7 @@ pub fn coerce_initializer_list(
     initializer: &mut CXExpr,
     to_type: &CXType
 ) -> Option<()> {
-    match &to_type.intrinsic_type_kind(env.type_map)?.clone() {
+    match &to_type.kind {
         CXTypeKind::Array { inner_type: _type, size } =>
             organize_array_initializer(env, initializer, _type, Some(*size)),
         
@@ -73,7 +73,7 @@ fn organize_structured_initializer(
     let CXExprKind::InitializerList { indices } = &mut initializer.kind else {
         unreachable!("PANIC: organize_structured_initializer expected initialzer, found: {initializer}");
     };
-    let CXTypeKind::Structured { fields, .. } = to_type.intrinsic_type_kind(env.type_map)?.clone() else {
+    let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
         log_error!("TYPE ERROR: Expected structured type for initializer, found: {to_type}");
     };
     

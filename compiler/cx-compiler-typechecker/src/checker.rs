@@ -165,11 +165,11 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
             let mut lhs_type = coerce_mem_ref(env, lhs)?;
 
-            if let Some(CXTypeKind::PointerTo { inner_type: inner, .. }) = lhs_type.intrinsic_type_kind(env.type_map) {
+            if let CXTypeKind::PointerTo { inner_type: inner, .. } = &lhs_type.kind {
                 lhs_type = *inner.clone();
             }
 
-            let CXTypeKind::Function { prototype } = lhs_type.intrinsic_type_kind(env.type_map).cloned()? else {
+            let CXTypeKind::Function { prototype } = &lhs_type.kind else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
 
@@ -190,7 +190,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             for i in prototype.params.len() .. args.len() {
                 let va_type = coerce_value(env, args[i])?;
 
-                match va_type.intrinsic_type_kind(env.type_map)? {
+                match &va_type.kind {
                     CXTypeKind::PointerTo { .. } => {
                         // Pointer types are already compatible with varargs, no need to cast
                     },
@@ -250,7 +250,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
         CXExprKind::Identifier(name) => {
             if let Some(record) = env.symbol_table.get(name.as_str()).cloned() {
-                return match record.intrinsic_type_kind(env.type_map)? {
+                return match &record.kind {
                     // Array variables are themselves memory aliases, so wrapping
                     // them in a memory alias ends up adding an extra load operation
                     // when using them
@@ -382,7 +382,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 log_error!("TYPE ERROR: Move operator can only be applied to memory references, found: {expr_type}");
             };
             
-            let CXTypeKind::StrongPointer { .. } = inner.intrinsic_type_kind(env.type_map)? else {
+            if !inner.is_strong_pointer() {
                 log_error!("TYPE ERROR: Move operator can only be applied to lvalue strong pointers, found: {expr_type}");
             };
             
@@ -406,7 +406,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
         CXExprKind::While { condition, body, .. } => {
             let condition_type = type_check_traverse(env, condition)?.clone();
 
-            if !matches!(condition_type.intrinsic_type_kind(env.type_map)?, CXTypeKind::Integer { .. }) {
+            if !condition_type.is_integer() {
                 implicit_coerce(env, condition, CXTypeKind::Integer { signed: true, bytes: 8 }.into())?;
             }
 
@@ -476,12 +476,11 @@ fn coerce_mem_ref(
 ) -> Option<CXType> {
     let expr_type = type_check_traverse(env, expr)?.clone();
 
-    let CXTypeKind::MemoryReference(inner)
-        = expr_type.intrinsic_type_kind(env.type_map).cloned()? else {
+    let CXTypeKind::MemoryReference(inner) = &expr_type.kind else {
         return Some(expr_type);
     };
     
-    match inner.intrinsic_type_kind(env.type_map)? {
+    match &inner.kind {
         CXTypeKind::Union { .. } |
         CXTypeKind::Structured { .. } => {},
         
@@ -509,9 +508,8 @@ pub(crate) fn coerce_return_value(
     
     let rvalue = _type.is_memory_reference();
     let value_type = coerce_mem_ref(env, expr)?;
-    let intrinsic_type = value_type.intrinsic_type_kind(env.type_map)?;
     
-    match intrinsic_type {
+    match value_type.kind {
         // The memory alias is not traditionally loadable (i.e. a struct), so it may be returned as-is
         CXTypeKind::MemoryReference(_) => (),
         

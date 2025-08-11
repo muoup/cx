@@ -2,7 +2,7 @@ use crate::attributes::*;
 use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BCTypeMap, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -31,7 +31,6 @@ pub(crate) struct GlobalState<'a> {
 
     functions: HashMap<String, FunctionType<'a>>,
 
-    type_map: &'a BCTypeMap,
     function_map: &'a BCFunctionMap,
 }
 
@@ -102,13 +101,8 @@ pub fn bytecode_aot_codegen(
 
         functions: HashMap::new(),
 
-        type_map: &bytecode.type_map,
         function_map: &bytecode.fn_map,
     };
-
-    for _type in global_state.type_map.values() {
-        cache_type(&mut global_state, _type).unwrap();
-    }
 
     for prototypes in global_state.function_map.values() {
         cache_prototype(&mut global_state, prototypes).unwrap();

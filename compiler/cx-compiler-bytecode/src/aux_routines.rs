@@ -85,7 +85,7 @@ fn variable_requires_nulling(
     builder: &BytecodeBuilder,
     cx_type: &CXType
 ) -> Option<bool> {
-    match cx_type.intrinsic_type_kind(&builder.cx_type_map)? {
+    match cx_type.kind {
         CXTypeKind::StrongPointer { .. } => Some(true),
         
         _ => Some(builder.type_check_data.destructor_exists(cx_type))

@@ -8,7 +8,7 @@ use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
-use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
+use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{implicit_defer_return, implicit_return};
 
 #[derive(Debug)]
@@ -19,7 +19,6 @@ pub struct BytecodeBuilder {
     pub cx_type_map: CXTypeMap,
     pub cx_function_map: CXFunctionMap,
     
-    pub type_map: BCTypeMap,
     pub fn_map: BCFunctionMap,
     
     pub type_check_data: TypeCheckData,
@@ -48,7 +47,6 @@ impl BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
 
-            type_map: convert_cx_type_map(&type_map),
             fn_map: convert_cx_func_map(&type_map, &fn_map),
             type_check_data: expr_type_map,
             
@@ -330,14 +328,6 @@ impl BytecodeBuilder {
         self.type_check_data.expr_type(expr).cloned()
     }
     
-    pub fn get_expr_intrinsic_type(&self, expr: &CXExpr) -> Option<CXTypeKind> {
-        let Some(cx_type) = self.get_expr_type(expr) else {
-            log_error!("INTERNAL PANIC: Failed to get intrinsic type for expression: {:?}", expr)
-        };
-        
-        cx_type.intrinsic_type_kind(&self.cx_type_map).cloned()
-    }
-    
     pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
         let Some(value) = self.get_variable(value_id) else {
             panic!("INTERNAL PANIC: Failed to get variable for value id: {value_id:?}");
@@ -493,7 +483,6 @@ impl BytecodeBuilder {
         Some(
             ProgramBytecode {
                 fn_map: self.fn_map,
-                type_map: self.type_map,
 
                 global_strs: self.global_strings,
                 fn_defs: self.functions

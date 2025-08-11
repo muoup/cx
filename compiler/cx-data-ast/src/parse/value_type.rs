@@ -133,29 +133,12 @@ impl CXType {
         self.specifiers & specifier == specifier
     }
     
-    pub fn intrinsic_type_kind<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
-        Some(&self.kind)
-    }
-    
-    pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
-            return None;
-        };
-
-        let intrin = inner.intrinsic_type_kind(type_map);
-        if matches!(intrin, Some(CXTypeKind::Structured { .. })) {
-            intrin.cloned()
-        } else {
-            panic!("Expected a structured type, found: {:?}", inner.kind);
-        }
-    }
-    
-    pub fn mem_ref_inner(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
+    pub fn mem_ref_inner(&self) -> Option<CXTypeKind> {
+        let CXTypeKind::MemoryReference(inner) = &self.kind else {
             return None;
         };
         
-        inner.intrinsic_type_kind(type_map).cloned()
+        Some(inner.kind.clone())
     }
 
     pub fn pointer_to(self) -> Self {
@@ -277,7 +260,7 @@ pub fn struct_field_type(
     type_: &CXType,
     field: &str
 ) -> Option<CXType> {
-    let Some(CXTypeKind::Structured { fields, .. }) = type_.get_structure_ref(type_map) else {
+    let Some(CXTypeKind::Structured { fields, .. }) = type_.mem_ref_inner() else {
         log_error!("Cannot access field {field} of non-structured type {type_}");
     };
 
