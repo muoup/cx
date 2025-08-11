@@ -52,7 +52,7 @@ pub(crate) fn generate_destructor(
     builder.symbol_table.push_scope();
     builder.new_function(prototype);
 
-    let this = builder.add_instruction_bt(
+    let this = builder.add_instruction(
         VirtualInstruction::FunctionParameter {
             param_index: 0,
         },
@@ -88,14 +88,14 @@ fn generate_params(
 
         if is_structured_return { i += 1; };
 
-        let value = builder.add_instruction_bt(
+        let value = builder.add_instruction(
             VirtualInstruction::FunctionParameter {
                 param_index: i as u32,
             },
             bc_type.clone()
         )?;
 
-        builder.add_instruction(
+        builder.add_instruction_cxty(
             VirtualInstruction::Store {
                 value,
                 memory,

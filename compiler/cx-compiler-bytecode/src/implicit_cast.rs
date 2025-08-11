@@ -14,7 +14,7 @@ pub(crate) fn implicit_cast(
 ) -> Option<ValueID> {
     match cast_type {
         CXCastType::BitCast => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::BitCast {
                     value,
                 },
@@ -27,7 +27,7 @@ pub(crate) fn implicit_cast(
                 panic!("INTERNAL PANIC: Invalid pointer type")
             };
 
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::PtrToInt {
                     value
                 },
@@ -42,14 +42,14 @@ pub(crate) fn implicit_cast(
             
             let val = if *bytes < 8 {
                 if *signed {
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::SExtend {
                             value,
                         },
                         BCTypeKind::Signed { bytes: 8 }.into()
                     )?
                 } else {
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
@@ -60,7 +60,7 @@ pub(crate) fn implicit_cast(
                 value
             };
             
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::BitCast {
                     value: val
                 },
@@ -79,14 +79,14 @@ pub(crate) fn implicit_cast(
             
             let val = if *bytes < 8 {
                 if *signed {
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::SExtend {
                             value,
                         },
                         BCTypeKind::Signed { bytes: 8 }.into()
                     )?
                 } else {
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
@@ -99,7 +99,7 @@ pub(crate) fn implicit_cast(
             
             let bc_type = builder.convert_cx_type(inner.as_ref())?;
             
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 IntToPtrDiff {
                     value: val,
                     ptr_type: bc_type,
@@ -109,7 +109,7 @@ pub(crate) fn implicit_cast(
         }
 
         CXCastType::IntegralTrunc => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::Trunc {
                     value,
                 },
@@ -120,21 +120,21 @@ pub(crate) fn implicit_cast(
         CXCastType::IntegralCast => {
             match &from_type.kind {
                 CXTypeKind::Integer { signed: true, .. } =>
-                    builder.add_instruction(
+                    builder.add_instruction_cxty(
                         VirtualInstruction::SExtend {
                             value,
                         },
                         to_type.clone()
                     ),
                 CXTypeKind::Integer { signed: false, .. } =>
-                    builder.add_instruction(
+                    builder.add_instruction_cxty(
                         VirtualInstruction::ZExtend {
                             value,
                         },
                         to_type.clone()
                     ),
                 CXTypeKind::Bool =>
-                    builder.add_instruction(
+                    builder.add_instruction_cxty(
                         VirtualInstruction::BoolExtend {
                             value,
                         },
@@ -146,7 +146,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::FunctionToPointerDecay => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::GetFunctionAddr {
                     func: value,
                 },
@@ -155,7 +155,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::FloatCast => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::FloatCast {
                     value,
                 },
@@ -164,7 +164,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::IntToFloat => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::IntToFloat {
                     from: builder.convert_fixed_cx_type(from_type)?,
                     value,
@@ -174,7 +174,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::FloatToInt => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::FloatToInt {
                     from: builder.convert_fixed_cx_type(from_type)?,
                     value,

@@ -98,7 +98,7 @@ pub(crate) fn allocate_variable(
     var_type: &CXType,
 ) -> Option<ValueID> {
     let bc_type = builder.convert_cx_type(var_type)?;
-    let memory = builder.add_instruction_bt(
+    let memory = builder.add_instruction(
         VirtualInstruction::Allocate {
             _type: bc_type.clone(),
             alignment: bc_type.alignment(),
@@ -119,7 +119,7 @@ pub(crate) fn allocate_variable(
     }
     
     if variable_requires_nulling(builder, var_type)? {
-        builder.add_instruction_bt(
+        builder.add_instruction(
             VirtualInstruction::ZeroMemory {
                 memory,
                 _type: bc_type.clone(),

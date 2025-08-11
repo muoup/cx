@@ -46,7 +46,7 @@ fn load_mem(
         return Some(val);
     }
     
-    builder.add_instruction_bt(
+    builder.add_instruction(
         VirtualInstruction::Load {
             value: val,
         },
@@ -65,14 +65,14 @@ fn if_owned_call(
     let skip = builder.create_named_block("skip");
 
     let zero = builder.int_const(0, 8, false)?;
-    let zero_ptr = builder.add_instruction_bt(
+    let zero_ptr = builder.add_instruction(
         VirtualInstruction::IntToPtr {
             value: zero
         },
         BCType::default_pointer()
     )?;
 
-    let nonnull = builder.add_instruction_bt(
+    let nonnull = builder.add_instruction(
         VirtualInstruction::PointerBinOp {
             left: pointer,
             right: zero_ptr,
@@ -82,7 +82,7 @@ fn if_owned_call(
         BCType::from(BCTypeKind::Bool)
     )?;
     
-    builder.add_instruction_bt(
+    builder.add_instruction(
         VirtualInstruction::Branch {
             condition: nonnull,
             true_block: run,
@@ -105,11 +105,12 @@ fn if_owned_call(
             func, args,
             method_sig: builder.fn_map.get(function_name).unwrap().clone()
         },
-        CXType::unit()
+        BCType::unit()
     )?;
-    builder.add_instruction_bt(
+    
+    builder.add_instruction(
         VirtualInstruction::Jump { target: skip },
-        BCType::from(BCTypeKind::Unit)
+        BCType::unit()
     )?;
     
     builder.set_current_block(skip);
@@ -149,12 +150,12 @@ pub fn deconstruct_variable(
 
                 let type_size = builder.convert_cx_type(inner.as_ref())?
                     .fixed_size();
-                let size_imm = builder.add_instruction_bt(
+                let size_imm = builder.add_instruction(
                     VirtualInstruction::Immediate { value: type_size as i32 },
                     BCType::from(BCTypeKind::Unsigned { bytes: 8 })
                 )?;
 
-                let ptr_to = builder.add_instruction_bt(
+                let ptr_to = builder.add_instruction(
                     VirtualInstruction::GetFunctionAddr {
                         func: deconstructor,
                     },
@@ -186,7 +187,7 @@ pub fn deconstruct_variable(
             let deconstructor_prototype = deconstructor_prototype(type_);
             
             if let Some(name) = builder.type_check_data.destructor_name(type_) {
-                let deconstructor = builder.add_instruction_bt(
+                let deconstructor = builder.add_instruction(
                     VirtualInstruction::FunctionReference { name },
                     BCType::default_pointer()
                 )?;
@@ -197,7 +198,7 @@ pub fn deconstruct_variable(
                         args: vec![val],
                         method_sig: deconstructor_prototype.clone(),
                     },
-                    CXType::unit()
+                    BCType::unit()
                 )?;
                 
                 generated = true;
@@ -213,7 +214,7 @@ pub fn deconstruct_variable(
                         args: vec![val],
                         method_sig: deconstructor_prototype
                     },
-                    CXType::unit()
+                    BCType::unit()
                 );
 
                 generated = true;
@@ -248,7 +249,7 @@ pub fn generate_deconstructor(
     builder.fn_map.insert(deconstructor_prototype.name.clone(), deconstructor_prototype.clone());
     builder.new_function(deconstructor_prototype.clone());
 
-    let struct_val = builder.add_instruction_bt(
+    let struct_val = builder.add_instruction(
         VirtualInstruction::FunctionParameter { param_index: 0 },
         BCType::default_pointer()
     )?;
@@ -257,7 +258,7 @@ pub fn generate_deconstructor(
         let destructor = builder.fn_ref(&destructor_name)?
             .expect("INTERNAL PANIC: Deconstructor function not found");
 
-        builder.add_instruction(
+        builder.add_instruction_cxty(
             VirtualInstruction::DirectCall {
                 func: destructor,
                 args: vec![struct_val],
@@ -276,7 +277,7 @@ pub fn generate_deconstructor(
             }
 
             let access = get_cx_struct_field_by_index(builder, &as_bc, dec_type.index)?;
-            let field = builder.add_instruction_bt(
+            let field = builder.add_instruction(
                 VirtualInstruction::StructAccess {
                     field_index: access.index,
                     field_offset: access.offset,

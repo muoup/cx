@@ -221,7 +221,7 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                 
                 let type_size = match bc_type.size() {
                     BCTypeSize::Fixed(size) => 
-                        builder.add_instruction_bt(
+                        builder.add_instruction(
                             VirtualInstruction::Immediate {
                                 value: size as i32,
                             },
@@ -230,7 +230,7 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                     BCTypeSize::Variable(id) => id
                 };
                 
-                let total_size = builder.add_instruction_bt(
+                let total_size = builder.add_instruction(
                     VirtualInstruction::IntegerBinOp {
                         left: size_id,
                         right: type_size,

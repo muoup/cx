@@ -39,7 +39,7 @@ pub fn generate_instruction(
                     value: right_id,
                     type_: inner_type,
                 },
-                CXType::unit()
+                BCType::unit()
             )
         },
         
@@ -66,7 +66,7 @@ pub fn generate_instruction(
                         panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
                     });
 
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::StructAccess {
                             struct_: left_id,
                             struct_type: ltype,
@@ -100,7 +100,7 @@ pub fn generate_instruction(
             
             let inner_as_bc = convert_fixed_type_kind(&builder.cx_type_map, &lhs_inner.kind)?;
 
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::PointerBinOp {
                     left: left_id,
                     right: right_id,
@@ -135,7 +135,7 @@ pub fn generate_instruction(
                 let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
                 let dereferenceable = buffer_type.fixed_size() as u32;
 
-                let buffer = builder.add_instruction_bt(
+                let buffer = builder.add_instruction(
                     VirtualInstruction::Allocate {
                         alignment: buffer_type.alignment(),
                         _type: buffer_type,
@@ -153,7 +153,7 @@ pub fn generate_instruction(
 
             match builder.get_expr_type(lhs)?.kind {
                 CXTypeKind::Function { prototype } => {
-                    builder.add_instruction(
+                    builder.add_instruction_cxty(
                         VirtualInstruction::DirectCall {
                             func: left_id,
                             args,
@@ -167,7 +167,7 @@ pub fn generate_instruction(
                         log_error!("Invalid function pointer type: {inner}");
                     };
 
-                    builder.add_instruction(
+                    builder.add_instruction_cxty(
                         VirtualInstruction::IndirectCall {
                             func_ptr: left_id,
                             args,
@@ -207,7 +207,7 @@ pub fn generate_instruction(
         CXExprKind::ImplicitLoad { expr, loaded_type } => {
             let inner = generate_instruction(builder, expr.as_ref())?;
 
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::Load {
                     value: inner
                 },
@@ -217,7 +217,7 @@ pub fn generate_instruction(
         CXExprKind::GetFunctionAddr { func_name, func_sig } => {
             let func_name = generate_instruction(builder, func_name.as_ref())?;
 
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::GetFunctionAddr {
                     func: func_name
                 },
@@ -230,7 +230,7 @@ pub fn generate_instruction(
         },
         
         CXExprKind::FloatLiteral { val, bytes } => {
-            builder.add_instruction(
+            builder.add_instruction_cxty(
                 VirtualInstruction::FloatImmediate {
                     value: *val
                 },
@@ -246,7 +246,7 @@ pub fn generate_instruction(
                 &template_input.params
             );
             
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::FunctionReference {
                     name: function_name
                 },
@@ -276,7 +276,7 @@ pub fn generate_instruction(
                 .clone();
             
             if returned_type.is_structure() {
-                let first_param = builder.add_instruction_bt(
+                let first_param = builder.add_instruction(
                     VirtualInstruction::FunctionParameter {
                         param_index: 0,
                     },
@@ -289,7 +289,7 @@ pub fn generate_instruction(
                         value: value_id,
                         type_: returned_type
                     },
-                    CXType::unit()
+                    BCType::unit()
                 )?;
                 
                 builder.add_return(Some(first_param));
@@ -315,7 +315,7 @@ pub fn generate_instruction(
         CXExprKind::StringLiteral { val, .. } => {
             let string_id = builder.create_global_string(val.clone());
 
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::StringLiteral {
                     str_id: string_id,
                 },
@@ -329,7 +329,7 @@ pub fn generate_instruction(
                     let operand = generate_instruction(builder, operand.as_ref())?;
                     let op_type = builder.get_type(operand)?.clone();
                     
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::IntegerUnOp {
                             value: operand,
                             op: BCIntUnOp::NEG
@@ -341,7 +341,7 @@ pub fn generate_instruction(
                     let operand = generate_instruction(builder, operand.as_ref())?;
                     let op_type = builder.get_type(operand)?.clone();
 
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::IntegerUnOp {
                             value: operand,
                             op: BCIntUnOp::LNOT
@@ -361,7 +361,7 @@ pub fn generate_instruction(
                     let CXTypeKind::MemoryReference(inner) = val_type.kind
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
-                    let loaded_val = builder.add_instruction(
+                    let loaded_val = builder.add_instruction_cxty(
                         VirtualInstruction::Load {
                             value
                         },
@@ -388,7 +388,7 @@ pub fn generate_instruction(
                             value: incremented,
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
                         },
-                        CXType::unit()
+                        BCType::unit()
                     )?;
 
                     Some(incremented)
@@ -401,7 +401,7 @@ pub fn generate_instruction(
                     let CXTypeKind::MemoryReference(inner) = val_type.kind
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
-                    let loaded_val = builder.add_instruction(
+                    let loaded_val = builder.add_instruction_cxty(
                         VirtualInstruction::Load {
                             value
                         },
@@ -428,7 +428,7 @@ pub fn generate_instruction(
                             value: incremented,
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
                         },
-                        CXType::unit()
+                        BCType::unit()
                     )?;
 
                     Some(loaded_val)
@@ -454,23 +454,26 @@ pub fn generate_instruction(
                     true_block: then_block,
                     false_block: else_block
                 },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(then_block);
             generate_instruction(builder, then_branch.as_ref());
+
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(else_block);
+
             if let Some(else_branch) = else_branch {
                 generate_instruction(builder, else_branch.as_ref());
             }
+
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(merge_block);
@@ -490,7 +493,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: first_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(condition_block);
@@ -502,14 +505,14 @@ pub fn generate_instruction(
                     true_block: body_block,
                     false_block: merge_block
                 },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(body_block);
             generate_instruction(builder, body.as_ref());
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.end_scope();
@@ -543,7 +546,7 @@ pub fn generate_instruction(
                         .collect(),
                     default: default_block.unwrap_or(merge_block)
                 },
-                CXType::unit()
+                BCType::unit()
             );
             
             let mut case_iter = sorted_cases.iter()
@@ -556,7 +559,7 @@ pub fn generate_instruction(
                     let case_block = case_block_iter.next().unwrap();
                     builder.add_instruction(
                         VirtualInstruction::Jump { target: *case_block },
-                        CXType::unit()
+                        BCType::unit()
                     );
                     next_index = case_iter.next();
                     builder.set_current_block(*case_block);
@@ -566,7 +569,7 @@ pub fn generate_instruction(
                     let block = default_block.unwrap();
                     builder.add_instruction(
                         VirtualInstruction::Jump { target: block },
-                        CXType::unit()
+                        BCType::unit()
                     );
                     builder.set_current_block(block);
                 }
@@ -576,7 +579,7 @@ pub fn generate_instruction(
             
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
-                CXType::unit()
+                BCType::unit()
             );
             
             builder.end_scope();
@@ -592,7 +595,7 @@ pub fn generate_instruction(
             generate_instruction(builder, init.as_ref())?;
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(condition_block);
@@ -603,21 +606,21 @@ pub fn generate_instruction(
                     true_block: body_block,
                     false_block: merge_block
                 },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(body_block);
             generate_instruction(builder, body.as_ref())?;
             builder.add_instruction(
                 VirtualInstruction::Jump { target: increment_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.set_current_block(increment_block);
             generate_instruction(builder, increment.as_ref())?;
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
-                CXType::unit()
+                BCType::unit()
             );
 
             builder.end_scope();
@@ -632,7 +635,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge },
-                CXType::unit()
+                BCType::unit()
             );
 
             Some(ValueID::NULL)
@@ -645,7 +648,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: cond },
-                CXType::unit()
+                BCType::unit()
             );
 
             Some(ValueID::NULL)
@@ -667,7 +670,7 @@ pub fn generate_instruction(
         CXExprKind::Move { expr } => {
             let memory = generate_instruction(builder, expr.as_ref())?;
             
-            let value = builder.add_instruction_bt(
+            let value = builder.add_instruction(
                 VirtualInstruction::Load {
                     value: memory
                 },
@@ -675,7 +678,7 @@ pub fn generate_instruction(
             )?;
             
             let zero = builder.int_const(0, 8, true)?;
-            let zero_as_ptr = builder.add_instruction(
+            let zero_as_ptr = builder.add_instruction_cxty(
                 VirtualInstruction::IntToPtr {
                     value: zero
                 },
@@ -688,7 +691,7 @@ pub fn generate_instruction(
                     value: zero_as_ptr,
                     type_: BCType::default_pointer()
                 },
-                CXType::unit()
+                BCType::unit()
             )?;
 
             Some(value)
@@ -709,7 +712,7 @@ pub fn generate_instruction(
                         .expect("INTERNAL PANIC: Standard array alloc function not found");
                     let len = generate_instruction(builder, len.as_ref())?;
                     
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::DirectCall {
                             func,
                             args: vec![size_imm, len],
@@ -723,7 +726,7 @@ pub fn generate_instruction(
                     let func = builder.fn_ref(STANDARD_ALLOC)?
                         .expect("INTERNAL PANIC: Standard alloc function not found");
                     
-                    builder.add_instruction_bt(
+                    builder.add_instruction(
                         VirtualInstruction::DirectCall {
                             func,
                             args: vec![size_imm],
@@ -739,7 +742,7 @@ pub fn generate_instruction(
             let generated_type = builder.get_expr_type(expr)?;
             let as_bc = builder.convert_cx_type(&generated_type)?;
             
-            let alloc = builder.add_instruction_bt(
+            let alloc = builder.add_instruction(
                 VirtualInstruction::Allocate {
                     alignment: as_bc.alignment(),
                     _type: as_bc.clone(),
@@ -752,7 +755,7 @@ pub fn generate_instruction(
                     memory: alloc,
                     _type: as_bc.clone(),
                 },
-                CXType::unit()
+                BCType::unit()
             );
             
             for index in indices.iter() {
@@ -766,7 +769,7 @@ pub fn generate_instruction(
                     panic!("PANIC: Attempting to access non-existent field at index {} in struct {as_bc:?}", index.index);
                 });
              
-                let struct_access = builder.add_instruction_bt(
+                let struct_access = builder.add_instruction(
                     VirtualInstruction::StructAccess {
                         struct_: alloc,
                         struct_type: as_bc.clone(),
@@ -776,7 +779,7 @@ pub fn generate_instruction(
                     BCType::default_pointer()
                 )?;
                 
-                builder.add_instruction_bt(
+                builder.add_instruction(
                     VirtualInstruction::Store {
                         memory: struct_access,
                         value,
@@ -808,7 +811,7 @@ pub(crate) fn generate_binop(
             let false_imm = builder.int_const_match(0, &match_type)?;
             
             let left_id = generate_instruction(builder, lhs)?;
-            let left_cmp = builder.add_instruction_bt(
+            let left_cmp = builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
                     right: false_imm,
@@ -832,13 +835,13 @@ pub(crate) fn generate_binop(
                     true_block,
                     false_block
                 },
-                CXType::unit()
+                BCType::unit()
             );
             
             builder.set_current_block(no_short_circuit_block);
             
             let right_id = generate_instruction(builder, rhs)?;
-            let right_cmp = builder.add_instruction_bt(
+            let right_cmp = builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
                     left: right_id,
                     right: false_imm,
@@ -851,12 +854,12 @@ pub(crate) fn generate_binop(
                 VirtualInstruction::Jump {
                     target: merge_block
                 },
-                CXType::unit()
+                BCType::unit()
             );
             
             builder.set_current_block(merge_block);
             
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::Phi {
                     predecessors: vec![
                         (left_cmp, previous_block),
@@ -893,7 +896,7 @@ pub(crate) fn generate_algebraic_binop(
 ) -> Option<ValueID> {
     match &cx_lhs_type.kind {
         CXTypeKind::Integer { signed: true, .. } => {
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
                     right: right_id,
@@ -904,7 +907,7 @@ pub(crate) fn generate_algebraic_binop(
         },
 
         CXTypeKind::Integer { signed: false, .. } => {
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
                     right: right_id,
@@ -915,7 +918,7 @@ pub(crate) fn generate_algebraic_binop(
         },
         
         CXTypeKind::Bool => {
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
                     left: left_id,
                     right: right_id,
@@ -931,7 +934,7 @@ pub(crate) fn generate_algebraic_binop(
                 unreachable!("generate_binop: Expected pointer type for {left_id}, found {cx_lhs_type}") 
             };
 
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::PointerBinOp {
                     left: left_id,
                     right: right_id,
@@ -943,7 +946,7 @@ pub(crate) fn generate_algebraic_binop(
         },
 
         CXTypeKind::Float { .. } => {
-            builder.add_instruction_bt(
+            builder.add_instruction(
                 VirtualInstruction::FloatBinOp {
                     left: left_id,
                     right: right_id,
@@ -984,12 +987,12 @@ pub(crate) fn implicit_return(
         VirtualInstruction::Jump {
             target: return_block
         },
-        CXType::unit()
+        BCType::unit()
     );
     builder.set_current_block(return_block);
 
     if prototype.name == "main" {
-        let zero = builder.add_instruction(
+        let zero = builder.add_instruction_cxty(
             VirtualInstruction::Immediate {
                 value: 0
             },
@@ -1033,7 +1036,7 @@ pub(crate) fn implicit_defer_return(
             VirtualInstruction::Return {
                 value: return_value,
             },
-            CXType::unit()
+            BCType::unit()
         )?;
     }
     

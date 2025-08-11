@@ -131,7 +131,7 @@ impl BytecodeBuilder {
         !ctx.deferred_blocks.is_empty()
     }
     
-    pub fn add_instruction_bt(
+    pub fn add_instruction(
         &mut self,
         instruction: VirtualInstruction,
         value_type: BCType
@@ -161,14 +161,14 @@ impl BytecodeBuilder {
         )
     }
 
-    pub fn add_instruction(
+    pub fn add_instruction_cxty(
         &mut self,
         instruction: VirtualInstruction,
         value_type: CXType
     ) -> Option<ValueID> {
         let value_type = self.convert_cx_type(&value_type)?;
         
-        self.add_instruction_bt(
+        self.add_instruction(
             instruction,
             value_type
         )
@@ -177,7 +177,7 @@ impl BytecodeBuilder {
     pub fn fn_ref_unchecked(
         &mut self, name: &str
     ) -> BytecodeResult<ValueID> {
-        self.add_instruction_bt(
+        self.add_instruction(
             VirtualInstruction::FunctionReference { name: name.to_owned() },
             BCType::default_pointer()
         )
@@ -200,7 +200,7 @@ impl BytecodeBuilder {
         } else {
             let return_block = self.create_named_block("return");
             
-            self.add_instruction_bt(
+            self.add_instruction(
                 VirtualInstruction::Jump { target: return_block },
                 BCType::unit()
             );
@@ -209,7 +209,7 @@ impl BytecodeBuilder {
             
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
-                CXType::unit()
+                BCType::unit()
             )
         }
     }
@@ -221,7 +221,7 @@ impl BytecodeBuilder {
     ) -> Option<ValueID> {
         let inst = self.add_instruction(
             VirtualInstruction::GotoDefer,
-            CXType::unit()
+            BCType::unit()
         )?;
 
         if let Some(value_id) = value_id {
@@ -260,7 +260,7 @@ impl BytecodeBuilder {
     pub fn bool_const(
         &mut self, value: bool
     ) -> Option<ValueID> {
-        self.add_instruction_bt(
+        self.add_instruction(
             VirtualInstruction::Immediate { value: if value { 1 } else { 0 } },
             BCType::from(BCTypeKind::Bool)
         )
@@ -294,7 +294,7 @@ impl BytecodeBuilder {
             }
         );
 
-        self.add_instruction_bt(
+        self.add_instruction(
             VirtualInstruction::Immediate { value },
             value_type
         )
@@ -359,7 +359,7 @@ impl BytecodeBuilder {
         let return_type = context.prototype.return_type.clone();
         
         if !context.prototype.return_type.is_void() {
-            self.add_instruction_bt(
+            self.add_instruction(
                 VirtualInstruction::Phi { predecessors: Vec::new() },
                 return_type
             );
