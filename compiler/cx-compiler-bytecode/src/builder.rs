@@ -9,7 +9,7 @@ use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
 use crate::aux_routines::deconstruct_scope;
-use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
+use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 
 #[derive(Debug)]
