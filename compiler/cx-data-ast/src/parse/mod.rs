@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod maps;
+pub mod type_mapping;
 
 pub mod intrinsic_types;
 pub mod value_type;

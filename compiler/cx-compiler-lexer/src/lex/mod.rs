@@ -1,4 +1,4 @@
-use cx_data_ast::lex::token;
+use cx_data_lexer::token;
 
 mod lexer;
 

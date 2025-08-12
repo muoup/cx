@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::lex::token::{IntrinsicType, TokenKind, Token};
+use crate::token::{IntrinsicType, Token, TokenKind};
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

@@ -1,16 +1,15 @@
-use std::collections::HashSet;
 use crate::{BytecodeResult, ProgramBytecode};
 use cx_data_ast::parse::ast::{CXExpr};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_ast::parse::value_type::CXType;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BlockInstruction, BytecodeFunction, BCFunctionPrototype, ElementID, FunctionBlock, ValueID, VirtualInstruction, VirtualValue, BCTypeMap, BCFunctionMap, BlockID};
+use cx_data_bytecode::*;
 use cx_data_bytecode::node_type_map::TypeCheckData;
-use cx_util::format::{dump_all, dump_data};
+use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
 use crate::aux_routines::deconstruct_scope;
-use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
+use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 
 #[derive(Debug)]
@@ -20,17 +19,16 @@ pub struct BytecodeBuilder {
     
     pub cx_type_map: CXTypeMap,
     pub cx_function_map: CXFunctionMap,
-    
-    pub type_map: BCTypeMap,
+
     pub fn_map: BCFunctionMap,
     
     pub type_check_data: TypeCheckData,
-    
+
+    pub symbol_table: ScopedMap<ValueID>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
-    symbol_table: ScopedMap<ValueID>,
-    
+
     in_deferred_block: bool,
-    function_context: Option<BytecodeFunctionContext>,
+    function_context: Option<BytecodeFunctionContext>
 }
 
 #[derive(Debug)]
@@ -57,7 +55,6 @@ impl BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
 
-            type_map: convert_cx_type_map(&type_map),
             fn_map: convert_cx_func_map(&type_map, &fn_map),
             type_check_data: expr_type_map,
             
@@ -143,42 +140,42 @@ impl BytecodeBuilder {
         self.symbol_table.push_scope();
         self.declaration_scope.push(Vec::new());
     }
-    
+
     pub fn pop_scope(&mut self) -> Option<()> {
         self.symbol_table.pop_scope();
         let decls = self.declaration_scope.pop();
-    
+
         deconstruct_scope(self, decls?.as_slice())
     }
-    
+
     pub fn generate_scoped(&mut self, expr: &CXExpr) -> BytecodeResult<ValueID> {
         self.push_scope();
         let val = generate_instruction(self, expr)?;
         self.pop_scope()?;
-        
+
         Some(val)
     }
-    
+
     pub fn insert_declaration(&mut self, declaration: DeclarationLifetime) {
         self.declaration_scope.last_mut()
             .expect("INTERNAL PANIC: Attempted to insert declaration with no current scope")
             .push(declaration);
     }
-    
+
     pub fn insert_symbol(&mut self, name: String, value_id: ValueID) {
         self.symbol_table.insert(name, value_id);
     }
-    
+
     pub fn get_symbol(&self, name: &str) -> Option<ValueID> {
         self.symbol_table.get(name).cloned()
     }
-    
+
     pub fn function_defers(&self) -> bool {
         let ctx = self.function_context.as_ref().unwrap();
         !ctx.deferred_blocks.is_empty()
     }
     
-    pub fn add_instruction_bt(
+    pub fn add_instruction(
         &mut self,
         instruction: VirtualInstruction,
         value_type: BCType
@@ -208,14 +205,14 @@ impl BytecodeBuilder {
         )
     }
 
-    pub fn add_instruction(
+    pub fn add_instruction_cxty(
         &mut self,
         instruction: VirtualInstruction,
         value_type: CXType
     ) -> Option<ValueID> {
         let value_type = self.convert_cx_type(&value_type)?;
         
-        self.add_instruction_bt(
+        self.add_instruction(
             instruction,
             value_type
         )
@@ -224,7 +221,7 @@ impl BytecodeBuilder {
     pub fn fn_ref_unchecked(
         &mut self, name: &str
     ) -> BytecodeResult<ValueID> {
-        self.add_instruction_bt(
+        self.add_instruction(
             VirtualInstruction::FunctionReference { name: name.to_owned() },
             BCType::default_pointer()
         )
@@ -232,7 +229,7 @@ impl BytecodeBuilder {
     
     pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<Option<ValueID>> {
         if self.fn_map.contains_key(name) {
-            self.fn_ref_unchecked(name).map(|opt| Some(opt))
+            self.fn_ref_unchecked(name).map(Some)
         } else {
             Some(None)
         }
@@ -247,7 +244,7 @@ impl BytecodeBuilder {
         } else {
             let return_block = self.create_named_block("return");
             
-            self.add_instruction_bt(
+            self.add_instruction(
                 VirtualInstruction::Jump { target: return_block },
                 BCType::unit()
             );
@@ -256,7 +253,7 @@ impl BytecodeBuilder {
             
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
-                CXType::unit()
+                BCType::unit()
             )
         }
     }
@@ -268,7 +265,7 @@ impl BytecodeBuilder {
     ) -> Option<ValueID> {
         let inst = self.add_instruction(
             VirtualInstruction::GotoDefer,
-            CXType::unit()
+            BCType::unit()
         )?;
 
         if let Some(value_id) = value_id {
@@ -293,7 +290,7 @@ impl BytecodeBuilder {
             .instruction;
         
         let VirtualInstruction::Phi { predecessors } = first_defer_inst else {
-            let fdi = format!("{}", first_defer_inst);
+            let fdi = format!("{first_defer_inst}");
             
             self.dump_current_fn();
             
@@ -307,7 +304,7 @@ impl BytecodeBuilder {
     pub fn bool_const(
         &mut self, value: bool
     ) -> Option<ValueID> {
-        self.add_instruction_bt(
+        self.add_instruction(
             VirtualInstruction::Immediate { value: if value { 1 } else { 0 } },
             BCType::from(BCTypeKind::Bool)
         )
@@ -341,7 +338,7 @@ impl BytecodeBuilder {
             }
         );
 
-        self.add_instruction_bt(
+        self.add_instruction(
             VirtualInstruction::Immediate { value },
             value_type
         )
@@ -374,15 +371,7 @@ impl BytecodeBuilder {
     pub fn get_expr_type(&self, expr: &CXExpr) -> Option<CXType> {
         self.type_check_data.expr_type(expr).cloned()
     }
-    
-    pub fn get_expr_intrinsic_type(&self, expr: &CXExpr) -> Option<CXTypeKind> {
-        let Some(cx_type) = self.get_expr_type(expr) else {
-            log_error!("INTERNAL PANIC: Failed to get intrinsic type for expression: {:?}", expr)
-        };
-        
-        cx_type.intrinsic_type_kind(&self.cx_type_map).cloned()
-    }
-    
+
     pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
         let Some(value) = self.get_variable(value_id) else {
             panic!("INTERNAL PANIC: Failed to get variable for value id: {value_id:?}");
@@ -415,7 +404,7 @@ impl BytecodeBuilder {
         let return_type = context.prototype.return_type.clone();
         
         if !context.prototype.return_type.is_void() {
-            self.add_instruction_bt(
+            self.add_instruction(
                 VirtualInstruction::Phi { predecessors: Vec::new() },
                 return_type
             );
@@ -542,10 +531,9 @@ impl BytecodeBuilder {
         Some(
             ProgramBytecode {
                 fn_map: self.fn_map,
-                type_map: self.type_map,
 
                 global_strs: self.global_strings,
-                fn_defs: self.functions,
+                fn_defs: self.functions
             }
         )
     }

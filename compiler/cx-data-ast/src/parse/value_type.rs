@@ -6,14 +6,7 @@ use crate::parse::ast::{CXExpr, CXFunctionPrototype};
 use crate::parse::identifier::CXIdent;
 use crate::parse::maps::CXTypeMap;
 use crate::parse::parser::VisibilityMode;
-
-pub type CXTypeSpecifier = u8;
-
-pub const CX_CONST: CXTypeSpecifier = 1 << 0;
-pub const CX_VOLATILE: CXTypeSpecifier = 1 << 1;
-pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
-pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
-pub const CX_UNION: CXTypeSpecifier = 1 << 4;
+use crate::preparse::pp_type::CXTypeSpecifier;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {
@@ -56,7 +49,6 @@ pub enum CXTypeKind {
     Structured {
         name: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
-        has_destructor: bool
     },
     Union {
         name: Option<CXIdent>,
@@ -65,21 +57,21 @@ pub enum CXTypeKind {
     Unit,
 
     StrongPointer { 
-        inner: Box<CXType>,
+        inner_type: Box<CXType>,
         is_array: bool,
     },
 
     PointerTo {
-        inner: Box<CXType>,
+        inner_type: Box<CXType>,
         
         sizeless_array: bool,
-        explicitly_weak: bool,
+        weak: bool,
         nullable: bool
     },
     MemoryReference(Box<CXType>),
     Array {
         size: usize,
-        _type: Box<CXType>
+        inner_type: Box<CXType>
     },
     VariableLengthArray {
         size: Box<CXExpr>,
@@ -92,47 +84,8 @@ pub enum CXTypeKind {
     Function {
         prototype: Box<CXFunctionPrototype>,
     },
-
-    Identifier {
-        name: CXIdent,
-        predeclaration: PredeclarationType
-    }
 }
 
-impl From<&str> for CXTypeKind {
-    fn from(value: &str) -> Self {
-        CXTypeKind::Identifier {
-            name: CXIdent::from(value),
-            predeclaration: PredeclarationType::None
-        }
-    }
-}
-
-impl From<CXIdent> for CXTypeKind {
-    fn from(value: CXIdent) -> Self {
-        CXTypeKind::Identifier {
-            name: value,
-            predeclaration: PredeclarationType::None
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
-pub enum PredeclarationType {
-    None,
-    Struct,
-    Union,
-    Enum
-}
-
-impl CXTypeKind {
-    pub fn to_val_type(self) -> CXType {
-        CXType::new(
-            0,
-            self
-        )
-    }
-}
 
 impl CXType {
     pub fn unit() -> Self {
@@ -180,78 +133,12 @@ impl CXType {
         self.specifiers & specifier == specifier
     }
     
-    pub fn intrinsic_type<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXType> {
-        get_intrinsic_type(type_map, self)
-    }
-
-    pub fn intrinsic_type_kind<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a CXTypeKind> {
-        Some(&get_intrinsic_type(type_map, self)?.kind)
-    }
-    
-    pub fn is_structure_ref(&self, type_map: &CXTypeMap) -> bool {
-        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
-            return false;
-        };
-          
-        inner.is_structured(type_map)
-    }
-
-    pub fn is_mem_ref(&self) -> bool {
-        matches!(self.kind, CXTypeKind::MemoryReference(_))
-    }
-    
-    pub fn is_structured(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { .. }))
-    }
-    
-    pub fn is_integer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Integer { .. }))
-    }
-    
-    pub fn is_strong_ptr(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::StrongPointer { .. }))
-    }
-    
-    pub fn has_destructor(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Structured { has_destructor: true, .. }))
-    }
-    
-    pub fn get_destructor<'a>(&'a self, type_map: &'a CXTypeMap) -> Option<&'a str> {
-        match self.intrinsic_type_kind(type_map)? {
-            CXTypeKind::Structured { has_destructor: true, name, .. } 
-                => Some(name.as_ref()?.as_str()),
-            
-            _ => None,
-        }
-    }
-    
-    pub fn get_structure_ref(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
-            return None;
-        };
-
-        let intrin = inner.intrinsic_type_kind(type_map);
-        if matches!(intrin, Some(CXTypeKind::Structured { .. })) {
-            intrin.cloned()
-        } else {
-            panic!("Expected a structured type, found: {:?}", inner.kind);
-        }
-    }
-    
-    pub fn mem_ref_inner(&self, type_map: &CXTypeMap) -> Option<CXTypeKind> {
-        let Some(CXTypeKind::MemoryReference(inner)) = self.intrinsic_type_kind(type_map) else {
+    pub fn mem_ref_inner(&self) -> Option<CXTypeKind> {
+        let CXTypeKind::MemoryReference(inner) = &self.kind else {
             return None;
         };
         
-        inner.intrinsic_type_kind(type_map).cloned()
-    }
-    
-    pub fn is_pointer(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::PointerTo { .. }))
-    }
-
-    pub fn is_void(&self, type_map: &CXTypeMap) -> bool {
-        matches!(self.intrinsic_type_kind(type_map), Some(CXTypeKind::Unit))
+        Some(inner.kind.clone())
     }
 
     pub fn pointer_to(self) -> Self {
@@ -260,39 +147,83 @@ impl CXType {
             specifiers: 0,
             visibility_mode: VisibilityMode::Private,
             kind: CXTypeKind::PointerTo {
-                inner: Box::new(self),
+                inner_type: Box::new(self),
                 
                 sizeless_array: false,
-                explicitly_weak: false,
+                weak: false,
                 nullable: true
             }
+        }
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self.kind, CXTypeKind::PointerTo { .. })
+    }
+
+    pub fn is_strong_pointer(&self) -> bool {
+        matches!(self.kind, CXTypeKind::StrongPointer { .. })
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Array { .. } | CXTypeKind::VariableLengthArray { .. })
+    }
+
+    pub fn is_structured(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Structured { .. } | CXTypeKind::Union { .. })
+    }
+
+    pub fn is_opaque(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Opaque { .. })
+    }
+
+    pub fn is_function(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Function { .. })
+    }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Integer { .. })
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Float { .. })
+    }
+
+    pub fn is_bool(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Bool)
+    }
+
+    pub fn is_unit(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Unit)
+    }
+
+    pub fn is_memory_reference(&self) -> bool {
+        matches!(self.kind, CXTypeKind::MemoryReference(_))
+    }
+}
+
+impl From<CXTypeKind> for CXType {
+    fn from(kind: CXTypeKind) -> Self {
+        CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
+            visibility_mode: VisibilityMode::Private,
+            specifiers: 0,
+            kind,
         }
     }
 }
 
 pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
     match (&t1.kind, &t2.kind) {
-        (CXTypeKind::Identifier { name: name1, .. },
-            CXTypeKind::Identifier { name: name2, .. })
-        if name1 == name2 =>
-            true,
-
-        (CXTypeKind::Identifier { name: name1, .. }, _) =>
-            same_type(type_map, type_map.get(name1.as_str()).unwrap(), t2),
-
-        (_, CXTypeKind::Identifier { name: name2, .. }) =>
-            same_type(type_map, t1, type_map.get(name2.as_str()).unwrap_or_else(|| panic!("Type not found: {name2}"))),
-
-        (CXTypeKind::Array { _type: t1_type, .. },
-         CXTypeKind::Array { _type: t2_type, .. }) =>
+        (CXTypeKind::Array { inner_type: t1_type, .. },
+         CXTypeKind::Array { inner_type: t2_type, .. }) =>
             same_type(type_map, t1_type, t2_type),
 
-        (CXTypeKind::PointerTo { inner: t1_type, .. },
-         CXTypeKind::PointerTo { inner: t2_type, .. }) =>
+        (CXTypeKind::PointerTo { inner_type: t1_type, .. },
+         CXTypeKind::PointerTo { inner_type: t2_type, .. }) =>
             same_type(type_map, t1_type, t2_type),
 
-        (CXTypeKind::StrongPointer { inner: t1_inner, .. },
-         CXTypeKind::StrongPointer { inner: t2_inner, .. }) =>
+        (CXTypeKind::StrongPointer { inner_type: t1_inner, .. },
+         CXTypeKind::StrongPointer { inner_type: t2_inner, .. }) =>
             same_type(type_map, t1_inner, t2_inner),
 
         (CXTypeKind::Structured { fields: t1_fields, .. },
@@ -324,23 +255,12 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
     }
 }
 
-pub fn get_intrinsic_type<'a>(type_map: &'a CXTypeMap, type_: &'a CXType) -> Option<&'a CXType> {
-    match &type_.kind {
-        CXTypeKind::Identifier { name, .. }
-            => type_map.get(name.as_str())
-                .and_then(|_type| get_intrinsic_type(type_map, _type))
-                .or_else(|| log_error!("Type not found: {}", name.as_str())),
-
-        _ => Some(&type_)
-    }
-}
-
 pub fn struct_field_type(
     type_map: &CXTypeMap,
     type_: &CXType,
     field: &str
 ) -> Option<CXType> {
-    let Some(CXTypeKind::Structured { fields, .. }) = type_.get_structure_ref(type_map) else {
+    let Some(CXTypeKind::Structured { fields, .. }) = type_.mem_ref_inner() else {
         log_error!("Cannot access field {field} of non-structured type {type_}");
     };
 

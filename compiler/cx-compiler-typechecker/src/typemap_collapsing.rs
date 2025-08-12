@@ -5,12 +5,15 @@ use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<CXTypeMap> 
     where MapRef: AsRef<CXTypeMap>
 {
-    let mut new_map = CXTypeMap::new();
+    // this is horrifying code, please forgive me
+    let mut new_map = self_map.clone();
+    let pairs = self_map.iter()
+        .map(|(name, _type)| (name.clone(), _type.clone()))
+        .collect::<Vec<_>>();
     
-    for (name, _type) in self_map.iter() {
-        let mut cloned = _type.clone();
-        collapse_type(&mut cloned, self_map, import_maps)?;
-        new_map.insert(name.clone(), cloned);
+    for (name, mut _type) in pairs.into_iter() {
+        collapse_type(&mut _type, &mut new_map, import_maps)?;
+        new_map.insert(name, _type);
     }
     
     for map in import_maps {
@@ -25,28 +28,13 @@ pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) ->
     Some(new_map)
 }
 
-fn collapse_type<MapRef>(_type: &mut CXType, self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<()> 
+pub fn collapse_type<MapRef>(_type: &mut CXType, self_map: &mut CXTypeMap, import_maps: &[MapRef]) -> Option<()> 
     where MapRef: AsRef<CXTypeMap>
 {
     match &mut _type.kind {
-        CXTypeKind::Identifier { name, .. } => {
-            if let Some(self_type) = self_map.get(name.as_str()) {
-                *_type = self_type.clone();
-            } else {
-                for import_map in import_maps {
-                    if let Some(import_type) = import_map.as_ref().get(name.as_str()) {
-                        *_type = import_type.clone();
-                        break;
-                    }
-                }
-                
-                todo!()
-            }
-        },
-        
-        CXTypeKind::Array { _type: inner, .. } |
-        CXTypeKind::StrongPointer { inner, .. } |
-        CXTypeKind::PointerTo { inner, .. } 
+        CXTypeKind::Array { inner_type: inner, .. } |
+        CXTypeKind::StrongPointer { inner_type: inner, .. } |
+        CXTypeKind::PointerTo { inner_type: inner, .. }
             => collapse_type(inner.as_mut(), self_map, import_maps)?,
         
         CXTypeKind::Union { fields, .. } |
@@ -71,8 +59,8 @@ fn collapse_type<MapRef>(_type: &mut CXType, self_map: &CXTypeMap, import_maps: 
         
         CXTypeKind::Integer { .. } |
         CXTypeKind::Float { .. } |
-        CXTypeKind::Bool { .. } |
-        CXTypeKind::Unit { .. }
+        CXTypeKind::Bool |
+        CXTypeKind::Unit
             => {}, // Primitive types do not need collapsing
     }
     

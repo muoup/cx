@@ -1,5 +1,5 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use crate::{compilation_hash, CompilationUnit, GlobalCompilationContext};
 
 pub fn file_path(path: &str) -> String {
@@ -13,7 +13,7 @@ pub fn file_path(path: &str) -> String {
             format!("{}/../../lib/{}", current_exe.parent().unwrap().display(), &path)
         }
     } else {
-        format!("{path}")
+        path.to_string()
     }
 }
 
@@ -32,7 +32,7 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     complete_path.push(identifier_string);
 
     std::fs::create_dir_all(&complete_path)
-        .expect(format!("Failed to create internal directory: {}", complete_path.display()).as_str());
+        .unwrap_or_else(|_| panic!("Failed to create internal directory: {}", complete_path.display()));
 
     complete_path
 }

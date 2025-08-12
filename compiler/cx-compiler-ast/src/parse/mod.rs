@@ -1,25 +1,19 @@
-use cx_data_ast::parse::ast::{CXAST};
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::parser::{ParserData, TokenIter};
+use cx_data_ast::parse::ast::CXAST;
+use cx_data_ast::parse::maps::CXFunctionMap;
+use cx_data_ast::parse::parser::ParserData;
+use cx_data_lexer::TokenIter;
 use global_scope::parse_global_stmt;
 
 pub mod expression;
 pub mod global_scope;
 pub mod typing;
 pub mod operators;
+pub mod precontextualizing;
+pub mod template;
 mod parsing_tools;
 mod structured_initialization;
-mod template;
 
-#[derive(Debug)]
-pub struct CXPreASTInfo {
-    pub type_map: CXTypeMap,
-    pub public_types: Vec<String>,
-    pub imports: Vec<String>,
-    pub templated_identifiers: Vec<String>
-}
-
-pub fn parse_function_prototypes(mut data: ParserData) -> Option<CXFunctionMap> {
+pub fn parse_function_prototypes(data: ParserData) -> Option<CXFunctionMap> {
     None
 }
 

@@ -1,5 +1,5 @@
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind};
+use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXInitIndex};
 use cx_data_ast::parse::parser::ParserData;
 use crate::parse::expression::parse_expr;

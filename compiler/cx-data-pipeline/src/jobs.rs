@@ -50,6 +50,19 @@ pub enum CompilationStep {
      *  
      */
     PreParse = 1 << 0,
+
+    /**
+     *  A relatively minor step, in order for templates to function, the preparse data of all modules
+     *  must be combined with the public interfaces of its imports. The reason for this is subtle,
+     *  as in order for a template to be resolved, in case type data is connected between multiple
+     *  compilation units, the module must "become" the module that contains the template, thus
+     *  meaning unresolved templates must be resolved to a certain degree beforehand.
+     *
+     *  Requires: The preparse data of the current compilation unit and its imports.
+     *
+     *  Outputs:  A slightly modified preparse data that contains the public interfaces of imports
+     */
+    ImportCombine = 1 << 1,
     
     /**
      *  Parse the AST from the source code. This is the main parsing step that converts the source
@@ -62,7 +75,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A naively parsed AST.
      */
-    ASTParse = 1 << 1,
+    ASTParse = 1 << 2,
 
     /**
      *  Typecheck the AST. This step validates expressions, statements, and declarations, as well
@@ -72,7 +85,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A type-checked AST.
      */
-    TypeCheck = 1 << 2,
+    TypeCheck = 1 << 3,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -85,7 +98,7 @@ pub enum CompilationStep {
      *            implementations of templated functions, types, and potentially in the future small
      *            always-inlined functions.
      */
-    BytecodeGen = 1 << 3,
+    BytecodeGen = 1 << 4,
 
     /**
      *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
@@ -97,7 +110,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 4
+    Codegen = 1 << 5
     
     // For now, linking is a single step that is done after all compilation above is done. This 
     // could be abstracted into a CompilationStep, but seeing as it is not specified to a single compilation
@@ -129,6 +142,12 @@ impl Hash for CompilationJob {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.unit.hash(state);
         self.step.hash(state);
+    }
+}
+
+impl Default for JobQueue {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

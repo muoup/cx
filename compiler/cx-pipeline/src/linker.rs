@@ -20,7 +20,7 @@ pub(crate) fn link(context: &GlobalCompilationContext) -> Option<()> {
         Some(())
     } else {
         eprintln!("[Linker] Failed to link files: {}", String::from_utf8_lossy(&output.stderr));
-        eprintln!("[Linker] Command: {:?}", cmd);
+        eprintln!("[Linker] Command: {cmd:?}");
         None
     }
 }

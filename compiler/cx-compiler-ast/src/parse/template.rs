@@ -1,8 +1,7 @@
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
+use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
+use cx_data_ast::parse::ast::CXGlobalStmt;
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::template::CXTemplateTypeGen;
 use cx_data_ast::parse::value_type::CXType;
 use cx_util::{point_log_error, CXResult};
 use crate::parse::global_scope::parse_global_stmt;
@@ -35,8 +34,9 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
 
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Greater));
 
-    let global_expr = parse_global_stmt(data)?
-        .expect("PARSER ERROR: Failed to parse global expression in template declaration!");
+    let Some(global_expr) = parse_global_stmt(data)? else {
+        return Some(None);
+    };
 
     for template_name in temp_typedefs {
         data.ast.type_map.remove(template_name.as_str());
@@ -44,15 +44,10 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
 
     match global_expr {
         CXGlobalStmt::FunctionDefinition { prototype, body } => {
-            let template = CXTemplateTypeGen::function_template(generic_params.clone(), prototype.clone());
-            let prototype_name = prototype.name.clone();
-
-            data.ast.function_map.insert_template(prototype_name.to_string(), template.clone());
-
             Some(
                 Some(
                     CXGlobalStmt::TemplatedFunction {
-                        fn_name: prototype_name,
+                        fn_name: prototype.name.clone(),
                         body,
                     }
                 )

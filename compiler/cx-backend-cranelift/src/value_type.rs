@@ -22,9 +22,14 @@ pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
         BCTypeKind::Float { bytes: 8 }         => ir::types::F64,
         BCTypeKind::Float { bytes: 16 }        => ir::types::F128,
         
+        BCTypeKind::Union { .. } |
         BCTypeKind::Struct { .. } |
         BCTypeKind::Pointer { .. }             => ir::Type::int(64).unwrap(),
         
+        // Because of the way Cranelift codegen works, there is actually no need for
+        // handling arrays, as anywhere where the type is used (i.e. in stack allocations)
+        // will implicitly use the size which can be derived from the bc type.
+
         _ => panic!("PANIC: Unsupported type for Cranelift: {val_type:?}"),
     }
 }

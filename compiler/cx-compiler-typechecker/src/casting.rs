@@ -1,14 +1,14 @@
 use crate::TypeEnvironment;
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
-use cx_util::{expr_error_log, log_error};
+use cx_util::log_error;
 use crate::checker::{coerce_value, type_check_traverse};
+use crate::structured_initialization::coerce_initializer_list;
 
 pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
                            -> Option<Option<CXCastType>> {
     Some(
-        match (from_type.intrinsic_type_kind(env.type_map).cloned()?,
-               to_type.intrinsic_type_kind(env.type_map).cloned()?) {
+        match (&from_type.kind, &to_type.kind) {
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
                 Some(CXCastType::PtrToInt)
             },
@@ -37,10 +37,10 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
 
-            (CXTypeKind::Array { _type, .. }, CXTypeKind::PointerTo { inner, .. })
-                if same_type(env.type_map, &_type, &inner) => Some(CXCastType::BitCast),
+            (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
+                if same_type(env.type_map, _type, inner) => Some(CXCastType::BitCast),
             
-            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner, .. })
+            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
                 if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
             _ => None
@@ -48,17 +48,14 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
     )
 }
 
-pub fn valid_explicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
-                           -> Option<Option<CXCastType>> {
+pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<Option<CXCastType>> {
     Some(
-        match (from_type.intrinsic_type_kind(env.type_map).cloned()?,
-               to_type.intrinsic_type_kind(env.type_map).cloned()?) {
-
+        match (&from_type.kind, &to_type.kind) {
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
 
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
-                if bytes == 8 => Some(CXCastType::BitCast),
+                if *bytes == 8 => Some(CXCastType::BitCast),
 
             (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
                 => Some(CXCastType::IntegralTrunc),
@@ -80,6 +77,11 @@ pub fn implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
         return Some(Some(()));
     }
 
+    if matches!(expr.kind, CXExprKind::InitializerList { .. }) {
+        coerce_initializer_list(env, expr, to_type)?;
+        return Some(Some(()));
+    }
+
     let Some(cast) = valid_implicit_cast(env, from_type, to_type)? else {
         return Some(None);
     };
@@ -95,7 +97,7 @@ pub fn explicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
         return Some(())
     }
 
-    let Some(expl_cast_type) = valid_explicit_cast(env, from_type, to_type)? else {
+    let Some(expl_cast_type) = valid_explicit_cast(from_type, to_type)? else {
         return None;
     };
 
@@ -129,14 +131,12 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
         return binop_type(&op, None, &l_type);
     }
 
-    match (l_type.intrinsic_type_kind(env.type_map).cloned()?,
-           r_type.intrinsic_type_kind(env.type_map).cloned()?) {
-
-        (CXTypeKind::PointerTo { inner: l_inner, .. }, CXTypeKind::Integer { .. }) => {
+    match (&l_type.kind, &r_type.kind) {
+        (CXTypeKind::PointerTo { inner_type: l_inner, .. }, CXTypeKind::Integer { .. }) => {
             ptr_int_binop_coercion(env, op, l_inner.as_ref(), rhs)
         },
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { inner: r_inner, .. }) => {
+        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { inner_type: r_inner, .. }) => {
             if matches!(op, CXBinOp::Subtract) {
                 log_error!("Invalid operation [integer] - [pointer] for types {l_type} and {r_type}");
             }
@@ -242,7 +242,7 @@ pub(crate) fn binop_type(op: &CXBinOp, pointer_inner: Option<&CXType>, lhs: &CXT
         CXBinOp::LAnd | CXBinOp::LOr |
         CXBinOp::Less | CXBinOp::Greater | 
         CXBinOp::LessEqual | CXBinOp::GreaterEqual |
-        CXBinOp::Equal | CXBinOp::NotEqual => Some(CXTypeKind::Bool.to_val_type()),
+        CXBinOp::Equal | CXBinOp::NotEqual => Some(CXTypeKind::Bool.into()),
 
         _ => panic!("Invalid binary operation {op} for type {lhs}")
     }

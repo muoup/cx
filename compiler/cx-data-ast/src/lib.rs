@@ -1,22 +1,26 @@
-use std::collections::HashMap;
-use crate::lex::token::Token;
+use speedy::{Readable, Writable};
 use crate::parse::ast::CXAST;
-use crate::parse::maps::{CXFunctionMap, CXTypeMap};
-use crate::parse::value_type::CXType;
-use crate::preparse::{CXPreparseToken, PreparseTokenMap};
+use crate::preparse::{CXNaiveFunctionMap, CXNaiveFunctionTemplates, CXNaiveTypeMap, CXNaiveTypeTemplates};
+use cx_data_lexer::token::Token;
 
-pub mod lex;
 pub mod parse;
 pub mod preparse;
 
 pub type PreprocessContents = String;
 pub type LexContents = Vec<Token>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct PreparseContents {
-    pub type_definitions: CXTypeMap,
-    pub function_definitions: CXFunctionMap,
+    pub module: String,
+    
+    pub destructor_definitions: Vec<String>,
     pub imports: Vec<String>,
+
+    pub type_definitions: CXNaiveTypeMap,
+    pub function_definitions: CXNaiveFunctionMap,
+
+    pub type_templates: CXNaiveTypeTemplates,
+    pub function_templates: CXNaiveFunctionTemplates
 }
 
 pub type ParseContents = CXAST;

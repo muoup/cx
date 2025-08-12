@@ -1,12 +1,12 @@
-use crate::lex::token::Token;
 use crate::parse::ast::CXAST;
 use crate::parse::value_type::CXType;
 use cx_util::scoped_map::ScopedMap;
 use speedy::{Readable, Writable};
+use cx_data_lexer::TokenIter;
 
 pub type VarTable = ScopedMap<CXType>;
 
-#[derive(Debug, Clone, PartialEq, Copy, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Readable, Writable)]
 pub enum VisibilityMode {
     Package,
     Public,
@@ -22,11 +22,6 @@ pub struct ParserData<'a> {
     pub ast: CXAST,
 }
 
-#[derive(Debug, Clone)]
-pub struct TokenIter<'a> {
-    pub slice: &'a [Token],
-    pub index: usize,
-}
 
 impl<'a> ParserData<'a> {
     pub fn back(&mut self) -> &mut Self {
@@ -57,43 +52,5 @@ impl<'a> ParserData<'a> {
 
     pub fn get_comma_mode(&self) -> bool {
         *self.expr_commas.last().expect("CRITICAL: No comma mode to get!")
-    }
-}
-
-impl<'a> TokenIter<'a> {
-    pub fn new(slice: &'a [Token]) -> Self {
-        TokenIter {
-            slice,
-            index: 0,
-        }
-    }
-    
-    pub fn next(&mut self) -> Option<&Token> {
-        let next = self.slice.get(self.index)?;
-        self.index += 1;
-        Some(next)
-    }
-
-    pub fn peek(&self) -> Option<&Token> {
-        self.slice.get(self.index)
-    }
-
-    pub fn back(&mut self) {
-        self.index -= 1;
-    }
-
-    pub fn prev(&self) -> Option<&Token> {
-        if self.index == 0 {
-            return None;
-        }
-        self.slice.get(self.index - 1)
-    }
-    
-    pub fn reset(&mut self) {
-        self.index = 0;
-    }
-
-    pub fn has_next(&self) -> bool {
-        self.slice.get(self.index).is_some()
     }
 }

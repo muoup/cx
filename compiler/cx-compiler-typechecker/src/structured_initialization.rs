@@ -9,11 +9,11 @@ pub fn coerce_initializer_list(
     initializer: &mut CXExpr,
     to_type: &CXType
 ) -> Option<()> {
-    match &to_type.intrinsic_type_kind(env.type_map)?.clone() {
-        CXTypeKind::Array { _type, size } =>
-            organize_array_initializer(env, initializer, &_type, Some(*size)),
+    match &to_type.kind {
+        CXTypeKind::Array { inner_type: _type, size } =>
+            organize_array_initializer(env, initializer, _type, Some(*size)),
         
-        CXTypeKind::PointerTo { inner, sizeless_array: true, .. } =>
+        CXTypeKind::PointerTo { inner_type: inner, sizeless_array: true, .. } =>
             organize_array_initializer(env, initializer, inner.as_ref(), None),
         
         CXTypeKind::Structured { .. } =>
@@ -56,9 +56,9 @@ fn organize_array_initializer(
     };
     
     let init_list_type = CXTypeKind::Array {
-        _type: Box::new(inner_type.clone()),
+        inner_type: Box::new(inner_type.clone()),
         size: array_size,
-    }.to_val_type();
+    }.into();
     
     env.typecheck_data.insert(initializer, init_list_type);
     
@@ -73,7 +73,7 @@ fn organize_structured_initializer(
     let CXExprKind::InitializerList { indices } = &mut initializer.kind else {
         unreachable!("PANIC: organize_structured_initializer expected initialzer, found: {initializer}");
     };
-    let CXTypeKind::Structured { fields, .. } = to_type.intrinsic_type_kind(env.type_map)?.clone() else {
+    let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
         log_error!("TYPE ERROR: Expected structured type for initializer, found: {to_type}");
     };
     

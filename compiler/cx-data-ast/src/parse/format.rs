@@ -270,7 +270,7 @@ impl Display for CXTypeKind {
                 write!(f, "f{float_bytes}")
             },
             CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { fields, name, has_destructor } => {
+            CXTypeKind::Structured { fields, name } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
@@ -281,7 +281,7 @@ impl Display for CXTypeKind {
                     "".to_string()
                 };
 
-                write!(f, "struct {name_str} {{ {field_strs} }} {{ has_destructor: {} }}", has_destructor)
+                write!(f, "struct {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Union { fields, name } => {
                 let field_strs = fields.iter()
@@ -297,7 +297,7 @@ impl Display for CXTypeKind {
                 write!(f, "union {name_str} {{ {field_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo { inner, explicitly_weak, nullable, sizeless_array } => {
+            CXTypeKind::PointerTo { inner_type: inner, weak: explicitly_weak, nullable, sizeless_array } => {
                 write!(f, "{inner} ")?;
                 
                 if *explicitly_weak {
@@ -316,10 +316,10 @@ impl Display for CXTypeKind {
                     Ok(())
                 }
             },
-            CXTypeKind::StrongPointer { inner, .. } => {
+            CXTypeKind::StrongPointer { inner_type: inner, .. } => {
                 write!(f, "{inner} strong*")
             },
-            CXTypeKind::Array { size, _type } => {
+            CXTypeKind::Array { size, inner_type: _type } => {
                 write!(f, "[{size}; {_type}]")
             },
             CXTypeKind::VariableLengthArray { _type, .. } => {
@@ -327,9 +327,6 @@ impl Display for CXTypeKind {
             },
             CXTypeKind::Opaque { name, size } => {
                 write!(f, "OPAQUE_{size}(\"{name}\")")
-            },
-            CXTypeKind::Identifier { name, .. } => {
-                write!(f, "{name}")
             },
             CXTypeKind::Function { prototype } => {
                 write!(f, "fn {prototype}")

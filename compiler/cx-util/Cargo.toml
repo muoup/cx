@@ -5,3 +5,4 @@ edition = "2021"
 autotests = false
 
 [dependencies]
+speedy = { version = "0.8.7" }

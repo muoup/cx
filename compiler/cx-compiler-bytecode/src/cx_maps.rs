@@ -1,7 +1,7 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BCTypeMap, LinkageType, VirtualInstruction};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
@@ -17,18 +17,6 @@ impl BytecodeBuilder {
     
     pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
         convert_cx_prototype(&self.cx_type_map, cx_proto)
-    }
-    
-    pub(crate) fn cx_type_to_prototype(
-        &self,
-        cx_type: &CXType
-    ) -> Option<BCFunctionPrototype> {
-        let Some(CXTypeKind::Function { prototype })
-            = cx_type.intrinsic_type_kind(&self.cx_type_map) else {
-            panic!("Expected function type, got: {cx_type:?}");
-        };
-        
-        self.convert_cx_prototype(prototype)
     }
 
     pub(crate) fn cx_ptr_binop(
@@ -172,16 +160,17 @@ fn convert_fixed_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCTyp
 }
 
 fn convert_argument_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCType> {
-    match cx_type.intrinsic_type_kind(cx_type_map)? {
+    match &cx_type.kind {
         CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } => {
             Some(BCType::default_pointer())
         },
+        
         _ => convert_fixed_type(cx_type_map, cx_type)
     }
 }
 
 pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
-    if cx_proto.return_type.is_structured(cx_type_map) {
+    if cx_proto.return_type.is_structured() {
         Some(
             BCFunctionPrototype {
                 name: cx_proto.name.as_string(),
@@ -215,14 +204,6 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
     }
 }
 
-pub(crate) fn convert_cx_type_map(cx_type_map: &CXTypeMap) -> BCTypeMap {
-    cx_type_map.iter()
-        .map(|(name, cx_type)| {
-            (name.clone(), convert_fixed_type(cx_type_map, cx_type).unwrap())
-        })
-        .collect::<BCTypeMap>()
-}
-
 pub(crate) fn convert_cx_func_map(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionMap) -> BCFunctionMap {
     cx_proto.iter()
         .map(|(name, cx_proto)| {
@@ -240,7 +221,7 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                 
                 let type_size = match bc_type.size() {
                     BCTypeSize::Fixed(size) => 
-                        builder.add_instruction_bt(
+                        builder.add_instruction(
                             VirtualInstruction::Immediate {
                                 value: size as i32,
                             },
@@ -249,7 +230,7 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                     BCTypeSize::Variable(id) => id
                 };
                 
-                let total_size = builder.add_instruction_bt(
+                let total_size = builder.add_instruction(
                     VirtualInstruction::IntegerBinOp {
                         left: size_id,
                         right: type_size,
@@ -272,13 +253,6 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
 pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
     Some(
         match cx_type_kind {
-            CXTypeKind::Identifier { name, .. } => {
-                let inner = cx_type_map.get(name.as_str())
-                    .expect("PANIC: Identifier not found in type map");
-
-                convert_fixed_type_kind(cx_type_map, &inner.kind)?
-            }
-
             CXTypeKind::Opaque { size, .. } =>
                 BCTypeKind::Opaque { bytes: *size },
             
@@ -296,7 +270,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::PointerTo { nullable: false, .. } =>
                 BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
-            CXTypeKind::StrongPointer { is_array: false, inner, .. } => {
+            CXTypeKind::StrongPointer { is_array: false, inner_type: inner, .. } => {
                 let inner_as_bc = convert_fixed_type(cx_type_map, inner)?;
                 
                 BCTypeKind::Pointer { nullable: false, dereferenceable: inner_as_bc.fixed_size() as u32 }
@@ -306,14 +280,14 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             CXTypeKind::PointerTo { nullable: true, .. } =>
                 BCTypeKind::Pointer { nullable: true, dereferenceable: 0 },
             
-            CXTypeKind::Array { _type, size } =>
+            CXTypeKind::Array { inner_type: _type, size } =>
                 BCTypeKind::Array {
                     element: Box::new(convert_fixed_type(cx_type_map, _type)?),
                     size: *size
                 },
             
             CXTypeKind::MemoryReference(inner) => {
-                match inner.intrinsic_type_kind(cx_type_map)? {
+                match &inner.kind {
                     CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
                     
@@ -343,7 +317,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 },
 
             CXTypeKind::Unit => BCTypeKind::Unit,
-            
+
             CXTypeKind::VariableLengthArray { .. } =>
                 panic!("Variable length arrays are not supported in bytecode generation"),
         }

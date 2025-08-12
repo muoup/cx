@@ -1,6 +1,7 @@
 mod scheduler;
 mod backends;
 mod linker;
+mod template_realizing;
 
 use crate::linker::link;
 use crate::scheduler::scheduling_loop;

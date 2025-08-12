@@ -1,86 +1,102 @@
-use std::collections::HashMap;
-use speedy::{Readable, Writable};
-use cx_util::CXResult;
-use crate::parse::ast::CXFunctionPrototype;
-use crate::parse::template::{CXTemplateTypeGen, CXTemplateInput, CXTemplateOutput};
+use crate::parse::template::{CXFunctionGenerator, CXTemplateInput, CXTemplateTypeGen, CXTypeGenerator, TemplateGenerator};
 use crate::parse::value_type::CXType;
+use speedy::{Readable, Writable};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Default, Readable, Writable)]
-pub struct CXMap<Output> {
-    types: HashMap<String, Output>,
-    templated_types: HashMap<String, CXTemplateTypeGen>
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct CXMap<Generator: TemplateGenerator> {
+    types: HashMap<String, Generator::Output>,
+
+    templated_types: HashMap<String, CXTemplateTypeGen<Generator>>
 }
 
-impl<Output> CXMap<Output> {
+impl<Generator: TemplateGenerator> CXMap<Generator> {
     pub fn new() -> Self {
         CXMap {
             types: HashMap::new(),
             templated_types: HashMap::new(),
         }
     }
-    
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Output)> {
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Generator::Output)> {
         self.types.iter()
     }
-    
-    pub fn values(&self) -> impl Iterator<Item = &Output> {
+
+    pub fn values(&self) -> impl Iterator<Item = &Generator::Output> {
         self.types.values()
     }
-    
+
+    pub fn templates(&self) -> impl Iterator<Item = &CXTemplateTypeGen<Generator>> {
+        self.templated_types.values()
+    }
+
     pub fn keys(&self) -> impl Iterator<Item = &String> {
         self.types.keys()
     }
-
-    pub fn extend<I: IntoIterator<Item = (String, Output)>>(&mut self, iter: I) {
-        self.types.extend(iter);
-    }
     
+    pub fn template_args(&self, name: &str) -> Option<&[String]> {
+        self.templated_types.get(name)
+            .map(|template| template.generator.args())
+    }
+
     pub fn contains_key(&self, name: &str) -> bool {
         self.types.contains_key(name)
     }
-    
-    pub fn insert(&mut self, name: String, ty: Output) -> Option<Output> {
+
+    pub fn insert(&mut self, name: String, ty: Generator::Output) -> Option<Generator::Output> {
         self.types.insert(name, ty)
     }
-    
-    pub fn remove(&mut self, name: &str) -> Option<Output> {
+
+    pub fn remove(&mut self, name: &str) -> Option<Generator::Output> {
         self.types.remove(name)
     }
 
-    pub fn get(&self, name: &str) -> Option<&Output> {
+    pub fn get_generator(&self, name: &str) -> Option<&CXTemplateTypeGen<Generator>> {
+        self.templated_types.get(name)
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Generator::Output> {
         self.types.get(name)
     }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut Output> {
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Generator::Output> {
         self.types.get_mut(name)
     }
-    
-    pub fn insert_template(&mut self, name: String, template: CXTemplateTypeGen) -> Option<CXTemplateTypeGen> {
-        self.templated_types.insert(name, template)
+
+    pub fn get_template(&self, map: &CXTypeMap, name: &str, input: CXTemplateInput) -> Option<Generator::Output> {
+        self.templated_types.get(name)
+            .and_then(|template| template.generator.get_template(map, input))
+    }
+
+    pub fn template_source(&self, name: &str) -> Option<String> {
+        self.templated_types.get(name)
+            .and_then(|template| template.module_origin.clone())
+    }
+
+    pub fn has_template(&self, name: &str) -> bool {
+        self.templated_types.contains_key(name)
+    }
+
+    pub fn insert_template(&mut self, name: String, template: CXTemplateTypeGen<Generator>) {
+        self.templated_types.insert(name, template);
     }
 }
 
-pub type CXTypeMap = CXMap<CXType>;
-pub type CXFunctionMap = CXMap<CXFunctionPrototype>;
-
-impl CXTypeMap {
-    pub fn get_template(&mut self, name: &str, template_input: CXTemplateInput) -> CXResult<CXType> {
-        self.templated_types.get_mut(name)
-            .and_then(|template| template.generate(template_input))
-            .and_then(|output| match output {
-                CXTemplateOutput::Type(ty) => Some(ty),
-                _ => None,
-            })
+impl<Generator: TemplateGenerator> Default for CXMap<Generator> {
+    fn default() -> Self {
+        CXMap {
+            types: HashMap::new(),
+            templated_types: HashMap::new()
+        }
     }
 }
 
-impl CXFunctionMap {
-    pub fn get_template(&mut self, name: &str, template_input: CXTemplateInput) -> CXResult<CXFunctionPrototype> {
-        self.templated_types.get_mut(name)
-            .and_then(|template| template.generate(template_input))
-            .and_then(|output| match output {
-                CXTemplateOutput::FunctionPrototype(fn_proto) => Some(fn_proto),
-                _ => None,
-            })
-    }
+pub type CXTypeMap = CXMap<CXTypeGenerator>;
+pub type CXFunctionMap = CXMap<CXFunctionGenerator>;
+pub type CXDestructorMap = HashMap<CXType, String>;
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct CXTemplateRequest {
+    pub template_name: String,
+    pub input: CXTemplateInput
 }

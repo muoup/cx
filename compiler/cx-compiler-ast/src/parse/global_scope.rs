@@ -1,13 +1,13 @@
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXFunctionPrototype, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable, CXParameter, CXAST};
-use cx_data_ast::parse::identifier::parse_std_ident;
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::value_type::CXTypeKind;
+use cx_data_ast::parse::type_mapping::contextualize_fn_prototype;
+use cx_data_ast::preparse::pp_type::CXNaivePrototype;
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::parse::template::parse_template;
-use crate::preparse::preparser::goto_statement_end;
+use crate::preparse::preparser::{goto_statement_end, parse_std_ident};
 use crate::preparse::typing::{parse_initializer, parse_params};
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
@@ -61,17 +61,7 @@ pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGloba
     
     let name = name.clone();
     let body = parse_body(data)?;
-    
-    let Some(type_) = data.ast.type_map.get_mut(&name) else {
-        point_log_error!(data.tokens, "PARSER ERROR: Destructor for {} must be in the same file as the type declaration!", name);
-    };
-    
-    let CXTypeKind::Structured { has_destructor, .. } = &mut type_.kind else {
-        point_log_error!(data.tokens, "PARSER ERROR: Destructor can only be defined for structured types!");
-    };
-    
-    *has_destructor = true;
-    
+
     Some(
         Some(
             CXGlobalStmt::DestructorDefinition {
@@ -144,11 +134,13 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
                 log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
             };
 
-            let prototype = CXFunctionPrototype {
+            let naive_prototype = CXNaivePrototype {
                 return_type, name,
                 params: result.params,
                 var_args: result.var_args,
             };
+            let prototype = contextualize_fn_prototype(&data.ast.type_map, &naive_prototype)
+                .expect("CRITICAL: Failed to contextualize function prototype in global expression!");
             
             if try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
                 Some(Some(CXGlobalStmt::FunctionPrototype { prototype }))
@@ -166,11 +158,6 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
             Some(None)
         },
     }
-}
-
-pub(crate) struct ParseParamsResult {
-    pub(crate) params: Vec<CXParameter>,
-    pub(crate) var_args: bool,
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {

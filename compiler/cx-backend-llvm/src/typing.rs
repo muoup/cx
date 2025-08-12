@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 use inkwell::AddressSpace;
 use crate::GlobalState;
-use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum, FunctionType};
+use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, BasicValueEnum};
 use cx_data_bytecode::BCFunctionPrototype;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
@@ -60,11 +60,13 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
             BCTypeKind::Float { bytes: 4 } => state.context.f32_type().as_any_type_enum(),
             BCTypeKind::Float { bytes: 8 } => state.context.f64_type().as_any_type_enum(),
 
+            BCTypeKind::Array { element, size } => {
+                let inner_llvm_type = bc_llvm_type(state, element)?;
+                let basic_type = any_to_basic_type(inner_llvm_type)?;
+
+                basic_type.array_type(*size as u32).as_any_type_enum()
+            },
             BCTypeKind::Pointer { .. } => state.context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
-            // BCTypeKind::Pointer { nullable: false } => {
-            //     state.context.ptr_type(AddressSpace::from(0))
-            //         .as_any_type_enum()
-            // }
 
             BCTypeKind::Struct { name, fields } => {
                 if let Some(_type) = state.context.get_struct_type(name.as_str()) {

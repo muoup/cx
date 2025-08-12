@@ -1,18 +1,16 @@
-use cx_data_ast::{assert_token_matches, keyword, next_kind, peek_next_kind, punctuator, try_next};
-use cx_data_ast::lex::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXParameter};
-use cx_data_ast::parse::identifier::{parse_intrinsic, parse_std_ident, CXIdent};
-use cx_data_ast::parse::parser::TokenIter;
-use cx_data_ast::parse::value_type::{CXTypeSpecifier, CXTypeKind, CXType, CX_CONST, CX_VOLATILE, PredeclarationType};
-use cx_util::{log_error, point_log_error};
-use crate::parse::global_scope::ParseParamsResult;
-use crate::preparse::preparser::goto_statement_end;
+use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, try_next};
+use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::preparse::pp_type::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
+use cx_data_lexer::{keyword, punctuator, TokenIter};
+use cx_util::{log_error, point_log_error, CXResult};
+use crate::preparse::preparser::{goto_statement_end, parse_intrinsic, parse_std_ident};
 
-fn predeclaration_identifier(name: Option<CXIdent>, predeclaration: PredeclarationType) -> Option<(Option<CXIdent>, CXTypeKind)> {
-    Some((name.clone(), CXTypeKind::Identifier { name: name.unwrap(), predeclaration }))
+fn predeclaration_identifier(name: Option<CXIdent>, predeclaration: PredeclarationType) -> Option<(Option<CXIdent>, CXNaiveTypeKind)> {
+    Some((name.clone(), CXNaiveTypeKind::Identifier { name: name.unwrap(), predeclaration }))
 }
 
-pub(crate) fn parse_struct(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXTypeKind)> {
+pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<(Option<CXIdent>, CXNaiveTypeKind)> {
     assert_token_matches!(tokens, keyword!(Struct));
 
     let name = parse_std_ident(tokens);
@@ -32,14 +30,14 @@ pub(crate) fn parse_struct(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, C
             point_log_error!(tokens, "UNSUPPORTED: Nameless struct member of type {}", _type);
         };
 
-        fields.push((name.data, _type));
+        fields.push((name.to_string(), _type));
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
-    Some((name.clone(), CXTypeKind::Structured { name, fields, has_destructor: false }))
+    Some((name.clone(), CXNaiveTypeKind::Structured { name, fields }))
 }
 
-pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXTypeKind)> {
+pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXNaiveTypeKind)> {
     assert_token_matches!(tokens, keyword!(Enum));
     
     let name = if let Some(TokenKind::Identifier(name)) = peek_next_kind!(tokens) {
@@ -56,10 +54,11 @@ pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXT
 
     tokens.back();
     goto_statement_end(tokens);
-    Some((name, CXTypeKind::Integer { signed: true, bytes: 4 }))
+    
+    Some((name, CXNaiveTypeKind::Identifier { name: CXIdent::from("int"), predeclaration: PredeclarationType::None }))
 }
 
-pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXTypeKind)> {
+pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXNaiveTypeKind)> {
     assert_token_matches!(tokens, keyword!(Union));
 
     let name = parse_std_ident(tokens);
@@ -77,17 +76,19 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CX
             point_log_error!(tokens, "UNSUPPORTED: Nameless union member of type {}", _type);
         };
 
-        fields.push((name.data, _type));
+        fields.push((name.to_string(), _type));
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
     Some((
         name.clone(),
-        CXTypeKind::Union {
-            name,
-            fields,
-        }
+        CXNaiveTypeKind::Union { name, fields }
     ))
+}
+
+pub(crate) struct ParseParamsResult {
+    pub(crate) params: Vec<CXNaiveParameter>,
+    pub(crate) var_args: bool,
 }
 
 pub(crate) fn parse_params(tokens: &mut TokenIter) -> Option<ParseParamsResult> {
@@ -104,7 +105,7 @@ pub(crate) fn parse_params(tokens: &mut TokenIter) -> Option<ParseParamsResult> 
         if let Some((name, type_)) = parse_initializer(tokens) {
             let name = name;
 
-            params.push(CXParameter { name, _type: type_ });
+            params.push(CXNaiveParameter { name, _type: type_ });
         } else {
             point_log_error!(tokens, "Failed to parse parameter in function call");
         }
@@ -124,7 +125,7 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
         match spec {
             SpecifierType::Const => spec_acc |= CX_CONST,
             SpecifierType::Volatile => spec_acc |= CX_VOLATILE,
-            SpecifierType::Restrict => spec_acc |= CX_VOLATILE,
+            SpecifierType::Restrict => spec_acc |= CX_RESTRICT,
 
             _ => break
         }
@@ -134,7 +135,7 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
     spec_acc
 }
 
-pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option<(Option<CXIdent>, CXType)> {
+pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> Option<(Option<CXIdent>, CXNaiveType)> {
     let Some(next_tok) = tokens.peek() else {
         return Some((None, acc_type));
     };
@@ -154,9 +155,9 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option
             };
 
             let specs = parse_specifier(tokens);
-            let acc_type = CXType::new(
+            let acc_type = CXNaiveType::new(
                 specs,
-                CXTypeKind::StrongPointer {
+                CXNaiveTypeKind::StrongPointer {
                     inner: Box::new(acc_type),
                     is_array
                 }
@@ -170,14 +171,11 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option
             assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Asterisk));
 
             let specs = parse_specifier(tokens);
-            let acc_type = CXType::new(
+            let acc_type = CXNaiveType::new(
                 specs,
-                CXTypeKind::PointerTo {
-                    inner: Box::new(acc_type),
-
-                    sizeless_array: false,
-                    explicitly_weak: true,
-                    nullable: true
+                CXNaiveTypeKind::PointerTo {
+                    inner_type: Box::new(acc_type),
+                    weak: true,
                 }
             );
 
@@ -187,7 +185,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option
         TokenKind::Operator(OperatorType::Asterisk) => {
             tokens.next();
             let specs = parse_specifier(tokens);
-            let acc_type = acc_type.pointer_to().add_specifier(specs);
+            let acc_type = acc_type.pointer_to(false, specs);
 
             parse_typemods(tokens, acc_type)
         },
@@ -199,7 +197,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option
             assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
             let ParseParamsResult { params, var_args } = parse_params(tokens)?;
 
-            let prototype = CXFunctionPrototype {
+            let prototype = CXNaivePrototype {
                 name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
                 return_type: acc_type,
                 params,
@@ -208,7 +206,9 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option
 
             Some((
                 name,
-                CXTypeKind::Function { prototype: Box::new(prototype) }.to_val_type().pointer_to()
+                CXNaiveTypeKind::FunctionPointer { prototype: Box::new(prototype) }
+                    .to_type()
+                    .pointer_to(false, 0)
             ))
         },
 
@@ -218,7 +218,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXType) -> Option
     }
 }
 
-pub(crate) fn parse_suffix_typemod(tokens: &mut TokenIter, acc_type: CXType) -> Option<CXType> {
+pub(crate) fn parse_suffix_typemod(tokens: &mut TokenIter, acc_type: CXNaiveType) -> Option<CXNaiveType> {
     let Some(next_tok) = tokens.peek() else {
         return Some(acc_type);
     };
@@ -229,17 +229,13 @@ pub(crate) fn parse_suffix_typemod(tokens: &mut TokenIter, acc_type: CXType) -> 
 
             let _type = match tokens.peek()?.kind {
                 TokenKind::Punctuator(PunctuatorType::CloseBracket) => {
-                    CXTypeKind::PointerTo {
-                        inner: Box::new(acc_type),
-
-                        sizeless_array: true,
-                        nullable: true,
-                        explicitly_weak: false,
-                    }.to_val_type()
+                    CXNaiveTypeKind::ImplicitSizedArray(Box::new(acc_type))
+                        .to_type()
                 },
                 TokenKind::IntLiteral(size) => {
                     tokens.next();
-                    CXTypeKind::Array { _type: Box::new(acc_type), size: size as usize }.to_val_type()
+                    CXNaiveTypeKind::ExplicitSizedArray(Box::new(acc_type), size as usize)
+                        .to_type()
                 },
 
                 // TODO: reimplement variable length arrays
@@ -255,32 +251,72 @@ pub(crate) fn parse_suffix_typemod(tokens: &mut TokenIter, acc_type: CXType) -> 
     }
 }
 
-pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXType> {
+pub(crate) fn parse_template_args(tokens: &mut TokenIter) -> Option<CXNaiveTemplateInput> {
+    assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Less));
+
+    let mut input_types = Vec::new();
+
+    loop {
+        let Some((None, _type)) = parse_initializer(tokens) else {
+            point_log_error!(tokens, "PARSER ERROR: Expected type declaration in template arguments!");
+        };
+
+        input_types.push(_type);
+
+        if !try_next!(tokens, TokenKind::Operator(OperatorType::Comma)) {
+            break;
+        }
+    }
+
+    assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Greater));
+
+    Some(CXNaiveTemplateInput { params: input_types })
+}
+
+pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXNaiveType> {
     let _type = match tokens.peek()?.kind {
-        TokenKind::Identifier(_) => Some(
-            CXTypeKind::Identifier {
-                name: parse_std_ident(tokens)?,
-                predeclaration: PredeclarationType::None
-            }.to_val_type()
-        ),
+        TokenKind::Identifier(_) => {
+            let ident = parse_std_ident(tokens)?;
+            
+            if peek_next!(tokens, TokenKind::Operator(OperatorType::Less)) {
+                let params = parse_template_args(tokens)?;
+             
+                Some(
+                    CXNaiveTypeKind::TemplatedIdentifier {
+                        name: ident,
+                        input: params,
+                    }.to_type()
+                )
+            } else {
+                Some(
+                    CXNaiveTypeKind::Identifier {
+                        name: ident,
+                        predeclaration: PredeclarationType::None
+                    }.to_type()
+                )
+            }
+        },
 
         TokenKind::Intrinsic(_) => Some(
-            CXTypeKind::Identifier {
+            CXNaiveTypeKind::Identifier {
                 name: parse_intrinsic(tokens)?,
                 predeclaration: PredeclarationType::None
-            }.to_val_type()
+            }.to_type()
         ),
 
         TokenKind::Keyword(KeywordType::Struct) => Some(
-            parse_struct(tokens)?.1.to_val_type()
+            parse_struct(tokens)?.1
+                .to_type()
         ),
 
         TokenKind::Keyword(KeywordType::Enum) => Some(
-            parse_enum(tokens)?.1.to_val_type()
+            parse_enum(tokens)?.1
+                .to_type()
         ),
 
         TokenKind::Keyword(KeywordType::Union) => Some(
-            parse_union(tokens)?.1.to_val_type()
+            parse_union(tokens)?.1
+                .to_type()
         ),
 
         _ => return None
@@ -291,13 +327,13 @@ pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXType> {
     Some(_type?.add_specifier(specifiers))
 }
 
-pub(crate) fn parse_base_mods(tokens: &mut TokenIter, acc_type: CXType) -> Option<(Option<CXIdent>, CXType)> {
+pub(crate) fn parse_base_mods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> Option<(Option<CXIdent>, CXNaiveType)> {
     let (name, modified_type) = parse_typemods(tokens, acc_type)?;
 
     Some((name, parse_suffix_typemod(tokens, modified_type)?))
 }
 
-pub(crate) fn parse_initializer(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXType)> {
+pub(crate) fn parse_initializer(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXNaiveType)> {
     let prefix_specs = parse_specifier(tokens);
     let type_base = parse_type_base(tokens)?;
 

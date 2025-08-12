@@ -1,41 +1,37 @@
 use std::fmt::{Display, Formatter};
-use speedy::{Readable, Writable};
-use cx_util::log_error;
-use crate::lex::token::{OperatorType, TokenKind};
-use crate::parse::parser::{ParserData, TokenIter};
-use crate::try_next;
+use std::sync::Arc;
+use speedy::{Context, Readable, Reader, Writable, Writer};
 
-#[derive(Debug, Clone, PartialEq, Readable, Writable)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CXIdent {
-    pub data: String
+    data: Arc<str>
 }
 
-impl Default for CXIdent {
-    fn default() -> Self {
-        CXIdent {
-            data: String::new()
-        }
+impl<'a, C: Context> Readable<'a, C> for CXIdent {
+    fn read_from<R: Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let s = String::read_from(reader)?;
+        Ok(CXIdent { data: Arc::from(s) })
+    }
+}
+
+impl<C: Context> Writable<C> for CXIdent {
+    fn write_to<T: ?Sized + Writer<C>>(&self, writer: &mut T) -> Result<(), C::Error> {
+        self.data.as_ref().write_to(writer)
     }
 }
 
 impl CXIdent {
     pub fn as_str(&self) -> &str {
-        self.data.as_str()
+        self.data.as_ref()
     }
 
     pub fn as_string(&self) -> String {
-        self.data.clone()
+        self.data.to_string()
     }
 
-    pub fn from(str: &str) -> Self {
+    pub fn from<T: Into<Arc<str>>>(str: T) -> Self {
         CXIdent {
-            data: str.to_string()
-        }
-    }
-
-    pub fn from_owned(str: String) -> Self {
-        CXIdent {
-            data: str
+            data: str.into()
         }
     }
 }
@@ -61,78 +57,4 @@ impl CXTypedIdent {
             CXTypedIdent::Intrinsic(_) => panic!("Expected standard identifier, found intrinsic!")
         }
     }
-}
-
-pub fn parse_identifier(tokens: &mut TokenIter) -> Option<CXTypedIdent> {
-    if matches!(tokens.peek()?.kind, TokenKind::Intrinsic(_)) {
-        return Some(
-            CXTypedIdent::Intrinsic(
-                parse_intrinsic(tokens)?
-            )
-        );
-    }
-
-    let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
-        return None;
-    };
-    tokens.next();
-
-    let mut idents = vec![CXIdent::from_owned(ident)];
-
-    while try_next!(tokens, TokenKind::Operator(OperatorType::ScopeRes)) {
-        let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
-            log_error!("Invalid token in namespace identifier: {:?}", tokens.prev());
-        };
-        tokens.next();
-
-        idents.push(CXIdent::from_owned(ident));
-    }
-
-    tokens.back();
-
-    match idents.len() {
-        1 => Some(
-            CXTypedIdent::Standard(
-                CXIdent {
-                    data: idents.remove(0).to_string()
-                }
-            )
-        ),
-        _ => Some(
-            CXTypedIdent::Namespace(idents)
-        )
-    }
-}
-
-pub fn parse_intrinsic(tokens: &mut TokenIter) -> Option<CXIdent> {
-    let mut ss = String::new();
-
-    while let Some(TokenKind::Intrinsic(ident)) = tokens.peek().map(|tok| &tok.kind) {
-        ss.push_str(format!("{ident:?}").to_lowercase().as_str());
-        tokens.next();
-    }
-
-    if ss.is_empty() {
-        return None;
-    }
-
-    Some(
-        CXIdent {
-            data: ss
-        }
-    )
-}
-
-pub fn parse_std_ident(tokens: &mut TokenIter) -> Option<CXIdent> {
-    let TokenKind::Identifier(ident) = tokens.peek().cloned()?.kind else {
-        return None;
-    };
-
-    tokens.next();
-
-    Some(
-        CXIdent {
-            data: ident
-        }
-    )
 }

@@ -1,21 +1,17 @@
 use crate::types::BCType;
 use std::collections::HashMap;
-
-pub mod mangling;
 pub mod node_type_map;
 pub mod types;
 mod format;
 
-pub type BCTypeMap = HashMap<String, BCType>;
 pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
 
 #[derive(Debug, Clone)]
 pub struct ProgramBytecode {
     pub fn_map: BCFunctionMap,
-    pub type_map: BCTypeMap,
-
-    pub global_strs: Vec<String>,
     pub fn_defs: Vec<BytecodeFunction>,
+    
+    pub global_strs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -90,21 +86,14 @@ pub struct BlockInstruction {
     pub value: VirtualValue
 }
 
-pub const POINTER_TAG : usize = 0xF000_0000_0000_0000;
-
 #[derive(Debug, Clone)]
 pub enum VirtualInstruction {
     FunctionParameter {
         param_index: u32
     },
-    
-    VariableAllocate {
-        size: ValueID,
-        alignment: u8,
-    },
 
     Allocate {
-        size: usize,
+        _type: BCType,
         alignment: u8,
     },
 
@@ -214,7 +203,7 @@ pub enum VirtualInstruction {
         args: Vec<ValueID>,
         method_sig: BCFunctionPrototype
     },
-
+    
     FunctionReference {
         name: String
     },

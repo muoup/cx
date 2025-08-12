@@ -6,7 +6,6 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
-use std::collections::HashMap;
 use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, ValueID};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
@@ -91,10 +90,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
 
     let first_block = context.get_block(BlockID { in_deferral: false, id: 0 });
     
-    if bc_func.prototype.return_type.is_structure() {
-        context.builder.append_block_param(first_block, context.pointer_type);
-    }
-
     for arg in bc_func.prototype.params.iter() {
         let cranelift_type = get_cranelift_type(&arg._type);
         let arg = context.builder.append_block_param(first_block, cranelift_type);

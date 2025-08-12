@@ -1,5 +1,5 @@
 use std::io::BufRead;
-use cx_data_ast::lex::token::{OperatorType, PunctuatorType, TokenKind, Token};
+use cx_data_lexer::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
 
 pub(crate) struct Lexer<'a> {

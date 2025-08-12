@@ -1,11 +1,9 @@
+use crate::FunctionState;
 use cranelift::codegen::gimli::ReaderOffset;
-use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
+use cranelift::prelude::{InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, DataId, Module};
 use cranelift_object::ObjectModule;
-use cx_data_ast::lex::token::OperatorType;
-use crate::FunctionState;
 
 pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(

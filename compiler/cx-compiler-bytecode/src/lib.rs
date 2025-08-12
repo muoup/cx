@@ -1,13 +1,9 @@
-use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
-use crate::instruction_gen::generate_instruction;
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::value_type::CXType;
-use cx_data_bytecode::node_type_map::TypeCheckData;
-use cx_data_bytecode::{ProgramBytecode, VirtualInstruction};
-use crate::cx_maps::convert_cx_prototype;
 use crate::deconstructor::generate_deconstructor;
 use crate::global_stmts::{generate_destructor, generate_function};
+use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
+use cx_data_bytecode::node_type_map::TypeCheckData;
+use cx_data_bytecode::ProgramBytecode;
 
 pub mod instruction_gen;
 mod builder;

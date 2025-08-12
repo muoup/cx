@@ -1,12 +1,10 @@
-use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
-use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
+use cx_data_bytecode::{ValueID, VirtualInstruction};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::bytecode_error_log;
 use crate::builder::{BytecodeBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
 use crate::deconstructor::deconstruct_variable;
-use crate::instruction_gen::generate_instruction;
 
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
@@ -85,13 +83,13 @@ pub(crate) fn get_cx_struct_field_by_index(
 }
 
 fn variable_requires_nulling(
-    type_map: &CXTypeMap,
+    builder: &BytecodeBuilder,
     cx_type: &CXType
 ) -> Option<bool> {
-    match cx_type.intrinsic_type_kind(type_map)? {
+    match cx_type.kind {
         CXTypeKind::StrongPointer { .. } => Some(true),
         
-        _ => Some(cx_type.has_destructor(type_map)),
+        _ => Some(builder.type_check_data.destructor_exists(cx_type))
     }
 }
 
@@ -101,27 +99,13 @@ pub(crate) fn allocate_variable(
     var_type: &CXType,
 ) -> Option<ValueID> {
     let bc_type = builder.convert_cx_type(var_type)?;
-
-    let memory = match bc_type.size() {
-        BCTypeSize::Fixed(size) => {
-            builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size,
-                    alignment: bc_type.alignment(),
-                },
-                BCType::default_pointer()
-            )?
+    let memory = builder.add_instruction(
+        VirtualInstruction::Allocate {
+            _type: bc_type.clone(),
+            alignment: bc_type.alignment(),
         },
-        BCTypeSize::Variable(size_expr) => {
-            builder.add_instruction_bt(
-                VirtualInstruction::VariableAllocate {
-                    size: size_expr,
-                    alignment: bc_type.alignment(),
-                },
-                BCType::default_pointer()
-            )?
-        }
-    };
+        BCType::default_pointer()
+    )?;
 
     builder.insert_symbol(name.to_owned(), memory);
     builder.insert_declaration(
@@ -131,8 +115,8 @@ pub(crate) fn allocate_variable(
         }
     );
     
-    if variable_requires_nulling(&builder.cx_type_map, var_type)? {
-        builder.add_instruction_bt(
+    if variable_requires_nulling(builder, var_type)? {
+        builder.add_instruction(
             VirtualInstruction::ZeroMemory {
                 memory,
                 _type: bc_type.clone(),

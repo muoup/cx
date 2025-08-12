@@ -1,4 +1,4 @@
-use crate::parse::value_type::{CXType, CXTypeKind};
+use crate::parse::value_type::CXTypeKind;
 
 pub const INTRINSIC_IMPORTS: &[&str] = &[
     "std/intrinsic/memory.cx"

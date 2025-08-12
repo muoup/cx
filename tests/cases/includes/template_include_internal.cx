@@ -1,0 +1,4 @@
+public:
+
+template <T : type>
+typedef T TemplateType;

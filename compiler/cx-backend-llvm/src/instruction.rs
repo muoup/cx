@@ -4,13 +4,12 @@ use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, ElementID, VirtualInstruction, POINTER_TAG};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
+use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
-use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;
 
 static NUM: Mutex<usize> = Mutex::new(0);
@@ -35,14 +34,35 @@ pub(crate) fn generate_instruction<'a>(
 ) -> Option<CodegenValue<'a>> {
     Some(
         match &block_instruction.instruction {
-            VirtualInstruction::Allocate { size, alignment } => {
-                let inst = function_state.builder
-                    .build_alloca(
-                        global_state.context.i8_type().array_type(*size as u32),
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
+            VirtualInstruction::Allocate { _type, alignment } => {
+                let inst = match _type.size() {
+                    BCTypeSize::Fixed(_) => {
+                        function_state.builder
+                            .build_alloca(
+                                any_to_basic_type(
+                                bc_llvm_type(global_state, _type)?
+                                )?,
+                                inst_num().as_str()
+                            )
+                            .unwrap()
+                            .as_any_value_enum()
+                    },
+                    BCTypeSize::Variable(size) => {
+                        let size = function_state
+                            .get_val_ref(&size)?
+                            .get_value()
+                            .into_int_value();
+
+                        function_state.builder
+                            .build_array_alloca(
+                                global_state.context.i8_type(),
+                                size,
+                                inst_num().as_str()
+                            )
+                            .unwrap()
+                            .as_any_value_enum()
+                    }
+                };
                 
                 function_state.builder
                     .get_insert_block()?
@@ -51,30 +71,6 @@ pub(crate) fn generate_instruction<'a>(
                     .unwrap();
                 
                 CodegenValue::Value(inst)
-            },
-            
-            VirtualInstruction::VariableAllocate { size, alignment } => {
-                let size = function_state
-                    .get_val_ref(size)?
-                    .get_value()
-                    .into_int_value();
-                
-                let allocation = function_state.builder
-                    .build_array_alloca(
-                        global_state.context.i8_type(),
-                        size,
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
-                
-                function_state.builder
-                    .get_insert_block()?
-                    .get_last_instruction()?
-                    .set_alignment(*alignment as u32)
-                    .unwrap();
-                
-                CodegenValue::Value(allocation)
             },
             
             VirtualInstruction::DirectCall { func, args, method_sig } => {
@@ -86,12 +82,13 @@ pub(crate) fn generate_instruction<'a>(
                     log_error!("Function reference not found for {func:?}");
                 };
                 
-                let function_val = global_state
+                let Some(function_val) = global_state
                     .module
-                    .get_function(function_name)
-                    .unwrap();
+                    .get_function(function_name) else {
+                    log_error!("Function not found in module: {function_name}");
+                };
 
-                let mut arg_vals = args
+                let arg_vals = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
@@ -129,7 +126,7 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value();
                 let fn_type = bc_llvm_prototype(global_state, method_sig)
                     .unwrap();
-                let mut args = args
+                let args = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
@@ -158,7 +155,7 @@ pub(crate) fn generate_instruction<'a>(
                         => CodegenValue::NULL
                 }
             },
-
+            
             VirtualInstruction::FunctionReference { name } =>
                 CodegenValue::FunctionRef(name.clone()),
 
@@ -276,44 +273,12 @@ pub(crate) fn generate_instruction<'a>(
                     .cloned()
                     .unwrap();
                 
-                let current_prototype = global_state.function_map
-                    .get(&function_state.current_function)
-                    .unwrap();
-                
-                if current_prototype.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(
-                        global_state, 
-                        &current_prototype.return_type
-                    )?;
-                    let type_size = any_to_basic_type(llvm_type)?
-                        .size_of()
-                        .expect("Failed to get size of type");
-                    
-                    let return_param = function_val
-                        .get_nth_param(0)
-                        .unwrap()
-                        .into_pointer_value();
-                    
-                    function_state.builder
-                        .build_memcpy(
-                            return_param, 1,
-                            value.get_value().into_pointer_value(), 1,
-                            type_size
-                        )
-                        .unwrap();
-                    
-                    function_state
-                        .builder
-                        .build_return(Some(&return_param.as_basic_value_enum()))
-                        .unwrap();
-                } else {
-                    let basic_val = any_to_basic_val(value.get_value())?;
+                let basic_val = any_to_basic_val(value.get_value())?;
 
-                    function_state
-                        .builder
-                        .build_return(Some(&basic_val))
-                        .unwrap();   
-                }
+                function_state
+                    .builder
+                    .build_return(Some(&basic_val))
+                    .unwrap();   
                 
                 CodegenValue::NULL
             },

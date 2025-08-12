@@ -1,6 +1,6 @@
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXGlobalStmt};
+use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype};
 use cx_data_ast::parse::value_type::CXType;
-use cx_data_bytecode::mangling::mangle_destructor;
+use cx_util::mangling::mangle_destructor;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionPrototype, BCParameter, LinkageType, VirtualInstruction};
 use crate::aux_routines::allocate_variable;
@@ -52,7 +52,7 @@ pub(crate) fn generate_destructor(
     builder.push_scope();
     builder.new_function(prototype);
 
-    let this = builder.add_instruction_bt(
+    let this = builder.add_instruction(
         VirtualInstruction::FunctionParameter {
             param_index: 0,
         },
@@ -62,7 +62,7 @@ pub(crate) fn generate_destructor(
     builder.insert_symbol("this".to_string(), this);
 
     let Some(_) = generate_instruction(builder, body) else {
-        panic!("Failed to generate body for destructor: {}", type_name);
+        panic!("Failed to generate body for destructor: {type_name}");
     };
 
     builder.pop_scope();
@@ -75,9 +75,9 @@ fn generate_params(
     builder: &mut BytecodeBuilder,
     prototype: &CXFunctionPrototype
 ) -> Option<()> {
-    let is_structured_return = prototype.return_type.is_structured(&builder.cx_type_map);
+    let is_structured_return = prototype.return_type.is_structured();
     
-    for (i, arg) in prototype.params.iter().enumerate() {
+    for (mut i, arg) in prototype.params.iter().enumerate() {
         let bc_type = builder.convert_cx_type(&arg._type)?;
         
         let memory = allocate_variable(
@@ -86,20 +86,16 @@ fn generate_params(
             &arg._type
         )?;
 
-        let i = if is_structured_return {
-            i + 1
-        } else {
-            i
-        };
+        if is_structured_return { i += 1; };
 
-        let value = builder.add_instruction_bt(
+        let value = builder.add_instruction(
             VirtualInstruction::FunctionParameter {
                 param_index: i as u32,
             },
             bc_type.clone()
         )?;
 
-        builder.add_instruction(
+        builder.add_instruction_cxty(
             VirtualInstruction::Store {
                 value,
                 memory,
