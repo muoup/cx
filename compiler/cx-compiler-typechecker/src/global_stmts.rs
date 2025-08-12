@@ -26,7 +26,7 @@ pub(crate) fn add_destructor_prototypes(
         );
 
         let prototype = CXFunctionPrototype {
-            name: CXIdent::from_owned(destructor_name.clone()),
+            name: CXIdent::from(destructor_name.clone()),
             params: vec![CXParameter { name: None, _type: this_type }],
             return_type: CXType::unit(),
             var_args: false

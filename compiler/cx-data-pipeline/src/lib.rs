@@ -19,6 +19,8 @@ use crate::directories::file_path;
 pub fn compilation_hash() -> u64 {
     struct PlaceHolder;
 
+    // TODO: Find a more defined way to generate a unique hash for each time the compiler is compiled.
+    
     static lazy_static: LazyLock<u64> = LazyLock::new(|| {
         let type_id = std::any::TypeId::of::<PlaceHolder>();
         let mut hasher = DefaultHasher::new();

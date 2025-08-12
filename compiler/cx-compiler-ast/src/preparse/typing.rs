@@ -30,7 +30,7 @@ pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<(Option<CXIdent>,
             point_log_error!(tokens, "UNSUPPORTED: Nameless struct member of type {}", _type);
         };
 
-        fields.push((name.data, _type));
+        fields.push((name.to_string(), _type));
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
@@ -76,16 +76,13 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CX
             point_log_error!(tokens, "UNSUPPORTED: Nameless union member of type {}", _type);
         };
 
-        fields.push((name.data, _type));
+        fields.push((name.to_string(), _type));
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
     Some((
         name.clone(),
-        CXNaiveTypeKind::Union {
-            name,
-            fields,
-        }
+        CXNaiveTypeKind::Union { name, fields }
     ))
 }
 

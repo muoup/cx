@@ -1,31 +1,37 @@
 use std::fmt::{Display, Formatter};
-use speedy::{Readable, Writable};
+use std::sync::Arc;
+use speedy::{Context, Readable, Reader, Writable, Writer};
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-#[derive(Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CXIdent {
-    pub data: String
+    data: Arc<str>
 }
 
+impl<'a, C: Context> Readable<'a, C> for CXIdent {
+    fn read_from<R: Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let s = String::read_from(reader)?;
+        Ok(CXIdent { data: Arc::from(s) })
+    }
+}
+
+impl<C: Context> Writable<C> for CXIdent {
+    fn write_to<T: ?Sized + Writer<C>>(&self, writer: &mut T) -> Result<(), C::Error> {
+        self.data.as_ref().write_to(writer)
+    }
+}
 
 impl CXIdent {
     pub fn as_str(&self) -> &str {
-        self.data.as_str()
+        self.data.as_ref()
     }
 
     pub fn as_string(&self) -> String {
-        self.data.clone()
+        self.data.to_string()
     }
 
-    pub fn from(str: &str) -> Self {
+    pub fn from<T: Into<Arc<str>>>(str: T) -> Self {
         CXIdent {
-            data: str.to_string()
-        }
-    }
-
-    pub fn from_owned(str: String) -> Self {
-        CXIdent {
-            data: str
+            data: str.into()
         }
     }
 }

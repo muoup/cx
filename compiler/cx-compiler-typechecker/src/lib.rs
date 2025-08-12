@@ -9,6 +9,7 @@ use cx_data_lexer::token::Token;
 use cx_util::mangling::mangle_templated_fn;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::HashMap;
+use cx_data_ast::parse::identifier::CXIdent;
 
 pub mod typemap_collapsing;
 pub mod deconstructed_types;
@@ -104,7 +105,7 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, input: CXTemplateInp
         .clone();
     
     typecheck_function(&mut env, &prototype, &mut body)?;
-    prototype.name.data = mangled_name;
+    prototype.name = CXIdent::from(mangled_name);
     
     Some((env.typecheck_data, prototype.clone(), CXGlobalStmt::FunctionDefinition {
         prototype,

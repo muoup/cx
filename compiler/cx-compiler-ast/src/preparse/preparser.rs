@@ -105,7 +105,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             Some(
                 PreparseResult::TypeTemplate(
                     CXTypeTemplate {
-                        name: CXIdent { data: name.clone() },
+                        name: CXIdent::from(name),
                         inputs: type_decls,
                         shell: type_
                     }
@@ -155,7 +155,7 @@ pub(crate) fn parse_typedef(tokens: &mut TokenIter) -> Option<PreparseResult> {
     
     Some(
         PreparseResult::TypeDefinition (
-            name.data,
+            name.to_string(),
             type_
         )
     )
@@ -223,9 +223,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> Option<CXIdent> {
     }
 
     Some(
-        CXIdent {
-            data: ss
-        }
+        CXIdent::from(ss)
     )
 }
 
@@ -236,9 +234,5 @@ pub fn parse_std_ident(tokens: &mut TokenIter) -> Option<CXIdent> {
 
     tokens.next();
 
-    Some(
-        CXIdent {
-            data: ident
-        }
-    )
+    Some(CXIdent::from(ident))
 }
