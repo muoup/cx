@@ -245,7 +245,7 @@ pub fn generate_instruction(
                 fn_name.as_str(),
                 &template_input.params
             );
-            
+
             builder.add_instruction(
                 VirtualInstruction::FunctionReference {
                     name: function_name
@@ -253,10 +253,10 @@ pub fn generate_instruction(
                 pointer_type
             )
         },
-        
+
         CXExprKind::Identifier(val) => {
-            if let Some(id) = builder.symbol_table.get(val.as_str()) {
-                Some(*id)
+            if let Some(id) = builder.get_symbol(val.as_str()) {
+                Some(id)
             } else if let Some(val) = builder.fn_ref(val.as_str())? {
                 Some(val)
             } else {
@@ -442,6 +442,7 @@ pub fn generate_instruction(
         },
 
         CXExprKind::If { condition, then_branch, else_branch } => {
+            builder.push_scope();
             let condition = generate_instruction(builder, condition.as_ref())?;
 
             let then_block = builder.create_block();
@@ -458,7 +459,7 @@ pub fn generate_instruction(
             );
 
             builder.set_current_block(then_block);
-            generate_instruction(builder, then_branch.as_ref());
+            builder.generate_scoped(then_branch.as_ref());
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
@@ -468,7 +469,7 @@ pub fn generate_instruction(
             builder.set_current_block(else_block);
 
             if let Some(else_branch) = else_branch {
-                generate_instruction(builder, else_branch.as_ref());
+                builder.generate_scoped(else_branch.as_ref());
             }
 
             builder.add_instruction(
@@ -476,6 +477,7 @@ pub fn generate_instruction(
                 BCType::unit()
             );
 
+            builder.pop_scope();
             builder.set_current_block(merge_block);
             Some(ValueID::NULL)
         },
@@ -497,7 +499,7 @@ pub fn generate_instruction(
             );
 
             builder.set_current_block(condition_block);
-            let condition_value = generate_instruction(builder, condition.as_ref())?;
+            let condition_value = builder.generate_scoped(condition.as_ref())?;
 
             builder.add_instruction(
                 VirtualInstruction::Branch {
@@ -509,7 +511,8 @@ pub fn generate_instruction(
             );
 
             builder.set_current_block(body_block);
-            generate_instruction(builder, body.as_ref());
+            builder.generate_scoped(body.as_ref());
+
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
                 BCType::unit()
@@ -528,6 +531,7 @@ pub fn generate_instruction(
             } else {
                 None
             };
+
             let merge_block = builder.start_scope();
             let case_blocks = cases
                 .iter()

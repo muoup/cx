@@ -8,8 +8,9 @@ use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
-use crate::cx_maps::convert_cx_func_map;
-use crate::instruction_gen::{implicit_defer_return, implicit_return};
+use crate::aux_routines::deconstruct_scope;
+use crate::cx_maps::{convert_cx_func_map, convert_cx_type_map};
+use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 
 #[derive(Debug)]
 pub struct BytecodeBuilder {
@@ -18,12 +19,13 @@ pub struct BytecodeBuilder {
     
     pub cx_type_map: CXTypeMap,
     pub cx_function_map: CXFunctionMap,
-    
+
     pub fn_map: BCFunctionMap,
     
     pub type_check_data: TypeCheckData,
 
     pub symbol_table: ScopedMap<ValueID>,
+    declaration_scope: Vec<Vec<DeclarationLifetime>>,
 
     in_deferred_block: bool,
     function_context: Option<BytecodeFunctionContext>
@@ -41,6 +43,12 @@ pub struct BytecodeFunctionContext {
     deferred_blocks: Vec<FunctionBlock>,
 }
 
+#[derive(Debug, Clone)]
+pub struct DeclarationLifetime {
+    pub value_id: ValueID,
+    pub _type: CXType
+}
+
 impl BytecodeBuilder {
     pub fn new(type_map: CXTypeMap, fn_map: CXFunctionMap, expr_type_map: TypeCheckData) -> Self {
         BytecodeBuilder {
@@ -56,6 +64,8 @@ impl BytecodeBuilder {
             in_deferred_block: false,
 
             symbol_table: ScopedMap::new(),
+            declaration_scope: Vec::new(),
+
             function_context: None
         }
     }
@@ -126,6 +136,40 @@ impl BytecodeBuilder {
             .expect("Attempted to access function context with no current function selected")
     }
     
+    pub fn push_scope(&mut self) {
+        self.symbol_table.push_scope();
+        self.declaration_scope.push(Vec::new());
+    }
+
+    pub fn pop_scope(&mut self) -> Option<()> {
+        self.symbol_table.pop_scope();
+        let decls = self.declaration_scope.pop();
+
+        deconstruct_scope(self, decls?.as_slice())
+    }
+
+    pub fn generate_scoped(&mut self, expr: &CXExpr) -> BytecodeResult<ValueID> {
+        self.push_scope();
+        let val = generate_instruction(self, expr)?;
+        self.pop_scope()?;
+
+        Some(val)
+    }
+
+    pub fn insert_declaration(&mut self, declaration: DeclarationLifetime) {
+        self.declaration_scope.last_mut()
+            .expect("INTERNAL PANIC: Attempted to insert declaration with no current scope")
+            .push(declaration);
+    }
+
+    pub fn insert_symbol(&mut self, name: String, value_id: ValueID) {
+        self.symbol_table.insert(name, value_id);
+    }
+
+    pub fn get_symbol(&self, name: &str) -> Option<ValueID> {
+        self.symbol_table.get(name).cloned()
+    }
+
     pub fn function_defers(&self) -> bool {
         let ctx = self.function_context.as_ref().unwrap();
         !ctx.deferred_blocks.is_empty()
@@ -327,7 +371,7 @@ impl BytecodeBuilder {
     pub fn get_expr_type(&self, expr: &CXExpr) -> Option<CXType> {
         self.type_check_data.expr_type(expr).cloned()
     }
-    
+
     pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
         let Some(value) = self.get_variable(value_id) else {
             panic!("INTERNAL PANIC: Failed to get variable for value id: {value_id:?}");
@@ -337,6 +381,7 @@ impl BytecodeBuilder {
     }
     
     pub fn start_cont_point(&mut self) -> BlockID {
+        self.push_scope();
         let cond_block = self.create_block();
 
         let context = self.fun_mut();
@@ -397,6 +442,7 @@ impl BytecodeBuilder {
     }
 
     pub fn start_scope(&mut self) -> BlockID {
+        self.push_scope();
         let merge_block = self.create_named_block("merge");
 
         let context = self.fun_mut();
@@ -418,6 +464,7 @@ impl BytecodeBuilder {
     }
 
     pub fn end_scope(&mut self) {
+        self.pop_scope();
         let context = self.fun_mut();
 
         let merge_block = context.merge_stack.pop().unwrap();
@@ -425,6 +472,7 @@ impl BytecodeBuilder {
     }
 
     pub fn end_cond(&mut self) {
+        self.pop_scope();
         let context = self.fun_mut();
 
         context.continue_stack.pop().unwrap();
