@@ -310,8 +310,6 @@ pub(crate) fn perform_job(
             let mut self_ast = context.module_db.naive_ast
                 .take(&job.unit);
             
-            // TODO: Get templates from other imported modules
-            
             let data = type_check(&lexemes, &mut self_ast)
                 .expect("Type checking failed");
 
