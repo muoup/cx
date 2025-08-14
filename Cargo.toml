@@ -1,6 +1,5 @@
 [workspace]
 resolver = "2"
 members = [
-    "compiler/cx", "compiler/cx-compiler-lexer", "compiler/cx-data-lexer",
-    "tests"
+    "compiler/cx", "tests"
 ]

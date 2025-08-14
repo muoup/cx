@@ -28,6 +28,10 @@ impl CXIdent {
     pub fn as_string(&self) -> String {
         self.data.to_string()
     }
+    
+    pub fn set_data<T: Into<Arc<str>>>(&mut self, data: T) {
+        self.data = data.into();
+    }
 
     pub fn from<T: Into<Arc<str>>>(str: T) -> Self {
         CXIdent {

@@ -56,7 +56,7 @@ pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
     pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
-    pub(crate) function_ids: &'a HashMap<String, FuncId>,
+    pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
     pub(crate) global_strs: &'a Vec<DataId>,
 
     pub(crate) fn_map: &'a BCFunctionMap,
@@ -100,7 +100,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
+pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
@@ -149,12 +149,7 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<()> {
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    let obj = global_state.object_module.finish();
-
-    let output_path = std::path::Path::new(output);
-
-    std::fs::create_dir_all(output_path.parent().unwrap()).expect("Failed to create output directory");
-    std::fs::write(output, obj.emit().unwrap()).expect("Failed to write object file");
-
-    Some(())
+    global_state.object_module.finish()
+        .emit()
+        .ok()
 }
