@@ -67,7 +67,7 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         object_module: &mut global_state.object_module,
         target_frontend_config: &global_state.target_frontend_config,
 
-        function_ids: &global_state.function_ids,
+        function_ids: &mut global_state.function_ids,
 
         fn_map: global_state.fn_map,
         

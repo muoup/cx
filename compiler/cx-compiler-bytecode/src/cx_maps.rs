@@ -1,5 +1,6 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
+use cx_data_ast::parse::template::CXTemplateInput;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
@@ -12,7 +13,7 @@ impl BytecodeBuilder {
     }
     
     pub(crate) fn convert_fixed_cx_type(&self, cx_type: &CXType) -> Option<BCType> {
-        convert_fixed_type(&self.cx_type_map, cx_type)
+        convert_fixed_type(cx_type)
     }
     
     pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
@@ -151,21 +152,21 @@ fn convert_type(builder: &mut BytecodeBuilder, cx_type: &CXType) -> Option<BCTyp
     )
 }
 
-fn convert_fixed_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCType> {
+fn convert_fixed_type(cx_type: &CXType) -> Option<BCType> {
     Some(
         BCType {
-            kind: convert_fixed_type_kind(cx_type_map, &cx_type.kind)?
+            kind: convert_fixed_type_kind(&cx_type.kind)?
         }
     )
 }
 
-fn convert_argument_type(cx_type_map: &CXTypeMap, cx_type: &CXType) -> Option<BCType> {
+fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
     match &cx_type.kind {
         CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } => {
             Some(BCType::default_pointer())
         },
         
-        _ => convert_fixed_type(cx_type_map, cx_type)
+        _ => convert_fixed_type(cx_type)
     }
 }
 
@@ -179,7 +180,7 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
                     .into_iter()
                     .chain(cx_proto.params.iter().map(|param| BCParameter {
                         name: None,
-                        _type: convert_argument_type(cx_type_map, &param._type).unwrap()
+                        _type: convert_argument_type(&param._type).unwrap()
                     }))
                     .collect(),
                 var_args: cx_proto.var_args,
@@ -190,11 +191,11 @@ pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctio
         Some(
             BCFunctionPrototype {
                 name: cx_proto.name.as_string(),
-                return_type: convert_fixed_type(cx_type_map, &cx_proto.return_type)?,
+                return_type: convert_fixed_type(&cx_proto.return_type)?,
                 params: cx_proto.params.iter()
                     .map(|param| BCParameter {
                         name: None,
-                        _type: convert_argument_type(cx_type_map, &param._type).unwrap()
+                        _type: convert_argument_type(&param._type).unwrap()
                     })
                     .collect(),
                 var_args: cx_proto.var_args,
@@ -245,12 +246,16 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                 }
             },
             
-            _ => convert_fixed_type_kind(&builder.cx_type_map, cx_type_kind)?
+            _ => convert_fixed_type_kind(cx_type_kind)?
         }
     )
 }
 
-pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
+pub(crate) fn convert_cx_template_prototype(prototype: &CXFunctionPrototype, input: &CXTemplateInput) {
+    
+}
+
+pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
     Some(
         match cx_type_kind {
             CXTypeKind::Opaque { size, .. } =>
@@ -271,7 +276,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                 BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
             CXTypeKind::StrongPointer { is_array: false, inner_type: inner, .. } => {
-                let inner_as_bc = convert_fixed_type(cx_type_map, inner)?;
+                let inner_as_bc = convert_fixed_type(inner)?;
                 
                 BCTypeKind::Pointer { nullable: false, dereferenceable: inner_as_bc.fixed_size() as u32 }
             },
@@ -282,14 +287,14 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
             
             CXTypeKind::Array { inner_type: _type, size } =>
                 BCTypeKind::Array {
-                    element: Box::new(convert_fixed_type(cx_type_map, _type)?),
+                    element: Box::new(convert_fixed_type(_type)?),
                     size: *size
                 },
             
             CXTypeKind::MemoryReference(inner) => {
                 match &inner.kind {
-                    CXTypeKind::Structured { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
-                    CXTypeKind::Union { .. } => convert_fixed_type_kind(cx_type_map, &inner.kind)?,
+                    CXTypeKind::Structured { .. } => convert_fixed_type_kind(&inner.kind)?,
+                    CXTypeKind::Union { .. } => convert_fixed_type_kind(&inner.kind)?,
                     
                     _ => BCTypeKind::Pointer { nullable: true, dereferenceable: 0 }
                 }
@@ -302,7 +307,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                         None => "".to_string()
                     },
                     fields: fields.iter()
-                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(cx_type_map, _type)?)))
+                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(_type)?)))
                         .collect::<Option<Vec<_>>>()?
                 },
             CXTypeKind::Union { fields, name } =>
@@ -312,7 +317,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_map: &CXTypeMap, cx_type_kind: &CX
                         None => "".to_string()
                     },
                     fields: fields.iter()
-                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(cx_type_map, _type)?)))
+                        .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(_type)?)))
                         .collect::<Option<Vec<_>>>()?
                 },
 

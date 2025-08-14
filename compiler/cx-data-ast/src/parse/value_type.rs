@@ -254,17 +254,3 @@ pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
         _ => false,
     }
 }
-
-pub fn struct_field_type(
-    type_map: &CXTypeMap,
-    type_: &CXType,
-    field: &str
-) -> Option<CXType> {
-    let Some(CXTypeKind::Structured { fields, .. }) = type_.mem_ref_inner() else {
-        log_error!("Cannot access field {field} of non-structured type {type_}");
-    };
-
-    fields.iter()
-        .find(|(name, _)| name == field)
-        .map(|(_, ty)| ty.clone())
-}

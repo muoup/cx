@@ -284,11 +284,6 @@ pub(crate) fn generate_instruction<'a>(
             },
             
             VirtualInstruction::FunctionParameter { param_index } => {
-                let function = global_state
-                    .function_map
-                    .get(function_state.current_function.as_str())
-                    .unwrap();
-                
                 let param = function_val
                     .get_nth_param(*param_index)
                     .unwrap();

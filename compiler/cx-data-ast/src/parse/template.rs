@@ -5,6 +5,7 @@ use crate::parse::value_type::CXType;
 use crate::preparse::pp_type::{CXFunctionTemplate, CXNaiveType, CXTypeTemplate};
 use speedy::{Readable, Writable};
 use std::collections::HashMap;
+use cx_util::mangling::mangle_templated_fn;
 use cx_util::rwlockser::RwLockSer;
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -109,7 +110,7 @@ impl TemplateGenerator for CXFunctionGenerator {
         }
 
         let resolved_prototype = contextualize_fn_prototype(&temp_map, &self.template.shell)?;
-
+        
         self.generated.write()
             .unwrap()
             .insert(input.clone(), resolved_prototype.clone());

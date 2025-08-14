@@ -16,6 +16,8 @@ pub fn standard_compilation(
     config: CompilerConfig,
     base_file: &Path
 ) -> Option<()> {
+    let previous_dir = std::env::current_dir().ok()?;
+    
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
@@ -30,6 +32,8 @@ pub fn standard_compilation(
 
     scheduling_loop(&compiler_context, initial_job)?;
     link(&compiler_context)?;
+    
+    std::env::set_current_dir(previous_dir).ok()?;
 
     Some(())
 }

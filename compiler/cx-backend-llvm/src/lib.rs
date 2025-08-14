@@ -89,7 +89,7 @@ pub fn bytecode_aot_codegen(
     bytecode: &ProgramBytecode,
     output_path: &str,
     optimization_level: OptimizationLevel,
-) -> Option<()> {
+) -> Option<Vec<u8>> {
     let context = Context::create();
     Target::initialize_native(&InitializationConfig::default()).expect(
         "Failed to initialize native"
@@ -182,11 +182,11 @@ pub fn bytecode_aot_codegen(
 
     // println!("[LLVM] Exporting module to file: {}", output_path);
     
-    target_machine
-        .write_to_file(&global_state.module, inkwell::targets::FileType::Object, Path::new(output_path))
+    let buff = target_machine
+        .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
         .expect("Failed to export module to file");
 
-    Some(())
+    Some(buff.as_slice().to_vec())
 }
 
 fn fn_aot_codegen(

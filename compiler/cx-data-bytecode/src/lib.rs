@@ -205,7 +205,7 @@ pub enum VirtualInstruction {
     },
     
     FunctionReference {
-        name: String
+        name: String,
     },
 
     GetFunctionAddr {

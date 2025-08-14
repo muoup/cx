@@ -15,3 +15,5 @@ harness = true
 [dependencies]
 cx-data-pipeline = { path = "../compiler/cx-data-pipeline" }
 cx-pipeline = { path = "../compiler/cx-pipeline" }
+
+ctor = "0.1.23"

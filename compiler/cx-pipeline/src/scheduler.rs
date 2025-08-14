@@ -13,6 +13,8 @@ use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, Compilat
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::Write;
+use fs2::FileExt;
 use cx_compiler_ast::parse::precontextualizing::{contextualize_fn_map, contextualize_type_map};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
@@ -34,8 +36,8 @@ pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: C
         let mut job = queue.pop_job().unwrap();
         
         compilation_exists.insert(job.unit.clone(), job.compilation_exists);
-        
-        if !cfg!(debug_assertions) && job.compilation_exists {
+
+        if job.compilation_exists {
             if load_precompiled_data(context, &job.unit).is_none() {
                 job.compilation_exists = false;
                 queue.push_job(job);
@@ -199,6 +201,9 @@ pub(crate) fn perform_job(
                 .unwrap_or_default();
             
             let identical_hash = previous_hash == current_hash;
+            let object_exists = std::fs::metadata(
+                internal_directory(context, &job.unit).with_extension("o")
+            ).is_ok();
             
             store_text(context, &job.unit, ".hash", &current_hash);
 
@@ -225,7 +230,7 @@ pub(crate) fn perform_job(
             context.module_db.preparse_incomplete
                 .insert(job.unit.clone(), output);
             
-            return if identical_hash {
+            return if identical_hash && object_exists {
                 Some(JobResult::UnchangedSinceLastCompilation)
             } else {
                 Some(JobResult::StandardSuccess)
@@ -339,14 +344,21 @@ pub(crate) fn perform_job(
             let mut internal_directory = internal_directory(context, &job.unit);
             internal_directory.push(".o");
             
-            match context.config.backend {
+            let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(&bytecode, internal_directory.to_str()?, context.config.optimization_level)
                     .expect("LLVM code generation failed"),
 
                 CompilerBackend::Cranelift => cranelift_compile(&bytecode, internal_directory.to_str()?)
                     .expect("Cranelift code generation failed"),
-            }
-            
+            };
+
+            let mut file = std::fs::File::create(&internal_directory)
+                .expect("Failed to create object file");
+            file.lock_exclusive()
+                .expect("Failed to lock object file for writing");
+
+            file.write_all(&buffer)
+                .expect("Failed to write object file");
             context.linking_files.lock().expect("Deadlock on linking files mutex")
                 .insert(internal_directory);
         }

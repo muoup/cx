@@ -10,6 +10,7 @@ use cranelift_module::Module;
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
 use std::ops::IndexMut;
+use crate::routines::get_function;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
@@ -112,14 +113,11 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             get_method_return(context, inst)
         },
 
-        VirtualInstruction::FunctionReference {
-            name
-        } => {
+        VirtualInstruction::FunctionReference { name } => {
+            let id = get_function(context, name)?;
+            
             Some(
-                CodegenValue::FunctionID {
-                    fn_name: name.clone(),
-                    id: context.function_ids.get(name).cloned().unwrap()
-                }
+                CodegenValue::FunctionID { fn_name: name.clone(), id }
             )
         }
 

@@ -98,7 +98,7 @@ pub fn generate_instruction(
                 _ => panic!("Invalid array index type: {l_type}"),
             };
             
-            let inner_as_bc = convert_fixed_type_kind(&builder.cx_type_map, &lhs_inner.kind)?;
+            let inner_as_bc = convert_fixed_type_kind(&lhs_inner.kind)?;
 
             builder.add_instruction_cxty(
                 VirtualInstruction::PointerBinOp {
@@ -239,18 +239,14 @@ pub fn generate_instruction(
         },
 
         CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
-            let _type = builder.get_expr_type(expr)?;
-            let pointer_type = builder.convert_fixed_cx_type(&_type)?;
-            let function_name = mangle_templated_fn(
+            let mangled_name = mangle_templated_fn(
                 fn_name.as_str(),
                 &template_input.params
             );
-
+            
             builder.add_instruction(
-                VirtualInstruction::FunctionReference {
-                    name: function_name
-                },
-                pointer_type
+                VirtualInstruction::FunctionReference { name: mangled_name },
+                BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 })
             )
         },
 

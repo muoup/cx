@@ -9,6 +9,7 @@ backend-llvm = ["cx-backend-llvm"]
 
 [dependencies]
 speedy = { version = "0.8.7" }
+fs2 = { version = "0.4.3" }
 
 cx-compiler-lexer = { path = "../cx-compiler-lexer" }
 cx-compiler-ast = { path = "../cx-compiler-ast" }
