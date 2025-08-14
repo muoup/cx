@@ -9,6 +9,7 @@ backend-llvm = ["cx-backend-llvm"]
 
 [dependencies]
 speedy = { version = "0.8.7" }
+fs2 = { version = "0.4.3" }
 
 cx-compiler-lexer = { path = "../cx-compiler-lexer" }
 cx-compiler-ast = { path = "../cx-compiler-ast" }
@@ -22,5 +23,3 @@ cx-data-pipeline = { path = "../cx-data-pipeline" }
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
 cx-util = { path = "../cx-util" }
-
-fs2 = { version = "0.4.3" }
