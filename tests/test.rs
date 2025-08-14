@@ -38,17 +38,17 @@ test_files!(
 #[ctor::ctor]
 fn init() {
     let root = env!("CARGO_MANIFEST_DIR");
-    let full_path = format!("{}/cases", root);
+    let full_path = format!("{root}/cases");
     std::env::set_current_dir(&full_path).unwrap();
 
     std::fs::remove_dir_all(".internal")
-        .unwrap_or_else(|_| {
+        .unwrap_or({
             // Ignore error if the directory does not exist
         });
 }
 
 fn get_output(path: &str) -> String {
-    let mut cmd = Command::new(format!("./{}", path));
+    let mut cmd = Command::new(format!("./{path}"));
     let output = cmd.output().unwrap();
     String::from_utf8(output.stdout).unwrap()
 }

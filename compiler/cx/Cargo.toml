@@ -10,5 +10,3 @@ backend-llvm = ["cx-data-pipeline/backend-llvm", "cx-pipeline/backend-llvm"]
 [dependencies]
 cx-pipeline = { path = "../cx-pipeline" }
 cx-data-pipeline = { path = "../cx-data-pipeline" }
-
-fs4 = { version = "0.13.1", features = ["sync"] }
