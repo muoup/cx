@@ -14,7 +14,7 @@ use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContex
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
-use std::os::fd::AsRawFd;
+use fs2::FileExt;
 use cx_compiler_ast::parse::precontextualizing::{contextualize_fn_map, contextualize_type_map};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
@@ -23,7 +23,6 @@ use cx_data_ast::parse::maps::CXDestructorMap;
 use cx_data_lexer::TokenIter;
 use cx_util::format::dump_data;
 use crate::template_realizing::realize_templates;
-use libc::{flock, LOCK_EX, LOCK_UN};
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
     let mut queue = JobQueue::new();
@@ -352,18 +351,16 @@ pub(crate) fn perform_job(
                 CompilerBackend::Cranelift => cranelift_compile(&bytecode, internal_directory.to_str()?)
                     .expect("Cranelift code generation failed"),
             };
-            
+
             let mut file = std::fs::File::create(&internal_directory)
                 .expect("Failed to create object file");
-            
-            unsafe { flock(file.as_raw_fd(), LOCK_EX); }
-            
+            file.lock_exclusive()
+                .expect("Failed to lock object file for writing");
+
             file.write_all(&buffer)
                 .expect("Failed to write object file");
             context.linking_files.lock().expect("Deadlock on linking files mutex")
                 .insert(internal_directory);
-        
-            unsafe { flock(file.as_raw_fd(), LOCK_UN); }
         }
     }
 
