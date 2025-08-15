@@ -3,9 +3,11 @@ use crate::parse::global_scope::{parse_body};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::parse::CXFunctionIdentifier;
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::type_mapping::{contextualize_template_args, contextualize_type};
 use cx_data_ast::parse::value_type::CXTypeKind;
+use cx_data_lexer::{identifier, operator, punctuator};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error, point_log_error};
 use crate::parse::structured_initialization::parse_structured_initialization;
@@ -71,7 +73,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
 
     loop {
         let (Some(name), mut _type) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
-            log_error!("PARSER ERROR: Failed to parse type declaration");
+            point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type declaration");
         };
         _type.specifiers = specifiers;
 
@@ -328,24 +330,25 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
 
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind> {
     let ident = parse_std_ident(&mut data.tokens)?;
+    let next = data.tokens.next()?;
     
-    if data.ast.function_map.has_template(ident.as_str()) {
-        let Some(args) = parse_template_args(&mut data.tokens) else {
-            point_log_error!(data.tokens, "PARSER ERROR: Failed to parse template arguments for function identifier: {:#?}", ident);
-        };
-        let Some(contextualized) = contextualize_template_args(&data.ast.type_map, &args) else {
-            point_log_error!(data.tokens, "PARSER ERROR: Failed to contextualize template arguments for function identifier: {:#?}", ident);
-        };
-
-        return Some(
-            CXExprKind::TemplatedFnIdent {
-                fn_name: ident,
-                template_input: contextualized
-            }
-        );
+    if !matches!(next.kind, operator!(Less)) || !is_type_decl(data) {
+        data.tokens.back();
+        return Some(CXExprKind::Identifier(ident));
     }
     
-    Some(CXExprKind::Identifier(ident))
+    data.tokens.back();
+
+    let Some(args) = parse_template_args(&mut data.tokens) else {
+        point_log_error!(data.tokens, "PARSER ERROR: Failed to parse template arguments for function identifier: {:#?}", ident);
+    };
+
+    Some(
+        CXExprKind::TemplatedFnIdent {
+            fn_name: ident,
+            template_input: args
+        }
+    )
 }
 
 pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {

@@ -20,6 +20,12 @@ impl<C: Context> Writable<C> for CXIdent {
     }
 }
 
+impl Display for CXIdent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.data)
+    }
+}
+
 impl CXIdent {
     pub fn as_str(&self) -> &str {
         self.data.as_ref()
@@ -38,11 +44,9 @@ impl CXIdent {
             data: str.into()
         }
     }
-}
-
-impl Display for CXIdent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.data)
+    
+    pub fn map_data<F: FnOnce(&str) -> String>(&mut self, f: F) {
+        self.data = f(self.data.as_ref()).into();
     }
 }
 

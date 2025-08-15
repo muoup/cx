@@ -55,7 +55,7 @@ impl BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
 
-            fn_map: convert_cx_func_map(&type_map, &fn_map),
+            fn_map: convert_cx_func_map(&fn_map),
             type_check_data: expr_type_map,
             
             cx_type_map: type_map,

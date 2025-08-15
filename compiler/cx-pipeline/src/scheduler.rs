@@ -257,10 +257,10 @@ pub(crate) fn perform_job(
                     pp_data.type_templates.insert(name.clone(), _template.transfer(import));
                 }
 
-                for (name, prototype) in other_pp_data.function_definitions.iter() {
+                for prototype in other_pp_data.function_definitions.iter() {
                     if prototype.visibility != VisibilityMode::Public { continue; };
 
-                    pp_data.function_definitions.push((name.clone(), prototype.transfer(import)));
+                    pp_data.function_definitions.push(prototype.transfer(import));
                 }
                 
                 for template in other_pp_data.function_templates.iter() {

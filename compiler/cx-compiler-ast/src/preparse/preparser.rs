@@ -1,11 +1,13 @@
-use cx_data_ast::{assert_token_matches, peek_next_kind, try_next};
-use crate::preparse::typing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_union};
-use cx_data_lexer::token::TokenKind;
+use cx_data_ast::{assert_token_matches, peek_next, try_next};
+use cx_data_ast::parse::{CXFunctionIdentifier, CXObjectIdentifier};
+use crate::preparse::typing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union};
+use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::parser::VisibilityMode;
+use cx_data_ast::parse::macros::error_pointer;
+use cx_data_ast::parse::parser::{VisibilityMode};
 use cx_data_ast::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeTemplate, PredeclarationType};
 use cx_data_lexer::{keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::point_log_error;
+use cx_util::{log_error, point_log_error, CXResult};
 use crate::preparse::importing::parse_import;
 use crate::preparse::PreparseData;
 
@@ -93,7 +95,6 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             Some(
                 PreparseResult::FunctionTemplate(
                     CXFunctionTemplate {
-                        name: signature.name.clone(),
                         inputs: type_decls,
                         shell: signature
                     }
@@ -129,12 +130,12 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> Option<PreparseRes
     };
 
     if matches!(type_, CXNaiveTypeKind::Identifier { predeclaration, .. } 
-            if predeclaration != PredeclarationType::None) {
+        if predeclaration != PredeclarationType::None) {
         data.tokens.index = starting_index; // Reset to the start if we didn't parse a type declaration
         return preparse_global_expr(data);
     }
     
-    try_next!(data.tokens, punctuator!(Semicolon));
+    assert_token_matches!(data.tokens, punctuator!(Semicolon));
     
     Some(
         PreparseResult::TypeDefinition(
@@ -161,30 +162,114 @@ pub(crate) fn parse_typedef(tokens: &mut TokenIter) -> Option<PreparseResult> {
     )
 }
 
+pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name: CXIdent) -> CXResult<Option<CXNaivePrototype>> {
+    match tokens.peek()?.kind {
+        // e.g:
+        // int main()
+        //         ^
+        TokenKind::Punctuator(PunctuatorType::OpenParen) => {
+            let Some(args) = parse_params(tokens) else {
+                point_log_error!(tokens, "PARSER ERROR: Failed to parse parameters in function declaration!");
+            };
+            
+            Some(
+                Some(
+                    CXNaivePrototype {
+                        return_type,
+                        name: CXFunctionIdentifier::Standard(name),
+                        params: args.params,
+                        var_args: args.var_args,
+                        this_param: args.contains_this
+                    }
+                )
+            )
+        },
+
+        // e.g:
+        // void vec<int>::push()
+        //         ^
+        TokenKind::Operator(OperatorType::Less) => {
+            let Some(params) = parse_template_args(tokens) else {
+                return Some(None);
+            };
+            
+            let _type = name;
+
+            assert_token_matches!(tokens, TokenKind::Operator(OperatorType::ScopeRes));
+            assert_token_matches!(tokens, TokenKind::Identifier(name));
+            let fn_name = CXIdent::from(name.as_str());
+            
+            if !peek_next!(tokens, TokenKind::Punctuator(PunctuatorType::OpenParen)) {
+                point_log_error!(tokens, "PARSER ERROR: Expected '(' after template arguments in function declaration!");
+            };
+
+            let Some(args) = parse_params(tokens) else {
+                point_log_error!(tokens, "PARSER ERROR: Failed to parse parameters in function declaration!");
+            };
+            let name = CXFunctionIdentifier::MemberFunction {
+                object: CXObjectIdentifier::Templated {
+                    name: CXIdent::from(_type.as_str()),
+                    template_input: params
+                }, 
+                function_name: fn_name
+            };
+
+            Some(
+                Some(
+                    CXNaivePrototype {
+                        return_type, name,
+                        params: args.params,
+                        var_args: args.var_args,
+                        this_param: args.contains_this
+                    }
+                )
+            )
+        }
+
+        // e.g:
+        // void renderer::draw()
+        //              ^
+        TokenKind::Operator(OperatorType::ScopeRes) => {
+            tokens.next();
+            let _type = name.as_string();
+            assert_token_matches!(tokens, TokenKind::Identifier(name));
+            let name = CXFunctionIdentifier::MemberFunction {
+                object: CXObjectIdentifier::Standard(CXIdent::from(_type.as_str())),
+                function_name: CXIdent::from(name.as_str())
+            };
+            let Some(params) = parse_params(tokens) else {
+                point_log_error!(tokens, "PARSER ERROR: Failed to parse parameters in member function declaration!");
+            };
+
+            Some(
+                Some(
+                    CXNaivePrototype {
+                        return_type, name,
+                        params: params.params,
+                        var_args: params.var_args,
+                        this_param: params.contains_this
+                    }
+                )
+            )
+        },
+
+        _ => Some(None)
+    }
+}
+
 pub(crate) fn preparse_global_expr(data: &mut PreparseData) -> Option<PreparseResult> {
     let (Some(name), return_type) = parse_initializer(&mut data.tokens)? else {
         point_log_error!(data.tokens, "Invalid global expression, name not found!");
     };
     
-    match peek_next_kind!(data.tokens)? {
-        punctuator!(OpenParen) => {
-            // We are parsing a function declaration
-            let params = parse_params(&mut data.tokens)?;
-            let signature = CXNaivePrototype {
-                name, return_type,
-                params: params.params,
-                var_args: params.var_args
-            };
-
-            goto_statement_end(&mut data.tokens);
-            Some(PreparseResult::FunctionDefinition(signature))
-        },
+    if let Some(method) = try_function_parse(&mut data.tokens, return_type, name.clone())? {
+        goto_statement_end(&mut data.tokens);
         
-        _ => {
-            eprintln!("Found: {:?}", data.tokens.peek());
-            todo!("global variables")
-        }
-    } 
+        return Some(PreparseResult::FunctionDefinition(method))
+    };
+    
+    eprintln!("Found: {:?}", data.tokens.peek());
+    todo!("global variables")
 }
 
 pub fn goto_statement_end(tokens: &mut TokenIter) -> Option<()> {

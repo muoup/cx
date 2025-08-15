@@ -133,12 +133,12 @@ impl CXType {
         self.specifiers & specifier == specifier
     }
     
-    pub fn mem_ref_inner(&self) -> Option<CXTypeKind> {
+    pub fn mem_ref_inner(&self) -> Option<&CXType> {
         let CXTypeKind::MemoryReference(inner) = &self.kind else {
             return None;
         };
         
-        Some(inner.kind.clone())
+        Some(inner.as_ref())
     }
 
     pub fn pointer_to(self) -> Self {
@@ -198,6 +198,16 @@ impl CXType {
 
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, CXTypeKind::MemoryReference(_))
+    }
+    
+    pub fn get_name(&self) -> Option<&str> {
+        match &self.kind {
+            CXTypeKind::Structured { name, .. } |
+            CXTypeKind::Union { name, .. } => name.as_ref().map(|n| n.as_str()),
+            CXTypeKind::Opaque { name, .. } => Some(name),
+            
+            _ => None,
+        }
     }
 }
 

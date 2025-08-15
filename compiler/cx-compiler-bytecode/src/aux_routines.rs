@@ -1,7 +1,12 @@
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
+use cx_data_ast::parse::{CXFunctionIdentifier, CXObjectIdentifier};
+use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::type_mapping::contextualize_template_args;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::bytecode_error_log;
+use cx_util::mangling::mangle_templated_fn;
 use crate::builder::{BytecodeBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
 use crate::deconstructor::deconstruct_variable;
@@ -17,6 +22,78 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
         current_offset + (alignment - (current_offset % alignment))
     } else {
         current_offset
+    }
+}
+
+pub(crate) fn try_access_member_fn(
+    builder: &mut BytecodeBuilder,
+    ltype: &CXType,
+    rhs: &CXExpr,
+) -> Option<ValueID> {
+    let inner = ltype.mem_ref_inner().cloned()?;
+    
+    let name = match &rhs.kind {
+        CXExprKind::Identifier(field_name) => {
+            CXFunctionIdentifier::MemberFunction {
+                function_name: field_name.clone(),
+                object: CXObjectIdentifier::Standard(CXIdent::from(inner.get_name()?))
+            }.as_string()
+        },
+        
+        CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+            let input = contextualize_template_args(&builder.cx_type_map, template_input)?;
+            
+            let premangled = CXFunctionIdentifier::MemberFunction {
+                function_name: fn_name.clone(),
+                object: CXObjectIdentifier::Standard(CXIdent::from(inner.get_name()?)),
+            }.as_string();
+            
+            mangle_templated_fn(&premangled, &input.params)
+        },
+        
+        _ => return None
+    };
+    
+    builder.add_instruction(
+        VirtualInstruction::FunctionReference { name },
+        BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 })
+    )
+}
+
+pub(crate) fn try_access_field(
+    builder: &mut BytecodeBuilder,
+    ltype: &BCType,
+    left_id: ValueID,
+    rhs: &CXExpr,
+) -> Option<ValueID> {
+    let CXExprKind::Identifier(field_name) = &rhs.kind else {
+        return None
+    };
+
+    match ltype.kind {
+        BCTypeKind::Struct { .. } => {
+            let struct_access = get_struct_field(
+                builder,
+                &ltype,
+                field_name.as_str()
+            ).unwrap_or_else(|| {
+                panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
+            });
+
+            builder.add_instruction(
+                VirtualInstruction::StructAccess {
+                    struct_: left_id,
+                    struct_type: ltype.clone(),
+                    field_offset: struct_access.offset,
+                    field_index: struct_access.index,
+                },
+                struct_access._type
+            )
+        },
+
+        BCTypeKind::Union { .. } => Some(left_id),
+
+        _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
     }
 }
 

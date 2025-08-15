@@ -4,7 +4,9 @@ use crate::parse::value_type::CXType;
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
+use crate::parse::CXFunctionIdentifier;
 use crate::parse::template::CXTemplateInput;
+use crate::preparse::pp_type::{CXNaiveTemplateInput, CXNaiveType};
 
 #[derive(Debug, Default)]
 pub struct CXAST {
@@ -30,9 +32,9 @@ pub struct CXParameter {
     pub _type: CXType,
 }
 
-#[derive(Debug, Clone, Default, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct CXFunctionPrototype {
-    pub name: CXIdent,
+    pub name: CXFunctionIdentifier,
     pub return_type: CXType,
     pub params: Vec<CXParameter>,
     pub var_args: bool
@@ -66,7 +68,7 @@ pub enum CXGlobalStmt {
     },
     
     TemplatedFunction {
-        fn_name: CXIdent,
+        prototype: CXFunctionPrototype,
         body: Box<CXExpr>
     },
 }
@@ -79,7 +81,7 @@ pub enum CXUnOp {
     ArrayIndex,
     InitializerIndex,
     
-    ExplicitCast(CXType),
+    ExplicitCast(CXNaiveType),
 
     PreIncrement(i8),
     PostIncrement(i8),
@@ -165,7 +167,7 @@ pub enum CXExprKind {
     
     TemplatedFnIdent {
         fn_name: CXIdent,
-        template_input: CXTemplateInput
+        template_input: CXNaiveTemplateInput
     },
     Identifier(CXIdent),
 
@@ -264,6 +266,11 @@ pub enum CXExprKind {
 
     InitializerList {
         indices: Vec<CXInitIndex>,
+    },
+    
+    // Typechecker Generated
+    InvokeDestructor {
+        object: Box<CXExpr>
     }
 }
 

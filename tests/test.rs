@@ -32,7 +32,8 @@ test_files!(
     short_circuit_eval,
     struct_and_pointers,
     struct_parameter,
-    template_include
+    template_include,
+    vector
 );
 
 #[ctor::ctor]
@@ -95,6 +96,10 @@ fn test(input: &Path) {
         assert_eq!(expected_output, get_output(&obj_output), "LLVM output does not match expected output for {}", input.display());
         println!("[{}] LLVM output matches expected output.", input.display());
     }
+    
+    std::fs::remove_file(&obj_output).unwrap_or_else(|_| {
+        panic!("Could not remove output file: {}", obj_output);
+    });
 }
 
 

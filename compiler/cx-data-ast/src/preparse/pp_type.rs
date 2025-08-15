@@ -1,8 +1,10 @@
 use std::hash::Hash;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
+use crate::parse::CXFunctionIdentifier;
 use crate::parse::identifier::CXIdent;
 use crate::parse::parser::VisibilityMode;
+use crate::preparse::CXNaiveFnIdent;
 
 pub type CXTypeSpecifier = u8;
 
@@ -37,15 +39,15 @@ pub enum PredeclarationType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaivePrototype {
-    pub name: CXIdent,
+    pub name: CXFunctionIdentifier,
     pub params: Vec<CXNaiveParameter>,
     pub return_type: CXNaiveType,
     pub var_args: bool,
+    pub this_param: bool
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXFunctionTemplate {
-    pub name: CXIdent,
     pub inputs: Vec<String>,
     pub shell: CXNaivePrototype,
 }

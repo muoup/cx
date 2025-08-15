@@ -1,9 +1,10 @@
 use cx_compiler_ast::parse::operators::{comma_separated_mut};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
+use cx_data_ast::parse::type_mapping::{contextualize_template_args, contextualize_type};
 use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
 use cx_data_ast::preparse::pp_type::CX_CONST;
 use cx_util::{expr_error_log, log_error};
-use crate::struct_typechecking::typecheck_access;
+use crate::struct_typechecking::{typecheck_access, typecheck_method_call};
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};
 use crate::structured_initialization::coerce_initializer_list;
 use crate::TypeEnvironment;
@@ -32,7 +33,9 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 log_error!("TYPE ERROR: Unknown template function {fn_name}");
             }
             
-            let Some(template) = env.function_template_prototype(fn_name.as_str(), template_input.clone()) else {
+            let contextualized_input = contextualize_template_args(env.type_map, template_input)?;
+            
+            let Some(template) = env.function_template_prototype(fn_name.as_str(), contextualized_input) else {
                 log_error!("TYPE ERROR: Could not generate template for {fn_name} with input {template_input:?}");
             };
             
@@ -128,13 +131,14 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
 
                 CXUnOp::ExplicitCast (to_type) => {
                     let mut operand_type = coerce_value(env, operand.as_mut())?;
-
-                    let Some(_) = explicit_cast(env, operand, &mut operand_type, to_type) else {
+                    let contextualized_type = contextualize_type(env.type_map, to_type)?;
+                    
+                    let Some(_) = explicit_cast(env, operand, &mut operand_type, &contextualized_type) else {
                         expr_error_log!(env.tokens, expr.start_index, expr.end_index,
                             "TYPE ERROR: Invalid cast from {operand_type} to {to_type}");
                     };
 
-                    Some(to_type.clone())
+                    Some(contextualized_type)
                 },
 
                 _ => todo!("CXUnOp {operator:?} not implemented"),
@@ -163,63 +167,18 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             typecheck_access(env, lhs.as_mut(), rhs.as_mut()),
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
-            let mut lhs_type = coerce_mem_ref(env, lhs)?;
+            let mut lhs_type = coerce_mem_ref(env, lhs.as_mut())?;
 
             if let CXTypeKind::PointerTo { inner_type: inner, .. } = &lhs_type.kind {
                 lhs_type = *inner.clone();
             }
-
+            
             let CXTypeKind::Function { prototype } = &lhs_type.kind else {
                 log_error!("TYPE ERROR: Method call operator can only be applied to functions, found: {lhs} of type {lhs_type}");
             };
-
-            let mut args = comma_separated_mut(rhs);
-
-            if args.len() != prototype.params.len() && !prototype.var_args {
-                log_error!("TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name, prototype.params.len(), args.len());
-            }
-
-            for (arg, expected_type) in
-                args
-                .iter_mut()
-                .zip(prototype.params.iter())
-            {
-                implicit_coerce(env, arg, expected_type._type.clone())?;
-            }
-
-            for arg in args.into_iter().skip(prototype.params.len()) {
-                let va_type = coerce_value(env, arg)?;
-
-                match &va_type.kind {
-                    CXTypeKind::PointerTo { .. } => {
-                        // Pointer types are already compatible with varargs, no need to cast
-                    },
-                    
-                    CXTypeKind::Integer { bytes, signed } => {
-                        if *bytes != 8 {
-                            let to_type = CXTypeKind::Integer { bytes: 8, signed: *signed }.into();
-                            implicit_cast(env, arg, &va_type, &to_type)?;
-                        }
-                    },
-
-                    CXTypeKind::Float { bytes } => {
-                        if *bytes != 8 {
-                            let to_type = CXTypeKind::Float { bytes: 8 }.into();
-                            implicit_cast(env, arg, &va_type, &to_type)?;
-                        }
-                    },
-                    
-                    CXTypeKind::Bool => {
-                        let to_type = CXTypeKind::Integer { bytes: 8, signed: false }.into();
-                        implicit_cast(env, arg, &va_type, &to_type)?;
-                    },
-
-                    _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", arg),
-                }
-            }
-
-            Some(prototype.return_type.clone())
-        }
+            
+            typecheck_method_call(env, prototype.as_ref(), rhs.as_mut())
+        },
 
         CXExprKind::BinOp { lhs, rhs, op } =>
             alg_bin_op_coercion(env, op.clone(), lhs, rhs)
@@ -437,6 +396,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             )
         },
         
+        CXExprKind::InvokeDestructor { .. } |
         CXExprKind::InitializerList { .. } =>
             Some(CXType::unit()),
         
@@ -470,7 +430,7 @@ pub(crate) fn implicit_coerce(
     Some(())
 }
 
-fn coerce_mem_ref(
+pub(crate) fn coerce_mem_ref(
     env: &mut TypeEnvironment,
     expr: &mut CXExpr,
 ) -> Option<CXType> {

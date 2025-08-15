@@ -30,7 +30,7 @@ impl Display for CXNaiveTypeKind {
                     .join(", ");
                 write!(f, "Union<{}> {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
             },
-            CXNaiveTypeKind::FunctionPointer { prototype } => write!(f, "FunctionPointer<{prototype}>"),
+            CXNaiveTypeKind::FunctionPointer { prototype } => write!(f, "FunctionPointer({prototype})"),
         }
     }
 }
@@ -41,7 +41,7 @@ impl Display for CXNaivePrototype {
             .map(|param| format!("{:?}: {}", param.name, param._type))
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "{}({}) -> {}", self.return_type, params_str, self.name)
+        write!(f, "{:?}({}) -> {}", self.name, params_str, self.return_type)
     }
 }
 

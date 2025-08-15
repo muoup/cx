@@ -95,12 +95,10 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                     data.tokens.index = pre_index;
                     return None;
                 };
-                let cx_type = contextualize_type(&data.ast.type_map, &type_)
-                    .expect("CRITICAL: Failed to contextualize type in pre_unop parsing!");
 
                 assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
 
-                return Some(CXUnOp::ExplicitCast(cx_type));
+                return Some(CXUnOp::ExplicitCast(type_));
             },
 
             _ => {

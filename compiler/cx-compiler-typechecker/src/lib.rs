@@ -65,16 +65,14 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, input: CXTemplateInp
     let mut fn_map = ast.function_map.clone();
     
     let args = ast.function_map
-        .template_args(prototype.name.as_str())
+        .template_args(&prototype.name.as_string())
         .unwrap_or_else(|| {
-            panic!("Template generator not found in type map for {}", prototype.name)
+            panic!("Template generator not found in type map for {}", &prototype.name.as_string())
         });
     
     for (name, _type) in args.iter().zip(&input.params) {
         type_map.insert(name.clone(), _type.clone());
     }
-    
-    let mangled_name = mangle_templated_fn(prototype.name.as_str(), &input.params);
     
     let mut env = TypeEnvironment {
         tokens,
@@ -89,23 +87,24 @@ pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, input: CXTemplateInp
         typecheck_data: TypeCheckData::new(&ast.destructor_map),
     };
     
+    let prototype_name = prototype.name.as_string();
+    
     let mut body = ast.global_stmts.iter()
         .find_map(
             |stmt| match stmt {
-                CXGlobalStmt::TemplatedFunction { fn_name, body } 
-                if fn_name == &prototype.name 
-                    => Some(body),
+                CXGlobalStmt::TemplatedFunction { prototype, body, .. } 
+                    if prototype.name.as_string() == prototype_name => Some(body),
                 _ => None,
             }
         )
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {}", prototype.name);
+            panic!("Function template body not found for {}", prototype_name);
         })
         .as_ref()
         .clone();
+    prototype.name.map_name_ident(|data| mangle_templated_fn(data, &input.params));
     
     typecheck_function(&mut env, &prototype, &mut body)?;
-    prototype.name = CXIdent::from(mangled_name);
     
     Some((env.typecheck_data, prototype.clone(), CXGlobalStmt::FunctionDefinition {
         prototype,

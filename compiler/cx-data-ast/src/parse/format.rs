@@ -53,12 +53,13 @@ impl Display for CXGlobalStmt {
                 Ok(())
             },
             
-            CXGlobalStmt::TemplatedFunction { fn_name, body } => {
+            CXGlobalStmt::TemplatedFunction { prototype, body } => {
                 indent();
-                fwriteln!(f, "templated function {} {{\n", fn_name)?;
+                fwriteln!(f, "template {prototype} {{")?;
                 fwrite!(f, "{}", body)?;
                 dedent();
                 fwriteln!(f, "")?;
+                fwrite!(f, "}}")?;
                 Ok(())
             },
         }
@@ -68,7 +69,7 @@ impl Display for CXGlobalStmt {
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}({}) -> {}",
-               self.name,
+               self.name.as_string(),
                self.params.iter().map(|p| format!("{p}")).collect::<Vec<_>>().join(", "),
                self.return_type
         )
@@ -329,7 +330,7 @@ impl Display for CXTypeKind {
                 write!(f, "OPAQUE_{size}(\"{name}\")")
             },
             CXTypeKind::Function { prototype } => {
-                write!(f, "fn {prototype}")
+                write!(f, "{prototype}")
             },
             CXTypeKind::MemoryReference(inner) => {
                 write!(f, "&{inner}")

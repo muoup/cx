@@ -1,4 +1,5 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
+use cx_data_ast::parse::CXFunctionIdentifier;
 use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
 use cx_data_ast::parse::template::CXTemplateInput;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
@@ -17,7 +18,7 @@ impl BytecodeBuilder {
     }
     
     pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
-        convert_cx_prototype(&self.cx_type_map, cx_proto)
+        convert_cx_prototype(cx_proto)
     }
 
     pub(crate) fn cx_ptr_binop(
@@ -99,21 +100,6 @@ impl BytecodeBuilder {
         )
     }
     
-    pub(crate) fn cx_unop(
-        &self,
-        op: &CXUnOp
-    ) -> Option<BCIntUnOp> {
-        Some(
-            match op {
-                CXUnOp::Negative          => BCIntUnOp::NEG,
-                CXUnOp::BNot              => BCIntUnOp::BNOT,
-                CXUnOp::LNot              => BCIntUnOp::LNOT,
-                
-                _ => todo!("Unsupported unary operation: {:?}", op)
-            }
-        )
-    }
-    
     pub(crate) fn cx_float_binop(
         &self,
         op: &CXBinOp
@@ -126,19 +112,6 @@ impl BytecodeBuilder {
                 CXBinOp::Divide         => BCFloatBinOp::FDIV,
                 
                 _ => todo!("Unsupported binary operation: {:?}", op)
-            }
-        )
-    }
-    
-    pub(crate) fn cx_float_unop(
-        &self,
-        op: &CXUnOp
-    ) -> Option<BCFloatUnOp> {
-        Some(
-            match op {
-                CXUnOp::Negative          => BCFloatUnOp::NEG,
-                
-                _ => todo!("Unsupported unary operation: {:?}", op)
             }
         )
     }
@@ -170,45 +143,53 @@ fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
-    if cx_proto.return_type.is_structured() {
-        Some(
-            BCFunctionPrototype {
-                name: cx_proto.name.as_string(),
-                return_type: BCType::default_pointer(),
-                params: vec![BCParameter { name: None, _type: BCType::default_pointer() }]
-                    .into_iter()
-                    .chain(cx_proto.params.iter().map(|param| BCParameter {
-                        name: None,
-                        _type: convert_argument_type(&param._type).unwrap()
-                    }))
-                    .collect(),
-                var_args: cx_proto.var_args,
-                linkage: LinkageType::Public
+pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
+    let mut params = cx_proto.params.iter()
+        .map(|param| {
+            BCParameter {
+                name: param.name.as_ref().map(|name| name.as_string()),
+                _type: convert_argument_type(&param._type).unwrap()
             }
-        )
-    } else {
-        Some(
-            BCFunctionPrototype {
-                name: cx_proto.name.as_string(),
-                return_type: convert_fixed_type(&cx_proto.return_type)?,
-                params: cx_proto.params.iter()
-                    .map(|param| BCParameter {
-                        name: None,
-                        _type: convert_argument_type(&param._type).unwrap()
-                    })
-                    .collect(),
-                var_args: cx_proto.var_args,
-                linkage: LinkageType::Public
-            }
-        )
+        })
+        .collect::<Vec<_>>();
+    let mut return_type = convert_fixed_type(&cx_proto.return_type).unwrap();
+   
+    match &cx_proto.name {
+        CXFunctionIdentifier::MemberFunction { .. } => {
+            params.insert(0, BCParameter {
+                name: Some("this".to_string()),
+                _type: BCType::from(BCTypeKind::Pointer {
+                    nullable: false,
+                    dereferenceable: 0,
+                }),
+            });
+        },
+        
+        _ => {}
     }
+    
+    if cx_proto.return_type.is_structured() {
+        params.insert(0, BCParameter {
+            name: Some("__internal_buffer".to_string()),
+            _type: BCType::default_pointer()
+        });
+        return_type = BCType::default_pointer();
+    }
+    
+    Some(
+        BCFunctionPrototype {
+            name: cx_proto.name.as_string(),
+            return_type, params,
+            var_args: cx_proto.var_args,
+            linkage: LinkageType::Public
+        }
+    )
 }
 
-pub(crate) fn convert_cx_func_map(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionMap) -> BCFunctionMap {
+pub(crate) fn convert_cx_func_map(cx_proto: &CXFunctionMap) -> BCFunctionMap {
     cx_proto.iter()
         .map(|(name, cx_proto)| {
-            (name.clone(), convert_cx_prototype(cx_type_map, cx_proto).unwrap())
+            (name.clone(), convert_cx_prototype(cx_proto).unwrap())
         })
         .collect::<BCFunctionMap>()
 }

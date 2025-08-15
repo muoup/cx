@@ -1,6 +1,8 @@
 use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype, CXParameter};
+use cx_data_ast::parse::{CXFunctionIdentifier, CXObjectIdentifier};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::maps::{CXDestructorMap, CXFunctionMap};
+use cx_data_ast::parse::type_mapping::{contextualize_template_args, contextualize_type};
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_util::mangling::mangle_destructor;
 use cx_util::log_error;
@@ -26,7 +28,7 @@ pub(crate) fn add_destructor_prototypes(
         );
 
         let prototype = CXFunctionPrototype {
-            name: CXIdent::from(destructor_name.clone()),
+            name: CXFunctionIdentifier::Destructor(CXIdent::from(name.as_str())),
             params: vec![CXParameter { name: None, _type: this_type }],
             return_type: CXType::unit(),
             var_args: false
@@ -49,6 +51,38 @@ pub(crate) fn typecheck_function(
         if let Some(name) = name {
             env.symbol_table.insert(name.as_string(), type_.clone());
         }
+    }
+    
+    match &prototype.name {
+        CXFunctionIdentifier::Standard(_) => {},
+        CXFunctionIdentifier::Destructor(_) => {}, //TODO
+        
+        CXFunctionIdentifier::MemberFunction { object, .. } => {
+            let object_type = match object {
+                CXObjectIdentifier::Standard(ident) => {
+                    let Some(type_) = env.type_map.get(ident.as_str()) else {
+                        log_error!("Failed to find type for object identifier: {}", ident);
+                    };
+                    
+                    type_.clone()
+                },
+                
+                CXObjectIdentifier::Templated { name, template_input } => {
+                    let input = contextualize_template_args(env.type_map, template_input)?;
+                    
+                    let Some(type_) = env.type_map.get_template(env.type_map, name.as_str(), input) else {
+                        log_error!("Failed to find templated type for object identifier: {}", name);
+                    };
+                    
+                    type_
+                }
+            };
+            
+            env.symbol_table.insert(
+                "this".to_string(),
+                object_type.pointer_to(),
+            );
+        },
     }
 
     type_check_traverse(env, body)?;

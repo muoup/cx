@@ -1,13 +1,15 @@
 use cx_compiler_ast::parse::operators::comma_separated;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
+use cx_data_ast::parse::CXFunctionIdentifier;
+use cx_data_ast::parse::type_mapping::contextualize_template_args;
 use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ValueID, VirtualInstruction};
-use cx_util::log_error;
+use cx_util::{bytecode_error_log, log_error};
 use cx_util::mangling::mangle_templated_fn;
-use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field};
+use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field, try_access_member_fn};
 use crate::builder::BytecodeBuilder;
-use crate::cx_maps::convert_fixed_type_kind;
+use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
 use crate::implicit_cast::implicit_cast;
 
@@ -52,35 +54,15 @@ pub fn generate_instruction(
                 .clone();
             let ltype = builder.convert_cx_type(&lhs_type)?;
 
-            let CXExprKind::Identifier(field_name) = &rhs.as_ref().kind else {
-                panic!("PANIC: Attempting to access struct field with rhs: {rhs:?}");
-            };
-            
-            match ltype.kind {
-                BCTypeKind::Struct { .. } => {
-                    let struct_access = get_struct_field(
-                        builder,
-                        &ltype,
-                        field_name.as_str()
-                    ).unwrap_or_else(|| {
-                        panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
-                    });
-
-                    builder.add_instruction(
-                        VirtualInstruction::StructAccess {
-                            struct_: left_id,
-                            struct_type: ltype,
-                            field_offset: struct_access.offset,
-                            field_index: struct_access.index,
-                        },
-                        struct_access._type
-                    )
-                },
-                
-                BCTypeKind::Union { .. } => Some(left_id),
-                
-                _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
+            if let Some(id) = try_access_field(builder, &ltype, left_id, rhs) {
+                return Some(id);
             }
+
+            if let Some(id) = try_access_member_fn(builder, &lhs_type, rhs) {
+                return Some(id);
+            }
+
+            bytecode_error_log!(builder, "Invalid access operation on {lhs_type} with {rhs:?}");
         },
 
         CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
@@ -130,20 +112,30 @@ pub fn generate_instruction(
             };
             
             let mut args = vec![];
-            
+
             if prototype.return_type.is_structured() {
                 let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
-                let dereferenceable = buffer_type.fixed_size() as u32;
 
                 let buffer = builder.add_instruction(
                     VirtualInstruction::Allocate {
+                        _type: buffer_type.clone(),
                         alignment: buffer_type.alignment(),
-                        _type: buffer_type,
                     },
-                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable })
+                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: buffer_type.fixed_size() as u32 })
                 )?;
-                
+
                 args.push(buffer);
+            }
+
+            match &prototype.name {
+                CXFunctionIdentifier::MemberFunction { .. } => {
+                    if let CXExprKind::BinOp { lhs, op: CXBinOp::Access, .. } = &lhs.as_ref().kind {
+                        let object_id = generate_instruction(builder, lhs.as_ref())?;
+                        args.push(object_id);
+                    }
+                },
+
+                _ => {}
             }
 
             for arg in rhs {
@@ -157,7 +149,7 @@ pub fn generate_instruction(
                         VirtualInstruction::DirectCall {
                             func: left_id,
                             args,
-                            method_sig: builder.convert_cx_prototype(prototype.as_ref())?
+                            method_sig: convert_cx_prototype(prototype.as_ref())?
                         },
                         prototype.return_type.clone()
                     )
@@ -171,7 +163,7 @@ pub fn generate_instruction(
                         VirtualInstruction::IndirectCall {
                             func_ptr: left_id,
                             args,
-                            method_sig: builder.convert_cx_prototype(prototype.as_ref())?
+                            method_sig: convert_cx_prototype(prototype.as_ref())?
                         },
                         prototype.return_type.clone()
                     )
@@ -239,10 +231,8 @@ pub fn generate_instruction(
         },
 
         CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
-            let mangled_name = mangle_templated_fn(
-                fn_name.as_str(),
-                &template_input.params
-            );
+            let input = contextualize_template_args(&builder.cx_type_map, template_input)?;
+            let mangled_name = mangle_templated_fn(fn_name.as_str(), &input.params);
             
             builder.add_instruction(
                 VirtualInstruction::FunctionReference { name: mangled_name },
@@ -252,12 +242,22 @@ pub fn generate_instruction(
 
         CXExprKind::Identifier(val) => {
             if let Some(id) = builder.get_symbol(val.as_str()) {
-                Some(id)
-            } else if let Some(val) = builder.fn_ref(val.as_str())? {
-                Some(val)
-            } else {
-                log_error!("Unknown identifier {val}")
+                return Some(id);
             }
+
+            if let CXTypeKind::Function { prototype } = builder.get_expr_type(expr)?.kind {
+                let name = prototype.name.as_string();
+
+                if !builder.fn_map.contains_key(&name) {
+                    let bc_prototype = convert_cx_prototype(prototype.as_ref())?;
+
+                    builder.fn_map.insert(name.clone(), bc_prototype);
+                }
+
+                return builder.fn_ref(&name)?;
+            }
+
+            bytecode_error_log!(builder, "Unknown identifier: {val}");
         },
 
         CXExprKind::Return { value } => {
@@ -790,6 +790,19 @@ pub fn generate_instruction(
             }
             
             Some(alloc)
+        },
+
+        CXExprKind::InvokeDestructor { object } => {
+            let object_type = builder.get_expr_type(object)?
+                .clone();
+            let object = generate_instruction(builder, object.as_ref())?;
+
+            deconstruct_variable(
+                builder, object,
+                &object_type, false
+            )?;
+
+            Some(ValueID::NULL)
         },
         
         CXExprKind::Taken => panic!("PANIC: Attempting to generate instruction for `Taken` expression, which should have been removed by the type checker."),

@@ -46,11 +46,8 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         CXGlobalStmt::FunctionDefinition { prototype, body } => {
             Some(
                 Some(
-                    CXGlobalStmt::TemplatedFunction {
-                        fn_name: prototype.name.clone(),
-                        body,
-                    }
-                )
+                    CXGlobalStmt::TemplatedFunction { prototype, body }
+                ) 
             )
         },
 
@@ -62,6 +59,6 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         CXGlobalStmt::GlobalVariable { .. } =>
             point_log_error!(data.tokens, "PARSER ERROR: Templated global variables are not supported!"),
         CXGlobalStmt::FunctionPrototype { .. } =>
-            point_log_error!(data.tokens, "PARSER ERROR: Templated functions must be declared with a function definition!"),
+            point_log_error!(data.tokens, "PARSER ERROR: Templated functions predeclarations are not supported!"),
     }
 }

@@ -4,9 +4,10 @@ pub mod preparser;
 mod macros;
 mod importing;
 
+use cx_data_ast::parse::identifier::CXIdent;
 use crate::preparse::preparser::{preparse_stmt, PreparseResult};
 use cx_data_ast::parse::parser::VisibilityMode;
-use cx_data_ast::preparse::pp_type::ModuleResource;
+use cx_data_ast::preparse::pp_type::{CXNaiveType, ModuleResource};
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};
@@ -35,7 +36,7 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
             },
 
             PreparseResult::FunctionDefinition(signature) => {
-                contents.function_definitions.push((signature.name.to_string(), ModuleResource::with_visibility(signature, data.visibility_mode)));
+                contents.function_definitions.push(ModuleResource::with_visibility(signature, data.visibility_mode));
             },
 
             PreparseResult::DestructorDefinition(name) => {

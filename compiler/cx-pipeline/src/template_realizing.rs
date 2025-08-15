@@ -22,9 +22,19 @@ pub(crate) fn realize_templates(
     for template in ast.function_map.templates() {
         let requests = template.generator.get_generated();
         
+        let (other_lex, other_ast) = match &template.module_origin {
+            Some(module) => {
+                let module = CompilationUnit::from_str(module.as_str());
+                
+                (context.module_db.lex_tokens.get(&module),
+                 context.module_db.typechecked_ast.get(&module))
+            },
+            None => (lex.clone(), ast.clone()),
+        };
+        
         for (input, prototype) in requests {
             let (data, prototype, stmt) 
-                = template_fn_typecheck(&lex, &ast, input, prototype)?;
+                = template_fn_typecheck(&other_lex, &other_ast, input, prototype)?;
             
             new_methods.push((prototype, stmt));
             typecheck_data.extend(data);
@@ -38,7 +48,7 @@ pub(crate) fn realize_templates(
 
     for (prototype, stmt) in new_methods {
         ast.global_stmts.push(stmt);
-        ast.function_map.insert(prototype.name.to_string(), prototype);
+        ast.function_map.insert(prototype.name.as_string(), prototype);
     }
     
     lock.insert(unit.clone(), Arc::from(ast));

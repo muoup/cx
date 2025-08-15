@@ -1,10 +1,13 @@
 use cx_util::{log_error};
 use cx_util::mangling::mangle_templated_type;
 use crate::parse::ast::{CXFunctionPrototype, CXParameter};
+use crate::parse::CXFunctionIdentifier;
+use crate::parse::identifier::CXIdent;
 use crate::parse::maps::{CXTypeMap};
 use crate::parse::template::{CXTemplateInput};
 use crate::parse::value_type::{CXType, CXTypeKind};
-use crate::preparse::pp_type::{CXNaiveType, CXNaiveTypeKind, CXNaivePrototype, CXNaiveParameter, CXNaiveTemplateInput};
+use crate::preparse::CXNaiveFnIdent;
+use crate::preparse::pp_type::{CXNaiveType, CXNaiveTypeKind, CXNaivePrototype, CXNaiveParameter, CXNaiveTemplateInput, PredeclarationType};
 
 pub fn contextualize_template_args(type_map: &CXTypeMap, template_args: &CXNaiveTemplateInput) -> Option<CXTemplateInput> {
     let args = template_args.params.iter()
@@ -166,7 +169,7 @@ pub fn contextualize_fn_prototype(type_map: &CXTypeMap, prototype: &CXNaiveProto
             Some(CXParameter { name: name.clone(), _type: param_type })
         })
         .collect::<Option<Vec<_>>>()?;
-
+    
     Some(CXFunctionPrototype {
         name: prototype.name.clone(),
         params: parameters,
