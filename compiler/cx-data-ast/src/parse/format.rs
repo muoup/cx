@@ -97,6 +97,16 @@ impl Display for CXExprKind {
             },
 
             CXExprKind::Identifier(ident) => fwrite!(f, "{}", ident),
+            CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+                let arg_string = template_input.params
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                
+                fwrite!(f, "{}<{}>", fn_name, arg_string)
+            },
+            
             CXExprKind::VarDeclaration { name, type_ } => {
                 fwrite!(f, "let {}: {}", name, type_)?;
 
@@ -132,6 +142,10 @@ impl Display for CXExprKind {
                 fwrite!(f, "{}[{}]", lhs, rhs)
             },
 
+            CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } => {
+                fwrite!(f, "{}.{}", lhs, rhs)
+            },
+            
             CXExprKind::BinOp { lhs, rhs, op } => {
                 fwrite!(f, "{} {} {}", lhs, op, rhs)
             },
@@ -193,14 +207,15 @@ impl Display for CXExprKind {
             CXExprKind::If { condition, then_branch, else_branch } => {
                 indent();
                 fwriteln!(f, "if {} {{", condition)?;
-                fwriteln!(f, "{}", then_branch)?;
+                fwrite!(f, "{}", then_branch)?;
                 dedent();
                 fwriteln!(f, "")?;
                 if let Some(else_branch) = else_branch {
                     indent();
                     fwriteln!(f, "}} else {{")?;
-                    fwriteln!(f, "{}", else_branch)?;
+                    fwrite!(f, "{}", else_branch)?;
                     dedent();
+                    fwriteln!(f, "")?;
                 } 
                 fwrite!(f, "}}")
             },
@@ -208,21 +223,13 @@ impl Display for CXExprKind {
             CXExprKind::For { init, condition, increment, body } => {
                 indent();
                 fwriteln!(f, "for ({}; {}; {}) {{", init, condition, increment)?;
-                fwriteln!(f, "{}", body)?;
+                fwrite!(f, "{}", body)?;
                 dedent();
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")
             },
 
-            CXExprKind::While { condition, body, pre_eval: true } => {
-                indent();
-                fwriteln!(f, "while ({condition}) {{")?;
-                fwriteln!(f, "{}", body)?;
-                dedent();
-                fwrite!(f, "}}")
-            },
-
-            CXExprKind::While { condition, body, pre_eval: false } => {
+            CXExprKind::While { condition, body, .. } => {
                 indent();
                 fwriteln!(f, "while ({condition}) {{")?;
                 fwrite!(f, "{}", body)?;

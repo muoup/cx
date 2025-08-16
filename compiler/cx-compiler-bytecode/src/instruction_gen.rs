@@ -73,7 +73,6 @@ pub fn generate_instruction(
 
             let lhs_inner = match l_type.kind {
                 CXTypeKind::PointerTo { inner_type: inner, .. } => inner,
-                
                 CXTypeKind::VariableLengthArray { _type, .. } |
                 CXTypeKind::Array { inner_type: _type, .. } => _type,
                 
@@ -82,17 +81,14 @@ pub fn generate_instruction(
             
             let inner_as_bc = convert_fixed_type_kind(&lhs_inner.kind)?;
 
-            builder.add_instruction_cxty(
+            builder.add_instruction(
                 VirtualInstruction::PointerBinOp {
                     left: left_id,
                     right: right_id,
                     ptr_type: BCType::from(inner_as_bc),
                     op: BCPtrBinOp::ADD
                 },
-                CXType::new(
-                    0,
-                    CXTypeKind::MemoryReference(lhs_inner)
-                )
+                BCType::default_pointer()
             )
         },
 
@@ -198,11 +194,9 @@ pub fn generate_instruction(
         },
         CXExprKind::ImplicitLoad { expr, loaded_type } => {
             let inner = generate_instruction(builder, expr.as_ref())?;
-
+            
             builder.add_instruction_cxty(
-                VirtualInstruction::Load {
-                    value: inner
-                },
+                VirtualInstruction::Load { value: inner },
                 loaded_type.clone()
             )
         },
@@ -346,8 +340,11 @@ pub fn generate_instruction(
                     )
                 },
                 
-                CXUnOp::Dereference |
-                CXUnOp::AddressOf => generate_instruction(builder, operand.as_ref()),
+                // No-op - only changes the type information for the typechecker
+                CXUnOp::AddressOf |
+                
+                // No-op - handled by a typechecker-generated implicit load
+                CXUnOp::Dereference => generate_instruction(builder, operand.as_ref()),
                 
                 CXUnOp::PreIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;

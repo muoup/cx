@@ -327,9 +327,11 @@ pub(crate) fn perform_job(
         CompilationStep::BytecodeGen => {
             realize_templates(context, &job.unit)
                 .expect("Template realizing failed");
-            
+
             let self_ast = context.module_db.typechecked_ast.take(&job.unit);
             let typecheck_data = context.module_db.typecheck_data.take(&job.unit);
+            
+            dump_data(&self_ast);
             
             let bytecode = generate_bytecode(self_ast, typecheck_data)
                 .expect("Bytecode generation failed");

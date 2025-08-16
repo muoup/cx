@@ -89,7 +89,7 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
                 
                 CXUnOp::AddressOf => {
                     let operand_type = type_check_traverse(env, operand.as_mut())?.clone();
-
+                    
                     match operand_type.kind {
                         CXTypeKind::MemoryReference(inner) => Some(inner.clone().pointer_to()),
                         CXTypeKind::Function { .. } => coerce_value(env, operand.as_mut()),
@@ -505,9 +505,16 @@ pub(crate) fn coerce_value(
 ) -> Option<CXType> {
     let expr_type = type_check_traverse(env, expr)?.clone();
     
-    if !expr_type.is_memory_reference() {
-        return Some(expr_type);   
-    }
+    let Some(inner) = expr_type.mem_ref_inner() else {
+        return Some(expr_type);
+    };
+    
+    match &inner.kind {
+        CXTypeKind::Structured { .. } |
+        CXTypeKind::Union { .. } => return Some(expr_type),
+        
+        _ => (),
+    };
     
     let expr_type = coerce_mem_ref(env, expr)?;
 
