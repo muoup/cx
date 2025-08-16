@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::process::Command;
-use cx_data_pipeline::{CompilerBackend, CompilerConfig};
+use cx_data_pipeline::{CompilerBackend, CompilerConfig, OptimizationLevel};
 use cx_pipeline::standard_compilation;
 
 macro_rules! test_files {
@@ -69,12 +69,12 @@ fn test(input: &Path) {
 
     let cranelift_config = CompilerConfig {
         backend: CompilerBackend::Cranelift,
-        optimization_level: cx_data_pipeline::OptimizationLevel::O0,
+        optimization_level: OptimizationLevel::O0,
         output: (&obj_output).into()
     };
     let llvm_config = CompilerConfig {
         backend: CompilerBackend::LLVM,
-        optimization_level: cx_data_pipeline::OptimizationLevel::O1,
+        optimization_level: OptimizationLevel::O1,
         output: (&obj_output).into()
     };
 

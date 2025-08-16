@@ -56,10 +56,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::DirectCall {
             func, args, method_sig
         } => {
-            let (val, params) = prepare_method_call(
-                context, *func,
-                method_sig, args
-            )?;
+            let (val, params) = prepare_method_call(context, *func, args)?;
 
             let fn_ref = get_func_ref(
                 context,
@@ -77,12 +74,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::IndirectCall {
             func_ptr, args, method_sig
         } => {
-            let (val, params) = prepare_method_call(
-                context,
-                *func_ptr,
-                context.function_prototype,
-                args
-            )?;
+            let (val, params) = prepare_method_call(context, *func_ptr, args)?;
 
             let mut sig = context.object_module.make_signature();
             let return_type = &method_sig.return_type;
@@ -330,9 +322,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                         _ => panic!("Invalid type for integer unop")
                     };
 
-                    if signed && bytes > 1 {
+                    if signed && bytes > 1 && bytes < 8 {
                         context.builder.ins().sextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
-                    } else if !signed && bytes > 1 {
+                    } else if !signed && bytes > 1 && bytes < 8 {
                         context.builder.ins().uextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
                     } else {
                         cmp
@@ -567,6 +559,12 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let _type = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(_type);
 
+            let val_type = context.builder.func.dfg.value_type(val);
+
+            if val_type == cranelift_type {
+                return Some(CodegenValue::Value(val));
+            }
+
             Some(
                 CodegenValue::Value(
                     context.builder.ins().uextend(cranelift_type, val)
@@ -581,8 +579,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .cloned()
                 .unwrap()
                 .as_value();
+
             let _type = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(_type);
+
+            let val_type = context.builder.func.dfg.value_type(val);
+
+            if val_type == cranelift_type {
+                return Some(CodegenValue::Value(val));
+            }
 
             Some(
                 CodegenValue::Value(
