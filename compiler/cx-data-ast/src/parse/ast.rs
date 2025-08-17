@@ -267,11 +267,6 @@ pub enum CXExprKind {
     InitializerList {
         indices: Vec<CXInitIndex>,
     },
-    
-    // Typechecker Generated
-    InvokeDestructor {
-        object: Box<CXExpr>
-    }
 }
 
 impl CXExprKind {

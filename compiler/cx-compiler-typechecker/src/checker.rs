@@ -396,7 +396,6 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             )
         },
         
-        CXExprKind::InvokeDestructor { .. } |
         CXExprKind::InitializerList { .. } =>
             Some(CXType::unit()),
         

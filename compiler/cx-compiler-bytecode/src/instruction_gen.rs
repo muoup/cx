@@ -788,19 +788,6 @@ pub fn generate_instruction(
             
             Some(alloc)
         },
-
-        CXExprKind::InvokeDestructor { object } => {
-            let object_type = builder.get_expr_type(object)?
-                .clone();
-            let object = generate_instruction(builder, object.as_ref())?;
-
-            deconstruct_variable(
-                builder, object,
-                &object_type, false
-            )?;
-
-            Some(ValueID::NULL)
-        },
         
         CXExprKind::Taken => panic!("PANIC: Attempting to generate instruction for `Taken` expression, which should have been removed by the type checker."),
         CXExprKind::Unit => panic!("PANIC: Attempting to generate instruction for `Unit` expression, which should have been removed by the type checker."),
