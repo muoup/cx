@@ -97,7 +97,7 @@ impl Display for CXExprKind {
             },
 
             CXExprKind::Identifier(ident) => fwrite!(f, "{}", ident),
-            CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+            CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
                 let arg_string = template_input.params
                     .iter()
                     .map(|arg| arg.to_string())

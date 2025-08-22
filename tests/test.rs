@@ -33,7 +33,8 @@ test_files!(
     struct_and_pointers,
     struct_parameter,
     template_include,
-    vector
+    vector,
+    templated_destructor
 );
 
 #[ctor::ctor]

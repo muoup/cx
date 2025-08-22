@@ -165,8 +165,8 @@ pub enum CXExprKind {
     Taken,
     Unit,
     
-    TemplatedFnIdent {
-        fn_name: CXIdent,
+    TemplatedIdentifier {
+        name: CXIdent,
         template_input: CXNaiveTemplateInput
     },
     Identifier(CXIdent),

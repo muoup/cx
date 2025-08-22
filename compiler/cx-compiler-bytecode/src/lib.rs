@@ -6,7 +6,7 @@ use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 
 pub mod instruction_gen;
-mod builder;
+pub mod builder;
 mod implicit_cast;
 mod cx_maps;
 mod aux_routines;
