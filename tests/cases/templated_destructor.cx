@@ -1,0 +1,13 @@
+template <T : type>
+struct templated_object {
+    T value;
+};
+
+template <T : type>
+~templated_object<T> {
+    printf("~templated_object\n");
+}
+
+int main() {
+    templated_object object;
+}

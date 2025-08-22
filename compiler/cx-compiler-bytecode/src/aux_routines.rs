@@ -40,7 +40,7 @@ pub(crate) fn try_access_member_fn(
             }.as_string()
         },
         
-        CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+        CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
             let input = contextualize_template_args(&builder.cx_type_map, template_input)?;
             
             let premangled = CXFunctionIdentifier::MemberFunction {

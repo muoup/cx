@@ -37,7 +37,7 @@ fn typecheck_member_function(
 
             prototype
         },
-        CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+        CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
             let name = CXFunctionIdentifier::MemberFunction {
                 function_name: fn_name.clone(),
                 object: CXObjectIdentifier::Standard(CXIdent::from(type_name)),

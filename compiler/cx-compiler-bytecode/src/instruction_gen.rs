@@ -224,7 +224,7 @@ pub fn generate_instruction(
             )
         },
 
-        CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+        CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
             let input = contextualize_template_args(&builder.cx_type_map, template_input)?;
             let mangled_name = mangle_templated_fn(fn_name.as_str(), &input.params);
             

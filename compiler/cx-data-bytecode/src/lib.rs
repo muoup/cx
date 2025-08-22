@@ -14,6 +14,16 @@ pub struct ProgramBytecode {
     pub global_strs: Vec<String>,
 }
 
+impl ProgramBytecode {
+    pub fn new() -> Self {
+        ProgramBytecode {
+            fn_map: HashMap::new(),
+            fn_defs: Vec::new(),
+            global_strs: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum LinkageType {
     ODR,

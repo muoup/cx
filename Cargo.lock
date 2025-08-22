@@ -301,6 +301,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-compiler-typecheck-gen"
+version = "0.1.0"
+dependencies = [
+ "cx-compiler-bytecode",
+ "cx-data-ast",
+ "cx-data-bytecode",
+ "cx-data-typechecker",
+ "cx-util",
+]
+
+[[package]]
 name = "cx-compiler-typechecker"
 version = "0.0.0"
 dependencies = [
@@ -349,6 +360,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-data-typechecker"
+version = "0.1.0"
+dependencies = [
+ "cx-data-ast",
+ "cx-util",
+]
+
+[[package]]
 name = "cx-pipeline"
 version = "0.1.0"
 dependencies = [
@@ -357,6 +376,7 @@ dependencies = [
  "cx-compiler-ast",
  "cx-compiler-bytecode",
  "cx-compiler-lexer",
+ "cx-compiler-typecheck-gen",
  "cx-compiler-typechecker",
  "cx-data-ast",
  "cx-data-bytecode",

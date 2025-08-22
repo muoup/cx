@@ -344,8 +344,8 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind>
     };
 
     Some(
-        CXExprKind::TemplatedFnIdent {
-            fn_name: ident,
+        CXExprKind::TemplatedIdentifier {
+            name: ident,
             template_input: args
         }
     )

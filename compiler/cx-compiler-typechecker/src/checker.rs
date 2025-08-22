@@ -28,7 +28,7 @@ pub(crate) fn type_check_traverse(env: &mut TypeEnvironment, expr: &mut CXExpr) 
 
 fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXType> {
     match &mut expr.kind {
-        CXExprKind::TemplatedFnIdent { fn_name, template_input } => {
+        CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
             if !env.fn_map.has_template(fn_name.as_str()) {
                 log_error!("TYPE ERROR: Unknown template function {fn_name}");
             }
