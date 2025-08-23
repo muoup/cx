@@ -181,15 +181,11 @@ impl CXType {
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Integer { .. })
+        matches!(self.kind, CXTypeKind::Integer { .. } | CXTypeKind::Bool)
     }
 
     pub fn is_float(&self) -> bool {
         matches!(self.kind, CXTypeKind::Float { .. })
-    }
-
-    pub fn is_bool(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Bool)
     }
 
     pub fn is_unit(&self) -> bool {
@@ -222,32 +218,32 @@ impl From<CXTypeKind> for CXType {
     }
 }
 
-pub fn same_type(type_map: &CXTypeMap, t1: &CXType, t2: &CXType) -> bool {
+pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
     match (&t1.kind, &t2.kind) {
         (CXTypeKind::Array { inner_type: t1_type, .. },
          CXTypeKind::Array { inner_type: t2_type, .. }) =>
-            same_type(type_map, t1_type, t2_type),
+            same_type(t1_type, t2_type),
 
         (CXTypeKind::PointerTo { inner_type: t1_type, .. },
          CXTypeKind::PointerTo { inner_type: t2_type, .. }) =>
-            same_type(type_map, t1_type, t2_type),
+            same_type(t1_type, t2_type),
 
         (CXTypeKind::StrongPointer { inner_type: t1_inner, .. },
          CXTypeKind::StrongPointer { inner_type: t2_inner, .. }) =>
-            same_type(type_map, t1_inner, t2_inner),
+            same_type(t1_inner, t2_inner),
 
         (CXTypeKind::Structured { fields: t1_fields, .. },
          CXTypeKind::Structured { fields: t2_fields, .. }) => {
             t1_fields.iter().zip(t2_fields.iter())
                 .all(|(f1, f2)|
-                    same_type(type_map, &f1.1, &f2.1))
+                    same_type(&f1.1, &f2.1))
         },
 
         (CXTypeKind::Function { prototype: p1 },
          CXTypeKind::Function { prototype: p2 }) =>
-            same_type(type_map, &p1.return_type, &p2.return_type) &&
+            same_type(&p1.return_type, &p2.return_type) &&
                 p1.params.iter().zip(p2.params.iter())
-                    .all(|(a1, a2)| same_type(type_map, &a1._type, &a2._type)),
+                    .all(|(a1, a2)| same_type(&a1._type, &a2._type)),
 
         (CXTypeKind::Integer { bytes: t1_bytes, signed: t1_signed },
             CXTypeKind::Integer { bytes: t2_bytes, signed: t2_signed }) =>

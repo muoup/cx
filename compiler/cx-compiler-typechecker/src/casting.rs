@@ -5,7 +5,7 @@ use cx_util::log_error;
 use crate::checker::{coerce_value, type_check_traverse};
 use crate::structured_initialization::coerce_initializer_list;
 
-pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &CXType)
+pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
                            -> Option<Option<CXCastType>> {
     Some(
         match (&from_type.kind, &to_type.kind) {
@@ -30,7 +30,7 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
             (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
             (CXTypeKind::MemoryReference(inner), CXTypeKind::Structured { .. })
-                if same_type(env.type_map, inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
+                if same_type(inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
 
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
@@ -38,10 +38,10 @@ pub fn valid_implicit_cast(env: &TypeEnvironment, from_type: &CXType, to_type: &
                 => Some(CXCastType::BitCast),
 
             (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(env.type_map, _type, inner) => Some(CXCastType::BitCast),
+                if same_type(_type, inner) => Some(CXCastType::BitCast),
             
             (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(env.type_map, inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
+                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
             _ => None
         }
@@ -73,7 +73,7 @@ pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<Optio
 
 pub fn implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &CXType, to_type: &CXType)
                      -> Option<Option<()>> {
-    if same_type(env.type_map, from_type, to_type) {
+    if same_type(from_type, to_type) {
         return Some(Some(()));
     }
 
@@ -82,7 +82,7 @@ pub fn implicit_cast(env: &mut TypeEnvironment, expr: &mut CXExpr, from_type: &C
         return Some(Some(()));
     }
 
-    let Some(cast) = valid_implicit_cast(env, from_type, to_type)? else {
+    let Some(cast) = valid_implicit_cast(from_type, to_type)? else {
         return Some(None);
     };
     
@@ -127,7 +127,7 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
     let l_type = coerce_value(env, lhs)?;
     let r_type = coerce_value(env, rhs)?;
     
-    if same_type(env.type_map, &l_type, &r_type) {
+    if same_type(&l_type, &r_type) {
         return binop_type(&op, None, &l_type);
     }
 

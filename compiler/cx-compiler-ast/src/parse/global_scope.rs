@@ -172,7 +172,6 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         Some (
             CXExprKind::Block {
                 exprs: body,
-                value: None
             }.into_expr(start_index, data.tokens.index)
         )
     } else {

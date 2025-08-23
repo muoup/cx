@@ -112,7 +112,6 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
         Some(
             CXExprKind::Block {
                 exprs: decls,
-                value: None
             }.into_expr(start_index, data.tokens.index)
         )
     }

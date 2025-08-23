@@ -176,13 +176,9 @@ pub fn generate_instruction(
             generate_binop(builder, lhs.as_ref(), rhs.as_ref(), as_bc, op)
         }
         
-        CXExprKind::Block { exprs, value } => {
+        CXExprKind::Block { exprs } => {
             for expr in exprs {
                 generate_instruction(builder, expr)?;
-            }
-
-            if let Some(value) = value {
-                return generate_instruction(builder, value.as_ref());
             }
 
             Some(ValueID::NULL)

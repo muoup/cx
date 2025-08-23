@@ -186,9 +186,7 @@ impl Display for CXExprKind {
                     CXUnOp::Negative => fwrite!(f, "-({})", operand),
                     CXUnOp::LNot => fwrite!(f, "!({})", operand),
                     CXUnOp::BNot => fwrite!(f, "~({})", operand),
-                    CXUnOp::InitializerIndex => fwrite!(f, ".{}", operand),
                     CXUnOp::Dereference => fwrite!(f, "*({})", operand),
-                    CXUnOp::ArrayIndex => fwrite!(f, "({})[]", operand),
                     CXUnOp::AddressOf => fwrite!(f, "&({})", operand),
 
                     CXUnOp::PreIncrement(1) => fwrite!(f, "++{}", operand),

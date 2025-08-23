@@ -45,13 +45,9 @@ fn type_check_inner(env: &mut TypeEnvironment, expr: &mut CXExpr) -> Option<CXTy
             )
         },
         
-        CXExprKind::Block { exprs, value } => {
+        CXExprKind::Block { exprs } => {
             for expr in exprs {
                 type_check_traverse(env, expr)?;
-            }
-
-            if let Some(value) = value {
-                return type_check_traverse(env, value.as_mut());
             }
 
             Some(CXType::unit())
@@ -418,7 +414,7 @@ pub(crate) fn implicit_coerce(
     
     let from_type = coerce_value(env, expr)?;
 
-    if same_type(env.type_map, &from_type, &to_type) {
+    if same_type(&from_type, &to_type) {
         return Some(());
     }
 

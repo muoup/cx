@@ -78,9 +78,7 @@ pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
     BNot, LNot,
-    ArrayIndex,
-    InitializerIndex,
-    
+
     ExplicitCast(CXNaiveType),
 
     PreIncrement(i8),
@@ -225,7 +223,6 @@ pub enum CXExprKind {
 
     Block {
         exprs: Vec<CXExpr>,
-        value: Option<Box<CXExpr>>
     },
 
     Break,
@@ -305,7 +302,4 @@ pub enum CXCastType {
     // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
     // used to create an explicit no-op to appease the typechecker.
     FauxLoad,
-    
-    AddPointerTag,
-    RemovePointerTag
 }
