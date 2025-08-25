@@ -288,6 +288,7 @@ dependencies = [
  "cx-compiler-ast",
  "cx-data-ast",
  "cx-data-bytecode",
+ "cx-data-typechecker",
  "cx-util",
 ]
 
@@ -364,6 +365,7 @@ version = "0.1.0"
 dependencies = [
  "cx-data-ast",
  "cx-util",
+ "speedy",
 ]
 
 [[package]]

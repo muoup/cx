@@ -66,10 +66,10 @@ pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> 
     Some(
         TCExpr {
             _type: final_type.clone(),
-            kind: TCExprKind::BinaryOp {
-                operator: op,
-                left: Box::new(lhs),
-                right: Box::new(rhs)
+            kind: TCExprKind::BinOp {
+                op: op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs)
             }
         }
     )

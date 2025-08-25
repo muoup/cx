@@ -5,6 +5,7 @@ use cx_data_ast::parse::type_mapping::contextualize_template_args;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_bytecode::{ValueID, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::bytecode_error_log;
 use cx_util::mangling::mangle_templated_fn;
 use crate::builder::{BytecodeBuilder, DeclarationLifetime};
@@ -28,19 +29,19 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
 pub(crate) fn try_access_member_fn(
     builder: &mut BytecodeBuilder,
     ltype: &CXType,
-    rhs: &CXExpr,
+    rhs: &TCExpr,
 ) -> Option<ValueID> {
     let inner = ltype.mem_ref_inner().cloned()?;
     
     let name = match &rhs.kind {
-        CXExprKind::Identifier(field_name) => {
+        TCExprKind::VariableIdentifier(field_name) => {
             CXFunctionIdentifier::MemberFunction {
                 function_name: field_name.clone(),
                 object: CXObjectIdentifier::Standard(CXIdent::from(inner.get_name()?))
             }.as_string()
         },
         
-        CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
+        TCExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
             let input = contextualize_template_args(&builder.cx_type_map, template_input)?;
             
             let premangled = CXFunctionIdentifier::MemberFunction {
@@ -64,18 +65,12 @@ pub(crate) fn try_access_field(
     builder: &mut BytecodeBuilder,
     ltype: &BCType,
     left_id: ValueID,
-    rhs: &CXExpr,
+    field_name: &str,
 ) -> Option<ValueID> {
-    let CXExprKind::Identifier(field_name) = &rhs.kind else {
-        return None
-    };
-
     match ltype.kind {
         BCTypeKind::Struct { .. } => {
             let struct_access = get_struct_field(
-                builder,
-                &ltype,
-                field_name.as_str()
+                builder, &ltype, field_name
             ).unwrap_or_else(|| {
                 panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
             });

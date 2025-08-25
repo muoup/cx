@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXCastType, CXExpr, CXExprKind, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
 use cx_data_ast::preparse::pp_type::CX_CONST;
@@ -229,7 +229,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                         TCExpr {
                             _type: operand_tc._type.clone(),
-                            kind: TCExprKind::UnaryOp {
+                            kind: TCExprKind::UnOp {
                                 operator: operator.clone(),
                                 operand: Box::new(operand_tc)
                             }
@@ -247,7 +247,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                         TCExpr {
                             _type: operand_tc._type.clone(),
-                            kind: TCExprKind::UnaryOp {
+                            kind: TCExprKind::UnOp {
                                 operator: operator.clone(),
                                 operand: Box::new(operand_tc)
                             }
@@ -261,7 +261,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                         TCExpr {
                             _type: inner.clone().pointer_to(),
-                            kind: TCExprKind::UnaryOp {
+                            kind: TCExprKind::UnOp {
                                 operator: operator.clone(),
                                 operand: Box::new(operand_tc)
                             }
@@ -277,7 +277,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                         TCExpr {
                             _type: inner.clone(),
-                            kind: TCExprKind::UnaryOp {
+                            kind: TCExprKind::UnOp {
                                 operator: operator.clone(),
                                 operand: Box::new(operand_tc)
                             }
@@ -295,6 +295,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         operand_tc
                     }
                 }
+            },
+
+            CXExprKind::BinOp { op: CXBinOp::Access, lhs, rhs } => {
+                let lhs = typecheck_expr(env, lhs)?;
+
+                todo!()
             },
 
             CXExprKind::BinOp { op, lhs, rhs } => {
@@ -343,7 +349,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     ),
                     kind: TCExprKind::New {
                         _type: _type.clone(),
-                        array_size: len_tc,
+                        array_length: len_tc,
                     },
                 }
             },
@@ -369,20 +375,21 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 let mut tc_condition = typecheck_expr(env, condition)?;
                 coerce_value(&mut tc_condition);
 
+                let tc_stmts = block.iter()
+                    .map(|e| typecheck_expr(env, e))
+                    .collect::<Option<Vec<_>>>()?;
+
                 if !tc_condition._type.is_integer() {
                     let Some(_) = try_implicit_cast(&mut tc_condition, &CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 })) else {
                         log_error!("TYPE ERROR: Switch condition must be an integer or convertible to integer");
                     };
                 }
 
-                for expr in block {
-                    typecheck_expr(env, expr);
-                }
-
                 TCExpr {
                     _type: CXType::from(CXTypeKind::Unit),
                     kind: TCExprKind::Switch {
                         condition: Box::new(tc_condition),
+                        block: tc_stmts,
                         cases: cases.clone(),
                         default_case: default_case.clone()
                     }

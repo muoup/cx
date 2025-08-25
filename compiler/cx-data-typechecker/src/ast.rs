@@ -1,4 +1,5 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXUnOp};
+use speedy::{Readable, Writable};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXInitIndex, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::value_type::CXType;
 
@@ -19,7 +20,7 @@ pub enum TCGlobalExpr {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct TCExpr {
     pub _type: CXType,
     pub kind: TCExprKind,
@@ -34,10 +35,9 @@ impl Default for TCExpr {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum TCExprKind {
     Taken,
-
     Unit,
 
     Block {
@@ -78,18 +78,24 @@ pub enum TCExprKind {
         arguments: Vec<TCExpr>,
     },
 
+    Access {
+        target: Box<TCExpr>,
+        field: CXIdent,
+    },
+
     Assignment {
         target: Box<TCExpr>,
         value: Box<TCExpr>,
+        additional_op: Option<CXBinOp>
     },
 
-    BinaryOp {
-        left: Box<TCExpr>,
-        right: Box<TCExpr>,
-        operator: CXBinOp
+    BinOp {
+        lhs: Box<TCExpr>,
+        rhs: Box<TCExpr>,
+        op: CXBinOp
     },
 
-    UnaryOp {
+    UnOp {
         operand: Box<TCExpr>,
         operator: CXUnOp
     },
@@ -115,6 +121,7 @@ pub enum TCExprKind {
 
     Switch {
         condition: Box<TCExpr>,
+        block: Vec<TCExpr>,
         cases: Vec<(u64, usize)>, // (case value, index of the case body)
         default_case: Option<usize>,
     },
@@ -128,16 +135,13 @@ pub enum TCExprKind {
         cast_type: CXCastType
     },
 
-    Break,
-    Continue,
-
     Defer {
         operand: Box<TCExpr>
     },
 
     New {
         _type: CXType,
-        array_size: Option<Box<TCExpr>>,
+        array_length: Option<Box<TCExpr>>,
     },
 
     Move {
@@ -147,4 +151,18 @@ pub enum TCExprKind {
     Return {
         value: Option<Box<TCExpr>>
     },
+
+    InitializerList {
+        indices: Vec<TCInitIndex>,
+    },
+
+    Break,
+    Continue,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct TCInitIndex {
+    pub name: Option<String>,
+    pub value: TCExpr,
+    pub index: usize,
 }
