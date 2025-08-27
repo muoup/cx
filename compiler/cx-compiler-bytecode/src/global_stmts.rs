@@ -1,17 +1,16 @@
-use cx_data_ast::parse::ast::{CXExpr, CXFunctionPrototype};
-use cx_data_ast::parse::CXFunctionIdentifier;
-use cx_data_ast::parse::value_type::CXType;
-use cx_util::mangling::mangle_destructor;
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, LinkageType, VirtualInstruction};
 use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
+use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, LinkageType, VirtualInstruction};
+use cx_data_typechecker::ast::TCExpr;
+use cx_data_typechecker::cx_types::CXFunctionPrototype;
+use cx_util::mangling::mangle_destructor;
 
 pub(crate) fn generate_function(
     builder: &mut BytecodeBuilder,
     prototype: &CXFunctionPrototype,
-    body: &CXExpr
+    body: &TCExpr
 ) -> Option<()> {
     builder.push_scope();
 
@@ -25,7 +24,7 @@ pub(crate) fn generate_function(
     };
 
     builder.pop_scope();
-    builder.finish_function(false);
+    builder.finish_function();
 
     Some(())
 }
@@ -33,7 +32,7 @@ pub(crate) fn generate_function(
 pub(crate) fn generate_destructor(
     builder: &mut BytecodeBuilder,
     type_name: &str,
-    body: &CXExpr
+    body: &TCExpr
 ) -> Option<()> {
     let destructor_name = mangle_destructor(type_name);
     let prototype = BCFunctionPrototype {
@@ -67,7 +66,7 @@ pub(crate) fn generate_destructor(
     };
 
     builder.pop_scope();
-    builder.finish_function(false);
+    builder.finish_function();
 
     Some(())
 }

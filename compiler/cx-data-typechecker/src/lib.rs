@@ -1,35 +1,71 @@
 pub mod ast;
+pub mod cx_types;
+pub mod intrinsic_types;
 
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXAST};
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::type_mapping::contextualize_type;
-use cx_data_ast::parse::value_type::CXType;
-use cx_data_ast::preparse::pp_type::CXNaiveType;
+mod format;
+
+use std::collections::{HashMap, HashSet};
+use speedy::{Readable, Writable};
+use cx_data_ast::parse::ast::CXAST;
+use cx_data_ast::preparse::naive_types::ModuleResource;
+use cx_data_ast::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
+use cx_types::CXType;
 use cx_util::scoped_map::ScopedMap;
-
-pub struct TCEnvironment<'a> {
-    ast: &'a CXAST,
-
-    type_map: &'a CXTypeMap,
-    fn_map: &'a CXFunctionMap,
-
-    current_function: Option<CXFunctionPrototype>,
-    symbol_table: ScopedMap<CXType>,
+use crate::cx_types::{CXFunctionPrototype, CXTemplateInput};
+ 
+#[derive(Debug, Default, Clone, Readable, Writable)]
+pub struct TemplateCache<Template> {
+    pub template: ModuleResource<Template>,
+    pub instantiated: HashSet<CXTemplateInput>
 }
 
-impl<'a> TCEnvironment<'a> {
-    pub fn new(ast: &'a CXAST) -> Self {
-        Self {
-            ast,
+#[derive(Debug, Default, Clone, Readable, Writable)]
+pub struct GenericMap<Standard, Template> {
+    pub standard: HashMap<String, Standard>,
+    pub templates: HashMap<String, TemplateCache<Template>>,
+}
 
-            type_map: &ast.type_map,
-            fn_map: &ast.function_map,
+pub type CXTypeMap = GenericMap<CXType, CXTypeTemplate>;
+pub type CXFunctionMap = GenericMap<CXFunctionPrototype, CXFunctionTemplate>;
 
-            current_function: None,
-            symbol_table: ScopedMap::new(),
+pub struct TCEnvironment {
+    pub type_map: CXTypeMap,
+    pub fn_map: CXFunctionMap,
+    
+    pub current_function: Option<CXFunctionPrototype>,
+    pub symbol_table: ScopedMap<CXType>,
+}
+
+impl<Type, TemplatedType> GenericMap<Type, TemplatedType> {
+    pub fn new() -> Self {
+        GenericMap {
+            standard: HashMap::new(),
+            templates: HashMap::new(),
         }
     }
+    
+    pub fn insert_standard(&mut self, name: String, item: Type) {
+        self.standard.insert(name, item);
+    }
+    
+    pub fn insert_template(&mut self, name: String, item: ModuleResource<TemplatedType>) {
+        self.templates.insert(name, TemplateCache {
+            template: item,
+            instantiated: HashSet::new(),
+        });
+    }
+    
+    pub fn get(&self, name: &str) -> Option<&Type> {
+        self.standard.get(name)
+    }
+    
+    pub fn get_template(&self, name: &str) -> Option<&TemplateCache<TemplatedType>> {
+        self.templates
+            .get(name)
+    }
+}
 
+impl TCEnvironment {
     pub fn push_scope(&mut self) {
         self.symbol_table.push_scope();
     }
@@ -47,19 +83,15 @@ impl<'a> TCEnvironment<'a> {
     }
 
     pub fn get_func(&self, name: &str) -> Option<&CXFunctionPrototype> {
-        self.fn_map.get(name)
+        self.fn_map.standard.get(name)
     }
 
     pub fn get_type(&self, name: &str) -> Option<&CXType> {
-        self.type_map.get(name)
+        self.type_map.standard.get(name)
     }
 
     pub fn current_function(&self) -> &CXFunctionPrototype {
         self.current_function.as_ref()
             .unwrap()
-    }
-
-    pub fn contextualize_type(&self, ty: &CXNaiveType) -> Option<CXType> {
-        contextualize_type(self.type_map, ty)
     }
 }

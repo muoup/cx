@@ -278,6 +278,7 @@ dependencies = [
  "cx-data-ast",
  "cx-data-lexer",
  "cx-data-pipeline",
+ "cx-data-typechecker",
  "cx-util",
 ]
 
@@ -302,23 +303,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-compiler-typechecker"
-version = "0.0.0"
-dependencies = [
- "cx-compiler-ast",
- "cx-data-ast",
- "cx-data-bytecode",
- "cx-data-lexer",
- "cx-data-typechecker",
- "cx-util",
- "uuid",
-]
-
-[[package]]
 name = "cx-compiler-typechecker-new"
 version = "0.1.0"
 dependencies = [
  "cx-data-ast",
+ "cx-data-lexer",
+ "cx-data-pipeline",
  "cx-data-typechecker",
  "cx-util",
 ]
@@ -337,7 +327,6 @@ dependencies = [
 name = "cx-data-bytecode"
 version = "0.0.0"
 dependencies = [
- "cx-data-ast",
  "cx-util",
  "speedy",
 ]
@@ -356,6 +345,7 @@ dependencies = [
  "cx-data-ast",
  "cx-data-bytecode",
  "cx-data-lexer",
+ "cx-data-typechecker",
  "speedy",
 ]
 
@@ -366,6 +356,7 @@ dependencies = [
  "cx-data-ast",
  "cx-util",
  "speedy",
+ "uuid",
 ]
 
 [[package]]
@@ -377,12 +368,12 @@ dependencies = [
  "cx-compiler-ast",
  "cx-compiler-bytecode",
  "cx-compiler-lexer",
- "cx-compiler-typechecker",
  "cx-compiler-typechecker-new",
  "cx-data-ast",
  "cx-data-bytecode",
  "cx-data-lexer",
  "cx-data-pipeline",
+ "cx-data-typechecker",
  "cx-util",
  "fs2",
  "speedy",

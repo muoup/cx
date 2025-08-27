@@ -3,11 +3,8 @@ use crate::parse::global_scope::{parse_body};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::parse::CXFunctionIdentifier;
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::type_mapping::{contextualize_template_args, contextualize_type};
-use cx_data_ast::parse::value_type::CXTypeKind;
-use cx_data_lexer::{identifier, operator, punctuator};
+use cx_data_lexer::{operator, punctuator};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error, point_log_error};
 use crate::parse::structured_initialization::parse_structured_initialization;
@@ -72,30 +69,26 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let (Some(name), mut _type) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
+        let (Some(name), mut type_) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
             point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type declaration");
         };
-        _type.specifiers = specifiers;
-
-        let cx_type = contextualize_type(&data.ast.type_map, &_type)
-            .expect("PARSER ERROR: Failed to contextualize type in declaration");
+        type_.specifiers = specifiers;
 
         if try_next!(data.tokens, TokenKind::Assignment(None)) {
             let lhs_end_index = data.tokens.index;
             let expr = parse_expr(data)?;
             decls.push(
                 CXExprKind::BinOp {
-                    lhs: Box::new(CXExprKind::VarDeclaration { type_: cx_type, name }.into_expr(start_index, lhs_end_index)),
+                    lhs: Box::new(CXExprKind::VarDeclaration { type_, name }
+                        .into_expr(start_index, lhs_end_index)),
                     rhs: Box::new(expr),
                     op: CXBinOp::Assign(None)
                 }.into_expr(start_index, data.tokens.index)
             )
         } else {
             decls.push(
-                CXExprKind::VarDeclaration { 
-                    type_: cx_type,
-                    name: name.clone() 
-                }.into_expr(start_index, data.tokens.index)
+                CXExprKind::VarDeclaration { type_, name: name.clone() }
+                    .into_expr(start_index, data.tokens.index)
             );
         }
 
@@ -253,17 +246,15 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
             
             let return_type = if is_type_decl(data) {
-                let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
+                let Some((None, type_)) = parse_initializer(&mut data.tokens) else {
                     log_error!("PARSER ERROR: Failed to parse type declaration for sizeof");
                 };
-                let cx_type = contextualize_type(&data.ast.type_map, &_type)
-                    .expect("PARSER ERROR: Failed to contextualize type in sizeof declaration");
 
                 CXExprKind::SizeOf {
                     expr: Box::new(
                         CXExprKind::VarDeclaration {
                             name: CXIdent::from("__internal_sizeof_dummy_decl"),
-                            type_: cx_type
+                            type_
                         }.into_expr(start_index, data.tokens.index)
                     )
                 }
@@ -284,29 +275,9 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
                 log_error!("PARSER ERROR: Failed to parse type declaration for new");
             };
-            let cx_type = contextualize_type(&data.ast.type_map, &_type)
-                .expect("PARSER ERROR: Failed to contextualize type in new declaration");
             
-            match cx_type.kind {
-                CXTypeKind::Array { size, inner_type } => {
-                    let length = CXExprKind::IntLiteral {
-                        bytes: 8,
-                        val: size as i64
-                    };
-                    
-                    CXExprKind::New {
-                        _type: *inner_type,
-                        array_length: Some(Box::new(length.into_expr(start_index, data.tokens.index)))
-                    }
-                }
-                CXTypeKind::VariableLengthArray { size, _type: inner_type } => {
-                    CXExprKind::New {
-                        _type: *inner_type,
-                        array_length: Some(size)
-                    }
-                },
-                _ => CXExprKind::New { _type: cx_type, array_length: None },
-            }
+            
+            CXExprKind::New { _type }
         },
 
         _ => {

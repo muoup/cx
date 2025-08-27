@@ -1,13 +1,9 @@
 use speedy::{Readable, Writable};
 use crate::parse::ast::CXAST;
-use crate::preparse::{CXNaiveFunctionMap, CXNaiveFunctionTemplates, CXNaiveTypeMap, CXNaiveTypeTemplates};
-use cx_data_lexer::token::Token;
+use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
 
 pub mod parse;
 pub mod preparse;
-
-pub type PreprocessContents = String;
-pub type LexContents = Vec<Token>;
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct PreparseContents {
@@ -17,10 +13,7 @@ pub struct PreparseContents {
     pub imports: Vec<String>,
 
     pub type_definitions: CXNaiveTypeMap,
-    pub function_definitions: CXNaiveFunctionMap,
-
-    pub type_templates: CXNaiveTypeTemplates,
-    pub function_templates: CXNaiveFunctionTemplates
+    pub function_definitions: CXNaiveFnMap,
 }
 
 pub type ParseContents = CXAST;

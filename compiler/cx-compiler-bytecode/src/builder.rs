@@ -1,12 +1,13 @@
 use crate::{BytecodeResult, ProgramBytecode};
 use cx_data_ast::parse::ast::{CXExpr};
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::value_type::CXType;
+use cx_data_typechecker::cx_types::CXType;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::*;
-use cx_data_bytecode::node_type_map::TypeCheckData;
+use cx_data_typechecker::ast::TCExpr;
+use cx_data_typechecker::{CXFunctionMap, CXTypeMap};
 use cx_util::format::dump_all;
 use cx_util::log_error;
+use cx_util::mangling::mangle_destructor;
 use cx_util::scoped_map::ScopedMap;
 use crate::aux_routines::deconstruct_scope;
 use crate::cx_maps::convert_cx_func_map;
@@ -22,8 +23,6 @@ pub struct BytecodeBuilder {
 
     pub fn_map: BCFunctionMap,
     
-    pub type_check_data: TypeCheckData,
-
     pub symbol_table: ScopedMap<ValueID>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
 
@@ -50,14 +49,13 @@ pub struct DeclarationLifetime {
 }
 
 impl BytecodeBuilder {
-    pub fn new(type_map: CXTypeMap, fn_map: CXFunctionMap, expr_type_map: TypeCheckData) -> Self {
+    pub fn new(type_map: CXTypeMap, fn_map: CXFunctionMap) -> Self {
         BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
 
             fn_map: convert_cx_func_map(&fn_map),
-            type_check_data: expr_type_map,
-            
+
             cx_type_map: type_map,
             cx_function_map: fn_map,
             
@@ -71,7 +69,7 @@ impl BytecodeBuilder {
     }
 
     pub fn new_function(&mut self, fn_prototype: BCFunctionPrototype) {
-        let defers = self.type_check_data.function_defers(&fn_prototype.name);
+        let defers = false;
         
         self.in_deferred_block = false;
         self.function_context = Some(
@@ -101,7 +99,7 @@ impl BytecodeBuilder {
         );
     }
 
-    pub fn finish_function(&mut self, static_linkage: bool) {
+    pub fn finish_function(&mut self) {
         let prototype = self.fun().prototype.clone();
         
         implicit_return(self, &prototype)
@@ -148,7 +146,7 @@ impl BytecodeBuilder {
         deconstruct_scope(self, decls?.as_slice())
     }
 
-    pub fn generate_scoped(&mut self, expr: &CXExpr) -> BytecodeResult<ValueID> {
+    pub fn generate_scoped(&mut self, expr: &TCExpr) -> BytecodeResult<ValueID> {
         self.push_scope();
         let val = generate_instruction(self, expr)?;
         self.pop_scope()?;
@@ -359,18 +357,6 @@ impl BytecodeBuilder {
                 .value
         )
     }
-    
-    pub fn get_expr_bc_type(&mut self, expr: &CXExpr) -> Option<BCType> {
-        let Some(cx_type) = self.get_expr_type(expr) else {
-            log_error!("INTERNAL PANIC: Failed to get bytecode type for expression: {:?}", expr)
-        };
-        
-        self.convert_cx_type(&cx_type)
-    }
-
-    pub fn get_expr_type(&self, expr: &CXExpr) -> Option<CXType> {
-        self.type_check_data.expr_type(expr).cloned()
-    }
 
     pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
         let Some(value) = self.get_variable(value_id) else {
@@ -379,7 +365,7 @@ impl BytecodeBuilder {
         
         Some(&value.type_)
     }
-    
+
     pub fn start_cont_point(&mut self) -> BlockID {
         self.push_scope();
         let cond_block = self.create_block();
@@ -514,6 +500,16 @@ impl BytecodeBuilder {
         BlockID {
             in_deferral: in_deferred_block,
             id: (add_to.len() - 1) as ElementID
+        }
+    }
+    
+    pub fn get_destructor(&self, _type: &CXType) -> Option<String> {
+        let mangled_name = mangle_destructor(_type.get_name()?);
+        
+        if self.cx_function_map.standard.contains_key(&mangled_name) {
+            Some(mangled_name)
+        } else {
+            None
         }
     }
 

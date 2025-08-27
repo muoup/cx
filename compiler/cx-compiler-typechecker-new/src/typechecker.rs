@@ -1,12 +1,30 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_ast::preparse::pp_type::CX_CONST;
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_data_ast::preparse::naive_types::CX_CONST;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::TCEnvironment;
 use cx_util::log_error;
-use crate::binary_ops::typecheck_binop;
+use crate::binary_ops::{typecheck_binop, typecheck_method_call};
 use crate::casting::{coerce_value, try_implicit_cast};
+use crate::type_mapping::contextualize_type;
+
+pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype) {
+    env.push_scope();
+
+    for param in prototype.params.iter() {
+        if let Some(name) = &param.name {
+            env.insert_symbol(name.as_string(), param._type.clone());
+        }
+    }
+
+    env.current_function = Some(prototype.clone());
+}
+
+pub(crate) fn cleanup_method_env(env: &mut TCEnvironment) {
+    env.current_function = None;
+    env.pop_scope();
+}
 
 pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> {
     Some(
@@ -43,12 +61,15 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     _type: env.get_type("char")
                         .unwrap()
                         .clone()
+                        .pointer_to()
                         .add_specifier(CX_CONST),
                     kind: TCExprKind::StringLiteral { value: CXIdent::from(val.as_str()) }
                 }
             },
 
             CXExprKind::VarDeclaration { type_, name } => {
+                let type_ = contextualize_type(env, &type_)?;
+
                 env.insert_symbol(name.as_string(), type_.clone());
 
                 TCExpr {
@@ -61,14 +82,15 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 if let Some(symbol_type) = env.symbol_type(name.as_str()) {
                     TCExpr {
                         _type: symbol_type.clone(),
-                        kind: TCExprKind::VariableIdentifier { name: name.clone() }
+                        kind: TCExprKind::VariableReference { name: name.clone() }
                     }
                 } else if let Some(function_type) = env.get_func(name.as_str()) {
                     TCExpr {
-                        _type: function_type.return_type.clone(),
-                        kind: TCExprKind::FunctionIdentifier { name: name.clone() } // Placeholder for args
+                        _type: CXTypeKind::Function { prototype: Box::new(function_type.clone()) }.into(),
+                        kind: TCExprKind::FunctionReference { name: name.clone() } // Placeholder for args
                     }
                 } else {
+                    println!("Environment: {:#?}", env.fn_map);
                     log_error!("Identifier '{}' not found", name);
                 }
             },
@@ -286,7 +308,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                     CXUnOp::ExplicitCast(to_type) => {
                         coerce_value(&mut operand_tc);
-                        let to_type = env.contextualize_type(to_type)?;
+                        let to_type = contextualize_type(env, to_type)?;
 
                         let Some(()) = try_implicit_cast(&mut operand_tc, &to_type) else {
                             log_error!("TYPE ERROR: Cannot cast from {} to {}", operand_tc._type, to_type);
@@ -302,6 +324,9 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 todo!()
             },
+
+            CXExprKind::BinOp { op: CXBinOp::MethodCall, lhs, rhs } =>
+                typecheck_method_call(env, lhs, rhs)?,
 
             CXExprKind::BinOp { op, lhs, rhs } => {
                 let lhs = typecheck_expr(env, lhs)?;
@@ -326,30 +351,19 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
             },
 
-            CXExprKind::New { _type, array_length } => {
-                let len_tc = if let Some(len) = array_length {
-                    let mut len_tc = typecheck_expr(env, len)?;
-                    coerce_value(&mut len_tc);
-
-                    if !len_tc._type.is_integer() {
-                        let Some(()) = try_implicit_cast(&mut len_tc, &CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 })) else {
-                            log_error!("TYPE ERROR: Array length must be an integer or convertible to integer");
-                        };
-                    }
-
-                    Some(Box::new(len_tc))
-                } else { None };
+            CXExprKind::New { _type } => {
+                let _type = contextualize_type(env, _type)?;
 
                 TCExpr {
                     _type: CXType::from(
                         CXTypeKind::StrongPointer {
                             inner_type: Box::new(_type.clone()),
-                            is_array: len_tc.is_some(),
+                            is_array: false,
                         }
                     ),
                     kind: TCExprKind::New {
                         _type: _type.clone(),
-                        array_length: len_tc,
+                        array_length: None,
                     },
                 }
             },
@@ -395,12 +409,6 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     }
                 }
             },
-
-            CXExprKind::GetFunctionAddr { .. } |
-            CXExprKind::ImplicitCast { .. } |
-            CXExprKind::ImplicitLoad { .. } => {
-                todo!("To be removed")
-            }
 
             CXExprKind::Taken => unreachable!("Taken expressions should not be present in the typechecker"),
         }

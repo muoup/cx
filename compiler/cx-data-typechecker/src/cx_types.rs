@@ -1,12 +1,11 @@
 use std::hash::{Hash, Hasher};
-use cx_util::log_error;
 use speedy::{Readable, Writable};
+use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::parser::VisibilityMode;
+use cx_data_ast::preparse::naive_types::CXTypeSpecifier;
 use uuid::Uuid;
-use crate::parse::ast::{CXExpr, CXFunctionPrototype};
-use crate::parse::identifier::CXIdent;
-use crate::parse::maps::CXTypeMap;
-use crate::parse::parser::VisibilityMode;
-use crate::preparse::pp_type::CXTypeSpecifier;
+use cx_util::mangling::{mangle_destructor, mangle_member_function};
+use crate::ast::TCExpr;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {
@@ -14,6 +13,25 @@ pub struct CXType {
     pub visibility_mode: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
     pub kind: CXTypeKind,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct CXParameter {
+    pub name: Option<CXIdent>,
+    pub _type: CXType,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct CXFunctionPrototype {
+    pub name: CXIdent,
+    pub return_type: CXType,
+    pub params: Vec<CXParameter>,
+    pub var_args: bool
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct CXTemplateInput {
+    pub args: Vec<CXType>,
 }
 
 impl PartialEq<Self> for CXType {
@@ -74,7 +92,7 @@ pub enum CXTypeKind {
         inner_type: Box<CXType>
     },
     VariableLengthArray {
-        size: Box<CXExpr>,
+        size: Box<TCExpr>,
         _type: Box<CXType>,
     },
     Opaque {
@@ -246,17 +264,53 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
                     .all(|(a1, a2)| same_type(&a1._type, &a2._type)),
 
         (CXTypeKind::Integer { bytes: t1_bytes, signed: t1_signed },
-            CXTypeKind::Integer { bytes: t2_bytes, signed: t2_signed }) =>
-            t1_bytes == t2_bytes && t1_signed == t2_signed,
+         CXTypeKind::Integer { bytes: t2_bytes, signed: t2_signed }) =>
+            *t1_bytes == *t2_bytes && *t1_signed == *t2_signed,
 
         (CXTypeKind::Float { bytes: t1_bytes },
             CXTypeKind::Float { bytes: t2_bytes }) =>
-            t1_bytes == t2_bytes,
+            *t1_bytes == *t2_bytes,
 
         (CXTypeKind::Bool, CXTypeKind::Bool) |
         (CXTypeKind::Unit, CXTypeKind::Unit) =>
             true,
 
         _ => false,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+pub enum CXFunctionIdentifier {
+    Standard(CXIdent),
+    MemberFunction {
+        _type: CXType,
+        function_name: CXIdent
+    },
+    Destructor(CXType)
+}
+
+impl CXFunctionIdentifier {
+    pub fn as_ident(&self) -> CXIdent {
+        CXIdent::from(self.as_string())
+    }
+
+    pub fn as_string(&self) -> String {
+        match self {
+            CXFunctionIdentifier::Standard(name) => name.to_string(),
+            CXFunctionIdentifier::MemberFunction { _type, function_name, .. } => {
+                let Some(name) = _type.get_name() else {
+                    unreachable!("Member function's type must have a name");
+                };
+
+                mangle_member_function(name.to_string(), function_name.as_str())
+            },
+            CXFunctionIdentifier::Destructor(_type) => {
+                let Some(name) = _type.get_name() else {
+                    unreachable!("Destructor's type must have a name");
+                };
+
+                mangle_destructor(name)
+            }
+        }
     }
 }

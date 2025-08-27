@@ -1,6 +1,6 @@
 use crate::TypeEnvironment;
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
-use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
+use cx_data_typechecker::cx_types::{same_type, CXTypeKind, CXType};
 use cx_util::log_error;
 use crate::checker::{coerce_value, type_check_traverse};
 use crate::structured_initialization::coerce_initializer_list;

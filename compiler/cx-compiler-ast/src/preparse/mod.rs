@@ -7,7 +7,7 @@ mod importing;
 use cx_data_ast::parse::identifier::CXIdent;
 use crate::preparse::preparser::{preparse_stmt, PreparseResult};
 use cx_data_ast::parse::parser::VisibilityMode;
-use cx_data_ast::preparse::pp_type::{CXNaiveType, ModuleResource};
+use cx_data_ast::preparse::naive_types::{CXNaiveType, ModuleResource};
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};
@@ -32,11 +32,14 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
 
         match result {
             PreparseResult::TypeDefinition(name, type_) => {
-                contents.type_definitions.insert(name, ModuleResource::with_visibility(type_, data.visibility_mode));
+                contents.type_definitions.insert_standard(name, ModuleResource::with_visibility(type_, data.visibility_mode));
             },
 
             PreparseResult::FunctionDefinition(signature) => {
-                contents.function_definitions.push(ModuleResource::with_visibility(signature, data.visibility_mode));
+                contents.function_definitions.insert_standard(
+                    signature.name.as_string(),
+                    ModuleResource::with_visibility(signature, data.visibility_mode)
+                );
             },
 
             PreparseResult::DestructorDefinition(name) => {
@@ -48,11 +51,14 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
             },
 
             PreparseResult::TypeTemplate(template) => {
-                contents.type_templates.insert(template.name.to_string(), ModuleResource::with_visibility(template, data.visibility_mode));
+                contents.type_definitions.insert_template(template.name.to_string(), ModuleResource::with_visibility(template, data.visibility_mode));
             },
 
             PreparseResult::FunctionTemplate(template) => {
-                contents.function_templates.push(ModuleResource::with_visibility(template, data.visibility_mode));
+                contents.function_definitions.insert_template(
+                    template.name.to_string(),
+                    ModuleResource::with_visibility(template, data.visibility_mode)
+                );
             },
 
             PreparseResult::Nothing => {}

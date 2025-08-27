@@ -1,7 +1,16 @@
-use crate::parse::value_type::CXTypeKind;
+use crate::cx_types::CXTypeKind;
+
+pub fn is_intrinsic_type(name: &str) -> bool {
+    for (intrinsic_name, _) in INTRINSIC_TYPES.iter() {
+        if intrinsic_name == &name {
+            return true;
+        }
+    }
+    false
+}
 
 pub const INTRINSIC_IMPORTS: &[&str] = &[
-    "std/intrinsic/memory.cx"
+    // "std/intrinsic/memory.cx"
 ];
 
 pub const INTRINSIC_TYPES: &[(&str, CXTypeKind)] = &[

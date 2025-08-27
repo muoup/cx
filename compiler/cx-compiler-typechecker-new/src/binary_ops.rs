@@ -1,10 +1,116 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr};
-use cx_data_ast::parse::value_type::{same_type, CXType, CXTypeKind};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
+use cx_data_typechecker::cx_types::{same_type, CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::TCEnvironment;
 use cx_util::{log_error, CXResult};
+use cx_util::mangling::mangle_member_function;
 use crate::casting::{add_coercion, coerce_value, try_implicit_cast};
 use crate::typechecker::typecheck_expr;
+
+pub fn comma_separated<'a>(env: &mut TCEnvironment, expr: &CXExpr) -> Option<Vec<TCExpr>> {
+    let mut expr_iter = expr;
+    let mut exprs = Vec::new();
+
+    while let CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Comma } = &expr_iter.kind {
+        let tc_expr = typecheck_expr(env, lhs)?;
+
+        exprs.push(tc_expr);
+    }
+
+    exprs.push(typecheck_expr(env, expr_iter)?);
+
+    Some(exprs)
+}
+
+pub fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr) -> Option<TCExpr> {
+    let mut lhs = typecheck_expr(env, lhs)?;
+    let mut tc_args = comma_separated(env, rhs)?;
+
+    let prototype = match lhs.kind {
+        TCExprKind::FunctionReference { ref name } => {
+            let Some(prototype) = env.get_func(name.as_str()).cloned() else {
+                log_error!("TYPE ERROR: Function '{}' not found in the current environment", name.as_string());
+            };
+
+            prototype
+        },
+
+        TCExprKind::MemberFunctionReference { target, name } => {
+            let Some(target_name) = target._type.get_name() else {
+                unreachable!("TYPE ERROR: Expected named type for method call target, found {}", target._type);
+            };
+            let mangled_name = mangle_member_function(name.as_str(), target_name);
+
+            tc_args.insert(0, *target);
+
+            let Some(prototype) = env.get_func(&mangled_name).cloned() else {
+                log_error!("TYPE ERROR: Method '{}' not found for type {}", name.as_string(), lhs._type);
+            };
+
+            lhs = TCExpr {
+                _type: CXTypeKind::Function { prototype: Box::new(prototype.clone()) }.into(),
+                kind: TCExprKind::FunctionReference { name: name.clone() }
+            };
+
+            prototype
+        },
+
+        _ => log_error!("TYPE ERROR: Expected function reference on the left side of method call, found {:?}", lhs),
+    };
+
+    if tc_args.len() != prototype.params.len() && !prototype.var_args {
+        log_error!("TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
+    }
+
+    if tc_args.len() < prototype.params.len() {
+        log_error!("TYPE ERROR: Method {} expects at least {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
+    }
+
+    let canon_params = prototype.params.len();
+
+    for (arg, param) in tc_args.iter_mut().zip(prototype.params.iter()) {
+        coerce_value(arg);
+
+        let Some(_) = try_implicit_cast(arg, &param._type) else {
+            log_error!("TYPE ERROR: Cannot coerce argument of type {} to expected type {} for method {}",
+                arg._type, param._type, prototype.name.as_string());
+        };
+    }
+
+    for arg in tc_args[canon_params..].iter_mut() {
+        coerce_value(arg);
+
+        match &arg._type.kind {
+            CXTypeKind::PointerTo { .. } => {
+                // Pointer types are already compatible with varargs, no need to cast
+            },
+
+            CXTypeKind::Integer { bytes, signed } => {
+                try_implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: *signed }.into())?;
+            },
+
+            CXTypeKind::Float { bytes } => {
+                todo!()
+            },
+
+            CXTypeKind::Bool => {
+                try_implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: false }.into())?;
+            },
+
+            _ => log_error!("TYPE ERROR: Cannot coerce value {:?} for varargs, expected intrinsic type or pointer!", arg),
+        }
+    }
+
+    Some(
+        TCExpr {
+            _type: prototype.return_type.clone(),
+            kind: TCExprKind::FunctionCall {
+                function: Box::new(lhs),
+                arguments: tc_args,
+            }
+        }
+    )
+}
 
 pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> Option<TCExpr> {
     coerce_value(&mut lhs);

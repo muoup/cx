@@ -1,7 +1,6 @@
 use std::hash::Hash;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
-use crate::parse::CXFunctionIdentifier;
 use crate::parse::identifier::CXIdent;
 use crate::parse::parser::VisibilityMode;
 use crate::preparse::CXNaiveFnIdent;
@@ -14,7 +13,7 @@ pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
 pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
 pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Readable, Writable)]
 pub struct ModuleResource<Resource> {
     pub visibility: VisibilityMode,
     pub external_module: Option<String>,
@@ -29,8 +28,9 @@ pub struct CXNaiveType {
     pub specifiers: CXTypeSpecifier,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum PredeclarationType {
+    #[default]
     None,
     Struct,
     Union,
@@ -39,24 +39,11 @@ pub enum PredeclarationType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaivePrototype {
-    pub name: CXFunctionIdentifier,
+    pub name: CXNaiveFnIdent,
     pub params: Vec<CXNaiveParameter>,
     pub return_type: CXNaiveType,
     pub var_args: bool,
     pub this_param: bool
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-pub struct CXFunctionTemplate {
-    pub inputs: Vec<String>,
-    pub shell: CXNaivePrototype,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-pub struct CXTypeTemplate {
-    pub name: CXIdent,
-    pub inputs: Vec<String>,
-    pub shell: CXNaiveType
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]

@@ -1,17 +1,54 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::hash::DefaultHasher;
 use speedy::{Readable, Writable};
 use crate::parse::identifier::CXIdent;
-use crate::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXTypeTemplate, ModuleResource};
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource};
+use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 
-pub mod pp_type;
+pub mod templates;
+pub mod naive_types;
 mod format;
 
-pub type CXNaiveTypeMap = HashMap<String, ModuleResource<CXNaiveType>>;
-pub type CXNaiveFunctionMap = Vec<ModuleResource<CXNaivePrototype>>;
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct GenericNaiveMap<Standard, Template> {
+    pub standard: HashMap<String, ModuleResource<Standard>>,
+    pub templates: HashMap<String, ModuleResource<Template>>,
+}
 
-pub type CXNaiveTypeTemplates = HashMap<String, ModuleResource<CXTypeTemplate>>;
-pub type CXNaiveFunctionTemplates = Vec<ModuleResource<CXFunctionTemplate>>;
+pub type CXNaiveTypeMap = GenericNaiveMap<CXNaiveType, CXTypeTemplate>;
+pub type CXNaiveFnMap = GenericNaiveMap<CXNaivePrototype, CXFunctionTemplate>;
+
+impl<Standard, Template> Default for GenericNaiveMap<Standard, Template> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<Standard, Template> GenericNaiveMap<Standard, Template> {
+    pub fn new() -> Self {
+        GenericNaiveMap {
+            standard: HashMap::new(),
+            templates: HashMap::new(),
+        }
+    }
+
+    pub fn insert_standard(&mut self, name: String, item: ModuleResource<Standard>) {
+        self.standard.insert(name, item);
+    }
+
+    pub fn insert_template(&mut self, name: String, item: ModuleResource<Template>) {
+        self.templates.insert(name, item);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&ModuleResource<Standard>> {
+        self.standard.get(name)
+    }
+
+    pub fn get_template(&self, name: &str) -> Option<&ModuleResource<Template>> {
+        self.templates.get(name)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum CXNaiveFnIdent {
@@ -36,3 +73,4 @@ impl CXNaiveFnIdent {
         }
     }
 }
+

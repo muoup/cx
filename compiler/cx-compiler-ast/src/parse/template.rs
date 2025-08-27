@@ -1,8 +1,9 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::CXGlobalStmt;
+use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::value_type::CXType;
+use cx_data_ast::preparse::naive_types::{CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
 use cx_util::{point_log_error, CXResult};
 use crate::parse::global_scope::parse_global_stmt;
 
@@ -22,8 +23,14 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
 
         generic_params.push(template_name.clone());
         
-        if !data.ast.type_map.contains_key(template_name.as_str()) {
-            data.ast.type_map.insert(template_name.clone(), CXType::unit());
+        if !data.ast.type_map.standard.contains_key(template_name.as_str()) {
+            let _NIL_TYPE: CXNaiveType = CXNaiveTypeKind::Identifier {
+                name: CXIdent::from("_nil"),
+                predeclaration: PredeclarationType::None
+            }.to_type();
+
+            data.ast.type_map
+                .insert_standard(template_name.clone(), ModuleResource::with_visibility(_NIL_TYPE, data.visibility));
             temp_typedefs.push(template_name);
         }
 
@@ -39,7 +46,7 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
     };
 
     for template_name in temp_typedefs {
-        data.ast.type_map.remove(template_name.as_str());
+        data.ast.type_map.standard.remove(template_name.as_str());
     }
 
     match global_expr {

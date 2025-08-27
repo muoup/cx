@@ -1,12 +1,9 @@
 use crate::parse::identifier::CXIdent;
-use crate::parse::maps::{CXDestructorMap, CXFunctionMap, CXTypeMap};
-use crate::parse::value_type::CXType;
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
-use crate::parse::CXFunctionIdentifier;
-use crate::parse::template::CXTemplateInput;
-use crate::preparse::pp_type::{CXNaiveTemplateInput, CXNaiveType};
+use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType};
 
 #[derive(Debug, Default)]
 pub struct CXAST {
@@ -19,46 +16,31 @@ pub struct CXAST {
     pub imports: Vec<String>,
     pub global_stmts: Vec<CXGlobalStmt>,
     
-    pub type_map: CXTypeMap,
-    pub function_map: CXFunctionMap,
-    pub destructor_map: CXDestructorMap,
+    pub type_map: CXNaiveTypeMap,
+    pub function_map: CXNaiveFnMap,
     
     pub global_variables: HashMap<String, CXGlobalVariable>
-}
-
-#[derive(Debug, Clone, Readable, Writable)]
-pub struct CXParameter {
-    pub name: Option<CXIdent>,
-    pub _type: CXType,
-}
-
-#[derive(Debug, Clone, Readable, Writable)]
-pub struct CXFunctionPrototype {
-    pub name: CXFunctionIdentifier,
-    pub return_type: CXType,
-    pub params: Vec<CXParameter>,
-    pub var_args: bool
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalStmt {
     TypeDecl {
         name: Option<String>,
-        type_: CXType
+        type_: CXNaiveType
     },
 
     GlobalVariable {
         name: CXIdent,
-        type_: CXType,
+        type_: CXNaiveType,
         initializer: Option<CXExpr>
     },
 
     FunctionPrototype {
-        prototype: CXFunctionPrototype,
+        prototype: CXNaivePrototype,
     },
     
     FunctionDefinition {
-        prototype: CXFunctionPrototype,
+        prototype: CXNaivePrototype,
         body: Box<CXExpr>,
     },
     
@@ -68,7 +50,7 @@ pub enum CXGlobalStmt {
     },
     
     TemplatedFunction {
-        prototype: CXFunctionPrototype,
+        prototype: CXNaivePrototype,
         body: Box<CXExpr>
     },
 }
@@ -208,7 +190,7 @@ pub enum CXExprKind {
         expr: Box<CXExpr>
     },
     VarDeclaration {
-        type_: CXType,
+        type_: CXNaiveType,
         name: CXIdent
     },
     BinOp {
@@ -235,32 +217,15 @@ pub enum CXExprKind {
     Defer {
         expr: Box<CXExpr>
     },
-
-    ImplicitCast {
-        expr: Box<CXExpr>,
-        from_type: CXType,
-        to_type: CXType,
-        cast_type: CXCastType
-    },
-
-    ImplicitLoad {
-        expr: Box<CXExpr>,
-        loaded_type: CXType
-    },
     
     New {
-        _type: CXType,
-        array_length: Option<Box<CXExpr>>
+        _type: CXNaiveType,
     },
+    
     Move {
         expr: Box<CXExpr>
     },
-
-    GetFunctionAddr {
-        func_name: Box<CXExpr>,
-        func_sig: CXType
-    },
-
+    
     InitializerList {
         indices: Vec<CXInitIndex>,
     },

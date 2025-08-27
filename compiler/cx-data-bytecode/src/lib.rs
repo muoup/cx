@@ -1,6 +1,5 @@
 use crate::types::BCType;
 use std::collections::HashMap;
-pub mod node_type_map;
 pub mod types;
 mod format;
 

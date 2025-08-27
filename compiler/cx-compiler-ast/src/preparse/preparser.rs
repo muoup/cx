@@ -1,11 +1,12 @@
 use cx_data_ast::{assert_token_matches, peek_next, try_next};
-use cx_data_ast::parse::{CXFunctionIdentifier, CXObjectIdentifier};
 use crate::preparse::typing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::macros::error_pointer;
 use cx_data_ast::parse::parser::{VisibilityMode};
-use cx_data_ast::preparse::pp_type::{CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeTemplate, PredeclarationType};
+use cx_data_ast::preparse::CXNaiveFnIdent;
+use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
+use cx_data_ast::preparse::templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate};
 use cx_data_lexer::{keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::preparse::importing::parse_import;
@@ -95,7 +96,10 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             Some(
                 PreparseResult::FunctionTemplate(
                     CXFunctionTemplate {
-                        inputs: type_decls,
+                        name: CXIdent::from(signature.name.as_string()),
+                        prototype: CXTemplatePrototype {
+                            types: type_decls.clone(),
+                        },
                         shell: signature
                     }
                 )
@@ -107,7 +111,9 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
                 PreparseResult::TypeTemplate(
                     CXTypeTemplate {
                         name: CXIdent::from(name),
-                        inputs: type_decls,
+                        prototype: CXTemplatePrototype {
+                            types: type_decls.clone(),
+                        },
                         shell: type_
                     }
                 )
@@ -176,7 +182,7 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
                 Some(
                     CXNaivePrototype {
                         return_type,
-                        name: CXFunctionIdentifier::Standard(name),
+                        name: CXNaiveFnIdent::Standard(name),
                         params: args.params,
                         var_args: args.var_args,
                         this_param: args.contains_this
@@ -206,11 +212,12 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
             let Some(args) = parse_params(tokens) else {
                 point_log_error!(tokens, "PARSER ERROR: Failed to parse parameters in function declaration!");
             };
-            let name = CXFunctionIdentifier::MemberFunction {
-                object: CXObjectIdentifier::Templated {
+            
+            let name = CXNaiveFnIdent::MemberFunction {
+                _type: CXNaiveTypeKind::TemplatedIdentifier {
                     name: CXIdent::from(_type.as_str()),
-                    template_input: params
-                }, 
+                    input: params
+                }.to_type(), 
                 function_name: fn_name
             };
 
@@ -233,8 +240,11 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
             tokens.next();
             let _type = name.as_string();
             assert_token_matches!(tokens, TokenKind::Identifier(name));
-            let name = CXFunctionIdentifier::MemberFunction {
-                object: CXObjectIdentifier::Standard(CXIdent::from(_type.as_str())),
+            let name = CXNaiveFnIdent::MemberFunction {
+                _type: CXNaiveTypeKind::Identifier {
+                    name: CXIdent::from(_type.as_str()),
+                    predeclaration: PredeclarationType::None
+                }.to_type(),
                 function_name: CXIdent::from(name.as_str())
             };
             let Some(params) = parse_params(tokens) else {

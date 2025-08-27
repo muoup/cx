@@ -1,14 +1,10 @@
-use cx_compiler_ast::parse::operators::comma_separated;
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXUnOp};
-use cx_data_ast::parse::CXFunctionIdentifier;
-use cx_data_ast::parse::type_mapping::contextualize_template_args;
-use cx_data_ast::parse::value_type::{CXTypeKind, CXType};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
+use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ValueID, VirtualInstruction};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
-use cx_util::mangling::mangle_templated_fn;
-use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field, try_access_member_fn};
+use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
@@ -25,17 +21,17 @@ pub fn generate_instruction(
         TCExprKind::Assignment { target, value, additional_op } => {
             let left_id = generate_instruction(builder, target)?;
             let right_id = generate_instruction(builder, value)?;
+            
+            if additional_op.is_some() { todo!("compound assignment") }
 
             let Some(inner) = target._type.mem_ref_inner()
-                else { unreachable!("generate_instruction: Expected memory alias type for expr, found {lhs_type}") };
+                else { unreachable!("generate_instruction: Expected memory alias type for expr, found {}", target._type) };
 
             if !matches!(target.as_ref().kind, TCExprKind::VariableDeclaration { .. }) {
-                deconstruct_variable(
-                    builder, left_id, inner.as_ref(), true
-                )?;
+                deconstruct_variable(builder, left_id, inner, true)?;
             }
             
-            let inner_type = builder.convert_fixed_cx_type(inner.as_ref())?;
+            let inner_type = builder.convert_fixed_cx_type(inner)?;
 
             builder.add_instruction(
                 VirtualInstruction::Store {
@@ -55,7 +51,7 @@ pub fn generate_instruction(
                 return Some(id);
             }
 
-            bytecode_error_log!(builder, "Invalid access operation on {lhs_type} with {rhs:?}");
+            bytecode_error_log!(builder, "Invalid access operation on {} with {field}", target._type);
         },
 
         TCExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
@@ -67,7 +63,7 @@ pub fn generate_instruction(
                 CXTypeKind::VariableLengthArray { _type, .. } |
                 CXTypeKind::Array { inner_type: _type, .. } => _type,
                 
-                _ => panic!("Invalid array index type: {l_type}"),
+                _ => panic!("Invalid array index type: {}", lhs._type),
             };
             
             let inner_as_bc = convert_fixed_type_kind(&lhs_inner.kind)?;
@@ -115,9 +111,10 @@ pub fn generate_instruction(
                 args.push(buffer);
             }
 
-            match &prototype.name {
-                CXFunctionIdentifier::MemberFunction { .. } => {
-                    todo!()
+            // Functions that require special intrinsic parameters
+            match &function.kind {
+                TCExprKind::MemberFunctionReference { target, name } => {
+                    args.push(generate_instruction(builder, target.as_ref())?);
                 },
 
                 _ => {}
@@ -200,27 +197,29 @@ pub fn generate_instruction(
                 unreachable!("generate_instruction: Expected float type for expr, found {}", expr._type);
             };
 
-            builder.float_const(*value, *bytes)
+            builder.add_instruction(
+                VirtualInstruction::FloatImmediate { value: *value },
+                BCType::from(BCTypeKind::Float { bytes: *bytes })
+            )
         },
 
-        TCExprKind::VariableIdentifier { name } => {
+        TCExprKind::VariableReference { name } => {
             builder.get_symbol(name.as_str())
         },
 
-        TCExprKind::FunctionIdentifier { name } => {
+        TCExprKind::MemberFunctionReference { name, .. } |
+        TCExprKind::FunctionReference { name } => {
             let CXTypeKind::Function { prototype } = &expr._type.kind else {
                 unreachable!("generate_instruction: Expected function type for expr, found {}", expr._type);
             };
 
-            let name = prototype.name.as_string();
-
-            if !builder.fn_map.contains_key(&name) {
+            if !builder.fn_map.contains_key(name.as_str()) {
                 let bc_prototype = convert_cx_prototype(prototype.as_ref())?;
 
-                builder.fn_map.insert(name.clone(), bc_prototype);
+                builder.fn_map.insert(name.as_string(), bc_prototype);
             }
 
-            builder.fn_ref(&name)?
+            builder.fn_ref(name.as_str())?
         },
 
         TCExprKind::Return { value } => {
@@ -231,8 +230,7 @@ pub fn generate_instruction(
             
             let value = value.as_ref().unwrap().as_ref();
             let value_id = generate_instruction(builder, value)?;
-            let returned_type = builder.get_expr_bc_type(value)?
-                .clone();
+            let returned_type = builder.convert_cx_type(&value._type)?;
             
             if returned_type.is_structure() {
                 let first_param = builder.add_instruction(
@@ -272,7 +270,7 @@ pub fn generate_instruction(
         }
 
         TCExprKind::StringLiteral { value, .. } => {
-            let string_id = builder.create_global_string(value.clone());
+            let string_id = builder.create_global_string(value.as_string());
 
             builder.add_instruction(
                 VirtualInstruction::StringLiteral {
@@ -317,10 +315,9 @@ pub fn generate_instruction(
                 
                 CXUnOp::PreIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;
-                    let val_type = builder.get_expr_type(operand)?
-                        .clone();
+                    let val_type = &operand._type.kind;
 
-                    let CXTypeKind::MemoryReference(inner) = val_type.kind
+                    let CXTypeKind::MemoryReference(inner) = val_type
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
                     let loaded_val = builder.add_instruction_cxty(
@@ -357,10 +354,9 @@ pub fn generate_instruction(
                 },
                 CXUnOp::PostIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;
-                    let val_type = builder.get_expr_type(operand)?
-                        .clone();
+                    let val_type = &operand._type;
 
-                    let CXTypeKind::MemoryReference(inner) = val_type.kind
+                    let CXTypeKind::MemoryReference(inner) = &val_type.kind
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
                     let loaded_val = builder.add_instruction_cxty(
@@ -621,8 +617,7 @@ pub fn generate_instruction(
         },
         
         TCExprKind::SizeOf { _type } => {
-            let type_ = builder.get_expr_type(expr.as_ref())?;
-            let type_size = builder.convert_cx_type(&type_)?
+            let type_size = builder.convert_cx_type(&expr._type)?
                 .size();
             
             match type_size {
@@ -705,13 +700,12 @@ pub fn generate_instruction(
         },
         
         TCExprKind::InitializerList { indices } => {
-            let generated_type = builder.get_expr_type(expr)?;
-            let as_bc = builder.convert_cx_type(&generated_type)?;
+            let expr_type = builder.convert_cx_type(&expr._type)?;
             
             let alloc = builder.add_instruction(
                 VirtualInstruction::Allocate {
-                    alignment: as_bc.alignment(),
-                    _type: as_bc.clone(),
+                    alignment: expr_type.alignment(),
+                    _type: expr_type.clone(),
                 },
                 BCType::default_pointer()
             )?;
@@ -719,7 +713,7 @@ pub fn generate_instruction(
             builder.add_instruction(
                 VirtualInstruction::ZeroMemory {
                     memory: alloc,
-                    _type: as_bc.clone(),
+                    _type: expr_type.clone(),
                 },
                 BCType::unit()
             );
@@ -729,16 +723,16 @@ pub fn generate_instruction(
              
                 let access = get_cx_struct_field_by_index(
                     builder,
-                    &as_bc,
+                    &expr_type,
                     index.index
                 ).unwrap_or_else(|| {
-                    panic!("PANIC: Attempting to access non-existent field at index {} in struct {as_bc:?}", index.index);
+                    panic!("PANIC: Attempting to access non-existent field at index {} in struct {expr_type:?}", index.index);
                 });
              
                 let struct_access = builder.add_instruction(
                     VirtualInstruction::StructAccess {
                         struct_: alloc,
-                        struct_type: as_bc.clone(),
+                        struct_type: expr_type.clone(),
                         field_offset: access.offset,
                         field_index: access.index,
                     },

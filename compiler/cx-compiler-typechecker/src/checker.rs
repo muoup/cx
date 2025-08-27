@@ -1,8 +1,8 @@
 use cx_compiler_ast::parse::operators::{comma_separated_mut};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
-use cx_data_ast::parse::type_mapping::{contextualize_template_args, contextualize_type};
-use cx_data_ast::parse::value_type::{same_type, CXTypeKind, CXType};
-use cx_data_ast::preparse::pp_type::CX_CONST;
+use cx_data_typechecker::type_mapping::{contextualize_template_args, contextualize_type};
+use cx_data_typechecker::cx_types::{same_type, CXTypeKind, CXType};
+use cx_data_ast::preparse::naive_types::CX_CONST;
 use cx_util::{expr_error_log, log_error};
 use crate::struct_typechecking::{typecheck_access, typecheck_method_call};
 use crate::casting::{alg_bin_op_coercion, explicit_cast, implicit_cast};

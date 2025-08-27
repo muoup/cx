@@ -2,7 +2,6 @@ use cx_data_ast::{assert_token_matches, next_kind};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
-use cx_data_ast::parse::type_mapping::contextualize_type;
 use crate::parse::typing::is_type_decl;
 use crate::preparse::typing::parse_initializer;
 

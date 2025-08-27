@@ -1,6 +1,6 @@
 use cx_data_ast::parse::maps::CXTypeMap;
 use cx_data_ast::parse::parser::VisibilityMode;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 
 pub fn collapse_typemap<MapRef>(self_map: &CXTypeMap, import_maps: &[MapRef]) -> Option<CXTypeMap> 
     where MapRef: AsRef<CXTypeMap>

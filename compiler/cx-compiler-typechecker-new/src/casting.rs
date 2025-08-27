@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::CXCastType;
-use cx_data_ast::parse::value_type::{same_type, CXType, CXTypeKind};
+use cx_data_typechecker::cx_types::{same_type, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 
 pub(crate) fn coerce_value(expr: &mut TCExpr) {
@@ -31,7 +31,7 @@ pub(crate) fn try_implicit_cast(
     expr: &mut TCExpr,
     to_type: &CXType
 ) -> Option<()> {
-    if expr._type == *to_type {
+    if same_type(&expr._type, to_type) {
         return Some(())
     }
 

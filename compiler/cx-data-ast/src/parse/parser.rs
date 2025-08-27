@@ -1,15 +1,13 @@
 use crate::parse::ast::CXAST;
-use crate::parse::value_type::CXType;
-use cx_util::scoped_map::ScopedMap;
 use speedy::{Readable, Writable};
 use cx_data_lexer::TokenIter;
 
-pub type VarTable = ScopedMap<CXType>;
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Readable, Writable)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Copy, Readable, Writable)]
 pub enum VisibilityMode {
     Package,
     Public,
+    
+    #[default]
     Private,
 }
 

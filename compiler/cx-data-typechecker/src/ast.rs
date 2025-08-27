@@ -1,23 +1,24 @@
+use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXInitIndex, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::parse::value_type::CXType;
+use crate::cx_types::{CXFunctionPrototype, CXType};
+use crate::{CXFunctionMap, CXTypeMap};
 
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct TCAST {
-    source_file: String,
+    pub source_file: String,
 
-    statements: Vec<TCGlobalExpr>,
+    pub type_map: CXTypeMap,
+    pub fn_map: CXFunctionMap,
+    
+    pub function_defs: Vec<TCFunctionDef>,
 }
 
-pub enum TCGlobalExpr {
-    GlobalVariable {
-        // TODO
-    },
-
-    FunctionDefinition {
-        name: CXIdent,
-        body: Box<TCExpr>
-    },
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct TCFunctionDef {
+    pub prototype: CXFunctionPrototype,
+    pub body: Box<TCExpr>
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -65,12 +66,17 @@ pub enum TCExprKind {
         name: CXIdent,
     },
 
-    VariableIdentifier {
+    VariableReference {
         name: CXIdent
     },
 
-    FunctionIdentifier {
+    FunctionReference {
         name: CXIdent
+    },
+
+    MemberFunctionReference {
+        target: Box<TCExpr>,
+        name: CXIdent,
     },
 
     FunctionCall {

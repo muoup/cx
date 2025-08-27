@@ -2,11 +2,8 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
-use cx_data_ast::parse::macros::error_pointer;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::type_mapping::contextualize_fn_prototype;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_ast::preparse::pp_type::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
+use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
 use cx_data_lexer::{keyword, operator, punctuator, specifier};
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::parse::template::parse_template;
@@ -112,10 +109,6 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlo
 }
 
 fn parse_fn_merge(data: &mut ParserData, prototype: CXNaivePrototype) -> CXResult<Option<CXGlobalStmt>> {
-    let Some(prototype) = contextualize_fn_prototype(&data.ast.type_map, &prototype) else {
-        panic!("CRITICAL: Failed to contextualize function prototype in parse_fn_merge! {prototype}");
-    };
-
     if try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
         Some(Some(CXGlobalStmt::FunctionPrototype { prototype }))
     } else {

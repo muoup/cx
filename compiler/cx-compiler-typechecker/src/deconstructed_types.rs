@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_bytecode::node_type_map::{AllocationType, DeconstructionType, DeconstructorData};
 use crate::{TypeCheckResult, TypeEnvironment};
 

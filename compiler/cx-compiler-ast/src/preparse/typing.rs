@@ -1,9 +1,8 @@
 use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, try_next};
-use cx_data_ast::parse::CXFunctionIdentifier;
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::preparse::CXNaiveFnIdent;
-use cx_data_ast::preparse::pp_type::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
+use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
 use cx_data_lexer::{identifier, keyword, operator, punctuator, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::preparse::preparser::{goto_statement_end, parse_intrinsic, parse_std_ident};
@@ -211,7 +210,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
             let ParseParamsResult { params, var_args, contains_this } = parse_params(tokens)?;
 
             let prototype = CXNaivePrototype {
-                name: CXFunctionIdentifier::Standard(CXIdent::from("__internal_fnptr")),
+                name: CXNaiveFnIdent::Standard(CXIdent::from("__internal_fnptr")),
                 return_type: acc_type,
                 params,
                 var_args,

@@ -1,30 +1,65 @@
+use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
+use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind};
+use cx_data_typechecker::TCEnvironment;
 use cx_util::{log_error};
-use cx_util::mangling::mangle_templated_type;
-use crate::parse::ast::{CXFunctionPrototype, CXParameter};
-use crate::parse::CXFunctionIdentifier;
-use crate::parse::identifier::CXIdent;
-use crate::parse::maps::{CXTypeMap};
-use crate::parse::template::{CXTemplateInput};
-use crate::parse::value_type::{CXType, CXTypeKind};
-use crate::preparse::CXNaiveFnIdent;
-use crate::preparse::pp_type::{CXNaiveType, CXNaiveTypeKind, CXNaivePrototype, CXNaiveParameter, CXNaiveTemplateInput, PredeclarationType};
+use cx_util::mangling::mangle_template;
+use crate::templates::instantiate_type_template;
 
-pub fn contextualize_template_args(type_map: &CXTypeMap, template_args: &CXNaiveTemplateInput) -> Option<CXTemplateInput> {
-    let args = template_args.params.iter()
-        .map(|arg| contextualize_type(type_map, arg))
-        .collect::<Option<Vec<_>>>()?;
+pub(crate) fn assemble_method(name: &CXFunctionIdentifier, mut return_type: CXType, mut params: Vec<CXParameter>, var_args: bool) -> CXFunctionPrototype {
+    if let CXFunctionIdentifier::MemberFunction { _type, .. } = name {
+        params.insert(0, CXParameter {
+            name: Some(CXIdent::from("this")),
+            _type: _type.clone().pointer_to()
+        });
+    }
 
-    Some(
-        CXTemplateInput {
-            params: args
-        }
-    )
+    if return_type.is_structured() {
+        return_type = return_type.pointer_to();
+
+        params.insert(0, CXParameter {
+            name: Some(CXIdent::from("__internal_buffer")),
+            _type: return_type.clone()
+        });
+    }
+
+    CXFunctionPrototype {
+        name: name.as_ident(),
+        return_type, params, var_args,
+    }
 }
 
-pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Option<CXType> {
+pub fn contextualize_template_args(env: &mut TCEnvironment, template_args: &CXNaiveTemplateInput) -> Option<CXTemplateInput> {
+    let args = template_args.params.iter()
+        .map(|arg| contextualize_type(env, arg))
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(CXTemplateInput { args })
+}
+
+pub fn contextualize_fn_prototype(env: &mut TCEnvironment, prototype: &CXNaivePrototype)
+    -> Option<CXFunctionPrototype> {
+    let return_type = contextualize_type(env, &prototype.return_type)?;
+    let parameters = prototype.params.iter()
+        .map(| CXNaiveParameter { name, _type }| {
+            let param_type = contextualize_type(env, _type)?;
+
+            Some(CXParameter { name: name.clone(), _type: param_type })
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(CXFunctionPrototype {
+        name: CXIdent::from(prototype.name.as_string()),
+        params: parameters,
+        return_type,
+        var_args: prototype.var_args,
+    })
+}
+
+pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> Option<CXType> {
     match &naive_type.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
-            let Some(_type) = type_map.get(name.as_str()).cloned() else {
+            let Some(_type) = env.get_type(name.as_str()).cloned() else {
                 log_error!("Unknown type: {name}");
             };
 
@@ -32,23 +67,25 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         },
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
-            let input = contextualize_template_args(type_map, input)?;
-            
-            let mangled_name = mangle_templated_type(name.as_str(), &input.params);
-            
-            if let Some(existing) = type_map.get(&mangled_name) {
+            let input = contextualize_template_args(env, input)?;
+
+            let mangled_name = mangle_template(name.as_str(), &input.args);
+
+            if let Some(existing) = env.get_type(&mangled_name) {
                 return Some(existing.clone());
             }
 
-            if let Some(template) = type_map.get_template(type_map, name.as_str(), input) {
-                return Some(template);
+            if let Some(template) = env.type_map.get_template(name.as_str()) {
+                let template = template.clone();
+
+                return instantiate_type_template(env, &template.template.resource, &input);
             }
-            
+
             log_error!("Unknown templated type: {name}");
         },
 
         CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {
-            let inner_type = contextualize_type(type_map, inner)?;
+            let inner_type = contextualize_type(env, inner)?;
 
             Some(
                 CXType::new(
@@ -61,7 +98,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
             )
         },
         CXNaiveTypeKind::ImplicitSizedArray(inner) => {
-            let inner_type = contextualize_type(type_map, inner)?;
+            let inner_type = contextualize_type(env, inner)?;
 
             Some(
                 CXType::new(
@@ -77,7 +114,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         },
 
         CXNaiveTypeKind::PointerTo { inner_type: inner, weak } => {
-            let inner_type = contextualize_type(type_map, inner)?;
+            let inner_type = contextualize_type(env, inner)?;
 
             Some(
                 CXType::new(
@@ -93,7 +130,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         },
 
         CXNaiveTypeKind::StrongPointer { inner, is_array } => {
-            let inner_type = contextualize_type(type_map, inner)?;
+            let inner_type = contextualize_type(env, inner)?;
 
             Some(
                 CXType::new(
@@ -109,7 +146,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         CXNaiveTypeKind::Structured { name, fields } => {
             let fields = fields.iter()
                 .map(|(name, field_type)| {
-                    let field_type = contextualize_type(type_map, field_type)?;
+                    let field_type = contextualize_type(env, field_type)?;
                     Some((name.clone(), field_type))
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -128,7 +165,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         CXNaiveTypeKind::Union { name, fields } => {
             let fields = fields.iter()
                 .map(|(name, field_type)| {
-                    let field_type = contextualize_type(type_map, field_type)?;
+                    let field_type = contextualize_type(env, field_type)?;
                     Some((name.clone(), field_type))
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -145,7 +182,7 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
         },
 
         CXNaiveTypeKind::FunctionPointer { prototype, .. } => {
-            let prototype = contextualize_fn_prototype(type_map, prototype)?;
+            let prototype = contextualize_fn_prototype(env, prototype)?;
 
             Some(
                 CXType::new(
@@ -157,23 +194,4 @@ pub fn contextualize_type(type_map: &CXTypeMap, naive_type: &CXNaiveType) -> Opt
             )
         },
     }
-}
-
-pub fn contextualize_fn_prototype(type_map: &CXTypeMap, prototype: &CXNaivePrototype)
-    -> Option<CXFunctionPrototype> {
-    let return_type = contextualize_type(type_map, &prototype.return_type)?;
-    let parameters = prototype.params.iter()
-        .map(| CXNaiveParameter { name, _type }| {
-            let param_type = contextualize_type(type_map, _type)?;
-
-            Some(CXParameter { name: name.clone(), _type: param_type })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    
-    Some(CXFunctionPrototype {
-        name: prototype.name.clone(),
-        params: parameters,
-        return_type,
-        var_args: prototype.var_args,
-    })
 }

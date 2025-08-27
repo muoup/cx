@@ -1,21 +1,21 @@
+use std::any::type_name;
 use crate::builder::BytecodeBuilder;
 use crate::BytecodeResult;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::node_type_map::{AllocationType, DeconstructorData};
+use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionPrototype, BCParameter, BCPtrBinOp, LinkageType, ValueID, VirtualInstruction};
+use cx_util::mangling::mangle_destructor;
 use crate::aux_routines::get_cx_struct_field_by_index;
 
 const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
-fn deconstructor_name(type_: &CXType) -> String {
-    format!("deconstruct_{}", type_.uuid)
-}
-
 fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
-    let deconstructor_name = deconstructor_name(type_);
+    let Some(type_name) = type_.get_name() else {
+        panic!("INTERNAL PANIC: Attempting to get deconstructor prototype for anonymous type: {type_:?}");
+    };
+    let deconstructor_name = mangle_destructor(type_name);
     let this_param_type = BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 });
 
     let mut name = match &type_.kind {
@@ -140,7 +140,7 @@ pub fn deconstruct_variable(
         },
 
         CXTypeKind::StrongPointer { inner_type: inner, is_array: true, .. } => {
-            let deconstructor_opt = get_deconstructor(builder, inner.as_ref())?;
+            let deconstructor_opt = get_deconstructor(builder, inner.as_ref());
 
             let val = load_mem(builder, val, unloaded)?;
             
@@ -185,8 +185,8 @@ pub fn deconstruct_variable(
         _ => {
             let mut generated = false;
             let deconstructor_prototype = deconstructor_prototype(type_);
-            
-            if let Some(name) = builder.type_check_data.destructor_name(type_) {
+
+            if let Some(name) = builder.get_destructor(type_) {
                 let deconstructor = builder.add_instruction(
                     VirtualInstruction::FunctionReference { name },
                     BCType::default_pointer()
@@ -204,7 +204,7 @@ pub fn deconstruct_variable(
                 generated = true;
             }
             
-            if let Some(deconstructor_name) = get_deconstructor(builder, type_)? {
+            if let Some(deconstructor_name) = get_deconstructor(builder, type_) {
                 let func = builder.fn_ref(&deconstructor_name)?
                     .expect("INTERNAL PANIC: Deconstructor function not found");
                 
@@ -230,68 +230,71 @@ pub fn deconstruct_variable(
 fn get_deconstructor(
     builder: &mut BytecodeBuilder,
     type_: &CXType
-) -> BytecodeResult<Option<String>> {
-    let deconstructor_name = deconstructor_name(type_);
+) -> Option<String> {
+    let Some(type_name) = type_.get_name() else {
+        return None;
+    };
+    let deconstructor_name = mangle_destructor(type_name);
 
     if builder.fn_map.contains_key(&deconstructor_name) {
-        Some(Some(deconstructor_name))
+        Some(deconstructor_name)
     } else {
-        Some(None)
+        None
     }
 }
 
-pub fn generate_deconstructor(
-    builder: &mut BytecodeBuilder,
-    data: &DeconstructorData
-) -> Option<()> {
-    let deconstructor_prototype = deconstructor_prototype(&data._type);
-
-    builder.fn_map.insert(deconstructor_prototype.name.clone(), deconstructor_prototype.clone());
-    builder.new_function(deconstructor_prototype.clone());
-
-    let struct_val = builder.add_instruction(
-        VirtualInstruction::FunctionParameter { param_index: 0 },
-        BCType::default_pointer()
-    )?;
-    
-    if let Some(destructor_name) = builder.type_check_data.destructor_name(&data._type) {
-        let destructor = builder.fn_ref(&destructor_name)?
-            .expect("INTERNAL PANIC: Deconstructor function not found");
-
-        builder.add_instruction_cxty(
-            VirtualInstruction::DirectCall {
-                func: destructor,
-                args: vec![struct_val],
-                method_sig: deconstructor_prototype.clone(),
-            },
-            CXType::unit()
-        )?;
-    }
-
-    let as_bc = builder.convert_cx_type(&data._type)?;
-
-    if let CXTypeKind::Structured { fields, .. } = &data._type.kind {
-        for dec_type in data.deconstructions.iter() {
-            if !dec_type.has_destructor && matches!(dec_type.allocation_type, AllocationType::None) {
-                continue;
-            }
-
-            let access = get_cx_struct_field_by_index(builder, &as_bc, dec_type.index)?;
-            let field = builder.add_instruction(
-                VirtualInstruction::StructAccess {
-                    field_index: access.index,
-                    field_offset: access.offset,
-                    struct_: struct_val,
-                    struct_type: as_bc.clone(),
-                },
-                access._type.clone()
-            )?;
-
-            deconstruct_variable(builder, field, &fields[dec_type.index].1, true)?;
-        }
-    }
-
-    builder.finish_function(true);
-
-    Some(())
-}
+// pub fn generate_deconstructor(
+//     builder: &mut BytecodeBuilder,
+//     data: &DeconstructorData
+// ) -> Option<()> {
+//     let deconstructor_prototype = deconstructor_prototype(&data._type);
+//
+//     builder.fn_map.insert(deconstructor_prototype.name.clone(), deconstructor_prototype.clone());
+//     builder.new_function(deconstructor_prototype.clone());
+//
+//     let struct_val = builder.add_instruction(
+//         VirtualInstruction::FunctionParameter { param_index: 0 },
+//         BCType::default_pointer()
+//     )?;
+//
+//     if let Some(destructor_name) = builder.type_check_data.destructor_name(&data._type) {
+//         let destructor = builder.fn_ref(&destructor_name)?
+//             .expect("INTERNAL PANIC: Deconstructor function not found");
+//
+//         builder.add_instruction_cxty(
+//             VirtualInstruction::DirectCall {
+//                 func: destructor,
+//                 args: vec![struct_val],
+//                 method_sig: deconstructor_prototype.clone(),
+//             },
+//             CXType::unit()
+//         )?;
+//     }
+//
+//     let as_bc = builder.convert_cx_type(&data._type)?;
+//
+//     if let CXTypeKind::Structured { fields, .. } = &data._type.kind {
+//         for dec_type in data.deconstructions.iter() {
+//             if !dec_type.has_destructor && matches!(dec_type.allocation_type, AllocationType::None) {
+//                 continue;
+//             }
+//
+//             let access = get_cx_struct_field_by_index(builder, &as_bc, dec_type.index)?;
+//             let field = builder.add_instruction(
+//                 VirtualInstruction::StructAccess {
+//                     field_index: access.index,
+//                     field_offset: access.offset,
+//                     struct_: struct_val,
+//                     struct_type: as_bc.clone(),
+//                 },
+//                 access._type.clone()
+//             )?;
+//
+//             deconstruct_variable(builder, field, &fields[dec_type.index].1, true)?;
+//         }
+//     }
+//
+//     builder.finish_function();
+//
+//     Some(())
+// }
