@@ -177,11 +177,18 @@ pub fn generate_instruction(
 
         TCExprKind::ImplicitLoad { operand } => {
             let inner = generate_instruction(builder, operand.as_ref())?;
-            
-            builder.add_instruction_cxty(
-                VirtualInstruction::Load { value: inner },
-                expr._type.clone()
-            )
+
+            // A memory reference to a struct operationally is the same as a struct itself,
+            // therefore loading it will actually cause issues.
+            match &expr._type.kind {
+                CXTypeKind::Structured { .. } |
+                CXTypeKind::Union { .. } => Some(inner),
+
+                _ => builder.add_instruction_cxty(
+                    VirtualInstruction::Load { value: inner },
+                    expr._type.clone()
+                )
+            }
         },
 
         TCExprKind::IntLiteral { value } => {
@@ -213,13 +220,25 @@ pub fn generate_instruction(
                 unreachable!("generate_instruction: Expected function type for expr, found {}", expr._type);
             };
 
-            if !builder.fn_map.contains_key(name.as_str()) {
+            if !builder.fn_map.contains_key(prototype.name.as_str()) {
                 let bc_prototype = convert_cx_prototype(prototype.as_ref())?;
 
                 builder.fn_map.insert(name.as_string(), bc_prototype);
             }
 
             builder.fn_ref(name.as_str())?
+        },
+
+        TCExprKind::TemporaryBuffer { _type } => {
+            let type_as_bc = builder.convert_cx_type(_type)?;
+
+            builder.add_instruction(
+                VirtualInstruction::Allocate {
+                    alignment: type_as_bc.alignment(),
+                    _type: type_as_bc.clone(),
+                },
+                BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: type_as_bc.fixed_size() as u32 })
+            )
         },
 
         TCExprKind::Return { value } => {
@@ -296,14 +315,13 @@ pub fn generate_instruction(
                 },
                 CXUnOp::LNot => {
                     let operand = generate_instruction(builder, operand.as_ref())?;
-                    let op_type = builder.get_type(operand)?.clone();
 
                     builder.add_instruction(
                         VirtualInstruction::IntegerUnOp {
                             value: operand,
                             op: BCIntUnOp::LNOT
                         },
-                        op_type
+                        BCType::from(BCTypeKind::Bool)
                     )
                 },
                 
@@ -826,7 +844,7 @@ pub(crate) fn generate_binop(
                         (right_cmp, no_short_circuit_block),
                     ]
                 },
-                return_type
+                BCType::from(BCTypeKind::Bool)
             )
         },
         

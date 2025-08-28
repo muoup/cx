@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::hash::DefaultHasher;
-use speedy::{Readable, Writable};
 use crate::parse::identifier::CXIdent;
-use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource};
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource};
 use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
+use speedy::{Readable, Writable};
+use std::collections::HashMap;
+use std::fmt::Display;
 
 pub mod templates;
 pub mod naive_types;

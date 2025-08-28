@@ -1,28 +1,101 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
+use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{same_type, CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::TCEnvironment;
 use cx_util::{log_error, CXResult};
 use cx_util::mangling::mangle_member_function;
-use crate::casting::{add_coercion, coerce_value, try_implicit_cast};
+use crate::casting::{add_coercion, coerce_value, implicit_cast, try_implicit_cast};
+use crate::templates::instantiate_type_template;
+use crate::type_mapping::contextualize_template_args;
 use crate::typechecker::typecheck_expr;
 
-pub fn comma_separated<'a>(env: &mut TCEnvironment, expr: &CXExpr) -> Option<Vec<TCExpr>> {
+pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr) -> Option<TCExpr> {
+    let mut lhs = typecheck_expr(env, lhs)?;
+    coerce_value(&mut lhs);
+
+    if let CXTypeKind::PointerTo { inner_type, .. } = &lhs._type.kind {
+        lhs = TCExpr {
+            _type: *inner_type.clone(),
+            kind: TCExprKind::ImplicitLoad { operand: Box::new(lhs) },
+        };
+    }
+
+    let fields = match &lhs._type.kind {
+        CXTypeKind::Structured { fields, .. } |
+        CXTypeKind::Union { fields, .. } => fields,
+
+        _ => log_error!("TYPE ERROR: Member access on {} without a struct or union type", lhs._type),
+    };
+
+    let Some(type_name) = lhs._type.get_name() else {
+        log_error!("TYPE ERROR: Member access on {} without a type name", lhs._type);
+    };
+
+    match &rhs.kind {
+        CXExprKind::Identifier(name) => {
+            if let Some(i) = fields.iter().position(|(field_name, _)| field_name.as_str() == name.as_str()) {
+                let (field_name, field_type) = &fields[i];
+
+                let field_name = CXIdent::from(field_name.as_str());
+                let field_type = field_type.clone().mem_ref_to();
+
+                return Some(
+                    TCExpr {
+                        _type: field_type,
+                        kind: TCExprKind::Access {
+                            target: Box::new(lhs),
+                            field: field_name
+                        }
+                    }
+                );
+            }
+
+            let member_fn_name = mangle_member_function(name.as_str(), type_name);
+
+            let Some(prototype) = env.get_func(&member_fn_name).cloned() else {
+                log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
+            };
+
+            Some(
+                TCExpr {
+                    _type: CXTypeKind::Function { prototype: Box::new(prototype.clone()) }.into(),
+                    kind: TCExprKind::MemberFunctionReference {
+                        target: Box::new(lhs),
+                        name: name.clone(),
+                    }
+                }
+            )
+        },
+
+        CXExprKind::TemplatedIdentifier { .. } => {
+            todo!()
+        },
+
+        _ => log_error!("TYPE ERROR: Invalid rhs for access expression, found {:?}", rhs),
+    }
+}
+
+pub(crate) fn comma_separated(env: &mut TCEnvironment, expr: &CXExpr) -> Option<Vec<TCExpr>> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
-    while let CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Comma } = &expr_iter.kind {
-        let tc_expr = typecheck_expr(env, lhs)?;
+    if matches!(expr.kind, CXExprKind::Unit) {
+        return Some(exprs);
+    }
 
-        exprs.push(tc_expr);
+    while let CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Comma } = &expr_iter.kind {
+        exprs.push(typecheck_expr(env, rhs)?);
+        expr_iter = lhs;
     }
 
     exprs.push(typecheck_expr(env, expr_iter)?);
+    exprs.reverse();
 
     Some(exprs)
 }
 
-pub fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr) -> Option<TCExpr> {
+pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr) -> Option<TCExpr> {
     let mut lhs = typecheck_expr(env, lhs)?;
     let mut tc_args = comma_separated(env, rhs)?;
 
@@ -58,7 +131,23 @@ pub fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr
         _ => log_error!("TYPE ERROR: Expected function reference on the left side of method call, found {:?}", lhs),
     };
 
+    if prototype.needs_buffer {
+        let CXTypeKind::MemoryReference(inner_type) = &prototype.return_type.kind else {
+            unreachable!("PANIC: Method {} requires a temporary buffer, but has non-pointer return type {}",
+                prototype.name.as_string(), prototype.return_type);
+        };
+
+        let temporary_buffer = TCExpr {
+            _type: inner_type.clone().pointer_to(),
+            kind: TCExprKind::TemporaryBuffer { _type: *inner_type.clone() }
+        };
+
+        tc_args.insert(0, temporary_buffer);
+    }
+
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
+        println!("DEBUG: prototype:\n{:#?}", prototype);
+        println!("DEBUG: tc_args:\n{:#?}", tc_args);
         log_error!("TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
     }
 
@@ -68,16 +157,14 @@ pub fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr
 
     let canon_params = prototype.params.len();
 
+    // Standard argument coercion
     for (arg, param) in tc_args.iter_mut().zip(prototype.params.iter()) {
         coerce_value(arg);
-
-        let Some(_) = try_implicit_cast(arg, &param._type) else {
-            log_error!("TYPE ERROR: Cannot coerce argument of type {} to expected type {} for method {}",
-                arg._type, param._type, prototype.name.as_string());
-        };
+        implicit_cast(arg, &param._type)?;
     }
 
-    for arg in tc_args[canon_params..].iter_mut() {
+    // Varargs argument coercion
+    for arg in tc_args.iter_mut().skip(canon_params) {
         coerce_value(arg);
 
         match &arg._type.kind {
@@ -85,16 +172,21 @@ pub fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr
                 // Pointer types are already compatible with varargs, no need to cast
             },
 
-            CXTypeKind::Integer { bytes, signed } => {
-                try_implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: *signed }.into())?;
+            CXTypeKind::Integer { signed, .. } => {
+                implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: *signed }.into())?;
             },
 
-            CXTypeKind::Float { bytes } => {
-                todo!()
+            CXTypeKind::Float { bytes: 4 } => {
+                implicit_cast(arg, &CXTypeKind::Float { bytes: 8 }.into())?;
+                add_coercion(arg, CXTypeKind::Integer { bytes: 8, signed: false }.into(), CXCastType::BitCast);
+            },
+
+            CXTypeKind::Float { bytes: 8 } => {
+                add_coercion(arg, CXTypeKind::Integer { bytes: 8, signed: false }.into(), CXCastType::BitCast);
             },
 
             CXTypeKind::Bool => {
-                try_implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: false }.into())?;
+                implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: false }.into())?;
             },
 
             _ => log_error!("TYPE ERROR: Cannot coerce value {:?} for varargs, expected intrinsic type or pointer!", arg),
@@ -118,7 +210,7 @@ pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> 
 
     let final_type = match (&lhs._type.kind, &rhs._type.kind) {
         (_, _) if same_type(&lhs._type, &rhs._type) => {
-            lhs._type.clone()
+            binop_type(&op, &lhs)?
         },
 
         (CXTypeKind::PointerTo { inner_type: l_inner, .. }, CXTypeKind::Integer { .. }) => {
@@ -147,8 +239,8 @@ pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> 
         },
 
         (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => {
-            add_coercion(&mut rhs, lhs._type.clone(), CXCastType::IntegralCast);
-            binop_type(&op, &lhs)?
+            add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
+            binop_type(&op, &rhs)?
         },
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => {
@@ -173,7 +265,7 @@ pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> 
         TCExpr {
             _type: final_type.clone(),
             kind: TCExprKind::BinOp {
-                op: op,
+                op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs)
             }

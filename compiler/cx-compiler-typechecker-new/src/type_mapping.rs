@@ -1,4 +1,5 @@
 use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind};
 use cx_data_typechecker::TCEnvironment;
@@ -7,6 +8,8 @@ use cx_util::mangling::mangle_template;
 use crate::templates::instantiate_type_template;
 
 pub(crate) fn assemble_method(name: &CXFunctionIdentifier, mut return_type: CXType, mut params: Vec<CXParameter>, var_args: bool) -> CXFunctionPrototype {
+    let needs_buffer = return_type.is_structured();
+
     if let CXFunctionIdentifier::MemberFunction { _type, .. } = name {
         params.insert(0, CXParameter {
             name: Some(CXIdent::from("this")),
@@ -14,18 +17,18 @@ pub(crate) fn assemble_method(name: &CXFunctionIdentifier, mut return_type: CXTy
         });
     }
 
-    if return_type.is_structured() {
-        return_type = return_type.pointer_to();
-
+    if needs_buffer {
         params.insert(0, CXParameter {
             name: Some(CXIdent::from("__internal_buffer")),
-            _type: return_type.clone()
+            _type: return_type.clone().pointer_to()
         });
+
+        return_type = return_type.mem_ref_to();
     }
 
     CXFunctionPrototype {
         name: name.as_ident(),
-        return_type, params, var_args,
+        return_type, params, needs_buffer, var_args,
     }
 }
 
@@ -37,8 +40,31 @@ pub fn contextualize_template_args(env: &mut TCEnvironment, template_args: &CXNa
     Some(CXTemplateInput { args })
 }
 
+fn contextualize_fn_ident(env: &mut TCEnvironment, ident: &CXNaiveFnIdent) -> Option<CXFunctionIdentifier> {
+    match ident {
+        CXNaiveFnIdent::MemberFunction { function_name, _type } => {
+            let _type = contextualize_type(env, _type)?;
+
+            Some(CXFunctionIdentifier::MemberFunction { function_name: function_name.clone(), _type })
+        },
+
+        CXNaiveFnIdent::Standard(name) => {
+            Some(CXFunctionIdentifier::Standard(name.clone()))
+        },
+
+        CXNaiveFnIdent::Destructor(name) => {
+            let Some(_type) = env.get_type(name.as_str()).cloned() else {
+                log_error!("Unknown type for destructor: {name}");
+            };
+
+            Some(CXFunctionIdentifier::Destructor(_type))
+        }
+    }
+}
+
 pub fn contextualize_fn_prototype(env: &mut TCEnvironment, prototype: &CXNaivePrototype)
     -> Option<CXFunctionPrototype> {
+    let ident = contextualize_fn_ident(env, &prototype.name)?;
     let return_type = contextualize_type(env, &prototype.return_type)?;
     let parameters = prototype.params.iter()
         .map(| CXNaiveParameter { name, _type }| {
@@ -48,12 +74,7 @@ pub fn contextualize_fn_prototype(env: &mut TCEnvironment, prototype: &CXNaivePr
         })
         .collect::<Option<Vec<_>>>()?;
 
-    Some(CXFunctionPrototype {
-        name: CXIdent::from(prototype.name.as_string()),
-        params: parameters,
-        return_type,
-        var_args: prototype.var_args,
-    })
+    Some(assemble_method(&ident, return_type, parameters, prototype.var_args))
 }
 
 pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> Option<CXType> {

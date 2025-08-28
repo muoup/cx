@@ -26,6 +26,8 @@ pub struct CXFunctionPrototype {
     pub name: CXIdent,
     pub return_type: CXType,
     pub params: Vec<CXParameter>,
+
+    pub needs_buffer: bool,
     pub var_args: bool
 }
 
@@ -174,6 +176,15 @@ impl CXType {
         }
     }
 
+    pub fn mem_ref_to(self) -> Self {
+        CXType {
+            uuid: Uuid::new_v4().as_u128() as u64,
+            specifiers: 0,
+            visibility_mode: VisibilityMode::Private,
+            kind: CXTypeKind::MemoryReference(Box::new(self))
+        }
+    }
+
     pub fn is_pointer(&self) -> bool {
         matches!(self.kind, CXTypeKind::PointerTo { .. })
     }
@@ -237,6 +248,10 @@ impl From<CXTypeKind> for CXType {
 }
 
 pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
+    if t1.uuid == t2.uuid {
+        return true;
+    }
+
     match (&t1.kind, &t2.kind) {
         (CXTypeKind::Array { inner_type: t1_type, .. },
          CXTypeKind::Array { inner_type: t2_type, .. }) =>
@@ -268,7 +283,7 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
             *t1_bytes == *t2_bytes && *t1_signed == *t2_signed,
 
         (CXTypeKind::Float { bytes: t1_bytes },
-            CXTypeKind::Float { bytes: t2_bytes }) =>
+         CXTypeKind::Float { bytes: t2_bytes }) =>
             *t1_bytes == *t2_bytes,
 
         (CXTypeKind::Bool, CXTypeKind::Bool) |

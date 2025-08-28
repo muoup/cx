@@ -64,10 +64,6 @@ impl<T> ScopedMap<T> {
             panic!("Scope table has uneven push/pop");
         }
         
-        let val = self.data.remove_entry(&name)
-            .map(|(name, old_value)| (name, Some(old_value)))
-            .unwrap_or((name.clone(), None));
-        
         self.data.insert(name, value);
     }
 

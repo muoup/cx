@@ -9,7 +9,7 @@ pub(crate) fn realize_templates(
 ) -> Option<()> {
     let ast = context.module_db.naive_ast
         .get(unit);
-    let mut tc_ast = context.module_db.typechecked_ast
+    let tc_ast = context.module_db.typechecked_ast
         .get(unit);
     
     let mut new_methods = Vec::new();

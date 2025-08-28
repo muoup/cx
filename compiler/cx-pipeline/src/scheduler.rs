@@ -300,7 +300,7 @@ pub(crate) fn perform_job(
         },
 
         CompilationStep::TypeCheck => {
-            let mut self_ast = context.module_db.naive_ast
+            let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
             
             let mut type_map = contextualize_type_map(&context.module_db, &self_ast.type_map)
@@ -318,7 +318,7 @@ pub(crate) fn perform_job(
             let ast = typecheck(tc_env, &self_ast)
                 .expect("Type checking failed");
 
-            dump_data(&format!("{:?}", ast));
+            dump_data(&format!("{:#?}", ast));
 
             context.module_db.typechecked_ast.insert(job.unit.clone(), ast);
         },

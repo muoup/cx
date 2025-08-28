@@ -2,11 +2,11 @@ use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_ast::preparse::naive_types::CX_CONST;
-use cx_data_typechecker::ast::{TCExpr, TCExprKind};
+use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCInitIndex};
 use cx_data_typechecker::TCEnvironment;
 use cx_util::log_error;
-use crate::binary_ops::{typecheck_binop, typecheck_method_call};
-use crate::casting::{coerce_value, try_implicit_cast};
+use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_method_call};
+use crate::casting::{coerce_condition, coerce_value, implicit_cast, try_implicit_cast};
 use crate::type_mapping::contextualize_type;
 
 pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype) {
@@ -73,7 +73,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 env.insert_symbol(name.as_string(), type_.clone());
 
                 TCExpr {
-                    _type: type_.clone(),
+                    _type: type_.clone().mem_ref_to(),
                     kind: TCExprKind::VariableDeclaration { name: name.clone(), type_: type_.clone() }
                 }
             },
@@ -81,7 +81,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             CXExprKind::Identifier(name) => {
                 if let Some(symbol_type) = env.symbol_type(name.as_str()) {
                     TCExpr {
-                        _type: symbol_type.clone(),
+                        _type: symbol_type.clone().mem_ref_to(),
                         kind: TCExprKind::VariableReference { name: name.clone() }
                     }
                 } else if let Some(function_type) = env.get_func(name.as_str()) {
@@ -90,7 +90,6 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         kind: TCExprKind::FunctionReference { name: name.clone() } // Placeholder for args
                     }
                 } else {
-                    println!("Environment: {:#?}", env.fn_map);
                     log_error!("Identifier '{}' not found", name);
                 }
             },
@@ -99,13 +98,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             CXExprKind::If { condition, then_branch, else_branch } => {
                 let mut condition_tc = typecheck_expr(env, condition)?;
-                coerce_value(&mut condition_tc);
-
-                if !condition_tc._type.is_integer() {
-                    let Some(()) = try_implicit_cast(&mut condition_tc, &CXType::from(CXTypeKind::Bool)) else {
-                        log_error!("Condition of 'if' must be an integer or convertible to bool");
-                    };
-                }
+                coerce_condition(&mut condition_tc);
 
                 let then_tc = typecheck_expr(env, then_branch)?;
                 let else_tc = if let Some(else_branch) = else_branch {
@@ -126,13 +119,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             CXExprKind::While { condition, body, pre_eval } => {
                 let mut condition_tc = typecheck_expr(env, condition)?;
-                coerce_value(&mut condition_tc);
-
-                if !condition_tc._type.is_integer() {
-                    let Some(()) = try_implicit_cast(&mut condition_tc, &CXType::from(CXTypeKind::Bool)) else {
-                        log_error!("Condition of 'while' must be an integer or convertible to bool");
-                    };
-                }
+                coerce_condition(&mut condition_tc);
 
                 let body_tc = typecheck_expr(env, body)?;
 
@@ -149,13 +136,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             CXExprKind::For { init, condition, increment, body } => {
                 let init_tc = typecheck_expr(env, init)?;
                 let mut condition_tc = typecheck_expr(env, condition)?;
-                coerce_value(&mut condition_tc);
-
-                if !condition_tc._type.is_integer() {
-                    let Some(()) = try_implicit_cast(&mut condition_tc, &CXType::from(CXTypeKind::Bool)) else {
-                        log_error!("Condition of 'for' must be an integer or convertible to bool");
-                    };
-                }
+                coerce_condition(&mut condition_tc);
 
                 let increment_tc = typecheck_expr(env, increment)?;
                 let body_tc = typecheck_expr(env, body)?;
@@ -187,7 +168,10 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             CXExprKind::Return { value } => {
                 let mut value_tc = if let Some(value) = value {
-                    Some(typecheck_expr(env, value)?)
+                    let mut val = typecheck_expr(env, value)?;
+                    coerce_value(&mut val);
+
+                    Some(val)
                 } else {
                     None
                 };
@@ -196,11 +180,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 match (&mut value_tc, return_type) {
                     (Some(value_tc), return_type) if !return_type.is_unit() => {
-                        let Some(()) = try_implicit_cast(value_tc, return_type) else {
-                            log_error!("TYPE ERROR: Cannot return value of\
-                                type {} from function {:?} with return type {}",
-                                value_tc._type, env.current_function().name, return_type);
-                        };
+                        implicit_cast(value_tc, return_type);
                     },
 
                     (None, _) if return_type.is_unit() => {},
@@ -240,13 +220,14 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     CXUnOp::PreIncrement(_) |
                     CXUnOp::PostIncrement(_) => {
                         let Some(inner) = operand_tc._type.mem_ref_inner() else {
-                            log_error!("TYPE ERROR: Cannot apply pre-increment to a non-reference");
+                            log_error!("TYPE ERROR: Cannot apply pre-increment to a non-reference {}", operand_tc._type);
                         };
 
-                        if !inner.is_integer() {
-                            let Some(_) = try_implicit_cast(&mut operand_tc, &CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 })) else {
-                                log_error!("TYPE ERROR: Pre-increment operator requires an integer type");
-                            };
+                        match &inner.kind {
+                            CXTypeKind::Integer { .. } |
+                            CXTypeKind::PointerTo { .. } => (),
+
+                            _ => log_error!("TYPE ERROR: Pre-increment operator requires an integer or pointer type, found {}", inner),
                         }
 
                         TCExpr {
@@ -262,13 +243,17 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         coerce_value(&mut operand_tc);
 
                         if !operand_tc._type.is_integer() {
-                            let Some(_) = try_implicit_cast(&mut operand_tc, &CXType::from(CXTypeKind::Bool)) else {
-                                log_error!("TYPE ERROR: Unary operator '{:?}' requires an integer or boolean type", operator);
-                            };
+                            implicit_cast(&mut operand_tc, &CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 }));
                         }
 
+                        let return_type = match operator {
+                            CXUnOp::LNot => CXType::from(CXTypeKind::Bool),
+
+                            _ => operand_tc._type.clone()
+                        };
+
                         TCExpr {
-                            _type: operand_tc._type.clone(),
+                            _type: return_type,
                             kind: TCExprKind::UnOp {
                                 operator: operator.clone(),
                                 operand: Box::new(operand_tc)
@@ -309,21 +294,46 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     CXUnOp::ExplicitCast(to_type) => {
                         coerce_value(&mut operand_tc);
                         let to_type = contextualize_type(env, to_type)?;
-
-                        let Some(()) = try_implicit_cast(&mut operand_tc, &to_type) else {
-                            log_error!("TYPE ERROR: Cannot cast from {} to {}", operand_tc._type, to_type);
-                        };
+                        implicit_cast(&mut operand_tc, &to_type);
 
                         operand_tc
                     }
                 }
             },
 
-            CXExprKind::BinOp { op: CXBinOp::Access, lhs, rhs } => {
+            CXExprKind::BinOp { op: CXBinOp::Assign(op), lhs, rhs } => {
                 let lhs = typecheck_expr(env, lhs)?;
+                let mut rhs = typecheck_expr(env, rhs)?;
 
-                todo!()
+                if lhs._type.get_specifier(CX_CONST) {
+                    log_error!("TYPE ERROR: Assignment operator cannot be applied to const variables");
+                }
+
+                coerce_value(&mut rhs);
+
+                let Some(inner) = lhs._type.mem_ref_inner() else {
+                    log_error!("TYPE ERROR: Cannot assign to a non-reference type {}", lhs._type);
+                };
+
+                if inner.is_structured() {
+                    implicit_cast(&mut rhs, inner);
+                }
+
+                TCExpr {
+                    _type: lhs._type.clone(),
+                    kind: TCExprKind::Assignment {
+                        target: Box::new(lhs),
+                        value: Box::new(rhs),
+                        additional_op: match op {
+                            Some(op) => Some(*op.clone()),
+                            None => None
+                        },
+                    }
+                }
             },
+
+            CXExprKind::BinOp { op: CXBinOp::Access, lhs, rhs } =>
+                typecheck_access(env, lhs, rhs)?,
 
             CXExprKind::BinOp { op: CXBinOp::MethodCall, lhs, rhs } =>
                 typecheck_method_call(env, lhs, rhs)?,
@@ -368,7 +378,28 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
             },
 
-            CXExprKind::InitializerList { .. } |
+            CXExprKind::InitializerList { indices } => {
+                let mut tc_indices = Vec::new();
+
+                for index in indices.iter() {
+                    let mut tc_expr = typecheck_expr(env, &index.value)?;
+                    coerce_value(&mut tc_expr);
+
+                    tc_indices.push(TCInitIndex {
+                        name: index.name.clone(),
+                        index: index.index,
+                        value: tc_expr,
+                    });
+                }
+
+                TCExpr {
+                    _type: CXType::from(CXTypeKind::Unit), // Placeholder, will be set during assignment
+                    kind: TCExprKind::InitializerList {
+                        indices: tc_indices
+                    }
+                }
+            },
+
             CXExprKind::Unit => {
                 TCExpr {
                     _type: CXType::from(CXTypeKind::Unit),
@@ -387,17 +418,11 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             CXExprKind::Switch { condition, block, cases, default_case } => {
                 let mut tc_condition = typecheck_expr(env, condition)?;
-                coerce_value(&mut tc_condition);
+                coerce_condition(&mut tc_condition);
 
                 let tc_stmts = block.iter()
                     .map(|e| typecheck_expr(env, e))
                     .collect::<Option<Vec<_>>>()?;
-
-                if !tc_condition._type.is_integer() {
-                    let Some(_) = try_implicit_cast(&mut tc_condition, &CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 })) else {
-                        log_error!("TYPE ERROR: Switch condition must be an integer or convertible to integer");
-                    };
-                }
 
                 TCExpr {
                     _type: CXType::from(CXTypeKind::Unit),

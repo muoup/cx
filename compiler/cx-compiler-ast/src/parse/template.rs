@@ -24,13 +24,13 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         generic_params.push(template_name.clone());
         
         if !data.ast.type_map.standard.contains_key(template_name.as_str()) {
-            let _NIL_TYPE: CXNaiveType = CXNaiveTypeKind::Identifier {
+            let _nil_type: CXNaiveType = CXNaiveTypeKind::Identifier {
                 name: CXIdent::from("_nil"),
                 predeclaration: PredeclarationType::None
             }.to_type();
 
             data.ast.type_map
-                .insert_standard(template_name.clone(), ModuleResource::with_visibility(_NIL_TYPE, data.visibility));
+                .insert_standard(template_name.clone(), ModuleResource::with_visibility(_nil_type, data.visibility));
             temp_typedefs.push(template_name);
         }
 

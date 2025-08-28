@@ -11,10 +11,9 @@ const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
-fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
-    let Some(type_name) = type_.get_name() else {
-        panic!("INTERNAL PANIC: Attempting to get deconstructor prototype for anonymous type: {type_:?}");
-    };
+fn deconstructor_prototype(type_: &CXType) -> Option<BCFunctionPrototype> {
+    let type_name = type_.get_name()?;
+
     let deconstructor_name = mangle_destructor(type_name);
     let this_param_type = BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 });
 
@@ -25,16 +24,18 @@ fn deconstructor_prototype(type_: &CXType) -> BCFunctionPrototype {
     };
     
     name.push_str(&type_.uuid.to_string());
-    
-    BCFunctionPrototype {
-        name: deconstructor_name,
-        return_type: BCType::unit(),
-        params: vec![
-            BCParameter { name: None, _type: this_param_type },
-        ],
-        var_args: false,
-        linkage: LinkageType::ODR
-    }
+
+    Some(
+        BCFunctionPrototype {
+            name: deconstructor_name,
+            return_type: BCType::unit(),
+            params: vec![
+                BCParameter { name: None, _type: this_param_type },
+            ],
+            var_args: false,
+            linkage: LinkageType::ODR
+        }
+    )
 }
 
 fn load_mem(
@@ -183,8 +184,9 @@ pub fn deconstruct_variable(
         },
 
         _ => {
-            let mut generated = false;
-            let deconstructor_prototype = deconstructor_prototype(type_);
+            let Some(deconstructor_prototype) = deconstructor_prototype(type_) else {
+                return Some(false);
+            };
 
             if let Some(name) = builder.get_destructor(type_) {
                 let deconstructor = builder.add_instruction(
@@ -201,10 +203,8 @@ pub fn deconstruct_variable(
                     BCType::unit()
                 )?;
                 
-                generated = true;
-            }
-            
-            if let Some(deconstructor_name) = get_deconstructor(builder, type_) {
+                Some(true)
+            } else if let Some(deconstructor_name) = get_deconstructor(builder, type_) {
                 let func = builder.fn_ref(&deconstructor_name)?
                     .expect("INTERNAL PANIC: Deconstructor function not found");
                 
@@ -217,10 +217,10 @@ pub fn deconstruct_variable(
                     BCType::unit()
                 );
 
-                generated = true;
+                Some(true)
+            } else {
+                Some(false)
             }
-            
-            Some(generated)
         },
     };
 

@@ -136,6 +136,10 @@ pub enum TCExprKind {
         operand: Box<TCExpr>
     },
 
+    TemporaryBuffer {
+        _type: CXType
+    },
+
     Coercion {
         operand: Box<TCExpr>,
         cast_type: CXCastType

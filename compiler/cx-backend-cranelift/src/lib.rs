@@ -5,6 +5,7 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, ValueID};
+use cx_data_bytecode::types::BCType;
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::routines::string_literal;
@@ -68,7 +69,6 @@ pub struct FunctionState<'a> {
     pub(crate) defer_offset: usize,
     pub(crate) in_defer: bool,
 
-    pub(crate) function_prototype: &'a BCFunctionPrototype,
     pub(crate) variable_table: VariableTable,
 
     pub(crate) pointer_type: ir::Type,

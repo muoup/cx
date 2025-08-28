@@ -254,14 +254,8 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
                     size: *size
                 },
             
-            CXTypeKind::MemoryReference(inner) => {
-                match &inner.kind {
-                    CXTypeKind::Structured { .. } => convert_fixed_type_kind(&inner.kind)?,
-                    CXTypeKind::Union { .. } => convert_fixed_type_kind(&inner.kind)?,
-                    
-                    _ => BCTypeKind::Pointer { nullable: true, dereferenceable: 0 }
-                }
-            },
+            CXTypeKind::MemoryReference(inner) =>
+                BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
             CXTypeKind::Structured { fields, name, .. } =>
                 BCTypeKind::Struct {

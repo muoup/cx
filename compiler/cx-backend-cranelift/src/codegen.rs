@@ -79,7 +79,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         fn_params: Vec::new(),
 
         builder,
-        function_prototype: &bc_func.prototype,
         global_strs: &global_state.global_strs,
         pointer_type,
     };

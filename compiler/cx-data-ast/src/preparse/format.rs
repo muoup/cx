@@ -43,7 +43,7 @@ impl Display for CXNaivePrototype {
             .map(|param| format!("{}: {}", param.name.as_ref().unwrap_or(&CXIdent::from("_")), param._type))
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "{} {}({}) -> {}", self.return_type, self.name, params_str, self.return_type)
+        write!(f, "{} {}({})", self.return_type, self.name, params_str)
     }
 }
 

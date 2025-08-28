@@ -16,6 +16,7 @@ mod typechecker;
 mod binary_ops;
 
 pub(crate) mod templates;
+pub(crate) mod structured_initialization;
 
 pub mod type_mapping;
 pub mod precontextualizing;
@@ -51,7 +52,8 @@ pub fn typecheck(mut env: TCEnvironment, ast: &CXAST) -> Option<TCAST> {
                         name: Some(CXIdent::from("this")),
                         _type: _type.clone().pointer_to(),
                     }],
-                    var_args: false
+                    var_args: false,
+                    needs_buffer: false,
                 };
 
                 setup_method_env(&mut env, &prototype);

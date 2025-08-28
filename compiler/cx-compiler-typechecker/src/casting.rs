@@ -152,6 +152,7 @@ pub(crate) fn alg_bin_op_coercion(env: &mut TypeEnvironment, op: CXBinOp,
                 add_implicit_cast(env, lhs, l_type.clone(), r_type.clone(), CXCastType::IntegralCast)?;
             }
             
+
             binop_type(&op, None, &l_type)
         },
 
