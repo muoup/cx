@@ -79,7 +79,7 @@ pub fn generate_instruction(
             )
         },
 
-        TCExprKind::FunctionCall { function, arguments } => {
+        TCExprKind::FunctionCall { function, arguments, direct_call } => {
             let left_id = generate_instruction(builder, function.as_ref())?;
 
             let prototype = match &function._type.kind {
@@ -125,8 +125,12 @@ pub fn generate_instruction(
                 args.push(arg_id);
             }
 
-            match &function._type.kind {
-                CXTypeKind::Function { prototype } => {
+            let CXTypeKind::Function { prototype } = &function._type.kind else {
+                log_error!("Invalid function type: {}", function._type);
+            };
+
+            match direct_call {
+                true => {
                     builder.add_instruction_cxty(
                         VirtualInstruction::DirectCall {
                             func: left_id,
@@ -136,11 +140,7 @@ pub fn generate_instruction(
                         prototype.return_type.clone()
                     )
                 },
-                CXTypeKind::PointerTo { inner_type: inner, .. } => {
-                    let CXTypeKind::Function { prototype } = &inner.kind else {
-                        log_error!("Invalid function pointer type: {inner}");
-                    };
-
+                false => {
                     builder.add_instruction_cxty(
                         VirtualInstruction::IndirectCall {
                             func_ptr: left_id,

@@ -4,7 +4,7 @@ use cx_data_typechecker::cx_types::CXType;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::*;
 use cx_data_typechecker::ast::TCExpr;
-use cx_data_typechecker::{CXFunctionMap, CXTypeMap};
+use cx_data_typechecker::{CXFnData, CXTypeData};
 use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::mangling::mangle_destructor;
@@ -18,8 +18,8 @@ pub struct BytecodeBuilder {
     global_strings: Vec<String>,
     functions: Vec<BytecodeFunction>,
     
-    pub cx_type_map: CXTypeMap,
-    pub cx_function_map: CXFunctionMap,
+    pub cx_type_map: CXTypeData,
+    pub cx_function_map: CXFnData,
 
     pub fn_map: BCFunctionMap,
     
@@ -49,7 +49,7 @@ pub struct DeclarationLifetime {
 }
 
 impl BytecodeBuilder {
-    pub fn new(type_map: CXTypeMap, fn_map: CXFunctionMap) -> Self {
+    pub fn new(type_map: CXTypeData, fn_map: CXFnData) -> Self {
         BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),

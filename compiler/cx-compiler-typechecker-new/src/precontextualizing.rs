@@ -9,7 +9,7 @@ use cx_data_pipeline::CompilationUnit;
 use cx_data_pipeline::db::ModuleData;
 use cx_util::mangling::{mangle_destructor, mangle_member_function, mangle_template};
 use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
-use cx_data_typechecker::{CXFunctionMap, CXTypeMap};
+use cx_data_typechecker::{CXFnData, CXTypeData};
 use cx_data_typechecker::intrinsic_types::INTRINSIC_TYPES;
 use crate::type_mapping::assemble_method;
 
@@ -36,7 +36,7 @@ fn reduce_ident_ident<'a>(
 
 pub fn precontextualize_type(
     module_data: &ModuleData,
-    cx_map: &mut CXTypeMap,
+    cx_map: &mut CXTypeData,
     naive_type_map: &CXNaiveTypeMap,
     external_module: Option<&String>,
     ty: &CXNaiveType,
@@ -220,7 +220,7 @@ pub fn precontextualize_type(
 }
 
 pub(crate) fn precontextualize_fn_ident(
-    module_data: &ModuleData, type_map: &mut CXTypeMap,
+    module_data: &ModuleData, type_map: &mut CXTypeData,
     naive_type_map: &CXNaiveTypeMap,
     ident: &CXNaiveFnIdent
 ) -> Option<CXFunctionIdentifier> {
@@ -257,7 +257,7 @@ pub(crate) fn precontextualize_fn_ident(
     }
 }
 
-fn add_if_not_exists(cx_map: &mut CXTypeMap, naive: &CXNaiveType, cx_type: &CXType) {
+fn add_if_not_exists(cx_map: &mut CXTypeData, naive: &CXNaiveType, cx_type: &CXType) {
     if let CXNaiveTypeKind::Identifier { name, .. } = &naive.kind {
         if !cx_map.standard.contains_key(name.as_str()) {
             cx_map.insert_standard(name.as_string(), cx_type.clone());
@@ -272,7 +272,7 @@ fn add_if_not_exists(cx_map: &mut CXTypeMap, naive: &CXNaiveType, cx_type: &CXTy
 }
 
 pub fn precontextualize_prototype(
-    module_data: &ModuleData, type_map: &mut CXTypeMap,
+    module_data: &ModuleData, type_map: &mut CXTypeData,
     naive_type_map: &CXNaiveTypeMap,
     prototype: &ModuleResource<CXNaivePrototype>,
 ) -> Option<CXFunctionPrototype> {
@@ -318,8 +318,8 @@ pub fn precontextualize_prototype(
     Some(cx_proto)
 }
 
-pub fn contextualize_type_map(module_data: &ModuleData, type_map: &CXNaiveTypeMap) -> CXResult<CXTypeMap> {
-    let mut cx_type_map = CXTypeMap::new();
+pub fn contextualize_type_map(module_data: &ModuleData, type_map: &CXNaiveTypeMap) -> CXResult<CXTypeData> {
+    let mut cx_type_map = CXTypeData::new();
 
     for (name, template) in type_map.templates.iter() {
         cx_type_map.insert_template(name.clone(), template.clone());
@@ -345,9 +345,9 @@ pub fn contextualize_type_map(module_data: &ModuleData, type_map: &CXNaiveTypeMa
 
 pub fn contextualize_fn_map(
     module_data: &ModuleData, fn_map: &CXNaiveFnMap,
-    type_map: &mut CXTypeMap, naive_type_map: &CXNaiveTypeMap
-) -> CXResult<CXFunctionMap> {
-    let mut cx_fn_map = CXFunctionMap::new();
+    type_map: &mut CXTypeData, naive_type_map: &CXNaiveTypeMap
+) -> CXResult<CXFnData> {
+    let mut cx_fn_map = CXFnData::new();
 
     for (name, naive_prototype) in fn_map.standard.iter() {
         let Some(cx_prototype)

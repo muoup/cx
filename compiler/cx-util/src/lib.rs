@@ -9,4 +9,3 @@ pub mod rwlockser;
 
 pub type CXResult<T> = Option<T>;
 
-pub type ModuleIdentifier = Rc<String>;

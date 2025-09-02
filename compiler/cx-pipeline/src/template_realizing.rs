@@ -9,7 +9,7 @@ pub(crate) fn realize_templates(
 ) -> Option<()> {
     let ast = context.module_db.naive_ast
         .get(unit);
-    let tc_ast = context.module_db.typechecked_ast
+    let tc_ast = context.module_db.dir_typechecked_ast
         .get(unit);
     
     let mut new_methods = Vec::new();
@@ -20,7 +20,7 @@ pub(crate) fn realize_templates(
                 let module = CompilationUnit::from_str(module.as_str());
 
                 (context.module_db.naive_ast.get(&module),
-                 context.module_db.typechecked_ast.get(&module))
+                 context.module_db.dir_typechecked_ast.get(&module))
             },
             None => (ast.clone(), tc_ast.clone())
         };
@@ -40,7 +40,7 @@ pub(crate) fn realize_templates(
     drop(ast);
     drop(tc_ast);
 
-    let (mut lock, mut ast) = context.module_db.typechecked_ast
+    let (mut lock, mut ast) = context.module_db.dir_typechecked_ast
         .take_lock(unit);
 
     ast.function_defs.extend(new_methods);

@@ -161,6 +161,13 @@ impl CXType {
         Some(inner.as_ref())
     }
 
+    pub fn ptr_inner(&self) -> Option<&CXType> {
+        let CXTypeKind::PointerTo { inner_type, .. } = &self.kind else {
+            return None;
+        };
+
+        Some(inner_type.as_ref())
+    }
     pub fn pointer_to(self) -> Self {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,

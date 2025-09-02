@@ -2,7 +2,7 @@ use cx_data_lexer::token::Token;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::preparse::naive_types::CXNaiveTemplateInput;
-use cx_data_typechecker::ast::{TCFunctionDef, TCAST};
+use cx_data_typechecker::ast::{TCFunctionDef, IPTCAST};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXParameter, CXTemplateInput, CXType};
 use cx_data_typechecker::TCEnvironment;
 use cx_util::log_error;
@@ -21,7 +21,7 @@ pub(crate) mod structured_initialization;
 pub mod type_mapping;
 pub mod precontextualizing;
 
-pub fn typecheck(mut env: TCEnvironment, ast: &CXAST) -> Option<TCAST> {
+pub fn typecheck(mut env: TCEnvironment, ast: &CXAST) -> Option<IPTCAST> {
     let mut statements = Vec::new();
 
     for stmt in ast.global_stmts.iter() {
@@ -73,7 +73,7 @@ pub fn typecheck(mut env: TCEnvironment, ast: &CXAST) -> Option<TCAST> {
     }
 
     Some(
-        TCAST {
+        IPTCAST {
             source_file: ast.file_path.clone(),
             type_map: env.type_map,
             fn_map: env.fn_map,
@@ -82,8 +82,8 @@ pub fn typecheck(mut env: TCEnvironment, ast: &CXAST) -> Option<TCAST> {
     )
 }
 
-pub fn realize_fn_prototype(origin: (&CXAST, &TCAST), input: &CXTemplateInput, prototype: &CXFunctionPrototype) 
-    -> Option<TCFunctionDef> {
+pub fn realize_fn_prototype(origin: (&CXAST, &IPTCAST), input: &CXTemplateInput, prototype: &CXFunctionPrototype)
+                            -> Option<TCFunctionDef> {
     let (cx, tc) = origin;
     
     let mut type_map = tc.type_map.clone();

@@ -10,6 +10,7 @@ use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::preparse::naive_types::ModuleResource;
 use cx_data_ast::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use cx_types::CXType;
+use cx_util::mangling::mangle_template;
 use cx_util::scoped_map::ScopedMap;
 use crate::cx_types::{CXFunctionPrototype, CXTemplateInput};
  
@@ -20,25 +21,30 @@ pub struct TemplateCache<Template> {
 }
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
-pub struct GenericMap<Standard, Template> {
-    pub standard: HashMap<String, Standard>,
+pub struct GenericData<Standard, Template> {
+    pub standard: GenericMap<Standard>,
     pub templates: HashMap<String, TemplateCache<Template>>,
 }
 
-pub type CXTypeMap = GenericMap<CXType, CXTypeTemplate>;
-pub type CXFunctionMap = GenericMap<CXFunctionPrototype, CXFunctionTemplate>;
+pub type GenericMap<Type> = HashMap<String, Type>;
+
+pub type CXTypeData = GenericData<CXType, CXTypeTemplate>;
+pub type CXFnData = GenericData<CXFunctionPrototype, CXFunctionTemplate>;
+
+pub type CXTypeMap = GenericMap<CXType>;
+pub type CXFnMap = GenericMap<CXFunctionPrototype>;
 
 pub struct TCEnvironment {
-    pub type_map: CXTypeMap,
-    pub fn_map: CXFunctionMap,
+    pub type_map: CXTypeData,
+    pub fn_map: CXFnData,
     
     pub current_function: Option<CXFunctionPrototype>,
     pub symbol_table: ScopedMap<CXType>,
 }
 
-impl<Type, TemplatedType> GenericMap<Type, TemplatedType> {
+impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
     pub fn new() -> Self {
-        GenericMap {
+        GenericData {
             standard: HashMap::new(),
             templates: HashMap::new(),
         }
@@ -62,6 +68,11 @@ impl<Type, TemplatedType> GenericMap<Type, TemplatedType> {
     pub fn get_template(&self, name: &str) -> Option<&TemplateCache<TemplatedType>> {
         self.templates
             .get(name)
+    }
+
+    pub fn get_template_mut(&mut self, name: &str) -> Option<&mut TemplateCache<TemplatedType>> {
+        self.templates
+            .get_mut(name)
     }
 }
 

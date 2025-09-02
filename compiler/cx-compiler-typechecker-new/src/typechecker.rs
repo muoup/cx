@@ -6,8 +6,10 @@ use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCInitIndex};
 use cx_data_typechecker::TCEnvironment;
 use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_method_call};
-use crate::casting::{coerce_condition, coerce_value, implicit_cast, try_implicit_cast};
-use crate::type_mapping::contextualize_type;
+use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast, try_implicit_cast};
+use crate::realize_fn_prototype;
+use crate::templates::instantiate_function_template;
+use crate::type_mapping::{contextualize_template_args, contextualize_type};
 
 pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype) {
     env.push_scope();
@@ -94,7 +96,18 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
             },
 
-            CXExprKind::TemplatedIdentifier { .. } => todo!(),
+            CXExprKind::TemplatedIdentifier { name, template_input } => {
+                // These [for now], are only for functions, as templated type identifiers can only appear
+                // in CXNaiveType contexts.
+
+                let input = contextualize_template_args(env, template_input)?;
+                let function = instantiate_function_template(env, name.as_str(), &input)?;
+
+                TCExpr {
+                    _type: CXTypeKind::Function { prototype: Box::new(function.clone()) }.into(),
+                    kind: TCExprKind::FunctionReference { name: function.name.clone() }
+                }
+            },
 
             CXExprKind::If { condition, then_branch, else_branch } => {
                 let mut condition_tc = typecheck_expr(env, condition)?;
@@ -276,14 +289,16 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     },
 
                     CXUnOp::Dereference => {
-                        let Some(inner) = operand_tc._type.mem_ref_inner().cloned() else {
-                            log_error!("TYPE ERROR: Cannot dereference a non-pointer type");
+                        coerce_value(&mut operand_tc);
+
+                        let Some(inner) = operand_tc._type.ptr_inner().cloned() else {
+                            log_error!("TYPE ERROR: Cannot dereference a non-pointer type {}", operand_tc._type);
                         };
 
                         coerce_value(&mut operand_tc);
 
                         TCExpr {
-                            _type: inner.clone(),
+                            _type: inner.mem_ref_to(),
                             kind: TCExprKind::UnOp {
                                 operator: operator.clone(),
                                 operand: Box::new(operand_tc)
@@ -294,7 +309,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     CXUnOp::ExplicitCast(to_type) => {
                         coerce_value(&mut operand_tc);
                         let to_type = contextualize_type(env, to_type)?;
-                        implicit_cast(&mut operand_tc, &to_type);
+                        explicit_cast(&mut operand_tc, &to_type);
 
                         operand_tc
                     }
@@ -347,9 +362,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             CXExprKind::Move { expr } => {
                 let mut expr_tc = typecheck_expr(env, expr)?;
-                coerce_value(&mut expr_tc);
 
-                if !expr_tc._type.is_strong_pointer() {
+                let Some(inner) = expr_tc._type.mem_ref_inner() else {
+                    log_error!("TYPE ERROR: Move expression requires a reference type, found {}", expr_tc._type);
+                };
+
+                if !inner.is_strong_pointer() {
                     log_error!("TYPE ERROR: Move expression requires a strong pointer type, found {}", expr_tc._type);
                 }
 

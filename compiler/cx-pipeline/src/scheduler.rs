@@ -145,9 +145,12 @@ pub(crate) fn handle_job(
             map_reqs_new_stage(job, CompilationStep::ASTParse)
         },
         CompilationStep::ASTParse => {
-            map_reqs_new_stage(job, CompilationStep::TypeCheck)
+            map_reqs_new_stage(job, CompilationStep::DirectTypechecking)
         },
-        CompilationStep::TypeCheck => {
+        CompilationStep::DirectTypechecking => {
+            map_reqs_new_stage(job, CompilationStep::IndirectTypechecking)
+        },
+        CompilationStep::IndirectTypechecking => {
             map_reqs_new_stage(job, CompilationStep::BytecodeGen)
         },
         CompilationStep::BytecodeGen => {
@@ -299,7 +302,7 @@ pub(crate) fn perform_job(
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
 
-        CompilationStep::TypeCheck => {
+        CompilationStep::DirectTypechecking => {
             let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
             
@@ -320,14 +323,18 @@ pub(crate) fn perform_job(
 
             dump_data(&format!("{:#?}", ast));
 
-            context.module_db.typechecked_ast.insert(job.unit.clone(), ast);
+            context.module_db.dir_typechecked_ast.insert(job.unit.clone(), ast);
+        },
+
+        CompilationStep::IndirectTypechecking => {
+            let ast = realize_templates(context, &job.unit)
+                .expect("Template realization failed");
+
+            dump_data(&format!("{:#?}", ast));
         },
 
         CompilationStep::BytecodeGen => {
-            realize_templates(context, &job.unit)
-                .expect("Template realizing failed");
-
-            let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
+            let tc_ast = context.module_db.dir_typechecked_ast.take(&job.unit);
             
             let bytecode = generate_bytecode(tc_ast)
                 .expect("Bytecode generation failed");

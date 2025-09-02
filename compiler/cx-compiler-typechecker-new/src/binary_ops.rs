@@ -99,13 +99,13 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
     let mut lhs = typecheck_expr(env, lhs)?;
     let mut tc_args = comma_separated(env, rhs)?;
 
-    let prototype = match lhs.kind {
+    let (direct, prototype) = match lhs.kind {
         TCExprKind::FunctionReference { ref name } => {
             let Some(prototype) = env.get_func(name.as_str()).cloned() else {
                 log_error!("TYPE ERROR: Function '{}' not found in the current environment", name.as_string());
             };
 
-            prototype
+            (true, prototype)
         },
 
         TCExprKind::MemberFunctionReference { target, name } => {
@@ -125,10 +125,27 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
                 kind: TCExprKind::FunctionReference { name: name.clone() }
             };
 
-            prototype
+            (true, prototype)
         },
 
-        _ => log_error!("TYPE ERROR: Expected function reference on the left side of method call, found {:?}", lhs),
+        _ => {
+            coerce_value(&mut lhs);
+
+            if let Some(inner) = lhs._type.ptr_inner() {
+                lhs = TCExpr {
+                    _type: inner.clone(),
+                    kind: TCExprKind::ImplicitLoad {
+                        operand: Box::new(std::mem::take(&mut lhs)),
+                    }
+                }
+            }
+
+            if let CXTypeKind::Function { prototype } = &lhs._type.kind {
+                (false, prototype.as_ref().clone())
+            } else {
+                log_error!("TYPE ERROR: Expected function or method call, found {}", lhs._type);
+            }
+        },
     };
 
     if prototype.needs_buffer {
@@ -189,7 +206,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
                 implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: false }.into())?;
             },
 
-            _ => log_error!("TYPE ERROR: Cannot coerce value {:?} for varargs, expected intrinsic type or pointer!", arg),
+            _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", arg._type),
         }
     }
 
@@ -199,6 +216,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
             kind: TCExprKind::FunctionCall {
                 function: Box::new(lhs),
                 arguments: tc_args,
+                direct_call: direct
             }
         }
     )

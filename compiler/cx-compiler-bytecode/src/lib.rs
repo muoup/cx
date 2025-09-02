@@ -1,7 +1,7 @@
 use crate::builder::BytecodeBuilder;
 use crate::global_stmts::generate_function;
 use cx_data_bytecode::ProgramBytecode;
-use cx_data_typechecker::ast::TCAST;
+use cx_data_typechecker::ast::IPTCAST;
 
 pub mod instruction_gen;
 pub mod builder;
@@ -13,7 +13,7 @@ mod global_stmts;
 
 pub type BytecodeResult<T> = Option<T>;
 
-pub fn generate_bytecode(ast: TCAST) -> Option<ProgramBytecode> {
+pub fn generate_bytecode(ast: IPTCAST) -> Option<ProgramBytecode> {
     // this shouldn't be necessary, but this is again because of the coupling of type information
     // and the bytecode builder
     // (TODO)

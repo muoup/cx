@@ -52,18 +52,18 @@ pub enum CompilationStep {
     PreParse = 1 << 0,
 
     /**
-     *  A relatively minor step, in order for templates to function, the preparse data of all modules
-     *  must be combined with the public interfaces of its imports. The reason for this is subtle,
-     *  as in order for a template to be resolved, in case type data is connected between multiple
-     *  compilation units, the module must "become" the module that contains the template, thus
-     *  meaning unresolved templates must be resolved to a certain degree beforehand.
+     *  A relatively minor step, in order for expressions to be parsed correctly, the parser must
+     *  know all declared type names, and function names as well in the case of templates. This
+     *  means that AST parsing, since "import" does not create a unified compilation unit, must
+     *  be preceded by a step that combines the public interfaces of all imports into the current
+     *  compilation unit's preparse data.
      *
      *  Requires: The preparse data of the current compilation unit and its imports.
      *
      *  Outputs:  A slightly modified preparse data that contains the public interfaces of imports
      */
     ImportCombine = 1 << 1,
-    
+
     /**
      *  Parse the AST from the source code. This is the main parsing step that converts the source
      *  code into an abstract syntax tree (AST) representation. In the process, a type map and
@@ -71,21 +71,43 @@ pub enum CompilationStep {
      *
      *  Requires: CX type and function definitions from the preparse step for both the current
      *            compilation unit and all imports, as well as the lexed and preprocessed source code.
-     *            
      *
      *  Outputs:  A naively parsed AST.
      */
     ASTParse = 1 << 2,
 
     /**
-     *  Typecheck the AST. This step validates expressions, statements, and declarations, as well
-     *  as adding implicit type conversions and checking for type errors.
+     *  Part 1 of typechecking: Ensures that all expressions in directly implemented functions and
+     *  types are type-correct, including adding implicit type coercion where necessary.
      *
-     *  Requires: The AST, along with the type and function definitions of imports and self.
+     *  Importantly, and why two steps are needed, this creates a fully-contextual type and function map
+     *  that combines declarations from other ASTs. Meaning templates declared in other compilation units
+     *  require that those units are typechecked with this step before they can be realized. In theory, this
+     *  step could be limited to just generating the type and function map of the current compilation unit,
+     *  and then all functions and templates could be typechecked in a single pass, but realizing templates,
+     *  requires cooperation with the pipeline to be given the needed context, meaning indirect and direct
+     *  typechecking would just be unignorably two separate mechanisms included in the same step.
      *
-     *  Outputs:  A type-checked AST.
+     *  Requires: The naive AST, along with the type and function definitions of imports and self.
+     *
+     *  Outputs:  A type-checked AST of direct implementation, including to-be type-checked requests to
+     *  be fulfilled.
      */
-    TypeCheck = 1 << 3,
+    DirectTypechecking = 1 << 3,
+
+    /**
+     *  Part 2 of typechecking: Typechecks all indirectly implemented functions and types to a type-checked
+     *  AST. This for the most part consists of realizing templated functions, however in the future other
+     *  use-cases may arise related to the implementation of dependent types or other advanced type system features.
+     *  As well, in the future, these steps being separated could allow for the pipeline to make better decisions
+     *  regarding duplicate template instantiations across multiple compilation units.
+     *
+     *  Requires: A directly type-checked AST, along with its requests, and the directly type-checked ASTs of
+     *  the compilation units where the declaration referenced by the requests were defined.
+     *
+     *  Outputs:  A fully type-checked AST.
+     */
+    IndirectTypechecking = 1 << 4,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -98,7 +120,7 @@ pub enum CompilationStep {
      *            implementations of templated functions, types, and potentially in the future small
      *            always-inlined functions.
      */
-    BytecodeGen = 1 << 4,
+    BytecodeGen = 1 << 5,
 
     /**
      *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
@@ -110,11 +132,11 @@ pub enum CompilationStep {
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 5
+    Codegen = 1 << 6
     
     // For now, linking is a single step that is done after all compilation above is done. This 
-    // could be abstracted into a CompilationStep, but seeing as it is not specified to a single compilation
-    // unit, it is just handled separately for now.
+    // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
+    // per-compilation unit, it handled as its own mechanism.
 }
 
 impl CompilationJob {
@@ -186,7 +208,7 @@ impl JobQueue {
     pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
         self.progress_map.insert((unit.clone(), CompilationStep::PreParse), JobState::Completed);
         self.progress_map.insert((unit.clone(), CompilationStep::ASTParse), JobState::Completed);
-        self.progress_map.insert((unit.clone(), CompilationStep::TypeCheck), JobState::Completed);
+        self.progress_map.insert((unit.clone(), CompilationStep::DirectTypechecking), JobState::Completed);
         self.progress_map.insert((unit.clone(), CompilationStep::BytecodeGen), JobState::Completed);
         self.progress_map.insert((unit.clone(), CompilationStep::Codegen), JobState::Completed);
     }

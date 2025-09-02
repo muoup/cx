@@ -6,8 +6,16 @@ use crate::structured_initialization::coerce_initializer_list;
 
 pub(crate) fn coerce_value(expr: &mut TCExpr) {
     if let Some(inner) = expr._type.mem_ref_inner() {
+        let _type = match &inner.kind {
+            CXTypeKind::StrongPointer { inner_type, .. } => {
+                inner_type.clone().pointer_to()
+            },
+
+            _ => inner.clone()
+        };
+
         *expr = TCExpr {
-            _type: inner.clone(),
+            _type,
             kind: TCExprKind::ImplicitLoad {
                 operand: Box::new(std::mem::take(expr))
             }
@@ -45,8 +53,15 @@ pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     };
 
     let Some(_) = try_implicit_cast(expr, to_type) else {
-        println!("[DEBUG] Expr: {:#?}", expr);
         log_error!("TYPE ERROR: Cannot implicitly cast value of type {} to type {}", expr._type, to_type);
+    };
+
+    Some(())
+}
+
+pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
+    let Some(_) = try_explicit_cast(expr, to_type) else {
+        log_error!("TYPE ERROR: Cannot explicitly cast value of type {} to type {}", expr._type, to_type);
     };
 
     Some(())
@@ -58,6 +73,19 @@ pub(crate) fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<(
     }
 
     let Some(cast_type) = valid_implicit_cast(&expr._type, to_type)? else {
+        return None;
+    };
+
+    add_coercion(expr, to_type.clone(), cast_type);
+    Some(())
+}
+
+pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
+    if let Some(_) = try_implicit_cast(expr, to_type) {
+        return Some(());
+    }
+
+    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type)? else {
         return None;
     };
 

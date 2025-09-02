@@ -1,18 +1,30 @@
-use std::collections::HashMap;
 use speedy::{Readable, Writable};
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXInitIndex, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use crate::cx_types::{CXFunctionPrototype, CXType};
-use crate::{CXFunctionMap, CXTypeMap};
+use crate::{CXFnData, CXTypeData};
 
+/**
+ *  "IPTCAST" = In-place type-checked AST, i.e. the AST with all of it's in-complation-unit references
+ *              resolved to direct references, along with the indirect references stored as requests
+ *              for the pipeline to assist in resolving.
+ *
+ */
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct TCAST {
+pub struct IPTCAST {
     pub source_file: String,
 
-    pub type_map: CXTypeMap,
-    pub fn_map: CXFunctionMap,
-    
+    pub type_map: CXTypeData,
+    pub fn_map: CXFnData,
+
     pub function_defs: Vec<TCFunctionDef>,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct FunctionTemplateRequest {
+    pub module_origin: Option<CXIdent>,
+    pub name: CXIdent,
+    pub type_arguments: Vec<CXType>
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -82,6 +94,7 @@ pub enum TCExprKind {
     FunctionCall {
         function: Box<TCExpr>,
         arguments: Vec<TCExpr>,
+        direct_call: bool
     },
 
     Access {
