@@ -1,0 +1,5 @@
+name = "TypeSystem"
+defaultTargets = ["TypeSystem"]
+
+[[lean_lib]]
+name = "TypeSystem"
