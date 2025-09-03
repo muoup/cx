@@ -7,7 +7,6 @@ use cx_util::bytecode_error_log;
 use cx_util::mangling::{mangle_destructor};
 use crate::builder::{BytecodeBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
-use crate::deconstructor::deconstruct_variable;
 
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
@@ -119,20 +118,11 @@ pub(crate) fn get_cx_struct_field_by_index(
 fn variable_requires_nulling(
     builder: &BytecodeBuilder,
     cx_type: &CXType
-) -> Option<bool> {
+) -> bool {
     match cx_type.kind {
-        CXTypeKind::StrongPointer { .. } => Some(true),
+        CXTypeKind::StrongPointer { .. } => true,
 
-        _ => {
-            let Some(name) = cx_type.get_name() else {
-                return Some(false);
-            };
-
-            Some(
-                builder.cx_function_map.standard
-                    .contains_key(&mangle_destructor(name))
-            )
-        }
+        _ => builder.get_destructor(cx_type).is_some()
     }
 }
 
@@ -158,7 +148,7 @@ pub(crate) fn allocate_variable(
         }
     );
     
-    if variable_requires_nulling(builder, var_type)? {
+    if variable_requires_nulling(builder, var_type) {
         builder.add_instruction(
             VirtualInstruction::ZeroMemory {
                 memory,
@@ -169,15 +159,4 @@ pub(crate) fn allocate_variable(
     }
 
     Some(memory)
-}
-
-pub(crate) fn deconstruct_scope(
-    builder: &mut BytecodeBuilder,
-    scope: &[DeclarationLifetime]
-) -> BytecodeResult<()> {
-    for lifetime in scope {
-        deconstruct_variable(builder, lifetime.value_id.clone(), &lifetime._type, true)?;
-    }
-    
-    Some(())
 }

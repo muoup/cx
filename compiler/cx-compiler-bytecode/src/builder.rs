@@ -1,26 +1,24 @@
-use crate::{BytecodeResult, ProgramBytecode};
-use cx_data_ast::parse::ast::{CXExpr};
-use cx_data_typechecker::cx_types::CXType;
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::*;
-use cx_data_typechecker::ast::TCExpr;
-use cx_data_typechecker::{CXFnData, CXTypeData};
-use cx_util::format::dump_all;
-use cx_util::log_error;
-use cx_util::mangling::mangle_destructor;
-use cx_util::scoped_map::ScopedMap;
-use crate::aux_routines::deconstruct_scope;
 use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
+use crate::{BytecodeResult, ProgramBytecode};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_bytecode::*;
+use cx_data_typechecker::ast::{TCExpr, TCAST};
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType};
+use cx_data_typechecker::CXFnMap;
+use cx_util::format::dump_all;
+use cx_util::log_error;
+use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
+use cx_util::scoped_map::ScopedMap;
+use crate::aux_routines::get_cx_struct_field_by_index;
+use crate::deconstructor::deconstruct_variable;
 
 #[derive(Debug)]
 pub struct BytecodeBuilder {
     global_strings: Vec<String>,
     functions: Vec<BytecodeFunction>,
     
-    pub cx_type_map: CXTypeData,
-    pub cx_function_map: CXFnData,
-
+    pub cx_function_map: CXFnMap,
     pub fn_map: BCFunctionMap,
     
     pub symbol_table: ScopedMap<ValueID>,
@@ -49,15 +47,13 @@ pub struct DeclarationLifetime {
 }
 
 impl BytecodeBuilder {
-    pub fn new(type_map: CXTypeData, fn_map: CXFnData) -> Self {
+    pub fn new(ast: &TCAST) -> Self {
         BytecodeBuilder {
             global_strings: Vec::new(),
             functions: Vec::new(),
 
-            fn_map: convert_cx_func_map(&fn_map),
-
-            cx_type_map: type_map,
-            cx_function_map: fn_map,
+            fn_map: convert_cx_func_map(&ast.fn_map),
+            cx_function_map: ast.fn_map.clone(),
             
             in_deferred_block: false,
 
@@ -141,9 +137,12 @@ impl BytecodeBuilder {
 
     pub fn pop_scope(&mut self) -> Option<()> {
         self.symbol_table.pop_scope();
-        let decls = self.declaration_scope.pop();
+        let decls = self.declaration_scope.pop()?;
 
-        deconstruct_scope(self, decls?.as_slice())
+        for DeclarationLifetime { value_id, _type } in decls.into_iter().rev() {
+            deconstruct_variable(self, value_id, &_type)?;
+        }
+        Some(())
     }
 
     pub fn generate_scoped(&mut self, expr: &TCExpr) -> BytecodeResult<ValueID> {
@@ -502,11 +501,24 @@ impl BytecodeBuilder {
             id: (add_to.len() - 1) as ElementID
         }
     }
-    
+
+    pub fn get_deconstructor(&self, _type: &CXType) -> Option<String> {
+        let Some(name) = _type.get_name() else {
+            return None;
+        };
+        let mangled_name = mangle_deconstructor(name);
+
+        if self.fn_map.contains_key(&mangled_name) {
+            Some(mangled_name)
+        } else {
+            None
+        }
+    }
+
     pub fn get_destructor(&self, _type: &CXType) -> Option<String> {
         let mangled_name = mangle_destructor(_type.get_name()?);
         
-        if self.cx_function_map.standard.contains_key(&mangled_name) {
+        if self.cx_function_map.contains_key(&mangled_name) {
             Some(mangled_name)
         } else {
             None
@@ -531,6 +543,44 @@ impl BytecodeBuilder {
                 global_strs: self.global_strings,
                 fn_defs: self.functions
             }
+        )
+    }
+
+    // Common helper routines
+    pub fn call(&mut self, name: &str, args: Vec<ValueID>) -> Option<ValueID> {
+        let Some(fn_prototype) = self.fn_map.get(name).cloned() else {
+            log_error!("Attempted to call unknown function: {}", name);
+        };
+
+        let ret_type = fn_prototype.return_type.clone();
+        let fn_ref = self.fn_ref_unchecked(name)?;
+
+        self.add_instruction(
+            VirtualInstruction::DirectCall {
+                func: fn_ref,
+                args,
+                method_sig: fn_prototype
+            },
+            ret_type
+        )
+    }
+
+    pub fn struct_access(&mut self, val: ValueID, _type: &BCType, index: usize) -> Option<ValueID> {
+        let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+            return None;
+        };
+
+        let access = get_cx_struct_field_by_index(self, _type, index)?;
+
+        self.add_instruction(
+            VirtualInstruction::StructAccess {
+                field_offset: access.offset,
+                field_index: access.index,
+
+                struct_: val,
+                struct_type: _type.clone()
+            },
+            access._type.clone()
         )
     }
 }

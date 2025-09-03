@@ -3,13 +3,21 @@ use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_ast::preparse::naive_types::CX_CONST;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCInitIndex};
-use cx_data_typechecker::TCEnvironment;
 use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_method_call};
 use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast, try_implicit_cast};
+use crate::environment::TCEnvironment;
 use crate::realize_fn_prototype;
 use crate::templates::instantiate_function_template;
 use crate::type_mapping::{contextualize_template_args, contextualize_type};
+use crate::variable_destruction::visit_destructable_instance;
+
+pub(crate) fn in_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype, expr: &CXExpr) -> Option<TCExpr> {
+    setup_method_env(env, prototype);
+    let tc_expr = typecheck_expr(env, expr)?;
+    cleanup_method_env(env);
+    Some(tc_expr)
+}
 
 pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype) {
     env.push_scope();
@@ -32,9 +40,13 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
     Some(
         match &expr.kind {
             CXExprKind::Block { exprs } => {
+                env.push_scope();
+
                 let tc_exprs = exprs.iter()
                     .map(|e| typecheck_expr(env, e))
                     .collect::<Option<Vec<_>>>()?;
+
+                env.pop_scope();
 
                 TCExpr {
                     _type: CXType::unit(),
@@ -73,6 +85,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 let type_ = contextualize_type(env, &type_)?;
 
                 env.insert_symbol(name.as_string(), type_.clone());
+                visit_destructable_instance(env, &type_);
 
                 TCExpr {
                     _type: type_.clone().mem_ref_to(),
@@ -110,6 +123,8 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::If { condition, then_branch, else_branch } => {
+                env.push_scope();
+
                 let mut condition_tc = typecheck_expr(env, condition)?;
                 coerce_condition(&mut condition_tc);
 
@@ -119,6 +134,8 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 } else {
                     None
                 };
+
+                env.pop_scope();
 
                 TCExpr {
                     _type: then_tc._type.clone(),
@@ -131,10 +148,14 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::While { condition, body, pre_eval } => {
+                env.push_scope();
+
                 let mut condition_tc = typecheck_expr(env, condition)?;
                 coerce_condition(&mut condition_tc);
 
                 let body_tc = typecheck_expr(env, body)?;
+
+                env.pop_scope();
 
                 TCExpr {
                     _type: body_tc._type.clone(),
@@ -147,12 +168,16 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::For { init, condition, increment, body } => {
+                env.push_scope();
+
                 let init_tc = typecheck_expr(env, init)?;
                 let mut condition_tc = typecheck_expr(env, condition)?;
                 coerce_condition(&mut condition_tc);
 
                 let increment_tc = typecheck_expr(env, increment)?;
                 let body_tc = typecheck_expr(env, body)?;
+
+                env.pop_scope();
 
                 TCExpr {
                     _type: body_tc._type.clone(),
@@ -330,7 +355,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     log_error!("TYPE ERROR: Cannot assign to a non-reference type {}", lhs._type);
                 };
 
-                if inner.is_structured() {
+                if !inner.is_structured() {
                     implicit_cast(&mut rhs, inner);
                 }
 
@@ -372,7 +397,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
 
                 TCExpr {
-                    _type: expr_tc._type.clone(),
+                    _type: inner.clone(),
                     kind: TCExprKind::Move {
                         operand: Box::new(expr_tc)
                     }
@@ -380,18 +405,39 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::New { _type } => {
-                let _type = contextualize_type(env, _type)?;
+                let mut _type = contextualize_type(env, _type)?;
+
+                let (_type, array_length) = match _type.kind {
+                    CXTypeKind::Array { inner_type, size, .. } => {
+                        let length = TCExpr {
+                            _type: CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 }),
+                            kind: TCExprKind::IntLiteral { value: size as i64 }
+                        };
+
+                        (*inner_type, Some(Box::new(length)))
+                    },
+
+                    CXTypeKind::VariableLengthArray { _type: inner_type, size } => {
+                        let mut size = *size;
+                        coerce_value(&mut size);
+
+                        _type = inner_type.clone().pointer_to();
+                        (*inner_type, Some(Box::new(size)))
+                    },
+
+                    _ => (_type, None)
+                };
 
                 TCExpr {
                     _type: CXType::from(
                         CXTypeKind::StrongPointer {
                             inner_type: Box::new(_type.clone()),
-                            is_array: false,
+                            is_array: array_length.is_some(),
                         }
                     ),
                     kind: TCExprKind::New {
                         _type: _type.clone(),
-                        array_length: None,
+                        array_length,
                     },
                 }
             },

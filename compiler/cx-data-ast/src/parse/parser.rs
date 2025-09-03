@@ -2,13 +2,12 @@ use crate::parse::ast::CXAST;
 use speedy::{Readable, Writable};
 use cx_data_lexer::TokenIter;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Copy, Readable, Writable)]
+#[derive(Debug, Default, Clone, PartialOrd, PartialEq, Eq, Copy, Readable, Writable)]
 pub enum VisibilityMode {
-    Package,
-    Public,
-    
     #[default]
     Private,
+    Package,
+    Public,
 }
 
 #[derive(Debug)]

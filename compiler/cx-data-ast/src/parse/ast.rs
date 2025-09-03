@@ -247,6 +247,15 @@ impl CXExprKind {
             end_index,
         }
     }
+
+    pub fn block_terminating(&self) -> bool {
+        matches!(self,
+            CXExprKind::Return { .. } |
+            CXExprKind::Break       |
+            CXExprKind::Continue    |
+            CXExprKind::Taken
+        )
+    }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

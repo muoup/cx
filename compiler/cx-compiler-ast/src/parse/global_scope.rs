@@ -4,7 +4,7 @@ use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
-use cx_data_lexer::{keyword, operator, punctuator, specifier};
+use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::parse::template::parse_template;
 use crate::preparse::preparser::{goto_statement_end, parse_std_ident, try_function_parse};
@@ -54,8 +54,13 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Tilda));
     assert_token_matches!(data.tokens, TokenKind::Identifier(name));
-    
     let name = name.clone();
+
+    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
+    assert_token_matches!(data.tokens, identifier!(this));
+    assert_eq!(this, "this");
+    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
+
     let body = parse_body(data)?;
 
     Some(

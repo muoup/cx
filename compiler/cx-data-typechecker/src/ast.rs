@@ -2,21 +2,22 @@ use speedy::{Readable, Writable};
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use crate::cx_types::{CXFunctionPrototype, CXType};
-use crate::{CXFnData, CXTypeData};
+use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
 
-/**
- *  "IPTCAST" = In-place type-checked AST, i.e. the AST with all of it's in-complation-unit references
- *              resolved to direct references, along with the indirect references stored as requests
- *              for the pipeline to assist in resolving.
- *
- */
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct IPTCAST {
+pub struct TCStructureData {
+    pub type_data: CXTypeData,
+    pub fn_data: CXFnData,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct TCAST {
     pub source_file: String,
 
-    pub type_map: CXTypeData,
-    pub fn_map: CXFnData,
+    pub type_map: CXTypeMap,
+    pub fn_map: CXFnMap,
 
+    pub destructors_required: Vec<CXType>,
     pub function_defs: Vec<TCFunctionDef>,
 }
 
@@ -181,6 +182,11 @@ pub enum TCExprKind {
 
     Break,
     Continue,
+
+    DeconstructObject {
+        variable_name: CXIdent,
+        variable_type: CXType,
+    }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

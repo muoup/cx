@@ -133,13 +133,13 @@ pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
-            => Some(CXCastType::BitCast),
+                => Some(CXCastType::BitCast),
 
             (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-            if same_type(_type, inner) => Some(CXCastType::BitCast),
+                if same_type(_type, inner) => Some(CXCastType::BitCast),
 
             (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-            if same_type(inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
+                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
             _ => None
         }

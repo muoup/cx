@@ -129,8 +129,4 @@ impl TypeEnvironment<'_> {
     pub fn function_template_prototype(&self, name: &str, input: CXTemplateInput) -> Option<CXFunctionPrototype> {
         self.fn_map.get_template(self.type_map, name, input)
     }
-    
-    pub fn destructor_exists(&self, _type: &CXType) -> bool {
-        self.typecheck_data.destructor_map.contains_key(_type)
-    }
 }

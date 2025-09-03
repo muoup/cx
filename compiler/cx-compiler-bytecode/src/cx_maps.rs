@@ -4,7 +4,7 @@ use cx_data_ast::parse::ast::CXBinOp;
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFloatBinOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind};
-use cx_data_typechecker::CXFnData;
+use cx_data_typechecker::{CXFnData, CXFnMap};
 
 impl BytecodeBuilder {
     pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<BCType> {
@@ -171,8 +171,8 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCF
     )
 }
 
-pub(crate) fn convert_cx_func_map(cx_proto: &CXFnData) -> BCFunctionMap {
-    cx_proto.standard
+pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
+    cx_proto
         .iter()
         .map(|(name, cx_proto)| {
             (name.clone(), convert_cx_prototype(cx_proto).unwrap())

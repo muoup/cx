@@ -1,13 +1,10 @@
-__stdfreearray_destructor_noop
-__stdfree
-~strong_ptr_container
-~strong_ptr_container
-__stdfree
-~strong_ptr_container
-~strong_ptr_container
-__stdfree
-__stdfreearray
+__stdfreearray length = 2
 __stdfreearray: calling destructor for element 0
 ~strong_ptr_container
 __stdfreearray: calling destructor for element 1
 ~strong_ptr_container
+~strong_ptr_container
+__stdfree
+~strong_ptr_container
+__stdfree
+__stdfreearray_destructor_noop

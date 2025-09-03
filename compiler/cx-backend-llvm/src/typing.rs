@@ -96,7 +96,8 @@ pub(crate) fn bc_llvm_type<'a>(state: &GlobalState<'a>, _type: &BCType) -> Optio
                 let struct_def = state.context.opaque_struct_type(struct_name.as_str());
                 struct_def.set_body(_types.as_slice(), false);
 
-                return Some(struct_type.as_any_type_enum());
+                return state.context.get_struct_type(struct_name.as_str())
+                    .map(|s| s.as_any_type_enum());
             }
             BCTypeKind::Union { name, .. } =>
                 state.context.get_struct_type(name.as_str())

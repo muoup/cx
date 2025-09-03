@@ -21,7 +21,7 @@ pub struct CXParameter {
     pub _type: CXType,
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, Default, Readable, Writable)]
 pub struct CXFunctionPrototype {
     pub name: CXIdent,
     pub return_type: CXType,

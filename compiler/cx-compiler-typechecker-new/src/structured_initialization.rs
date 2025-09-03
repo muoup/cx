@@ -1,7 +1,6 @@
 use cx_data_ast::parse::ast::CXExprKind;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
-use cx_data_typechecker::TCEnvironment;
 use cx_util::log_error;
 use crate::casting::implicit_cast;
 

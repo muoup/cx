@@ -2,10 +2,10 @@ use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{same_type, CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
-use cx_data_typechecker::TCEnvironment;
 use cx_util::{log_error, CXResult};
 use cx_util::mangling::mangle_member_function;
 use crate::casting::{add_coercion, coerce_value, implicit_cast, try_implicit_cast};
+use crate::environment::TCEnvironment;
 use crate::templates::instantiate_type_template;
 use crate::type_mapping::contextualize_template_args;
 use crate::typechecker::typecheck_expr;
@@ -129,21 +129,31 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
         },
 
         _ => {
-            coerce_value(&mut lhs);
+            let mut try_mem_ref = || -> Option<_> {
+                let Some(inner) = lhs._type.mem_ref_inner() else {
+                    return None;
+                };
 
-            if let Some(inner) = lhs._type.ptr_inner() {
-                lhs = TCExpr {
-                    _type: inner.clone(),
-                    kind: TCExprKind::ImplicitLoad {
-                        operand: Box::new(std::mem::take(&mut lhs)),
-                    }
+                if let CXTypeKind::Function { prototype } = &inner.kind {
+                    Some(prototype.as_ref().clone())
+                } else {
+                    coerce_value(&mut lhs);
+                    None
                 }
-            }
+            };
 
-            if let CXTypeKind::Function { prototype } = &lhs._type.kind {
-                (false, prototype.as_ref().clone())
+            if let Some(prototype) = try_mem_ref() {
+                (false, prototype)
             } else {
-                log_error!("TYPE ERROR: Expected function or method call, found {}", lhs._type);
+                let Some(inner) = lhs._type.ptr_inner() else {
+                    log_error!("TYPE ERROR: Attempted to call non-function type {}", lhs._type);
+                };
+
+                let CXTypeKind::Function { prototype } = &inner.kind else {
+                    log_error!("TYPE ERROR: Attempted to call non-function type {}", lhs._type);
+                };
+
+                (false, *prototype.clone())
             }
         },
     };

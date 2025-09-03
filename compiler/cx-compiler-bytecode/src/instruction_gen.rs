@@ -1,9 +1,10 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCPtrBinOp, BlockID, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCParameter, BCPtrBinOp, BlockID, LinkageType, ValueID, VirtualInstruction};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
+use cx_util::mangling::mangle_deconstructor;
 use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
@@ -24,13 +25,13 @@ pub fn generate_instruction(
             
             if additional_op.is_some() { todo!("compound assignment") }
 
+            if !matches!(target.kind, TCExprKind::VariableDeclaration { .. }) {
+                deconstruct_variable(builder, left_id, &target._type)?;
+            }
+
             let Some(inner) = target._type.mem_ref_inner()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {}", target._type) };
 
-            if !matches!(target.as_ref().kind, TCExprKind::VariableDeclaration { .. }) {
-                deconstruct_variable(builder, left_id, inner, true)?;
-            }
-            
             let inner_type = builder.convert_fixed_cx_type(inner)?;
 
             builder.add_instruction(
@@ -125,17 +126,13 @@ pub fn generate_instruction(
                 args.push(arg_id);
             }
 
-            let CXTypeKind::Function { prototype } = &function._type.kind else {
-                log_error!("Invalid function type: {}", function._type);
-            };
-
             match direct_call {
                 true => {
                     builder.add_instruction_cxty(
                         VirtualInstruction::DirectCall {
                             func: left_id,
                             args,
-                            method_sig: convert_cx_prototype(prototype.as_ref())?
+                            method_sig: convert_cx_prototype(&prototype)?
                         },
                         prototype.return_type.clone()
                     )
@@ -145,7 +142,7 @@ pub fn generate_instruction(
                         VirtualInstruction::IndirectCall {
                             func_ptr: left_id,
                             args,
-                            method_sig: convert_cx_prototype(prototype.as_ref())?
+                            method_sig: convert_cx_prototype(&prototype)?
                         },
                         prototype.return_type.clone()
                     )
@@ -768,6 +765,13 @@ pub fn generate_instruction(
             }
             
             Some(alloc)
+        },
+
+        TCExprKind::DeconstructObject { variable_name, variable_type} => {
+            let var = builder.get_symbol(variable_name.as_str())?;
+            deconstruct_variable(builder, var, variable_type)?;
+
+            Some(ValueID::NULL)
         },
 
         TCExprKind::Taken |

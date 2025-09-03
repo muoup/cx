@@ -2,9 +2,9 @@ use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind};
-use cx_data_typechecker::TCEnvironment;
 use cx_util::{log_error};
 use cx_util::mangling::mangle_template;
+use crate::environment::TCEnvironment;
 use crate::templates::instantiate_type_template;
 
 pub(crate) fn assemble_method(name: &CXFunctionIdentifier, mut return_type: CXType, mut params: Vec<CXParameter>, var_args: bool) -> CXFunctionPrototype {
@@ -96,7 +96,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
                 return Some(existing.clone());
             }
 
-            if let Some(template) = env.type_map.get_template(name.as_str()) {
+            if let Some(template) = env.type_data.get_template(name.as_str()) {
                 let template = template.clone();
 
                 return instantiate_type_template(env, &template.template.resource, &input);

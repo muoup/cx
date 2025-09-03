@@ -77,8 +77,13 @@ impl Display for CXTypeKind {
                     Ok(())
                 }
             },
-            CXTypeKind::StrongPointer { inner_type: inner, .. } => {
-                write!(f, "{inner} strong*")
+            CXTypeKind::StrongPointer { inner_type: inner, is_array } => {
+                write!(f, "{inner} strong")?;
+                if *is_array {
+                    write!(f, "[]")
+                } else {
+                    write!(f, "*")
+                }
             },
             CXTypeKind::Array { size, inner_type: _type } => {
                 write!(f, "[{size}; {_type}]")

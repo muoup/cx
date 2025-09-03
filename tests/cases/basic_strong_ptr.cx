@@ -5,7 +5,7 @@ struct strong_ptr_container {
     int strong* ptr;
 };
 
-~strong_ptr_container {
+~strong_ptr_container(this) {
     printf("~strong_ptr_container\n");
 }
 

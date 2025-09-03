@@ -93,7 +93,7 @@ pub enum CompilationStep {
      *  Outputs:  A type-checked AST of direct implementation, including to-be type-checked requests to
      *  be fulfilled.
      */
-    DirectTypechecking = 1 << 3,
+    TypeCompletion = 1 << 3,
 
     /**
      *  Part 2 of typechecking: Typechecks all indirectly implemented functions and types to a type-checked
@@ -107,7 +107,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A fully type-checked AST.
      */
-    IndirectTypechecking = 1 << 4,
+    Typechecking = 1 << 4,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -208,7 +208,7 @@ impl JobQueue {
     pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
         self.progress_map.insert((unit.clone(), CompilationStep::PreParse), JobState::Completed);
         self.progress_map.insert((unit.clone(), CompilationStep::ASTParse), JobState::Completed);
-        self.progress_map.insert((unit.clone(), CompilationStep::DirectTypechecking), JobState::Completed);
+        self.progress_map.insert((unit.clone(), CompilationStep::TypeCompletion), JobState::Completed);
         self.progress_map.insert((unit.clone(), CompilationStep::BytecodeGen), JobState::Completed);
         self.progress_map.insert((unit.clone(), CompilationStep::Codegen), JobState::Completed);
     }

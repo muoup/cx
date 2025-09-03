@@ -10,18 +10,20 @@ use cx_data_pipeline::directories::internal_directory;
 use cx_data_pipeline::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue};
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use fs2::FileExt;
 use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_type_map};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
+use cx_compiler_typechecker_new::environment::TCEnvironment;
 use cx_compiler_typechecker_new::typecheck;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_lexer::TokenIter;
-use cx_data_typechecker::TCEnvironment;
+use cx_data_typechecker::ast::TCStructureData;
 use cx_util::format::dump_data;
+use cx_util::scoped_map::ScopedMap;
 use crate::template_realizing::realize_templates;
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
@@ -145,12 +147,12 @@ pub(crate) fn handle_job(
             map_reqs_new_stage(job, CompilationStep::ASTParse)
         },
         CompilationStep::ASTParse => {
-            map_reqs_new_stage(job, CompilationStep::DirectTypechecking)
+            map_reqs_new_stage(job, CompilationStep::TypeCompletion)
         },
-        CompilationStep::DirectTypechecking => {
-            map_reqs_new_stage(job, CompilationStep::IndirectTypechecking)
+        CompilationStep::TypeCompletion => {
+            map_reqs_new_stage(job, CompilationStep::Typechecking)
         },
-        CompilationStep::IndirectTypechecking => {
+        CompilationStep::Typechecking => {
             map_reqs_new_stage(job, CompilationStep::BytecodeGen)
         },
         CompilationStep::BytecodeGen => {
@@ -247,36 +249,37 @@ pub(crate) fn perform_job(
             for import in pp_data.imports.iter() {
                 let other_pp_data = context.module_db.preparse_incomplete
                     .get(&CompilationUnit::from_str(import.as_str()));
+                let required_visiblity = VisibilityMode::Public;
 
                 for (name, _type) in other_pp_data.type_definitions
                     .standard.iter() {
-                    if _type.visibility != VisibilityMode::Public { continue; };
+                    if _type.visibility < required_visiblity { continue; };
 
                     pp_data.type_definitions.insert_standard(name.clone(), _type.transfer(import));
                 }
 
                 for (name, template) in other_pp_data.type_definitions
                     .templates.iter() {
-                    if template.visibility != VisibilityMode::Public { continue; };
+                    if template.visibility < required_visiblity { continue; };
                     
                     pp_data.type_definitions.insert_template(name.clone(), template.transfer(import));
                 }
 
                 for (name, prototype) in other_pp_data.function_definitions
                     .standard.iter() {
-                    if prototype.visibility != VisibilityMode::Public { continue; };
+                    if prototype.visibility < required_visiblity { continue; };
 
                     pp_data.function_definitions.insert_standard(name.clone(), prototype.transfer(import));
                 }
                 
                 for (name, template) in other_pp_data.function_definitions
                     .templates.iter() {
-                    if template.visibility != VisibilityMode::Public { continue; };
+                    if template.visibility < required_visiblity { continue; };
                     
                     pp_data.function_definitions.insert_template(name.clone(), template.transfer(import));
                 }
             }
-            
+
             context.module_db.preparse_full
                 .insert(job.unit.clone(), pp_data);
         },
@@ -302,50 +305,67 @@ pub(crate) fn perform_job(
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
 
-        CompilationStep::DirectTypechecking => {
+        CompilationStep::TypeCompletion => {
             let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
             
-            let mut type_map = contextualize_type_map(&context.module_db, &self_ast.type_map)
+            let mut type_data = contextualize_type_map(&context.module_db, &self_ast.type_map)
                 .expect("Failed to contextualize type map");
-            let fn_map = contextualize_fn_map(&context.module_db, &self_ast.function_map, &mut type_map, &self_ast.type_map)
+            let fn_data = contextualize_fn_map(&context.module_db, &self_ast.function_map, &mut type_data, &self_ast.type_map)
                 .expect("Failed to contextualize function map");
-            
-            let tc_env = TCEnvironment {
-                type_map, fn_map,
-                
-                current_function: None,
-                symbol_table: Default::default(),
+
+            let completed_data = TCStructureData {
+                type_data,
+                fn_data
             };
-            
-            let ast = typecheck(tc_env, &self_ast)
-                .expect("Type checking failed");
 
-            dump_data(&format!("{:#?}", ast));
-
-            context.module_db.dir_typechecked_ast.insert(job.unit.clone(), ast);
+            context.module_db.structure_data.insert(job.unit.clone(), completed_data.clone());
         },
 
-        CompilationStep::IndirectTypechecking => {
-            let ast = realize_templates(context, &job.unit)
+        CompilationStep::Typechecking => {
+            let structure_data = context.module_db.structure_data
+                .get(&job.unit);
+            let self_ast = context.module_db.naive_ast
+                .get(&job.unit);
+
+            let mut env = TCEnvironment {
+                type_data: structure_data.type_data.clone(),
+                fn_data: structure_data.fn_data.clone(),
+
+                requests: Vec::new(),
+                deconstructors: HashSet::new(),
+
+                current_function: None,
+                symbol_table: ScopedMap::new()
+            };
+
+            let mut tc_ast = typecheck(&mut env, &self_ast)?;
+
+            realize_templates(context, &job.unit, &mut env, &mut tc_ast)
                 .expect("Template realization failed");
 
-            dump_data(&format!("{:#?}", ast));
+            dump_data(&format!("{:#?}", tc_ast));
+
+            tc_ast.type_map = env.type_data.standard;
+            tc_ast.fn_map = env.fn_data.standard;
+            tc_ast.destructors_required = env.deconstructors.into_iter().collect();
+
+            context.module_db.typechecked_ast.insert(job.unit.clone(), tc_ast);
         },
 
         CompilationStep::BytecodeGen => {
-            let tc_ast = context.module_db.dir_typechecked_ast.take(&job.unit);
+            let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
             
             let bytecode = generate_bytecode(tc_ast)
                 .expect("Bytecode generation failed");
 
             dump_data(&bytecode);
 
-            context.module_db.bytecode_data.insert(job.unit.clone(), bytecode);
+            context.module_db.bytecode.insert(job.unit.clone(), bytecode);
         },
 
         CompilationStep::Codegen => {
-            let bytecode = context.module_db.bytecode_data.take(&job.unit);
+            let bytecode = context.module_db.bytecode.take(&job.unit);
             let mut internal_directory = internal_directory(context, &job.unit);
             internal_directory.push(".o");
             
@@ -364,7 +384,8 @@ pub(crate) fn perform_job(
 
             file.write_all(&buffer)
                 .expect("Failed to write object file");
-            context.linking_files.lock().expect("Deadlock on linking files mutex")
+            context.linking_files.lock()
+                .expect("Deadlock on linking files mutex")
                 .insert(internal_directory);
         }
     }
