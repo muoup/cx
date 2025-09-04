@@ -1,8 +1,0 @@
-#include <stdio.h>
-
-int main() {
-    int arr[5];
-
-    printf("Size of int: %zu bytes\n", sizeof(int));
-    printf("Size of arr: %zu bytes\n", sizeof(arr));
-}

@@ -2,35 +2,39 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
+use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::parse::type_mapping::contextualize_fn_prototype;
-use cx_data_ast::preparse::pp_type::CXNaivePrototype;
+use cx_data_ast::preparse::CXNaiveFnIdent;
+use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
+use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
+use cx_data_typechecker::cx_types::CXType;
 use cx_util::{log_error, point_log_error, CXResult};
+use cx_util::mangling::mangle_destructor;
 use crate::parse::template::parse_template;
-use crate::preparse::preparser::{goto_statement_end, parse_std_ident};
-use crate::preparse::typing::{parse_initializer, parse_params};
+use crate::preparse::preparser::{goto_statement_end, parse_std_ident, try_function_parse};
+use crate::preparse::typing::{parse_initializer, parse_params, parse_template_args};
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     match data.tokens.peek()
         .expect("CRITICAL: parse_global_stmt() should not be called with no remaining tokens!")
         .kind {
         
-        TokenKind::Keyword(KeywordType::Typedef) |
-        TokenKind::Keyword(KeywordType::Import) => {
+        keyword!(Typedef) |
+        keyword!(Import) => {
             goto_statement_end(&mut data.tokens);
             Some(None)
         },
         
-        TokenKind::Punctuator(PunctuatorType::Semicolon) => {
+        punctuator!(Semicolon) => {
             data.tokens.next();
             Some(None)
         },
-
-        TokenKind::Keyword(KeywordType::Enum) => parse_enum_constants(data),
-        TokenKind::Operator(OperatorType::Tilda) => parse_destructor(data),
-        TokenKind::Specifier(_) => parse_access_mods(data),
         
-        TokenKind::Keyword(KeywordType::Template) => parse_template(data),
+        keyword!(Enum) => parse_enum_constants(data),
+        operator!(Tilda) => parse_destructor(data),
+        specifier!() => parse_access_mods(data),
+        
+        keyword!(Template) => parse_template(data),
 
         _ => parse_global_expr(data)
     }
@@ -40,44 +44,65 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
     assert_token_matches!(data.tokens, TokenKind::Specifier(specifier));
 
     match specifier {
-        SpecifierType::Public => {
-            data.visibility = VisibilityMode::Public;
-            try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
-        },
-        SpecifierType::Private => {
-            data.visibility = VisibilityMode::Private;
-            try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
-        },
+        SpecifierType::Public => data.visibility = VisibilityMode::Public,
+        SpecifierType::Private => data.visibility = VisibilityMode::Private,
 
         _ => todo!("parse_access_mods: {:#?}", specifier)
     };
+    
+    try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
 
     Some(None)
 }
 
 pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Tilda));
-    assert_token_matches!(data.tokens, TokenKind::Identifier(name));
-    
-    let name = name.clone();
+    let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
+        point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type in destructor definition!");
+    };
+    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
+    assert_token_matches!(data.tokens, identifier!(this));
+    assert_eq!(this, "this");
+    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
+
     let body = parse_body(data)?;
 
     Some(
         Some(
             CXGlobalStmt::DestructorDefinition {
-                type_name: name,
-                body: Box::new(body),
+                _type, body: Box::new(body)
             }
         )
     )
 }
 
+pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
+    let Some(name) = _type.get_name().cloned() else {
+        unreachable!("CRITICAL: destructor_prototype() called with unnamed type!");
+    };
+
+    CXNaivePrototype {
+        name: CXNaiveFnIdent::Destructor(name),
+
+        return_type: CXNaiveTypeKind::Identifier {
+            name: CXIdent::from("void"),
+            predeclaration: PredeclarationType::None
+        }.to_type(),
+        params: vec![
+            CXNaiveParameter {
+                name: Some(CXIdent::from("this")),
+                _type: _type.pointer_to(true, 0),
+            }
+        ],
+        var_args: false,
+        this_param: true,
+    }
+}
+
 pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::Enum));
 
-    let Some(name) = parse_std_ident(&mut data.tokens) else {
-        point_log_error!(data.tokens, "PARSER ERROR: Failed to parse enum name");
-    };
+    let name = parse_std_ident(&mut data.tokens);
 
     if !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
         return Some(None);
@@ -114,6 +139,15 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlo
     Some(None)
 }
 
+fn parse_fn_merge(data: &mut ParserData, prototype: CXNaivePrototype) -> CXResult<Option<CXGlobalStmt>> {
+    if try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
+        Some(Some(CXGlobalStmt::FunctionPrototype { prototype }))
+    } else {
+        let body = Box::new(parse_body(data)?);
+        Some(Some(CXGlobalStmt::FunctionDefinition { prototype, body }))
+    }
+}
+
 pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     let Some((name, return_type)) = parse_initializer(&mut data.tokens) else {
         point_log_error!(data.tokens, "PARSER ERROR: Failed to parse initializer in global expression!");
@@ -127,37 +161,13 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
     if !data.tokens.has_next() {
         point_log_error!(data.tokens, "PARSER ERROR: Reached end of token stream when parsing global expression!");
     }
-
-    match data.tokens.peek().unwrap().kind {
-        TokenKind::Punctuator(PunctuatorType::OpenParen) => {
-            let Some(result) = parse_params(&mut data.tokens) else {
-                log_error!("PARSER ERROR: Failed to parse parameters in function declaration!");
-            };
-
-            let naive_prototype = CXNaivePrototype {
-                return_type, name,
-                params: result.params,
-                var_args: result.var_args,
-            };
-            let prototype = contextualize_fn_prototype(&data.ast.type_map, &naive_prototype)
-                .expect("CRITICAL: Failed to contextualize function prototype in global expression!");
-            
-            if try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
-                Some(Some(CXGlobalStmt::FunctionPrototype { prototype }))
-            } else {
-                let body = Box::new(parse_body(data)?);
-                Some(Some(CXGlobalStmt::FunctionDefinition { prototype, body }))
-            }
-        },
-
-        TokenKind::Punctuator(PunctuatorType::Semicolon)
-        | TokenKind::Assignment(_) => todo!("Global variables"),
-        
-        _ => {
-            goto_statement_end(&mut data.tokens);
-            Some(None)
-        },
+    
+    if let Some(func) = try_function_parse(&mut data.tokens, return_type.clone(), name.clone())? {
+        return parse_fn_merge(data, func);
     }
+    
+    // TODO: Global variables and constants
+    Some(None)
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
@@ -186,7 +196,6 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         Some (
             CXExprKind::Block {
                 exprs: body,
-                value: None
             }.into_expr(start_index, data.tokens.index)
         )
     } else {

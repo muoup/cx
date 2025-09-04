@@ -54,12 +54,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
 
         VirtualInstruction::DirectCall {
-            func, args, method_sig
+            func, args, ..
         } => {
-            let (val, params) = prepare_method_call(
-                context, *func,
-                method_sig, args
-            )?;
+            let (val, params) = prepare_method_call(context, *func, args)?;
 
             let fn_ref = get_func_ref(
                 context,
@@ -77,12 +74,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::IndirectCall {
             func_ptr, args, method_sig
         } => {
-            let (val, params) = prepare_method_call(
-                context,
-                *func_ptr,
-                context.function_prototype,
-                args
-            )?;
+            let (val, params) = prepare_method_call(context, *func_ptr, args)?;
 
             let mut sig = context.object_module.make_signature();
             let return_type = &method_sig.return_type;
@@ -192,20 +184,21 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 BCTypeKind::Unsigned { bytes, .. } => bytes,
                 _ => panic!("Invalid type for pointer to integer conversion")
             };
-            
+
             let val = context.variable_table.get(value).cloned().unwrap();
-            
+
             if bytes < 8 {
                 return Some(
                     CodegenValue::Value(
                         context.builder.ins().ireduce(
-                            ir::Type::int(bytes as u16).unwrap(),
+                            ir::Type::int(bytes as u16 * 8)
+                                .unwrap_or_else(|| panic!("Unsupported integer size: {}", bytes * 8)),
                             val.as_value()
                         )
                     )
                 );
             };
-            
+
             Some(val)
         },
         
@@ -321,23 +314,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let inst = match op {
                 BCIntUnOp::NEG      => context.builder.ins().ineg(val.as_value()),
                 BCIntUnOp::BNOT     => context.builder.ins().bnot(val.as_value()),
-                BCIntUnOp::LNOT     => {
-                    let cmp = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, val.as_value(), 0);
-                 
-                    let (signed, bytes) = match instruction.value.type_.kind {
-                        BCTypeKind::Signed { bytes, .. } => (true, bytes),
-                        BCTypeKind::Unsigned { bytes, .. } => (false, bytes),
-                        _ => panic!("Invalid type for integer unop")
-                    };
-
-                    if signed && bytes > 1 {
-                        context.builder.ins().sextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
-                    } else if !signed && bytes > 1 {
-                        context.builder.ins().uextend(ir::Type::int((bytes * 8) as u16).unwrap(), cmp)
-                    } else {
-                        cmp
-                    }
-                },
+                BCIntUnOp::LNOT     => context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, val.as_value(), 0),
                 _ => todo!("UnOp not implemented: {:?}", op)
             };
 
@@ -376,8 +353,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                         BCFloatBinOp::SUB           => context.builder.ins().fsub(left, right),
                         BCFloatBinOp::FMUL          => context.builder.ins().fmul(left, right),
                         BCFloatBinOp::FDIV          => context.builder.ins().fdiv(left, right),
-                        
-                        _ => unimplemented!("Operator not implemented: {:?}", op)
                     }
                 )
             )
@@ -567,6 +542,12 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let _type = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(_type);
 
+            let val_type = context.builder.func.dfg.value_type(val);
+
+            if val_type == cranelift_type {
+                return Some(CodegenValue::Value(val));
+            }
+
             Some(
                 CodegenValue::Value(
                     context.builder.ins().uextend(cranelift_type, val)
@@ -581,8 +562,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .cloned()
                 .unwrap()
                 .as_value();
+
             let _type = &instruction.value.type_;
             let cranelift_type = get_cranelift_type(_type);
+
+            let val_type = context.builder.func.dfg.value_type(val);
+
+            if val_type == cranelift_type {
+                return Some(CodegenValue::Value(val));
+            }
 
             Some(
                 CodegenValue::Value(
@@ -596,7 +584,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         } => {
             let val = context.variable_table.get(value).cloned().unwrap();
             let _type = &instruction.value.type_;
+
+            let value = val.as_value();
             let cranelift_type = get_cranelift_type(_type);
+            let value_type = context.builder.func.dfg.value_type(value);
+
+            if value_type == cranelift_type {
+                return Some(CodegenValue::Value(value));
+            }
 
             Some(
                 CodegenValue::Value(

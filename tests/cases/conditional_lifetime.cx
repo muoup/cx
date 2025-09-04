@@ -6,4 +6,10 @@ int main() {
     } else {
         int strong* y = new int;
     }
+
+    if (cond) {
+        int strong[] y = new int[5];
+    } else {
+        int z = 10;
+    }
 }

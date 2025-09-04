@@ -13,15 +13,14 @@ void strong[] __stdallocarray(u64 elem_size, u64 elem_count) {
     return (void strong[]) ((long*) data + 1);
 }
 
-void __stdfree(void strong* ptr) {
+void __stdfree(void* ptr) {
     printf("__stdfree\n", ptr);
     free(ptr);
-    move ptr;
 }
 
-void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)) {
-    printf("__stdfreearray\n", ptr);
+void __stdfreearray(void* ptr, usize type_size, void(*destructor)(void*)) {
     u64 length = *((long*) ptr - 1);
+    printf("__stdfreearray length = %d\n", length, ptr);
 
     for (u64 i = 0; i < length; i++) {
         printf("__stdfreearray: calling destructor for element %llu\n", i);
@@ -29,13 +28,11 @@ void __stdfreearray(void strong[] ptr, usize type_size, void(*destructor)(void*)
     }
 
     free((u8*) ptr - 8);
-    move ptr; // 'leak' the strong pointer
 }
 
-void __stdfreearray_destructor_noop(void strong[] ptr) {
+void __stdfreearray_destructor_noop(void* ptr) {
     printf("__stdfreearray_destructor_noop\n", ptr);
     free((u8*) ptr - 8);
-    move ptr; // 'leak' the strong pointer
 }
 
 private:

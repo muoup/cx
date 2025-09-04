@@ -60,15 +60,11 @@ impl<T> ScopedMap<T> {
     }
 
     pub fn insert(&mut self, name: String, value: T) {
-        if self.overwrites.is_empty() {
-            panic!("Scope table has uneven push/pop");
-        }
-        
-        let val = self.data.remove_entry(&name)
-            .map(|(name, old_value)| (name, Some(old_value)))
-            .unwrap_or((name.clone(), None));
-        
-        self.data.insert(name, value);
+        let replacing = self.data.insert(name.clone(), value);
+        self.overwrites
+            .last_mut()
+            .expect("Uneven push/pop in ScopedMap")
+            .push((name, replacing));
     }
 
     pub fn get(&self, name: &str) -> Option<&T> {

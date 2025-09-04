@@ -1,13 +1,13 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_data_ast::parse::ast::CXAST;
-use cx_data_bytecode::node_type_map::TypeCheckData;
 use cx_data_bytecode::ProgramBytecode;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::token::Token;
+use cx_data_typechecker::ast::{TCStructureData, TCAST};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
@@ -20,10 +20,11 @@ pub struct ModuleData {
     pub preparse_full: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
-    pub typechecked_ast: ModuleMap<CXAST>,
-    
-    pub typecheck_data: ModuleMap<TypeCheckData>,
-    pub bytecode_data: ModuleMap<ProgramBytecode>
+
+    pub structure_data: ModuleMap<TCStructureData>,
+    pub typechecked_ast: ModuleMap<TCAST>,
+
+    pub bytecode: ModuleMap<ProgramBytecode>
 }
 
 impl Default for ModuleData {
@@ -43,10 +44,11 @@ impl ModuleData {
             preparse_full: ModuleMap::new(".cx-preparse-full"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
-            typechecked_ast: ModuleMap::new(".cx-ast"),
 
-            typecheck_data: ModuleMap::new(".cx-typecheck-data"),
-            bytecode_data: ModuleMap::new(".cx-bytecode")
+            structure_data: ModuleMap::new(".cx-structure-data"),
+            typechecked_ast: ModuleMap::new(".cx-typechecked-ast"),
+
+            bytecode: ModuleMap::new(".cx-bytecode")
         }
     }
     

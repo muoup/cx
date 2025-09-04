@@ -1,11 +1,10 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXFunctionPrototype, CXUnOp};
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::template::CXTemplateInput;
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
-use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
+use cx_data_ast::parse::ast::CXBinOp;
+use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
+use cx_data_bytecode::{BCFloatBinOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind};
+use cx_data_typechecker::{CXFnData, CXFnMap};
 
 impl BytecodeBuilder {
     pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<BCType> {
@@ -17,7 +16,7 @@ impl BytecodeBuilder {
     }
     
     pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
-        convert_cx_prototype(&self.cx_type_map, cx_proto)
+        convert_cx_prototype(cx_proto)
     }
 
     pub(crate) fn cx_ptr_binop(
@@ -99,21 +98,6 @@ impl BytecodeBuilder {
         )
     }
     
-    pub(crate) fn cx_unop(
-        &self,
-        op: &CXUnOp
-    ) -> Option<BCIntUnOp> {
-        Some(
-            match op {
-                CXUnOp::Negative          => BCIntUnOp::NEG,
-                CXUnOp::BNot              => BCIntUnOp::BNOT,
-                CXUnOp::LNot              => BCIntUnOp::LNOT,
-                
-                _ => todo!("Unsupported unary operation: {:?}", op)
-            }
-        )
-    }
-    
     pub(crate) fn cx_float_binop(
         &self,
         op: &CXBinOp
@@ -126,19 +110,6 @@ impl BytecodeBuilder {
                 CXBinOp::Divide         => BCFloatBinOp::FDIV,
                 
                 _ => todo!("Unsupported binary operation: {:?}", op)
-            }
-        )
-    }
-    
-    pub(crate) fn cx_float_unop(
-        &self,
-        op: &CXUnOp
-    ) -> Option<BCFloatUnOp> {
-        Some(
-            match op {
-                CXUnOp::Negative          => BCFloatUnOp::NEG,
-                
-                _ => todo!("Unsupported unary operation: {:?}", op)
             }
         )
     }
@@ -170,45 +141,41 @@ fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
+pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
+    let mut params = cx_proto.params.iter()
+        .map(|param| {
+            BCParameter {
+                name: param.name.as_ref().map(|name| name.as_string()),
+                _type: convert_argument_type(&param._type).unwrap()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut return_type = convert_fixed_type(&cx_proto.return_type).unwrap();
+
     if cx_proto.return_type.is_structured() {
-        Some(
-            BCFunctionPrototype {
-                name: cx_proto.name.as_string(),
-                return_type: BCType::default_pointer(),
-                params: vec![BCParameter { name: None, _type: BCType::default_pointer() }]
-                    .into_iter()
-                    .chain(cx_proto.params.iter().map(|param| BCParameter {
-                        name: None,
-                        _type: convert_argument_type(&param._type).unwrap()
-                    }))
-                    .collect(),
-                var_args: cx_proto.var_args,
-                linkage: LinkageType::Public
-            }
-        )
-    } else {
-        Some(
-            BCFunctionPrototype {
-                name: cx_proto.name.as_string(),
-                return_type: convert_fixed_type(&cx_proto.return_type)?,
-                params: cx_proto.params.iter()
-                    .map(|param| BCParameter {
-                        name: None,
-                        _type: convert_argument_type(&param._type).unwrap()
-                    })
-                    .collect(),
-                var_args: cx_proto.var_args,
-                linkage: LinkageType::Public
-            }
-        )
+        params.insert(0, BCParameter {
+            name: Some("__internal_buffer".to_string()),
+            _type: BCType::default_pointer()
+        });
+        return_type = BCType::default_pointer();
     }
+    
+    Some(
+        BCFunctionPrototype {
+            name: cx_proto.name.as_string(),
+            return_type, params,
+            var_args: cx_proto.var_args,
+            linkage: LinkageType::Public
+        }
+    )
 }
 
-pub(crate) fn convert_cx_func_map(cx_type_map: &CXTypeMap, cx_proto: &CXFunctionMap) -> BCFunctionMap {
-    cx_proto.iter()
+pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
+    cx_proto
+        .iter()
         .map(|(name, cx_proto)| {
-            (name.clone(), convert_cx_prototype(cx_type_map, cx_proto).unwrap())
+            (name.clone(), convert_cx_prototype(cx_proto).unwrap())
         })
         .collect::<BCFunctionMap>()
 }
@@ -216,9 +183,9 @@ pub(crate) fn convert_cx_func_map(cx_type_map: &CXTypeMap, cx_proto: &CXFunction
 pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
     Some(
         match cx_type_kind {
-            CXTypeKind::VariableLengthArray { size, _type } => {
+            CXTypeKind::VariableLengthArray { _type, size } => {
                 let bc_type = builder.convert_cx_type(_type)?;
-                let size_id = generate_instruction(builder, size)?;
+                let size_id = generate_instruction(builder, size.as_ref())?;
                 
                 let type_size = match bc_type.size() {
                     BCTypeSize::Fixed(size) => 
@@ -249,10 +216,6 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
             _ => convert_fixed_type_kind(cx_type_kind)?
         }
     )
-}
-
-pub(crate) fn convert_cx_template_prototype(prototype: &CXFunctionPrototype, input: &CXTemplateInput) {
-    
 }
 
 pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
@@ -291,14 +254,8 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
                     size: *size
                 },
             
-            CXTypeKind::MemoryReference(inner) => {
-                match &inner.kind {
-                    CXTypeKind::Structured { .. } => convert_fixed_type_kind(&inner.kind)?,
-                    CXTypeKind::Union { .. } => convert_fixed_type_kind(&inner.kind)?,
-                    
-                    _ => BCTypeKind::Pointer { nullable: true, dereferenceable: 0 }
-                }
-            },
+            CXTypeKind::MemoryReference(inner) =>
+                BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
             CXTypeKind::Structured { fields, name, .. } =>
                 BCTypeKind::Struct {

@@ -312,7 +312,13 @@ fn cache_prototype<'a>(
             }
         )
     );
-    
+
+    // get_type_attributes(global_state.context, &prototype.return_type)
+    //     .into_iter()
+    //     .for_each(|attr| {
+    //         func.add_attribute(AttributeLoc::Return, attr);
+    //     });
+
     for (i, _type) in prototype.params.iter().enumerate() {
         get_type_attributes(global_state.context, &_type._type)
             .into_iter()

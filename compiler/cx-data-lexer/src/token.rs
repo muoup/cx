@@ -19,7 +19,7 @@ pub struct Token {
 #[macro_export]
 macro_rules! keyword {
     () => {
-        TokenKind::Keyword(cx_data_lexer::token::KeywordType::If)
+        TokenKind::Keyword(_)
     };
 
     ($($name:ident),+) => {
@@ -30,7 +30,7 @@ macro_rules! keyword {
 #[macro_export]
 macro_rules! specifier {
     () => {
-        TokenKind::Specifier(cx_data_lexer::token::SpecifierType::Inline)
+        TokenKind::Specifier(_)
     };
 
     ($($name:ident),+) => {
@@ -52,7 +52,7 @@ macro_rules! intrinsic {
 #[macro_export]
 macro_rules! operator {
     () => {
-        TokenKind::Operator(cx_data_lexer::token::OperatorType::Plus)
+        TokenKind::Operator(_)
     };
 
     ($name:ident) => {
@@ -63,7 +63,7 @@ macro_rules! operator {
 #[macro_export]
 macro_rules! punctuator {
     () => {
-        TokenKind::Punctuator(cx_data_lexer::token::PunctuatorType::OpenParen)
+        TokenKind::Punctuator(_)
     };
 
     ($name:ident) => {
@@ -218,7 +218,7 @@ impl TokenKind {
 
             "template" => TokenKind::Keyword(KeywordType::Template),
             "type" => TokenKind::Keyword(KeywordType::Type),
-            
+
             _ => TokenKind::Identifier(str),
         }
     }

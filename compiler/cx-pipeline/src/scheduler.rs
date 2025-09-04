@@ -3,7 +3,6 @@ use crate::backends::{cranelift_compile, llvm_compile};
 use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_ast::preparse::preparse;
 use cx_compiler_bytecode::generate_bytecode;
-use cx_compiler_typechecker::type_check;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_pipeline::db::ModuleMap;
@@ -11,17 +10,20 @@ use cx_data_pipeline::directories::internal_directory;
 use cx_data_pipeline::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue};
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use fs2::FileExt;
-use cx_compiler_ast::parse::precontextualizing::{contextualize_fn_map, contextualize_type_map};
+use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_type_map};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
-use cx_data_ast::parse::intrinsic_types::INTRINSIC_IMPORTS;
-use cx_data_ast::parse::maps::CXDestructorMap;
+use cx_compiler_typechecker_new::environment::TCEnvironment;
+use cx_compiler_typechecker_new::typecheck;
+use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_lexer::TokenIter;
+use cx_data_typechecker::ast::{TCStructureData, TCAST};
 use cx_util::format::dump_data;
+use cx_util::scoped_map::ScopedMap;
 use crate::template_realizing::realize_templates;
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
@@ -145,9 +147,12 @@ pub(crate) fn handle_job(
             map_reqs_new_stage(job, CompilationStep::ASTParse)
         },
         CompilationStep::ASTParse => {
-            map_reqs_new_stage(job, CompilationStep::TypeCheck)
+            map_reqs_new_stage(job, CompilationStep::TypeCompletion)
         },
-        CompilationStep::TypeCheck => {
+        CompilationStep::TypeCompletion => {
+            map_reqs_new_stage(job, CompilationStep::Typechecking)
+        },
+        CompilationStep::Typechecking => {
             map_reqs_new_stage(job, CompilationStep::BytecodeGen)
         },
         CompilationStep::BytecodeGen => {
@@ -244,30 +249,37 @@ pub(crate) fn perform_job(
             for import in pp_data.imports.iter() {
                 let other_pp_data = context.module_db.preparse_incomplete
                     .get(&CompilationUnit::from_str(import.as_str()));
+                let required_visiblity = VisibilityMode::Public;
 
-                for (name, _type) in other_pp_data.type_definitions.iter() {
-                    if _type.visibility != VisibilityMode::Public { continue; };
+                for (name, _type) in other_pp_data.type_definitions
+                    .standard.iter() {
+                    if _type.visibility < required_visiblity { continue; };
 
-                    pp_data.type_definitions.insert(name.clone(), _type.transfer(import));
+                    pp_data.type_definitions.insert_standard(name.clone(), _type.transfer(import));
                 }
 
-                for (name, _template) in other_pp_data.type_templates.iter() {
-                    if _template.visibility != VisibilityMode::Public { continue; };
+                for (name, template) in other_pp_data.type_definitions
+                    .templates.iter() {
+                    if template.visibility < required_visiblity { continue; };
                     
-                    pp_data.type_templates.insert(name.clone(), _template.transfer(import));
+                    pp_data.type_definitions.insert_template(name.clone(), template.transfer(import));
                 }
 
-                for (name, prototype) in other_pp_data.function_definitions.iter() {
-                    if prototype.visibility != VisibilityMode::Public { continue; };
+                for (name, prototype) in other_pp_data.function_definitions
+                    .standard.iter() {
+                    if prototype.visibility < required_visiblity { continue; };
 
-                    pp_data.function_definitions.push((name.clone(), prototype.transfer(import)));
+                    pp_data.function_definitions.insert_standard(name.clone(), prototype.transfer(import));
                 }
                 
-                for template in other_pp_data.function_templates.iter() {
-                    pp_data.function_templates.push(template.transfer(import));
+                for (name, template) in other_pp_data.function_definitions
+                    .templates.iter() {
+                    if template.visibility < required_visiblity { continue; };
+                    
+                    pp_data.function_definitions.insert_template(name.clone(), template.transfer(import));
                 }
             }
-            
+
             context.module_db.preparse_full
                 .insert(job.unit.clone(), pp_data);
         },
@@ -278,25 +290,9 @@ pub(crate) fn perform_job(
             let lexemes = context.module_db.lex_tokens
                 .get(&job.unit);
             
-            let mut cx_type_map = contextualize_type_map(
-                &context.module_db,
-                &pp_data.type_definitions, &pp_data.type_templates
-            ).expect("Type map contextualization failed");
-            
-            let cx_fn_map = contextualize_fn_map(
-                &context.module_db,
-                &mut cx_type_map, &pp_data
-            ).expect("Function map contextualization failed");
-            
-            let cx_destructor_defs = pp_data.destructor_definitions
-                .iter()
-                .filter_map(|name| Some((cx_type_map.get(name.as_str()).cloned()?, name.clone())))
-                .collect::<CXDestructorMap>();
-
             let base_ast = CXAST {
-                type_map: cx_type_map, 
-                function_map: cx_fn_map,
-                destructor_map: cx_destructor_defs,
+                type_map: pp_data.type_definitions.to_owned(), 
+                function_map: pp_data.function_definitions.to_owned(),
                 
                 ..Default::default()
             };
@@ -309,38 +305,69 @@ pub(crate) fn perform_job(
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
 
-        CompilationStep::TypeCheck => {
-            let lexemes = context.module_db.lex_tokens
+        CompilationStep::TypeCompletion => {
+            let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
-            let mut self_ast = context.module_db.naive_ast
-                .take(&job.unit);
             
-            let data = type_check(&lexemes, &mut self_ast)
-                .expect("Type checking failed");
+            let mut type_data = contextualize_type_map(&context.module_db, &self_ast.type_map)
+                .expect("Failed to contextualize type map");
+            let fn_data = contextualize_fn_map(&context.module_db, &self_ast.function_map, &mut type_data, &self_ast.type_map)
+                .expect("Failed to contextualize function map");
 
-            dump_data(&self_ast);
+            let completed_data = TCStructureData {
+                type_data,
+                fn_data
+            };
 
-            context.module_db.typechecked_ast.insert(job.unit.clone(), self_ast);
-            context.module_db.typecheck_data.insert(job.unit.clone(), data);
+            context.module_db.structure_data.insert(job.unit.clone(), completed_data.clone());
+        },
+
+        CompilationStep::Typechecking => {
+            let structure_data = context.module_db.structure_data
+                .get(&job.unit);
+            let self_ast = context.module_db.naive_ast
+                .get(&job.unit);
+
+            let mut env = TCEnvironment::new(structure_data.as_ref().clone());
+            env.load_global_symbols(self_ast.as_ref());
+
+            let mut stmts = typecheck(&mut env, &self_ast)?;
+            let template_stmts = realize_templates(context, &job.unit, &mut env)
+                .expect("Template realization failed");
+
+            let tc_ast = TCAST {
+                source_file: self_ast.file_path.clone(),
+
+                type_map: env.type_data.standard,
+                fn_map: env.fn_data.standard,
+
+                destructors_required: env.deconstructors.into_iter().collect::<_>(),
+                global_variables: env.global_variables.into_iter()
+                    .map(|(name, var)| var)
+                    .collect::<_>(),
+                function_defs: stmts.into_iter()
+                    .chain(template_stmts.into_iter())
+                    .collect::<Vec<_>>(),
+            };
+
+            dump_data(&format!("{:#?}", tc_ast));
+
+            context.module_db.typechecked_ast.insert(job.unit.clone(), tc_ast);
         },
 
         CompilationStep::BytecodeGen => {
-            realize_templates(context, &job.unit)
-                .expect("Template realizing failed");
+            let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
             
-            let self_ast = context.module_db.typechecked_ast.take(&job.unit);
-            let typecheck_data = context.module_db.typecheck_data.take(&job.unit);
-            
-            let bytecode = generate_bytecode(self_ast, typecheck_data)
+            let bytecode = generate_bytecode(tc_ast)
                 .expect("Bytecode generation failed");
 
             dump_data(&bytecode);
 
-            context.module_db.bytecode_data.insert(job.unit.clone(), bytecode);
+            context.module_db.bytecode.insert(job.unit.clone(), bytecode);
         },
 
         CompilationStep::Codegen => {
-            let bytecode = context.module_db.bytecode_data.take(&job.unit);
+            let bytecode = context.module_db.bytecode.take(&job.unit);
             let mut internal_directory = internal_directory(context, &job.unit);
             internal_directory.push(".o");
             
@@ -359,7 +386,8 @@ pub(crate) fn perform_job(
 
             file.write_all(&buffer)
                 .expect("Failed to write object file");
-            context.linking_files.lock().expect("Deadlock on linking files mutex")
+            context.linking_files.lock()
+                .expect("Deadlock on linking files mutex")
                 .insert(internal_directory);
         }
     }

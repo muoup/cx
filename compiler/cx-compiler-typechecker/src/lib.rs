@@ -1,137 +1,121 @@
-use crate::deconstructed_types::generate_deconstructor_data;
-use crate::global_stmts::{add_destructor_prototypes, typecheck_destructor, typecheck_function};
-use cx_data_ast::parse::ast::{CXFunctionPrototype, CXGlobalStmt, CXGlobalVariable, CXAST};
-use cx_data_ast::parse::maps::{CXFunctionMap, CXTypeMap};
-use cx_data_ast::parse::template::CXTemplateInput;
-use cx_data_ast::parse::value_type::CXType;
-use cx_data_bytecode::node_type_map::TypeCheckData;
+use std::collections::HashSet;
 use cx_data_lexer::token::Token;
-use cx_util::mangling::mangle_templated_fn;
-use cx_util::scoped_map::ScopedMap;
-use std::collections::HashMap;
+use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::preparse::naive_types::CXNaiveTemplateInput;
+use cx_data_ast::preparse::templates::CXFunctionTemplate;
+use cx_data_typechecker::ast::{TCFunctionDef, TCStructureData, TCAST};
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXParameter, CXTemplateInput, CXType};
+use cx_data_typechecker::{CXFnMap, CXTypeMap};
+use cx_util::log_error;
+use cx_util::mangling::{mangle_destructor, mangle_template};
+use cx_util::scoped_map::ScopedMap;
+use crate::environment::TCEnvironment;
+use crate::type_mapping::contextualize_fn_prototype;
+use crate::typechecker::{cleanup_method_env, in_method_env, setup_method_env, typecheck_expr};
 
-pub mod typemap_collapsing;
-pub mod deconstructed_types;
-pub mod checker;
-mod struct_typechecking;
 mod casting;
-mod global_stmts;
-mod structured_initialization;
+mod typechecker;
+mod binary_ops;
 
-pub type TypeCheckResult<T> = Option<T>;
+pub(crate) mod templates;
+pub(crate) mod structured_initialization;
+pub(crate) mod variable_destruction;
 
-pub fn type_check(tokens: &[Token], ast: &mut CXAST) -> Option<TypeCheckData> {
-    let mut type_environment = TypeEnvironment {
-        tokens,
-        
-        type_map: &mut ast.type_map,
-        fn_map: &mut ast.function_map,
-        
-        symbol_table: ScopedMap::new(),
-        global_variables: &ast.global_variables,
-        
-        current_prototype: None,
-        typecheck_data: TypeCheckData::new(&ast.destructor_map),
-    };
-    
-    for stmt in &mut ast.global_stmts {
+pub mod environment;
+
+pub mod type_mapping;
+pub mod precontextualizing;
+
+pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<Vec<TCFunctionDef>> {
+    let mut statements = Vec::new();
+
+    for stmt in ast.global_stmts.iter() {
         match stmt {
-            CXGlobalStmt::FunctionDefinition { prototype, body } =>
-                typecheck_function(&mut type_environment, prototype, body)?,
-            CXGlobalStmt::GlobalVariable { .. } =>
-                todo!("Global variable type checking is not implemented yet"),
-            
-            _ => continue,
+            CXGlobalStmt::GlobalVariable { name, type_, initializer } => {
+                todo!()
+            },
+
+            _ => ()
         }
     }
 
-    add_destructor_prototypes(&type_environment.typecheck_data.destructor_map, type_environment.fn_map)?;
-    type_environment.typecheck_data.deconstructor_data = generate_deconstructor_data(&type_environment)?;
-
-    for stmt in &mut ast.global_stmts {
+    for stmt in ast.global_stmts.iter() {
         match stmt {
-            CXGlobalStmt::DestructorDefinition { type_name, body } =>
-                typecheck_destructor(&mut type_environment, type_name, body)?,
-            _ => continue,
+            CXGlobalStmt::FunctionDefinition { prototype, body } => {
+                let prototype = contextualize_fn_prototype(env, prototype)?;
+                let body = in_method_env(env, &prototype, body)?;
+
+                statements.push(
+                    TCFunctionDef {
+                        prototype: prototype.clone(),
+                        body: Box::new(body),
+                    }
+                )
+            },
+
+            CXGlobalStmt::DestructorDefinition { _type, body } => {
+                let destructor = mangle_destructor(_type);
+                let Some(prototype) = env.get_func(&destructor).cloned() else {
+                    unreachable!("Destructor prototype should not be missing: {}", destructor);
+                };
+
+                let body = in_method_env(env, &prototype, body)?;
+                statements.push(
+                    TCFunctionDef {
+                        prototype, body: Box::new(body),
+                    }
+                )
+            },
+
+            _ => {}
         }
     }
-    
-    Some(type_environment.typecheck_data)
+
+    Some(statements)
 }
 
-pub fn template_fn_typecheck(tokens: &[Token], ast: &CXAST, input: CXTemplateInput, mut prototype: CXFunctionPrototype) -> Option<(TypeCheckData, CXFunctionPrototype, CXGlobalStmt)> {
-    let mut type_map = ast.type_map.clone();
-    let mut fn_map = ast.function_map.clone();
-    
-    let args = ast.function_map
-        .template_args(prototype.name.as_str())
-        .unwrap_or_else(|| {
-            panic!("Template generator not found in type map for {}", prototype.name)
-        });
-    
-    for (name, _type) in args.iter().zip(&input.params) {
-        type_map.insert(name.clone(), _type.clone());
+pub fn realize_fn_implementation(
+    parent_env: &mut TCEnvironment,
+    structure_data: &TCStructureData, origin: &CXAST,
+    template: &CXFunctionTemplate, input: &CXTemplateInput
+) -> Option<TCFunctionDef> {
+    let mut env = TCEnvironment::new(structure_data.clone());
+    env.deconstructors = std::mem::take(&mut parent_env.deconstructors);
+    env.global_variables = std::mem::take(&mut env.global_variables);
+
+    let args = &template
+        .prototype
+        .types;
+
+    for (name, _type) in args.iter().zip(&input.args) {
+        env.type_data.insert_standard(name.clone(), _type.clone());
     }
-    
-    let mangled_name = mangle_templated_fn(prototype.name.as_str(), &input.params);
-    
-    let mut env = TypeEnvironment {
-        tokens,
-        
-        type_map: &mut type_map,
-        fn_map: &mut fn_map,
-        
-        symbol_table: ScopedMap::new(),
-        global_variables: &ast.global_variables,
-        
-        current_prototype: None,
-        typecheck_data: TypeCheckData::new(&ast.destructor_map),
-    };
-    
-    let mut body = ast.global_stmts.iter()
+
+    let template_name = template.shell.name.mangle();
+    let mangled_name = mangle_template(&template_name, &input.args);
+    let prototype = parent_env.fn_data.get(&mangled_name)?.clone();
+
+    let body = origin.global_stmts.iter()
         .find_map(
             |stmt| match stmt {
-                CXGlobalStmt::TemplatedFunction { fn_name, body } 
-                if fn_name == &prototype.name 
-                    => Some(body),
+                CXGlobalStmt::TemplatedFunction { prototype, body, .. }
+                    if prototype.name.mangle() == template_name => Some(body),
                 _ => None,
             }
         )
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {}", prototype.name);
+            panic!("Function template body not found for {}", template_name);
         })
         .as_ref()
         .clone();
-    
-    typecheck_function(&mut env, &prototype, &mut body)?;
-    prototype.name = CXIdent::from(mangled_name);
-    
-    Some((env.typecheck_data, prototype.clone(), CXGlobalStmt::FunctionDefinition {
-        prototype,
-        body: Box::new(body),
-    }))
-}
 
-pub(crate) struct TypeEnvironment<'a> {
-    tokens: &'a [Token],
-    
-    type_map: &'a mut CXTypeMap,
-    fn_map: &'a mut CXFunctionMap,
-    
-    symbol_table: ScopedMap<CXType>,
-    typecheck_data: TypeCheckData,
+    let tc_body = in_method_env(&mut env, &prototype, &body)?;
+    let function_def = TCFunctionDef {
+        prototype, body: Box::new(tc_body.clone()),
+    };
 
-    global_variables: &'a HashMap<String, CXGlobalVariable>,
-    current_prototype: Option<CXFunctionPrototype>,
-}
-
-impl TypeEnvironment<'_> {
-    pub fn function_template_prototype(&self, name: &str, input: CXTemplateInput) -> Option<CXFunctionPrototype> {
-        self.fn_map.get_template(self.type_map, name, input)
-    }
-    
-    pub fn destructor_exists(&self, _type: &CXType) -> bool {
-        self.typecheck_data.destructor_map.contains_key(_type)
-    }
+    parent_env.deconstructors = env.deconstructors;
+    parent_env.global_variables = env.global_variables;
+    Some(function_def)
 }

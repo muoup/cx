@@ -13,13 +13,14 @@ fs2 = { version = "0.4.3" }
 
 cx-compiler-lexer = { path = "../cx-compiler-lexer" }
 cx-compiler-ast = { path = "../cx-compiler-ast" }
-cx-compiler-typechecker = { path = "../cx-compiler-typechecker" }
+cx-compiler-typechecker-new = { path = "../cx-compiler-typechecker" }
 cx-compiler-bytecode = { path = "../cx-compiler-bytecode" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
-cx-data-lexer = { path = "../cx-data-lexer" }
 cx-data-pipeline = { path = "../cx-data-pipeline" }
+cx-data-lexer = { path = "../cx-data-lexer" }
 cx-data-ast = { path = "../cx-data-ast" }
+cx-data-typechecker = { path = "../cx-data-typechecker" }
 cx-data-bytecode = { path = "../cx-data-bytecode" }
 cx-util = { path = "../cx-util" }

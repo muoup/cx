@@ -3,13 +3,13 @@
 struct Inner {
     int a;
     int b;
-}
+};
 
 struct Test {
     Inner inner;
     int c;
     int d;
-}
+};
 
 int main() {
     Test t = struct_return();

@@ -1,10 +1,9 @@
 use crate::parse::identifier::CXIdent;
-use crate::parse::maps::{CXDestructorMap, CXFunctionMap, CXTypeMap};
-use crate::parse::value_type::CXType;
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
-use crate::parse::template::CXTemplateInput;
+use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType};
 
 #[derive(Debug, Default)]
 pub struct CXAST {
@@ -17,56 +16,41 @@ pub struct CXAST {
     pub imports: Vec<String>,
     pub global_stmts: Vec<CXGlobalStmt>,
     
-    pub type_map: CXTypeMap,
-    pub function_map: CXFunctionMap,
-    pub destructor_map: CXDestructorMap,
+    pub type_map: CXNaiveTypeMap,
+    pub function_map: CXNaiveFnMap,
     
     pub global_variables: HashMap<String, CXGlobalVariable>
-}
-
-#[derive(Debug, Clone, Readable, Writable)]
-pub struct CXParameter {
-    pub name: Option<CXIdent>,
-    pub _type: CXType,
-}
-
-#[derive(Debug, Clone, Default, Readable, Writable)]
-pub struct CXFunctionPrototype {
-    pub name: CXIdent,
-    pub return_type: CXType,
-    pub params: Vec<CXParameter>,
-    pub var_args: bool
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalStmt {
     TypeDecl {
         name: Option<String>,
-        type_: CXType
+        type_: CXNaiveType
     },
 
     GlobalVariable {
         name: CXIdent,
-        type_: CXType,
+        type_: CXNaiveType,
         initializer: Option<CXExpr>
     },
 
     FunctionPrototype {
-        prototype: CXFunctionPrototype,
+        prototype: CXNaivePrototype,
     },
     
     FunctionDefinition {
-        prototype: CXFunctionPrototype,
+        prototype: CXNaivePrototype,
         body: Box<CXExpr>,
     },
     
     DestructorDefinition {
-        type_name: String,
+        _type: CXNaiveType,
         body: Box<CXExpr>,
     },
     
     TemplatedFunction {
-        fn_name: CXIdent,
+        prototype: CXNaivePrototype,
         body: Box<CXExpr>
     },
 }
@@ -76,10 +60,8 @@ pub enum CXUnOp {
     Dereference, AddressOf,
     Negative,
     BNot, LNot,
-    ArrayIndex,
-    InitializerIndex,
-    
-    ExplicitCast(CXType),
+
+    ExplicitCast(CXNaiveType),
 
     PreIncrement(i8),
     PostIncrement(i8),
@@ -163,9 +145,9 @@ pub enum CXExprKind {
     Taken,
     Unit,
     
-    TemplatedFnIdent {
-        fn_name: CXIdent,
-        template_input: CXTemplateInput
+    TemplatedIdentifier {
+        name: CXIdent,
+        template_input: CXNaiveTemplateInput
     },
     Identifier(CXIdent),
 
@@ -208,7 +190,7 @@ pub enum CXExprKind {
         expr: Box<CXExpr>
     },
     VarDeclaration {
-        type_: CXType,
+        type_: CXNaiveType,
         name: CXIdent
     },
     BinOp {
@@ -223,7 +205,6 @@ pub enum CXExprKind {
 
     Block {
         exprs: Vec<CXExpr>,
-        value: Option<Box<CXExpr>>
     },
 
     Break,
@@ -236,35 +217,18 @@ pub enum CXExprKind {
     Defer {
         expr: Box<CXExpr>
     },
-
-    ImplicitCast {
-        expr: Box<CXExpr>,
-        from_type: CXType,
-        to_type: CXType,
-        cast_type: CXCastType
-    },
-
-    ImplicitLoad {
-        expr: Box<CXExpr>,
-        loaded_type: CXType
-    },
     
     New {
-        _type: CXType,
-        array_length: Option<Box<CXExpr>>
+        _type: CXNaiveType,
     },
+    
     Move {
         expr: Box<CXExpr>
     },
-
-    GetFunctionAddr {
-        func_name: Box<CXExpr>,
-        func_sig: CXType
-    },
-
+    
     InitializerList {
         indices: Vec<CXInitIndex>,
-    }
+    },
 }
 
 impl CXExprKind {
@@ -282,6 +246,15 @@ impl CXExprKind {
             start_index,
             end_index,
         }
+    }
+
+    pub fn block_terminating(&self) -> bool {
+        matches!(self,
+            CXExprKind::Return { .. } |
+            CXExprKind::Break       |
+            CXExprKind::Continue    |
+            CXExprKind::Taken
+        )
     }
 }
 
@@ -303,7 +276,4 @@ pub enum CXCastType {
     // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
     // used to create an explicit no-op to appease the typechecker.
     FauxLoad,
-    
-    AddPointerTag,
-    RemovePointerTag
 }

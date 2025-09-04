@@ -414,7 +414,10 @@ pub(crate) fn generate_instruction<'a>(
                 
                 let signed = match block_instruction.value.type_.kind {
                     BCTypeKind::Signed { .. } => true,
+
+                    BCTypeKind::Bool { .. } |
                     BCTypeKind::Unsigned { .. } => false,
+
                     _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp
                 };
                 

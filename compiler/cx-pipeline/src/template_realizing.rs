@@ -1,50 +1,45 @@
-use cx_compiler_typechecker::template_fn_typecheck;
+use std::collections::HashSet;
+use cx_compiler_typechecker_new::environment::TCEnvironment;
+use cx_compiler_typechecker_new::realize_fn_implementation;
 use cx_data_pipeline::{CompilationUnit, GlobalCompilationContext};
-use std::sync::Arc;
+use cx_data_typechecker::ast::TCFunctionDef;
+use cx_util::mangling::mangle_template;
 
 pub(crate) fn realize_templates(
     context: &GlobalCompilationContext,
-    unit: &CompilationUnit
-) -> Option<()> {
-    let ast = context.module_db.typechecked_ast
-        .get(unit);
-
-    let mut typecheck_data = context.module_db
-        .typecheck_data
-        .take(unit);
-    
-    let lex = context.module_db
-        .lex_tokens
-        .get(unit);
-    
+    job: &CompilationUnit,
+    env: &mut TCEnvironment
+) -> Option<Vec<TCFunctionDef>> {
     let mut new_methods = Vec::new();
+    let mut requests_fulfilled = HashSet::new();
     
-    for template in ast.function_map.templates() {
-        let requests = template.generator.get_generated();
-        
-        for (input, prototype) in requests {
-            let (data, prototype, stmt) 
-                = template_fn_typecheck(&lex, &ast, input, prototype)?;
-            
-            new_methods.push((prototype, stmt));
-            typecheck_data.extend(data);
+    while let Some(request) = env.requests.pop() {
+        let origin = match &request.module_origin {
+            Some(module) => CompilationUnit::from_str(module.as_str()),
+            None => job.clone(),
+        };
+        let mangle_name = mangle_template(request.name.as_str(), &request.input.args);
+
+        if requests_fulfilled.contains(&mangle_name) {
+            continue;
         }
+
+        let other_ast = context.module_db.naive_ast.get(&origin);
+        let other_data = context.module_db.structure_data.get(&origin);
+
+        let template = env.fn_data.get_template(request.name.as_str())?
+            .template
+            .resource
+            .clone();
+        let stmt = realize_fn_implementation(
+            env,
+            other_data.as_ref(), other_ast.as_ref(),
+            &template, &request.input
+        )?;
+
+        requests_fulfilled.insert(mangle_name);
+        new_methods.push(stmt);
     }
 
-    drop(ast);
-
-    let (mut lock, mut ast) = context.module_db.typechecked_ast
-        .take_lock(unit);
-
-    for (prototype, stmt) in new_methods {
-        ast.global_stmts.push(stmt);
-        ast.function_map.insert(prototype.name.to_string(), prototype);
-    }
-    
-    lock.insert(unit.clone(), Arc::from(ast));
-
-    context.module_db
-        .typecheck_data
-        .insert(unit.clone(), typecheck_data);
-    Some(())
+    Some(new_methods)
 }

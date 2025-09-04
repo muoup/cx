@@ -30,20 +30,12 @@ pub(crate) fn prepare_function_sig(
 pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
     func: ValueID,
-    prototype: &BCFunctionPrototype,
     args: &'a [ValueID],
 ) -> Option<(CodegenValue, Vec<Value>)> {
     let val = context.variable_table.get(&func).cloned().unwrap();
-    let mut params = args.iter()
+    let params = args.iter()
         .map(|arg| context.variable_table.get(arg).unwrap().as_value())
         .collect::<Vec<_>>();
-
-    if prototype.return_type.is_structure() {
-        let type_size = prototype.return_type.fixed_size();
-        let temp_buffer = allocate_variable(context, type_size as u32, None)?;
-
-        params.insert(0, temp_buffer);
-    }
 
     Some((val, params))
 }

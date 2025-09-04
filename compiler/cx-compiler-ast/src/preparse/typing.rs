@@ -1,8 +1,9 @@
 use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_ast::parse::identifier::CXIdent;
-use cx_data_ast::preparse::pp_type::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
-use cx_data_lexer::{keyword, punctuator, TokenIter};
+use cx_data_ast::preparse::CXNaiveFnIdent;
+use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
+use cx_data_lexer::{identifier, keyword, operator, punctuator, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::preparse::preparser::{goto_statement_end, parse_intrinsic, parse_std_ident};
 
@@ -54,6 +55,7 @@ pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXN
 
     tokens.back();
     goto_statement_end(tokens);
+    tokens.back();
     
     Some((name, CXNaiveTypeKind::Identifier { name: CXIdent::from("int"), predeclaration: PredeclarationType::None }))
 }
@@ -89,17 +91,27 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CX
 pub(crate) struct ParseParamsResult {
     pub(crate) params: Vec<CXNaiveParameter>,
     pub(crate) var_args: bool,
+    pub(crate) contains_this: bool,
 }
 
 pub(crate) fn parse_params(tokens: &mut TokenIter) -> Option<ParseParamsResult> {
     assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
 
     let mut params = Vec::new();
+    let mut contains_this = false;
+    
+    if let Some(TokenKind::Identifier(this)) = peek_next_kind!(tokens) {
+        if this.as_str() == "this" {
+            tokens.next();
+            contains_this = true;
+            try_next!(tokens, operator!(Comma));
+        }
+    };
 
     while !try_next!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
         if try_next!(tokens, TokenKind::Punctuator(PunctuatorType::Ellipsis)) {
             assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
-            return Some(ParseParamsResult { params, var_args: true });
+            return Some(ParseParamsResult { params, var_args: true, contains_this });
         }
 
         if let Some((name, type_)) = parse_initializer(tokens) {
@@ -115,7 +127,7 @@ pub(crate) fn parse_params(tokens: &mut TokenIter) -> Option<ParseParamsResult> 
         }
     }
 
-    Some(ParseParamsResult { params, var_args: false })
+    Some(ParseParamsResult { params, var_args: false, contains_this })
 }
 
 pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
@@ -139,6 +151,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
     let Some(next_tok) = tokens.peek() else {
         return Some((None, acc_type));
     };
+    let start_index = tokens.index;
 
     match &next_tok.kind {
         TokenKind::Keyword(KeywordType::Strong) => {
@@ -192,16 +205,20 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             tokens.next();
-            assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Asterisk));
+            if next_kind!(tokens) != Some(operator!(Asterisk)) {
+                tokens.index = start_index;
+                return Some((None, acc_type));
+            }
             let name = parse_std_ident(tokens);
             assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
-            let ParseParamsResult { params, var_args } = parse_params(tokens)?;
+            let ParseParamsResult { params, var_args, contains_this } = parse_params(tokens)?;
 
             let prototype = CXNaivePrototype {
-                name: CXIdent::from("INTERNAL_FUNCTION_PTR_TYPE"),
+                name: CXNaiveFnIdent::Standard(CXIdent::from("__internal_fnptr")),
                 return_type: acc_type,
                 params,
-                var_args
+                var_args,
+                this_param: contains_this,
             };
 
             Some((
