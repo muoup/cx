@@ -13,7 +13,7 @@ fs2 = { version = "0.4.3" }
 
 cx-compiler-lexer = { path = "../cx-compiler-lexer" }
 cx-compiler-ast = { path = "../cx-compiler-ast" }
-cx-compiler-typechecker-new = { path = "../cx-compiler-typechecker-new" }
+cx-compiler-typechecker-new = { path = "../cx-compiler-typechecker" }
 cx-compiler-bytecode = { path = "../cx-compiler-bytecode" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
