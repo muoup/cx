@@ -16,3 +16,4 @@ pub struct CXTemplate<Shell> {
 
 pub type CXTypeTemplate = CXTemplate<CXNaiveType>;
 pub type CXFunctionTemplate = CXTemplate<CXNaivePrototype>;
+pub type CXDestructorTemplate = CXTemplate<String>;

@@ -100,9 +100,10 @@ pub fn precontextualize_type(
                 map_clone.insert_standard(name.clone(), ModuleResource::standard(reduced_type.clone()));
             }
 
-            let cx_type = precontextualize_type(module_data, cx_map, &map_clone, None, &shell)?;
-            cx_map.insert_standard(template_name.clone(), cx_type.clone());
+            let mut cx_type = precontextualize_type(module_data, cx_map, &map_clone, None, &shell)?;
+            cx_type.map_name(|name| mangle_template(name, &input.params));
 
+            cx_map.insert_standard(template_name.clone(), cx_type.clone());
             Some(cx_type)
         },
 
@@ -193,6 +194,7 @@ pub fn precontextualize_type(
                 CXType::from(
                     CXTypeKind::Structured {
                         name: name.clone(),
+                        base_identifier: name.clone(),
                         fields,
                     }
                 )
@@ -244,15 +246,7 @@ pub(crate) fn precontextualize_fn_ident(
         },
 
         CXNaiveFnIdent::Destructor(ty) => {
-            let cx_type = precontextualize_type(
-                module_data, type_map, naive_type_map,
-                None, &CXNaiveTypeKind::Identifier {
-                    name: ty.clone(),
-                    predeclaration: PredeclarationType::None
-                }.to_type()
-            )?;
-
-            Some(CXFunctionIdentifier::Destructor(cx_type))
+            Some(CXFunctionIdentifier::Destructor(ty.clone()))
         },
     }
 }

@@ -6,19 +6,21 @@ use cx_data_ast::parse::macros::error_pointer;
 use cx_data_ast::parse::parser::{VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
-use cx_data_ast::preparse::templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate};
+use cx_data_ast::preparse::templates::{CXDestructorTemplate, CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate};
 use cx_data_lexer::{keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};
+use cx_util::mangling::mangle_destructor;
+use crate::parse::global_scope::destructor_prototype;
 use crate::preparse::importing::parse_import;
 use crate::preparse::PreparseData;
 
 pub(crate) enum PreparseResult {
     TypeDefinition(String, CXNaiveType),
     FunctionDefinition(CXNaivePrototype),
+    DestructorDefinition(CXNaiveType),
     TypeTemplate(CXTypeTemplate),
     FunctionTemplate(CXFunctionTemplate),
-    DestructorDefinition(String),
-    
+
     Import(String),
 
     Nothing
@@ -34,11 +36,12 @@ pub(crate) fn preparse_stmt(data: &mut PreparseData) -> Option<PreparseResult> {
         
         operator!(Tilda) => {
             data.tokens.next();
-            assert_token_matches!(data.tokens, TokenKind::Identifier(name));
-            let name = name.clone();
+            let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
+                point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type in destructor definition!");
+            };
             goto_statement_end(&mut data.tokens);
             
-            Some(PreparseResult::DestructorDefinition(name))
+            Some(PreparseResult::DestructorDefinition(_type))
         },
         
         specifier!(Public) => {
@@ -96,7 +99,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             Some(
                 PreparseResult::FunctionTemplate(
                     CXFunctionTemplate {
-                        name: CXIdent::from(signature.name.as_string()),
+                        name: CXIdent::from(signature.name.mangle()),
                         prototype: CXTemplatePrototype {
                             types: type_decls.clone(),
                         },
@@ -115,6 +118,22 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
                             types: type_decls.clone(),
                         },
                         shell: type_
+                    }
+                )
+            )
+        },
+
+        PreparseResult::DestructorDefinition(_type) => {
+            let prototype = destructor_prototype(_type.clone());
+
+            Some(
+                PreparseResult::FunctionTemplate(
+                    CXFunctionTemplate {
+                        name: CXIdent::from(prototype.name.mangle()),
+                        prototype: CXTemplatePrototype {
+                            types: type_decls.clone(),
+                        },
+                        shell: prototype
                     }
                 )
             )

@@ -52,13 +52,8 @@ fn contextualize_fn_ident(env: &mut TCEnvironment, ident: &CXNaiveFnIdent) -> Op
             Some(CXFunctionIdentifier::Standard(name.clone()))
         },
 
-        CXNaiveFnIdent::Destructor(name) => {
-            let Some(_type) = env.get_type(name.as_str()).cloned() else {
-                log_error!("Unknown type for destructor: {name}");
-            };
-
-            Some(CXFunctionIdentifier::Destructor(_type))
-        }
+        CXNaiveFnIdent::Destructor(name)
+            => Some(CXFunctionIdentifier::Destructor(name.clone()))
     }
 }
 
@@ -89,7 +84,6 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
             let input = contextualize_template_args(env, input)?;
-
             let mangled_name = mangle_template(name.as_str(), &input.args);
 
             if let Some(existing) = env.get_type(&mangled_name) {
@@ -97,9 +91,8 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
             }
 
             if let Some(template) = env.type_data.get_template(name.as_str()) {
-                let template = template.clone();
-
-                return instantiate_type_template(env, &template.template.resource, &input);
+                let name = &template.template.resource.name.clone();
+                return instantiate_type_template(env, name.as_str(), &input);
             }
 
             log_error!("Unknown templated type: {name}");
@@ -177,6 +170,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
                     0,
                     CXTypeKind::Structured {
                         name: name.clone(),
+                        base_identifier: name.clone(),
                         fields,
                     }
                 )

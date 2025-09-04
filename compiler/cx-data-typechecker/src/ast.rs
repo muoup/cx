@@ -1,5 +1,5 @@
 use speedy::{Readable, Writable};
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
@@ -17,6 +17,7 @@ pub struct TCAST {
     pub type_map: CXTypeMap,
     pub fn_map: CXFnMap,
 
+    pub global_variables: Vec<CXGlobalVariable>,
     pub destructors_required: Vec<CXType>,
     pub function_defs: Vec<TCFunctionDef>,
 }
@@ -89,7 +90,7 @@ pub enum TCExprKind {
 
     MemberFunctionReference {
         target: Box<TCExpr>,
-        name: CXIdent,
+        mangled_name: CXIdent,
     },
 
     FunctionCall {

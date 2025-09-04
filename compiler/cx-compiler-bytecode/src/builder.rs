@@ -506,6 +506,7 @@ impl BytecodeBuilder {
         let Some(name) = _type.get_name() else {
             return None;
         };
+
         let mangled_name = mangle_deconstructor(name);
 
         if self.fn_map.contains_key(&mangled_name) {
@@ -518,7 +519,7 @@ impl BytecodeBuilder {
     pub fn get_destructor(&self, _type: &CXType) -> Option<String> {
         let mangled_name = mangle_destructor(_type.get_name()?);
         
-        if self.cx_function_map.contains_key(&mangled_name) {
+        if self.fn_map.contains_key(&mangled_name) {
             Some(mangled_name)
         } else {
             None

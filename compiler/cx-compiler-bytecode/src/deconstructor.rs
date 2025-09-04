@@ -85,8 +85,6 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: ValueID, _type: 
 
             builder.set_current_block(deconstruct);
 
-            println!("Deconstructor type {}", _type);
-
             match (deconstructor, is_array) {
                 (Some(prototype), true) => {
                     // Array of objects with deconstructor

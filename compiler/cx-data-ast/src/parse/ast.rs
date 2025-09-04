@@ -45,7 +45,7 @@ pub enum CXGlobalStmt {
     },
     
     DestructorDefinition {
-        type_name: String,
+        _type: CXNaiveType,
         body: Box<CXExpr>,
     },
     

@@ -11,6 +11,7 @@ use cx_data_ast::preparse::naive_types::{CXNaiveType, ModuleResource};
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};
+use crate::parse::global_scope::destructor_prototype;
 
 pub(crate) struct PreparseData<'a> {
     tokens: TokenIter<'a>,
@@ -37,14 +38,19 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
 
             PreparseResult::FunctionDefinition(signature) => {
                 contents.function_definitions.insert_standard(
-                    signature.name.as_string(),
+                    signature.name.mangle(),
                     ModuleResource::with_visibility(signature, data.visibility_mode)
                 );
             },
 
-            PreparseResult::DestructorDefinition(name) => {
-                contents.destructor_definitions.push(name);
-            },
+            PreparseResult::DestructorDefinition(_type) => {
+                let prototype = destructor_prototype(_type);
+
+                contents.function_definitions.insert_standard(
+                    prototype.name.mangle(),
+                    ModuleResource::with_visibility(prototype, data.visibility_mode)
+                );
+            }
 
             PreparseResult::Import(path) => {
                 contents.imports.push(path);

@@ -117,6 +117,16 @@ impl CXNaiveType {
         self.specifiers |= specifier;
         self
     }
+
+    pub fn get_name(&self) -> Option<&CXIdent> {
+        match &self.kind {
+            CXNaiveTypeKind::Identifier { name, .. } => Some(name),
+            CXNaiveTypeKind::TemplatedIdentifier { name, .. } => Some(name),
+            CXNaiveTypeKind::Structured { name, .. } => name.as_ref(),
+            CXNaiveTypeKind::Union { name, .. } => name.as_ref(),
+            _ => None,
+        }
+    }
 }
 
 impl CXNaiveTypeKind {

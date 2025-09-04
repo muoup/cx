@@ -2,10 +2,14 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
+use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
-use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
+use cx_data_ast::preparse::CXNaiveFnIdent;
+use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
 use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
+use cx_data_typechecker::cx_types::CXType;
 use cx_util::{log_error, point_log_error, CXResult};
+use cx_util::mangling::mangle_destructor;
 use crate::parse::template::parse_template;
 use crate::preparse::preparser::{goto_statement_end, parse_std_ident, try_function_parse};
 use crate::preparse::typing::{parse_initializer, parse_params, parse_template_args};
@@ -53,9 +57,9 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 
 pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Tilda));
-    assert_token_matches!(data.tokens, TokenKind::Identifier(name));
-    let name = name.clone();
-
+    let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
+        point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type in destructor definition!");
+    };
     assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
     assert_token_matches!(data.tokens, identifier!(this));
     assert_eq!(this, "this");
@@ -66,11 +70,33 @@ pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGloba
     Some(
         Some(
             CXGlobalStmt::DestructorDefinition {
-                type_name: name,
-                body: Box::new(body),
+                _type, body: Box::new(body)
             }
         )
     )
+}
+
+pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
+    let Some(name) = _type.get_name().cloned() else {
+        unreachable!("CRITICAL: destructor_prototype() called with unnamed type!");
+    };
+
+    CXNaivePrototype {
+        name: CXNaiveFnIdent::Destructor(name),
+
+        return_type: CXNaiveTypeKind::Identifier {
+            name: CXIdent::from("void"),
+            predeclaration: PredeclarationType::None
+        }.to_type(),
+        params: vec![
+            CXNaiveParameter {
+                name: Some(CXIdent::from("this")),
+                _type: _type.pointer_to(true, 0),
+            }
+        ],
+        var_args: false,
+        this_param: true,
+    }
 }
 
 pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlobalStmt>> {

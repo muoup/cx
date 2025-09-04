@@ -5,7 +5,7 @@ use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::preparse::naive_types::{CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
 use cx_util::{point_log_error, CXResult};
-use crate::parse::global_scope::parse_global_stmt;
+use crate::parse::global_scope::{destructor_prototype, parse_global_stmt};
 
 pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::Template));
@@ -25,7 +25,7 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         
         if !data.ast.type_map.standard.contains_key(template_name.as_str()) {
             let _nil_type: CXNaiveType = CXNaiveTypeKind::Identifier {
-                name: CXIdent::from("_nil"),
+                name: CXIdent::from("__undefined_template_type"),
                 predeclaration: PredeclarationType::None
             }.to_type();
 
@@ -41,13 +41,15 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
 
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Greater));
 
-    let Some(global_expr) = parse_global_stmt(data)? else {
-        return Some(None);
-    };
+    let global_stmt = parse_global_stmt(data)?;
 
     for template_name in temp_typedefs {
         data.ast.type_map.standard.remove(template_name.as_str());
     }
+
+    let Some(global_expr) = global_stmt else {
+        return Some(None);
+    };
 
     match global_expr {
         CXGlobalStmt::FunctionDefinition { prototype, body } => {
@@ -58,8 +60,18 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
             )
         },
 
+        CXGlobalStmt::DestructorDefinition { _type, body } => {
+            Some(
+                Some(
+                    CXGlobalStmt::TemplatedFunction {
+                        prototype: destructor_prototype(_type.clone()),
+                        body,
+                    }
+                )
+            )
+        },
+
         CXGlobalStmt::TypeDecl { .. } => todo!(),
-        CXGlobalStmt::DestructorDefinition { .. } => todo!(),
 
         CXGlobalStmt::TemplatedFunction { .. } =>
             point_log_error!(data.tokens, "PARSER ERROR: Nested templated generators are not supported!"),

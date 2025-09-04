@@ -4,6 +4,7 @@ use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use speedy::{Readable, Writable};
 use std::collections::HashMap;
 use std::fmt::Display;
+use cx_util::mangling::{mangle_destructor, mangle_member_function};
 
 pub mod templates;
 pub mod naive_types;
@@ -60,14 +61,18 @@ pub enum CXNaiveFnIdent {
 }
 
 impl CXNaiveFnIdent {
-    pub fn as_string(&self) -> String {
+    pub fn mangle(&self) -> String {
         match self {
             CXNaiveFnIdent::Standard(name) => name.to_string(),
             CXNaiveFnIdent::MemberFunction { _type, function_name } => {
-                format!("_{}_{}", _type, function_name.to_string())
+                let Some(name) = _type.get_name() else {
+                    unreachable!("Member function's type must have a name");
+                };
+
+                mangle_member_function(name.to_string(), function_name.as_str())
             }
             CXNaiveFnIdent::Destructor(name) => {
-                format!("~{}", name.to_string())
+                mangle_destructor(name.as_str())
             }
         }
     }

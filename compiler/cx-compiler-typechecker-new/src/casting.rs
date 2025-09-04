@@ -48,10 +48,6 @@ pub(crate) fn coerce_condition(expr: &mut TCExpr) -> Option<()> {
 }
 
 pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
-    if matches!(expr.kind, TCExprKind::InitializerList { .. }) {
-        return coerce_initializer_list(expr, to_type);
-    };
-
     let Some(_) = try_implicit_cast(expr, to_type) else {
         log_error!("TYPE ERROR: Cannot implicitly cast value of type {} to type {}", expr._type, to_type);
     };
@@ -71,6 +67,10 @@ pub(crate) fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<(
     if same_type(&expr._type, to_type) {
         return Some(())
     }
+
+    if matches!(expr.kind, TCExprKind::InitializerList { .. }) {
+        return coerce_initializer_list(expr, to_type);
+    };
 
     let Some(cast_type) = valid_implicit_cast(&expr._type, to_type)? else {
         return None;
@@ -134,6 +134,9 @@ pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
                 => Some(CXCastType::BitCast),
+
+            (CXTypeKind::Structured { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
+                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FauxLoad),
 
             (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
                 if same_type(_type, inner) => Some(CXCastType::BitCast),

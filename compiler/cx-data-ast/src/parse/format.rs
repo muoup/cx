@@ -41,10 +41,10 @@ impl Display for CXGlobalStmt {
                 fwrite!(f, "}}")?;
                 Ok(())
             },
-            
-            CXGlobalStmt::DestructorDefinition { type_name, body } => {
+
+            CXGlobalStmt::DestructorDefinition { _type, body } => {
                 indent();
-                fwriteln!(f, "destructor for {} {{", type_name)?;
+                fwriteln!(f, "destructor for {} {{", _type)?;
                 fwrite!(f, "{}", body)?;
                 dedent();
                 fwriteln!(f, "")?;

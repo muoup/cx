@@ -4,7 +4,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 pub fn mangle_deconstructor(name: &str) -> String {
     format!("__deconstructor_{}", name)
 }
-pub fn mangle_destructor(type_name: &str) -> String {
+pub fn mangle_destructor(type_name: impl Display) -> String {
     format!("__destructor_{type_name}")
 }
 
@@ -17,5 +17,5 @@ pub fn mangle_template<ArgType: Hash>(name: &str, template_args: &[ArgType]) -> 
     for arg in template_args {
         arg.hash(&mut hash);
     }
-    format!("_{}_{}", name, hash.finish())
+    format!("{}_{}", name, hash.finish())
 }

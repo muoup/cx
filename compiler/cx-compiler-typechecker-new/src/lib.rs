@@ -3,11 +3,12 @@ use cx_data_lexer::token::Token;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_ast::preparse::naive_types::CXNaiveTemplateInput;
+use cx_data_ast::preparse::templates::CXFunctionTemplate;
 use cx_data_typechecker::ast::{TCFunctionDef, TCStructureData, TCAST};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXParameter, CXTemplateInput, CXType};
 use cx_data_typechecker::{CXFnMap, CXTypeMap};
 use cx_util::log_error;
-use cx_util::mangling::mangle_destructor;
+use cx_util::mangling::{mangle_destructor, mangle_template};
 use cx_util::scoped_map::ScopedMap;
 use crate::environment::TCEnvironment;
 use crate::type_mapping::contextualize_fn_prototype;
@@ -26,8 +27,18 @@ pub mod environment;
 pub mod type_mapping;
 pub mod precontextualizing;
 
-pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<TCAST> {
+pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<Vec<TCFunctionDef>> {
     let mut statements = Vec::new();
+
+    for stmt in ast.global_stmts.iter() {
+        match stmt {
+            CXGlobalStmt::GlobalVariable { name, type_, initializer } => {
+                todo!()
+            },
+
+            _ => ()
+        }
+    }
 
     for stmt in ast.global_stmts.iter() {
         match stmt {
@@ -43,32 +54,16 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<TCAST> {
                 )
             },
 
-            CXGlobalStmt::DestructorDefinition { type_name, body } => {
-                let Some(_type) = env.type_data.get(type_name) else {
-                    log_error!("Destructor defined for unknown type: {type_name}");
+            CXGlobalStmt::DestructorDefinition { _type, body } => {
+                let destructor = mangle_destructor(_type);
+                let Some(prototype) = env.get_func(&destructor).cloned() else {
+                    unreachable!("Destructor prototype should not be missing: {}", destructor);
                 };
 
-                let prototype = CXFunctionPrototype {
-                    return_type: CXType::unit(),
-                    name: CXIdent::from(mangle_destructor(type_name)),
-                    params: vec![CXParameter {
-                        name: Some(CXIdent::from("this")),
-                        _type: _type.clone().pointer_to(),
-                    }],
-                    var_args: false,
-                    needs_buffer: false,
-                };
-
-                let final_body = in_method_env(env, &prototype, body)?;
-
-                env.fn_data.insert_standard(
-                    prototype.name.to_string(),
-                    prototype.clone()
-                );
+                let body = in_method_env(env, &prototype, body)?;
                 statements.push(
                     TCFunctionDef {
-                        prototype: prototype.clone(),
-                        body: Box::new(final_body),
+                        prototype, body: Box::new(body),
                     }
                 )
             },
@@ -77,66 +72,50 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<TCAST> {
         }
     }
 
-    Some(
-        TCAST {
-            source_file: ast.file_path.clone(),
-
-            type_map: CXTypeMap::new(),
-            fn_map: CXFnMap::new(),
-            destructors_required: Vec::new(),
-
-            function_defs: statements,
-        }
-    )
+    Some(statements)
 }
 
-pub fn realize_fn_prototype(env: &mut TCEnvironment, origin: &CXAST, input: &CXTemplateInput, prototype: &CXFunctionPrototype)
-                            -> Option<TCFunctionDef> {
-    let mut type_map = env.type_data.clone();
-    let fn_map = env.fn_data.clone();
+pub fn realize_fn_implementation(
+    parent_env: &mut TCEnvironment,
+    structure_data: &TCStructureData, origin: &CXAST,
+    template: &CXFunctionTemplate, input: &CXTemplateInput
+) -> Option<TCFunctionDef> {
+    let mut env = TCEnvironment::new(structure_data.clone());
+    env.deconstructors = std::mem::take(&mut parent_env.deconstructors);
+    env.global_variables = std::mem::take(&mut env.global_variables);
 
-    let args = &env.fn_data
-        .get_template(&prototype.name.as_string())
-        .unwrap_or_else(|| {
-            panic!("Template generator not found in type map for {}", &prototype.name.as_string())
-        })
-        .template
-        .resource
+    let args = &template
         .prototype
         .types;
 
     for (name, _type) in args.iter().zip(&input.args) {
-        type_map.insert_standard(name.clone(), _type.clone());
+        env.type_data.insert_standard(name.clone(), _type.clone());
     }
 
-    let mut env = TCEnvironment {
-        type_data: type_map,
-        fn_data: fn_map,
-
-        requests: Vec::new(),
-        deconstructors: HashSet::new(),
-
-        current_function: None,
-        symbol_table: ScopedMap::new(),
-    };
-    
-    let prototype_name = prototype.name.as_string();
+    let template_name = template.shell.name.mangle();
+    let mangled_name = mangle_template(&template_name, &input.args);
+    let prototype = parent_env.fn_data.get(&mangled_name)?.clone();
 
     let body = origin.global_stmts.iter()
         .find_map(
             |stmt| match stmt {
                 CXGlobalStmt::TemplatedFunction { prototype, body, .. }
-                    if prototype.name.as_string() == prototype_name => Some(body),
+                    if prototype.name.mangle() == template_name => Some(body),
                 _ => None,
             }
         )
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {}", prototype_name);
+            panic!("Function template body not found for {}", template_name);
         })
         .as_ref()
         .clone();
 
-    let tc_body = typecheck_expr(&mut env, &body)?;
+    let tc_body = in_method_env(&mut env, &prototype, &body)?;
+    let function_def = TCFunctionDef {
+        prototype, body: Box::new(tc_body.clone()),
+    };
 
-    Some(TCFunctionDef { prototype: prototype.clone(), body: Box::new(tc_body) })
+    parent_env.deconstructors = env.deconstructors;
+    parent_env.global_variables = env.global_variables;
+    Some(function_def)
 }

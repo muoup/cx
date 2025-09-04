@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
 use cx_data_ast::parse::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_ast::preparse::naive_types::CX_CONST;
@@ -7,7 +7,7 @@ use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_method_call};
 use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast, try_implicit_cast};
 use crate::environment::TCEnvironment;
-use crate::realize_fn_prototype;
+use crate::realize_fn_implementation;
 use crate::templates::instantiate_function_template;
 use crate::type_mapping::{contextualize_template_args, contextualize_type};
 use crate::variable_destruction::visit_destructable_instance;
@@ -104,6 +104,8 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         _type: CXTypeKind::Function { prototype: Box::new(function_type.clone()) }.into(),
                         kind: TCExprKind::FunctionReference { name: name.clone() } // Placeholder for args
                     }
+                } else if let Some(global) = env.global_variables.get(name.as_str()) {
+                    global_constant_expr(global)?
                 } else {
                     log_error!("Identifier '{}' not found", name);
                 }
@@ -114,7 +116,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 // in CXNaiveType contexts.
 
                 let input = contextualize_template_args(env, template_input)?;
-                let function = instantiate_function_template(env, name.as_str(), &input)?;
+                let function = env.get_templated_func(name.as_str(), &input)?;
 
                 TCExpr {
                     _type: CXTypeKind::Function { prototype: Box::new(function.clone()) }.into(),
@@ -502,4 +504,21 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             CXExprKind::Taken => unreachable!("Taken expressions should not be present in the typechecker"),
         }
     )
+}
+
+fn global_constant_expr(global: &CXGlobalVariable) -> Option<TCExpr> {
+    match global {
+        CXGlobalVariable::GlobalConstant { constant, .. } => {
+            match constant {
+                CXGlobalConstant::Int(val) => {
+                    Some(
+                        TCExpr {
+                            _type: CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 }),
+                            kind: TCExprKind::IntLiteral { value: *val as i64 }
+                        }
+                    )
+                },
+            }
+        }
+    }
 }

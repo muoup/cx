@@ -31,13 +31,13 @@ impl Display for CXTypeKind {
                 write!(f, "f{float_bytes}")
             },
             CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { fields, name } => {
+            CXTypeKind::Structured { fields, base_identifier, .. } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let name_str = if let Some(name) = name {
-                    format!("{name} ")
+                let name_str = if let Some(base_identifier) = base_identifier {
+                    format!("{base_identifier} ")
                 } else {
                     "".to_string()
                 };

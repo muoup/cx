@@ -62,7 +62,11 @@ impl Display for CXNaiveFnIdent {
         match self {
             CXNaiveFnIdent::Standard(name) => write!(f, "{}", name),
             CXNaiveFnIdent::MemberFunction { _type, function_name } => {
-                write!(f, "{}::{}", _type, function_name)
+                let Some(name) = _type.get_name() else {
+                    unreachable!("Member function type must have a name");
+                };
+
+                write!(f, "_{}_{}", name, function_name)
             }
             CXNaiveFnIdent::Destructor(name) => {
                 write!(f, "~{}", name)

@@ -20,11 +20,11 @@ pub(crate) fn visit_destructable_instance(env: &mut TCEnvironment, ty: &CXType) 
             true
         },
 
-        CXTypeKind::Structured { name: Some(name), fields } => {
+        CXTypeKind::Structured { name: Some(name), fields, .. } => {
             let any_field_deconstructable = fields.into_iter()
                 .any(|(_, field_type)| visit_destructable_instance(env, &field_type));
 
-            if !any_field_deconstructable && !env.destructor_exists(name.as_str()) {
+            if !any_field_deconstructable && !env.destructor_exists(ty) {
                 return false;
             }
 

@@ -151,6 +151,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
     let Some(next_tok) = tokens.peek() else {
         return Some((None, acc_type));
     };
+    let start_index = tokens.index;
 
     match &next_tok.kind {
         TokenKind::Keyword(KeywordType::Strong) => {
@@ -204,7 +205,10 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
 
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             tokens.next();
-            assert_token_matches!(tokens, TokenKind::Operator(OperatorType::Asterisk));
+            if next_kind!(tokens) != Some(operator!(Asterisk)) {
+                tokens.index = start_index;
+                return Some((None, acc_type));
+            }
             let name = parse_std_ident(tokens);
             assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
             let ParseParamsResult { params, var_args, contains_this } = parse_params(tokens)?;

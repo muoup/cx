@@ -114,7 +114,7 @@ pub fn generate_instruction(
 
             // Functions that require special intrinsic parameters
             match &function.kind {
-                TCExprKind::MemberFunctionReference { target, name } => {
+                TCExprKind::MemberFunctionReference { target, mangled_name: name } => {
                     args.push(generate_instruction(builder, target.as_ref())?);
                 },
 
@@ -211,7 +211,7 @@ pub fn generate_instruction(
             builder.get_symbol(name.as_str())
         },
 
-        TCExprKind::MemberFunctionReference { name, .. } |
+        TCExprKind::MemberFunctionReference { mangled_name: name, .. } |
         TCExprKind::FunctionReference { name } => {
             let CXTypeKind::Function { prototype } = &expr._type.kind else {
                 unreachable!("generate_instruction: Expected function type for expr, found {}", expr._type);

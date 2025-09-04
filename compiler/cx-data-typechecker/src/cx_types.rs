@@ -68,6 +68,7 @@ pub enum CXTypeKind {
     Bool,
     Structured {
         name: Option<CXIdent>,
+        base_identifier: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
     },
     Union {
@@ -241,6 +242,28 @@ impl CXType {
             _ => None,
         }
     }
+
+    pub fn get_identifier(&self) -> Option<&CXIdent> {
+        match &self.kind {
+            CXTypeKind::Structured { base_identifier, .. } => base_identifier.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn set_name(&mut self, name: CXIdent) {
+        match &mut self.kind {
+            CXTypeKind::Structured { name: n, .. } |
+            CXTypeKind::Union { name: n, .. } => *n = Some(name),
+            _ => {}
+        }
+    }
+
+    pub fn map_name(&mut self, f: impl FnOnce(&str) -> String) {
+        if let Some(name) = self.get_name() {
+            let new_name = f(name);
+            self.set_name(CXIdent::from(new_name));
+        }
+    }
 }
 
 impl From<CXTypeKind> for CXType {
@@ -308,7 +331,7 @@ pub enum CXFunctionIdentifier {
         _type: CXType,
         function_name: CXIdent
     },
-    Destructor(CXType)
+    Destructor(CXIdent)
 }
 
 impl CXFunctionIdentifier {
@@ -320,17 +343,13 @@ impl CXFunctionIdentifier {
         match self {
             CXFunctionIdentifier::Standard(name) => name.to_string(),
             CXFunctionIdentifier::MemberFunction { _type, function_name, .. } => {
-                let Some(name) = _type.get_name() else {
+                let Some(name) = _type.get_identifier() else {
                     unreachable!("Member function's type must have a name");
                 };
 
                 mangle_member_function(name.to_string(), function_name.as_str())
             },
-            CXFunctionIdentifier::Destructor(_type) => {
-                let Some(name) = _type.get_name() else {
-                    unreachable!("Destructor's type must have a name");
-                };
-
+            CXFunctionIdentifier::Destructor(name) => {
                 mangle_destructor(name)
             }
         }

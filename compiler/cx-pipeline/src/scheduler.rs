@@ -21,7 +21,7 @@ use cx_compiler_typechecker_new::environment::TCEnvironment;
 use cx_compiler_typechecker_new::typecheck;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_lexer::TokenIter;
-use cx_data_typechecker::ast::TCStructureData;
+use cx_data_typechecker::ast::{TCStructureData, TCAST};
 use cx_util::format::dump_data;
 use cx_util::scoped_map::ScopedMap;
 use crate::template_realizing::realize_templates;
@@ -328,27 +328,29 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
 
-            let mut env = TCEnvironment {
-                type_data: structure_data.type_data.clone(),
-                fn_data: structure_data.fn_data.clone(),
+            let mut env = TCEnvironment::new(structure_data.as_ref().clone());
+            env.load_global_symbols(self_ast.as_ref());
 
-                requests: Vec::new(),
-                deconstructors: HashSet::new(),
-
-                current_function: None,
-                symbol_table: ScopedMap::new()
-            };
-
-            let mut tc_ast = typecheck(&mut env, &self_ast)?;
-
-            realize_templates(context, &job.unit, &mut env, &mut tc_ast)
+            let mut stmts = typecheck(&mut env, &self_ast)?;
+            let template_stmts = realize_templates(context, &job.unit, &mut env)
                 .expect("Template realization failed");
 
-            dump_data(&format!("{:#?}", tc_ast));
+            let tc_ast = TCAST {
+                source_file: self_ast.file_path.clone(),
 
-            tc_ast.type_map = env.type_data.standard;
-            tc_ast.fn_map = env.fn_data.standard;
-            tc_ast.destructors_required = env.deconstructors.into_iter().collect();
+                type_map: env.type_data.standard,
+                fn_map: env.fn_data.standard,
+
+                destructors_required: env.deconstructors.into_iter().collect::<_>(),
+                global_variables: env.global_variables.into_iter()
+                    .map(|(name, var)| var)
+                    .collect::<_>(),
+                function_defs: stmts.into_iter()
+                    .chain(template_stmts.into_iter())
+                    .collect::<Vec<_>>(),
+            };
+
+            dump_data(&format!("{:#?}", tc_ast));
 
             context.module_db.typechecked_ast.insert(job.unit.clone(), tc_ast);
         },

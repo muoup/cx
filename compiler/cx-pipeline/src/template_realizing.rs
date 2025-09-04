@@ -1,36 +1,45 @@
+use std::collections::HashSet;
 use cx_compiler_typechecker_new::environment::TCEnvironment;
-use cx_compiler_typechecker_new::realize_fn_prototype;
+use cx_compiler_typechecker_new::realize_fn_implementation;
 use cx_data_pipeline::{CompilationUnit, GlobalCompilationContext};
-use cx_data_typechecker::ast::TCAST;
+use cx_data_typechecker::ast::TCFunctionDef;
 use cx_util::mangling::mangle_template;
 
 pub(crate) fn realize_templates(
     context: &GlobalCompilationContext,
     job: &CompilationUnit,
-    env: &mut TCEnvironment,
-    tc_ast: &mut TCAST,
-) -> Option<()> {
+    env: &mut TCEnvironment
+) -> Option<Vec<TCFunctionDef>> {
     let mut new_methods = Vec::new();
+    let mut requests_fulfilled = HashSet::new();
     
     while let Some(request) = env.requests.pop() {
         let origin = match &request.module_origin {
             Some(module) => CompilationUnit::from_str(module.as_str()),
             None => job.clone(),
         };
+        let mangle_name = mangle_template(request.name.as_str(), &request.input.args);
+
+        if requests_fulfilled.contains(&mangle_name) {
+            continue;
+        }
 
         let other_ast = context.module_db.naive_ast.get(&origin);
         let other_data = context.module_db.structure_data.get(&origin);
-        
-        let manged_name = mangle_template(&request.name, &request.input.args);
-        let Some(existing) = other_data.fn_data.get(&manged_name) else {
-            unreachable!("Instantiated function template not found in typechecked AST: {}", manged_name);
-        };
 
-        let stmt = realize_fn_prototype(env, other_ast.as_ref(), &request.input, existing)?;
+        let template = env.fn_data.get_template(request.name.as_str())?
+            .template
+            .resource
+            .clone();
+        let stmt = realize_fn_implementation(
+            env,
+            other_data.as_ref(), other_ast.as_ref(),
+            &template, &request.input
+        )?;
 
+        requests_fulfilled.insert(mangle_name);
         new_methods.push(stmt);
     }
 
-    tc_ast.function_defs.extend(new_methods);
-    Some(())
+    Some(new_methods)
 }

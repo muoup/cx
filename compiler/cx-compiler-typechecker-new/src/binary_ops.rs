@@ -28,7 +28,7 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
         _ => log_error!("TYPE ERROR: Member access on {} without a struct or union type", lhs._type),
     };
 
-    let Some(type_name) = lhs._type.get_name() else {
+    let Some(type_name) = lhs._type.get_identifier() else {
         log_error!("TYPE ERROR: Member access on {} without a type name", lhs._type);
     };
 
@@ -51,25 +51,41 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
                 );
             }
 
-            let member_fn_name = mangle_member_function(name.as_str(), type_name);
-
+            let member_fn_name = mangle_member_function(name.as_str(), type_name.as_str());
             let Some(prototype) = env.get_func(&member_fn_name).cloned() else {
                 log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
             };
+            let name = prototype.name.clone();
 
             Some(
                 TCExpr {
-                    _type: CXTypeKind::Function { prototype: Box::new(prototype.clone()) }.into(),
+                    _type: CXTypeKind::Function { prototype: Box::new(prototype) }.into(),
                     kind: TCExprKind::MemberFunctionReference {
                         target: Box::new(lhs),
-                        name: name.clone(),
+                        mangled_name: name
                     }
                 }
             )
         },
 
-        CXExprKind::TemplatedIdentifier { .. } => {
-            todo!()
+        CXExprKind::TemplatedIdentifier { name, template_input } => {
+            let member_fn_name = mangle_member_function(type_name, name.as_str());
+            let input = contextualize_template_args(env, template_input)?;
+
+            let Some(prototype) = env.get_templated_func(&member_fn_name, &input).cloned() else {
+                log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
+            };
+            let name = prototype.name.clone();
+
+            Some(
+                TCExpr {
+                    _type: CXTypeKind::Function { prototype: Box::new(prototype) }.into(),
+                    kind: TCExprKind::MemberFunctionReference {
+                        target: Box::new(lhs),
+                        mangled_name: name,
+                    }
+                }
+            )
         },
 
         _ => log_error!("TYPE ERROR: Invalid rhs for access expression, found {:?}", rhs),
@@ -108,21 +124,19 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
             (true, prototype)
         },
 
-        TCExprKind::MemberFunctionReference { target, name } => {
+        TCExprKind::MemberFunctionReference { target, mangled_name } => {
             let Some(target_name) = target._type.get_name() else {
                 unreachable!("TYPE ERROR: Expected named type for method call target, found {}", target._type);
             };
-            let mangled_name = mangle_member_function(name.as_str(), target_name);
 
-            tc_args.insert(0, *target);
-
-            let Some(prototype) = env.get_func(&mangled_name).cloned() else {
-                log_error!("TYPE ERROR: Method '{}' not found for type {}", name.as_string(), lhs._type);
+            let Some(prototype) = env.get_func(mangled_name.as_str()).cloned() else {
+                log_error!("TYPE ERROR: Method '{}' not found for type {}", mangled_name.as_string(), target_name);
             };
+            tc_args.insert(0, *target);
 
             lhs = TCExpr {
                 _type: CXTypeKind::Function { prototype: Box::new(prototype.clone()) }.into(),
-                kind: TCExprKind::FunctionReference { name: name.clone() }
+                kind: TCExprKind::FunctionReference { name: mangled_name.clone() }
             };
 
             (true, prototype)
@@ -205,7 +219,6 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
 
             CXTypeKind::Float { bytes: 4 } => {
                 implicit_cast(arg, &CXTypeKind::Float { bytes: 8 }.into())?;
-                add_coercion(arg, CXTypeKind::Integer { bytes: 8, signed: false }.into(), CXCastType::BitCast);
             },
 
             CXTypeKind::Float { bytes: 8 } => {
