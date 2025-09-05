@@ -18,7 +18,36 @@ to request for compiler guarantees, both for debugging and optimization.
 
 ### Prerequisites
 
-*   [Rust](https://www.rust-lang.org/tools/install)
+*   [Rust](https://www.rust-lang.org/tools/install) - for building the compiler.
+*   [GCC](https://gcc.gnu.org/install/) - currently the only supported linker for building executables.
+
+#### Optional Prerequisite: LLVM
+
+LLVM is used as a backend for code generation (i.e. generating pseudo-assembly which can then be optimized and assembled into machine code).
+LLVM is currently not required by default, instead opting for the Cranelift backend due to its more lightweight nature and better compatibility
+with Rust. Generating code with LLVM currently uses Inkwell, a set of bindings for LLVM in Rust, which only supports up to LLVM version 18.1.X,
+leading even more to the decision to not include LLVM by default. If you do want better optimized output with LLVM, the steps to install the 
+dependency are as so:
+
+##### On Ubuntu/Debian
+The [Github releases page for LLVM](https://github.com/llvm/llvm-project/releases) has prebuilt binaries for Linux 
+systems on a variety of architectures. Having worked on this project both on Windows and Linux, I can confirm that
+this option is much preferable to building LLVM from source. The process that worked for me is as follows:
+
+1. Download the prebuilt binary tarball for your architecture and extract it somewhere, for example `/usr/opt/llvm-18.1.X'
+2. Add a symbolic link to the 'llvm-config' binary to somewhere in your PATH, for example:
+   ```bash
+   sudo ln -s /usr/opt/llvm-18.1.X/bin/llvm-config /usr/bin/llvm-config
+   ```
+3. Verify the installation by running:
+   ```bash
+   llvm-config --version
+   ```
+4. Hopefully, you should now be able to build the project with the LLVM backend enabled.
+
+##### Windows and Otherwise - Building LLVM from Source
+See the [official LLVM documentation](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) for more information on building LLVM from source.
+Good luck :)
 
 ### Installation
 
@@ -28,11 +57,10 @@ to request for compiler guarantees, both for debugging and optimization.
     ```
 2.  Build the project:
     ```bash
-    cargo build --release
+    cargo build --release [--features llvm-backend]
     ```
-
-### Optional Feature: LLVM Backend
-
+    
+use the LLVM backend, first you must install LLVM 18.1.X
 
 ## Usage
 
@@ -49,17 +77,7 @@ cargo run --release -- [-O0, -O1, -O2, -O3, -Ofast, -Osize] [-o <output_file>] <
 *   `<file_name>`: The name of the CX file to compile.
 
 ## Compiler Pipeline
-
-The CX compiler uses a multi-stage compilation pipeline to transform CX code into machine code. The pipeline consists of the following stages:
-
-1.  **Lexing:** The source code is converted into a stream of tokens.
-2.  **Pre-parsing:** Type declarations and function signatures are parsed.
-3.  **Import Combining:** Pre-parsed data from imported modules is combined.
-4.  **Parsing:** The abstract syntax tree (AST) is built.
-5.  **Type Checking and Template Realization:** The types of expressions and statements are checked, and templates are realized.
-6.  **Bytecode Generation:** The AST is converted into a flat SSA IR.
-7.  **Backend Code Generation:** The SSA IR is converted into machine code using either Cranelift or LLVM.
-8.  **Linking:** The generated object files are linked into a single executable.
+For a detailed overview of the compiler pipeline, see the [Pipeline Design](docs/pipeline_design.md) document.
 
 ## Backends
 
