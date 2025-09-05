@@ -1,5 +1,0 @@
-import imported2;
-
-void imported_function() {
-    imported2_function();
-}
