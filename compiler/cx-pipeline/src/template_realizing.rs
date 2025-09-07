@@ -26,7 +26,7 @@ pub(crate) fn realize_templates(
         let other_ast = context.module_db.naive_ast.get(&origin);
         let other_data = context.module_db.structure_data.get(&origin);
 
-        let template = env.fn_data.get_template(request.name.as_str())?
+        let template = env.base_data.fn_data.get_template(request.name.as_str())?
             .template
             .resource
             .clone();

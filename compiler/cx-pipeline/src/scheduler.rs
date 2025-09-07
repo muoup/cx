@@ -328,18 +328,21 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
 
-            let mut env = TCEnvironment::new(structure_data.as_ref().clone());
+            let mut env = TCEnvironment::new(structure_data.as_ref());
             typecheck(&mut env, &self_ast)
                 .expect("Typechecking failed");
 
             realize_templates(context, &job.unit, &mut env)
                 .expect("Template realization failed");
 
+            env.realized_types.extend(structure_data.type_data.standard.clone());
+            env.realized_fns.extend(structure_data.fn_data.standard.clone());
+
             let tc_ast = TCAST {
                 source_file: self_ast.file_path.clone(),
 
-                type_map: env.type_data.standard,
-                fn_map: env.fn_data.standard,
+                type_map: env.realized_types,
+                fn_map: env.realized_fns,
 
                 destructors_required: env.deconstructors.into_iter()
                     .collect::<_>(),

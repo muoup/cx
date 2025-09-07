@@ -75,7 +75,7 @@ pub fn contextualize_fn_prototype(env: &mut TCEnvironment, prototype: &CXNaivePr
 pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> Option<CXType> {
     match &naive_type.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
-            let Some(_type) = env.get_type(name.as_str()).cloned() else {
+            let Some(_type) = env.get_type(name.as_str()) else {
                 log_error!("Unknown type: {name}");
             };
 
@@ -90,9 +90,8 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
                 return Some(existing.clone());
             }
 
-            if let Some(template) = env.type_data.get_template(name.as_str()) {
-                let name = &template.template.resource.name.clone();
-                return instantiate_type_template(env, name.as_str(), &input);
+            if let Some(template) = env.get_templated_type(name.as_str(), &input) {
+                return Some(template);
             }
 
             log_error!("Unknown templated type: {name}");

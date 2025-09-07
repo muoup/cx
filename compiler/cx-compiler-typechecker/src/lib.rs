@@ -7,6 +7,7 @@ use cx_data_ast::preparse::templates::CXFunctionTemplate;
 use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCStructureData};
 use cx_data_typechecker::cx_types::CXTemplateInput;
 use cx_util::mangling::{mangle_destructor, mangle_template};
+use crate::templates::{add_templated_types, restore_template_overwrites};
 
 mod casting;
 mod typechecker;
@@ -58,7 +59,7 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
 
             CXGlobalStmt::DestructorDefinition { _type, body } => {
                 let destructor = mangle_destructor(_type);
-                let Some(prototype) = env.get_func(&destructor).cloned() else {
+                let Some(prototype) = env.get_func(&destructor) else {
                     unreachable!("Destructor prototype should not be missing: {}", destructor);
                 };
 
@@ -78,24 +79,20 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
 }
 
 pub fn realize_fn_implementation(
-    parent_env: &mut TCEnvironment,
+    env: &mut TCEnvironment,
     structure_data: &TCStructureData, origin: &CXAST,
     template: &CXFunctionTemplate, input: &CXTemplateInput
 ) -> Option<()> {
-    let mut template_env = TCEnvironment::new(structure_data.clone());
-    template_env.deconstructors = std::mem::take(&mut parent_env.deconstructors);
-
-    let args = &template
-        .prototype
-        .types;
-
-    for (name, _type) in args.iter().zip(&input.args) {
-        template_env.type_data.insert_standard(name.clone(), _type.clone());
+    let old_base = env.base_data;
+    unsafe {
+        env.base_data = std::mem::transmute(structure_data);
     }
+
+    let overwrites = add_templated_types(env, &template.prototype, input);
 
     let template_name = template.shell.name.mangle();
     let mangled_name = mangle_template(&template_name, &input.args);
-    let prototype = parent_env.fn_data.get(&mangled_name)?.clone();
+    let prototype = env.get_func(&mangled_name)?.clone();
 
     let body = origin.global_stmts.iter()
         .find_map(
@@ -111,14 +108,16 @@ pub fn realize_fn_implementation(
         .as_ref()
         .clone();
 
-    let tc_body = in_method_env(&mut template_env, &prototype, &body)?;
-    let function_def = TCFunctionDef {
-        prototype, body: Box::new(tc_body.clone()),
-    };
+    let tc_body = in_method_env(env, &prototype, &body)?;
+    env.declared_functions.push(TCFunctionDef {
+        prototype: prototype.clone(),
+        body: Box::new(tc_body.clone()),
+    });
 
-    parent_env.deconstructors = template_env.deconstructors;
-    parent_env.global_variables.extend(template_env.global_variables);
-    parent_env.declared_functions.push(function_def);
+    restore_template_overwrites(env, overwrites);
 
+    unsafe {
+        *(&mut env.base_data as *mut &_) = old_base;
+    }
     Some(())
 }
