@@ -1,8 +1,8 @@
-use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::{assert_token_matches, next_kind, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalStmt, CXGlobalVariable};
+use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
@@ -47,7 +47,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
         SpecifierType::Public => data.visibility = VisibilityMode::Public,
         SpecifierType::Private => data.visibility = VisibilityMode::Private,
 
-        _ => todo!("parse_access_mods: {:#?}", specifier)
+        _ => point_log_error!(data.tokens, "PARSER ERROR: Unexpected specifier in global scope"),
     };
     
     try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
@@ -102,7 +102,7 @@ pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
 pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::Enum));
 
-    let name = parse_std_ident(&mut data.tokens);
+    let _ = parse_std_ident(&mut data.tokens);
 
     if !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenBrace)) {
         return Some(None);
@@ -119,13 +119,7 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlo
             counter = *value as i32;
         }
         
-        data.ast.global_variables.insert(
-            enum_name.as_str().into(),
-            CXGlobalVariable::GlobalConstant {
-                anonymous: true,
-                constant: CXGlobalConstant::Int(counter)
-            }
-        );
+        data.ast.enum_constants.push((enum_name.as_str().into(), counter as i64));
 
         counter += 1;
 
@@ -165,9 +159,37 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
     if let Some(func) = try_function_parse(&mut data.tokens, return_type.clone(), name.clone())? {
         return parse_fn_merge(data, func);
     }
-    
-    // TODO: Global variables and constants
-    Some(None)
+
+    match next_kind!(data.tokens) {
+        Some(TokenKind::Assignment(_)) => {
+            let initial_value = parse_expr(data)?;
+            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon));
+
+            Some(
+                Some(
+                    CXGlobalStmt::GlobalVariable {
+                        name,
+                        type_: return_type,
+                        initializer: Some(initial_value),
+                    }
+                )
+            )
+        },
+
+        Some(TokenKind::Punctuator(PunctuatorType::Semicolon)) => {
+            Some(
+                Some(
+                    CXGlobalStmt::GlobalVariable {
+                        name,
+                        type_: return_type,
+                        initializer: None,
+                    }
+                )
+            )
+        },
+
+        _ => point_log_error!(data.tokens, "PARSER ERROR: Unexpected token in global expression: {:#?}", data.tokens.peek()),
+    }
 }
 
 pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {

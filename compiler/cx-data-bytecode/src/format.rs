@@ -1,10 +1,15 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID, BCGlobalType};
+use crate::BlockID::Block;
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Bytecode Program:")?;
+
+        for global in self.global_vars.iter() {
+            writeln!(f, "{} :: {}", global.name, global._type)?;
+        }
 
         for func in self.fn_defs.iter() {
             writeln!(f, "{func}")?;
@@ -71,6 +76,21 @@ impl Display for BlockInstruction {
     }
 }
 
+impl Display for BCGlobalType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BCGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s),
+            BCGlobalType::Variable { _type, initial_value } => {
+                if let Some(initial_value) = initial_value {
+                    write!(f, "variable {} = {}", _type, initial_value)
+                } else {
+                    write!(f, "variable {}", _type)
+                }
+            },
+        }
+    }
+}
+
 impl Display for VirtualValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_)
@@ -79,13 +99,20 @@ impl Display for VirtualValue {
 
 impl Display for ValueID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}@{}", self.value_id, self.block_id)
+        match self {
+            ValueID::NULL => write!(f, "null"),
+            ValueID::Global(id) => write!(f, "g{}", id),
+            ValueID::Block(block_id, value_id) => write!(f, "b{}.v{}", block_id, value_id),
+        }
     }
 }
 
 impl Display for BlockID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "b{}{}", self.id, if self.in_deferral { "*" } else { "" })
+        match self {
+            BlockID::Block(id) => write!(f, "b{}", id),
+            BlockID::DeferredBlock(id) => write!(f, "d{}", id),
+        }
     }
 }
 
@@ -213,9 +240,6 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::FloatUnOp { op, value } => {
                 write!(f, "float_unop {op:?} {value}")
-            },
-            VirtualInstruction::StringLiteral { str_id } => {
-                write!(f, "string_literal {str_id}")
             },
             VirtualInstruction::FunctionReference { name } => {
                 write!(f, "function_reference {name}")

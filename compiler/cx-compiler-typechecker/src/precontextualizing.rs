@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_util::{log_error, CXResult};
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::preparse::{CXNaiveFnIdent, CXNaiveFnMap, CXNaiveTypeMap};

@@ -1,0 +1,13 @@
+import includes::global_template_include;
+import std::io;
+
+void procedure() {
+    int result = increment<int>();
+    printf("Incremented value: %d\n", result);
+}
+
+int main() {
+    procedure();
+    procedure();
+    return 0;
+}

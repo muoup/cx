@@ -1,20 +1,24 @@
 use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
+use cranelift::codegen::ir::GlobalValue;
+use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
-use cranelift_module::{DataId, FuncId};
+use cranelift::prelude::{settings, Block, FunctionBuilder, GlobalValueData, InstBuilder, MemFlags, Value};
+use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, ValueID};
 use cx_data_bytecode::types::BCType;
+use cx_util::format::dump_data;
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
-use crate::routines::string_literal;
+use crate::globals::generate_global;
 
 mod codegen;
 mod value_type;
 mod routines;
 mod instruction;
 mod inst_calling;
+mod globals;
 
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
@@ -58,8 +62,6 @@ pub struct FunctionState<'a> {
     pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
     pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
-    pub(crate) global_strs: &'a Vec<DataId>,
-
     pub(crate) fn_map: &'a BCFunctionMap,
 
     pub(crate) block_map: Vec<Block>,
@@ -67,10 +69,8 @@ pub struct FunctionState<'a> {
     pub(crate) fn_params: Vec<Value>,
     
     pub(crate) defer_offset: usize,
-    pub(crate) in_defer: bool,
 
     pub(crate) variable_table: VariableTable,
-
     pub(crate) pointer_type: ir::Type,
 }
 
@@ -80,7 +80,6 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
     pub(crate) fn_map: &'a BCFunctionMap,
-    pub(crate) global_strs: Vec<DataId>,
 
     pub(crate) function_ids: HashMap<String, FuncId>,
     pub(crate) function_sigs: &'a mut HashMap<String, ir::Signature>,
@@ -88,10 +87,11 @@ pub(crate) struct GlobalState<'a> {
 
 impl FunctionState<'_> {
     pub(crate) fn get_block(&mut self, block_id: BlockID) -> Block {
-        let id = if !block_id.in_deferral {
-            block_id.id as usize
-        } else {
-            block_id.id as usize + self.defer_offset
+        let id = match block_id {
+            BlockID::Block(id) => id as usize,
+            BlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
+
+            _ => panic!("Invalid block type for block ID: {:?}", block_id)
         };
         
         self.block_map.get(id)
@@ -100,7 +100,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<Vec<u8>> {
+pub fn bytecode_aot_codegen(bc: &ProgramBytecode, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
@@ -116,26 +116,23 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<Vec<u
             ).unwrap()
         ),
 
-        fn_map: &ast.fn_map,
+        fn_map: &bc.fn_map,
 
         context: Context::new(),
         target_frontend_config: isa.frontend_config(),
-        global_strs: Vec::new(),
         function_ids: HashMap::new(),
         function_sigs: &mut HashMap::new(),
     };
 
-    for global_str in ast.global_strs.iter() {
-        let global_val = string_literal(&mut global_state.object_module, global_str);
-
-        global_state.global_strs.push(global_val);
+    for global_var in bc.global_vars.iter() {
+        generate_global(&mut global_state, global_var)?;
     }
 
-    for fn_prototype in ast.fn_map.values() {
+    for fn_prototype in bc.fn_map.values() {
         codegen_fn_prototype(&mut global_state, fn_prototype);
     }
 
-    for func in &ast.fn_defs {
+    for func in &bc.fn_defs {
         let Some(func_id) = global_state.function_ids.get(&func.prototype.name).cloned() else {
             log_error!(
                 "Function not found in function map: {}",
@@ -152,4 +149,27 @@ pub fn bytecode_aot_codegen(ast: &ProgramBytecode, output: &str) -> Option<Vec<u
     global_state.object_module.finish()
         .emit()
         .ok()
+}
+
+impl FunctionState<'_> {
+    pub(crate) fn get_variable(&mut self, id: &ValueID) -> Option<CodegenValue> {
+        match id {
+            ValueID::NULL
+                => Some(CodegenValue::NULL),
+            ValueID::Global(index) => {
+                let global_val_ref = self.object_module
+                    .declare_data_in_func(
+                        DataId::from_u32(*index as u32),
+                        &mut self.builder.func
+                    );
+
+                let global_val = self.builder.ins()
+                    .global_value(self.pointer_type, global_val_ref);
+
+                Some(CodegenValue::Value(global_val))
+            },
+            ValueID::Block(..)
+                => self.variable_table.get(id).cloned(),
+        }
+    }
 }

@@ -97,26 +97,22 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: ValueID, _type: 
                         .fixed_size();
                     let size_imm = builder.int_const(type_size as i32, 8, false)?;
 
-                    println!("Type: STANDARD_FREE_ARRAY");
                     builder.call(STANDARD_FREE_ARRAY, vec![inner_val, size_imm, ptr_to])?;
                 },
 
                 (None, true) => {
                     // Array of objects without deconstructor
-                    println!("Type: STANDARD_FREE_ARRAY_NOOP");
                     builder.call(STANDARD_FREE_ARRAY_NOOP, vec![inner_val])?;
                 },
 
                 (Some(prototype), false) => {
                     // Single object with deconstructor
-                    println!("Type: STANDARD_FREE with deconstructor");
                     builder.call(&prototype, vec![inner_val])?;
                     builder.call(STANDARD_FREE, vec![inner_val])?;
                 },
 
                 (None, false) => {
                     // Single object without deconstructor
-                    println!("Type: STANDARD_FREE");
                     builder.call(STANDARD_FREE, vec![inner_val])?;
                 },
             }

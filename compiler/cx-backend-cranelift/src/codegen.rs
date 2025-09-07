@@ -6,7 +6,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
-use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, ValueID};
+use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ValueID};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
@@ -15,6 +15,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &B
         LinkageType::Static => Linkage::Local,
         LinkageType::Public => Linkage::Export,
         LinkageType::Private => Linkage::Local,
+        LinkageType::External => Linkage::Import,
     };
 
     let id = global_state.object_module
@@ -38,10 +39,7 @@ pub(crate) fn codegen_block(
     for (value_id, instr) in fn_block.body.iter().enumerate() {
         if let Some(val) = codegen_instruction(context, instr) {
             context.variable_table.insert(
-                ValueID {
-                    block_id,
-                    value_id: value_id as u32
-                },
+                ValueID::Block(block_id, value_id as u32),
                 val
             );
         }
@@ -72,14 +70,12 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         fn_map: global_state.fn_map,
         
         defer_offset: bc_func.blocks.len(),
-        in_defer: false,
 
         variable_table: VariableTable::new(),
         block_map: Vec::new(),
         fn_params: Vec::new(),
 
         builder,
-        global_strs: &global_state.global_strs,
         pointer_type,
     };
 
@@ -87,8 +83,8 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         context.block_map.push(context.builder.create_block());
     }
 
-    let first_block = context.get_block(BlockID { in_deferral: false, id: 0 });
-    
+    let first_block = context.get_block(BlockID::Block(0));
+
     for arg in bc_func.prototype.params.iter() {
         let cranelift_type = get_cranelift_type(&arg._type);
         let arg = context.builder.append_block_param(first_block, cranelift_type);
@@ -96,16 +92,12 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
         context.fn_params.push(arg);
     }
     
-    context.in_defer = false;
-    
     for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
-        codegen_block(&mut context, fn_block, BlockID { in_deferral: false, id: block_id as u32 });
+        codegen_block(&mut context, fn_block, BlockID::Block(block_id as ElementID));
     }
-    
-    context.in_defer = true;
-    
+
     for (block_id, fn_block) in bc_func.defer_blocks.iter().enumerate() {
-        codegen_block(&mut context, fn_block, BlockID { in_deferral: true, id: block_id as u32 });
+        codegen_block(&mut context, fn_block, BlockID::DeferredBlock(block_id as ElementID));
     }
     
     context.builder.seal_all_blocks();

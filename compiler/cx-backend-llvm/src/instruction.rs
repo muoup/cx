@@ -1,6 +1,5 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::attr_noundef;
-use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
@@ -74,13 +73,10 @@ pub(crate) fn generate_instruction<'a>(
             },
             
             VirtualInstruction::DirectCall { func, args, method_sig } => {
-                let Some(function_name) =
-                    function_state
-                        .get_val_ref(func)
-                        .map(|val| val.get_function_ref()) else {
-                    
-                    log_error!("Function reference not found for {func:?}");
+                let Some(func) = function_state.get_val_ref(func) else {
+                    unreachable!("Function value not found for direct call");
                 };
+                let function_name = func.get_function_ref();
                 
                 let Some(function_val) = global_state
                     .module
@@ -159,15 +155,6 @@ pub(crate) fn generate_instruction<'a>(
             VirtualInstruction::FunctionReference { name } =>
                 CodegenValue::FunctionRef(name.clone()),
 
-            VirtualInstruction::StringLiteral { str_id } => {
-                let global = global_state
-                    .module
-                    .get_global(string_literal_name(*str_id as usize).as_str())
-                    .unwrap();
-               
-                CodegenValue::Value(global.as_any_value_enum())
-            },
-
             VirtualInstruction::BitCast { value } => {
                 let val = function_state.value_map
                     .get(value)
@@ -235,7 +222,7 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::GotoDefer => {
                 let defer_block = function_state
-                    .get_block(function_val, BlockID { in_deferral: true, id: 0 })
+                    .get_block(function_val, BlockID::DeferredBlock(0))
                     .unwrap();
                 
                 function_state.builder
@@ -699,9 +686,10 @@ pub(crate) fn generate_instruction<'a>(
             },
             
             VirtualInstruction::GetFunctionAddr { func: func_name } => {
-                let function_name = function_state
-                    .get_val_ref(func_name)?
-                    .get_function_ref();
+                let Some(func_ref) = function_state.get_val_ref(func_name) else {
+                    unreachable!("Function value not found for GetFunctionAddr");
+                };
+                let function_name = func_ref.get_function_ref();
                 
                 let function_val = global_state
                     .module

@@ -22,24 +22,6 @@ pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial
     Some(stack_pointer)
 }
 
-pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> DataId {
-    let id = object_module.declare_anonymous_data(
-        false,
-        false
-    ).unwrap();
-
-    let mut str_data = str.to_owned().into_bytes();
-    str_data.push(b'\0');
-
-    let mut data = DataDescription::new();
-    data.define(str_data.into_boxed_slice());
-
-    object_module.define_data(id, &data).unwrap();
-    object_module.declare_data_in_data(id, &mut data);
-
-    id
-}
-
 pub fn get_function(context: &mut FunctionState, name: &str) -> Option<FuncId> {
     if let Some(func_id) = context.function_ids.get(name) {
         return Some(*func_id);
@@ -53,6 +35,7 @@ pub fn get_function(context: &mut FunctionState, name: &str) -> Option<FuncId> {
         cx_data_bytecode::LinkageType::Static => cranelift_module::Linkage::Local,
         cx_data_bytecode::LinkageType::Public => cranelift_module::Linkage::Export,
         cx_data_bytecode::LinkageType::Private => cranelift_module::Linkage::Local,
+        cx_data_bytecode::LinkageType::External => cranelift_module::Linkage::Import,
     };
     
     let func_id = context.object_module

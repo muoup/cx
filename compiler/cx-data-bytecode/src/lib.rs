@@ -1,5 +1,7 @@
 use crate::types::BCType;
 use std::collections::HashMap;
+use cx_util::identifier::CXIdent;
+
 pub mod types;
 mod format;
 
@@ -10,7 +12,7 @@ pub struct ProgramBytecode {
     pub fn_map: BCFunctionMap,
     pub fn_defs: Vec<BytecodeFunction>,
     
-    pub global_strs: Vec<String>,
+    pub global_vars: Vec<BCGlobalValue>
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -18,31 +20,39 @@ pub enum LinkageType {
     ODR,
     Static,
     Public,
-    Private
+    Private,
+    External
 }
 
 pub type ElementID = u32;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct ValueID {
-    pub block_id: BlockID,
-    pub value_id: ElementID
+#[derive(Debug, Clone)]
+pub struct BCGlobalValue {
+    pub name: CXIdent,
+    pub _type: BCGlobalType,
+    pub linkage: LinkageType,
+}
+
+#[derive(Debug, Clone)]
+pub enum BCGlobalType {
+    StringLiteral(String),
+    Variable {
+        _type: BCType,
+        initial_value: Option<i64>
+    },
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct BlockID {
-    pub in_deferral: bool,
-    pub id: ElementID
+pub enum ValueID {
+    NULL,
+    Global(ElementID),
+    Block(BlockID, ElementID)
 }
 
-impl ValueID {
-    pub const NULL: Self = ValueID {
-        block_id: BlockID {
-            in_deferral: true,
-            id: u32::MAX
-        },
-        value_id: u32::MAX
-    };
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum BlockID {
+    Block(ElementID),
+    DeferredBlock(ElementID)
 }
 
 #[derive(Debug, Clone)]
@@ -187,10 +197,6 @@ pub enum VirtualInstruction {
         value: ValueID
     },
 
-    StringLiteral {
-        str_id: ElementID
-    },
-
     DirectCall {
         func: ValueID,
         args: Vec<ValueID>,
@@ -307,4 +313,17 @@ pub enum BCFloatBinOp {
 #[derive(Debug, Clone, Copy)]
 pub enum BCFloatUnOp {
     NEG
+}
+
+impl BCGlobalValue {
+    pub fn as_virtual_value(&self) -> VirtualValue {
+        match &self._type {
+            BCGlobalType::StringLiteral(s) => VirtualValue {
+                type_: BCType::default_pointer()
+            },
+            BCGlobalType::Variable { _type, .. } => VirtualValue {
+                type_: _type.clone()
+            },
+        }
+    }
 }

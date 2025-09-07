@@ -49,20 +49,3 @@ impl CXIdent {
         self.data = f(self.data.as_ref()).into();
     }
 }
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CXTypedIdent {
-    Intrinsic(CXIdent),
-    Namespace(Vec<CXIdent>),
-    Standard(CXIdent)
-}
-
-impl CXTypedIdent {
-    pub fn assert_standard(self) -> CXIdent {
-        match self {
-            CXTypedIdent::Standard(ident) => ident,
-            CXTypedIdent::Namespace(_) => panic!("Expected standard identifier, found namespace!"),
-            CXTypedIdent::Intrinsic(_) => panic!("Expected standard identifier, found intrinsic!")
-        }
-    }
-}

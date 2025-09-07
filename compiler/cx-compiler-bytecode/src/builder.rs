@@ -15,13 +15,13 @@ use crate::deconstructor::deconstruct_variable;
 
 #[derive(Debug)]
 pub struct BytecodeBuilder {
-    global_strings: Vec<String>,
     functions: Vec<BytecodeFunction>,
+
+    global_variables: Vec<BCGlobalValue>,
     
-    pub cx_function_map: CXFnMap,
     pub fn_map: BCFunctionMap,
     
-    pub symbol_table: ScopedMap<ValueID>,
+    symbol_table: ScopedMap<ValueID>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
 
     in_deferred_block: bool,
@@ -49,12 +49,10 @@ pub struct DeclarationLifetime {
 impl BytecodeBuilder {
     pub fn new(ast: &TCAST) -> Self {
         BytecodeBuilder {
-            global_strings: Vec::new(),
             functions: Vec::new(),
+            global_variables: Vec::new(),
 
             fn_map: convert_cx_func_map(&ast.fn_map),
-            cx_function_map: ast.fn_map.clone(),
-            
             in_deferred_block: false,
 
             symbol_table: ScopedMap::new(),
@@ -71,11 +69,8 @@ impl BytecodeBuilder {
         self.function_context = Some(
             BytecodeFunctionContext {
                 prototype: fn_prototype,
-                current_block: BlockID {
-                    in_deferral: false,
-                    id: 0,
-                },
-                
+                current_block: BlockID::Block(0),
+
                 merge_stack: Vec::new(),
                 continue_stack: Vec::new(),
                 
@@ -167,24 +162,38 @@ impl BytecodeBuilder {
         self.symbol_table.get(name).cloned()
     }
 
+    pub fn insert_global_symbol(&mut self, value: BCGlobalValue) {
+        let key = value.name.to_string();
+        self.global_variables.push(value);
+        let index = (self.global_variables.len() - 1) as u32;
+
+        self.insert_symbol(key, ValueID::Global(index));
+    }
+
+    pub fn global_symbol_exists(&self, name: &str) -> bool {
+        self.symbol_table.get(name).is_some()
+    }
+
     pub fn function_defers(&self) -> bool {
         let ctx = self.function_context.as_ref().unwrap();
         !ctx.deferred_blocks.is_empty()
     }
-    
+
     pub fn add_instruction(
         &mut self,
         instruction: VirtualInstruction,
         value_type: BCType
     ) -> Option<ValueID> {
-        let in_deferred_block = self.in_deferred_block;
         let context = self.fun_mut();
         let current_block = context.current_block;
 
-        let body = if in_deferred_block {
-            &mut context.deferred_blocks[current_block.id as usize].body
-        } else {
-            &mut context.blocks[current_block.id as usize].body
+        let body = match current_block {
+            BlockID::Block(id)
+                => &mut context.blocks.get_mut(id as usize)?.body,
+            BlockID::DeferredBlock(id)
+                => &mut context.deferred_blocks.get_mut(id as usize)?.body,
+
+            _ => unreachable!("INTERNAL PANIC: Attempted to add instruction to invalid block {current_block}")
         };
 
         body.push(BlockInstruction {
@@ -194,12 +203,7 @@ impl BytecodeBuilder {
             }
         });
 
-        Some(
-            ValueID {
-                block_id: context.current_block, 
-                value_id: (body.len() - 1) as ElementID,
-            }
-        )
+        Some(ValueID::Block(context.current_block, (body.len() - 1) as ElementID))
     }
 
     pub fn add_instruction_cxty(
@@ -341,28 +345,37 @@ impl BytecodeBuilder {
         )
     }
 
-    pub fn get_variable(&self, value_id: ValueID) -> Option<&VirtualValue> {
-        let block = if self.in_deferred_block {
-            &self.fun().deferred_blocks
-        } else {
-            &self.fun().blocks
-        };
-        
-        Some(
-            &block
-                .get(value_id.block_id.id as usize)?
-                .body
-                .get(value_id.value_id as usize)?
-                .value
-        )
+    pub fn get_variable(&self, value_id: ValueID) -> Option<VirtualValue> {
+        match value_id {
+            ValueID::NULL => unreachable!("INTERNAL PANIC: Attempted to get variable for NULL value id"),
+
+            ValueID::Global(index) =>
+                self.global_variables.get(index as usize)
+                    .map(|gvar| gvar.as_virtual_value()),
+
+            ValueID::Block(block, elem) =>
+                match block {
+                    BlockID::Block(id) =>
+                        self.fun().blocks.get(id as usize)
+                            .and_then(|b| b.body.get(elem as usize))
+                            .map(|instr| instr.value.clone()),
+
+                    BlockID::DeferredBlock(id) =>
+                        self.fun().deferred_blocks.get(id as usize)
+                            .and_then(|b| b.body.get(elem as usize))
+                            .map(|instr| instr.value.clone()),
+
+                    _ => unreachable!("INTERNAL PANIC: Attempted to get variable for invalid block id: {block:?}")
+                }
+        }
     }
 
-    pub fn get_type(&self, value_id: ValueID) -> Option<&BCType> {
+    pub fn get_type(&self, value_id: ValueID) -> Option<BCType> {
         let Some(value) = self.get_variable(value_id) else {
             panic!("INTERNAL PANIC: Failed to get variable for value id: {value_id:?}");
         };
         
-        Some(&value.type_)
+        Some(value.type_)
     }
 
     pub fn start_cont_point(&mut self) -> BlockID {
@@ -377,7 +390,7 @@ impl BytecodeBuilder {
     
     pub fn setup_deferring_block(&mut self){
         self.in_deferred_block = true;
-        self.set_current_block(BlockID { in_deferral: true, id: 0 });
+        self.set_current_block(BlockID::DeferredBlock(0));
         
         let context = self.fun_mut();
         
@@ -406,10 +419,7 @@ impl BytecodeBuilder {
         self.in_deferred_block = true;
         
         let context = self.fun_mut();
-        let last_block = BlockID {
-            in_deferral: true,
-            id: context.deferred_blocks.len() as ElementID - 1
-        };
+        let last_block = BlockID::DeferredBlock(context.deferred_blocks.len() as ElementID - 1);
         
         self.set_current_block(last_block);
     }
@@ -418,10 +428,7 @@ impl BytecodeBuilder {
         self.in_deferred_block = false;
 
         let context = self.fun_mut();
-        let last_block = BlockID {
-            in_deferral: false,
-            id: context.blocks.len() as ElementID - 1
-        };
+        let last_block = BlockID::Block(context.blocks.len() as ElementID - 1);
         
         self.set_current_block(last_block);
     }
@@ -465,12 +472,6 @@ impl BytecodeBuilder {
 
     pub fn set_current_block(&mut self, block: BlockID) {
         self.fun_mut().current_block = block;
-        self.in_deferred_block = block.in_deferral;
-    }
-
-    pub fn create_global_string(&mut self, string: String) -> u32 {
-        self.global_strings.push(string.clone());
-        self.global_strings.len() as u32 - 1
     }
     
     pub fn current_block(&self) -> BlockID {
@@ -482,23 +483,21 @@ impl BytecodeBuilder {
     }
     
     pub fn create_named_block(&mut self, name: &str) -> BlockID {
-        let in_deferred_block = self.in_deferred_block;
         let context = self.fun_mut();
 
-        let add_to = if in_deferred_block {
-            &mut context.deferred_blocks
-        } else {
-            &mut context.blocks
+        let add_to = match &context.current_block {
+            BlockID::Block(_) => &mut context.blocks,
+            BlockID::DeferredBlock(_) => &mut context.deferred_blocks,
         };
         
         add_to.push(FunctionBlock {
-            debug_name: "".to_owned(),
+            debug_name: name.to_string(),
             body: Vec::new()
         });
 
-        BlockID {
-            in_deferral: in_deferred_block,
-            id: (add_to.len() - 1) as ElementID
+        match &context.current_block {
+            BlockID::Block(_) => BlockID::Block((add_to.len() - 1) as ElementID),
+            BlockID::DeferredBlock(_) => BlockID::DeferredBlock((add_to.len() - 1) as ElementID)
         }
     }
 
@@ -540,9 +539,9 @@ impl BytecodeBuilder {
         Some(
             ProgramBytecode {
                 fn_map: self.fn_map,
+                fn_defs: self.functions,
 
-                global_strs: self.global_strings,
-                fn_defs: self.functions
+                global_vars: self.global_variables,
             }
         )
     }

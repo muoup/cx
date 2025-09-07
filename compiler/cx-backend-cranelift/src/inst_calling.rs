@@ -32,9 +32,9 @@ pub(crate) fn prepare_method_call<'a>(
     func: ValueID,
     args: &'a [ValueID],
 ) -> Option<(CodegenValue, Vec<Value>)> {
-    let val = context.variable_table.get(&func).cloned().unwrap();
+    let val = context.get_variable(&func).unwrap();
     let params = args.iter()
-        .map(|arg| context.variable_table.get(arg).unwrap().as_value())
+        .map(|arg| context.get_variable(arg).unwrap().as_value())
         .collect::<Vec<_>>();
 
     Some((val, params))

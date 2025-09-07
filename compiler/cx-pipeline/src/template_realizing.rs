@@ -9,8 +9,7 @@ pub(crate) fn realize_templates(
     context: &GlobalCompilationContext,
     job: &CompilationUnit,
     env: &mut TCEnvironment
-) -> Option<Vec<TCFunctionDef>> {
-    let mut new_methods = Vec::new();
+) -> Option<()> {
     let mut requests_fulfilled = HashSet::new();
     
     while let Some(request) = env.requests.pop() {
@@ -31,15 +30,14 @@ pub(crate) fn realize_templates(
             .template
             .resource
             .clone();
-        let stmt = realize_fn_implementation(
+        realize_fn_implementation(
             env,
             other_data.as_ref(), other_ast.as_ref(),
             &template, &request.input
         )?;
 
         requests_fulfilled.insert(mangle_name);
-        new_methods.push(stmt);
     }
 
-    Some(new_methods)
+    Some(())
 }

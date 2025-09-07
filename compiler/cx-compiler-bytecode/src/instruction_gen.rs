@@ -1,7 +1,8 @@
+use std::any::type_name_of_val;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFunctionPrototype, BCIntUnOp, BCParameter, BCPtrBinOp, BlockID, LinkageType, ValueID, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCGlobalType, BCGlobalValue, BCIntUnOp, BCParameter, BCPtrBinOp, BlockID, LinkageType, ValueID, VirtualInstruction};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
 use cx_util::mangling::mangle_deconstructor;
@@ -208,6 +209,29 @@ pub fn generate_instruction(
         },
 
         TCExprKind::VariableReference { name } => {
+            let Some(val) = builder.get_symbol(name.as_str()) else {
+                log_error!("Variable {name} not found in current scope");
+            };
+
+            Some(val)
+        },
+
+        TCExprKind::GlobalVariableReference { name } => {
+            if !builder.global_symbol_exists(name.as_str()) {
+                let type_ = builder.convert_cx_type(&expr._type)?;
+
+                builder.insert_global_symbol(
+                    BCGlobalValue {
+                        name: name.clone(),
+                        linkage: LinkageType::External,
+                        _type: BCGlobalType::Variable {
+                            _type: type_,
+                            initial_value: None
+                        }
+                    }
+                );
+            }
+
             builder.get_symbol(name.as_str())
         },
 
@@ -284,17 +308,6 @@ pub fn generate_instruction(
             
             Some(ValueID::NULL)
         }
-
-        TCExprKind::StringLiteral { value, .. } => {
-            let string_id = builder.create_global_string(value.as_string());
-
-            builder.add_instruction(
-                VirtualInstruction::StringLiteral {
-                    str_id: string_id,
-                },
-                BCType::default_pointer()
-            )
-        },
 
         TCExprKind::UnOp { operator, operand } => {
             match operator {
@@ -1001,15 +1014,7 @@ pub(crate) fn implicit_defer_return(
             None
         } else {
             // Phi node for the return value
-            Some(
-                ValueID {
-                    block_id: BlockID {
-                        id: 0,
-                        in_deferral: true
-                    },
-                    value_id: 0
-                }
-            )
+            Some(ValueID::Block(BlockID::DeferredBlock(0), 0))
         };
 
         builder.enter_deferred_logic();

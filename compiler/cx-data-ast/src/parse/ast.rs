@@ -1,4 +1,4 @@
-use crate::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
@@ -19,7 +19,7 @@ pub struct CXAST {
     pub type_map: CXNaiveTypeMap,
     pub function_map: CXNaiveFnMap,
     
-    pub global_variables: HashMap<String, CXGlobalVariable>
+    pub enum_constants: Vec<(String, i64)>
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -92,19 +92,12 @@ pub struct CXInitIndex {
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalVariable {
-    GlobalConstant {
-        // if the constant cannot be addressed (e.g. intrinsic generated constants like enum values),
-        // these values do not need to be generated in the final binary
-        //
-        // anonymous - true if the constant fits this criteria, false if it can be addressed
-        anonymous: bool,
-        constant: CXGlobalConstant
-    },
-}
-
-#[derive(Debug, Clone, Readable, Writable)]
-pub enum CXGlobalConstant {
-    Int(i32)
+    EnumConstant(i32),
+    GlobalVariable {
+        type_: CXNaiveType,
+        is_mutable: bool,
+        initializer: Option<CXExpr>,
+    }
 }
 
 #[derive(Debug, Readable, Writable)]

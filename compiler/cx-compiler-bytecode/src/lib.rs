@@ -1,5 +1,5 @@
 use crate::builder::BytecodeBuilder;
-use crate::global_stmts::generate_function;
+use crate::global_stmts::{generate_function, generate_global_variable};
 use cx_data_bytecode::ProgramBytecode;
 use cx_data_typechecker::ast::{TCStructureData, TCAST};
 use cx_util::bytecode_error_log;
@@ -27,6 +27,10 @@ pub fn generate_bytecode(ast: TCAST) -> Option<ProgramBytecode> {
         let Some(_) = generate_deconstructor(&mut builder, _type) else {
             bytecode_error_log!(builder, "Failed to generate deconstructor for type {}", _type);
         };
+    }
+
+    for global_var in ast.global_variables.iter() {
+        generate_global_variable(&mut builder, global_var);
     }
 
     for fn_def in ast.function_defs.iter() {

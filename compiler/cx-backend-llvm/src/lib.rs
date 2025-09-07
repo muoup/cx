@@ -1,5 +1,4 @@
 use crate::attributes::*;
-use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
@@ -10,27 +9,28 @@ use inkwell::module::{Linkage, Module};
 use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{AnyType, FunctionType};
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, GlobalValue};
 
 use std::collections::HashMap;
-use std::path::Path;
 use inkwell::basic_block::BasicBlock;
 use cx_data_pipeline::OptimizationLevel;
 use cx_util::format::dump_data;
+use crate::globals::generate_global_variable;
 use crate::instruction::reset_num;
 
 pub(crate) mod typing;
 mod instruction;
-mod mangling;
 mod attributes;
 mod arithmetic;
+mod globals;
 
 pub(crate) struct GlobalState<'a> {
     module: Module<'a>,
     context: &'a Context,
 
-    functions: HashMap<String, FunctionType<'a>>,
+    globals: Vec<GlobalValue<'a>>,
 
+    functions: HashMap<String, FunctionType<'a>>,
     function_map: &'a BCFunctionMap,
 }
 
@@ -39,7 +39,7 @@ pub(crate) struct FunctionState<'a> {
     
     defer_block_offset: usize,
     in_defer: bool,
-    
+
     builder: Builder<'a>,
     value_map: HashMap<ValueID, CodegenValue<'a>>,
 }
@@ -50,13 +50,17 @@ impl<'a> FunctionState<'a> {
     }
     
     pub(crate) fn get_block(&self, function_val: &FunctionValue<'a>, block_id: BlockID) -> Option<BasicBlock> {
-        let adjusted_id = if !block_id.in_deferral {
-            block_id.id as usize
-        } else {
-            block_id.id as usize + self.defer_block_offset
-        };
-     
-        function_val.get_basic_blocks().get(adjusted_id).cloned()
+        match block_id {
+            BlockID::Block(id) =>
+                function_val.get_basic_blocks()
+                    .get(id as usize)
+                    .cloned(),
+            BlockID::DeferredBlock(id) =>
+                function_val.get_basic_blocks()
+                    .get(id as usize + self.defer_block_offset)
+                    .cloned(),
+            _ => None
+        }
     }
 }
 
@@ -100,6 +104,7 @@ pub fn bytecode_aot_codegen(
         context: &context,
 
         functions: HashMap::new(),
+        globals: Vec::new(),
 
         function_map: &bytecode.fn_map,
     };
@@ -108,22 +113,9 @@ pub fn bytecode_aot_codegen(
         cache_prototype(&mut global_state, prototypes).unwrap();
     }
 
-    for (i, str) in bytecode.global_strs.iter().enumerate() {
-        let val =
-            context
-                .const_string(str.as_bytes(), true)
-                .as_basic_value_enum();
-
-        let global = global_state.module.add_global(
-            val.get_type(),
-            None,
-            string_literal_name(i).as_str()
-        );
-        
-        global.set_linkage(Linkage::Private);
-        global.set_initializer(&val);
-        global.set_unnamed_addr(true);
-        global.set_constant(true);
+    for global in bytecode.global_vars.iter() {
+        generate_global_variable(&mut global_state, global)
+            .unwrap_or_else(|| panic!("Failed to generate global variable: {}", global.name));
     }
 
     for func in bytecode.fn_defs.iter() {
@@ -206,10 +198,17 @@ fn fn_aot_codegen(
         
         defer_block_offset: bytecode.blocks.len(),
         in_defer: false,
-        
+
         builder,
         value_map: HashMap::new(),
     };
+
+    for (i, global) in global_state.globals.iter().enumerate() {
+        function_state.value_map.insert(
+            ValueID::Global(i as ElementID),
+            CodegenValue::Value(global.as_any_value_enum())
+        );
+    }
 
     for i in 0..bytecode.blocks.len() {
         global_state.context.append_basic_block(func_val, format!("block_{i}").as_str());
@@ -222,13 +221,13 @@ fn fn_aot_codegen(
     function_state.in_defer = false;
     
     for (block_id, block) in bytecode.blocks.iter().enumerate() {
-        codegen_block(global_state, &mut function_state, &func_val, BlockID { in_deferral: false, id: block_id as u32 }, block);
+        codegen_block(global_state, &mut function_state, &func_val, BlockID::Block(block_id as ElementID), block);
     }
 
     function_state.in_defer = true;
     
     for (block_id, block) in bytecode.defer_blocks.iter().enumerate() {
-        codegen_block(global_state, &mut function_state, &func_val, BlockID { in_deferral: true, id: block_id as u32}, block);
+        codegen_block(global_state, &mut function_state, &func_val, BlockID::DeferredBlock(block_id as ElementID), block);
     }
 
     Some(())
@@ -245,7 +244,7 @@ fn codegen_block<'a>(
         .unwrap_or_else(|| panic!("Block with ID {block_id} not found in function"));
     function_state.builder.position_at_end(block_val);
 
-    for (value_id, inst) in block.body.iter().enumerate() {
+    for (value_idx, inst) in block.body.iter().enumerate() {
         let value = instruction::generate_instruction(
             global_state,
             function_state,
@@ -254,10 +253,7 @@ fn codegen_block<'a>(
         ).unwrap_or_else(|| panic!("Failed to generate instruction {inst}"));
 
         function_state.value_map.insert(
-            ValueID { 
-                block_id, 
-                value_id: value_id as ElementID 
-            },
+            ValueID::Block(block_id, value_idx as ElementID),
             value
         );
         
@@ -309,6 +305,7 @@ fn cache_prototype<'a>(
                 LinkageType::Static => Linkage::Internal,
                 LinkageType::Public => Linkage::External,
                 LinkageType::Private => Linkage::Private,
+                LinkageType::External => Linkage::External,
             }
         )
     );

@@ -329,10 +329,10 @@ pub(crate) fn perform_job(
                 .get(&job.unit);
 
             let mut env = TCEnvironment::new(structure_data.as_ref().clone());
-            env.load_global_symbols(self_ast.as_ref());
+            typecheck(&mut env, &self_ast)
+                .expect("Typechecking failed");
 
-            let mut stmts = typecheck(&mut env, &self_ast)?;
-            let template_stmts = realize_templates(context, &job.unit, &mut env)
+            realize_templates(context, &job.unit, &mut env)
                 .expect("Template realization failed");
 
             let tc_ast = TCAST {
@@ -341,13 +341,12 @@ pub(crate) fn perform_job(
                 type_map: env.type_data.standard,
                 fn_map: env.fn_data.standard,
 
-                destructors_required: env.deconstructors.into_iter().collect::<_>(),
-                global_variables: env.global_variables.into_iter()
-                    .map(|(name, var)| var)
+                destructors_required: env.deconstructors.into_iter()
                     .collect::<_>(),
-                function_defs: stmts.into_iter()
-                    .chain(template_stmts.into_iter())
-                    .collect::<Vec<_>>(),
+                global_variables: env.global_variables.into_iter()
+                    .map(|(_, var)| var)
+                    .collect::<_>(),
+                function_defs: env.declared_functions
             };
 
             dump_data(&format!("{:#?}", tc_ast));

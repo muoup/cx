@@ -2,8 +2,8 @@ use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, LinkageType, VirtualInstruction};
-use cx_data_typechecker::ast::TCExpr;
+use cx_data_bytecode::{BCFunctionPrototype, BCGlobalType, BCGlobalValue, BCParameter, LinkageType, VirtualInstruction};
+use cx_data_typechecker::ast::{TCExpr, TCGlobalVariable};
 use cx_data_typechecker::cx_types::CXFunctionPrototype;
 use cx_util::mangling::mangle_destructor;
 
@@ -20,7 +20,7 @@ pub(crate) fn generate_function(
     generate_params(builder, &prototype, &bc_prototype)?;
 
     let Some(_) = generate_instruction(builder, body) else {
-        panic!("Failed to generate body for function: {:?}", prototype.name);
+        panic!("Failed to generate body for function {}", prototype.name.as_str());
     };
 
     builder.pop_scope();
@@ -128,6 +128,38 @@ fn generate_params(
                 BCType::unit()
             )?;
         }
+    }
+
+    Some(())
+}
+
+pub(crate) fn generate_global_variable(builder: &mut BytecodeBuilder, var: &TCGlobalVariable) -> Option<()> {
+    match var {
+        TCGlobalVariable::UnaddressableConstant { .. } => (),
+
+        TCGlobalVariable::StringLiteral { name, value} => {
+            let value = BCGlobalValue {
+                name: name.clone(),
+                linkage: LinkageType::Static,
+                _type: BCGlobalType::StringLiteral(value.clone())
+            };
+
+            builder.insert_global_symbol(value);
+        },
+
+        TCGlobalVariable::Variable { name, _type, initializer } => {
+            let _type = builder.convert_cx_type(_type)?;
+            let value = BCGlobalValue {
+                name: name.clone(),
+                linkage: LinkageType::Public,
+                _type: BCGlobalType::Variable {
+                    initial_value: initializer.clone(),
+                    _type: _type.clone(),
+                }
+            };
+
+            builder.insert_global_symbol(value);
+        },
     }
 
     Some(())

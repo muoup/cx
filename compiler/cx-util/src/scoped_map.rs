@@ -29,7 +29,7 @@ impl<T> ScopedMap<T> {
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
-            overwrites: vec![]
+            overwrites: vec![vec![]]
         }
     }
 

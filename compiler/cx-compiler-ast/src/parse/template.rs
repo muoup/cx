@@ -1,7 +1,7 @@
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::CXGlobalStmt;
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::preparse::naive_types::{CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
 use cx_util::{point_log_error, CXResult};
@@ -71,7 +71,10 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
             )
         },
 
-        CXGlobalStmt::TypeDecl { .. } => todo!(),
+        CXGlobalStmt::TypeDecl { .. } => {
+            // All relevant work done in preparsing.
+            Some(None)
+        },
 
         CXGlobalStmt::TemplatedFunction { .. } =>
             point_log_error!(data.tokens, "PARSER ERROR: Nested templated generators are not supported!"),

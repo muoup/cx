@@ -5,7 +5,7 @@ use cx_util::mangling::{mangle_destructor, mangle_template};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
 use cx_data_ast::parse::ast::{CXGlobalVariable, CXAST};
-use cx_data_typechecker::ast::TCStructureData;
+use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCStructureData};
 
 pub struct TCTemplateRequest {
     pub module_origin: Option<String>,
@@ -20,9 +20,11 @@ pub struct TCEnvironment {
     pub requests: Vec<TCTemplateRequest>,
     pub deconstructors: HashSet<CXType>,
 
-    pub global_variables: HashMap<String, CXGlobalVariable>,
+    pub global_variables: HashMap<String, TCGlobalVariable>,
     pub current_function: Option<CXFunctionPrototype>,
     pub symbol_table: ScopedMap<CXType>,
+
+    pub declared_functions: Vec<TCFunctionDef>,
 }
 
 impl TCEnvironment {
@@ -37,6 +39,7 @@ impl TCEnvironment {
             requests: Vec::new(),
             deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
+            declared_functions: Vec::new()
         }
     }
 
@@ -92,9 +95,5 @@ impl TCEnvironment {
     pub fn extend(&mut self, other: TCEnvironment) {
         self.requests.extend(other.requests);
         self.deconstructors.extend(other.deconstructors);
-    }
-
-    pub fn load_global_symbols(&mut self, ast: &CXAST) {
-        self.global_variables.extend(ast.global_variables.clone());
     }
 }
