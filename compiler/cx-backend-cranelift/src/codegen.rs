@@ -7,16 +7,11 @@ use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
 use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ValueID};
+use crate::routines::convert_linkage;
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
-    let linkage = match prototype.linkage {
-        LinkageType::ODR => Linkage::Local,
-        LinkageType::Static => Linkage::Local,
-        LinkageType::Public => Linkage::Export,
-        LinkageType::Private => Linkage::Local,
-        LinkageType::External => Linkage::Import,
-    };
+    let linkage = convert_linkage(prototype.linkage);
 
     let id = global_state.object_module
         .declare_function(prototype.name.as_str(), linkage, &sig)
@@ -102,8 +97,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     
     context.builder.seal_all_blocks();
     context.builder.finalize();
-
-    dump_data(&func);
 
     let GlobalState { object_module, context, .. } = global_state;
 

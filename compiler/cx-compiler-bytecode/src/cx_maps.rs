@@ -166,7 +166,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCF
             name: cx_proto.name.as_string(),
             return_type, params,
             var_args: cx_proto.var_args,
-            linkage: LinkageType::Public
+            linkage: LinkageType::Standard
         }
     )
 }

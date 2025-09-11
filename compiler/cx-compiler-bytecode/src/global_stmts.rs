@@ -46,7 +46,7 @@ pub(crate) fn generate_destructor(
             }),
         }],
         var_args: false,
-        linkage: LinkageType::Public
+        linkage: LinkageType::Standard
     };
 
     builder.push_scope();
@@ -151,7 +151,7 @@ pub(crate) fn generate_global_variable(builder: &mut BytecodeBuilder, var: &TCGl
             let _type = builder.convert_cx_type(_type)?;
             let value = BCGlobalValue {
                 name: name.clone(),
-                linkage: LinkageType::Public,
+                linkage: LinkageType::Standard,
                 _type: BCGlobalType::Variable {
                     initial_value: initializer.clone(),
                     _type: _type.clone(),

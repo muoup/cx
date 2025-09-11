@@ -1,9 +1,10 @@
 use std::sync::Mutex;
 use inkwell::AddressSpace;
+use inkwell::module::Linkage;
 use crate::GlobalState;
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, BasicValueEnum};
-use cx_data_bytecode::BCFunctionPrototype;
+use cx_data_bytecode::{BCFunctionPrototype, LinkageType};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 
 fn anonymous_struct_name() -> String {
@@ -146,4 +147,13 @@ pub(crate) fn bc_llvm_prototype<'a>(
             _ => panic!("Invalid return type, found: {return_type:?}")
         }
     )
+}
+
+pub(crate) fn convert_linkage(linkage: LinkageType) -> Linkage {
+    match linkage {
+        LinkageType::ODR => Linkage::LinkOnceODR,
+        LinkageType::Static => Linkage::Internal,
+        LinkageType::Standard => Linkage::External,
+        LinkageType::External => Linkage::ExternalWeak
+    }
 }

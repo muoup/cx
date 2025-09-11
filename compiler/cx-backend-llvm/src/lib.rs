@@ -1,5 +1,5 @@
 use crate::attributes::*;
-use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype};
+use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype, convert_linkage};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
 use inkwell::attributes::AttributeLoc;
@@ -146,10 +146,12 @@ pub fn bytecode_aot_codegen(
             CodeModel::Default
         )
         .expect("Failed to create target machine");
-    
-    dump_data(&format!("{}", global_state.module.print_to_string().to_string_lossy()));
-    
-    global_state.module.verify().unwrap_or_else(|err| panic!("Module verification failed with error: {err:#?}"));
+
+    global_state.module.verify()
+        .unwrap_or_else(|err| {
+            dump_data(&global_state.module.print_to_string().to_string_lossy());
+            panic!("Module verification failed: {}", err.to_string());
+        });
     global_state.module.set_triple(&TargetMachine::get_default_triple());
     
     global_state.module
@@ -159,21 +161,9 @@ pub fn bytecode_aot_codegen(
             PassBuilderOptions::create()
         )
         .expect("Failed to run passes");
-    
-    let output = global_state.module.print_to_string();
-    dump_data(&output.to_string_lossy());
-    
-    let asm = target_machine
-        .write_to_memory_buffer(
-            &global_state.module,
-            inkwell::targets::FileType::Assembly,
-        )
-        .expect("Failed to write module to memory buffer");
-    
-    dump_data(&String::from_utf8_lossy(asm.as_slice()));
 
-    // println!("[LLVM] Exporting module to file: {}", output_path);
-    
+    dump_data(&format!("{}", global_state.module.print_to_string().to_string_lossy()));
+
     let buff = target_machine
         .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
         .expect("Failed to export module to file");
@@ -299,15 +289,7 @@ fn cache_prototype<'a>(
     let func = global_state.module.add_function(
         prototype.name.as_str(),
         llvm_prototype,
-        Some(
-            match prototype.linkage {
-                LinkageType::ODR => Linkage::LinkOnceODR,
-                LinkageType::Static => Linkage::Internal,
-                LinkageType::Public => Linkage::External,
-                LinkageType::Private => Linkage::Private,
-                LinkageType::External => Linkage::External,
-            }
-        )
+        Some(convert_linkage(prototype.linkage))
     );
 
     // get_type_attributes(global_state.context, &prototype.return_type)

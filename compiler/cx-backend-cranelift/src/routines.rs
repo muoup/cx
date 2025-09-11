@@ -2,8 +2,9 @@ use crate::FunctionState;
 use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{InstBuilder, StackSlotData, StackSlotKind, Value};
-use cranelift_module::{DataDescription, DataId, FuncId, Module};
+use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module};
 use cranelift_object::ObjectModule;
+use cx_data_bytecode::LinkageType;
 use crate::inst_calling::prepare_function_sig;
 
 pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
@@ -30,13 +31,7 @@ pub fn get_function(context: &mut FunctionState, name: &str) -> Option<FuncId> {
     let prototype = context.fn_map.get(name)?;
 
     let signature = prepare_function_sig(&mut context.object_module, prototype)?;
-    let linkage = match prototype.linkage {
-        cx_data_bytecode::LinkageType::ODR => cranelift_module::Linkage::Local,
-        cx_data_bytecode::LinkageType::Static => cranelift_module::Linkage::Local,
-        cx_data_bytecode::LinkageType::Public => cranelift_module::Linkage::Export,
-        cx_data_bytecode::LinkageType::Private => cranelift_module::Linkage::Local,
-        cx_data_bytecode::LinkageType::External => cranelift_module::Linkage::Import,
-    };
+    let linkage = convert_linkage(prototype.linkage);
     
     let func_id = context.object_module
         .declare_function(prototype.name.as_str(), linkage, &signature)
@@ -45,4 +40,13 @@ pub fn get_function(context: &mut FunctionState, name: &str) -> Option<FuncId> {
     context.function_ids.insert(prototype.name.clone(), func_id);
 
     Some(func_id)
+}
+
+pub fn convert_linkage(linkage: LinkageType) -> cranelift_module::Linkage {
+    match linkage {
+        LinkageType::ODR => Linkage::Local,
+        LinkageType::Static => Linkage::Local,
+        LinkageType::Standard => Linkage::Export,
+        LinkageType::External => Linkage::Import,
+    }
 }

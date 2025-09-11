@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 use crate::{BytecodeResult, ProgramBytecode};

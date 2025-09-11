@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
 use cx_util::identifier::CXIdent;
@@ -8,6 +9,7 @@ use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
 pub struct TCStructureData {
     pub type_data: CXTypeData,
     pub fn_data: CXFnData,
+    pub global_variables: HashMap<String, TCGlobalVariable>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -50,7 +52,7 @@ pub enum TCGlobalVariable {
         name: CXIdent,
         _type: CXType,
         initializer: Option<i64>
-    }
+    },
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

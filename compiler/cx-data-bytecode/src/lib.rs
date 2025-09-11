@@ -19,8 +19,7 @@ pub struct ProgramBytecode {
 pub enum LinkageType {
     ODR,
     Static,
-    Public,
-    Private,
+    Standard,
     External
 }
 

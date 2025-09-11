@@ -1,6 +1,7 @@
-use cranelift_module::{DataDescription, Module};
+use cranelift_module::{DataDescription, Linkage, Module};
 use cx_data_bytecode::{BCGlobalType, BCGlobalValue};
 use crate::GlobalState;
+use crate::routines::convert_linkage;
 
 pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue) -> Option<()> {
     match &variable._type {
@@ -21,12 +22,15 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue)
         },
 
         BCGlobalType::Variable { _type, initial_value } => {
+            let linkage = convert_linkage(variable.linkage);
             let id = state.object_module.declare_data(
-                variable.name.as_str(),
-                cranelift_module::Linkage::Export,
-                true,
-                false
+                variable.name.as_str(), linkage,
+                true, false
             ).unwrap();
+
+            if linkage == Linkage::Import {
+                return Some(());
+            }
 
             let mut data = DataDescription::new();
 
@@ -40,13 +44,12 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue)
                     .collect::<Vec<_>>();
 
                 data.define(relevant_data.into_boxed_slice());
+                state.object_module.define_data(id, &data).expect("");
             } else {
                 let size = _type.fixed_size();
                 data.define_zeroinit(size);
+                state.object_module.define_data(id, &data).expect("");
             }
-
-            state.object_module.define_data(id, &data).unwrap();
-            state.object_module.declare_data_in_data(id, &mut data);
         },
     }
 

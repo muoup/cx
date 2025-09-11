@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicUsize;
 use inkwell::module::Linkage;
-use cx_data_bytecode::{BCGlobalType, BCGlobalValue};
+use cx_data_bytecode::{BCGlobalType, BCGlobalValue, LinkageType};
 use crate::GlobalState;
-use crate::typing::{any_to_basic_type, bc_llvm_type};
+use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
 
 fn string_literal_name() -> String {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -39,12 +39,23 @@ pub(crate) fn generate_global_variable(state: &mut GlobalState, variable: &BCGlo
 
             let global = state.module.add_global(basic_type, None, variable.name.as_str());
 
+            if variable.linkage != LinkageType::External {
+                if let Some(initializer) = initial_value {
+                    global.set_initializer(
+                        &basic_type.into_int_type()
+                            .const_int(*initializer as u64, true)
+                    );
+                } else {
+                    global.set_initializer(&basic_type.const_zero());
+                }
+            } else {
+                global.set_linkage(Linkage::External);
+            }
+
             if let Some(initial_value) = initial_value {
                 let init_val = llvm_type.into_int_type()
                     .const_int(*initial_value as u64, true);
                 global.set_initializer(&init_val);
-            } else {
-                global.set_initializer(&llvm_type.into_int_type().const_zero());
             }
 
             state.globals.push(global);

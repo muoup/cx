@@ -82,7 +82,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 let anonymous_name = anonymous_name_gen();
                 let name_ident = CXIdent::from(anonymous_name.clone());
 
-                env.global_variables.insert(
+                env.realized_globals.insert(
                     anonymous_name.clone(),
                     TCGlobalVariable::StringLiteral {
                         name: name_ident.clone(),
@@ -123,7 +123,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         _type: CXTypeKind::Function { prototype: Box::new(function_type.clone()) }.into(),
                         kind: TCExprKind::FunctionReference { name: name.clone() } // Placeholder for args
                     }
-                } else if let Some(global) = env.global_variables.get(name.as_str()) {
+                } else if let Some(global) = env.get_global_var(name.as_str()) {
                     global_constant_expr(global)?
                 } else {
                     log_error!("Identifier '{}' not found", name);
@@ -527,43 +527,6 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
     )
 }
 
-pub(crate) fn typecheck_global_variable(
-    env: &mut TCEnvironment,
-    name: &str, type_: &CXNaiveType, initializer: &Option<CXExpr>
-) -> Option<()> {
-    let type_ = contextualize_type(env, type_)?;
-
-    let initializer = match initializer {
-        Some(initializer) => {
-            if !type_.is_integer() {
-                log_error!("TYPE ERROR: Global variable initializers currently only support integer types");
-            }
-
-            let mut init_tc = typecheck_expr(env, initializer)?;
-            coerce_value(&mut init_tc);
-            implicit_cast(&mut init_tc, &type_);
-
-            let TCExprKind::IntLiteral { value, .. } = init_tc.kind else {
-                log_error!("TYPE ERROR: Global variable initializers currently only support constant integer expressions");
-            };
-
-            Some(value)
-        },
-
-        None => None
-    };
-
-    env.global_variables.insert(
-        name.to_string(),
-        TCGlobalVariable::Variable {
-            name: CXIdent::from(name.clone()),
-            _type: type_.clone(),
-            initializer
-        }
-    );
-
-    Some(())
-}
 
 fn global_constant_expr(global: &TCGlobalVariable) -> Option<TCExpr> {
     match global {

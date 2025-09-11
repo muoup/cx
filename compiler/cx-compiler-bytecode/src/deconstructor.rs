@@ -23,7 +23,7 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<BCFunctionProtot
             return_type: BCType::unit(),
             params: vec![BCParameter { name: None, _type: BCType::default_pointer() }],
             var_args: false,
-            linkage: LinkageType::Static
+            linkage: LinkageType::ODR
         }
     )
 }

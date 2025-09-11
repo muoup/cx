@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use cx_data_ast::parse::ast::{CXGlobalStmt, CXGlobalVariable, CXAST};
 use cx_util::identifier::CXIdent;
 use cx_util::{log_error, CXResult};
 use cx_data_ast::parse::parser::VisibilityMode;
@@ -10,8 +12,9 @@ use cx_data_pipeline::db::ModuleData;
 use cx_util::mangling::{mangle_destructor, mangle_member_function, mangle_template};
 use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
 use cx_data_typechecker::{CXFnData, CXTypeData};
+use cx_data_typechecker::ast::TCGlobalVariable;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_TYPES;
-use crate::type_mapping::assemble_method;
+use crate::type_mapping::{assemble_method, contextualize_type};
 
 // As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
 // a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
@@ -358,4 +361,50 @@ pub fn contextualize_fn_map(
 
 
     Some(cx_fn_map)
+}
+
+pub fn contextualize_globals(module_data: &ModuleData,
+                             type_map: &mut CXTypeData, naive_map: &CXNaiveTypeMap,
+                             ast: &CXAST)
+    -> Option<HashMap<String, TCGlobalVariable>> {
+
+    let mut tc_globals = HashMap::new();
+
+    for (name, constant) in ast.enum_constants.iter() {
+        tc_globals.insert(
+            name.clone(),
+            TCGlobalVariable::UnaddressableConstant {
+                name: CXIdent::from(name.clone()),
+                val: *constant,
+            }
+        );
+    }
+
+    for global in ast.global_stmts.iter() {
+        match global {
+            CXGlobalStmt::GlobalVariable { name, type_, initializer } => {
+                if initializer.is_some() {
+                    todo!("Global variable with initializer")
+                }
+
+                let _type = precontextualize_type(
+                    module_data, type_map, naive_map,
+                    None, type_
+                )?;
+
+                tc_globals.insert(
+                    name.to_string(),
+                    TCGlobalVariable::Variable {
+                        name: name.clone(),
+                        _type,
+                        initializer: None
+                    }
+                );
+            },
+
+            _ => ()
+        }
+    }
+
+    Some(tc_globals)
 }

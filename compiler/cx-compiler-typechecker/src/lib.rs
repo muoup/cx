@@ -1,13 +1,12 @@
 use crate::environment::TCEnvironment;
+use crate::templates::{add_templated_types, restore_template_overwrites};
 use crate::type_mapping::contextualize_fn_prototype;
-use crate::typechecker::{in_method_env, typecheck_global_variable};
+use crate::typechecker::in_method_env;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_util::identifier::CXIdent;
 use cx_data_ast::preparse::templates::CXFunctionTemplate;
-use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCStructureData};
+use cx_data_typechecker::ast::{TCFunctionDef, TCStructureData};
 use cx_data_typechecker::cx_types::CXTemplateInput;
 use cx_util::mangling::{mangle_destructor, mangle_template};
-use crate::templates::{add_templated_types, restore_template_overwrites};
 
 mod casting;
 mod typechecker;
@@ -23,25 +22,6 @@ pub mod type_mapping;
 pub mod precontextualizing;
 
 pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
-    for (name, constant) in ast.enum_constants.iter() {
-        env.global_variables.insert(
-            name.clone(),
-            TCGlobalVariable::UnaddressableConstant {
-                name: CXIdent::from(name.clone()),
-                val: *constant,
-            }
-        );
-    }
-
-    for stmt in ast.global_stmts.iter() {
-        match stmt {
-            CXGlobalStmt::GlobalVariable { name, type_, initializer } =>
-                typecheck_global_variable(env, name.as_str(), type_, initializer)?,
-
-            _ => ()
-        }
-    }
-
     for stmt in ast.global_stmts.iter() {
         match stmt {
             CXGlobalStmt::FunctionDefinition { prototype, body } => {

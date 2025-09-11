@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use fs2::FileExt;
-use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_type_map};
+use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
 use cx_compiler_lexer::lex::lex;
 use cx_compiler_lexer::preprocessor::preprocess;
 use cx_compiler_typechecker_new::environment::TCEnvironment;
@@ -300,7 +300,9 @@ pub(crate) fn perform_job(
             let parsed_ast = parse_ast(TokenIter::new(&lexemes), base_ast)
                 .expect("AST parsing failed");
 
-            dump_data(&parsed_ast);
+            if !job.unit.is_std_lib() {
+                dump_data(&parsed_ast);
+            }
 
             context.module_db.naive_ast.insert(job.unit.clone(), parsed_ast);
         },
@@ -313,10 +315,11 @@ pub(crate) fn perform_job(
                 .expect("Failed to contextualize type map");
             let fn_data = contextualize_fn_map(&context.module_db, &self_ast.function_map, &mut type_data, &self_ast.type_map)
                 .expect("Failed to contextualize function map");
+            let global_variables = contextualize_globals(&context.module_db, &mut type_data, &self_ast.type_map, &self_ast)
+                .expect("Failed to contextualize global variables");
 
             let completed_data = TCStructureData {
-                type_data,
-                fn_data
+                type_data, fn_data, global_variables
             };
 
             context.module_db.structure_data.insert(job.unit.clone(), completed_data.clone());
@@ -337,22 +340,26 @@ pub(crate) fn perform_job(
 
             env.realized_types.extend(structure_data.type_data.standard.clone());
             env.realized_fns.extend(structure_data.fn_data.standard.clone());
+            env.realized_globals.extend(structure_data.global_variables.clone());
 
             let tc_ast = TCAST {
                 source_file: self_ast.file_path.clone(),
 
                 type_map: env.realized_types,
                 fn_map: env.realized_fns,
+                global_variables: env.realized_globals
+                    .into_iter()
+                    .map(|(_, gv)| gv)
+                    .collect(),
 
                 destructors_required: env.deconstructors.into_iter()
-                    .collect::<_>(),
-                global_variables: env.global_variables.into_iter()
-                    .map(|(_, var)| var)
                     .collect::<_>(),
                 function_defs: env.declared_functions
             };
 
-            dump_data(&format!("{:#?}", tc_ast));
+            if !job.unit.is_std_lib() {
+                dump_data(&format!("{:#?}", tc_ast));
+            }
 
             context.module_db.typechecked_ast.insert(job.unit.clone(), tc_ast);
         },
@@ -363,7 +370,9 @@ pub(crate) fn perform_job(
             let bytecode = generate_bytecode(tc_ast)
                 .expect("Bytecode generation failed");
 
-            dump_data(&bytecode);
+            if !job.unit.is_std_lib() {
+                dump_data(&bytecode);
+            }
 
             context.module_db.bytecode.insert(job.unit.clone(), bytecode);
         },

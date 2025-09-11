@@ -17,11 +17,11 @@ pub struct TCEnvironment<'a> {
     pub base_data: &'a TCStructureData,
     pub realized_types: CXTypeMap,
     pub realized_fns: CXFnMap,
+    pub realized_globals: HashMap<String, TCGlobalVariable>,
 
     pub requests: Vec<TCTemplateRequest>,
     pub deconstructors: HashSet<CXType>,
 
-    pub global_variables: HashMap<String, TCGlobalVariable>,
     pub current_function: Option<CXFunctionPrototype>,
     pub symbol_table: ScopedMap<CXType>,
 
@@ -34,10 +34,10 @@ impl TCEnvironment<'_> {
             base_data: &structure_data,
             realized_types: HashMap::new(),
             realized_fns: HashMap::new(),
+            realized_globals: HashMap::new(),
 
             current_function: None,
 
-            global_variables: HashMap::new(),
             requests: Vec::new(),
             deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
@@ -71,6 +71,12 @@ impl TCEnvironment<'_> {
         self.realized_types
             .get(name).cloned()
             .or_else(|| self.base_data.type_data.get(name).cloned())
+    }
+
+    pub fn get_global_var(&self, name: &str) -> Option<&TCGlobalVariable> {
+        self.realized_globals
+            .get(name)
+            .or_else(|| self.base_data.global_variables.get(name))
     }
 
     pub fn get_templated_func(&mut self, name: &str, input: &CXTemplateInput) -> Option<CXFunctionPrototype> {
