@@ -17,7 +17,7 @@ use std::path::Path;
 use inkwell::basic_block::BasicBlock;
 use cx_data_pipeline::OptimizationLevel;
 use cx_util::format::dump_data;
-use crate::instruction::reset_num;
+use crate::instruction::{inst_num, reset_num};
 
 pub(crate) mod typing;
 mod instruction;
@@ -64,9 +64,30 @@ impl<'a> FunctionState<'a> {
 
                 Some(CodegenValue::Value(float_val))
             },
-            MIRValue::NULL => Some(CodegenValue::NULL),
 
-            _ => self.value_map.get(id).cloned()
+            MIRValue::LoadOf(_type, val) => {
+                let ptr_val = self.get_value(val)?
+                    .get_value();
+                let ptr_type = bc_llvm_type(self.context, _type)?;
+                let basic_type = any_to_basic_type(ptr_type)?;
+
+                let load_inst = self.builder.build_load(
+                        basic_type,
+                        ptr_val.into_pointer_value(),
+                        &*inst_num()
+                    )
+                    .ok()?
+                    .as_any_value_enum();
+
+                Some(CodegenValue::Value(load_inst))
+            },
+
+            MIRValue::FunctionRef(_) => panic!("Function references should be handled at a higher level"),
+
+            MIRValue::BlockResult { .. } |
+            MIRValue::Global(..) => self.value_map.get(id).cloned(),
+
+            MIRValue::NULL => Some(CodegenValue::NULL),
         }
     }
     

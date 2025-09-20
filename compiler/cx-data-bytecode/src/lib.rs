@@ -38,6 +38,7 @@ pub enum MIRValue {
     },
     Global(ElementID),
     FunctionRef(CXIdent),
+    LoadOf(BCType, Box<MIRValue>),
     BlockResult {
         block_id: BlockID,
         value_id: u32
@@ -101,15 +102,15 @@ pub enum VirtualInstruction {
         alignment: u8,
     },
 
-    Load {
-        value: MIRValue,
-    },
-
     StructAccess {
         struct_: MIRValue,
         struct_type: BCType,
         field_index: usize,
         field_offset: usize
+    },
+
+    Temp {
+        value: MIRValue
     },
 
     Store {

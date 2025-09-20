@@ -98,6 +98,7 @@ impl Display for MIRValue {
                 let float = f64::from_bits(*val as u64);
                 write!(f, "{float}")
             },
+            MIRValue::LoadOf(_, value) => write!(f, "*{value}"),
             MIRValue::FunctionRef(name) => write!(f, "{name}"),
             MIRValue::Global(id) => write!(f, "g{}", id),
             MIRValue::BlockResult { block_id, value_id } => write!(f, "{}:v{}", block_id, value_id),
@@ -114,17 +115,17 @@ impl Display for BlockID {
 impl Display for VirtualInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            VirtualInstruction::Temp { value } => {
+                write!(f, "{value}")
+            },
             VirtualInstruction::Allocate { _type, alignment } => {
                 write!(f, "alloca {_type} (alignment: {alignment})")
             },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
             },
-            VirtualInstruction::Load { value } => {
-                write!(f, "load {value}")
-            },
             VirtualInstruction::Store { value, memory, type_ } => {
-                write!(f, "store {type_} {value} -> {memory}")
+                write!(f, "store {value} -> {memory} [{type_}]")
             },
             VirtualInstruction::ZeroMemory { memory, _type } => {
                 write!(f, "zero_memory {memory} ({_type})")

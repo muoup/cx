@@ -122,6 +122,21 @@ impl FunctionState<'_> {
                     _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_)
                 }
             },
+            MIRValue::LoadOf(_type, val) => {
+                let Some(addr) = self.get_value(val) else {
+                    log_error!("Failed to get address for LoadOf: {:?}", val);
+                };
+
+                let addr = addr.as_value();
+                let loaded = self.builder.ins().load(
+                    get_cranelift_type(_type),
+                    ir::MemFlags::new(),
+                    addr,
+                    0
+                );
+
+                Some(CodegenValue::Value(loaded))
+            },
             MIRValue::NULL => Some(CodegenValue::NULL),
 
             _ => self.variable_table.get(mir_value).cloned()

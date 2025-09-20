@@ -35,6 +35,8 @@ pub(crate) fn generate_instruction<'a>(
 ) -> Option<CodegenValue<'a>> {
     Some(
         match &block_instruction.instruction {
+            VirtualInstruction::Temp { value } =>
+                function_state.get_value(value)?,
             VirtualInstruction::Allocate { _type, alignment } => {
                 let inst = match _type.size() {
                     BCTypeSize::Fixed(_) => {
@@ -332,26 +334,6 @@ pub(crate) fn generate_instruction<'a>(
                 }
                 
                 CodegenValue::NULL
-            },
-            
-            VirtualInstruction::Load { value } => {
-                let any_value = function_state
-                    .get_value(value)?
-                    .get_value()
-                    .into_pointer_value();
-                
-                let loaded_type = bc_llvm_type(
-                    global_state.context,
-                    &block_instruction.value_type,
-                ).unwrap();
-                let basic_type = any_to_basic_type(loaded_type).unwrap();
-
-                let val = function_state
-                    .builder
-                    .build_load(basic_type, any_value, inst_num().as_str())
-                    .unwrap();
-                
-                CodegenValue::Value(val.as_any_value_enum())
             },
 
             VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {

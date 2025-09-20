@@ -180,10 +180,11 @@ pub fn generate_instruction(
                 CXTypeKind::Structured { .. } |
                 CXTypeKind::Union { .. } => Some(inner),
 
-                _ => builder.add_instruction_cxty(
-                    VirtualInstruction::Load { value: inner },
-                    expr._type.clone()
-                )
+                _ => {
+                    let bc_type = builder.convert_cx_type(&expr._type)?;
+
+                    Some(MIRValue::LoadOf(bc_type, Box::new(inner)))
+                }
             }
         },
 
@@ -316,19 +317,9 @@ pub fn generate_instruction(
                     let CXTypeKind::MemoryReference(inner) = val_type
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
-                    let loaded_val = builder.add_instruction_cxty(
-                        VirtualInstruction::Load {
-                            value
-                        },
-                        inner.as_ref().clone()
-                    )?;
+                    let bc_type = builder.convert_fixed_cx_type(inner.as_ref())?;
 
-                    let bytes = match &inner.kind {
-                        CXTypeKind::Integer { bytes, .. } => *bytes,
-                        CXTypeKind::PointerTo { .. } => 8,
-                        _ => panic!("Invalid type for post increment: {inner:?}")
-                    };
-
+                    let loaded_val = MIRValue::LoadOf(bc_type, value.into());
                     let offset = builder.int_const(*off as i32, 8, true);
 
                     let incremented = generate_algebraic_binop(
@@ -355,12 +346,9 @@ pub fn generate_instruction(
                     let CXTypeKind::MemoryReference(inner) = &val_type.kind
                         else { unreachable!("generate_instruction: Expected memory alias type for expr, found {val_type}") };
 
-                    let loaded_val = builder.add_instruction_cxty(
-                        VirtualInstruction::Load {
-                            value: value.clone()
-                        },
-                        inner.as_ref().clone()
-                    )?;
+                    let bc_type = builder.convert_fixed_cx_type(inner.as_ref())?;
+
+                    let loaded_val = MIRValue::LoadOf(bc_type, Box::new(value.clone()));
 
                     let bytes = match &inner.kind {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
@@ -629,27 +617,17 @@ pub fn generate_instruction(
 
         TCExprKind::Move { operand } => {
             let memory = generate_instruction(builder, operand.as_ref())?;
-            
             let value = builder.add_instruction(
-                VirtualInstruction::Load {
-                    value: memory.clone()
+                VirtualInstruction::Temp {
+                    value: MIRValue::LoadOf(BCType::default_pointer(), Box::new(memory.clone()))
                 },
                 BCType::default_pointer()
             )?;
-            
-            let zero = builder.int_const(0, 8, true);
-            let zero_as_ptr = builder.add_instruction_cxty(
-                VirtualInstruction::IntToPtr {
-                    value: zero
-                },
-                CXTypeKind::Integer { bytes: 8, signed: true }.into()
-            )?;
 
             builder.add_instruction(
-                VirtualInstruction::Store {
+                VirtualInstruction::ZeroMemory {
                     memory,
-                    value: zero_as_ptr,
-                    type_: BCType::default_pointer()
+                    _type: BCType::default_pointer()
                 },
                 BCType::unit()
             )?;

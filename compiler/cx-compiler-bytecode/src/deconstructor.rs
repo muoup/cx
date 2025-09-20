@@ -55,11 +55,7 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
         CXTypeKind::StrongPointer { inner_type, is_array } => {
             let deconstructor = builder.get_deconstructor(inner_type);
 
-            let inner_val = builder.add_instruction(
-                VirtualInstruction::Load { value: var.clone() },
-                BCType::default_pointer()
-            )?;
-
+            let inner_val = MIRValue::LoadOf(BCType::default_pointer(), Box::new(var.clone()));
             let deconstruct = builder.create_named_block("ptr_not_null");
             let post_deconstruct = builder.create_named_block("ptr_is_null");
 
@@ -100,26 +96,22 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
                         type_: BCTypeKind::Unsigned { bytes: 8 }.into()
                     };
 
-                    println!("Type: STANDARD_FREE_ARRAY");
                     builder.call(STANDARD_FREE_ARRAY, vec![inner_val, size_imm, ptr_to])?;
                 },
 
                 (None, true) => {
                     // Array of objects without deconstructor
-                    println!("Type: STANDARD_FREE_ARRAY_NOOP");
                     builder.call(STANDARD_FREE_ARRAY_NOOP, vec![inner_val])?;
                 },
 
                 (Some(prototype), false) => {
                     // Single object with deconstructor
-                    println!("Type: STANDARD_FREE with deconstructor");
                     builder.call(&prototype, vec![inner_val.clone()])?;
                     builder.call(STANDARD_FREE, vec![inner_val])?;
                 },
 
                 (None, false) => {
                     // Single object without deconstructor
-                    println!("Type: STANDARD_FREE");
                     builder.call(STANDARD_FREE, vec![inner_val])?;
                 },
             }

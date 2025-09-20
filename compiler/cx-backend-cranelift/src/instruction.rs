@@ -14,6 +14,9 @@ use crate::routines::get_function;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
+        VirtualInstruction::Temp { value } =>
+            context.get_value(value),
+
         VirtualInstruction::Allocate {
             _type, alignment
         } => {
@@ -149,24 +152,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 CodegenValue::Value(
                     context.builder.ins()
                         .func_addr(pointer, func_ref)
-                )
-            )
-        },
-
-        VirtualInstruction::Load { value } => {
-            let val = context.get_value(value).unwrap();
-            let type_ = &instruction.value_type;
-            let cranelift_type = get_cranelift_type(type_);
-
-            Some(
-                CodegenValue::Value(
-                    context.builder.ins()
-                        .load(
-                            cranelift_type,
-                            MemFlags::new(),
-                            val.as_value(),
-                            0
-                        )
                 )
             )
         },
