@@ -517,7 +517,6 @@ impl BytecodeBuilder {
 
         self.add_instruction(
             VirtualInstruction::DirectCall {
-                func: name.to_string(),
                 args,
                 method_sig: fn_prototype
             },

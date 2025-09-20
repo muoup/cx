@@ -43,7 +43,13 @@ impl Display for BytecodeFunction {
 impl Display for FunctionBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (i, instruction) in self.body.iter().enumerate() {
-            writeln!(f, "    v{i} = {instruction}")?;
+            write!(f, "\t")?;
+
+            if !instruction.value_type.is_void() {
+                write!(f, "_{i} = ")?;
+            }
+
+            writeln!(f, "{instruction}")?;
         }
 
         Ok(())
@@ -67,7 +73,13 @@ impl Display for BCFunctionPrototype {
 
 impl Display for BlockInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.instruction, self.value_type)
+        write!(f, "{}", self.instruction)?;
+
+        if !self.value_type.is_void() {
+            write!(f, "\n\t\t ({})", self.value_type)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -118,7 +130,7 @@ impl Display for VirtualInstruction {
                 write!(f, "zero_memory {memory} ({_type})")
             },
             VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
-                write!(f, "struct_access {struct_} ({struct_type})[index: {field_index}; offset: {field_offset}]")
+                write!(f, "access {struct_} at index {field_index}; offset: {field_offset}")
             },
             VirtualInstruction::BoolExtend { value } => {
                 write!(f, "bool_extend {value}")
@@ -183,8 +195,8 @@ impl Display for VirtualInstruction {
                 }
                 write!(f, "] else {default}")
             }
-            VirtualInstruction::DirectCall { func, args, .. } => {
-                write!(f, "direct_call {func}(")?;
+            VirtualInstruction::DirectCall { method_sig, args, .. } => {
+                write!(f, "@{}(", method_sig.name)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -194,7 +206,7 @@ impl Display for VirtualInstruction {
                 write!(f, ")")
             },
             VirtualInstruction::IndirectCall { func_ptr, args, .. } => {
-                write!(f, "indirect_call {func_ptr}(")?;
+                write!(f, "@(*{func_ptr})(")?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -204,19 +216,19 @@ impl Display for VirtualInstruction {
                 write!(f, ")")
             },
             VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
-                write!(f, "ptr_binop ({ptr_type}*) {op} {left} {right}")
+                write!(f, "{left} {op} {right} [{ptr_type}*]")
             },
             VirtualInstruction::IntegerBinOp { left, right, op } => {
-                write!(f, "int_binop {op} {left} {right}")
+                write!(f, "{left} {op} {right} [i]")
             },
             VirtualInstruction::IntegerUnOp { op, value } => {
-                write!(f, "int_unop {op:?} {value}")
+                write!(f, "{op:?} {value} [i]")
             },
             VirtualInstruction::FloatBinOp { left, right, op } => {
-                write!(f, "float_binop {op} {left} {right}")
+                write!(f, "{left} {op} {right} [f]")
             },
             VirtualInstruction::FloatUnOp { op, value } => {
-                write!(f, "float_unop {op:?} {value}")
+                write!(f, "{op:?} {value} [f]")
             },
             VirtualInstruction::StringLiteral { str_id } => {
                 write!(f, "string_literal {str_id}")

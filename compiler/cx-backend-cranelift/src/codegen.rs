@@ -7,6 +7,7 @@ use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
 use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, MIRValue};
+use cx_util::log_error;
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
@@ -44,7 +45,7 @@ pub(crate) fn codegen_block(
                 },
                 val
             );
-        }
+        };
 
         if instr.instruction.is_block_terminating() {
             break;

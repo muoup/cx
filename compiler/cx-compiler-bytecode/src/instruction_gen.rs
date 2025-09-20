@@ -128,7 +128,6 @@ pub fn generate_instruction(
                 true => {
                     builder.add_instruction_cxty(
                         VirtualInstruction::DirectCall {
-                            func: prototype.name.as_string(),
                             args,
                             method_sig: convert_cx_prototype(&prototype)?
                         },
@@ -675,7 +674,6 @@ pub fn generate_instruction(
                     
                     builder.add_instruction(
                         VirtualInstruction::DirectCall {
-                            func,
                             args: vec![size_imm, len],
                             method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
                         },
@@ -689,7 +687,6 @@ pub fn generate_instruction(
                     
                     builder.add_instruction(
                         VirtualInstruction::DirectCall {
-                            func,
                             args: vec![size_imm],
                             method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
                         },

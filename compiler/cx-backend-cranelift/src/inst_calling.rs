@@ -41,11 +41,9 @@ pub(crate) fn prepare_parameters<'a>(
     context: &'a mut FunctionState,
     args: &'a [MIRValue],
 ) -> Option<Vec<Value>> {
-    let params = args.iter()
-        .map(|arg| context.get_value(arg).unwrap().as_value())
-        .collect::<Vec<_>>();
-
-    Some(params)
+    args.iter()
+        .map(|arg| context.get_value(arg).map(|arg| arg.as_value()))
+        .collect::<Option<Vec<_>>>()
 }
 
 pub(crate) fn get_method_return(
@@ -59,15 +57,9 @@ pub(crate) fn get_method_return(
 }
 
 pub(crate) fn get_func_ref(
-    context: &mut FunctionState,
-    func_id: FuncId,
-    name: &str,
-    args: &[Value],
+    context: &mut FunctionState, func_id: FuncId,
+    prototype: &BCFunctionPrototype, args: &[Value],
 ) -> Option<FuncRef> {
-    let prototype = context
-        .fn_map
-        .get(name)?;
-
     if !prototype.var_args || args.len() == prototype.params.len() {
         return Some(
             context

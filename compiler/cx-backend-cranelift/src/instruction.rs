@@ -54,15 +54,21 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
 
         VirtualInstruction::DirectCall {
-            func, args, ..
+            args, method_sig, ..
         } => {
-            let id = get_function(context, func)?;
-            let params = prepare_parameters(context, args)?;
+            let Some(id) = get_function(context, method_sig) else {
+                panic!("Failed to call function {}", &method_sig.name);
+            };
 
-            let fn_ref = get_func_ref(
-                context, id,
-                func, params.as_slice()
-            )?;
+            let Some(params) = prepare_parameters(context, args) else {
+                panic!("Failed to prepare parameters for DirectCall: {}", method_sig.name);
+            };
+
+            let Some(fn_ref) = get_func_ref(
+                context, id, method_sig, params.as_slice()
+            ) else {
+                panic!("Failed to get function reference for DirectCall: {}", method_sig.name);
+            };
 
             let inst = context.builder.ins()
                 .call(fn_ref, params.as_slice());
@@ -448,6 +454,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::Phi { predecessors } => {
             let current_block = context.builder.current_block()?;
+            let current_block_len = context.builder.func
+                .layout
+                .block_insts(current_block)
+                .count();
 
             context.builder
                 .append_block_param(current_block, get_cranelift_type(&instruction.value_type));
@@ -461,18 +471,26 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     .next_back()
                     .unwrap();
 
-                // unseal block
+
+                // code made with only the worst of intentions
                 context.builder.func.layout.remove_inst(last_inst);
 
-                context.builder.switch_to_block(block);
                 let value = context.get_value(from_value)
                     .unwrap()
                     .as_value();
 
+                while context.builder.func.layout.block_insts(current_block).count() > current_block_len {
+                    let inst = context.builder.func.layout
+                        .block_insts(current_block)
+                        .next_back()
+                        .unwrap();
+                    context.builder.func.layout.remove_inst(inst);
+                    context.builder.func.layout.append_inst(inst, block);
+                }
+
                 context.builder.func.layout.append_inst(last_inst, block);
 
                 unsafe {
-                    // code made with the worst of intentions, purely to spite the borrow checker
                     let value_pool : *mut _ = &mut context.builder.func.dfg.value_lists;
 
                     match context.builder.func.dfg.insts.index_mut(last_inst) {
@@ -494,7 +512,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 }
             }
 
-            context.builder.switch_to_block(current_block);
             let val = context.builder.block_params(current_block)
                 .last()
                 .cloned()
@@ -509,8 +526,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let val = context.get_value(value).unwrap();
             
             match instruction.value_type.kind {
-                BCTypeKind::Signed { bytes : 1 } |
-                BCTypeKind::Unsigned { bytes : 1 } => {
+                BCTypeKind::Signed   { bytes: 1 } |
+                BCTypeKind::Unsigned { bytes: 1 } => {
                     Some(val)
                 },
 
@@ -595,9 +612,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::NOP => Some(CodegenValue::NULL),
 
-        VirtualInstruction::BitCast {
-            value
-        } => {
+        VirtualInstruction::BitCast { value } => {
             let Some(val) = context.get_value(value) else {
                 panic!("Value not found for BitCast: {:?}", value);
             };

@@ -4,6 +4,7 @@ use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{DataDescription, DataId, FuncId, Module};
 use cranelift_object::ObjectModule;
+use cx_data_bytecode::BCFunctionPrototype;
 use crate::inst_calling::prepare_function_sig;
 
 pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
@@ -40,14 +41,15 @@ pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> Dat
     id
 }
 
-pub fn get_function(context: &mut FunctionState, name: &str) -> Option<FuncId> {
-    if let Some(func_id) = context.function_ids.get(name) {
+pub fn get_function(context: &mut FunctionState, prototype: &BCFunctionPrototype) -> Option<FuncId> {
+    if let Some(func_id) = context.function_ids.get(&prototype.name) {
         return Some(*func_id);
     }
     
-    let prototype = context.fn_map.get(name)?;
+    let Some(signature) = prepare_function_sig(&mut context.object_module, prototype) else {
+        panic!("Failed to prepare function signature for function: {:?}", prototype.name);
+    };
 
-    let signature = prepare_function_sig(&mut context.object_module, prototype)?;
     let linkage = match prototype.linkage {
         cx_data_bytecode::LinkageType::ODR => cranelift_module::Linkage::Local,
         cx_data_bytecode::LinkageType::Static => cranelift_module::Linkage::Local,

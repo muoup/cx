@@ -11,6 +11,7 @@ use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
 use cx_util::log_error;
+use crate::routines::get_function;
 
 static NUM: Mutex<usize> = Mutex::new(0);
 
@@ -73,11 +74,9 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(inst)
             },
             
-            VirtualInstruction::DirectCall { func, args, method_sig } => {
-                let Some(function_val) = global_state
-                    .module
-                    .get_function(func) else {
-                    log_error!("Function not found in module: {func}");
+            VirtualInstruction::DirectCall { args, method_sig } => {
+                let Some(function_val) = get_function(global_state, method_sig) else {
+                    log_error!("Function not found in module: {}", method_sig.name);
                 };
 
                 let arg_vals = args

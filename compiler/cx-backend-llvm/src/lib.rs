@@ -24,6 +24,7 @@ mod instruction;
 mod mangling;
 mod attributes;
 mod arithmetic;
+mod routines;
 
 pub(crate) struct GlobalState<'a> {
     module: Module<'a>,
@@ -267,12 +268,14 @@ fn codegen_block<'a>(
     function_state.builder.position_at_end(block_val);
 
     for (value_id, inst) in block.body.iter().enumerate() {
-        let value = instruction::generate_instruction(
+        let Some(value) = instruction::generate_instruction(
             global_state,
             function_state,
             func_val,
             inst
-        ).unwrap_or_else(|| panic!("Failed to generate instruction {inst}"));
+        ) else {
+            panic!("Failed to generate instruction: {inst} in function: {}", function_state.current_function);
+        };
 
         function_state.value_map.insert(
             MIRValue::BlockResult {

@@ -189,7 +189,6 @@ pub enum VirtualInstruction {
     },
 
     DirectCall {
-        func: String,
         args: Vec<MIRValue>,
         method_sig: BCFunctionPrototype
     },
