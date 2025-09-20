@@ -3,7 +3,7 @@ use crate::parse::global_scope::{parse_body};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_lexer::{operator, punctuator};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error, point_log_error};

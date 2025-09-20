@@ -1,6 +1,6 @@
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
-use cx_data_bytecode::{ValueID, VirtualInstruction};
+use cx_data_bytecode::{MIRValue, VirtualInstruction};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::bytecode_error_log;
@@ -25,9 +25,9 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
 pub(crate) fn try_access_field(
     builder: &mut BytecodeBuilder,
     ltype: &BCType,
-    left_id: ValueID,
+    left_id: MIRValue,
     field_name: &str,
-) -> Option<ValueID> {
+) -> Option<MIRValue> {
     match ltype.kind {
         BCTypeKind::Struct { .. } => {
             let struct_access = get_struct_field(
@@ -130,7 +130,7 @@ pub(crate) fn allocate_variable(
     name: &str,
     builder: &mut BytecodeBuilder,
     var_type: &CXType,
-) -> Option<ValueID> {
+) -> Option<MIRValue> {
     let bc_type = builder.convert_cx_type(var_type)?;
     let memory = builder.add_instruction(
         VirtualInstruction::Allocate {
@@ -140,10 +140,10 @@ pub(crate) fn allocate_variable(
         BCType::default_pointer()
     )?;
 
-    builder.insert_symbol(name.to_owned(), memory);
+    builder.insert_symbol(name.to_owned(), memory.clone());
     builder.insert_declaration(
         DeclarationLifetime {
-            value_id: memory,
+            value_id: memory.clone(),
             _type: var_type.clone()
         }
     );
@@ -151,7 +151,7 @@ pub(crate) fn allocate_variable(
     if variable_requires_nulling(builder, var_type) {
         builder.add_instruction(
             VirtualInstruction::ZeroMemory {
-                memory,
+                memory: memory.clone(),
                 _type: bc_type.clone(),
             },
             BCType::unit()

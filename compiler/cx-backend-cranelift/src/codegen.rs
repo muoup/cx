@@ -6,7 +6,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Linkage, Module};
 use cx_util::format::dump_data;
-use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, ValueID};
+use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, FunctionBlock, LinkageType, MIRValue};
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
@@ -38,7 +38,7 @@ pub(crate) fn codegen_block(
     for (value_id, instr) in fn_block.body.iter().enumerate() {
         if let Some(val) = codegen_instruction(context, instr) {
             context.variable_table.insert(
-                ValueID {
+                MIRValue::BlockResult {
                     block_id,
                     value_id: value_id as u32
                 },

@@ -1,4 +1,4 @@
-use crate::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;

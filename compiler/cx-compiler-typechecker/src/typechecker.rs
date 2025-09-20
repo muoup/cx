@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_ast::preparse::naive_types::CX_CONST;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCInitIndex};

@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, Block, FunctionBuilder, Value};
+use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, ValueID};
-use cx_data_bytecode::types::BCType;
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, MIRValue};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::routines::string_literal;
+use crate::value_type::get_cranelift_type;
 
 mod codegen;
 mod value_type;
@@ -51,7 +52,7 @@ impl CodegenValue {
     }
 }
 
-pub(crate) type VariableTable = HashMap<ValueID, CodegenValue>;
+pub(crate) type VariableTable = HashMap<MIRValue, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -97,6 +98,34 @@ impl FunctionState<'_> {
         self.block_map.get(id)
             .cloned()
             .unwrap_or_else(|| panic!("Block with ID {id} not found in block map"))
+    }
+
+    pub(crate) fn get_value(&mut self, mir_value: &MIRValue) -> Option<CodegenValue> {
+        match mir_value {
+            MIRValue::IntImmediate { val, type_ } => {
+                let int_type = get_cranelift_type(type_);
+                let value = self.builder.ins().iconst(int_type, *val);
+                Some(CodegenValue::Value(value))
+            },
+            MIRValue::FloatImmediate { val, type_ } => {
+                let value = f64::from_bits(*val as u64);
+
+                match &type_.kind {
+                    BCTypeKind::Float { bytes: 4 } => {
+                        let value = self.builder.ins().f32const(value as f32);
+                        Some(CodegenValue::Value(value))
+                    },
+                    BCTypeKind::Float { bytes: 8 } => {
+                        let value = self.builder.ins().f64const(value);
+                        Some(CodegenValue::Value(value))
+                    },
+                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_)
+                }
+            },
+            MIRValue::NULL => Some(CodegenValue::NULL),
+
+            _ => self.variable_table.get(mir_value).cloned()
+        }
     }
 }
 

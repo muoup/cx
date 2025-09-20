@@ -97,7 +97,7 @@ fn generate_params(
         )?;
 
         builder.add_instruction(
-            VirtualInstruction::Store { value, memory, type_: param._type.clone() },
+            VirtualInstruction::Store { value, memory: memory.clone(), type_: param._type.clone() },
             BCType::unit()
         )?;
 

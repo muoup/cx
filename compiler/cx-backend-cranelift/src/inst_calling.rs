@@ -6,7 +6,7 @@ use cranelift::codegen::ir::{FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, ValueID};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, MIRValue};
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
@@ -29,15 +29,23 @@ pub(crate) fn prepare_function_sig(
 
 pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
-    func: ValueID,
-    args: &'a [ValueID],
+    func: &MIRValue,
+    args: &'a [MIRValue],
 ) -> Option<(CodegenValue, Vec<Value>)> {
-    let val = context.variable_table.get(&func).cloned().unwrap();
+    let val = context.get_value(&func).unwrap();
+
+    Some((val, prepare_parameters(context, args)?))
+}
+
+pub(crate) fn prepare_parameters<'a>(
+    context: &'a mut FunctionState,
+    args: &'a [MIRValue],
+) -> Option<Vec<Value>> {
     let params = args.iter()
-        .map(|arg| context.variable_table.get(arg).unwrap().as_value())
+        .map(|arg| context.get_value(arg).unwrap().as_value())
         .collect::<Vec<_>>();
 
-    Some((val, params))
+    Some(params)
 }
 
 pub(crate) fn get_method_return(

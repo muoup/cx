@@ -1,7 +1,7 @@
 use cx_data_ast::{assert_token_matches, peek_next, try_next};
 use crate::preparse::typing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::macros::error_pointer;
 use cx_data_ast::parse::parser::{VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;

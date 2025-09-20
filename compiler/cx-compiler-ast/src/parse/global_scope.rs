@@ -2,7 +2,7 @@ use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalConstant, CXGlobalStmt, CXGlobalVariable};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};

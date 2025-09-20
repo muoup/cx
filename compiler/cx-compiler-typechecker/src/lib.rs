@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use cx_data_lexer::token::Token;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::preparse::naive_types::CXNaiveTemplateInput;
 use cx_data_ast::preparse::templates::CXFunctionTemplate;
 use cx_data_typechecker::ast::{TCFunctionDef, TCStructureData, TCAST};

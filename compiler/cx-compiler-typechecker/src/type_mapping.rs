@@ -1,4 +1,4 @@
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind};

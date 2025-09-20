@@ -1,6 +1,6 @@
 use speedy::{Readable, Writable};
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
 

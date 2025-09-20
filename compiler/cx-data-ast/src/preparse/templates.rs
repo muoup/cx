@@ -1,5 +1,5 @@
 use speedy::{Readable, Writable};
-use crate::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType};
 
 #[derive(Debug, Default, Clone, Hash, Readable, Writable)]

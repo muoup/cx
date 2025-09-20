@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, MIRValue, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -67,7 +67,7 @@ impl Display for BCFunctionPrototype {
 
 impl Display for BlockInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.instruction, self.value)
+        write!(f, "{} ({})", self.instruction, self.value_type)
     }
 }
 
@@ -77,9 +77,19 @@ impl Display for VirtualValue {
     }
 }
 
-impl Display for ValueID {
+impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v{}@{}", self.value_id, self.block_id)
+        match self {
+            MIRValue::NULL => write!(f, "null"),
+            MIRValue::IntImmediate { val, .. } => write!(f, "{val}"),
+            MIRValue::FloatImmediate { val, ..} => {
+                let float = f64::from_bits(*val as u64);
+                write!(f, "{float}")
+            },
+            MIRValue::FunctionRef(name) => write!(f, "{name}"),
+            MIRValue::Global(id) => write!(f, "g{}", id),
+            MIRValue::BlockResult { block_id, value_id } => write!(f, "{}:v{}", block_id, value_id),
+        }
     }
 }
 
@@ -106,12 +116,6 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::ZeroMemory { memory, _type } => {
                 write!(f, "zero_memory {memory} ({_type})")
-            },
-            VirtualInstruction::Immediate { value } => {
-                write!(f, "immediate {value}")
-            },
-            VirtualInstruction::FloatImmediate { value } => {
-                write!(f, "float_immediate {value}")
             },
             VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
                 write!(f, "struct_access {struct_} ({struct_type})[index: {field_index}; offset: {field_offset}]")
@@ -216,9 +220,6 @@ impl Display for VirtualInstruction {
             },
             VirtualInstruction::StringLiteral { str_id } => {
                 write!(f, "string_literal {str_id}")
-            },
-            VirtualInstruction::FunctionReference { name } => {
-                write!(f, "function_reference {name}")
             },
             VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
