@@ -24,10 +24,6 @@ mod globals;
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
     Value(Value),
-    FunctionID {
-        fn_name: String,
-        id: FuncId
-    },
     NULL
 }
 
@@ -37,21 +33,6 @@ impl CodegenValue {
             CodegenValue::Value(value) => *value,
 
             _ => panic!("Expected Value, got: {self:?}")
-        }
-    }
-
-    pub(crate) fn as_func_id(&self) -> FuncId {
-        match self {
-            CodegenValue::FunctionID { id, .. } => *id,
-
-            _ => panic!("Expected FunctionID, got: {self:?}")
-        }
-    }
-
-    pub(crate) fn as_func_name(&self) -> &str {
-        match self {
-            CodegenValue::FunctionID { fn_name, .. } => fn_name.as_str(),
-            _ => panic!("Expected FunctionID, got: {self:?}")
         }
     }
 }
