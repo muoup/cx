@@ -1,0 +1,9 @@
+int x;
+
+public:
+
+template <T : type>
+T increment() {
+    x++;
+    return x;
+}

@@ -1,5 +1,0 @@
-import std::io;
-
-void imported2_function() {
-    printf("This is a function from imported2 module.\n");
-}

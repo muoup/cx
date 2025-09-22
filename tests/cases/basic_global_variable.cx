@@ -1,0 +1,13 @@
+import std::io;
+
+int x;
+
+void procedure() {
+    x = 10;
+}
+
+int main() {
+    procedure();
+
+    printf("Value of x: %d\n", x);
+}

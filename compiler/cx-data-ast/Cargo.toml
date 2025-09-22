@@ -6,6 +6,7 @@ autotests = false
 
 [dependencies]
 cx-util = { path = "../cx-util" }
-uuid = { version = "1.16.0", features = ["v4"] }
+cx-data-lexer = { path = "../cx-data-lexer" }
 
-serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.16.0", features = ["v4"] }
+speedy = { version = "0.8.7" }

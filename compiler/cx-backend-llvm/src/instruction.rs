@@ -1,17 +1,16 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::attr_noundef;
-use crate::mangling::string_literal_name;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, ElementID, VirtualInstruction, POINTER_TAG};
+use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, IntMathValue};
+use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
-use cx_data_bytecode::mangling::mangle_destructor;
 use cx_util::log_error;
+use crate::routines::get_function;
 
 static NUM: Mutex<usize> = Mutex::new(0);
 
@@ -35,14 +34,38 @@ pub(crate) fn generate_instruction<'a>(
 ) -> Option<CodegenValue<'a>> {
     Some(
         match &block_instruction.instruction {
-            VirtualInstruction::Allocate { size, alignment } => {
-                let inst = function_state.builder
-                    .build_alloca(
-                        global_state.context.i8_type().array_type(*size as u32),
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
+            VirtualInstruction::Temp { value } =>
+                function_state.get_value(value)?,
+
+            VirtualInstruction::Allocate { _type, alignment } => {
+                let inst = match _type.size() {
+                    BCTypeSize::Fixed(_) => {
+                        function_state.builder
+                            .build_alloca(
+                                any_to_basic_type(
+                                bc_llvm_type(global_state.context, _type)?
+                                )?,
+                                inst_num().as_str()
+                            )
+                            .unwrap()
+                            .as_any_value_enum()
+                    },
+                    BCTypeSize::Variable(size) => {
+                        let size = function_state
+                            .get_value(&size)?
+                            .get_value()
+                            .into_int_value();
+
+                        function_state.builder
+                            .build_array_alloca(
+                                global_state.context.i8_type(),
+                                size,
+                                inst_num().as_str()
+                            )
+                            .unwrap()
+                            .as_any_value_enum()
+                    }
+                };
                 
                 function_state.builder
                     .get_insert_block()?
@@ -53,49 +76,16 @@ pub(crate) fn generate_instruction<'a>(
                 CodegenValue::Value(inst)
             },
             
-            VirtualInstruction::VariableAllocate { size, alignment } => {
-                let size = function_state
-                    .get_val_ref(size)?
-                    .get_value()
-                    .into_int_value();
-                
-                let allocation = function_state.builder
-                    .build_array_alloca(
-                        global_state.context.i8_type(),
-                        size,
-                        inst_num().as_str()
-                    )
-                    .unwrap()
-                    .as_any_value_enum();
-                
-                function_state.builder
-                    .get_insert_block()?
-                    .get_last_instruction()?
-                    .set_alignment(*alignment as u32)
-                    .unwrap();
-                
-                CodegenValue::Value(allocation)
-            },
-            
-            VirtualInstruction::DirectCall { func, args, method_sig } => {
-                let Some(function_name) =
-                    function_state
-                        .get_val_ref(func)
-                        .map(|val| val.get_function_ref()) else {
-                    
-                    log_error!("Function reference not found for {func:?}");
+            VirtualInstruction::DirectCall { args, method_sig } => {
+                let Some(function_val) = get_function(global_state, method_sig) else {
+                    log_error!("Function not found in module: {}", method_sig.name);
                 };
-                
-                let function_val = global_state
-                    .module
-                    .get_function(function_name)
-                    .unwrap();
 
-                let mut arg_vals = args
+                let arg_vals = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
-                            .get_val_ref(arg)?
+                            .get_value(arg)?
                             .get_value();
                         
                         let basic_val = any_to_basic_val(val)?;
@@ -125,15 +115,15 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::IndirectCall { func_ptr, args, method_sig } => {
                 let ptr = function_state
-                    .get_val_ref(func_ptr)?
+                    .get_value(func_ptr)?
                     .get_value();
                 let fn_type = bc_llvm_prototype(global_state, method_sig)
                     .unwrap();
-                let mut args = args
+                let args = args
                     .iter()
                     .map(|arg| {
                         let val = function_state
-                            .get_val_ref(arg)?
+                            .get_value(arg)?
                             .get_value();
                         
                         let basic_val = any_to_basic_val(val)?;
@@ -159,28 +149,15 @@ pub(crate) fn generate_instruction<'a>(
                 }
             },
 
-            VirtualInstruction::FunctionReference { name } =>
-                CodegenValue::FunctionRef(name.clone()),
-
-            VirtualInstruction::StringLiteral { str_id } => {
-                let global = global_state
-                    .module
-                    .get_global(string_literal_name(*str_id as usize).as_str())
-                    .unwrap();
-               
-                CodegenValue::Value(global.as_any_value_enum())
-            },
-
             VirtualInstruction::BitCast { value } => {
-                let val = function_state.value_map
-                    .get(value)
-                    .cloned()?
+                let val = function_state
+                    .get_value(value)?
                     .get_value();
                 let basic_val = any_to_basic_val(val)?;
                 
                 let bit_cast_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?;
                 let basic_type = any_to_basic_type(bit_cast_type).unwrap();
                 
@@ -197,12 +174,12 @@ pub(crate) fn generate_instruction<'a>(
             },
 
             VirtualInstruction::IntToPtrDiff { value, .. } => {
-                function_state.get_val_ref(value)?.clone()
+                function_state.get_value(value)?.clone()
             },
             
             VirtualInstruction::IntToPtr { value } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 
@@ -217,28 +194,10 @@ pub(crate) fn generate_instruction<'a>(
                         .as_any_value_enum()
                 )
             },
-
-            VirtualInstruction::Immediate { value } => {
-                let imm_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
-                )?.into_int_type();
-                
-                CodegenValue::Value(imm_type.const_int(*value as u64, false).as_any_value_enum())
-            },
-
-            VirtualInstruction::FloatImmediate { value } => {
-                let imm_type = bc_llvm_type(
-                    global_state,
-                    &block_instruction.value.type_
-                )?.into_float_type();
-
-                CodegenValue::Value(imm_type.const_float(*value).as_any_value_enum())
-            },
             
             VirtualInstruction::GotoDefer => {
                 let defer_block = function_state
-                    .get_block(function_val, BlockID { in_deferral: true, id: 0 })
+                    .get_block(function_val, BlockID::DeferredBlock(0))
                     .unwrap();
                 
                 function_state.builder
@@ -271,59 +230,20 @@ pub(crate) fn generate_instruction<'a>(
                 };
                 
                 let value = function_state
-                    .value_map
-                    .get(value)
-                    .cloned()
+                    .get_value(value)
                     .unwrap();
                 
-                let current_prototype = global_state.function_map
-                    .get(&function_state.current_function)
-                    .unwrap();
-                
-                if current_prototype.return_type.is_structure() {
-                    let llvm_type = bc_llvm_type(
-                        global_state, 
-                        &current_prototype.return_type
-                    )?;
-                    let type_size = any_to_basic_type(llvm_type)?
-                        .size_of()
-                        .expect("Failed to get size of type");
-                    
-                    let return_param = function_val
-                        .get_nth_param(0)
-                        .unwrap()
-                        .into_pointer_value();
-                    
-                    function_state.builder
-                        .build_memcpy(
-                            return_param, 1,
-                            value.get_value().into_pointer_value(), 1,
-                            type_size
-                        )
-                        .unwrap();
-                    
-                    function_state
-                        .builder
-                        .build_return(Some(&return_param.as_basic_value_enum()))
-                        .unwrap();
-                } else {
-                    let basic_val = any_to_basic_val(value.get_value())?;
+                let basic_val = any_to_basic_val(value.get_value())?;
 
-                    function_state
-                        .builder
-                        .build_return(Some(&basic_val))
-                        .unwrap();   
-                }
+                function_state
+                    .builder
+                    .build_return(Some(&basic_val))
+                    .unwrap();   
                 
                 CodegenValue::NULL
             },
             
             VirtualInstruction::FunctionParameter { param_index } => {
-                let function = global_state
-                    .function_map
-                    .get(function_state.current_function.as_str())
-                    .unwrap();
-                
                 let param = function_val
                     .get_nth_param(*param_index)
                     .unwrap();
@@ -333,17 +253,17 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::Store { value, type_, memory } => {
                 let any_value = function_state
-                    .get_val_ref(value)
+                    .get_value(value)
                     .unwrap()
                     .get_value();
-                let any_type = bc_llvm_type(global_state, type_).unwrap();
+                let any_type = bc_llvm_type(global_state.context, type_).unwrap();
 
                 let basic_val = any_to_basic_val(any_value)
                     .unwrap_or_else(|| panic!("Failed to convert value {any_value:?} to basic value"));
                 let basic_type = any_to_basic_type(any_type).unwrap();
                 
                 let memory_val = function_state
-                    .get_val_ref(memory)?
+                    .get_value(memory)?
                     .get_value()
                     .into_pointer_value();
                 
@@ -371,7 +291,7 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::ZeroMemory { memory, _type } => {
                 let any_value = function_state
-                    .get_val_ref(memory)?
+                    .get_value(memory)?
                     .get_value()
                     .into_pointer_value();
                 
@@ -391,7 +311,7 @@ pub(crate) fn generate_instruction<'a>(
                     },
                     BCTypeSize::Variable(size) => {
                         let size_value = function_state
-                            .get_val_ref(&size)?
+                            .get_value(&size)?
                             .get_value()
                             .into_int_value();
                         
@@ -406,35 +326,15 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::NULL
             },
-            
-            VirtualInstruction::Load { value } => {
-                let any_value = function_state
-                    .get_val_ref(value)?
-                    .get_value()
-                    .into_pointer_value();
-                
-                let loaded_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_,
-                ).unwrap();
-                let basic_type = any_to_basic_type(loaded_type).unwrap();
-
-                let val = function_state
-                    .builder
-                    .build_load(basic_type, any_value, inst_num().as_str())
-                    .unwrap();
-                
-                CodegenValue::Value(val.as_any_value_enum())
-            },
 
             VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
                 let left_value = function_state
-                    .get_val_ref(left)
+                    .get_value(left)
                     .unwrap()
                     .get_value();
 
                 let right_value = function_state
-                    .get_val_ref(right)
+                    .get_value(right)
                     .unwrap()
                     .get_value();
 
@@ -448,13 +348,16 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::IntegerUnOp { value, op } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 
-                let signed = match block_instruction.value.type_.kind {
+                let signed = match block_instruction.value_type.kind {
                     BCTypeKind::Signed { .. } => true,
+
+                    BCTypeKind::Bool { .. } |
                     BCTypeKind::Unsigned { .. } => false,
+
                     _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp
                 };
                 
@@ -487,16 +390,16 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::IntegerBinOp { left, right, op } => {
                 let left = function_state
-                    .get_val_ref(left)?
+                    .get_value(left)?
                     .get_value()
                     .into_int_value();
                 
                 let right = function_state
-                    .get_val_ref(right)?
+                    .get_value(right)?
                     .get_value()
                     .into_int_value();
                 
-                let signed = match block_instruction.value.type_.kind {
+                let signed = match block_instruction.value_type.kind {
                     BCTypeKind::Signed { .. } => true,
                     BCTypeKind::Unsigned { .. } => false,
                     BCTypeKind::Bool => false,
@@ -509,7 +412,7 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::FloatUnOp { value, op } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_float_value();
                 
@@ -525,12 +428,12 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::FloatBinOp { left, right, op } => {
                 let left_value = function_state
-                    .get_val_ref(left)?
+                    .get_value(left)?
                     .get_value()
                     .into_float_value();
                 
                 let right_value = function_state
-                    .get_val_ref(right)?
+                    .get_value(right)?
                     .get_value()
                     .into_float_value();
                 
@@ -561,8 +464,8 @@ pub(crate) fn generate_instruction<'a>(
 
             VirtualInstruction::Phi { predecessors: from } => {
                 let val_type = bc_llvm_type(
-                    global_state,
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?;
                 let as_basic_type = any_to_basic_type(val_type)
                     .expect("Failed to convert value type to basic type");
@@ -573,7 +476,7 @@ pub(crate) fn generate_instruction<'a>(
 
                 for (value_id, block_id) in from {
                     let value = function_state
-                        .get_val_ref(value_id)?
+                        .get_value(value_id)?
                         .get_value();
                     let value = any_to_basic_val(value)
                         .expect("Failed to convert value to basic value");
@@ -590,7 +493,7 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::Branch { condition, true_block, false_block } => {
                 let mut condition_value = function_state
-                    .get_val_ref(condition)?
+                    .get_value(condition)?
                     .get_value()
                     .into_int_value();
                 
@@ -625,7 +528,7 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::JumpTable { value, targets, default } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 
@@ -658,12 +561,12 @@ pub(crate) fn generate_instruction<'a>(
             VirtualInstruction::BoolExtend { value } |
             VirtualInstruction::ZExtend { value } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_int_type();
                 
                 CodegenValue::Value(
@@ -676,12 +579,12 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::SExtend { value } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_int_type();
                 
                 CodegenValue::Value(
@@ -694,12 +597,12 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::StructAccess { struct_, struct_type, field_index, .. } => {
                 let struct_ptr = function_state
-                    .get_val_ref(struct_)?
+                    .get_value(struct_)?
                     .get_value()
                     .into_pointer_value();
                 
                 let struct_type = bc_llvm_type(
-                    global_state, 
+                    global_state.context,
                     struct_type
                 )?.into_struct_type();
                 
@@ -718,13 +621,13 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::Trunc { value } => {
                 let value = function_state    
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_int_type();
                 
                 CodegenValue::Value(
@@ -735,14 +638,10 @@ pub(crate) fn generate_instruction<'a>(
                 )
             },
             
-            VirtualInstruction::GetFunctionAddr { func: func_name } => {
-                let function_name = function_state
-                    .get_val_ref(func_name)?
-                    .get_function_ref();
-                
+            VirtualInstruction::GetFunctionAddr { func } => {
                 let function_val = global_state
                     .module
-                    .get_function(function_name)
+                    .get_function(func)
                     .unwrap()
                     .as_global_value()
                     .as_pointer_value();
@@ -756,13 +655,13 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::IntToFloat { from, value } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_int_value();
                 
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_float_type();
                 
                 CodegenValue::Value(
@@ -786,17 +685,17 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::FloatToInt { value, .. } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_float_value();
                 
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_int_type();
                 
                 CodegenValue::Value(
-                    match block_instruction.value.type_.kind {
+                    match block_instruction.value_type.kind {
                         BCTypeKind::Signed { .. } =>
                             function_state.builder
                                 .build_float_to_signed_int(value, to_type, inst_num().as_str())
@@ -816,13 +715,13 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::PtrToInt { value } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_pointer_value();
                 
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_int_type();
                 
                 CodegenValue::Value(
@@ -835,13 +734,13 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::FloatCast { value } => {
                 let value = function_state
-                    .get_val_ref(value)?
+                    .get_value(value)?
                     .get_value()
                     .into_float_value();
                 
                 let to_type = bc_llvm_type(
-                    global_state, 
-                    &block_instruction.value.type_
+                    global_state.context,
+                    &block_instruction.value_type
                 )?.into_float_type();
                 
                 CodegenValue::Value(

@@ -1,11 +1,8 @@
 /target
-*/.internal
+**/.internal/*
 .idea
 
-*.data
 *.exe
-*.hx
-*.cx-types
-*.cx-functions
-*.o
 *.out
+
+GEMINI.md

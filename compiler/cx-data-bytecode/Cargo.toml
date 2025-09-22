@@ -5,4 +5,5 @@ edition = "2021"
 autotests = false
 
 [dependencies]
-cx-data-ast = { path = "../cx-data-ast" }
+cx-util = { path = "../cx-util" }
+speedy = "0.8.7"

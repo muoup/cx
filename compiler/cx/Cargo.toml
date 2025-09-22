@@ -5,8 +5,8 @@ edition = "2021"
 autotests = false
 
 [features]
-backend-llvm = ["cx-exec-data/backend-llvm", "cx-exec-pipeline/backend-llvm"]
+backend-llvm = ["cx-data-pipeline/backend-llvm", "cx-pipeline/backend-llvm"]
 
 [dependencies]
-cx-exec-pipeline = { path = "../cx-exec-pipeline" }
-cx-exec-data = { path = "../cx-exec-data" }
+cx-pipeline = { path = "../cx-pipeline" }
+cx-data-pipeline = { path = "../cx-data-pipeline" }

@@ -1,4 +1,3 @@
-use crate::routines::allocate_variable;
 use crate::value_type::get_cranelift_abi_type;
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
@@ -6,7 +5,7 @@ use cranelift::codegen::ir::{FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, ValueID};
+use cx_data_bytecode::{BCFunctionPrototype, BCParameter, MIRValue};
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
@@ -29,23 +28,21 @@ pub(crate) fn prepare_function_sig(
 
 pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
-    func: ValueID,
-    prototype: &BCFunctionPrototype,
-    args: &'a [ValueID],
+    func: &MIRValue,
+    args: &'a [MIRValue],
 ) -> Option<(CodegenValue, Vec<Value>)> {
-    let val = context.variable_table.get(&func).cloned().unwrap();
-    let mut params = args.iter()
-        .map(|arg| context.variable_table.get(arg).unwrap().as_value())
-        .collect::<Vec<_>>();
+    let val = context.get_value(&func).unwrap();
 
-    if prototype.return_type.is_structure() {
-        let type_size = prototype.return_type.fixed_size();
-        let temp_buffer = allocate_variable(context, type_size as u32, None)?;
+    Some((val, prepare_parameters(context, args)?))
+}
 
-        params.insert(0, temp_buffer);
-    }
-
-    Some((val, params))
+pub(crate) fn prepare_parameters<'a>(
+    context: &'a mut FunctionState,
+    args: &'a [MIRValue],
+) -> Option<Vec<Value>> {
+    args.iter()
+        .map(|arg| context.get_value(arg)?.as_value().into())
+        .collect::<Option<Vec<_>>>()
 }
 
 pub(crate) fn get_method_return(
@@ -59,15 +56,9 @@ pub(crate) fn get_method_return(
 }
 
 pub(crate) fn get_func_ref(
-    context: &mut FunctionState,
-    func_id: FuncId,
-    name: &str,
-    args: &[Value],
+    context: &mut FunctionState, func_id: FuncId,
+    prototype: &BCFunctionPrototype, args: &[Value],
 ) -> Option<FuncRef> {
-    let prototype = context
-        .fn_map
-        .get(name)?;
-
     if !prototype.var_args || args.len() == prototype.params.len() {
         return Some(
             context

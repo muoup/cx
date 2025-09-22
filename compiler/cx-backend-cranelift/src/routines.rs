@@ -1,11 +1,10 @@
-use cranelift::codegen::gimli::ReaderOffset;
-use cranelift::codegen::ir;
-use cranelift::codegen::ir::stackslot::StackSize;
-use cranelift::prelude::{FunctionBuilder, InstBuilder, StackSlotData, StackSlotKind, Value};
-use cranelift_module::{DataDescription, DataId, Module};
-use cranelift_object::ObjectModule;
-use cx_data_ast::lex::token::OperatorType;
+use crate::inst_calling::prepare_function_sig;
 use crate::FunctionState;
+use cranelift::codegen::gimli::ReaderOffset;
+use cranelift::codegen::ir::stackslot::StackSize;
+use cranelift::prelude::{InstBuilder, StackSlotData, StackSlotKind, Value};
+use cranelift_module::{FuncId, Linkage, Module};
+use cx_data_bytecode::{BCFunctionPrototype, LinkageType};
 
 pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(
@@ -23,20 +22,30 @@ pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial
     Some(stack_pointer)
 }
 
-pub(crate) fn string_literal(object_module: &mut ObjectModule, str: &str) -> DataId {
-    let id = object_module.declare_anonymous_data(
-        false,
-        false
-    ).unwrap();
+pub fn get_function(context: &mut FunctionState, prototype: &BCFunctionPrototype) -> Option<FuncId> {
+    if let Some(func_id) = context.function_ids.get(&prototype.name) {
+        return Some(*func_id);
+    }
+    
+    let Some(signature) = prepare_function_sig(&mut context.object_module, prototype) else {
+        panic!("Failed to prepare function signature for function: {:?}", prototype.name);
+    };
+    let linkage = convert_linkage(prototype.linkage);
+    
+    let func_id = context.object_module
+        .declare_function(prototype.name.as_str(), linkage, &signature)
+        .unwrap();
 
-    let mut str_data = str.to_owned().into_bytes();
-    str_data.push(b'\0');
+    context.function_ids.insert(prototype.name.clone(), func_id);
 
-    let mut data = DataDescription::new();
-    data.define(str_data.into_boxed_slice());
+    Some(func_id)
+}
 
-    object_module.define_data(id, &data).unwrap();
-    object_module.declare_data_in_data(id, &mut data);
-
-    id
+pub fn convert_linkage(linkage: LinkageType) -> cranelift_module::Linkage {
+    match linkage {
+        LinkageType::ODR => Linkage::Local,
+        LinkageType::Static => Linkage::Local,
+        LinkageType::Standard => Linkage::Export,
+        LinkageType::External => Linkage::Import,
+    }
 }

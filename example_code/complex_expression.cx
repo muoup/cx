@@ -1,9 +1,0 @@
-int add(int x, int y) {
-    return x + y;
-}
-
-int function(int* x, int *y) {
-    int x = add(1, 2) % 5;
-
-    return x;
-}

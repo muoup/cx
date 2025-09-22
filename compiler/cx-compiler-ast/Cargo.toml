@@ -8,6 +8,7 @@ autotests = false
 cx-util = { path = "../cx-util" }
 
 cx-data-ast = { path = "../cx-data-ast" }
-cx-exec-data = { path = "../cx-exec-data" }
+cx-data-lexer = { path = "../cx-data-lexer" }
+cx-data-typechecker = { path = "../cx-data-typechecker" }
 
-cx-compiler-modules = { path = "../cx-compiler-modules" }
+cx-data-pipeline = { path = "../cx-data-pipeline" }

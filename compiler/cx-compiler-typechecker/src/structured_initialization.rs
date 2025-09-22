@@ -1,36 +1,39 @@
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
+use cx_data_ast::parse::ast::CXExprKind;
+use cx_data_typechecker::ast::{TCExpr, TCExprKind};
+use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_util::log_error;
-use crate::checker::implicit_coerce;
-use crate::TypeEnvironment;
+use crate::casting::implicit_cast;
 
 pub fn coerce_initializer_list(
-    env: &mut TypeEnvironment,
-    initializer: &mut CXExpr,
+    initializer: &mut TCExpr,
     to_type: &CXType
 ) -> Option<()> {
-    match &to_type.intrinsic_type_kind(env.type_map)?.clone() {
-        CXTypeKind::Array { _type, size } =>
-            organize_array_initializer(env, initializer, &_type, Some(*size)),
+    let to_type = match &to_type.kind {
+        CXTypeKind::MemoryReference(inner) => inner.as_ref(),
+        _ => to_type,
+    };
+
+    match &to_type.kind {
+        CXTypeKind::Array { inner_type: _type, size } =>
+            organize_array_initializer(initializer, _type, Some(*size)),
         
-        CXTypeKind::PointerTo { inner, sizeless_array: true, .. } =>
-            organize_array_initializer(env, initializer, inner.as_ref(), None),
+        CXTypeKind::PointerTo { inner_type: inner, sizeless_array: true, .. } =>
+            organize_array_initializer(initializer, inner.as_ref(), None),
         
         CXTypeKind::Structured { .. } =>
-            organize_structured_initializer(env, initializer, to_type),
+            organize_structured_initializer(initializer, to_type),
         
         _ => log_error!("TYPE ERROR: Cannot coerce initializer to type {to_type}"),
     }
 }
 
 fn organize_array_initializer(
-    env: &mut TypeEnvironment,
-    initializer: &mut CXExpr,
+    initializer: &mut TCExpr,
     inner_type: &CXType,
     size: Option<usize>
 ) -> Option<()> {
-    let CXExprKind::InitializerList { indices } = &mut initializer.kind else {
-        unreachable!("PANIC: organize_array_initializer expected initialzer, found: {initializer}");
+    let TCExprKind::InitializerList { indices } = &mut initializer.kind else {
+        unreachable!("PANIC: organize_array_initializer expected initialzer, found: {initializer:?}");
     };
     
     let mut counter = 0;
@@ -41,7 +44,7 @@ fn organize_array_initializer(
         }
         
         index.index = counter;
-        implicit_coerce(env, &mut index.value, inner_type.clone())?;
+        implicit_cast(&mut index.value, &inner_type)?;
         
         if let Some(size) = size {
             if i < size {
@@ -56,24 +59,22 @@ fn organize_array_initializer(
     };
     
     let init_list_type = CXTypeKind::Array {
-        _type: Box::new(inner_type.clone()),
+        inner_type: Box::new(inner_type.clone()),
         size: array_size,
-    }.to_val_type();
-    
-    env.typecheck_data.insert(initializer, init_list_type);
-    
+    }.into();
+
+    initializer._type = init_list_type;
     Some(())
 }
 
 fn organize_structured_initializer(
-    env: &mut TypeEnvironment,
-    initializer: &mut CXExpr,
+    initializer: &mut TCExpr,
     to_type: &CXType,
 ) -> Option<()> {
-    let CXExprKind::InitializerList { indices } = &mut initializer.kind else {
-        unreachable!("PANIC: organize_structured_initializer expected initialzer, found: {initializer}");
+    let TCExprKind::InitializerList { indices } = &mut initializer.kind else {
+        unreachable!("PANIC: organize_structured_initializer expected initialzer, found: {initializer:?}");
     };
-    let CXTypeKind::Structured { fields, .. } = to_type.intrinsic_type_kind(env.type_map)?.clone() else {
+    let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
         log_error!("TYPE ERROR: Expected structured type for initializer, found: {to_type}");
     };
     
@@ -91,14 +92,13 @@ fn organize_structured_initializer(
         index.index = counter;
         
         let field_type = &fields[counter].1;
-        implicit_coerce(env, &mut index.value, field_type.clone())?;
+        implicit_cast(&mut index.value, &field_type)?;
         
         if counter < fields.len() {
             counter += 1;
         }
     }
-    
-    env.typecheck_data.insert(initializer, to_type.clone());
-    
+
+    initializer._type = to_type.clone();
     Some(())
 }

@@ -1,14 +1,14 @@
-use cx_data_ast::parse::ast::{CXExpr, CXTypeMap};
-use cx_data_ast::parse::value_type::{CXType, CXTypeKind};
-use cx_data_bytecode::{ElementID, ValueID, VirtualInstruction};
-use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
+use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
+use cx_data_bytecode::{MIRValue, VirtualInstruction};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::bytecode_error_log;
+use cx_util::mangling::{mangle_destructor};
 use crate::builder::{BytecodeBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
-use crate::deconstructor::deconstruct_variable;
-use crate::instruction_gen::generate_instruction;
 
-pub(crate) struct StructAccess {
+pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
     pub(crate) index: usize,
     pub(crate) _type: BCType,
@@ -22,11 +22,42 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
     }
 }
 
+pub(crate) fn try_access_field(
+    builder: &mut BytecodeBuilder,
+    ltype: &BCType,
+    left_id: MIRValue,
+    field_name: &str,
+) -> Option<MIRValue> {
+    match ltype.kind {
+        BCTypeKind::Struct { .. } => {
+            let struct_access = get_struct_field(
+                builder, &ltype, field_name
+            ).unwrap_or_else(|| {
+                panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
+            });
+
+            builder.add_instruction(
+                VirtualInstruction::StructAccess {
+                    struct_: left_id,
+                    struct_type: ltype.clone(),
+                    field_offset: struct_access.offset,
+                    field_index: struct_access.index,
+                },
+                struct_access._type
+            )
+        },
+
+        BCTypeKind::Union { .. } => Some(left_id),
+
+        _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
+    }
+}
+
 pub(crate) fn get_struct_field(
     builder: &BytecodeBuilder,
     _type: &BCType,
     name: &str
-) -> Option<StructAccess> {
+) -> Option<CXStructAccess> {
     let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(builder, "PANIC: Expected struct type on access {name}, got: {:?}", _type);
     };
@@ -36,8 +67,8 @@ pub(crate) fn get_struct_field(
     for (index, (field_name, field_type)) in fields.iter().enumerate() {
         offset = align_offset(offset, field_type.alignment() as usize);
         
-        if field_name == name {
-            return Some(StructAccess {
+        if field_name.as_str() == name {
+            return Some(CXStructAccess {
                 offset, index,
                 _type: field_type.clone()
             });
@@ -53,7 +84,7 @@ pub(crate) fn get_cx_struct_field_by_index(
     builder: &BytecodeBuilder,
     _type: &BCType,
     index: usize
-) -> Option<StructAccess> {
+) -> Option<CXStructAccess> {
     let BCTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(builder, "PANIC: Expected struct type on access by index {index}, got: {:?}", _type);
     };
@@ -78,20 +109,20 @@ pub(crate) fn get_cx_struct_field_by_index(
     
     let field_type = fields[index].1.clone();
     
-    Some(StructAccess {
+    Some(CXStructAccess {
         offset, index,
         _type: field_type
     })
 }
 
 fn variable_requires_nulling(
-    type_map: &CXTypeMap,
+    builder: &BytecodeBuilder,
     cx_type: &CXType
-) -> Option<bool> {
-    match cx_type.intrinsic_type_kind(type_map)? {
-        CXTypeKind::StrongPointer { .. } => Some(true),
-        
-        _ => Some(cx_type.has_destructor(type_map)),
+) -> bool {
+    match cx_type.kind {
+        CXTypeKind::StrongPointer { .. } => true,
+
+        _ => builder.get_destructor(cx_type).is_some()
     }
 }
 
@@ -99,42 +130,28 @@ pub(crate) fn allocate_variable(
     name: &str,
     builder: &mut BytecodeBuilder,
     var_type: &CXType,
-) -> Option<ValueID> {
+) -> Option<MIRValue> {
     let bc_type = builder.convert_cx_type(var_type)?;
-
-    let memory = match bc_type.size() {
-        BCTypeSize::Fixed(size) => {
-            builder.add_instruction_bt(
-                VirtualInstruction::Allocate {
-                    size,
-                    alignment: bc_type.alignment(),
-                },
-                BCType::default_pointer()
-            )?
+    let memory = builder.add_instruction(
+        VirtualInstruction::Allocate {
+            _type: bc_type.clone(),
+            alignment: bc_type.alignment(),
         },
-        BCTypeSize::Variable(size_expr) => {
-            builder.add_instruction_bt(
-                VirtualInstruction::VariableAllocate {
-                    size: size_expr,
-                    alignment: bc_type.alignment(),
-                },
-                BCType::default_pointer()
-            )?
-        }
-    };
+        BCType::default_pointer()
+    )?;
 
-    builder.insert_symbol(name.to_owned(), memory);
+    builder.insert_symbol(name.to_owned(), memory.clone());
     builder.insert_declaration(
         DeclarationLifetime {
-            value_id: memory,
+            value_id: memory.clone(),
             _type: var_type.clone()
         }
     );
     
-    if variable_requires_nulling(&builder.cx_type_map, var_type)? {
-        builder.add_instruction_bt(
+    if variable_requires_nulling(builder, var_type) {
+        builder.add_instruction(
             VirtualInstruction::ZeroMemory {
-                memory,
+                memory: memory.clone(),
                 _type: bc_type.clone(),
             },
             BCType::unit()
@@ -142,15 +159,4 @@ pub(crate) fn allocate_variable(
     }
 
     Some(memory)
-}
-
-pub(crate) fn deconstruct_scope(
-    builder: &mut BytecodeBuilder,
-    scope: &[DeclarationLifetime]
-) -> BytecodeResult<()> {
-    for lifetime in scope {
-        deconstruct_variable(builder, lifetime.value_id.clone(), &lifetime._type, true)?;
-    }
-    
-    Some(())
 }
