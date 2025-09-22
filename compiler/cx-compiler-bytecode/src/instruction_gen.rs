@@ -974,10 +974,7 @@ pub(crate) fn implicit_defer_return(
             // Phi node for the return value
             Some(
                 MIRValue::BlockResult {
-                    block_id: BlockID {
-                        id: 0,
-                        in_deferral: true
-                    },
+                    block_id: BlockID::DeferredBlock(0),
                     value_id: 0
                 }
             )

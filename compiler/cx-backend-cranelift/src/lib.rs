@@ -4,7 +4,7 @@ use cranelift::codegen::ir::GlobalValue;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
-use cranelift_module::{DataId, FuncId};
+use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_util::format::dump_data;
 use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, MIRValue};
@@ -138,8 +138,26 @@ impl FunctionState<'_> {
                 Some(CodegenValue::Value(loaded))
             },
             MIRValue::NULL => Some(CodegenValue::NULL),
+            MIRValue::Global(id) => {
+                let global_ref = self.object_module
+                    .declare_data_in_func(
+                        DataId::from_u32(*id as u32),
+                        &mut self.builder.func
+                    );
 
-            _ => self.variable_table.get(mir_value).cloned()
+                let gv = self.builder.ins()
+                    .global_value(self.pointer_type, global_ref);
+
+                Some(CodegenValue::Value(gv))
+            },
+
+            _ => {
+                let Some(var) = self.variable_table.get(mir_value).cloned() else {
+                    log_error!("Variable not found in variable table: {:?}", mir_value);
+                };
+
+                Some(var)
+            }
         }
     }
 }

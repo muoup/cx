@@ -33,7 +33,7 @@ pub(crate) fn generate_global_variable(state: &mut GlobalState, variable: &BCGlo
         },
 
         BCGlobalType::Variable { _type, initial_value } => {
-            let llvm_type = bc_llvm_type(state, _type)?;
+            let llvm_type = bc_llvm_type(state.context, _type)?;
             let basic_type = any_to_basic_type(llvm_type)
                 .unwrap_or_else(|| panic!("Unsupported global variable type"));
 

@@ -6,6 +6,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, MIRValue};
+use crate::routines::convert_linkage;
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;

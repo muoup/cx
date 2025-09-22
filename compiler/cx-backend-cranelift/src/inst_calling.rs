@@ -41,7 +41,7 @@ pub(crate) fn prepare_parameters<'a>(
     args: &'a [MIRValue],
 ) -> Option<Vec<Value>> {
     args.iter()
-        .map(|arg| context.get_value(arg).map(|arg| arg.as_value()))
+        .map(|arg| context.get_value(arg)?.as_value().into())
         .collect::<Option<Vec<_>>>()
 }
 
