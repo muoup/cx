@@ -78,12 +78,13 @@ be avoided when possible.
 - **Input**: AST from the parsing stage, type and function signature information.
 - **Output**: A modified AST containing additional implicit AST elements, type information for each node, and realized template functions and types.
 
-### Stage 6: Bytecode Generation
-In its current form, the "bytecode" is implemented as an SSA flat IR that can be converted to different
-codegen backends, which for now includes LLVM and Cranelift. In the future this will be re-implemented,
-likely during self-hosting, to use a more TAC-like representation that could be used for interpretation
-rather than just compilation, where compilation will happen during execution of the program to allow for
-better debugging.
+### Stage 6: MIR Generation
+In the code, MIR will often be referred to as `Bytecode` as was it's old moniker, however it is more
+accurately described as a flat SSA MIR for the frontend to use before handing off to the supported
+codegen backends, currently LLVM and Cranelift. This IR does not currently come with its own special
+optimizations, however it is slowly being redesigned for such. While backends typically do their own
+optimizations, as MIR is more high-level and aware of the semantics of the language, it has the ability
+to be aware of safe transformations at a higher level than the backends.
 
 - **Prerequisites**: The type-checked and template-realized AST.
 - **Input**: Type-checked and template-realized AST. Type map, and function signature map.
