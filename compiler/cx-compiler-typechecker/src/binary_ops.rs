@@ -1,5 +1,5 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{same_type, CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{log_error, CXResult};
@@ -52,7 +52,7 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
             }
 
             let member_fn_name = mangle_member_function(name.as_str(), type_name.as_str());
-            let Some(prototype) = env.get_func(&member_fn_name).cloned() else {
+            let Some(prototype) = env.get_func(&member_fn_name) else {
                 log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
             };
             let name = prototype.name.clone();
@@ -72,7 +72,7 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
             let member_fn_name = mangle_member_function(type_name, name.as_str());
             let input = contextualize_template_args(env, template_input)?;
 
-            let Some(prototype) = env.get_templated_func(&member_fn_name, &input).cloned() else {
+            let Some(prototype) = env.get_templated_func(&member_fn_name, &input) else {
                 log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
             };
             let name = prototype.name.clone();
@@ -117,7 +117,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
 
     let (direct, prototype) = match lhs.kind {
         TCExprKind::FunctionReference { ref name } => {
-            let Some(prototype) = env.get_func(name.as_str()).cloned() else {
+            let Some(prototype) = env.get_func(name.as_str()) else {
                 log_error!("TYPE ERROR: Function '{}' not found in the current environment", name.as_string());
             };
 
@@ -129,7 +129,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
                 unreachable!("TYPE ERROR: Expected named type for method call target, found {}", target._type);
             };
 
-            let Some(prototype) = env.get_func(mangled_name.as_str()).cloned() else {
+            let Some(prototype) = env.get_func(mangled_name.as_str()) else {
                 log_error!("TYPE ERROR: Method '{}' not found for type {}", mangled_name.as_string(), target_name);
             };
             tc_args.insert(0, *target);

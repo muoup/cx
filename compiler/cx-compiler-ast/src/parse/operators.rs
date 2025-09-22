@@ -2,6 +2,7 @@ use cx_data_ast::{assert_token_matches, next_kind};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
+use cx_util::log_error;
 use crate::parse::typing::is_type_decl;
 use crate::preparse::typing::parse_initializer;
 
@@ -37,6 +38,10 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
         CXBinOp::LShift | CXBinOp::RShift => 6,
         CXBinOp::Less | CXBinOp::Greater | CXBinOp::LessEqual | CXBinOp::GreaterEqual => 7,
 
+        CXBinOp::BitAnd => 8,
+        CXBinOp::BitXor => 9,
+        CXBinOp::BitOr => 10,
+
         CXBinOp::Equal | CXBinOp::NotEqual => 10,
 
         CXBinOp::LAnd => 14,
@@ -44,14 +49,13 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
         CXBinOp::Assign(_) => 16,
 
         CXBinOp::Comma => 17,
-
-        _ => todo!("binop_prec {op:?}")
     }
 }
 
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 2,
+        CXUnOp::BNot => 2,
         
         CXUnOp::LNot => 3,
         CXUnOp::Negative => 3,
@@ -59,8 +63,6 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
         CXUnOp::Dereference => 3,
         CXUnOp::PreIncrement(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
-
-        _ => todo!("unop_prec {op:?}")
     }
 }
 
@@ -148,14 +150,14 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
             OperatorType::LessEqual         => CXBinOp::LessEqual,
             OperatorType::GreaterEqual      => CXBinOp::GreaterEqual,
 
-            OperatorType::Ampersand => CXBinOp::LAnd,
-            OperatorType::DoubleBar => CXBinOp::LOr,
-            OperatorType::DoubleAmpersand => CXBinOp::LAnd,
+            OperatorType::Ampersand         => CXBinOp::LAnd,
+            OperatorType::DoubleBar         => CXBinOp::LOr,
+            OperatorType::DoubleAmpersand   => CXBinOp::LAnd,
             
-            OperatorType::DoubleLT => CXBinOp::LShift,
-            OperatorType::DoubleGT => CXBinOp::RShift,
+            OperatorType::DoubleLT          => CXBinOp::LShift,
+            OperatorType::DoubleGT          => CXBinOp::RShift,
 
-            _ => todo!("op_to_binop: {op:?}")
+            _ => log_error!("PARSER ERROR: Invalid binary operator: {:?}", op)
         }
     )
 }

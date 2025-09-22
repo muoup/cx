@@ -1,5 +1,7 @@
 use crate::types::BCType;
 use std::collections::HashMap;
+use cx_util::identifier::CXIdent;
+
 pub mod types;
 mod format;
 
@@ -10,39 +12,59 @@ pub struct ProgramBytecode {
     pub fn_map: BCFunctionMap,
     pub fn_defs: Vec<BytecodeFunction>,
     
-    pub global_strs: Vec<String>,
+    pub global_vars: Vec<BCGlobalValue>
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum LinkageType {
     ODR,
     Static,
-    Public,
-    Private
+    Standard,
+    External
 }
 
 pub type ElementID = u32;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct ValueID {
-    pub block_id: BlockID,
-    pub value_id: ElementID
+#[derive(Debug, Clone)]
+pub struct BCGlobalValue {
+    pub name: CXIdent,
+    pub _type: BCGlobalType,
+    pub linkage: LinkageType,
+}
+
+#[derive(Debug, Clone)]
+pub enum BCGlobalType {
+    StringLiteral(String),
+    Variable {
+        _type: BCType,
+        initial_value: Option<i64>
+    },
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum MIRValue {
+    NULL,
+    IntImmediate {
+        type_: BCType,
+        val: i64
+    },
+    FloatImmediate {
+        type_: BCType,
+        val: i64
+    },
+    Global(ElementID),
+    FunctionRef(CXIdent),
+    LoadOf(BCType, Box<MIRValue>),
+    BlockResult {
+        block_id: BlockID,
+        value_id: u32
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct BlockID {
-    pub in_deferral: bool,
-    pub id: ElementID
-}
-
-impl ValueID {
-    pub const NULL: Self = ValueID {
-        block_id: BlockID {
-            in_deferral: true,
-            id: u32::MAX
-        },
-        value_id: u32::MAX
-    };
+pub enum BlockID {
+    Block(ElementID),
+    DeferredBlock(ElementID)
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +104,7 @@ pub struct FunctionBlock {
 #[derive(Debug, Clone)]
 pub struct BlockInstruction {
     pub instruction: VirtualInstruction,
-    pub value: VirtualValue
+    pub value_type: BCType
 }
 
 #[derive(Debug, Clone)]
@@ -96,33 +118,25 @@ pub enum VirtualInstruction {
         alignment: u8,
     },
 
-    Load {
-        value: ValueID,
-    },
-
-    Immediate {
-        value: i32
-    },
-    
-    FloatImmediate {
-        value: f64
-    },
-
     StructAccess {
-        struct_: ValueID,
+        struct_: MIRValue,
         struct_type: BCType,
         field_index: usize,
         field_offset: usize
     },
 
+    Temp {
+        value: MIRValue
+    },
+
     Store {
-        memory: ValueID,
-        value: ValueID,
+        memory: MIRValue,
+        value: MIRValue,
         type_: BCType
     },
     
     ZeroMemory {
-        memory: ValueID,
+        memory: MIRValue,
         _type: BCType
     },
 
@@ -130,107 +144,98 @@ pub enum VirtualInstruction {
     // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
     // an error,
     BoolExtend {
-        value: ValueID,
+        value: MIRValue,
     },
     
     ZExtend {
-        value: ValueID,
+        value: MIRValue,
     },
 
     SExtend {
-        value: ValueID,
+        value: MIRValue,
     },
     
     Phi {
-        predecessors: Vec<(ValueID, BlockID)>,
+        predecessors: Vec<(MIRValue, BlockID)>,
     },
 
     Trunc {
-        value: ValueID
+        value: MIRValue
     },
     
     IntToPtrDiff {
-        value: ValueID,
+        value: MIRValue,
         ptr_type: BCType
     },
     
     IntToPtr {
-        value: ValueID
+        value: MIRValue
     },
     
     PointerBinOp {
         op: BCPtrBinOp,
         ptr_type: BCType,
-        left: ValueID,
-        right: ValueID,
+        left: MIRValue,
+        right: MIRValue,
     },
 
     IntegerBinOp {
         op: BCIntBinOp,
-        left: ValueID,
-        right: ValueID
+        left: MIRValue,
+        right: MIRValue
     },
 
     IntegerUnOp {
         op: BCIntUnOp,
-        value: ValueID
+        value: MIRValue
     },
 
     FloatBinOp {
         op: BCFloatBinOp,
-        left: ValueID,
-        right: ValueID
+        left: MIRValue,
+        right: MIRValue
     },
 
     FloatUnOp {
         op: BCFloatUnOp,
-        value: ValueID
-    },
-
-    StringLiteral {
-        str_id: ElementID
+        value: MIRValue
     },
 
     DirectCall {
-        func: ValueID,
-        args: Vec<ValueID>,
+        args: Vec<MIRValue>,
         method_sig: BCFunctionPrototype
     },
 
     IndirectCall {
-        func_ptr: ValueID,
-        args: Vec<ValueID>,
+        func_ptr: MIRValue,
+        args: Vec<MIRValue>,
         method_sig: BCFunctionPrototype
-    },
-    
-    FunctionReference {
-        name: String,
     },
 
     GetFunctionAddr {
-        func: ValueID
+        func: String
     },
 
     IntToFloat {
         from: BCType,
-        value: ValueID
+        value: MIRValue
     },
 
     FloatToInt {
         from: BCType,
-        value: ValueID
+        value: MIRValue
     },
     
     PtrToInt {
-        value: ValueID
+        value: MIRValue
     },
 
     FloatCast {
-        value: ValueID
+        value: MIRValue
     },
 
     Branch {
-        condition: ValueID,
+        condition: MIRValue,
         true_block: BlockID,
         false_block: BlockID
     },
@@ -242,17 +247,17 @@ pub enum VirtualInstruction {
     },
     
     JumpTable {
-        value: ValueID,
+        value: MIRValue,
         targets: Vec<(u64, BlockID)>,
         default: BlockID
     },
 
     Return {
-        value: Option<ValueID>
+        value: Option<MIRValue>
     },
 
     BitCast {
-        value: ValueID
+        value: MIRValue
     },
     
     NOP
@@ -307,4 +312,17 @@ pub enum BCFloatBinOp {
 #[derive(Debug, Clone, Copy)]
 pub enum BCFloatUnOp {
     NEG
+}
+
+impl BCGlobalValue {
+    pub fn as_virtual_value(&self) -> VirtualValue {
+        match &self._type {
+            BCGlobalType::StringLiteral(s) => VirtualValue {
+                type_: BCType::default_pointer()
+            },
+            BCGlobalType::Variable { _type, .. } => VirtualValue {
+                type_: _type.clone()
+            },
+        }
+    }
 }

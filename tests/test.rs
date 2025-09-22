@@ -34,7 +34,9 @@ test_files!(
     struct_parameter,
     template_include,
     vector,
-    templated_destructor
+    templated_destructor,
+    basic_global_variable,
+    global_in_template
 );
 
 #[ctor::ctor]
@@ -102,67 +104,3 @@ fn test(input: &Path) {
         panic!("Could not remove output file: {}", obj_output);
     });
 }
-
-
-// #[test]
-// fn run_tests() {
-//     // CWD to workspace root to make paths simpler.
-//     let root = std::env::current_dir().unwrap().parent().unwrap().to_path_buf();
-//     std::env::set_current_dir(&root).unwrap();
-//     std::env::set_current_dir("tests/cases").unwrap();
-//
-//     std::fs::remove_dir_all(".internal")
-//         .unwrap_or(());
-//
-//     let cases_dir = std::fs::read_dir("./").unwrap();
-//     let files = cases_dir
-//         .filter_map(Result::ok)
-//         .collect::<Vec<_>>();
-//
-//     for (i, case) in files.iter().enumerate() {
-//         let path = case.path(); // path is now relative to workspace root, e.g., "tests/cases/hello_world.cx"
-//
-//         let cranelift_config = CompilerConfig {
-//             backend: CompilerBackend::Cranelift,
-//             optimization_level: cx_data_pipeline::OptimizationLevel::O0,
-//             output: format!("a{}.out", i).into(),
-//         };
-//         let llvm_config = CompilerConfig {
-//             backend: CompilerBackend::LLVM,
-//             optimization_level: cx_data_pipeline::OptimizationLevel::O1,
-//             output: format!("a{}.out", i).into(),
-//         };
-//
-//         if path.extension().is_some() && path.extension().unwrap() == "cx" {
-//             let expected_output_path = path.with_extension("cx-output");
-//             let Some(expected_output) = std::fs::read_to_string(&expected_output_path).ok() else {
-//                 eprintln!("[{}] No expected output file found, skipping...", path.display());
-//                 return;
-//             };
-//
-//             println!("[{}] Compiling...", path.display());
-//
-//             std::env::set_current_dir(&root).unwrap();
-//             std::env::set_current_dir("tests/cases").unwrap();
-//             standard_compilation(cranelift_config.clone(), path.as_path())
-//                 .expect("Cranelift compilation failed");
-//             assert_eq!(expected_output, get_output(), "Cranelift output does not match expected output for {}", path.display());
-//             println!("[{}] Cranelift output matches expected output.", path.display());
-//
-//             if cfg!(feature = "backend-llvm") {
-//                 std::env::set_current_dir(&root).unwrap();
-//                 std::env::set_current_dir("tests/cases").unwrap();
-//                 standard_compilation(llvm_config.clone(), path.as_path())
-//                     .expect("LLVM compilation failed");
-//                 assert_eq!(expected_output, get_output(), "LLVM output does not match expected output for {}", path.display());
-//                 println!("[{}] LLVM output matches expected output.", path.display());
-//             }
-//
-//             std::fs::remove_file(llvm_config.output).unwrap_or_else(|_| {
-//                 panic!("Could not remove output file: a.out");
-//             });
-//         }
-//     }
-//
-//     std::env::set_current_dir(&root).unwrap();
-// }

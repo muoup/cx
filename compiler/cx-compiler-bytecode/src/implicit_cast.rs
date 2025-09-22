@@ -2,16 +2,16 @@ use crate::builder::BytecodeBuilder;
 use cx_data_ast::parse::ast::CXCastType;
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_bytecode::VirtualInstruction::IntToPtrDiff;
-use cx_data_bytecode::{ValueID, VirtualInstruction};
+use cx_data_bytecode::{MIRValue, VirtualInstruction};
 use cx_data_bytecode::types::BCTypeKind;
 
 pub(crate) fn implicit_cast(
     builder: &mut BytecodeBuilder,
-    value: ValueID,
+    value: MIRValue,
     from_type: &CXType,
     to_type: &CXType,
     cast_type: &CXCastType
-) -> Option<ValueID> {
+) -> Option<MIRValue> {
     match cast_type {
         CXCastType::BitCast => {
             builder.add_instruction_cxty(
@@ -146,9 +146,13 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::FunctionToPointerDecay => {
+            let MIRValue::FunctionRef(func) = &value else {
+                panic!("INTERNAL PANIC: Invalid function to pointer decay value")
+            };
+
             builder.add_instruction_cxty(
                 VirtualInstruction::GetFunctionAddr {
-                    func: value,
+                    func: func.as_string(),
                 },
                 to_type.clone()
             )
@@ -186,7 +190,5 @@ pub(crate) fn implicit_cast(
         CXCastType::FauxLoad => {
             Some(value)
         },
-        
-        _ => todo!("implicit_cast({cast_type:?})")
     }
 }

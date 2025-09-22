@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
 
@@ -8,6 +9,7 @@ use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
 pub struct TCStructureData {
     pub type_data: CXTypeData,
     pub fn_data: CXFnData,
+    pub global_variables: HashMap<String, TCGlobalVariable>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -17,8 +19,8 @@ pub struct TCAST {
     pub type_map: CXTypeMap,
     pub fn_map: CXFnMap,
 
-    pub global_variables: Vec<CXGlobalVariable>,
     pub destructors_required: Vec<CXType>,
+    pub global_variables: Vec<TCGlobalVariable>,
     pub function_defs: Vec<TCFunctionDef>,
 }
 
@@ -33,6 +35,24 @@ pub struct FunctionTemplateRequest {
 pub struct TCFunctionDef {
     pub prototype: CXFunctionPrototype,
     pub body: Box<TCExpr>
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub enum TCGlobalVariable {
+    // Currently used with enum constants
+    UnaddressableConstant {
+        name: CXIdent,
+        val: i64
+    },
+    StringLiteral {
+        name: CXIdent,
+        value: String
+    },
+    Variable {
+        name: CXIdent,
+        _type: CXType,
+        initializer: Option<i64>
+    },
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -67,10 +87,6 @@ pub enum TCExprKind {
         value: f64
     },
 
-    StringLiteral {
-        value: CXIdent
-    },
-
     SizeOf {
         _type: CXType,
     },
@@ -78,6 +94,10 @@ pub enum TCExprKind {
     VariableDeclaration {
         type_: CXType,
         name: CXIdent,
+    },
+
+    GlobalVariableReference {
+        name: CXIdent
     },
 
     VariableReference {

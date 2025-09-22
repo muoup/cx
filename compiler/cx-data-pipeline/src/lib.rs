@@ -158,6 +158,10 @@ impl CompilationUnit {
     pub fn with_extension(&self, extension: &str) -> PathBuf {
         self.path.with_extension(extension)
     }
+
+    pub fn is_std_lib(&self) -> bool {
+        self.identifier.starts_with("std/")
+    }
 }
 
 pub fn libary_path_prefix() -> String {

@@ -1,4 +1,4 @@
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use crate::environment::TCEnvironment;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};

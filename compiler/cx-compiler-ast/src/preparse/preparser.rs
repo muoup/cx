@@ -1,7 +1,8 @@
-use cx_data_ast::{assert_token_matches, peek_next, try_next};
+use cx_data_ast::{assert_token_matches, next_kind, peek_next, try_next};
+use cx_data_ast::parse::ast::CXExpr;
 use crate::preparse::typing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::macros::error_pointer;
 use cx_data_ast::parse::parser::{VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;
@@ -108,7 +109,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
                 )
             )
         },
-        
+
         PreparseResult::TypeDefinition(name, type_) => {
             Some(
                 PreparseResult::TypeTemplate(
@@ -139,7 +140,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             )
         },
 
-        _ => todo!()
+        _ => point_log_error!(data.tokens, "PARSER ERROR: Invalid statement in template declaration!"),
     }
 }
 
@@ -296,9 +297,12 @@ pub(crate) fn preparse_global_expr(data: &mut PreparseData) -> Option<PreparseRe
         
         return Some(PreparseResult::FunctionDefinition(method))
     };
-    
-    eprintln!("Found: {:?}", data.tokens.peek());
-    todo!("global variables")
+
+    // Global variables are parsed during the full parse, variable identifiers are not
+    // at least currently, needed in the process of full parsing an AST like type names are.
+
+    goto_statement_end(&mut data.tokens);
+    Some(PreparseResult::Nothing)
 }
 
 pub fn goto_statement_end(tokens: &mut TokenIter) -> Option<()> {

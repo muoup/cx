@@ -9,7 +9,7 @@ pub(crate) fn generate_ptr_binop<'a>(
     ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, 
     op: BCPtrBinOp
 ) -> Option<CodegenValue<'a>> {
-    let ptr_type = bc_llvm_type(global_state, ptr_type)?;
+    let ptr_type = bc_llvm_type(global_state.context, ptr_type)?;
 
     Some(
         CodegenValue::Value(

@@ -1,4 +1,4 @@
-use crate::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource};
 use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use speedy::{Readable, Writable};

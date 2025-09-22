@@ -1,10 +1,17 @@
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 use std::sync::Arc;
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CXIdent {
     data: Arc<str>
+}
+
+impl Hash for CXIdent {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
 }
 
 impl<'a, C: Context> Readable<'a, C> for CXIdent {
@@ -47,22 +54,5 @@ impl CXIdent {
     
     pub fn map_data<F: FnOnce(&str) -> String>(&mut self, f: F) {
         self.data = f(self.data.as_ref()).into();
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CXTypedIdent {
-    Intrinsic(CXIdent),
-    Namespace(Vec<CXIdent>),
-    Standard(CXIdent)
-}
-
-impl CXTypedIdent {
-    pub fn assert_standard(self) -> CXIdent {
-        match self {
-            CXTypedIdent::Standard(ident) => ident,
-            CXTypedIdent::Namespace(_) => panic!("Expected standard identifier, found namespace!"),
-            CXTypedIdent::Intrinsic(_) => panic!("Expected standard identifier, found intrinsic!")
-        }
     }
 }

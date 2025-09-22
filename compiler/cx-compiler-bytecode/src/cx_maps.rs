@@ -166,7 +166,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCF
             name: cx_proto.name.as_string(),
             return_type, params,
             var_args: cx_proto.var_args,
-            linkage: LinkageType::Public
+            linkage: LinkageType::Standard
         }
     )
 }
@@ -188,13 +188,7 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                 let size_id = generate_instruction(builder, size.as_ref())?;
                 
                 let type_size = match bc_type.size() {
-                    BCTypeSize::Fixed(size) => 
-                        builder.add_instruction(
-                            VirtualInstruction::Immediate {
-                                value: size as i32,
-                            },
-                            BCTypeKind::Unsigned { bytes: 8 }.into()
-                        )?,
+                    BCTypeSize::Fixed(size) => builder.int_const(size as i32, 8, false),
                     BCTypeSize::Variable(id) => id
                 };
                 
@@ -208,7 +202,7 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                 )?;
                 
                 BCTypeKind::VariableSized {
-                    size: total_size,
+                    size: Box::new(total_size),
                     alignment: bc_type.alignment()
                 }
             },

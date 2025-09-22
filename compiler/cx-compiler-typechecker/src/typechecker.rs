@@ -1,8 +1,8 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalConstant, CXGlobalVariable, CXUnOp};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
+use cx_util::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
-use cx_data_ast::preparse::naive_types::CX_CONST;
-use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCInitIndex};
+use cx_data_ast::preparse::naive_types::{CXNaiveType, CX_CONST};
+use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex};
 use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_method_call};
 use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast, try_implicit_cast};
@@ -11,6 +11,14 @@ use crate::realize_fn_implementation;
 use crate::templates::instantiate_function_template;
 use crate::type_mapping::{contextualize_template_args, contextualize_type};
 use crate::variable_destruction::visit_destructable_instance;
+
+fn anonymous_name_gen() -> String {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+    format!("__anon_{}", id)
+}
 
 pub(crate) fn in_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype, expr: &CXExpr) -> Option<TCExpr> {
     setup_method_env(env, prototype);
@@ -71,13 +79,24 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::StringLiteral { val } => {
+                let anonymous_name = anonymous_name_gen();
+                let name_ident = CXIdent::from(anonymous_name.clone());
+
+                env.realized_globals.insert(
+                    anonymous_name.clone(),
+                    TCGlobalVariable::StringLiteral {
+                        name: name_ident.clone(),
+                        value: val.clone()
+                    }
+                );
+
                 TCExpr {
                     _type: env.get_type("char")
                         .unwrap()
                         .clone()
                         .pointer_to()
                         .add_specifier(CX_CONST),
-                    kind: TCExprKind::StringLiteral { value: CXIdent::from(val.as_str()) }
+                    kind: TCExprKind::GlobalVariableReference { name: name_ident }
                 }
             },
 
@@ -104,7 +123,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         _type: CXTypeKind::Function { prototype: Box::new(function_type.clone()) }.into(),
                         kind: TCExprKind::FunctionReference { name: name.clone() } // Placeholder for args
                     }
-                } else if let Some(global) = env.global_variables.get(name.as_str()) {
+                } else if let Some(global) = env.get_global_var(name.as_str()) {
                     global_constant_expr(global)?
                 } else {
                     log_error!("Identifier '{}' not found", name);
@@ -116,7 +135,9 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 // in CXNaiveType contexts.
 
                 let input = contextualize_template_args(env, template_input)?;
-                let function = env.get_templated_func(name.as_str(), &input)?;
+                let Some(function) = env.get_templated_func(name.as_str(), &input) else {
+                    log_error!("Function template '{}' not found", name);
+                };
 
                 TCExpr {
                     _type: CXTypeKind::Function { prototype: Box::new(function.clone()) }.into(),
@@ -506,19 +527,28 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
     )
 }
 
-fn global_constant_expr(global: &CXGlobalVariable) -> Option<TCExpr> {
+
+fn global_constant_expr(global: &TCGlobalVariable) -> Option<TCExpr> {
     match global {
-        CXGlobalVariable::GlobalConstant { constant, .. } => {
-            match constant {
-                CXGlobalConstant::Int(val) => {
-                    Some(
-                        TCExpr {
-                            _type: CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 }),
-                            kind: TCExprKind::IntLiteral { value: *val as i64 }
-                        }
-                    )
-                },
-            }
-        }
+        TCGlobalVariable::UnaddressableConstant { val, .. } => {
+            Some(
+                TCExpr {
+                    _type: CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 }),
+                    kind: TCExprKind::IntLiteral { value: *val }
+                }
+            )
+        },
+
+        TCGlobalVariable::Variable { name, _type, .. } => {
+            Some(
+                TCExpr {
+                    _type: _type.clone().mem_ref_to(),
+                    kind: TCExprKind::GlobalVariableReference { name: name.clone() }
+                }
+            )
+        },
+
+        TCGlobalVariable::StringLiteral { .. }
+            => unreachable!("String literals cannot be referenced via an identifier"),
     }
 }

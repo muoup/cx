@@ -1,6 +1,6 @@
 use std::hash::{Hash, Hasher};
 use speedy::{Readable, Writable};
-use cx_data_ast::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::preparse::naive_types::CXTypeSpecifier;
 use uuid::Uuid;

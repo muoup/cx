@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::parse::identifier::CXIdent;
+use cx_util::identifier::CXIdent;
 use crate::preparse::CXNaiveFnIdent;
 use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 
