@@ -1,6 +1,6 @@
-use crate::ValueID;
+use crate::MIRValue;
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct BCType {
     pub kind: BCTypeKind
 }
@@ -19,7 +19,7 @@ impl BCType {
     }
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum BCTypeKind {
     Opaque { bytes: usize },
     Signed { bytes: u8 },
@@ -32,7 +32,7 @@ pub enum BCTypeKind {
     Struct { name: String, fields: Vec<(String, BCType)> },
     Union { name: String, fields: Vec<(String, BCType)> },
     
-    VariableSized { size: ValueID, alignment: u8 },
+    VariableSized { size: Box<MIRValue>, alignment: u8 },
 
     Unit
 }
@@ -40,7 +40,7 @@ pub enum BCTypeKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BCTypeSize {
     Fixed(usize),
-    Variable(ValueID),
+    Variable(MIRValue),
 }
 
 impl BCTypeSize {
@@ -61,7 +61,7 @@ impl From<BCTypeKind> for BCType {
 impl BCType {
     pub fn size(&self) -> BCTypeSize {
         match &self.kind {
-            BCTypeKind::VariableSized { size, .. } => BCTypeSize::Variable(*size),
+            BCTypeKind::VariableSized { size, .. } => BCTypeSize::Variable(*size.clone()),
             _ => BCTypeSize::Fixed(self.fixed_size()),
         }
     }

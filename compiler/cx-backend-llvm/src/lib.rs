@@ -1,27 +1,28 @@
 use crate::attributes::*;
-use crate::typing::{any_to_basic_type, bc_llvm_type, bc_llvm_prototype, convert_linkage};
+use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, LinkageType, ProgramBytecode, ValueID};
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, MIRValue, ProgramBytecode};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
+use inkwell::module::Module;
 use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{AnyType, FunctionType};
 use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, GlobalValue};
 
-use std::collections::HashMap;
-use inkwell::basic_block::BasicBlock;
+use crate::globals::generate_global_variable;
+use crate::instruction::{inst_num, reset_num};
 use cx_data_pipeline::OptimizationLevel;
 use cx_util::format::dump_data;
-use crate::globals::generate_global_variable;
-use crate::instruction::reset_num;
+use inkwell::basic_block::BasicBlock;
+use std::collections::HashMap;
 
 pub(crate) mod typing;
 mod instruction;
 mod attributes;
 mod arithmetic;
+mod routines;
 mod globals;
 
 pub(crate) struct GlobalState<'a> {
@@ -35,18 +36,59 @@ pub(crate) struct GlobalState<'a> {
 }
 
 pub(crate) struct FunctionState<'a> {
+    context: &'a Context,
+
     current_function: String,
     
     defer_block_offset: usize,
     in_defer: bool,
 
     builder: Builder<'a>,
-    value_map: HashMap<ValueID, CodegenValue<'a>>,
+    value_map: HashMap<MIRValue, CodegenValue<'a>>,
 }
 
 impl<'a> FunctionState<'a> {
-    pub(crate) fn get_val_ref(&self, id: &ValueID) -> Option<&CodegenValue<'a>> {
-        self.value_map.get(id)
+    pub(crate) fn get_value(&self, id: &MIRValue) -> Option<CodegenValue<'a>> {
+        match id {
+            MIRValue::IntImmediate { val, type_ } => {
+                let int_type = bc_llvm_type(self.context, type_)?;
+                let int_val = int_type.into_int_type().const_int(*val as u64, true).as_any_value_enum();
+
+                Some(CodegenValue::Value(int_val))
+            },
+            MIRValue::FloatImmediate { val, type_ } => {
+                let float_type = bc_llvm_type(self.context, type_)?;
+                let float_val = float_type.into_float_type()
+                    .const_float(f64::from_bits(*val as u64))
+                    .as_any_value_enum();
+
+                Some(CodegenValue::Value(float_val))
+            },
+
+            MIRValue::LoadOf(_type, val) => {
+                let ptr_val = self.get_value(val)?
+                    .get_value();
+                let ptr_type = bc_llvm_type(self.context, _type)?;
+                let basic_type = any_to_basic_type(ptr_type)?;
+
+                let load_inst = self.builder.build_load(
+                        basic_type,
+                        ptr_val.into_pointer_value(),
+                        &*inst_num()
+                    )
+                    .ok()?
+                    .as_any_value_enum();
+
+                Some(CodegenValue::Value(load_inst))
+            },
+
+            MIRValue::FunctionRef(_) => panic!("Function references should be handled at a higher level"),
+
+            MIRValue::BlockResult { .. } |
+            MIRValue::Global(..) => self.value_map.get(id).cloned(),
+
+            MIRValue::NULL => Some(CodegenValue::NULL),
+        }
     }
     
     pub(crate) fn get_block(&self, function_val: &FunctionValue<'a>, block_id: BlockID) -> Option<BasicBlock> {
@@ -103,8 +145,8 @@ pub fn bytecode_aot_codegen(
         module: context.create_module(output_path),
         context: &context,
 
-        functions: HashMap::new(),
         globals: Vec::new(),
+        functions: HashMap::new(),
 
         function_map: &bytecode.fn_map,
     };
@@ -184,6 +226,7 @@ fn fn_aot_codegen(
     let builder = global_state.context.create_builder();
 
     let mut function_state = FunctionState {
+        context: global_state.context,
         current_function: bytecode.prototype.name.clone(),
         
         defer_block_offset: bytecode.blocks.len(),
@@ -195,7 +238,7 @@ fn fn_aot_codegen(
 
     for (i, global) in global_state.globals.iter().enumerate() {
         function_state.value_map.insert(
-            ValueID::Global(i as ElementID),
+            MIRValue::Global(i as ElementID),
             CodegenValue::Value(global.as_any_value_enum())
         );
     }
@@ -234,16 +277,21 @@ fn codegen_block<'a>(
         .unwrap_or_else(|| panic!("Block with ID {block_id} not found in function"));
     function_state.builder.position_at_end(block_val);
 
-    for (value_idx, inst) in block.body.iter().enumerate() {
-        let value = instruction::generate_instruction(
+    for (value_id, inst) in block.body.iter().enumerate() {
+        let Some(value) = instruction::generate_instruction(
             global_state,
             function_state,
             func_val,
             inst
-        ).unwrap_or_else(|| panic!("Failed to generate instruction {inst}"));
+        ) else {
+            panic!("Failed to generate instruction: {inst} in function: {}", function_state.current_function);
+        };
 
         function_state.value_map.insert(
-            ValueID::Block(block_id, value_idx as ElementID),
+            MIRValue::BlockResult {
+                block_id, 
+                value_id: value_id as ElementID 
+            },
             value
         );
         
@@ -264,13 +312,13 @@ fn cache_type<'a>(
     let fields = fields
         .iter()
         .map(|(_, field_type)| {
-            let type_ = bc_llvm_type(global_state, field_type)?;
+            let type_ = bc_llvm_type(global_state.context, field_type)?;
 
             any_to_basic_type(type_)
         })
         .collect::<Option<Vec<_>>>()?;
     
-    let struct_type = bc_llvm_type(global_state, _type)?.into_struct_type();
+    let struct_type = bc_llvm_type(global_state.context, _type)?.into_struct_type();
     struct_type.set_body(&fields, false);
     struct_type.as_any_type_enum();
 

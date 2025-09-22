@@ -1,5 +1,4 @@
 use crate::environment::TCEnvironment;
-use crate::templates::{add_templated_types, restore_template_overwrites};
 use crate::type_mapping::contextualize_fn_prototype;
 use crate::typechecker::in_method_env;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
@@ -7,6 +6,7 @@ use cx_data_ast::preparse::templates::CXFunctionTemplate;
 use cx_data_typechecker::ast::{TCFunctionDef, TCStructureData};
 use cx_data_typechecker::cx_types::CXTemplateInput;
 use cx_util::mangling::{mangle_destructor, mangle_template};
+use crate::templates::{add_templated_types, restore_template_overwrites};
 
 mod casting;
 mod typechecker;

@@ -3,15 +3,16 @@ use cranelift::codegen::{ir, Context};
 use cranelift::codegen::ir::GlobalValue;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::isa::TargetFrontendConfig;
-use cranelift::prelude::{settings, Block, FunctionBuilder, GlobalValueData, InstBuilder, MemFlags, Value};
-use cranelift_module::{DataId, FuncId, Module};
+use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
+use cranelift_module::{DataId, FuncId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, ValueID};
-use cx_data_bytecode::types::BCType;
 use cx_util::format::dump_data;
+use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, MIRValue};
+use cx_data_bytecode::types::{BCType, BCTypeKind};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::generate_global;
+use crate::value_type::get_cranelift_type;
 
 mod codegen;
 mod value_type;
@@ -55,7 +56,7 @@ impl CodegenValue {
     }
 }
 
-pub(crate) type VariableTable = HashMap<ValueID, CodegenValue>;
+pub(crate) type VariableTable = HashMap<MIRValue, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -97,6 +98,49 @@ impl FunctionState<'_> {
         self.block_map.get(id)
             .cloned()
             .unwrap_or_else(|| panic!("Block with ID {id} not found in block map"))
+    }
+
+    pub(crate) fn get_value(&mut self, mir_value: &MIRValue) -> Option<CodegenValue> {
+        match mir_value {
+            MIRValue::IntImmediate { val, type_ } => {
+                let int_type = get_cranelift_type(type_);
+                let value = self.builder.ins().iconst(int_type, *val);
+                Some(CodegenValue::Value(value))
+            },
+            MIRValue::FloatImmediate { val, type_ } => {
+                let value = f64::from_bits(*val as u64);
+
+                match &type_.kind {
+                    BCTypeKind::Float { bytes: 4 } => {
+                        let value = self.builder.ins().f32const(value as f32);
+                        Some(CodegenValue::Value(value))
+                    },
+                    BCTypeKind::Float { bytes: 8 } => {
+                        let value = self.builder.ins().f64const(value);
+                        Some(CodegenValue::Value(value))
+                    },
+                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_)
+                }
+            },
+            MIRValue::LoadOf(_type, val) => {
+                let Some(addr) = self.get_value(val) else {
+                    log_error!("Failed to get address for LoadOf: {:?}", val);
+                };
+
+                let addr = addr.as_value();
+                let loaded = self.builder.ins().load(
+                    get_cranelift_type(_type),
+                    ir::MemFlags::new(),
+                    addr,
+                    0
+                );
+
+                Some(CodegenValue::Value(loaded))
+            },
+            MIRValue::NULL => Some(CodegenValue::NULL),
+
+            _ => self.variable_table.get(mir_value).cloned()
+        }
     }
 }
 
@@ -149,27 +193,4 @@ pub fn bytecode_aot_codegen(bc: &ProgramBytecode, output: &str) -> Option<Vec<u8
     global_state.object_module.finish()
         .emit()
         .ok()
-}
-
-impl FunctionState<'_> {
-    pub(crate) fn get_variable(&mut self, id: &ValueID) -> Option<CodegenValue> {
-        match id {
-            ValueID::NULL
-                => Some(CodegenValue::NULL),
-            ValueID::Global(index) => {
-                let global_val_ref = self.object_module
-                    .declare_data_in_func(
-                        DataId::from_u32(*index as u32),
-                        &mut self.builder.func
-                    );
-
-                let global_val = self.builder.ins()
-                    .global_value(self.pointer_type, global_val_ref);
-
-                Some(CodegenValue::Value(global_val))
-            },
-            ValueID::Block(..)
-                => self.variable_table.get(id).cloned(),
-        }
-    }
 }

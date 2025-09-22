@@ -1,10 +1,17 @@
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 use std::sync::Arc;
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CXIdent {
     data: Arc<str>
+}
+
+impl Hash for CXIdent {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
 }
 
 impl<'a, C: Context> Readable<'a, C> for CXIdent {

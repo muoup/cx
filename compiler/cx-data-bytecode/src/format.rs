@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, ValueID, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID, BCGlobalType};
-use crate::BlockID::Block;
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID, BCGlobalType, MIRValue};
 use crate::types::{BCType, BCTypeKind};
 
 impl Display for ProgramBytecode {
@@ -48,7 +47,13 @@ impl Display for BytecodeFunction {
 impl Display for FunctionBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (i, instruction) in self.body.iter().enumerate() {
-            writeln!(f, "    v{i} = {instruction}")?;
+            write!(f, "\t")?;
+
+            if !instruction.value_type.is_void() {
+                write!(f, "_{i} = ")?;
+            }
+
+            writeln!(f, "{instruction}")?;
         }
 
         Ok(())
@@ -72,7 +77,13 @@ impl Display for BCFunctionPrototype {
 
 impl Display for BlockInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.instruction, self.value)
+        write!(f, "{}", self.instruction)?;
+
+        if !self.value_type.is_void() {
+            write!(f, "\n\t\t ({})", self.value_type)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -97,12 +108,19 @@ impl Display for VirtualValue {
     }
 }
 
-impl Display for ValueID {
+impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValueID::NULL => write!(f, "null"),
-            ValueID::Global(id) => write!(f, "g{}", id),
-            ValueID::Block(block_id, value_id) => write!(f, "b{}.v{}", block_id, value_id),
+            MIRValue::NULL => write!(f, "null"),
+            MIRValue::IntImmediate { val, .. } => write!(f, "{val}"),
+            MIRValue::FloatImmediate { val, ..} => {
+                let float = f64::from_bits(*val as u64);
+                write!(f, "{float}")
+            },
+            MIRValue::LoadOf(_, value) => write!(f, "*{value}"),
+            MIRValue::FunctionRef(name) => write!(f, "{name}"),
+            MIRValue::Global(id) => write!(f, "g{}", id),
+            MIRValue::BlockResult { block_id, value_id } => write!(f, "{}:v{}", block_id, value_id),
         }
     }
 }
@@ -119,29 +137,23 @@ impl Display for BlockID {
 impl Display for VirtualInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            VirtualInstruction::Temp { value } => {
+                write!(f, "{value}")
+            },
             VirtualInstruction::Allocate { _type, alignment } => {
                 write!(f, "alloca {_type} (alignment: {alignment})")
             },
             VirtualInstruction::FunctionParameter { param_index } => {
                 write!(f, "parameter {param_index}")
             },
-            VirtualInstruction::Load { value } => {
-                write!(f, "load {value}")
-            },
             VirtualInstruction::Store { value, memory, type_ } => {
-                write!(f, "store {type_} {value} -> {memory}")
+                write!(f, "store {value} -> {memory} [{type_}]")
             },
             VirtualInstruction::ZeroMemory { memory, _type } => {
                 write!(f, "zero_memory {memory} ({_type})")
             },
-            VirtualInstruction::Immediate { value } => {
-                write!(f, "immediate {value}")
-            },
-            VirtualInstruction::FloatImmediate { value } => {
-                write!(f, "float_immediate {value}")
-            },
             VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
-                write!(f, "struct_access {struct_} ({struct_type})[index: {field_index}; offset: {field_offset}]")
+                write!(f, "access {struct_} at index {field_index}; offset: {field_offset}")
             },
             VirtualInstruction::BoolExtend { value } => {
                 write!(f, "bool_extend {value}")
@@ -206,8 +218,8 @@ impl Display for VirtualInstruction {
                 }
                 write!(f, "] else {default}")
             }
-            VirtualInstruction::DirectCall { func, args, .. } => {
-                write!(f, "direct_call {func}(")?;
+            VirtualInstruction::DirectCall { method_sig, args, .. } => {
+                write!(f, "@{}(", method_sig.name)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -217,7 +229,7 @@ impl Display for VirtualInstruction {
                 write!(f, ")")
             },
             VirtualInstruction::IndirectCall { func_ptr, args, .. } => {
-                write!(f, "indirect_call {func_ptr}(")?;
+                write!(f, "@(*{func_ptr})(")?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -227,22 +239,19 @@ impl Display for VirtualInstruction {
                 write!(f, ")")
             },
             VirtualInstruction::PointerBinOp { left, ptr_type, right, op } => {
-                write!(f, "ptr_binop ({ptr_type}*) {op} {left} {right}")
+                write!(f, "{left} {op} {right} [{ptr_type}*]")
             },
             VirtualInstruction::IntegerBinOp { left, right, op } => {
-                write!(f, "int_binop {op} {left} {right}")
+                write!(f, "{left} {op} {right} [i]")
             },
             VirtualInstruction::IntegerUnOp { op, value } => {
-                write!(f, "int_unop {op:?} {value}")
+                write!(f, "{op:?} {value} [i]")
             },
             VirtualInstruction::FloatBinOp { left, right, op } => {
-                write!(f, "float_binop {op} {left} {right}")
+                write!(f, "{left} {op} {right} [f]")
             },
             VirtualInstruction::FloatUnOp { op, value } => {
-                write!(f, "float_unop {op:?} {value}")
-            },
-            VirtualInstruction::FunctionReference { name } => {
-                write!(f, "function_reference {name}")
+                write!(f, "{op:?} {value} [f]")
             },
             VirtualInstruction::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")

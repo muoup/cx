@@ -1,4 +1,4 @@
-use crate::inst_calling::{get_func_ref, get_method_return, prepare_method_call};
+use crate::inst_calling::{get_func_ref, get_method_return, prepare_method_call, prepare_parameters};
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
@@ -14,6 +14,9 @@ use crate::routines::get_function;
 
 pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &BlockInstruction) -> Option<CodegenValue> {
     match &instruction.instruction {
+        VirtualInstruction::Temp { value } =>
+            context.get_value(value),
+
         VirtualInstruction::Allocate {
             _type, alignment
         } => {
@@ -42,16 +45,21 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         },
 
         VirtualInstruction::DirectCall {
-            func, args, ..
+            args, method_sig, ..
         } => {
-            let (val, params) = prepare_method_call(context, *func, args)?;
+            let Some(id) = get_function(context, method_sig) else {
+                panic!("Failed to call function {}", &method_sig.name);
+            };
 
-            let fn_ref = get_func_ref(
-                context,
-                val.as_func_id(),
-                val.as_func_name(),
-                params.as_slice()
-            )?;
+            let Some(params) = prepare_parameters(context, args) else {
+                panic!("Failed to prepare parameters for DirectCall: {}", method_sig.name);
+            };
+
+            let Some(fn_ref) = get_func_ref(
+                context, id, method_sig, params.as_slice()
+            ) else {
+                panic!("Failed to get function reference for DirectCall: {}", method_sig.name);
+            };
 
             let inst = context.builder.ins()
                 .call(fn_ref, params.as_slice());
@@ -62,7 +70,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::IndirectCall {
             func_ptr, args, method_sig
         } => {
-            let (val, params) = prepare_method_call(context, *func_ptr, args)?;
+            let (val, params) = prepare_method_call(context, func_ptr, args)?;
 
             let mut sig = context.object_module.make_signature();
             let return_type = &method_sig.return_type;
@@ -93,18 +101,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             get_method_return(context, inst)
         },
 
-        VirtualInstruction::FunctionReference { name } => {
-            let id = get_function(context, name)?;
-            
-            Some(
-                CodegenValue::FunctionID { fn_name: name.clone(), id }
-            )
-        }
-
         VirtualInstruction::Return { value } => {
             match value {
                 Some(value) => {
-                    let return_value = context.get_variable(value).unwrap();
+                    let return_value = context.get_value(value).unwrap();
                     context.builder.ins().return_(&[return_value.as_value()]);
                 },
                 None => {
@@ -125,13 +125,11 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
-        VirtualInstruction::GetFunctionAddr {
-            func: func_name
-        } => {
-            let CodegenValue::FunctionID { id, .. }
-                = context.get_variable(func_name).unwrap() else {
-                panic!("Function reference not found")
+        VirtualInstruction::GetFunctionAddr { func } => {
+            let Some(id) = context.function_ids.get(func.as_str()).cloned() else {
+                panic!("INTERNAL ERROR: Function not found in codegen for GetFunctionAddr: {}", func);
             };
+
             let func_ref = context.object_module.declare_func_in_func(
                 id,
                 context.builder.func
@@ -146,34 +144,16 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             )
         },
 
-        VirtualInstruction::Load { value } => {
-            let val = context.get_variable(value).unwrap();
-            let type_ = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(type_);
-
-            Some(
-                CodegenValue::Value(
-                    context.builder.ins()
-                        .load(
-                            cranelift_type,
-                            MemFlags::new(),
-                            val.as_value(),
-                            0
-                        )
-                )
-            )
-        },
-        
         VirtualInstruction::PtrToInt { 
             value
         } => {
-            let bytes = match instruction.value.type_.kind {
+            let bytes = match instruction.value_type.kind {
                 BCTypeKind::Signed { bytes, .. } => bytes,
                 BCTypeKind::Unsigned { bytes, .. } => bytes,
                 _ => panic!("Invalid type for pointer to integer conversion")
             };
 
-            let val = context.get_variable(value).unwrap();
+            let val = context.get_value(value).unwrap();
 
             if bytes < 8 {
                 return Some(
@@ -192,7 +172,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         
         VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
             let size = ptr_type.fixed_size();
-            let val = context.get_variable(value).unwrap();
+            let val = context.get_value(value).unwrap();
             
             let ptr_diff = context.builder.ins().imul_imm(
                 val.as_value(),
@@ -203,14 +183,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         }, 
         
         VirtualInstruction::IntToPtr { value } =>
-            context.get_variable(value),
+            context.get_value(value),
         
         VirtualInstruction::PointerBinOp {
             op, left, right, ..
         } => {
-            let left = context.get_variable(left).unwrap().as_value();
-            let right = context.get_variable(right).unwrap().as_value();
-            let _type = &instruction.value.type_;
+            let left = context.get_value(left).unwrap().as_value();
+            let right = context.get_value(right).unwrap().as_value();
+            let _type = &instruction.value_type;
 
             let inst = match op {
                 BCPtrBinOp::ADD => context.builder.ins().iadd(left, right),
@@ -235,8 +215,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::IntegerBinOp {
             op, left, right
         } => {
-            let left = context.get_variable(left).unwrap().as_value();
-            let right = context.get_variable(right).unwrap().as_value();
+            let left = context.get_value(left).unwrap().as_value();
+            let right = context.get_value(right).unwrap().as_value();
 
             let inst = match op {
                 BCIntBinOp::ADD             => context.builder.ins().iadd(left, right),
@@ -296,7 +276,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::IntegerUnOp {
             op, value
         } => {
-            let val = context.get_variable(value).unwrap();
+            let val = context.get_value(value).unwrap();
 
             let inst = match op {
                 BCIntUnOp::NEG      => context.builder.ins().ineg(val.as_value()),
@@ -312,8 +292,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         }
         
         VirtualInstruction::FloatUnOp { value, op } => {
-            let val = context.get_variable(value).unwrap();
-            let _type = &instruction.value.type_;
+            let val = context.get_value(value).unwrap();
+            let _type = &instruction.value_type;
             
             match op {
                 BCFloatUnOp::NEG => {
@@ -329,8 +309,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::FloatBinOp {
             left, right, op
         } => {
-            let left = context.get_variable(left).unwrap().as_value();
-            let right = context.get_variable(right).unwrap().as_value();
+            let left = context.get_value(left).unwrap().as_value();
+            let right = context.get_value(right).unwrap().as_value();
 
             Some(
                 CodegenValue::Value(
@@ -347,7 +327,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Branch {
             condition, true_block, false_block
         } => {
-            let condition = context.get_variable(condition).unwrap().as_value();
+            let condition = context.get_value(condition).unwrap().as_value();
             let true_block = context.get_block(*true_block);
             let false_block = context.get_block(*false_block);
 
@@ -381,8 +361,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::StructAccess {
             struct_, field_offset, ..
         } => {
-            let ptr = context.get_variable(struct_).unwrap().clone();
-            let _type = &instruction.value.type_;
+            let ptr = context.get_value(struct_).unwrap().clone();
+            let _type = &instruction.value_type;
 
             Some(
                 CodegenValue::Value(
@@ -394,10 +374,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Store {
             memory, value, type_
         } => {
-            let target = context.get_variable(memory)
+            let target = context.get_value(memory)
                 .unwrap()
                 .as_value();
-            let value = context.get_variable(value)
+            let value = context.get_value(value)
                 .unwrap()
                 .as_value();
 
@@ -421,14 +401,14 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::ZeroMemory {
             memory, _type
         } => {
-            let target = context.get_variable(memory)
+            let target = context.get_value(memory)
                 .unwrap()
                 .as_value();
             
             let size_literal = match _type.size() {
                 BCTypeSize::Fixed(size) => context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64),
                 BCTypeSize::Variable(size_expr) => {
-                    let size_value = context.get_variable(&size_expr).unwrap();
+                    let size_value = context.get_value(&size_expr).unwrap();
                     context.builder.ins().uextend(ir::Type::int(64).unwrap(), size_value.as_value())
                 }
             };
@@ -446,14 +426,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::Phi { predecessors } => {
             let current_block = context.builder.current_block()?;
+            let current_block_len = context.builder.func
+                .layout
+                .block_insts(current_block)
+                .count();
 
             context.builder
-                .append_block_param(current_block, get_cranelift_type(&instruction.value.type_));
+                .append_block_param(current_block, get_cranelift_type(&instruction.value_type));
 
             for (from_value, from_block) in predecessors {
-                let value = context.get_variable(from_value)
-                    .unwrap()
-                    .as_value();
                 let block = context.get_block(*from_block);
 
                 // get last instruction in the block
@@ -462,8 +443,26 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                     .next_back()
                     .unwrap();
 
+
+                // code made with only the worst of intentions
+                context.builder.func.layout.remove_inst(last_inst);
+
+                let value = context.get_value(from_value)
+                    .unwrap()
+                    .as_value();
+
+                while context.builder.func.layout.block_insts(current_block).count() > current_block_len {
+                    let inst = context.builder.func.layout
+                        .block_insts(current_block)
+                        .next_back()
+                        .unwrap();
+                    context.builder.func.layout.remove_inst(inst);
+                    context.builder.func.layout.append_inst(inst, block);
+                }
+
+                context.builder.func.layout.append_inst(last_inst, block);
+
                 unsafe {
-                    // code made with the worst of intentions, purely to spite the borrow checker
                     let value_pool : *mut _ = &mut context.builder.func.dfg.value_lists;
 
                     match context.builder.func.dfg.insts.index_mut(last_inst) {
@@ -496,16 +495,16 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::BoolExtend {
             value
         } => {
-            let val = context.get_variable(value).unwrap();
+            let val = context.get_value(value).unwrap();
             
-            match instruction.value.type_.kind {
-                BCTypeKind::Signed { bytes : 1 } |
-                BCTypeKind::Unsigned { bytes : 1 } => {
+            match instruction.value_type.kind {
+                BCTypeKind::Signed   { bytes: 1 } |
+                BCTypeKind::Unsigned { bytes: 1 } => {
                     Some(val)
                 },
 
                 _ => {
-                    let _type = &instruction.value.type_;
+                    let _type = &instruction.value_type;
                     let cranelift_type = get_cranelift_type(_type);
 
                     Some(
@@ -520,10 +519,10 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::ZExtend {
             value
         } => {
-            let val = context.get_variable(value)
+            let val = context.get_value(value)
                 .unwrap()
                 .as_value();
-            let _type = &instruction.value.type_;
+            let _type = &instruction.value_type;
             let cranelift_type = get_cranelift_type(_type);
 
             let val_type = context.builder.func.dfg.value_type(val);
@@ -542,11 +541,11 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::SExtend {
             value
         } => {
-            let val = context.get_variable(value)
+            let val = context.get_value(value)
                 .unwrap()
                 .as_value();
 
-            let _type = &instruction.value.type_;
+            let _type = &instruction.value_type;
             let cranelift_type = get_cranelift_type(_type);
 
             let val_type = context.builder.func.dfg.value_type(val);
@@ -565,8 +564,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::Trunc {
             value
         } => {
-            let val = context.get_variable(value).unwrap();
-            let _type = &instruction.value.type_;
+            let val = context.get_value(value).unwrap();
+            let _type = &instruction.value_type;
 
             let value = val.as_value();
             let cranelift_type = get_cranelift_type(_type);
@@ -585,48 +584,17 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::NOP => Some(CodegenValue::NULL),
 
-        VirtualInstruction::Immediate {
-            value
-        } => {
-            let _type = &instruction.value.type_;
-            let cranelift_type = get_cranelift_type(_type);
-
-            Some(
-                CodegenValue::Value(
-                    context.builder.ins().iconst(cranelift_type, *value as i64)
-                )
-            )
-        },
-        
-        VirtualInstruction::FloatImmediate { 
-            value
-        } => {
-            let BCTypeKind::Float { bytes } = &instruction.value.type_.kind
-                else { unreachable!("Non-FP Type Float Immediate") };
-
-            Some(
-                CodegenValue::Value(
-                    match bytes {
-                        4 => context.builder.ins().f32const(*value as f32),
-                        8 => context.builder.ins().f64const(*value),
-                        
-                        _ => panic!("Unsupported float size: {bytes}")
-                    }
-                )
-            )
-        }
-
-        VirtualInstruction::BitCast {
-            value
-        } => {
-            let val = context.get_variable(value).unwrap();
+        VirtualInstruction::BitCast { value } => {
+            let Some(val) = context.get_value(value) else {
+                panic!("Value not found for BitCast: {:?}", value);
+            };
 
             Some(val)
         },
         
         VirtualInstruction::FloatCast { value } => {
-            let val = context.get_variable(value).unwrap();
-            let to_type = &instruction.value.type_;
+            let val = context.get_value(value).unwrap();
+            let to_type = &instruction.value_type;
             let cranelift_type = get_cranelift_type(to_type);
             
             match &to_type.kind {
@@ -653,8 +621,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::IntToFloat {
             from, value
         } => {
-            let val = context.get_variable(value).unwrap().as_value();
-            let _type = &instruction.value.type_;
+            let val = context.get_value(value).unwrap().as_value();
+            let _type = &instruction.value_type;
 
             let to_cl_type = get_cranelift_type(_type);
 
@@ -676,8 +644,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
         VirtualInstruction::FloatToInt {
             from, value
         } => {
-            let val = context.get_variable(value).unwrap().as_value();
-            let _type = &instruction.value.type_;
+            let val = context.get_value(value).unwrap().as_value();
+            let _type = &instruction.value_type;
 
             let to_cl_type = get_cranelift_type(_type);
 
@@ -724,9 +692,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             }
             
             let default_block = context.get_block(*default);
-            let val = context.get_variable(value).unwrap().as_value();
+            let value = context.get_value(value).unwrap();
 
-            switch.emit(&mut context.builder, val, default_block);
+            switch.emit(&mut context.builder, value.as_value(), default_block);
             
             Some(CodegenValue::NULL)
         }

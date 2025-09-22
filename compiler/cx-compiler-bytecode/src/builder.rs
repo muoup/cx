@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 use crate::{BytecodeResult, ProgramBytecode};
@@ -19,10 +18,10 @@ pub struct BytecodeBuilder {
     functions: Vec<BytecodeFunction>,
 
     global_variables: Vec<BCGlobalValue>,
-    
+
     pub fn_map: BCFunctionMap,
     
-    symbol_table: ScopedMap<ValueID>,
+    symbol_table: ScopedMap<MIRValue>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
 
     in_deferred_block: bool,
@@ -43,7 +42,7 @@ pub struct BytecodeFunctionContext {
 
 #[derive(Debug, Clone)]
 pub struct DeclarationLifetime {
-    pub value_id: ValueID,
+    pub value_id: MIRValue,
     pub _type: CXType
 }
 
@@ -136,12 +135,12 @@ impl BytecodeBuilder {
         let decls = self.declaration_scope.pop()?;
 
         for DeclarationLifetime { value_id, _type } in decls.into_iter().rev() {
-            deconstruct_variable(self, value_id, &_type)?;
+            deconstruct_variable(self, &value_id, &_type)?;
         }
         Some(())
     }
 
-    pub fn generate_scoped(&mut self, expr: &TCExpr) -> BytecodeResult<ValueID> {
+    pub fn generate_scoped(&mut self, expr: &TCExpr) -> BytecodeResult<MIRValue> {
         self.push_scope();
         let val = generate_instruction(self, expr)?;
         self.pop_scope()?;
@@ -155,11 +154,11 @@ impl BytecodeBuilder {
             .push(declaration);
     }
 
-    pub fn insert_symbol(&mut self, name: String, value_id: ValueID) {
+    pub fn insert_symbol(&mut self, name: String, value_id: MIRValue) {
         self.symbol_table.insert(name, value_id);
     }
 
-    pub fn get_symbol(&self, name: &str) -> Option<ValueID> {
+    pub fn get_symbol(&self, name: &str) -> Option<MIRValue> {
         self.symbol_table.get(name).cloned()
     }
 
@@ -168,7 +167,7 @@ impl BytecodeBuilder {
         self.global_variables.push(value);
         let index = (self.global_variables.len() - 1) as u32;
 
-        self.insert_symbol(key, ValueID::Global(index));
+        self.insert_symbol(key, MIRValue::Global(index));
     }
 
     pub fn global_symbol_exists(&self, name: &str) -> bool {
@@ -184,7 +183,7 @@ impl BytecodeBuilder {
         &mut self,
         instruction: VirtualInstruction,
         value_type: BCType
-    ) -> Option<ValueID> {
+    ) -> Option<MIRValue> {
         let context = self.fun_mut();
         let current_block = context.current_block;
 
@@ -197,21 +196,21 @@ impl BytecodeBuilder {
             _ => unreachable!("INTERNAL PANIC: Attempted to add instruction to invalid block {current_block}")
         };
 
-        body.push(BlockInstruction {
-            instruction,
-            value: VirtualValue {
-                type_: value_type
-            }
-        });
+        body.push(BlockInstruction { instruction, value_type });
 
-        Some(ValueID::Block(context.current_block, (body.len() - 1) as ElementID))
+        Some(
+            MIRValue::BlockResult {
+                block_id: context.current_block, 
+                value_id: (body.len() - 1) as ElementID,
+            }
+        )
     }
 
     pub fn add_instruction_cxty(
         &mut self,
         instruction: VirtualInstruction,
         value_type: CXType
-    ) -> Option<ValueID> {
+    ) -> Option<MIRValue> {
         let value_type = self.convert_cx_type(&value_type)?;
         
         self.add_instruction(
@@ -220,27 +219,18 @@ impl BytecodeBuilder {
         )
     }
     
-    pub fn fn_ref_unchecked(
-        &mut self, name: &str
-    ) -> BytecodeResult<ValueID> {
-        self.add_instruction(
-            VirtualInstruction::FunctionReference { name: name.to_owned() },
-            BCType::default_pointer()
-        )
-    }
-    
-    pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<Option<ValueID>> {
+    pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<String> {
         if self.fn_map.contains_key(name) {
-            self.fn_ref_unchecked(name).map(Some)
+            Some(name.to_string())
         } else {
-            Some(None)
+            None
         }
     }
     
     pub(crate) fn add_return(
         &mut self,
-        value_id: Option<ValueID>
-    ) -> Option<ValueID> {
+        value_id: Option<MIRValue>
+    ) -> Option<MIRValue> {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
@@ -263,8 +253,8 @@ impl BytecodeBuilder {
     pub(crate) fn add_defer_jump(
         &mut self,
         block_id: BlockID,
-        value_id: Option<ValueID>
-    ) -> Option<ValueID> {
+        value_id: Option<MIRValue>
+    ) -> Option<MIRValue> {
         let inst = self.add_instruction(
             VirtualInstruction::GotoDefer,
             BCType::unit()
@@ -280,7 +270,7 @@ impl BytecodeBuilder {
     pub fn add_defer_merge(
         &mut self,
         from_block: BlockID,
-        value: ValueID
+        value: MIRValue
     ) {
         let first_defer_inst = &mut self.fun_mut()
             .deferred_blocks
@@ -302,81 +292,43 @@ impl BytecodeBuilder {
         
         predecessors.push((value, from_block));
     }
-    
-    pub fn bool_const(
-        &mut self, value: bool
-    ) -> Option<ValueID> {
-        self.add_instruction(
-            VirtualInstruction::Immediate { value: if value { 1 } else { 0 } },
-            BCType::from(BCTypeKind::Bool)
-        )
-    }
-    
-    pub fn int_const_match(
-        &mut self, value: i32, bc_type: &BCType
-    ) -> Option<ValueID> {
-        match bc_type.kind {
-            BCTypeKind::Signed { bytes } =>
-                self.int_const(value, bytes, true),
-            BCTypeKind::Unsigned { bytes } =>
-                self.int_const(value, bytes, false),
-            BCTypeKind::Bool =>
-                self.bool_const(value != 0),
-            
-            _ => panic!("INTERNAL PANIC: Attempted to create integer constant with non-integer type: {bc_type:?}")
+
+    pub fn match_int_const(&self, value: i32, _type: &BCType) -> MIRValue {
+        match _type.kind {
+            BCTypeKind::Bool => MIRValue::IntImmediate {
+                val: value as i64,
+                type_: BCType::from(BCTypeKind::Bool)
+            },
+            BCTypeKind::Signed { bytes } => self.int_const(value, bytes, true),
+            BCTypeKind::Unsigned { bytes } => self.int_const(value, bytes, false),
+
+            _ => panic!("PANIC: Attempted to match integer constant with non-integer type: {}", _type)
         }
     }
     
-    pub fn int_const(
-        &mut self,
-        value: i32,
-        bytes: u8,
-        signed: bool
-    ) -> Option<ValueID> {
-        let value_type = BCType::from(
-            match signed {
-                true => BCTypeKind::Signed { bytes },
-                false => BCTypeKind::Unsigned { bytes },
+    pub fn int_const(&self, value: i32, bytes: u8, signed: bool) -> MIRValue {
+        MIRValue::IntImmediate {
+            val: value as i64,
+            type_: match signed {
+                true => BCType::from(BCTypeKind::Signed { bytes }),
+                false => BCType::from(BCTypeKind::Unsigned { bytes }),
             }
-        );
-
-        self.add_instruction(
-            VirtualInstruction::Immediate { value },
-            value_type
-        )
-    }
-
-    pub fn get_variable(&self, value_id: ValueID) -> Option<VirtualValue> {
-        match value_id {
-            ValueID::NULL => unreachable!("INTERNAL PANIC: Attempted to get variable for NULL value id"),
-
-            ValueID::Global(index) =>
-                self.global_variables.get(index as usize)
-                    .map(|gvar| gvar.as_virtual_value()),
-
-            ValueID::Block(block, elem) =>
-                match block {
-                    BlockID::Block(id) =>
-                        self.fun().blocks.get(id as usize)
-                            .and_then(|b| b.body.get(elem as usize))
-                            .map(|instr| instr.value.clone()),
-
-                    BlockID::DeferredBlock(id) =>
-                        self.fun().deferred_blocks.get(id as usize)
-                            .and_then(|b| b.body.get(elem as usize))
-                            .map(|instr| instr.value.clone()),
-
-                    _ => unreachable!("INTERNAL PANIC: Attempted to get variable for invalid block id: {block:?}")
-                }
         }
     }
 
-    pub fn get_type(&self, value_id: ValueID) -> Option<BCType> {
-        let Some(value) = self.get_variable(value_id) else {
-            panic!("INTERNAL PANIC: Failed to get variable for value id: {value_id:?}");
-        };
-        
-        Some(value.type_)
+    pub fn match_float_const(&self, value: f64, _type: &BCType) -> MIRValue {
+        match _type.kind {
+            BCTypeKind::Float { bytes } => self.float_const(value, bytes),
+
+            _ => panic!("PANIC: Attempted to match float constant with non-float type: {}", _type)
+        }
+    }
+
+    pub fn float_const(&self, value: f64, bytes: u8) -> MIRValue {
+        MIRValue::FloatImmediate {
+            val: value.to_bits() as i64,
+            type_: BCTypeKind::Float { bytes }.into()
+        }
     }
 
     pub fn start_cont_point(&mut self) -> BlockID {
@@ -548,17 +500,15 @@ impl BytecodeBuilder {
     }
 
     // Common helper routines
-    pub fn call(&mut self, name: &str, args: Vec<ValueID>) -> Option<ValueID> {
+    pub fn call(&mut self, name: &str, args: Vec<MIRValue>) -> Option<MIRValue> {
         let Some(fn_prototype) = self.fn_map.get(name).cloned() else {
             log_error!("Attempted to call unknown function: {}", name);
         };
 
         let ret_type = fn_prototype.return_type.clone();
-        let fn_ref = self.fn_ref_unchecked(name)?;
 
         self.add_instruction(
             VirtualInstruction::DirectCall {
-                func: fn_ref,
                 args,
                 method_sig: fn_prototype
             },
@@ -566,8 +516,8 @@ impl BytecodeBuilder {
         )
     }
 
-    pub fn struct_access(&mut self, val: ValueID, _type: &BCType, index: usize) -> Option<ValueID> {
-        let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+    pub fn struct_access(&mut self, val: MIRValue, _type: &BCType, index: usize) -> Option<MIRValue> {
+        let BCTypeKind::Struct { .. } = &_type.kind else {
             return None;
         };
 
