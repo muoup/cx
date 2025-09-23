@@ -1,7 +1,7 @@
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
-use cx_data_bytecode::{MIRValue, VirtualInstruction};
-use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_mir::{MIRValue, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::bytecode_error_log;
 use cx_util::mangling::{mangle_destructor};
@@ -11,7 +11,7 @@ use crate::BytecodeResult;
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
     pub(crate) index: usize,
-    pub(crate) _type: BCType,
+    pub(crate) _type: MIRType,
 }
 
 fn align_offset(current_offset: usize, alignment: usize) -> usize {
@@ -24,12 +24,12 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
 
 pub(crate) fn try_access_field(
     builder: &mut BytecodeBuilder,
-    ltype: &BCType,
+    ltype: &MIRType,
     left_id: MIRValue,
     field_name: &str,
 ) -> Option<MIRValue> {
     match ltype.kind {
-        BCTypeKind::Struct { .. } => {
+        MIRTypeKind::Struct { .. } => {
             let struct_access = get_struct_field(
                 builder, &ltype, field_name
             ).unwrap_or_else(|| {
@@ -47,7 +47,7 @@ pub(crate) fn try_access_field(
             )
         },
 
-        BCTypeKind::Union { .. } => Some(left_id),
+        MIRTypeKind::Union { .. } => Some(left_id),
 
         _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
     }
@@ -55,10 +55,10 @@ pub(crate) fn try_access_field(
 
 pub(crate) fn get_struct_field(
     builder: &BytecodeBuilder,
-    _type: &BCType,
+    _type: &MIRType,
     name: &str
 ) -> Option<CXStructAccess> {
-    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+    let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(builder, "PANIC: Expected struct type on access {name}, got: {:?}", _type);
     };
     
@@ -82,10 +82,10 @@ pub(crate) fn get_struct_field(
 
 pub(crate) fn get_cx_struct_field_by_index(
     builder: &BytecodeBuilder,
-    _type: &BCType,
+    _type: &MIRType,
     index: usize
 ) -> Option<CXStructAccess> {
-    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+    let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(builder, "PANIC: Expected struct type on access by index {index}, got: {:?}", _type);
     };
     
@@ -137,7 +137,7 @@ pub(crate) fn allocate_variable(
             _type: bc_type.clone(),
             alignment: bc_type.alignment(),
         },
-        BCType::default_pointer()
+        MIRType::default_pointer()
     )?;
 
     builder.insert_symbol(name.to_owned(), memory.clone());
@@ -154,7 +154,7 @@ pub(crate) fn allocate_variable(
                 memory: memory.clone(),
                 _type: bc_type.clone(),
             },
-            BCType::unit()
+            MIRType::unit()
         )?;
     }
 

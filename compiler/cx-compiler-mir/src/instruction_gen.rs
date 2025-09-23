@@ -1,8 +1,8 @@
 use std::any::type_name_of_val;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
-use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFunctionPrototype, BCGlobalType, BCGlobalValue, BCIntUnOp, BCParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind, BCTypeSize};
+use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, BCIntUnOp, MIRParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
 use cx_util::mangling::mangle_deconstructor;
@@ -41,7 +41,7 @@ pub fn generate_instruction(
                     value: right_id,
                     type_: inner_type,
                 },
-                BCType::unit()
+                MIRType::unit()
             )
         },
 
@@ -74,10 +74,10 @@ pub fn generate_instruction(
                 VirtualInstruction::PointerBinOp {
                     left: left_id,
                     right: right_id,
-                    ptr_type: BCType::from(inner_as_bc),
+                    ptr_type: MIRType::from(inner_as_bc),
                     op: BCPtrBinOp::ADD
                 },
-                BCType::default_pointer()
+                MIRType::default_pointer()
             )
         },
 
@@ -105,7 +105,7 @@ pub fn generate_instruction(
                         _type: buffer_type.clone(),
                         alignment: buffer_type.alignment(),
                     },
-                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: buffer_type.fixed_size() as u32 })
+                    MIRType::from(MIRTypeKind::Pointer { nullable: false, dereferenceable: buffer_type.fixed_size() as u32 })
                 )?;
 
                 args.push(buffer);
@@ -213,10 +213,10 @@ pub fn generate_instruction(
                 let type_ = builder.convert_cx_type(&expr._type)?;
 
                 builder.insert_global_symbol(
-                    BCGlobalValue {
+                    MIRGlobalValue {
                         name: name.clone(),
                         linkage: LinkageType::External,
-                        _type: BCGlobalType::Variable {
+                        _type: MIRGlobalType::Variable {
                             _type: type_,
                             initial_value: None
                         }
@@ -240,7 +240,7 @@ pub fn generate_instruction(
                     alignment: type_as_bc.alignment(),
                     _type: type_as_bc.clone(),
                 },
-                BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: type_as_bc.fixed_size() as u32 })
+                MIRType::from(MIRTypeKind::Pointer { nullable: false, dereferenceable: type_as_bc.fixed_size() as u32 })
             )
         },
 
@@ -255,23 +255,16 @@ pub fn generate_instruction(
             let returned_type = builder.convert_cx_type(&value._type)?;
             
             if returned_type.is_structure() {
-                let first_param = builder.add_instruction(
-                    VirtualInstruction::FunctionParameter {
-                        param_index: 0,
-                    },
-                    BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 })
-                )?;
-                
                 builder.add_instruction(
                     VirtualInstruction::Store {
-                        memory: first_param.clone(),
+                        memory: MIRValue::ParameterRef(0),
                         value: value_id,
                         type_: returned_type
                     },
-                    BCType::unit()
+                    MIRType::unit()
                 )?;
                 
-                builder.add_return(Some(first_param));
+                builder.add_return(Some(MIRValue::ParameterRef(0)));
             } else {
                 builder.add_return(Some(value_id));
             }
@@ -313,7 +306,7 @@ pub fn generate_instruction(
                             value: operand,
                             op: BCIntUnOp::LNOT
                         },
-                        BCType::from(BCTypeKind::Bool)
+                        MIRType::from(MIRTypeKind::Bool)
                     )
                 },
                 
@@ -347,7 +340,7 @@ pub fn generate_instruction(
                             value: incremented.clone(),
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
                         },
-                        BCType::unit()
+                        MIRType::unit()
                     )?;
 
                     Some(incremented)
@@ -371,7 +364,7 @@ pub fn generate_instruction(
 
                     let one = MIRValue::IntImmediate {
                         val: *off as i64,
-                        type_: BCTypeKind::Signed { bytes }.into()
+                        type_: MIRTypeKind::Signed { bytes }.into()
                     };
 
                     let incremented = generate_algebraic_binop(
@@ -386,7 +379,7 @@ pub fn generate_instruction(
                             value: incremented,
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
                         },
-                        BCType::unit()
+                        MIRType::unit()
                     )?;
 
                     Some(loaded_val)
@@ -413,7 +406,7 @@ pub fn generate_instruction(
                     true_block: then_block,
                     false_block: else_block
                 },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(then_block);
@@ -421,7 +414,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(else_block);
@@ -432,7 +425,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.pop_scope();
@@ -453,7 +446,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: first_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(condition_block);
@@ -465,7 +458,7 @@ pub fn generate_instruction(
                     true_block: body_block,
                     false_block: merge_block
                 },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(body_block);
@@ -473,7 +466,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.end_scope();
@@ -508,7 +501,7 @@ pub fn generate_instruction(
                         .collect(),
                     default: default_block.unwrap_or(merge_block)
                 },
-                BCType::unit()
+                MIRType::unit()
             );
             
             let mut case_iter = sorted_cases.iter()
@@ -521,7 +514,7 @@ pub fn generate_instruction(
                     let case_block = case_block_iter.next().unwrap();
                     builder.add_instruction(
                         VirtualInstruction::Jump { target: *case_block },
-                        BCType::unit()
+                        MIRType::unit()
                     );
                     next_index = case_iter.next();
                     builder.set_current_block(*case_block);
@@ -531,7 +524,7 @@ pub fn generate_instruction(
                     let block = default_block.unwrap();
                     builder.add_instruction(
                         VirtualInstruction::Jump { target: block },
-                        BCType::unit()
+                        MIRType::unit()
                     );
                     builder.set_current_block(block);
                 }
@@ -541,7 +534,7 @@ pub fn generate_instruction(
             
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge_block },
-                BCType::unit()
+                MIRType::unit()
             );
             
             builder.end_scope();
@@ -557,7 +550,7 @@ pub fn generate_instruction(
             generate_instruction(builder, init.as_ref())?;
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(condition_block);
@@ -568,21 +561,21 @@ pub fn generate_instruction(
                     true_block: body_block,
                     false_block: merge_block
                 },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(body_block);
             generate_instruction(builder, body.as_ref())?;
             builder.add_instruction(
                 VirtualInstruction::Jump { target: increment_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.set_current_block(increment_block);
             generate_instruction(builder, increment.as_ref())?;
             builder.add_instruction(
                 VirtualInstruction::Jump { target: condition_block },
-                BCType::unit()
+                MIRType::unit()
             );
 
             builder.end_scope();
@@ -597,7 +590,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: merge },
-                BCType::unit()
+                MIRType::unit()
             );
 
             Some(MIRValue::NULL)
@@ -610,7 +603,7 @@ pub fn generate_instruction(
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: cond },
-                BCType::unit()
+                MIRType::unit()
             );
 
             Some(MIRValue::NULL)
@@ -632,17 +625,17 @@ pub fn generate_instruction(
             let memory = generate_instruction(builder, operand.as_ref())?;
             let value = builder.add_instruction(
                 VirtualInstruction::Temp {
-                    value: MIRValue::LoadOf(BCType::default_pointer(), Box::new(memory.clone()))
+                    value: MIRValue::LoadOf(MIRType::default_pointer(), Box::new(memory.clone()))
                 },
-                BCType::default_pointer()
+                MIRType::default_pointer()
             )?;
 
             builder.add_instruction(
                 VirtualInstruction::ZeroMemory {
                     memory,
-                    _type: BCType::default_pointer()
+                    _type: MIRType::default_pointer()
                 },
-                BCType::unit()
+                MIRType::unit()
             )?;
 
             Some(value)
@@ -668,7 +661,7 @@ pub fn generate_instruction(
                             args: vec![size_imm, len],
                             method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
                         },
-                        BCType::default_pointer()
+                        MIRType::default_pointer()
                     )
                 },
                 
@@ -681,7 +674,7 @@ pub fn generate_instruction(
                             args: vec![size_imm],
                             method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
                         },
-                        BCType::default_pointer()
+                        MIRType::default_pointer()
                     )
                 },
             }
@@ -695,7 +688,7 @@ pub fn generate_instruction(
                     alignment: expr_type.alignment(),
                     _type: expr_type.clone(),
                 },
-                BCType::default_pointer()
+                MIRType::default_pointer()
             )?;
             
             builder.add_instruction(
@@ -703,7 +696,7 @@ pub fn generate_instruction(
                     memory: alloc.clone(),
                     _type: expr_type.clone(),
                 },
-                BCType::unit()
+                MIRType::unit()
             );
             
             for index in indices.iter() {
@@ -724,7 +717,7 @@ pub fn generate_instruction(
                         field_offset: access.offset,
                         field_index: access.index,
                     },
-                    BCType::default_pointer()
+                    MIRType::default_pointer()
                 )?;
                 
                 builder.add_instruction(
@@ -733,7 +726,7 @@ pub fn generate_instruction(
                         value,
                         type_: access._type.clone()
                     },
-                    BCType::unit()
+                    MIRType::unit()
                 )?;
             }
             
@@ -753,9 +746,9 @@ pub fn generate_instruction(
 }
 
 pub(crate) fn generate_binop(
-    builder: &mut BytecodeBuilder, 
+    builder: &mut BytecodeBuilder,
     lhs: &TCExpr, rhs: &TCExpr,
-    return_type: BCType,
+    return_type: MIRType,
     op: &CXBinOp
 ) -> Option<MIRValue> {
     match op {
@@ -772,7 +765,7 @@ pub(crate) fn generate_binop(
                     right: false_imm.clone(),
                     op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap()
                 },
-                BCType::from(BCTypeKind::Bool)
+                MIRType::from(MIRTypeKind::Bool)
             )?;
             
             let no_short_circuit_block = builder.create_block();
@@ -790,7 +783,7 @@ pub(crate) fn generate_binop(
                     true_block,
                     false_block
                 },
-                BCType::unit()
+                MIRType::unit()
             );
             
             builder.set_current_block(no_short_circuit_block);
@@ -802,14 +795,14 @@ pub(crate) fn generate_binop(
                     right: false_imm,
                     op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap()
                 },
-                BCType::from(BCTypeKind::Bool)
+                MIRType::from(MIRTypeKind::Bool)
             )?;
             
             builder.add_instruction(
                 VirtualInstruction::Jump {
                     target: merge_block
                 },
-                BCType::unit()
+                MIRType::unit()
             );
             
             builder.set_current_block(merge_block);
@@ -821,7 +814,7 @@ pub(crate) fn generate_binop(
                         (right_cmp, no_short_circuit_block),
                     ]
                 },
-                BCType::from(BCTypeKind::Bool)
+                MIRType::from(MIRTypeKind::Bool)
             )
         },
         
@@ -845,7 +838,7 @@ pub(crate) fn generate_algebraic_binop(
     cx_lhs_type: &CXType,
     left_id: MIRValue,
     right_id: MIRValue,
-    return_type: BCType,
+    return_type: MIRType,
     op: &CXBinOp
 ) -> Option<MIRValue> {
     match &cx_lhs_type.kind {
@@ -917,7 +910,7 @@ pub(crate) fn generate_algebraic_binop(
 
 pub(crate) fn implicit_return(
     builder: &mut BytecodeBuilder,
-    prototype: &BCFunctionPrototype,
+    prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     let last_instruction = builder.last_instruction();
 
@@ -941,7 +934,7 @@ pub(crate) fn implicit_return(
         VirtualInstruction::Jump {
             target: return_block
         },
-        BCType::unit()
+        MIRType::unit()
     );
     builder.set_current_block(return_block);
 
@@ -949,7 +942,7 @@ pub(crate) fn implicit_return(
         builder.add_return(Some(
             MIRValue::IntImmediate {
                 val: 0,
-                type_: BCTypeKind::Signed { bytes: 4 }.into()
+                type_: MIRTypeKind::Signed { bytes: 4 }.into()
             }
         ));
     } else if prototype.return_type.is_void() {
@@ -965,7 +958,7 @@ pub(crate) fn implicit_return(
 
 pub(crate) fn implicit_defer_return(
     builder: &mut BytecodeBuilder,
-    prototype: &BCFunctionPrototype,
+    prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     if builder.function_defers() {
         let return_value = if prototype.return_type.is_void() {
@@ -985,7 +978,7 @@ pub(crate) fn implicit_defer_return(
             VirtualInstruction::Return {
                 value: return_value,
             },
-            BCType::unit()
+            MIRType::unit()
         )?;
     }
     

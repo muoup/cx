@@ -7,8 +7,8 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_util::format::dump_data;
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, ProgramBytecode, MIRValue};
-use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_mir::{BCFunctionMap, MIRFunctionPrototype, BlockID, ProgramMIR, MIRValue};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::generate_global;
@@ -83,26 +83,32 @@ impl FunctionState<'_> {
 
     pub(crate) fn get_value(&mut self, mir_value: &MIRValue) -> Option<CodegenValue> {
         match mir_value {
+            MIRValue::NULL => Some(CodegenValue::NULL),
+
+            MIRValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
+
             MIRValue::IntImmediate { val, type_ } => {
                 let int_type = get_cranelift_type(type_);
                 let value = self.builder.ins().iconst(int_type, *val);
                 Some(CodegenValue::Value(value))
             },
+
             MIRValue::FloatImmediate { val, type_ } => {
                 let value = f64::from_bits(*val as u64);
 
                 match &type_.kind {
-                    BCTypeKind::Float { bytes: 4 } => {
+                    MIRTypeKind::Float { bytes: 4 } => {
                         let value = self.builder.ins().f32const(value as f32);
                         Some(CodegenValue::Value(value))
                     },
-                    BCTypeKind::Float { bytes: 8 } => {
+                    MIRTypeKind::Float { bytes: 8 } => {
                         let value = self.builder.ins().f64const(value);
                         Some(CodegenValue::Value(value))
                     },
                     _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_)
                 }
             },
+
             MIRValue::LoadOf(_type, val) => {
                 let Some(addr) = self.get_value(val) else {
                     log_error!("Failed to get address for LoadOf: {:?}", val);
@@ -118,7 +124,7 @@ impl FunctionState<'_> {
 
                 Some(CodegenValue::Value(loaded))
             },
-            MIRValue::NULL => Some(CodegenValue::NULL),
+
             MIRValue::Global(id) => {
                 let global_ref = self.object_module
                     .declare_data_in_func(
@@ -143,7 +149,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(bc: &ProgramBytecode, output: &str) -> Option<Vec<u8>> {
+pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 

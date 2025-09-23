@@ -1,21 +1,21 @@
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_data_ast::parse::ast::CXBinOp;
-use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFloatBinOp, BCFunctionMap, BCFunctionPrototype, BCIntBinOp, BCParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind, BCTypeSize};
+use cx_data_mir::{BCFloatBinOp, BCFunctionMap, MIRFunctionPrototype, BCIntBinOp, MIRParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind};
 use cx_data_typechecker::{CXFnData, CXFnMap};
 
 impl BytecodeBuilder {
-    pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<BCType> {
+    pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<MIRType> {
         convert_type(self, cx_type)
     }
     
-    pub(crate) fn convert_fixed_cx_type(&self, cx_type: &CXType) -> Option<BCType> {
+    pub(crate) fn convert_fixed_cx_type(&self, cx_type: &CXType) -> Option<MIRType> {
         convert_fixed_type(cx_type)
     }
     
-    pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
+    pub(crate) fn convert_cx_prototype(&self, cx_proto: &CXFunctionPrototype) -> Option<MIRFunctionPrototype> {
         convert_cx_prototype(cx_proto)
     }
 
@@ -115,36 +115,36 @@ impl BytecodeBuilder {
     }
 }
 
-fn convert_type(builder: &mut BytecodeBuilder, cx_type: &CXType) -> Option<BCType> {
+fn convert_type(builder: &mut BytecodeBuilder, cx_type: &CXType) -> Option<MIRType> {
     Some(
-        BCType {
+        MIRType {
             kind: convert_type_kind(builder, &cx_type.kind)?
         }
     )
 }
 
-fn convert_fixed_type(cx_type: &CXType) -> Option<BCType> {
+fn convert_fixed_type(cx_type: &CXType) -> Option<MIRType> {
     Some(
-        BCType {
+        MIRType {
             kind: convert_fixed_type_kind(&cx_type.kind)?
         }
     )
 }
 
-fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
+fn convert_argument_type(cx_type: &CXType) -> Option<MIRType> {
     match &cx_type.kind {
         CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } => {
-            Some(BCType::default_pointer())
+            Some(MIRType::default_pointer())
         },
         
         _ => convert_fixed_type(cx_type)
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCFunctionPrototype> {
+pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIRFunctionPrototype> {
     let mut params = cx_proto.params.iter()
         .map(|param| {
-            BCParameter {
+            MIRParameter {
                 name: param.name.as_ref().map(|name| name.as_string()),
                 _type: convert_argument_type(&param._type).unwrap()
             }
@@ -154,15 +154,15 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<BCF
     let mut return_type = convert_fixed_type(&cx_proto.return_type).unwrap();
 
     if cx_proto.return_type.is_structured() {
-        params.insert(0, BCParameter {
+        params.insert(0, MIRParameter {
             name: Some("__internal_buffer".to_string()),
-            _type: BCType::default_pointer()
+            _type: MIRType::default_pointer()
         });
-        return_type = BCType::default_pointer();
+        return_type = MIRType::default_pointer();
     }
     
     Some(
-        BCFunctionPrototype {
+        MIRFunctionPrototype {
             name: cx_proto.name.as_string(),
             return_type, params,
             var_args: cx_proto.var_args,
@@ -180,7 +180,7 @@ pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
         .collect::<BCFunctionMap>()
 }
 
-pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
+pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CXTypeKind) -> Option<MIRTypeKind> {
     Some(
         match cx_type_kind {
             CXTypeKind::VariableLengthArray { _type, size } => {
@@ -198,10 +198,10 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
                         right: type_size,
                         op: BCIntBinOp::MUL,
                     },
-                    BCTypeKind::Unsigned { bytes: 8 }.into()
+                    MIRTypeKind::Unsigned { bytes: 8 }.into()
                 )?;
                 
-                BCTypeKind::VariableSized {
+                MIRTypeKind::VariableSized {
                     size: Box::new(total_size),
                     alignment: bc_type.alignment()
                 }
@@ -212,47 +212,47 @@ pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CX
     )
 }
 
-pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
+pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<MIRTypeKind> {
     Some(
         match cx_type_kind {
             CXTypeKind::Opaque { size, .. } =>
-                BCTypeKind::Opaque { bytes: *size },
+                MIRTypeKind::Opaque { bytes: *size },
             
             CXTypeKind::Bool => 
-                BCTypeKind::Bool,
+                MIRTypeKind::Bool,
 
             CXTypeKind::Integer { signed: true, bytes} =>
-                BCTypeKind::Signed { bytes: *bytes },
+                MIRTypeKind::Signed { bytes: *bytes },
             CXTypeKind::Integer { signed: false, bytes } =>
-                BCTypeKind::Unsigned { bytes: *bytes },
+                MIRTypeKind::Unsigned { bytes: *bytes },
             CXTypeKind::Float { bytes } =>
-                BCTypeKind::Float { bytes: *bytes },
+                MIRTypeKind::Float { bytes: *bytes },
 
             CXTypeKind::StrongPointer { is_array: true, .. } |
             CXTypeKind::PointerTo { nullable: false, .. } =>
-                BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
+                MIRTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
             CXTypeKind::StrongPointer { is_array: false, inner_type: inner, .. } => {
                 let inner_as_bc = convert_fixed_type(inner)?;
                 
-                BCTypeKind::Pointer { nullable: false, dereferenceable: inner_as_bc.fixed_size() as u32 }
+                MIRTypeKind::Pointer { nullable: false, dereferenceable: inner_as_bc.fixed_size() as u32 }
             },
 
             CXTypeKind::Function { .. } |
             CXTypeKind::PointerTo { nullable: true, .. } =>
-                BCTypeKind::Pointer { nullable: true, dereferenceable: 0 },
+                MIRTypeKind::Pointer { nullable: true, dereferenceable: 0 },
             
             CXTypeKind::Array { inner_type: _type, size } =>
-                BCTypeKind::Array {
+                MIRTypeKind::Array {
                     element: Box::new(convert_fixed_type(_type)?),
                     size: *size
                 },
             
             CXTypeKind::MemoryReference(inner) =>
-                BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
+                MIRTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
             CXTypeKind::Structured { fields, name, .. } =>
-                BCTypeKind::Struct {
+                MIRTypeKind::Struct {
                     name: match name {
                         Some(name) => name.as_string(),
                         None => "".to_string()
@@ -262,7 +262,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
                         .collect::<Option<Vec<_>>>()?
                 },
             CXTypeKind::Union { fields, name } =>
-                BCTypeKind::Union {
+                MIRTypeKind::Union {
                     name: match name {
                         Some(name) => name.as_string(),
                         None => "".to_string()
@@ -272,7 +272,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
                         .collect::<Option<Vec<_>>>()?
                 },
 
-            CXTypeKind::Unit => BCTypeKind::Unit,
+            CXTypeKind::Unit => MIRTypeKind::Unit,
 
             CXTypeKind::VariableLengthArray { .. } =>
                 panic!("Variable length arrays are not supported in bytecode generation"),

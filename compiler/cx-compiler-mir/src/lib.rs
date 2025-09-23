@@ -1,7 +1,7 @@
 use crate::builder::BytecodeBuilder;
 use crate::global_stmts::{generate_function, generate_global_variable};
-use cx_data_bytecode::ProgramBytecode;
-use cx_data_typechecker::ast::{TCStructureData, TCAST};
+use cx_data_mir::ProgramMIR;
+use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
 use cx_util::bytecode_error_log;
 use crate::deconstructor::{deconstructor_prototype, generate_deconstructor};
 
@@ -15,7 +15,7 @@ mod global_stmts;
 
 pub type BytecodeResult<T> = Option<T>;
 
-pub fn generate_bytecode(ast: TCAST) -> Option<ProgramBytecode> {
+pub fn generate_bytecode(ast: TCAST) -> Option<ProgramMIR> {
     let mut builder = BytecodeBuilder::new(&ast);
 
     for _type in ast.destructors_required.iter() {

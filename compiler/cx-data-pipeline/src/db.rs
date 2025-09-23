@@ -1,13 +1,13 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_data_ast::parse::ast::CXAST;
-use cx_data_bytecode::ProgramBytecode;
+use cx_data_mir::ProgramMIR;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::token::Token;
-use cx_data_typechecker::ast::{TCStructureData, TCAST};
+use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
 
@@ -21,10 +21,10 @@ pub struct ModuleData {
 
     pub naive_ast: ModuleMap<CXAST>,
 
-    pub structure_data: ModuleMap<TCStructureData>,
+    pub structure_data: ModuleMap<TCBaseMappings>,
     pub typechecked_ast: ModuleMap<TCAST>,
 
-    pub bytecode: ModuleMap<ProgramBytecode>
+    pub bytecode: ModuleMap<ProgramMIR>
 }
 
 impl Default for ModuleData {

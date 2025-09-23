@@ -5,7 +5,7 @@ use cx_util::mangling::{mangle_destructor, mangle_template};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
 use cx_data_ast::parse::ast::{CXGlobalVariable, CXAST};
-use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCStructureData};
+use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCBaseMappings};
 
 pub struct TCTemplateRequest {
     pub module_origin: Option<String>,
@@ -14,7 +14,7 @@ pub struct TCTemplateRequest {
 }
 
 pub struct TCEnvironment<'a> {
-    pub base_data: &'a TCStructureData,
+    pub base_data: &'a TCBaseMappings,
     pub realized_types: CXTypeMap,
     pub realized_fns: CXFnMap,
     pub realized_globals: HashMap<String, TCGlobalVariable>,
@@ -29,7 +29,7 @@ pub struct TCEnvironment<'a> {
 }
 
 impl TCEnvironment<'_> {
-    pub fn new(structure_data: &TCStructureData) -> TCEnvironment {
+    pub fn new(structure_data: &TCBaseMappings) -> TCEnvironment {
         TCEnvironment {
             base_data: &structure_data,
             realized_types: HashMap::new(),

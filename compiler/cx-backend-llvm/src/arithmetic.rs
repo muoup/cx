@@ -1,12 +1,12 @@
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
-use cx_data_bytecode::{BCIntBinOp, BCPtrBinOp};
-use cx_data_bytecode::types::BCType;
+use cx_data_mir::{BCIntBinOp, BCPtrBinOp};
+use cx_data_mir::types::MIRType;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 
-pub(crate) fn generate_ptr_binop<'a>(
-    global_state: &GlobalState<'a>, function_state: &FunctionState<'a>,
-    ptr_type: &BCType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>, 
+pub(crate) fn generate_ptr_binop<'a, 'b>(
+    global_state: &GlobalState<'a>, function_state: &FunctionState<'a, 'b>,
+    ptr_type: &MIRType, left_value: AnyValueEnum<'a>, right_value: AnyValueEnum<'a>,
     op: BCPtrBinOp
 ) -> Option<CodegenValue<'a>> {
     let ptr_type = bc_llvm_type(global_state.context, ptr_type)?;
@@ -105,9 +105,9 @@ pub(crate) fn generate_ptr_binop<'a>(
     )
 }
 
-pub(crate) fn generate_int_binop<'a>(
+pub(crate) fn generate_int_binop<'a, 'b>(
     _: &GlobalState<'a>,
-    function_state: &FunctionState<'a>,
+    function_state: &FunctionState<'a, 'b>,
     left_value: IntValue<'a>, right_value: IntValue<'a>, 
     op: BCIntBinOp, signed: bool
 ) -> Option<CodegenValue<'a>> {

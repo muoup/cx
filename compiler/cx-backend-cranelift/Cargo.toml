@@ -6,7 +6,7 @@ autotests = false
 
 [dependencies]
 cx-util = { path = "../cx-util" }
-cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-data-mir = { path = "../cx-data-mir" }
 cx-data-ast = { path = "../cx-data-ast" }
 
 cranelift = "0.120.0"

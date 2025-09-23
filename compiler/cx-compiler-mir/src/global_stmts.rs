@@ -1,8 +1,8 @@
 use crate::aux_routines::allocate_variable;
 use crate::builder::BytecodeBuilder;
 use crate::instruction_gen::generate_instruction;
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, BCGlobalType, BCGlobalValue, BCParameter, LinkageType, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRParameter, LinkageType, VirtualInstruction, MIRValue};
 use cx_data_typechecker::ast::{TCExpr, TCGlobalVariable};
 use cx_data_typechecker::cx_types::CXFunctionPrototype;
 use cx_util::mangling::mangle_destructor;
@@ -35,12 +35,12 @@ pub(crate) fn generate_destructor(
     body: &TCExpr
 ) -> Option<()> {
     let destructor_name = mangle_destructor(type_name);
-    let prototype = BCFunctionPrototype {
-        return_type: BCType::unit(),
+    let prototype = MIRFunctionPrototype {
+        return_type: MIRType::unit(),
         name: destructor_name,
-        params: vec![BCParameter {
+        params: vec![MIRParameter {
             name: Some("this".to_string()),
-            _type: BCType::from(BCTypeKind::Pointer {
+            _type: MIRType::from(MIRTypeKind::Pointer {
                 nullable: false,
                 dereferenceable: 0,
             }),
@@ -52,14 +52,7 @@ pub(crate) fn generate_destructor(
     builder.push_scope();
     builder.new_function(prototype);
 
-    let this = builder.add_instruction(
-        VirtualInstruction::FunctionParameter {
-            param_index: 0,
-        },
-        BCType::default_pointer()
-    )?;
-
-    builder.insert_symbol("this".to_string(), this);
+    builder.insert_symbol("this".to_string(), MIRValue::ParameterRef(0));
 
     let Some(_) = generate_instruction(builder, body) else {
         panic!("Failed to generate body for destructor: {type_name}");
@@ -74,7 +67,7 @@ pub(crate) fn generate_destructor(
 fn generate_params(
     builder: &mut BytecodeBuilder,
     prototype: &CXFunctionPrototype,
-    bc_prototype: &BCFunctionPrototype
+    bc_prototype: &MIRFunctionPrototype
 ) -> Option<()> {
     let hidden_params_count = bc_prototype.params.len() - prototype.params.len();
     
@@ -86,19 +79,16 @@ fn generate_params(
                 _type: param._type.clone(),
                 alignment: param._type.alignment(),
             },
-            BCType::default_pointer()
-        )?;
-
-        let value = builder.add_instruction(
-            VirtualInstruction::FunctionParameter {
-                param_index: i as u32
-            },
-            param._type.clone()
+            MIRType::default_pointer()
         )?;
 
         builder.add_instruction(
-            VirtualInstruction::Store { value, memory: memory.clone(), type_: param._type.clone() },
-            BCType::unit()
+            VirtualInstruction::Store {
+                value: MIRValue::ParameterRef(i as u32),
+                memory: memory.clone(),
+                type_: param._type.clone()
+            },
+            MIRType::unit()
         )?;
 
         if let Some(name) = &param.name {
@@ -108,24 +98,18 @@ fn generate_params(
 
     for (i, param) in prototype.params.iter().enumerate() {
         let i = i + hidden_params_count;
-        
+
         if let Some(name) = &param.name {
             let memory = allocate_variable(name.as_str(), builder, &param._type)?;
-            let value = builder.add_instruction(
-                VirtualInstruction::FunctionParameter {
-                    param_index: i as u32
-                },
-                BCType::default_pointer()
-            )?;
-            
             let param_type = builder.convert_cx_type(&param._type)?;
             
             builder.add_instruction(
                 VirtualInstruction::Store {
-                    value, memory,
+                    value: MIRValue::ParameterRef(i as u32),
+                    memory,
                     type_: param_type
                 },
-                BCType::unit()
+                MIRType::unit()
             )?;
         }
     }
@@ -138,10 +122,10 @@ pub(crate) fn generate_global_variable(builder: &mut BytecodeBuilder, var: &TCGl
         TCGlobalVariable::UnaddressableConstant { .. } => (),
 
         TCGlobalVariable::StringLiteral { name, value} => {
-            let value = BCGlobalValue {
+            let value = MIRGlobalValue {
                 name: name.clone(),
                 linkage: LinkageType::Static,
-                _type: BCGlobalType::StringLiteral(value.clone())
+                _type: MIRGlobalType::StringLiteral(value.clone())
             };
 
             builder.insert_global_symbol(value);
@@ -149,10 +133,10 @@ pub(crate) fn generate_global_variable(builder: &mut BytecodeBuilder, var: &TCGl
 
         TCGlobalVariable::Variable { name, _type, initializer } => {
             let _type = builder.convert_cx_type(_type)?;
-            let value = BCGlobalValue {
+            let value = MIRGlobalValue {
                 name: name.clone(),
                 linkage: LinkageType::Standard,
-                _type: BCGlobalType::Variable {
+                _type: MIRGlobalType::Variable {
                     initial_value: initializer.clone(),
                     _type: _type.clone(),
                 }

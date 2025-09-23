@@ -1,18 +1,18 @@
-use crate::types::BCType;
+use crate::types::MIRType;
 use std::collections::HashMap;
 use cx_util::identifier::CXIdent;
 
 pub mod types;
 mod format;
 
-pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
+pub type BCFunctionMap = HashMap<String, MIRFunctionPrototype>;
 
 #[derive(Debug, Clone)]
-pub struct ProgramBytecode {
+pub struct ProgramMIR {
     pub fn_map: BCFunctionMap,
-    pub fn_defs: Vec<BytecodeFunction>,
+    pub fn_defs: Vec<MIRFunction>,
     
-    pub global_vars: Vec<BCGlobalValue>
+    pub global_vars: Vec<MIRGlobalValue>
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -26,17 +26,17 @@ pub enum LinkageType {
 pub type ElementID = u32;
 
 #[derive(Debug, Clone)]
-pub struct BCGlobalValue {
+pub struct MIRGlobalValue {
     pub name: CXIdent,
-    pub _type: BCGlobalType,
+    pub _type: MIRGlobalType,
     pub linkage: LinkageType,
 }
 
 #[derive(Debug, Clone)]
-pub enum BCGlobalType {
+pub enum MIRGlobalType {
     StringLiteral(String),
     Variable {
-        _type: BCType,
+        _type: MIRType,
         initial_value: Option<i64>
     },
 }
@@ -44,17 +44,18 @@ pub enum BCGlobalType {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum MIRValue {
     NULL,
+    ParameterRef(u32),
     IntImmediate {
-        type_: BCType,
+        type_: MIRType,
         val: i64
     },
     FloatImmediate {
-        type_: BCType,
+        type_: MIRType,
         val: i64
     },
     Global(ElementID),
     FunctionRef(CXIdent),
-    LoadOf(BCType, Box<MIRValue>),
+    LoadOf(MIRType, Box<MIRValue>),
     BlockResult {
         block_id: BlockID,
         value_id: u32
@@ -68,28 +69,23 @@ pub enum BlockID {
 }
 
 #[derive(Debug, Clone)]
-pub struct VirtualValue {
-    pub type_: BCType
-}
-
-#[derive(Debug, Clone)]
-pub struct BCParameter {
+pub struct MIRParameter {
     pub name: Option<String>,
-    pub _type: BCType
+    pub _type: MIRType
 }
 
 #[derive(Debug, Clone)]
-pub struct BCFunctionPrototype {
+pub struct MIRFunctionPrototype {
     pub name: String,
-    pub return_type: BCType,
-    pub params: Vec<BCParameter>,
+    pub return_type: MIRType,
+    pub params: Vec<MIRParameter>,
     pub var_args: bool,
     pub linkage: LinkageType,
 }
 
 #[derive(Debug, Clone)]
-pub struct BytecodeFunction {
-    pub prototype: BCFunctionPrototype,
+pub struct MIRFunction {
+    pub prototype: MIRFunctionPrototype,
     
     pub blocks: Vec<FunctionBlock>,
     pub defer_blocks: Vec<FunctionBlock>,
@@ -104,23 +100,19 @@ pub struct FunctionBlock {
 #[derive(Debug, Clone)]
 pub struct BlockInstruction {
     pub instruction: VirtualInstruction,
-    pub value_type: BCType
+    pub value_type: MIRType
 }
 
 #[derive(Debug, Clone)]
 pub enum VirtualInstruction {
-    FunctionParameter {
-        param_index: u32
-    },
-
     Allocate {
-        _type: BCType,
+        _type: MIRType,
         alignment: u8,
     },
 
     StructAccess {
         struct_: MIRValue,
-        struct_type: BCType,
+        struct_type: MIRType,
         field_index: usize,
         field_offset: usize
     },
@@ -132,12 +124,12 @@ pub enum VirtualInstruction {
     Store {
         memory: MIRValue,
         value: MIRValue,
-        type_: BCType
+        type_: MIRType
     },
     
     ZeroMemory {
         memory: MIRValue,
-        _type: BCType
+        _type: MIRType
     },
 
     // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
@@ -165,7 +157,7 @@ pub enum VirtualInstruction {
     
     IntToPtrDiff {
         value: MIRValue,
-        ptr_type: BCType
+        ptr_type: MIRType
     },
     
     IntToPtr {
@@ -174,7 +166,7 @@ pub enum VirtualInstruction {
     
     PointerBinOp {
         op: BCPtrBinOp,
-        ptr_type: BCType,
+        ptr_type: MIRType,
         left: MIRValue,
         right: MIRValue,
     },
@@ -203,13 +195,13 @@ pub enum VirtualInstruction {
 
     DirectCall {
         args: Vec<MIRValue>,
-        method_sig: BCFunctionPrototype
+        method_sig: MIRFunctionPrototype
     },
 
     IndirectCall {
         func_ptr: MIRValue,
         args: Vec<MIRValue>,
-        method_sig: BCFunctionPrototype
+        method_sig: MIRFunctionPrototype
     },
 
     GetFunctionAddr {
@@ -217,12 +209,12 @@ pub enum VirtualInstruction {
     },
 
     IntToFloat {
-        from: BCType,
+        from: MIRType,
         value: MIRValue
     },
 
     FloatToInt {
-        from: BCType,
+        from: MIRType,
         value: MIRValue
     },
     
@@ -312,17 +304,4 @@ pub enum BCFloatBinOp {
 #[derive(Debug, Clone, Copy)]
 pub enum BCFloatUnOp {
     NEG
-}
-
-impl BCGlobalValue {
-    pub fn as_virtual_value(&self) -> VirtualValue {
-        match &self._type {
-            BCGlobalType::StringLiteral(s) => VirtualValue {
-                type_: BCType::default_pointer()
-            },
-            BCGlobalType::Variable { _type, .. } => VirtualValue {
-                type_: _type.clone()
-            },
-        }
-    }
 }

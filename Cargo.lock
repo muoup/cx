@@ -257,7 +257,7 @@ dependencies = [
  "cranelift-native",
  "cranelift-object",
  "cx-data-ast",
- "cx-data-bytecode",
+ "cx-data-mir",
  "cx-util",
 ]
 
@@ -265,7 +265,7 @@ dependencies = [
 name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
- "cx-data-bytecode",
+ "cx-data-mir",
  "cx-data-pipeline",
  "cx-util",
  "inkwell",
@@ -283,22 +283,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-compiler-bytecode"
-version = "0.0.0"
-dependencies = [
- "cx-compiler-ast",
- "cx-data-ast",
- "cx-data-bytecode",
- "cx-data-typechecker",
- "cx-util",
-]
-
-[[package]]
 name = "cx-compiler-lexer"
 version = "0.1.0"
 dependencies = [
  "cx-data-lexer",
  "cx-data-pipeline",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-compiler-mir"
+version = "0.0.0"
+dependencies = [
+ "cx-compiler-ast",
+ "cx-data-ast",
+ "cx-data-mir",
+ "cx-data-typechecker",
  "cx-util",
 ]
 
@@ -324,16 +324,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-data-bytecode"
-version = "0.0.0"
+name = "cx-data-lexer"
+version = "0.1.0"
 dependencies = [
  "cx-util",
- "speedy",
 ]
 
 [[package]]
-name = "cx-data-lexer"
-version = "0.1.0"
+name = "cx-data-mir"
+version = "0.0.0"
 dependencies = [
  "cx-util",
 ]
@@ -343,8 +342,8 @@ name = "cx-data-pipeline"
 version = "0.1.0"
 dependencies = [
  "cx-data-ast",
- "cx-data-bytecode",
  "cx-data-lexer",
+ "cx-data-mir",
  "cx-data-typechecker",
  "speedy",
 ]
@@ -366,12 +365,12 @@ dependencies = [
  "cx-backend-cranelift",
  "cx-backend-llvm",
  "cx-compiler-ast",
- "cx-compiler-bytecode",
  "cx-compiler-lexer",
+ "cx-compiler-mir",
  "cx-compiler-typechecker-new",
  "cx-data-ast",
- "cx-data-bytecode",
  "cx-data-lexer",
+ "cx-data-mir",
  "cx-data-pipeline",
  "cx-data-typechecker",
  "cx-util",
