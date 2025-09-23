@@ -64,6 +64,8 @@ use the LLVM backend, first you must install LLVM 18.1.X
 
 ## Usage
 
+For information regarding the CX language syntax, see the [Language Specification](docs/language_spec.md) document.
+
 To compile a CX file, use the following command:
 
 ```bash
