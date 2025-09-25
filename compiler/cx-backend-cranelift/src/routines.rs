@@ -4,7 +4,7 @@ use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{FuncId, Linkage, Module};
-use cx_data_bytecode::{BCFunctionPrototype, LinkageType};
+use cx_data_mir::{MIRFunctionPrototype, LinkageType};
 
 pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(
@@ -22,7 +22,7 @@ pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial
     Some(stack_pointer)
 }
 
-pub fn get_function(context: &mut FunctionState, prototype: &BCFunctionPrototype) -> Option<FuncId> {
+pub fn get_function(context: &mut FunctionState, prototype: &MIRFunctionPrototype) -> Option<FuncId> {
     if let Some(func_id) = context.function_ids.get(&prototype.name) {
         return Some(*func_id);
     }

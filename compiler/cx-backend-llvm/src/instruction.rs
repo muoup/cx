@@ -2,8 +2,8 @@ use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::attr_noundef;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
+use cx_data_mir::types::{MIRTypeKind, BCTypeSize};
+use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
@@ -26,9 +26,9 @@ pub(crate) fn inst_num() -> String {
     format!("inst_{}", *num)
 }
 
-pub(crate) fn generate_instruction<'a>(
+pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
-    function_state: &FunctionState<'a>,
+    function_state: &FunctionState<'a, 'b>,
     function_val: &FunctionValue<'a>,
     block_instruction: &BlockInstruction
 ) -> Option<CodegenValue<'a>> {
@@ -197,7 +197,7 @@ pub(crate) fn generate_instruction<'a>(
             
             VirtualInstruction::GotoDefer => {
                 let defer_block = function_state
-                    .get_block(function_val, BlockID::DeferredBlock(0))
+                    .get_block(BlockID::DeferredBlock(0))
                     .unwrap();
                 
                 function_state.builder
@@ -212,7 +212,7 @@ pub(crate) fn generate_instruction<'a>(
                     .builder
                     .build_unconditional_branch(
                         function_state
-                            .get_block(function_val, *target)
+                            .get_block(*target)
                             .unwrap()
                     ).unwrap();
                 
@@ -242,15 +242,7 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::NULL
             },
-            
-            VirtualInstruction::FunctionParameter { param_index } => {
-                let param = function_val
-                    .get_nth_param(*param_index)
-                    .unwrap();
-                
-                CodegenValue::Value(param.as_any_value_enum())
-            },
-            
+
             VirtualInstruction::Store { value, type_, memory } => {
                 let any_value = function_state
                     .get_value(value)
@@ -353,10 +345,10 @@ pub(crate) fn generate_instruction<'a>(
                     .into_int_value();
                 
                 let signed = match block_instruction.value_type.kind {
-                    BCTypeKind::Signed { .. } => true,
+                    MIRTypeKind::Signed { .. } => true,
 
-                    BCTypeKind::Bool { .. } |
-                    BCTypeKind::Unsigned { .. } => false,
+                    MIRTypeKind::Bool { .. } |
+                    MIRTypeKind::Unsigned { .. } => false,
 
                     _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp
                 };
@@ -400,9 +392,9 @@ pub(crate) fn generate_instruction<'a>(
                     .into_int_value();
                 
                 let signed = match block_instruction.value_type.kind {
-                    BCTypeKind::Signed { .. } => true,
-                    BCTypeKind::Unsigned { .. } => false,
-                    BCTypeKind::Bool => false,
+                    MIRTypeKind::Signed { .. } => true,
+                    MIRTypeKind::Unsigned { .. } => false,
+                    MIRTypeKind::Bool => false,
 
                     _ => log_error!("Unsupported type for IntegerBinOp"),
                 };
@@ -482,7 +474,7 @@ pub(crate) fn generate_instruction<'a>(
                         .expect("Failed to convert value to basic value");
 
                     let block = function_state
-                        .get_block(function_val, *block_id)
+                        .get_block(*block_id)
                         .unwrap();
 
                     phi_node.add_incoming(&[(&value, block)]);
@@ -508,11 +500,11 @@ pub(crate) fn generate_instruction<'a>(
                 }
                 
                 let true_block_val = function_state
-                    .get_block(function_val, *true_block)
+                    .get_block(*true_block)
                     .unwrap();
                 
                 let false_block_val = function_state
-                    .get_block(function_val, *false_block)
+                    .get_block(*false_block)
                     .unwrap();
                 
                 function_state.builder
@@ -538,7 +530,7 @@ pub(crate) fn generate_instruction<'a>(
                         let value = global_state.context.i32_type()
                             .const_int(*value, false);
                         let block = function_state
-                            .get_block(function_val, *block)
+                            .get_block(*block)
                             .unwrap();
                         
                         (value, block)
@@ -549,7 +541,7 @@ pub(crate) fn generate_instruction<'a>(
                     .build_switch(
                         value,
                         function_state
-                            .get_block(function_val, *default)
+                            .get_block(*default)
                             .unwrap(),
                         targets.as_slice()
                     )
@@ -666,13 +658,13 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::Value(
                     match from.kind {
-                        BCTypeKind::Signed { .. } =>
+                        MIRTypeKind::Signed { .. } =>
                             function_state.builder
                                 .build_signed_int_to_float(value, to_type, inst_num().as_str())
                                 .unwrap()
                                 .as_any_value_enum(),
                         
-                        BCTypeKind::Unsigned { .. } =>
+                        MIRTypeKind::Unsigned { .. } =>
                             function_state.builder
                                 .build_unsigned_int_to_float(value, to_type, inst_num().as_str())
                                 .unwrap()
@@ -696,13 +688,13 @@ pub(crate) fn generate_instruction<'a>(
                 
                 CodegenValue::Value(
                     match block_instruction.value_type.kind {
-                        BCTypeKind::Signed { .. } =>
+                        MIRTypeKind::Signed { .. } =>
                             function_state.builder
                                 .build_float_to_signed_int(value, to_type, inst_num().as_str())
                                 .unwrap()
                                 .as_any_value_enum(),
                         
-                        BCTypeKind::Unsigned { .. } =>
+                        MIRTypeKind::Unsigned { .. } =>
                             function_state.builder
                                 .build_float_to_unsigned_int(value, to_type, inst_num().as_str())
                                 .unwrap()

@@ -1,8 +1,8 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, BytecodeFunction, BCFunctionPrototype, FunctionBlock, ProgramBytecode, VirtualInstruction, VirtualValue, BCPtrBinOp, BlockID, BCGlobalType, MIRValue};
-use crate::types::{BCType, BCTypeKind};
+use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, MIRFunction, MIRFunctionPrototype, FunctionBlock, ProgramMIR, VirtualInstruction, BCPtrBinOp, BlockID, MIRGlobalType, MIRValue};
+use crate::types::{MIRType, MIRTypeKind};
 
-impl Display for ProgramBytecode {
+impl Display for ProgramMIR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Bytecode Program:")?;
 
@@ -18,7 +18,7 @@ impl Display for ProgramBytecode {
     }
 }
 
-impl Display for BytecodeFunction {
+impl Display for MIRFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.prototype)?;
 
@@ -60,7 +60,7 @@ impl Display for FunctionBlock {
     }
 }
 
-impl Display for BCFunctionPrototype {
+impl Display for MIRFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}(", self.name)?;
 
@@ -87,11 +87,11 @@ impl Display for BlockInstruction {
     }
 }
 
-impl Display for BCGlobalType {
+impl Display for MIRGlobalType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            BCGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s),
-            BCGlobalType::Variable { _type, initial_value } => {
+            MIRGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s),
+            MIRGlobalType::Variable { _type, initial_value } => {
                 if let Some(initial_value) = initial_value {
                     write!(f, "variable {} = {}", _type, initial_value)
                 } else {
@@ -102,16 +102,11 @@ impl Display for BCGlobalType {
     }
 }
 
-impl Display for VirtualValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.type_)
-    }
-}
-
 impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             MIRValue::NULL => write!(f, "null"),
+            MIRValue::ParameterRef(index) => write!(f, "p{index}"),
             MIRValue::IntImmediate { val, .. } => write!(f, "{val}"),
             MIRValue::FloatImmediate { val, ..} => {
                 let float = f64::from_bits(*val as u64);
@@ -140,20 +135,17 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Temp { value } => {
                 write!(f, "{value}")
             },
-            VirtualInstruction::Allocate { _type, alignment } => {
-                write!(f, "alloca {_type} (alignment: {alignment})")
+            VirtualInstruction::Allocate { _type, .. } => {
+                write!(f, "stackallocate {_type}")
             },
-            VirtualInstruction::FunctionParameter { param_index } => {
-                write!(f, "parameter {param_index}")
-            },
-            VirtualInstruction::Store { value, memory, type_ } => {
-                write!(f, "store {value} -> {memory} [{type_}]")
+            VirtualInstruction::Store { value, memory, .. } => {
+                write!(f, "{memory} := {value}")
             },
             VirtualInstruction::ZeroMemory { memory, _type } => {
-                write!(f, "zero_memory {memory} ({_type})")
+                write!(f, "{memory} := 0")
             },
-            VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
-                write!(f, "access {struct_} at index {field_index}; offset: {field_offset}")
+            VirtualInstruction::StructAccess { struct_, field_index, .. } => {
+                write!(f, "{struct_}.[{field_index}]")
             },
             VirtualInstruction::BoolExtend { value } => {
                 write!(f, "bool_extend {value}")
@@ -186,7 +178,7 @@ impl Display for VirtualInstruction {
                 Ok(())
             },
             VirtualInstruction::Branch { condition, true_block, false_block } => {
-                write!(f, "branch on {condition}; true -> {true_block}, false -> {false_block}")
+                write!(f, "if {condition} goto {true_block} else {false_block}")
             },
             VirtualInstruction::Phi { predecessors: from } => {
                 write!(f, "phi")?;
@@ -321,15 +313,15 @@ impl Display for BCIntBinOp {
                 BCIntBinOp::EQ => "==",
                 BCIntBinOp::NE => "!=",
                
-                BCIntBinOp::ILT => "i<",
-                BCIntBinOp::IGT => "i>",
-                BCIntBinOp::ILE => "i<=",
-                BCIntBinOp::IGE => "i>=",
+                BCIntBinOp::ILT => "<",
+                BCIntBinOp::IGT => ">",
+                BCIntBinOp::ILE => "<=",
+                BCIntBinOp::IGE => ">=",
                
-                BCIntBinOp::ULT => "u<",
-                BCIntBinOp::UGT => "u>",
-                BCIntBinOp::ULE => "u<=",
-                BCIntBinOp::UGE => "u>=",
+                BCIntBinOp::ULT => "(u) <",
+                BCIntBinOp::UGT => "(u) >",
+                BCIntBinOp::ULE => "(u) <=",
+                BCIntBinOp::UGE => "(u) >=",
            },
         )
     }
@@ -370,22 +362,22 @@ impl Display for BCFloatUnOp {
     }
 }
 
-impl Display for BCType {
+impl Display for MIRType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl Display for BCTypeKind {
+impl Display for MIRTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
-            BCTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
-            BCTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
-            BCTypeKind::Bool => write!(f, "bool"),
-            BCTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
+            MIRTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
+            MIRTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
+            MIRTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
+            MIRTypeKind::Bool => write!(f, "bool"),
+            MIRTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
             
-            BCTypeKind::Pointer { nullable, dereferenceable } => {
+            MIRTypeKind::Pointer { nullable, dereferenceable } => {
                 if !*nullable {
                     write!(f, "!")?;
                 }
@@ -399,10 +391,10 @@ impl Display for BCTypeKind {
                 }
             },
             
-            BCTypeKind::Array { element, size } => {
+            MIRTypeKind::Array { element, size } => {
                 write!(f, "[{element}; {size}]")
             },
-            BCTypeKind::Struct { fields, .. } => {
+            MIRTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
                     .map(|(name, _type)| format!("{name}: {_type}"))
@@ -411,7 +403,7 @@ impl Display for BCTypeKind {
 
                 write!(f, "struct {{ {fields} }}")
             },
-            BCTypeKind::Union { fields, .. } => {
+            MIRTypeKind::Union { fields, .. } => {
                 let fields = fields
                     .iter()
                     .map(|(name, _type)| format!("{name}: {_type}"))
@@ -421,8 +413,8 @@ impl Display for BCTypeKind {
                 write!(f, "union {{ {fields} }}")
             },
 
-            BCTypeKind::Unit => write!(f, "()"),
-            BCTypeKind::VariableSized { size, alignment } => {
+            MIRTypeKind::Unit => write!(f, "()"),
+            MIRTypeKind::VariableSized { size, alignment } => {
                 write!(f, "variable_sized (size: {size}, alignment: {alignment})")
             },
         }

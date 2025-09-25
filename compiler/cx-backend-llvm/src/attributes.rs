@@ -1,6 +1,6 @@
 use inkwell::attributes::Attribute;
 use inkwell::context::Context;
-use cx_data_bytecode::types::{BCType, BCTypeKind};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
 
 pub(crate) fn attr_noundef(context: &Context) -> Attribute {
     context.create_enum_attribute(
@@ -20,11 +20,11 @@ pub(crate) fn attr_dereferenceable(context: &Context, bytes: u64) -> Attribute {
     )
 }
 
-pub fn get_type_attributes(context: &Context, _type: &BCType) -> Vec<Attribute> {
+pub fn get_type_attributes(context: &Context, _type: &MIRType) -> Vec<Attribute> {
     match _type.kind {
-        BCTypeKind::Pointer { nullable: false, dereferenceable: 0 } => 
+        MIRTypeKind::Pointer { nullable: false, dereferenceable: 0 } =>
             vec![attr_nonnull(context), attr_noundef(context)],
-        BCTypeKind::Pointer { nullable: false, dereferenceable } =>
+        MIRTypeKind::Pointer { nullable: false, dereferenceable } =>
             vec![attr_nonnull(context), attr_noundef(context), attr_dereferenceable(context, dereferenceable as u64)],
         
         _ => vec![attr_noundef(context)],

@@ -6,7 +6,7 @@ use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct TCStructureData {
+pub struct TCBaseMappings {
     pub type_data: CXTypeData,
     pub fn_data: CXFnData,
     pub global_variables: HashMap<String, TCGlobalVariable>,
@@ -202,12 +202,7 @@ pub enum TCExprKind {
     },
 
     Break,
-    Continue,
-
-    DeconstructObject {
-        variable_name: CXIdent,
-        variable_type: CXType,
-    }
+    Continue
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

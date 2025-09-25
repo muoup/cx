@@ -1,11 +1,11 @@
 use cranelift_module::{DataDescription, Linkage, Module};
-use cx_data_bytecode::{BCGlobalType, BCGlobalValue};
+use cx_data_mir::{MIRGlobalType, MIRGlobalValue};
 use crate::GlobalState;
 use crate::routines::convert_linkage;
 
-pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue) -> Option<()> {
+pub(crate) fn generate_global(state: &mut GlobalState, variable: &MIRGlobalValue) -> Option<()> {
     match &variable._type {
-        BCGlobalType::StringLiteral(str) => {
+        MIRGlobalType::StringLiteral(str) => {
             let id = state.object_module.declare_anonymous_data(
                 false,
                 false
@@ -21,7 +21,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue)
             state.object_module.declare_data_in_data(id, &mut data);
         },
 
-        BCGlobalType::Variable { _type, initial_value } => {
+        MIRGlobalType::Variable { _type, initial_value } => {
             let linkage = convert_linkage(variable.linkage);
             let id = state.object_module.declare_data(
                 variable.name.as_str(), linkage,

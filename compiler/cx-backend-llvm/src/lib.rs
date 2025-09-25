@@ -1,7 +1,7 @@
 use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionMap, BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, MIRValue, ProgramBytecode};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_data_mir::{BCFunctionMap, MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue, ProgramMIR};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -35,8 +35,9 @@ pub(crate) struct GlobalState<'a> {
     function_map: &'a BCFunctionMap,
 }
 
-pub(crate) struct FunctionState<'a> {
+pub(crate) struct FunctionState<'a, 'b> {
     context: &'a Context,
+    function_value: &'b FunctionValue<'a>,
 
     current_function: String,
     
@@ -47,15 +48,24 @@ pub(crate) struct FunctionState<'a> {
     value_map: HashMap<MIRValue, CodegenValue<'a>>,
 }
 
-impl<'a> FunctionState<'a> {
+impl<'a> FunctionState<'a, '_> {
     pub(crate) fn get_value(&self, id: &MIRValue) -> Option<CodegenValue<'a>> {
         match id {
+            MIRValue::ParameterRef(index) => {
+                let param_val = self.function_value.get_nth_param(*index)
+                    .unwrap_or_else(|| panic!("Parameter index {index} out of bounds for function {}", self.current_function))
+                    .as_any_value_enum();
+
+                Some(CodegenValue::Value(param_val))
+            },
+
             MIRValue::IntImmediate { val, type_ } => {
                 let int_type = bc_llvm_type(self.context, type_)?;
                 let int_val = int_type.into_int_type().const_int(*val as u64, true).as_any_value_enum();
 
                 Some(CodegenValue::Value(int_val))
             },
+
             MIRValue::FloatImmediate { val, type_ } => {
                 let float_type = bc_llvm_type(self.context, type_)?;
                 let float_val = float_type.into_float_type()
@@ -91,14 +101,14 @@ impl<'a> FunctionState<'a> {
         }
     }
     
-    pub(crate) fn get_block(&self, function_val: &FunctionValue<'a>, block_id: BlockID) -> Option<BasicBlock> {
+    pub(crate) fn get_block(&self, block_id: BlockID) -> Option<BasicBlock> {
         match block_id {
             BlockID::Block(id) =>
-                function_val.get_basic_blocks()
+                self.function_value.get_basic_blocks()
                     .get(id as usize)
                     .cloned(),
             BlockID::DeferredBlock(id) =>
-                function_val.get_basic_blocks()
+                self.function_value.get_basic_blocks()
                     .get(id as usize + self.defer_block_offset)
                     .cloned(),
             _ => None
@@ -132,7 +142,7 @@ impl<'a> CodegenValue<'a> {
 }
 
 pub fn bytecode_aot_codegen(
-    bytecode: &ProgramBytecode,
+    bytecode: &ProgramMIR,
     output_path: &str,
     optimization_level: OptimizationLevel,
 ) -> Option<Vec<u8>> {
@@ -214,7 +224,7 @@ pub fn bytecode_aot_codegen(
 }
 
 fn fn_aot_codegen(
-    bytecode: &BytecodeFunction,
+    bytecode: &MIRFunction,
     global_state: &GlobalState
 ) -> Option<()> {
     reset_num();
@@ -227,6 +237,8 @@ fn fn_aot_codegen(
 
     let mut function_state = FunctionState {
         context: global_state.context,
+        function_value: &func_val,
+
         current_function: bytecode.prototype.name.clone(),
         
         defer_block_offset: bytecode.blocks.len(),
@@ -266,14 +278,14 @@ fn fn_aot_codegen(
     Some(())
 }
 
-fn codegen_block<'a>(
+fn codegen_block<'a, 'b>(
     global_state: &GlobalState<'a>,
-    function_state: &mut FunctionState<'a>,
+    function_state: &mut FunctionState<'a, 'b>,
     func_val: &FunctionValue<'a>,
     block_id: BlockID,
     block: &FunctionBlock
 ) {
-    let block_val = function_state.get_block(func_val, block_id)
+    let block_val = function_state.get_block(block_id)
         .unwrap_or_else(|| panic!("Block with ID {block_id} not found in function"));
     function_state.builder.position_at_end(block_val);
 
@@ -303,9 +315,9 @@ fn codegen_block<'a>(
 
 fn cache_type<'a>(
     global_state: &GlobalState<'a>,
-    _type: &BCType
+    _type: &MIRType
 ) -> Option<()> {
-    let BCTypeKind::Struct { fields, .. } = &_type.kind else {
+    let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
         return Some(());
     };
 
@@ -327,7 +339,7 @@ fn cache_type<'a>(
 
 fn cache_prototype<'a>(
     global_state: &mut GlobalState<'a>,
-    prototype: &'a BCFunctionPrototype,
+    prototype: &'a MIRFunctionPrototype,
 ) -> Option<()> {
     let llvm_prototype = bc_llvm_prototype(
         global_state,

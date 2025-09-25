@@ -5,7 +5,7 @@ edition = "2024"
 autotests = false
 
 [dependencies]
-cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-data-mir = { path = "../cx-data-mir" }
 cx-data-pipeline = { path = "../cx-data-pipeline" }
 cx-util = { path = "../cx-util" }
 

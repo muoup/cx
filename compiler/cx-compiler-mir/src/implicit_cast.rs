@@ -1,18 +1,20 @@
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use cx_data_ast::parse::ast::CXCastType;
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
-use cx_data_bytecode::VirtualInstruction::IntToPtrDiff;
-use cx_data_bytecode::{MIRValue, VirtualInstruction};
-use cx_data_bytecode::types::BCTypeKind;
+use cx_data_mir::VirtualInstruction::IntToPtrDiff;
+use cx_data_mir::{MIRValue, VirtualInstruction};
+use cx_data_mir::types::MIRTypeKind;
 
 pub(crate) fn implicit_cast(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     value: MIRValue,
     from_type: &CXType,
     to_type: &CXType,
     cast_type: &CXCastType
 ) -> Option<MIRValue> {
     match cast_type {
+        CXCastType::NOOP => Some(value),
+
         CXCastType::BitCast => {
             builder.add_instruction_cxty(
                 VirtualInstruction::BitCast {
@@ -46,14 +48,14 @@ pub(crate) fn implicit_cast(
                         VirtualInstruction::SExtend {
                             value,
                         },
-                        BCTypeKind::Signed { bytes: 8 }.into()
+                        MIRTypeKind::Signed { bytes: 8 }.into()
                     )?
                 } else {
                     builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
-                        BCTypeKind::Unsigned { bytes: 8 }.into()
+                        MIRTypeKind::Unsigned { bytes: 8 }.into()
                     )?
                 }
             } else {
@@ -83,14 +85,14 @@ pub(crate) fn implicit_cast(
                         VirtualInstruction::SExtend {
                             value,
                         },
-                        BCTypeKind::Signed { bytes: 8 }.into()
+                        MIRTypeKind::Signed { bytes: 8 }.into()
                     )?
                 } else {
                     builder.add_instruction(
                         VirtualInstruction::ZExtend {
                             value,
                         },
-                        BCTypeKind::Unsigned { bytes: 8 }.into()
+                        MIRTypeKind::Unsigned { bytes: 8 }.into()
                     )?
                 }
             } else {

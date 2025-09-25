@@ -253,6 +253,8 @@ impl CXExprKind {
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXCastType {
+    NOOP,
+
     IntegralCast,
     FloatCast,
     IntToFloat,

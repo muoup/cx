@@ -117,7 +117,7 @@ pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
             } else if b1 < b2 {
                 Some(CXCastType::IntegralCast)
             } else {
-                Some(CXCastType::BitCast)
+                Some(CXCastType::NOOP)
             },
 
             (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => Some(CXCastType::IntegralCast),
@@ -133,7 +133,7 @@ pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
             (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
             (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
-                => Some(CXCastType::BitCast),
+                => Some(CXCastType::NOOP),
 
             (CXTypeKind::Structured { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
                 if same_type(inner.as_ref(), from_type) => Some(CXCastType::FauxLoad),

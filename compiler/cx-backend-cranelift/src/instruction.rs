@@ -7,8 +7,8 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
+use cx_data_mir::types::{MIRTypeKind, BCTypeSize};
+use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
 use std::ops::IndexMut;
 use crate::routines::get_function;
 
@@ -115,16 +115,6 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             None
         },
 
-        VirtualInstruction::FunctionParameter { param_index, .. } => {
-            let parameter_ptr = context.fn_params.get(*param_index as usize).cloned().unwrap();
-
-            Some(
-                CodegenValue::Value(
-                    parameter_ptr
-                )
-            )
-        },
-
         VirtualInstruction::GetFunctionAddr { func } => {
             let Some(id) = context.function_ids.get(func.as_str()).cloned() else {
                 panic!("INTERNAL ERROR: Function not found in codegen for GetFunctionAddr: {}", func);
@@ -148,8 +138,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             value
         } => {
             let bytes = match instruction.value_type.kind {
-                BCTypeKind::Signed { bytes, .. } => bytes,
-                BCTypeKind::Unsigned { bytes, .. } => bytes,
+                MIRTypeKind::Signed { bytes, .. } => bytes,
+                MIRTypeKind::Unsigned { bytes, .. } => bytes,
                 _ => panic!("Invalid type for pointer to integer conversion")
             };
 
@@ -498,8 +488,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let val = context.get_value(value).unwrap();
             
             match instruction.value_type.kind {
-                BCTypeKind::Signed   { bytes: 1 } |
-                BCTypeKind::Unsigned { bytes: 1 } => {
+                MIRTypeKind::Signed   { bytes: 1 } |
+                MIRTypeKind::Unsigned { bytes: 1 } => {
                     Some(val)
                 },
 
@@ -598,7 +588,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let cranelift_type = get_cranelift_type(to_type);
             
             match &to_type.kind {
-                BCTypeKind::Float { bytes }
+                MIRTypeKind::Float { bytes }
                     if *bytes == 4 => {
                         Some(
                             CodegenValue::Value(
@@ -606,7 +596,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                             )
                         )
                     },
-                BCTypeKind::Float { bytes }
+                MIRTypeKind::Float { bytes }
                     if *bytes == 8 => {
                         Some(
                             CodegenValue::Value(
@@ -626,9 +616,9 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             let to_cl_type = get_cranelift_type(_type);
 
-            let inst = if matches!(from.kind, BCTypeKind::Signed { .. }) {
+            let inst = if matches!(from.kind, MIRTypeKind::Signed { .. }) {
                 context.builder.ins().fcvt_from_sint(to_cl_type, val)
-            } else if matches!(from.kind, BCTypeKind::Unsigned { .. }) {
+            } else if matches!(from.kind, MIRTypeKind::Unsigned { .. }) {
                 context.builder.ins().fcvt_from_uint(to_cl_type, val)
             } else {
                 panic!("Invalid type for int to float conversion")
@@ -649,15 +639,15 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
             let to_cl_type = get_cranelift_type(_type);
 
-            let BCTypeKind::Float { bytes: float_bytes, .. } = &from.kind else {
+            let MIRTypeKind::Float { bytes: float_bytes, .. } = &from.kind else {
                 panic!("Invalid type for float to int conversion")
             };
 
             let (ival, signed, int_bytes) =
-            if let BCTypeKind::Signed { bytes: int_bytes } = &_type.kind {
+            if let MIRTypeKind::Signed { bytes: int_bytes } = &_type.kind {
                 let ival = context.builder.ins().fcvt_to_sint(to_cl_type, val);
                 (ival, true, int_bytes)
-            } else if let BCTypeKind::Unsigned { bytes: int_bytes } = &_type.kind {
+            } else if let MIRTypeKind::Unsigned { bytes: int_bytes } = &_type.kind {
                 let ival = context.builder.ins().fcvt_to_uint(to_cl_type, val);
                 (ival, false, int_bytes)
             } else {
