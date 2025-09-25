@@ -14,7 +14,7 @@ use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::deconstructor::deconstruct_variable;
 
 #[derive(Debug)]
-pub struct BytecodeBuilder {
+pub struct MIRBuilder {
     functions: Vec<MIRFunction>,
 
     global_variables: Vec<MIRGlobalValue>,
@@ -46,9 +46,9 @@ pub struct DeclarationLifetime {
     pub _type: CXType
 }
 
-impl BytecodeBuilder {
+impl MIRBuilder {
     pub fn new(ast: &TCAST) -> Self {
-        BytecodeBuilder {
+        MIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
 

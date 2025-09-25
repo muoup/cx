@@ -135,16 +135,16 @@ impl Display for VirtualInstruction {
             VirtualInstruction::Temp { value } => {
                 write!(f, "{value}")
             },
-            VirtualInstruction::Allocate { _type, alignment } => {
+            VirtualInstruction::Allocate { _type, .. } => {
                 write!(f, "stackallocate {_type}")
             },
-            VirtualInstruction::Store { value, memory, type_ } => {
+            VirtualInstruction::Store { value, memory, .. } => {
                 write!(f, "{memory} := {value}")
             },
             VirtualInstruction::ZeroMemory { memory, _type } => {
                 write!(f, "{memory} := 0")
             },
-            VirtualInstruction::StructAccess { struct_, struct_type, field_index, field_offset, .. } => {
+            VirtualInstruction::StructAccess { struct_, field_index, .. } => {
                 write!(f, "{struct_}.[{field_index}]")
             },
             VirtualInstruction::BoolExtend { value } => {

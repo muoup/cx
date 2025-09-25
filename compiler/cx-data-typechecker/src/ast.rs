@@ -202,12 +202,7 @@ pub enum TCExprKind {
     },
 
     Break,
-    Continue,
-
-    DeconstructObject {
-        variable_name: CXIdent,
-        variable_type: CXType,
-    }
+    Continue
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

@@ -1,4 +1,4 @@
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_data_ast::parse::ast::CXBinOp;
 use cx_data_mir::types::{MIRType, MIRTypeKind, BCTypeSize};
@@ -6,7 +6,7 @@ use cx_data_mir::{BCFloatBinOp, BCFunctionMap, MIRFunctionPrototype, BCIntBinOp,
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind};
 use cx_data_typechecker::{CXFnData, CXFnMap};
 
-impl BytecodeBuilder {
+impl MIRBuilder {
     pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<MIRType> {
         convert_type(self, cx_type)
     }
@@ -115,7 +115,7 @@ impl BytecodeBuilder {
     }
 }
 
-fn convert_type(builder: &mut BytecodeBuilder, cx_type: &CXType) -> Option<MIRType> {
+fn convert_type(builder: &mut MIRBuilder, cx_type: &CXType) -> Option<MIRType> {
     Some(
         MIRType {
             kind: convert_type_kind(builder, &cx_type.kind)?
@@ -180,7 +180,7 @@ pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
         .collect::<BCFunctionMap>()
 }
 
-pub(crate) fn convert_type_kind(builder: &mut BytecodeBuilder, cx_type_kind: &CXTypeKind) -> Option<MIRTypeKind> {
+pub(crate) fn convert_type_kind(builder: &mut MIRBuilder, cx_type_kind: &CXTypeKind) -> Option<MIRTypeKind> {
     Some(
         match cx_type_kind {
             CXTypeKind::VariableLengthArray { _type, size } => {

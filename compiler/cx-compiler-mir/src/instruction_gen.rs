@@ -7,13 +7,13 @@ use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
 use cx_util::mangling::mangle_deconstructor;
 use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field};
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
 use crate::implicit_cast::implicit_cast;
 
 pub fn generate_instruction(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     expr: &TCExpr
 ) -> Option<MIRValue> {
     match &expr.kind {
@@ -733,20 +733,13 @@ pub fn generate_instruction(
             Some(alloc)
         },
 
-        TCExprKind::DeconstructObject { variable_name, variable_type} => {
-            let var = builder.get_symbol(variable_name.as_str())?;
-            deconstruct_variable(builder, &var, variable_type)?;
-
-            Some(MIRValue::NULL)
-        },
-
         TCExprKind::Taken |
         TCExprKind::Unit => unreachable!("generate_instruction: Expected expression, found {:?}", expr._type.kind),
     }
 }
 
 pub(crate) fn generate_binop(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     lhs: &TCExpr, rhs: &TCExpr,
     return_type: MIRType,
     op: &CXBinOp
@@ -834,7 +827,7 @@ pub(crate) fn generate_binop(
 }
 
 pub(crate) fn generate_algebraic_binop(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     cx_lhs_type: &CXType,
     left_id: MIRValue,
     right_id: MIRValue,
@@ -909,7 +902,7 @@ pub(crate) fn generate_algebraic_binop(
 }
 
 pub(crate) fn implicit_return(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     let last_instruction = builder.last_instruction();
@@ -957,7 +950,7 @@ pub(crate) fn implicit_return(
 }
 
 pub(crate) fn implicit_defer_return(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     if builder.function_defers() {

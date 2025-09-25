@@ -1,4 +1,4 @@
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use cx_data_ast::parse::ast::CXCastType;
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_mir::VirtualInstruction::IntToPtrDiff;
@@ -6,7 +6,7 @@ use cx_data_mir::{MIRValue, VirtualInstruction};
 use cx_data_mir::types::MIRTypeKind;
 
 pub(crate) fn implicit_cast(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     value: MIRValue,
     from_type: &CXType,
     to_type: &CXType,

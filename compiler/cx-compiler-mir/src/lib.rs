@@ -1,4 +1,4 @@
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use crate::global_stmts::{generate_function, generate_global_variable};
 use cx_data_mir::ProgramMIR;
 use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
@@ -16,7 +16,7 @@ mod global_stmts;
 pub type BytecodeResult<T> = Option<T>;
 
 pub fn generate_bytecode(ast: TCAST) -> Option<ProgramMIR> {
-    let mut builder = BytecodeBuilder::new(&ast);
+    let mut builder = MIRBuilder::new(&ast);
 
     for _type in ast.destructors_required.iter() {
         let prototype = deconstructor_prototype(_type)?;

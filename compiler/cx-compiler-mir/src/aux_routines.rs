@@ -5,7 +5,7 @@ use cx_data_mir::types::{MIRType, MIRTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::bytecode_error_log;
 use cx_util::mangling::{mangle_destructor};
-use crate::builder::{BytecodeBuilder, DeclarationLifetime};
+use crate::builder::{MIRBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
 
 pub(crate) struct CXStructAccess {
@@ -23,7 +23,7 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
 }
 
 pub(crate) fn try_access_field(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     ltype: &MIRType,
     left_id: MIRValue,
     field_name: &str,
@@ -54,7 +54,7 @@ pub(crate) fn try_access_field(
 }
 
 pub(crate) fn get_struct_field(
-    builder: &BytecodeBuilder,
+    builder: &MIRBuilder,
     _type: &MIRType,
     name: &str
 ) -> Option<CXStructAccess> {
@@ -81,7 +81,7 @@ pub(crate) fn get_struct_field(
 }
 
 pub(crate) fn get_cx_struct_field_by_index(
-    builder: &BytecodeBuilder,
+    builder: &MIRBuilder,
     _type: &MIRType,
     index: usize
 ) -> Option<CXStructAccess> {
@@ -116,7 +116,7 @@ pub(crate) fn get_cx_struct_field_by_index(
 }
 
 fn variable_requires_nulling(
-    builder: &BytecodeBuilder,
+    builder: &MIRBuilder,
     cx_type: &CXType
 ) -> bool {
     match cx_type.kind {
@@ -128,7 +128,7 @@ fn variable_requires_nulling(
 
 pub(crate) fn allocate_variable(
     name: &str,
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     var_type: &CXType,
 ) -> Option<MIRValue> {
     let bc_type = builder.convert_cx_type(var_type)?;

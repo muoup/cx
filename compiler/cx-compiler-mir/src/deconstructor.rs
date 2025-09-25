@@ -1,4 +1,4 @@
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_mir::types::{MIRType, MIRTypeKind};
 use cx_data_mir::{MIRFunctionPrototype, MIRParameter, BCPtrBinOp, LinkageType, MIRValue, VirtualInstruction};
@@ -27,7 +27,7 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionProto
 }
 
 fn get_deconstructor(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     type_: &CXType
 ) -> Option<String> {
     let Some(type_name) = type_.get_name() else {
@@ -42,7 +42,7 @@ fn get_deconstructor(
     }
 }
 
-pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type: &CXType) -> Option<()> {
+pub fn deconstruct_variable(builder: &mut MIRBuilder, var: &MIRValue, _type: &CXType) -> Option<()> {
     match &_type.kind {
         CXTypeKind::Structured { .. } => {
             if let Some(deconstructor) = get_deconstructor(builder, _type) {
@@ -128,7 +128,7 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
     Some(())
 }
 
-pub fn generate_deconstructor(builder: &mut BytecodeBuilder, _type: &CXType) -> Option<()> {
+pub fn generate_deconstructor(builder: &mut MIRBuilder, _type: &CXType) -> Option<()> {
     let deconstructor_prototype = deconstructor_prototype(_type)?;
 
     builder.new_function(deconstructor_prototype.clone());

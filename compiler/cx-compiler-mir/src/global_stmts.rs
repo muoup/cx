@@ -1,5 +1,5 @@
 use crate::aux_routines::allocate_variable;
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_data_mir::types::{MIRType, MIRTypeKind};
 use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRParameter, LinkageType, VirtualInstruction, MIRValue};
@@ -8,7 +8,7 @@ use cx_data_typechecker::cx_types::CXFunctionPrototype;
 use cx_util::mangling::mangle_destructor;
 
 pub(crate) fn generate_function(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     prototype: &CXFunctionPrototype,
     body: &TCExpr
 ) -> Option<()> {
@@ -30,7 +30,7 @@ pub(crate) fn generate_function(
 }
 
 pub(crate) fn generate_destructor(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     type_name: &str,
     body: &TCExpr
 ) -> Option<()> {
@@ -65,7 +65,7 @@ pub(crate) fn generate_destructor(
 }
 
 fn generate_params(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     prototype: &CXFunctionPrototype,
     bc_prototype: &MIRFunctionPrototype
 ) -> Option<()> {
@@ -117,7 +117,7 @@ fn generate_params(
     Some(())
 }
 
-pub(crate) fn generate_global_variable(builder: &mut BytecodeBuilder, var: &TCGlobalVariable) -> Option<()> {
+pub(crate) fn generate_global_variable(builder: &mut MIRBuilder, var: &TCGlobalVariable) -> Option<()> {
     match var {
         TCGlobalVariable::UnaddressableConstant { .. } => (),
 
