@@ -3,42 +3,28 @@ use cx_data_lexer::punctuator;
 use cx_data_lexer::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
 
-pub(crate) struct Lexer<'a> {
-    source: &'a str,
-
+pub(crate) struct LineLexer<'a> {
     last_consume: usize,
-    iter: CharIter<'a>,
+    iter: &'a mut CharIter<'a>,
 
     pub tokens: Vec<Token>,
 }
 
-impl Lexer<'_> {
-    pub(crate) fn add_token(&mut self, token: Token) {
+pub(crate) fn lex_line(iter: &mut CharIter) -> Option<Vec<Token>> {
+    let mut line_lexer = LineLexer::new(iter);
+    line_lexer.generate_tokens();
+    Some(line_lexer.tokens)
+}
+
+impl LineLexer<'_> {
+    fn add_token(&mut self, token: Token) {
         if !matches!(token.kind, TokenKind::Ignore) {
             self.tokens.push(token);
         }
     }
-}
 
-impl Lexer<'_> {
-    pub fn new(source: &str) -> Lexer {
-        Lexer {
-            source,
-
-            last_consume: 0,
-            iter: CharIter {
-                source,
-                
-                current_iter: 0,
-                line: 1,
-            },
-
-            tokens: Vec::new(),
-        }
-    }
-
-    pub fn generate_tokens(&mut self) {
-        while self.iter.has_next() {
+    pub(crate) fn generate_tokens(&mut self) {
+        while self.iter.has_next() && self.iter.peek() != Some('\n') {
             if self.last_consume == self.iter.current_iter {
                 if let Some(token) = self.pre_ident_lex() {
                     self.tokens.push(token);
@@ -66,6 +52,16 @@ impl Lexer<'_> {
                 self.iter.next();
             }
         }
+
+        self.consume(self.iter.current_iter);
+    }
+
+    fn new<'a>(iter: &'a mut CharIter<'a>) -> LineLexer<'a> {
+        LineLexer {
+            iter,
+            last_consume: iter.current_iter,
+            tokens: Vec::new(),
+        }
     }
 
     fn consume(&mut self, up_to: usize) {
@@ -73,7 +69,7 @@ impl Lexer<'_> {
             return;
         }
 
-        let str = self.source[self.last_consume.. up_to].to_string();
+        let str = self.iter.source[self.last_consume.. up_to].to_string();
         self.last_consume = self.iter.current_iter;
 
         if str.chars().any(|c| !c.is_whitespace()) {

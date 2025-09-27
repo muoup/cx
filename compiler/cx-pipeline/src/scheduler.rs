@@ -15,8 +15,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use fs2::FileExt;
 use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
-use cx_compiler_lexer::lex::lex;
-use cx_compiler_lexer::preprocessor::preprocess;
+use cx_compiler_lexer;
 use cx_compiler_typechecker_new::environment::TCEnvironment;
 use cx_compiler_typechecker_new::typecheck;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
@@ -212,8 +211,7 @@ pub(crate) fn perform_job(
             
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let preprocess = preprocess(file_contents.as_str());
-            let tokens = lex(preprocess.as_str());
+            let tokens = cx_compiler_lexer::lex(file_contents.as_str());
 
             let mut output = preparse(
                 TokenIter {
