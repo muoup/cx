@@ -60,7 +60,7 @@ impl<'a> Lexer<'a> {
                 _ => ()
             }
 
-            return Some(generate_lexable_slice(self));
+            return generate_lexable_slice(self);
         }
     }
 

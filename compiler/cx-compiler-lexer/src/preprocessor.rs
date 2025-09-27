@@ -1,12 +1,33 @@
 use cx_util::char_iter::CharIter;
 use crate::unified_lexer::Lexer;
 
-pub(crate) fn generate_lexable_slice<'a>(lexer: &'a mut Lexer<'a>) -> CharIter<'a> {
-    todo!("\
-        Generates a sub iterator which contains lexable text (i.e. no directive or comment in slice),\
-        moves lexer's iterator to the end of this slice, and returns that sub iterator which contains\
-        the current state of the lexer iterator with a shortened slice to what it should lex.\
-    ")
+pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIter<'a>> {
+    lexer.char_iter.skip_whitespace();
+
+    // find whichever comes first: end of line or start of comment
+    let start = lexer.char_iter.current_iter;
+
+    while let Some(c) = lexer.char_iter.next() {
+        match c {
+            '\n' => break,
+            '/' => {
+                if lexer.char_iter.peek() == Some('/') || lexer.char_iter.peek() == Some('*') {
+                    lexer.char_iter.back();
+                    break;
+                }
+            }
+            _ => ()
+        }
+    }
+
+    if !lexer.char_iter.has_next() { return None }
+
+    Some(
+        CharIter::sub_iter(
+            &lexer.char_iter, start,
+            &lexer.source[0 ..= lexer.char_iter.current_iter]
+        )
+    )
 }
 
 // returns true if a comment was handled, false otherwise
