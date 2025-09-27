@@ -530,8 +530,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
             },
             CXExprKind::SizeOf { expr } => {
-                let mut tc_expr = typecheck_expr(env, expr)?;
-                coerce_value(&mut tc_expr);
+                let tc_expr = typecheck_expr(env, expr)?;
 
                 TCExpr {
                     _type: CXType::from(CXTypeKind::Integer { signed: true, bytes: 8 }),

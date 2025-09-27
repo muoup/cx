@@ -90,7 +90,7 @@ impl Display for BlockInstruction {
 impl Display for BCGlobalType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            BCGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s),
+            BCGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s.replace('\n', "\\n")),
             BCGlobalType::Variable { _type, initial_value } => {
                 if let Some(initial_value) = initial_value {
                     write!(f, "variable {} = {}", _type, initial_value)

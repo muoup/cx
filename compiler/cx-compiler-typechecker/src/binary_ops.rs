@@ -204,12 +204,12 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
 
     // Standard argument coercion
     for (arg, param) in tc_args.iter_mut().zip(prototype.params.iter()) {
-        coerce_value(arg);
         implicit_cast(arg, &param._type)?;
     }
 
     // Varargs argument coercion
     for arg in tc_args.iter_mut().skip(canon_params) {
+        // All varargs arguments must be lvalues, coerce_value is necessary here
         coerce_value(arg);
 
         match &arg._type.kind {
