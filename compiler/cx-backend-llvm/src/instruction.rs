@@ -2,7 +2,7 @@ use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::attr_noundef;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_data_mir::types::{MIRTypeKind, BCTypeSize};
+use cx_data_mir::types::{MIRTypeKind, MIRTypeSize};
 use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
 use inkwell::types::{BasicType, IntType};
@@ -39,7 +39,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             VirtualInstruction::Allocate { _type, alignment } => {
                 let inst = match _type.size() {
-                    BCTypeSize::Fixed(_) => {
+                    MIRTypeSize::Fixed(_) => {
                         function_state.builder
                             .build_alloca(
                                 any_to_basic_type(
@@ -50,7 +50,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                             .unwrap()
                             .as_any_value_enum()
                     },
-                    BCTypeSize::Variable(size) => {
+                    MIRTypeSize::Variable(size) => {
                         let size = function_state
                             .get_value(&size)?
                             .get_value()
@@ -287,7 +287,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 let zero = global_state.context.i8_type().const_zero();
                 
                 match _type.size() {
-                    BCTypeSize::Fixed(size) => {
+                    MIRTypeSize::Fixed(size) => {
                         let size_value = global_state.context.i32_type()
                             .const_int(size as u64, false);
                         
@@ -298,7 +298,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                             )
                             .unwrap();
                     },
-                    BCTypeSize::Variable(size) => {
+                    MIRTypeSize::Variable(size) => {
                         let size_value = function_state
                             .get_value(&size)?
                             .get_value()

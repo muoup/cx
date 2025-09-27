@@ -38,16 +38,16 @@ pub enum MIRTypeKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BCTypeSize {
+pub enum MIRTypeSize {
     Fixed(usize),
     Variable(MIRValue),
 }
 
-impl BCTypeSize {
+impl MIRTypeSize {
     pub fn assert_fixed(self, msg: &str) -> usize {
         match self {
-            BCTypeSize::Fixed(size) => size,
-            BCTypeSize::Variable(_) => panic!("{msg}: expected fixed size, got variable"),
+            MIRTypeSize::Fixed(size) => size,
+            MIRTypeSize::Variable(_) => panic!("{msg}: expected fixed size, got variable"),
         }
     }
 }
@@ -59,10 +59,10 @@ impl From<MIRTypeKind> for MIRType {
 }
 
 impl MIRType {
-    pub fn size(&self) -> BCTypeSize {
+    pub fn size(&self) -> MIRTypeSize {
         match &self.kind {
-            MIRTypeKind::VariableSized { size, .. } => BCTypeSize::Variable(*size.clone()),
-            _ => BCTypeSize::Fixed(self.fixed_size()),
+            MIRTypeKind::VariableSized { size, .. } => MIRTypeSize::Variable(*size.clone()),
+            _ => MIRTypeSize::Fixed(self.fixed_size()),
         }
     }
     

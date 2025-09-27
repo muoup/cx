@@ -559,17 +559,17 @@ impl MIRBuilder {
         )
     }
 
-    pub fn get_tag_addr(&mut self, val: &MIRValue, _type: &BCType) -> Option<MIRValue> {
+    pub fn get_tag_addr(&mut self, val: &MIRValue, _type: &MIRType) -> Option<MIRValue> {
         self.struct_access(val.clone(), _type, 1)
     }
 
-    pub fn get_tag(&mut self, val: &MIRValue, _type: &BCType) -> Option<MIRValue> {
+    pub fn get_tag(&mut self, val: &MIRValue, _type: &MIRType) -> Option<MIRValue> {
         let tag_field = self.get_tag_addr(val, _type)?;
 
-        self.load_value(tag_field, BCType::from(BCTypeKind::Unsigned { bytes: 4 }) )
+        self.load_value(tag_field, MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }) )
     }
 
-    pub fn set_tag(&mut self, val: &MIRValue, _type: &BCType, tag: u32) -> Option<MIRValue> {
+    pub fn set_tag(&mut self, val: &MIRValue, _type: &MIRType, tag: u32) -> Option<MIRValue> {
         let tag_val = self.int_const(tag as i32, 4, true);
         let tag_field = self.get_tag_addr(val, _type)?;
 
@@ -578,13 +578,13 @@ impl MIRBuilder {
                 memory: tag_field,
                 value: tag_val,
 
-                type_: BCType::from(BCTypeKind::Unsigned { bytes: 4 })
+                type_: MIRType::from(MIRTypeKind::Unsigned { bytes: 4 })
             },
-            BCType::unit()
+            MIRType::unit()
         )
     }
 
-    pub fn load_value(&mut self, ptr: MIRValue, _type: BCType) -> Option<MIRValue> {
+    pub fn load_value(&mut self, ptr: MIRValue, _type: MIRType) -> Option<MIRValue> {
         if _type.is_structure() { return Some(ptr); }
 
         Some(MIRValue::LoadOf(_type, Box::new(ptr)))

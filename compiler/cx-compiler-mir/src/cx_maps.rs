@@ -1,8 +1,8 @@
 use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_data_ast::parse::ast::CXBinOp;
-use cx_data_mir::types::{MIRType, MIRTypeKind, BCTypeSize};
-use cx_data_mir::{BCFloatBinOp, BCFunctionMap, MIRFunctionPrototype, BCIntBinOp, MIRParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_data_mir::{BCFloatBinOp, BCFunctionMap, MIRFunctionPrototype, MIRIntBinOp, MIRParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind};
 use cx_data_typechecker::{CXFnData, CXFnMap};
 
@@ -44,16 +44,16 @@ impl MIRBuilder {
     pub(crate) fn cx_u_binop(
         &self,
         op: &CXBinOp
-    ) -> Option<BCIntBinOp> {
+    ) -> Option<MIRIntBinOp> {
         Some(
             match op {
-                CXBinOp::Divide         => BCIntBinOp::UDIV,
-                CXBinOp::Modulus        => BCIntBinOp::UREM,
+                CXBinOp::Divide         => MIRIntBinOp::UDIV,
+                CXBinOp::Modulus        => MIRIntBinOp::UREM,
                 
-                CXBinOp::Less           => BCIntBinOp::ULT,
-                CXBinOp::Greater        => BCIntBinOp::UGT,
-                CXBinOp::LessEqual      => BCIntBinOp::ULE,
-                CXBinOp::GreaterEqual   => BCIntBinOp::UGE,
+                CXBinOp::Less           => MIRIntBinOp::ULT,
+                CXBinOp::Greater        => MIRIntBinOp::UGT,
+                CXBinOp::LessEqual      => MIRIntBinOp::ULE,
+                CXBinOp::GreaterEqual   => MIRIntBinOp::UGE,
                 
                 _ => self.cx_i_binop(op)?
             }
@@ -63,31 +63,31 @@ impl MIRBuilder {
     pub(crate) fn cx_i_binop(
         &self,
         op: &CXBinOp
-    ) -> Option<BCIntBinOp> {
+    ) -> Option<MIRIntBinOp> {
         Some(
             match op {
-                CXBinOp::Add            => BCIntBinOp::ADD,
-                CXBinOp::Subtract       => BCIntBinOp::SUB,
-                CXBinOp::Multiply       => BCIntBinOp::MUL,
-                CXBinOp::Divide         => BCIntBinOp::IDIV,
-                CXBinOp::Modulus        => BCIntBinOp::IREM,
+                CXBinOp::Add            => MIRIntBinOp::ADD,
+                CXBinOp::Subtract       => MIRIntBinOp::SUB,
+                CXBinOp::Multiply       => MIRIntBinOp::MUL,
+                CXBinOp::Divide         => MIRIntBinOp::IDIV,
+                CXBinOp::Modulus        => MIRIntBinOp::IREM,
                 
-                CXBinOp::BitAnd         => BCIntBinOp::BAND,
-                CXBinOp::BitOr          => BCIntBinOp::BOR,
-                CXBinOp::BitXor         => BCIntBinOp::BXOR,
+                CXBinOp::BitAnd         => MIRIntBinOp::BAND,
+                CXBinOp::BitOr          => MIRIntBinOp::BOR,
+                CXBinOp::BitXor         => MIRIntBinOp::BXOR,
                 
-                CXBinOp::LShift         => BCIntBinOp::SHL,
-                CXBinOp::RShift         => BCIntBinOp::ASHR,
+                CXBinOp::LShift         => MIRIntBinOp::SHL,
+                CXBinOp::RShift         => MIRIntBinOp::ASHR,
                 
-                CXBinOp::LAnd           => BCIntBinOp::LAND,
-                CXBinOp::LOr            => BCIntBinOp::LOR,
+                CXBinOp::LAnd           => MIRIntBinOp::LAND,
+                CXBinOp::LOr            => MIRIntBinOp::LOR,
                 
-                CXBinOp::Less           => BCIntBinOp::ILT,
-                CXBinOp::Greater        => BCIntBinOp::IGT,
-                CXBinOp::LessEqual      => BCIntBinOp::ILE,
-                CXBinOp::GreaterEqual   => BCIntBinOp::IGE,
-                CXBinOp::Equal          => BCIntBinOp::EQ,
-                CXBinOp::NotEqual       => BCIntBinOp::NE,
+                CXBinOp::Less           => MIRIntBinOp::ILT,
+                CXBinOp::Greater        => MIRIntBinOp::IGT,
+                CXBinOp::LessEqual      => MIRIntBinOp::ILE,
+                CXBinOp::GreaterEqual   => MIRIntBinOp::IGE,
+                CXBinOp::Equal          => MIRIntBinOp::EQ,
+                CXBinOp::NotEqual       => MIRIntBinOp::NE,
 
                 _ => return None,
             }
@@ -127,12 +127,12 @@ fn convert_fixed_type(cx_type: &CXType) -> Option<MIRType> {
     )
 }
 
-fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
+fn convert_argument_type(cx_type: &CXType) -> Option<MIRType> {
     let bc_type = convert_fixed_type(cx_type)?;
 
     match &bc_type.kind {
-        BCTypeKind::Struct { .. } | BCTypeKind::Union { .. }
-            => Some(BCType::default_pointer()),
+        MIRTypeKind::Struct { .. } | MIRTypeKind::Union { .. }
+            => Some(MIRType::default_pointer()),
 
         _ => Some(bc_type)
     }
@@ -185,15 +185,15 @@ pub(crate) fn convert_type_kind(builder: &mut MIRBuilder, cx_type_kind: &CXTypeK
                 let size_id = generate_instruction(builder, size.as_ref())?;
                 
                 let type_size = match bc_type.size() {
-                    BCTypeSize::Fixed(size) => builder.int_const(size as i32, 8, false),
-                    BCTypeSize::Variable(id) => id
+                    MIRTypeSize::Fixed(size) => builder.int_const(size as i32, 8, false),
+                    MIRTypeSize::Variable(id) => id
                 };
                 
                 let total_size = builder.add_instruction(
                     VirtualInstruction::IntegerBinOp {
                         left: size_id,
                         right: type_size,
-                        op: BCIntBinOp::MUL,
+                        op: MIRIntBinOp::MUL,
                     },
                     MIRTypeKind::Unsigned { bytes: 8 }.into()
                 )?;
@@ -240,16 +240,16 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<MIRTy
                 MIRTypeKind::Pointer { nullable: true, dereferenceable: 0 },
 
             CXTypeKind::TaggedUnion { name, variants } =>
-                BCTypeKind::Struct {
+                MIRTypeKind::Struct {
                     name: name.as_string(),
                     fields: vec![
-                        ("data".to_string(), BCTypeKind::Union {
+                        ("data".to_string(), MIRTypeKind::Union {
                             name: String::new(),
                             fields: variants.iter()
                                 .map(|(name, _type)| Some((name.clone(), convert_fixed_type(_type)?)))
                                 .collect::<Option<Vec<_>>>()?
                         }.into()),
-                        ("tag".to_string(), BCTypeKind::Unsigned { bytes: 4 }.into())
+                        ("tag".to_string(), MIRTypeKind::Unsigned { bytes: 4 }.into())
                     ]
                 },
 
@@ -260,7 +260,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<MIRTy
                 },
             
             CXTypeKind::MemoryReference(..) =>
-                BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
+                MIRTypeKind::Pointer { nullable: false, dereferenceable: 0 },
 
             CXTypeKind::Structured { fields, name, .. } =>
                 MIRTypeKind::Struct {
@@ -273,7 +273,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<MIRTy
                         .collect::<Option<Vec<_>>>()?
                 },
             CXTypeKind::Union { variants: fields, name } =>
-                BCTypeKind::Union {
+                MIRTypeKind::Union {
                     name: match name {
                         Some(name) => name.as_string(),
                         None => "".to_string()

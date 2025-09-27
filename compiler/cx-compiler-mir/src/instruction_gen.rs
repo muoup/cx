@@ -1,12 +1,12 @@
 use std::any::type_name_of_val;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
-use cx_data_mir::types::{MIRType, MIRTypeKind, BCTypeSize};
-use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, BCIntUnOp, MIRParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, BCIntUnOp, MIRParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction, MIRIntBinOp};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
 use cx_util::mangling::mangle_deconstructor;
-use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field};
+use crate::aux_routines::{allocate_variable, assign_value, get_cx_struct_field_by_index, get_struct_field, try_access_field};
 use crate::builder::MIRBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
@@ -149,7 +149,7 @@ pub fn generate_instruction(
                     alignment: union_bc_type.alignment(),
                     _type: union_bc_type.clone(),
                 },
-                BCType::default_pointer()
+                MIRType::default_pointer()
             )?;
 
             if !input._type.is_unit() {
@@ -595,14 +595,14 @@ pub fn generate_instruction(
                         .collect(),
                     default: default_block.unwrap_or(merge_block)
                 },
-                BCType::unit()
+                MIRType::unit()
             );
 
             for (_, block) in blocks.iter() {
                 builder.set_current_block(*block);
                 builder.add_instruction(
                     VirtualInstruction::Jump { target: merge_block },
-                    BCType::unit()
+                    MIRType::unit()
                 );
             }
 
@@ -610,7 +610,7 @@ pub fn generate_instruction(
                 builder.set_current_block(default_block);
                 builder.add_instruction(
                     VirtualInstruction::Jump { target: merge_block },
-                    BCType::unit()
+                    MIRType::unit()
                 );
             }
 
@@ -623,15 +623,15 @@ pub fn generate_instruction(
             let union_bc_type = builder.convert_cx_type(union_type)?;
 
             let tag_value = builder.get_tag(&expr_value, &union_bc_type)?;
-            let tag_const = builder.match_int_const(*variant_tag as i32, &BCType::from(BCTypeKind::Unsigned { bytes: 4 }));
+            let tag_const = builder.match_int_const(*variant_tag as i32, &MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }));
 
             let is_match = builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
                     left: tag_value,
                     right: tag_const,
-                    op: BCIntBinOp::EQ
+                    op: MIRIntBinOp::EQ
                 },
-                BCType::from(BCTypeKind::Bool)
+                MIRType::from(MIRTypeKind::Bool)
             )?;
 
             builder.insert_symbol(
@@ -715,16 +715,16 @@ pub fn generate_instruction(
                 .size();
             
             match type_size {
-                BCTypeSize::Fixed(size) 
+                MIRTypeSize::Fixed(size)
                     => Some(builder.int_const(size as i32, 8, true)),
-                BCTypeSize::Variable(size_expr) 
+                MIRTypeSize::Variable(size_expr)
                     => Some(size_expr)
             }
         },
 
         TCExprKind::Move { operand } => {
             let memory = generate_instruction(builder, operand.as_ref())?;
-            let loaded_value = builder.load_value(memory.clone(), BCType::default_pointer())?;
+            let loaded_value = builder.load_value(memory.clone(), MIRType::default_pointer())?;
 
             let value = builder.add_instruction(
                 VirtualInstruction::Temp {

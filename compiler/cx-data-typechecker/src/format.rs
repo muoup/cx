@@ -235,9 +235,6 @@ impl<'a> Display for TCExprFormatter<'a> {
             }
             TCExprKind::Break => writeln!(f, "Break {}", self.expr._type)?,
             TCExprKind::Continue => writeln!(f, "Continue {}", self.expr._type)?,
-            TCExprKind::DeconstructObject { variable_name, variable_type } => {
-                writeln!(f, "DeconstructObject {} {} {}", variable_name, variable_type, self.expr._type)?;
-            }
         }
 
         Ok(())

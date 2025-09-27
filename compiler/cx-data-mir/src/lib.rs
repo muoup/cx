@@ -172,7 +172,7 @@ pub enum VirtualInstruction {
     },
 
     IntegerBinOp {
-        op: BCIntBinOp,
+        op: MIRIntBinOp,
         left: MIRValue,
         right: MIRValue
     },
@@ -276,7 +276,7 @@ pub enum BCPtrBinOp {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum BCIntBinOp {
+pub enum MIRIntBinOp {
     ADD, SUB,
     MUL, IDIV, UDIV, IREM, UREM,
 

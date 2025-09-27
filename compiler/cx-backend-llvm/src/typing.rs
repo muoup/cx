@@ -97,7 +97,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<
                     .map(|s| s.as_any_type_enum());
             }
 
-            BCTypeKind::Union { .. } => {
+            MIRTypeKind::Union { .. } => {
                 let _type_size = _type.fixed_size();
                 let array_type = context.i8_type().array_type(_type_size as u32);
 

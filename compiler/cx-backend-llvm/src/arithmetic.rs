@@ -1,5 +1,5 @@
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
-use cx_data_mir::{BCIntBinOp, BCPtrBinOp};
+use cx_data_mir::{MIRIntBinOp, BCPtrBinOp};
 use cx_data_mir::types::MIRType;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use crate::typing::{any_to_basic_type, bc_llvm_type};
@@ -108,51 +108,51 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
 pub(crate) fn generate_int_binop<'a, 'b>(
     _: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    left_value: IntValue<'a>, right_value: IntValue<'a>, 
-    op: BCIntBinOp, signed: bool
+    left_value: IntValue<'a>, right_value: IntValue<'a>,
+    op: MIRIntBinOp, signed: bool
 ) -> Option<CodegenValue<'a>> {
     let inst_return = match op {
-        BCIntBinOp::ADD if signed => function_state.builder
+        MIRIntBinOp::ADD if signed => function_state.builder
             .build_int_nsw_add(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::ADD => function_state.builder
+        MIRIntBinOp::ADD => function_state.builder
             .build_int_add(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::SUB if signed => function_state.builder
+        MIRIntBinOp::SUB if signed => function_state.builder
             .build_int_nsw_sub(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::SUB => function_state.builder
+        MIRIntBinOp::SUB => function_state.builder
             .build_int_sub(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::MUL if signed => function_state.builder
+        MIRIntBinOp::MUL if signed => function_state.builder
             .build_int_nsw_mul(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::MUL => function_state.builder
+        MIRIntBinOp::MUL => function_state.builder
             .build_int_mul(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::IDIV => function_state.builder
+        MIRIntBinOp::IDIV => function_state.builder
             .build_int_signed_div(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::UDIV => function_state.builder
+        MIRIntBinOp::UDIV => function_state.builder
             .build_int_unsigned_div(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::IREM => function_state.builder
+        MIRIntBinOp::IREM => function_state.builder
             .build_int_signed_rem(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::UREM => function_state.builder
+        MIRIntBinOp::UREM => function_state.builder
             .build_int_unsigned_rem(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::IGT => function_state.builder
+        MIRIntBinOp::IGT => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::SGT,
                 left_value,
@@ -161,7 +161,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::UGT => function_state.builder
+        MIRIntBinOp::UGT => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::UGT,
                 left_value,
@@ -170,7 +170,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::IGE => function_state.builder
+        MIRIntBinOp::IGE => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::SGE,
                 left_value,
@@ -179,7 +179,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::UGE => function_state.builder
+        MIRIntBinOp::UGE => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::UGE,
                 left_value,
@@ -188,7 +188,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::ILT => function_state.builder
+        MIRIntBinOp::ILT => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::SLT,
                 left_value,
@@ -197,7 +197,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::ULT => function_state.builder
+        MIRIntBinOp::ULT => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::ULT,
                 left_value,
@@ -206,7 +206,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::ILE => function_state.builder
+        MIRIntBinOp::ILE => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::SLE,
                 left_value,
@@ -216,7 +216,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             .ok()?
             .as_any_value_enum(),
 
-        BCIntBinOp::ASHR => function_state.builder
+        MIRIntBinOp::ASHR => function_state.builder
             .build_right_shift(
                 left_value,
                 right_value,
@@ -225,7 +225,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::LSHR => function_state.builder
+        MIRIntBinOp::LSHR => function_state.builder
             .build_right_shift(
                 left_value,
                 right_value,
@@ -235,7 +235,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             .ok()?
             .as_any_value_enum(),
 
-        BCIntBinOp::SHL => function_state.builder
+        MIRIntBinOp::SHL => function_state.builder
             .build_left_shift(
                 left_value,
                 right_value,
@@ -244,19 +244,19 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             .ok()?
             .as_any_value_enum(),
 
-        BCIntBinOp::BAND => function_state.builder
+        MIRIntBinOp::BAND => function_state.builder
             .build_and(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::BOR => function_state.builder
+        MIRIntBinOp::BOR => function_state.builder
             .build_or(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::BXOR => function_state.builder
+        MIRIntBinOp::BXOR => function_state.builder
             .build_xor(left_value, right_value, crate::instruction::inst_num().as_str())
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::LAND => function_state.builder
+        MIRIntBinOp::LAND => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::NE,
                 left_value,
@@ -265,7 +265,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::LOR => function_state.builder
+        MIRIntBinOp::LOR => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::NE,
                 left_value,
@@ -274,7 +274,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::EQ => function_state.builder
+        MIRIntBinOp::EQ => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::EQ,
                 left_value,
@@ -283,7 +283,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::NE => function_state.builder
+        MIRIntBinOp::NE => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::NE,
                 left_value,
@@ -292,7 +292,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::ULE => function_state.builder
+        MIRIntBinOp::ULE => function_state.builder
             .build_int_compare(
                 inkwell::IntPredicate::ULE,
                 left_value,

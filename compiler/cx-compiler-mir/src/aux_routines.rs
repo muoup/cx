@@ -163,7 +163,7 @@ pub(crate) fn allocate_variable(
     Some(memory)
 }
 
-pub(crate) fn assign_value(builder: &mut BytecodeBuilder, target: MIRValue, source: MIRValue, _type: &CXType, additional_op: Option<&CXBinOp>)
+pub(crate) fn assign_value(builder: &mut MIRBuilder, target: MIRValue, source: MIRValue, _type: &CXType, additional_op: Option<&CXBinOp>)
     -> BytecodeResult<MIRValue> {
 
     if additional_op.is_some() { todo!("compound assignment") }
@@ -176,6 +176,6 @@ pub(crate) fn assign_value(builder: &mut BytecodeBuilder, target: MIRValue, sour
             value: source,
             type_: inner_type,
         },
-        BCType::unit()
+        MIRType::unit()
     )
 }
