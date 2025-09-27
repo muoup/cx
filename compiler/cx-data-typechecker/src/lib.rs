@@ -2,7 +2,7 @@ pub mod ast;
 pub mod cx_types;
 pub mod intrinsic_types;
 
-mod format;
+pub mod format;
 
 use std::collections::{HashMap, HashSet};
 use speedy::{Readable, Writable};

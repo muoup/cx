@@ -2,10 +2,10 @@ use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::attr_noundef;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_data_mir::types::{MIRTypeKind, BCTypeSize};
+use cx_data_mir::types::{MIRTypeKind, MIRTypeSize};
 use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
-use inkwell::types::BasicType;
+use inkwell::types::{BasicType, IntType};
 use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
@@ -39,7 +39,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             VirtualInstruction::Allocate { _type, alignment } => {
                 let inst = match _type.size() {
-                    BCTypeSize::Fixed(_) => {
+                    MIRTypeSize::Fixed(_) => {
                         function_state.builder
                             .build_alloca(
                                 any_to_basic_type(
@@ -50,7 +50,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                             .unwrap()
                             .as_any_value_enum()
                     },
-                    BCTypeSize::Variable(size) => {
+                    MIRTypeSize::Variable(size) => {
                         let size = function_state
                             .get_value(&size)?
                             .get_value()
@@ -248,12 +248,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     .get_value(value)
                     .unwrap()
                     .get_value();
-                let any_type = bc_llvm_type(global_state.context, type_).unwrap();
-
                 let basic_val = any_to_basic_val(any_value)
                     .unwrap_or_else(|| panic!("Failed to convert value {any_value:?} to basic value"));
-                let basic_type = any_to_basic_type(any_type).unwrap();
-                
+
                 let memory_val = function_state
                     .get_value(memory)?
                     .get_value()
@@ -267,8 +264,8 @@ pub(crate) fn generate_instruction<'a, 'b>(
                             1,
                             basic_val.into_pointer_value(),
                             1,
-                            basic_type.size_of()
-                                .expect("Failed to get size of type")
+                            global_state.context.i64_type()
+                                .const_int(type_.fixed_size() as u64, false)
                         )
                         .unwrap();
                 } else {
@@ -290,7 +287,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 let zero = global_state.context.i8_type().const_zero();
                 
                 match _type.size() {
-                    BCTypeSize::Fixed(size) => {
+                    MIRTypeSize::Fixed(size) => {
                         let size_value = global_state.context.i32_type()
                             .const_int(size as u64, false);
                         
@@ -301,7 +298,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                             )
                             .unwrap();
                     },
-                    BCTypeSize::Variable(size) => {
+                    MIRTypeSize::Variable(size) => {
                         let size_value = function_state
                             .get_value(&size)?
                             .get_value()

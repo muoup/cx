@@ -1,0 +1,56 @@
+#include <stdlib.h>
+#include <stdio.h>
+
+union class Output {
+    integer :: int,
+    fp      :: double,
+    string  :: const char*,
+    data    :: struct { int a; double b; char c; },
+    error   :: void
+};
+
+Output generate_output(int i) {
+    switch (i) {
+        case 0: return Output::integer(42);
+        case 1: return Output::fp(3.14);
+        case 2: return Output::string("Hello, World!");
+        case 3: return Output::data({ 1, 2.0, 'c' });
+        default: break;
+    }
+
+    return Output::error();
+}
+
+void print_output(Output out) {
+    match (out) {
+        Output::integer(i) => printf("Integer: %d\n", i);
+        Output::fp(d) => printf("Float: %f\n", d);
+        Output::string(s) => printf("String: %s\n", s);
+        Output::data(data) => printf("Data: a=%d, b=%f, c=%c\n", data.a, data.b, data.c);
+        default => printf("Unknown type\n");
+    }
+}
+
+int main() {
+    Output out1 = generate_output(0);
+    Output out2 = generate_output(1);
+    Output out3 = generate_output(2);
+    Output out4 = generate_output(3);
+
+    if (out3 is Output::string(s)) {
+        printf("Extracted string: %s\n", s);
+    } else {
+        printf("Not a string\n");
+    }
+
+    if (out2 is Output::string(s)) {
+        printf("Extracted string: %s\n", s);
+    } else {
+        printf("Not a string\n");
+    }
+
+    print_output(out1);
+    print_output(out2);
+    print_output(out3);
+    print_output(out4);
+}

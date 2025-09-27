@@ -7,8 +7,8 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_data_mir::types::{MIRTypeKind, BCTypeSize};
-use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
+use cx_data_mir::types::{MIRTypeKind, MIRTypeSize};
+use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, MIRIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
 use std::ops::IndexMut;
 use crate::routines::get_function;
 
@@ -21,7 +21,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             _type, alignment
         } => {
             let slot = match _type.size() {
-                BCTypeSize::Fixed(size) => 
+                MIRTypeSize::Fixed(size) =>
                     context.builder.create_sized_stack_slot(
                         StackSlotData::new(
                             StackSlotKind::ExplicitSlot,
@@ -29,7 +29,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                             *alignment
                         )
                     ),
-                BCTypeSize::Variable(_) =>
+                MIRTypeSize::Variable(_) =>
                     panic!("Cranelift does not support variable sized stack slots, use LLVM instead")
             };
 
@@ -209,49 +209,49 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
             let right = context.get_value(right).unwrap().as_value();
 
             let inst = match op {
-                BCIntBinOp::ADD             => context.builder.ins().iadd(left, right),
-                BCIntBinOp::SUB             => context.builder.ins().isub(left, right),
-                BCIntBinOp::MUL             => context.builder.ins().imul(left, right),
-                BCIntBinOp::IDIV            => context.builder.ins().sdiv(left, right),
-                BCIntBinOp::IREM            => context.builder.ins().srem(left, right),
+                MIRIntBinOp::ADD             => context.builder.ins().iadd(left, right),
+                MIRIntBinOp::SUB             => context.builder.ins().isub(left, right),
+                MIRIntBinOp::MUL             => context.builder.ins().imul(left, right),
+                MIRIntBinOp::IDIV            => context.builder.ins().sdiv(left, right),
+                MIRIntBinOp::IREM            => context.builder.ins().srem(left, right),
                 
-                BCIntBinOp::UDIV            => context.builder.ins().udiv(left, right),
-                BCIntBinOp::UREM            => context.builder.ins().urem(left, right),
+                MIRIntBinOp::UDIV            => context.builder.ins().udiv(left, right),
+                MIRIntBinOp::UREM            => context.builder.ins().urem(left, right),
                 
-                BCIntBinOp::SHL             => context.builder.ins().ishl(left, right),
-                BCIntBinOp::ASHR            => context.builder.ins().sshr(left, right),
-                BCIntBinOp::LSHR            => context.builder.ins().ushr(left, right),
+                MIRIntBinOp::SHL             => context.builder.ins().ishl(left, right),
+                MIRIntBinOp::ASHR            => context.builder.ins().sshr(left, right),
+                MIRIntBinOp::LSHR            => context.builder.ins().ushr(left, right),
                 
-                BCIntBinOp::BAND            => context.builder.ins().band(left, right),
-                BCIntBinOp::BOR             => context.builder.ins().bor(left, right),
-                BCIntBinOp::BXOR            => context.builder.ins().bxor(left, right),
+                MIRIntBinOp::BAND            => context.builder.ins().band(left, right),
+                MIRIntBinOp::BOR             => context.builder.ins().bor(left, right),
+                MIRIntBinOp::BXOR            => context.builder.ins().bxor(left, right),
                 
-                BCIntBinOp::LAND            => {
+                MIRIntBinOp::LAND            => {
                     let left = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, left, 0);
                     let right = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, right, 0);
 
                     context.builder.ins().band(left, right)
                 },
                 
-                BCIntBinOp::LOR             => {
+                MIRIntBinOp::LOR             => {
                     let left = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, left, 0);
                     let right = context.builder.ins().icmp_imm(ir::condcodes::IntCC::Equal, right, 0);
 
                     context.builder.ins().bor(left, right)
                 },
                 
-                BCIntBinOp::EQ              => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
-                BCIntBinOp::NE              => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
+                MIRIntBinOp::EQ              => context.builder.ins().icmp(ir::condcodes::IntCC::Equal, left, right),
+                MIRIntBinOp::NE              => context.builder.ins().icmp(ir::condcodes::IntCC::NotEqual, left, right),
                 
-                BCIntBinOp::ILT             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
-                BCIntBinOp::IGT             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
-                BCIntBinOp::ILE             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
-                BCIntBinOp::IGE             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
+                MIRIntBinOp::ILT             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThan, left, right),
+                MIRIntBinOp::IGT             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right),
+                MIRIntBinOp::ILE             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedLessThanOrEqual, left, right),
+                MIRIntBinOp::IGE             => context.builder.ins().icmp(ir::condcodes::IntCC::SignedGreaterThanOrEqual, left, right),
                 
-                BCIntBinOp::ULT             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedLessThan, left, right),
-                BCIntBinOp::UGT             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedGreaterThan, left, right),
-                BCIntBinOp::ULE             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedLessThanOrEqual, left, right),
-                BCIntBinOp::UGE             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedGreaterThanOrEqual, left, right),
+                MIRIntBinOp::ULT             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedLessThan, left, right),
+                MIRIntBinOp::UGT             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedGreaterThan, left, right),
+                MIRIntBinOp::ULE             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedLessThanOrEqual, left, right),
+                MIRIntBinOp::UGE             => context.builder.ins().icmp(ir::condcodes::IntCC::UnsignedGreaterThanOrEqual, left, right),
                 
                 _ => unimplemented!("Operator not implemented: {:?}", op)
             };
@@ -396,8 +396,8 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
                 .as_value();
             
             let size_literal = match _type.size() {
-                BCTypeSize::Fixed(size) => context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64),
-                BCTypeSize::Variable(size_expr) => {
+                MIRTypeSize::Fixed(size) => context.builder.ins().iconst(ir::Type::int(64).unwrap(), size as i64),
+                MIRTypeSize::Variable(size_expr) => {
                     let size_value = context.get_value(&size_expr).unwrap();
                     context.builder.ins().uextend(ir::Type::int(64).unwrap(), size_value.as_value())
                 }

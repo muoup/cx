@@ -3,8 +3,9 @@ use crate::parse::global_scope::{parse_body};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
+use cx_data_ast::preparse::naive_types::CXNaiveTypeKind;
 use cx_util::identifier::CXIdent;
-use cx_data_lexer::{operator, punctuator};
+use cx_data_lexer::{identifier, operator, punctuator};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 use cx_util::{log_error, point_log_error};
 use crate::parse::structured_initialization::parse_structured_initialization;
@@ -18,6 +19,7 @@ pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
         CXExprKind::If { .. }       |
         CXExprKind::While { .. }    |
         CXExprKind::For { .. }      |
+        CXExprKind::Match { .. }    |
         CXExprKind::Switch { .. }   => false,
 
         _ => true
@@ -25,10 +27,6 @@ pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
 }
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
-    if is_type_decl(data) {
-        return parse_declaration(data);
-    }
-
     if try_next!(data.tokens, TokenKind::Keyword(_)) {
         data.tokens.back();
         
@@ -69,25 +67,33 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let (Some(name), mut type_) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
+        let (name, mut type_) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
             point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type declaration");
         };
         type_.specifiers = specifiers;
 
-        if try_next!(data.tokens, TokenKind::Assignment(None)) {
-            let lhs_end_index = data.tokens.index;
-            let expr = parse_expr(data)?;
+        if let Some(name) = name {
             decls.push(
-                CXExprKind::BinOp {
-                    lhs: Box::new(CXExprKind::VarDeclaration { type_, name }
-                        .into_expr(start_index, lhs_end_index)),
-                    rhs: Box::new(expr),
-                    op: CXBinOp::Assign(None)
-                }.into_expr(start_index, data.tokens.index)
-            )
+                CXExprKind::VarDeclaration { type_, name }
+                    .into_expr(start_index, data.tokens.index)
+            );
         } else {
+            assert_token_matches!(data.tokens, operator!(ScopeRes));
+
+            let Some(name) = parse_std_ident(&mut data.tokens) else {
+                point_log_error!(data.tokens, "PARSER ERROR: Identifier expected")
+            };
+
+            let CXNaiveTypeKind::Identifier { name: type_name, .. } = type_.kind else {
+                log_error!("PARSER ERROR: Identifier expected")
+            };
+
+            assert_token_matches!(data.tokens, punctuator!(OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+
             decls.push(
-                CXExprKind::VarDeclaration { type_, name: name.clone() }
+                CXExprKind::TypeConstructor { union_name: type_name, variant_name: name, inner: Box::new(expr) }
                     .into_expr(start_index, data.tokens.index)
             );
         }
@@ -181,6 +187,11 @@ pub(crate) fn compress_stack(expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<Pr
 
 pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>, op_stack: &mut Vec<PrecOperator>) -> Option<()> {
     let start_index = data.tokens.index;
+
+    if is_type_decl(data) {
+        expr_stack.push(parse_declaration(data)?);
+        return Some(());
+    }
     
     while let Some(op) = parse_pre_unop(data) {
         op_stack.push(PrecOperator::UnOp(op));
@@ -362,6 +373,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                 }
             )
         },
+
         KeywordType::Switch => {
             assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
             let expr = parse_expr(data)?;
@@ -375,9 +387,8 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             
             while !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
                 if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Case)) {
-                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(case_value));
-                    cases.push((*case_value as u64, index));
-                    
+                    assert_token_matches!(data.tokens, TokenKind::IntLiteral(val));
+                    cases.push((*val as u64, index as usize));
                     assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
                     continue;
                 } else if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Default)) {
@@ -385,12 +396,13 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                     if default_case.is_some() {
                         log_error!("PARSER ERROR: Multiple default cases in switch statement");
                     }
-                    default_case = Some(index);
+                    default_case = Some(index as usize);
                     continue;
                 }
                 
                 let expr = parse_expr(data)?;
                 index += 1;
+
                 if requires_semicolon(&expr) {
                     assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon));
                 }
@@ -406,6 +418,46 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                 }
             )
         },
+
+        KeywordType::Match => {
+            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+
+            let mut arms = Vec::new();
+            let mut default_arm = None;
+
+            data.change_comma_mode(false);
+
+            while !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+                if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Default)) {
+                    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::ThickArrow));
+                    if default_arm.is_some() {
+                        log_error!("PARSER ERROR: Multiple default cases in match statement");
+                    }
+                    default_arm = Some(Box::new(parse_body(data)?));
+                    continue;
+                }
+
+                let value = parse_expr(data)?;
+                assert_token_matches!(data.tokens, punctuator!(ThickArrow));
+                let body = parse_body(data)?;
+
+                arms.push((value, body));
+            }
+
+            data.pop_comma_mode();
+
+            Some(
+                CXExprKind::Match {
+                    condition: Box::new(expr),
+                    arms,
+                    default: default_arm
+                }
+            )
+        },
+
         KeywordType::Do => {
             let body = parse_body(data)?;
             assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::While));

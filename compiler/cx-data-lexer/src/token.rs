@@ -115,7 +115,7 @@ pub enum OperatorType {
     Comma, ArrayIndex,
     Access, ScopeRes,
     
-    Move
+    Move, Is
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -126,7 +126,9 @@ pub enum PunctuatorType {
     Semicolon,
     Ellipsis,
     Colon, Period,
-    QuestionMark
+    QuestionMark,
+
+    ThickArrow /* (=>) */
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -147,7 +149,7 @@ pub enum KeywordType {
 
     // CX Specific
     Import, Defer, Strong, Weak, New, 
-    Template, Type
+    Template, Type, Class, Match
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -218,6 +220,11 @@ impl TokenKind {
 
             "template" => TokenKind::Keyword(KeywordType::Template),
             "type" => TokenKind::Keyword(KeywordType::Type),
+
+            "class" => TokenKind::Keyword(KeywordType::Class),
+
+            "match" => TokenKind::Keyword(KeywordType::Match),
+            "is"    => TokenKind::Operator(OperatorType::Is),
 
             _ => TokenKind::Identifier(str),
         }

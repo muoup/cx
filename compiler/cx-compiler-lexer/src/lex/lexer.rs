@@ -1,4 +1,5 @@
 use std::io::BufRead;
+use cx_data_lexer::punctuator;
 use cx_data_lexer::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
 
@@ -327,6 +328,10 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::Equal))
+            },
+            Some('>') => {
+                iter.next();
+                Some(punctuator!(ThickArrow))
             },
             _ => Some(TokenKind::Assignment(None))
         },

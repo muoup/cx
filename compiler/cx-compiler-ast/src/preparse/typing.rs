@@ -60,8 +60,49 @@ pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXN
     Some((name, CXNaiveTypeKind::Identifier { name: CXIdent::from("int"), predeclaration: PredeclarationType::None }))
 }
 
+pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXNaiveTypeKind)> {
+    assert_token_matches!(tokens, keyword!(Union));
+    assert_token_matches!(tokens, keyword!(Class));
+
+    let name = parse_std_ident(tokens)?;
+
+    assert_token_matches!(tokens, punctuator!(OpenBrace));
+
+    let mut variants = Vec::new();
+
+    loop {
+        let Some(name) = parse_std_ident(tokens) else {
+            point_log_error!(tokens, "PARSER ERROR: Expected variant name in tagged union");
+        };
+
+        assert_token_matches!(tokens, operator!(ScopeRes));
+
+        match parse_initializer(tokens) {
+            // Success Path - Valid Type + No Name
+            Some((None, _type)) => variants.push((name.to_string(), _type)),
+
+            Some((Some(_), _)) => point_log_error!(tokens, "PARSER ERROR: Tagged union variant may not have a named type"),
+
+            None => point_log_error!(tokens, "PARSER ERROR: Failed to parse tagged union variant type"),
+        }
+
+        if !try_next!(tokens, operator!(Comma)) {
+            break;
+        }
+    }
+
+    assert_token_matches!(tokens, punctuator!(CloseBrace));
+
+    Some((Some(name.clone()), CXNaiveTypeKind::TaggedUnion { name, variants }))
+}
+
 pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CXNaiveTypeKind)> {
     assert_token_matches!(tokens, keyword!(Union));
+
+    if peek_next!(tokens, keyword!(Class)) {
+        tokens.back();
+        return parse_tagged_union(tokens);
+    }
 
     let name = parse_std_ident(tokens);
 
@@ -71,7 +112,7 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CX
 
     let mut fields = Vec::new();
 
-    while !try_next!(tokens, punctuator!(CloseBrace)) {
+    loop {
         let (name, _type) = parse_initializer(tokens)?;
 
         let Some(name) = name else {
@@ -79,8 +120,13 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<(Option<CXIdent>, CX
         };
 
         fields.push((name.to_string(), _type));
-        assert_token_matches!(tokens, punctuator!(Semicolon));
+
+        if !try_next!(tokens, punctuator!(Semicolon)) {
+            break;
+        }
     }
+
+    assert_token_matches!(tokens, punctuator!(CloseBrace));
 
     Some((
         name.clone(),

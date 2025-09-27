@@ -1,4 +1,4 @@
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_mir::{MIRValue, VirtualInstruction};
 use cx_data_mir::types::{MIRType, MIRTypeKind};
@@ -7,6 +7,8 @@ use cx_util::bytecode_error_log;
 use cx_util::mangling::{mangle_destructor};
 use crate::builder::{MIRBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
+use crate::deconstructor::deconstruct_variable;
+use crate::instruction_gen::generate_instruction;
 
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
@@ -159,4 +161,21 @@ pub(crate) fn allocate_variable(
     }
 
     Some(memory)
+}
+
+pub(crate) fn assign_value(builder: &mut MIRBuilder, target: MIRValue, source: MIRValue, _type: &CXType, additional_op: Option<&CXBinOp>)
+    -> BytecodeResult<MIRValue> {
+
+    if additional_op.is_some() { todo!("compound assignment") }
+
+    let inner_type = builder.convert_fixed_cx_type(&_type)?;
+
+    builder.add_instruction(
+        VirtualInstruction::Store {
+            memory: target,
+            value: source,
+            type_: inner_type,
+        },
+        MIRType::unit()
+    )
 }

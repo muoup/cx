@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::{BCFloatBinOp, BCFloatUnOp, BCIntBinOp, BCIntUnOp, BlockInstruction, MIRFunction, MIRFunctionPrototype, FunctionBlock, ProgramMIR, VirtualInstruction, BCPtrBinOp, BlockID, MIRGlobalType, MIRValue};
+use crate::{BCFloatBinOp, BCFloatUnOp, MIRIntBinOp, BCIntUnOp, BlockInstruction, MIRFunction, MIRFunctionPrototype, FunctionBlock, ProgramMIR, VirtualInstruction, BCPtrBinOp, BlockID, MIRGlobalType, MIRValue};
 use crate::types::{MIRType, MIRTypeKind};
 
 impl Display for ProgramMIR {
@@ -90,7 +90,7 @@ impl Display for BlockInstruction {
 impl Display for MIRGlobalType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s),
+            MIRGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s.replace('\n', "\\n")),
             MIRGlobalType::Variable { _type, initial_value } => {
                 if let Some(initial_value) = initial_value {
                     write!(f, "variable {} = {}", _type, initial_value)
@@ -286,42 +286,42 @@ impl Display for BCPtrBinOp {
     }
 }
 
-impl Display for BCIntBinOp {
+impl Display for MIRIntBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}",
            match self {
-                BCIntBinOp::ADD => "+",
-                BCIntBinOp::SUB => "-",
-                BCIntBinOp::MUL => "*",
-                BCIntBinOp::IDIV => "i/",
-                BCIntBinOp::IREM => "i%",
+                MIRIntBinOp::ADD => "+",
+                MIRIntBinOp::SUB => "-",
+                MIRIntBinOp::MUL => "*",
+                MIRIntBinOp::IDIV => "i/",
+                MIRIntBinOp::IREM => "i%",
 
-                BCIntBinOp::UDIV => "u/",
-                BCIntBinOp::UREM => "u%",
+                MIRIntBinOp::UDIV => "u/",
+                MIRIntBinOp::UREM => "u%",
 
-                BCIntBinOp::SHL => "<<",
-                BCIntBinOp::ASHR => "a>>",
-                BCIntBinOp::LSHR => "l>>",
+                MIRIntBinOp::SHL => "<<",
+                MIRIntBinOp::ASHR => "a>>",
+                MIRIntBinOp::LSHR => "l>>",
 
-                BCIntBinOp::BAND => "&",
-                BCIntBinOp::BOR => "|",
-                BCIntBinOp::BXOR => "^",
+                MIRIntBinOp::BAND => "&",
+                MIRIntBinOp::BOR => "|",
+                MIRIntBinOp::BXOR => "^",
 
-                BCIntBinOp::LAND => "&&",
-                BCIntBinOp::LOR => "||",
+                MIRIntBinOp::LAND => "&&",
+                MIRIntBinOp::LOR => "||",
                
-                BCIntBinOp::EQ => "==",
-                BCIntBinOp::NE => "!=",
+                MIRIntBinOp::EQ => "==",
+                MIRIntBinOp::NE => "!=",
                
-                BCIntBinOp::ILT => "<",
-                BCIntBinOp::IGT => ">",
-                BCIntBinOp::ILE => "<=",
-                BCIntBinOp::IGE => ">=",
+                MIRIntBinOp::ILT => "<",
+                MIRIntBinOp::IGT => ">",
+                MIRIntBinOp::ILE => "<=",
+                MIRIntBinOp::IGE => ">=",
                
-                BCIntBinOp::ULT => "(u) <",
-                BCIntBinOp::UGT => "(u) >",
-                BCIntBinOp::ULE => "(u) <=",
-                BCIntBinOp::UGE => "(u) >=",
+                MIRIntBinOp::ULT => "(u) <",
+                MIRIntBinOp::UGT => "(u) >",
+                MIRIntBinOp::ULE => "(u) <=",
+                MIRIntBinOp::UGE => "(u) >=",
            },
         )
     }

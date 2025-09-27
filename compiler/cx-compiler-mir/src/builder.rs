@@ -184,6 +184,10 @@ impl MIRBuilder {
         instruction: VirtualInstruction,
         value_type: MIRType
     ) -> Option<MIRValue> {
+        if self.current_block_closed() {
+            return Some(MIRValue::NULL);
+        }
+
         let context = self.fun_mut();
         let current_block = context.current_block;
 
@@ -204,6 +208,14 @@ impl MIRBuilder {
                 value_id: (body.len() - 1) as ElementID,
             }
         )
+    }
+
+    fn current_block_closed(&self) -> bool {
+        let Some(last_inst) = self.current_block_last_inst() else {
+            return false;
+        };
+
+        last_inst.instruction.is_block_terminating()
     }
 
     pub fn add_instruction_cxty(
@@ -483,7 +495,19 @@ impl MIRBuilder {
 
         context.blocks.last()?.body.last()
     }
-    
+
+    fn current_block_last_inst(&self) -> Option<&BlockInstruction> {
+        let context = self.fun();
+
+        let current_block = match context.current_block {
+            BlockID::Block(id) => context.blocks.get(id as usize)?,
+            BlockID::DeferredBlock(id) => context.deferred_blocks.get(id as usize)?,
+            _ => unreachable!("INTERNAL PANIC: Attempted to access last instruction of invalid block")
+        };
+
+        current_block.body.last()
+    }
+
     pub fn current_function_name(&self) -> Option<&str> {
         self.function_context.as_ref().map(|ctx| ctx.prototype.name.as_str())
     }
@@ -533,5 +557,36 @@ impl MIRBuilder {
             },
             access._type.clone()
         )
+    }
+
+    pub fn get_tag_addr(&mut self, val: &MIRValue, _type: &MIRType) -> Option<MIRValue> {
+        self.struct_access(val.clone(), _type, 1)
+    }
+
+    pub fn get_tag(&mut self, val: &MIRValue, _type: &MIRType) -> Option<MIRValue> {
+        let tag_field = self.get_tag_addr(val, _type)?;
+
+        self.load_value(tag_field, MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }) )
+    }
+
+    pub fn set_tag(&mut self, val: &MIRValue, _type: &MIRType, tag: u32) -> Option<MIRValue> {
+        let tag_val = self.int_const(tag as i32, 4, true);
+        let tag_field = self.get_tag_addr(val, _type)?;
+
+        self.add_instruction(
+            VirtualInstruction::Store {
+                memory: tag_field,
+                value: tag_val,
+
+                type_: MIRType::from(MIRTypeKind::Unsigned { bytes: 4 })
+            },
+            MIRType::unit()
+        )
+    }
+
+    pub fn load_value(&mut self, ptr: MIRValue, _type: MIRType) -> Option<MIRValue> {
+        if _type.is_structure() { return Some(ptr); }
+
+        Some(MIRValue::LoadOf(_type, Box::new(ptr)))
     }
 }

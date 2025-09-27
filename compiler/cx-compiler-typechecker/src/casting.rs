@@ -63,29 +63,12 @@ pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     Some(())
 }
 
-pub(crate) fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
-    if same_type(&expr._type, to_type) {
-        return Some(())
-    }
-
-    if matches!(expr.kind, TCExprKind::InitializerList { .. }) {
-        return coerce_initializer_list(expr, to_type);
-    };
-
-    let Some(cast_type) = valid_implicit_cast(&expr._type, to_type)? else {
-        return None;
-    };
-
-    add_coercion(expr, to_type.clone(), cast_type);
-    Some(())
-}
-
 pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     if let Some(_) = try_implicit_cast(expr, to_type) {
         return Some(());
     }
 
-    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type)? else {
+    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type) else {
         return None;
     };
 
@@ -103,71 +86,100 @@ pub fn add_coercion(expr: &mut TCExpr, to_type: CXType, cast_type: CXCastType) {
     }
 }
 
-pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
-                           -> Option<Option<CXCastType>> {
-    Some(
-        match (&from_type.kind, &to_type.kind) {
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
-                Some(CXCastType::PtrToInt)
-            },
+pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType)
+                           -> Option<()> {
+    if matches!(expr.kind, TCExprKind::InitializerList { .. }) {
+        return coerce_initializer_list(expr, to_type);
+    }
 
-            (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. })
+    if same_type(&expr._type, to_type) {
+        return Some(());
+    }
+
+    let from_type = expr._type.clone();
+    let mut coerce = |coercion_type: CXCastType| {
+        add_coercion(expr, to_type.clone(), coercion_type);
+    };
+
+    match (&from_type.kind, &to_type.kind) {
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) =>
+            coerce(CXCastType::PtrToInt),
+
+        (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. })
             => if b1 > b2 {
-                Some(CXCastType::IntegralTrunc)
+                coerce(CXCastType::IntegralTrunc)
             } else if b1 < b2 {
-                Some(CXCastType::IntegralCast)
+                coerce(CXCastType::IntegralCast)
             } else {
-                Some(CXCastType::NOOP)
+                coerce(CXCastType::BitCast)
             },
 
-            (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => Some(CXCastType::IntegralCast),
+        (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => coerce(CXCastType::IntegralCast),
+        (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => coerce(CXCastType::FloatCast),
+        (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => coerce(CXCastType::IntToFloat),
+        (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => coerce(CXCastType::FloatToInt),
 
-            (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::FloatCast),
+        (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
+        (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => coerce(CXCastType::BitCast),
 
-            (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
-            (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
+        (CXTypeKind::MemoryReference(inner), _)
+            if same_type(inner.as_ref(), to_type) && to_type.is_structured() => coerce(CXCastType::Reinterpret),
+        (CXTypeKind::MemoryReference(inner), _)
+            if same_type(inner, to_type) => coerce(CXCastType::Load),
+        (CXTypeKind::MemoryReference(inner), _) => {
+            let mut loaded = TCExpr {
+                _type: *inner.clone(),
+                kind: TCExprKind::ImplicitLoad {
+                    operand: Box::new(std::mem::take(expr))
+                }
+            };
 
-            (CXTypeKind::MemoryReference(inner), CXTypeKind::Structured { .. })
-                if same_type(inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
+            let Some(_) = try_implicit_cast(&mut loaded, to_type) else {
+                let TCExprKind::ImplicitLoad { operand} = loaded.kind else {
+                    unreachable!();
+                };
 
-            (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
-            (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
-                => Some(CXCastType::NOOP),
+                *expr = *operand;
+                return None;
+            };
 
-            (CXTypeKind::Structured { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FauxLoad),
+            *expr = loaded;
+        },
 
-            (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(_type, inner) => Some(CXCastType::BitCast),
+        (_, CXTypeKind::MemoryReference(inner)) |
+        (_, CXTypeKind::PointerTo { inner_type: inner, .. })
+            if same_type(inner.as_ref(), &from_type) && from_type.is_structured() => coerce(CXCastType::Reinterpret),
 
-            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
+        (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
+            if same_type(_type, inner) => coerce(CXCastType::BitCast),
 
-            _ => None
-        }
-    )
+        (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
+            if same_type(inner.as_ref(), &from_type) => coerce(CXCastType::FunctionToPointerDecay),
+
+        _ => return None
+    }
+
+    Some(())
 }
 
-pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<Option<CXCastType>> {
-    Some(
-        match (&from_type.kind, &to_type.kind) {
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
+pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<CXCastType> {
+    match (&from_type.kind, &to_type.kind) {
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
             => Some(CXCastType::BitCast),
 
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
             if *bytes == 8 => Some(CXCastType::BitCast),
 
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
             => Some(CXCastType::IntegralTrunc),
 
-            (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. })
+        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. })
             => Some(CXCastType::IntToPtr),
 
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. })
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. })
             => Some(CXCastType::BitCast),
 
-            _ => None
-        }
-    )
+        _ => None
+    }
 }

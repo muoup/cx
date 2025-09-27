@@ -188,9 +188,14 @@ pub(crate) fn implicit_cast(
                 to_type.clone()
             )
         },
+
+        CXCastType::Load => {
+            let new_type = builder.convert_cx_type(to_type)?;
+            builder.load_value(value, new_type)
+        }
         
-        CXCastType::FauxLoad => {
+        CXCastType::Reinterpret => {
             Some(value)
-        },
+        }
     }
 }

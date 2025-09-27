@@ -31,7 +31,7 @@ impl PrecOperator {
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex => 1,
+        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex | CXBinOp::Is => 1,
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -156,6 +156,8 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
             
             OperatorType::DoubleLT          => CXBinOp::LShift,
             OperatorType::DoubleGT          => CXBinOp::RShift,
+
+            OperatorType::Is                => CXBinOp::Is,
 
             _ => log_error!("PARSER ERROR: Invalid binary operator: {:?}", op)
         }

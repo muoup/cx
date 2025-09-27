@@ -80,7 +80,9 @@ pub enum CXBinOp {
 
     Assign(Option<Box<CXBinOp>>),
 
-    Access, MethodCall, ArrayIndex
+    Access, MethodCall, ArrayIndex,
+
+    Is
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -172,10 +174,17 @@ pub enum CXExprKind {
         increment: Box<CXExpr>,
         body: Box<CXExpr>
     },
+
+    Match {
+        condition: Box<CXExpr>,
+        arms: Vec<(CXExpr, CXExpr)>, // (value, block)
+        default: Option<Box<CXExpr>>
+    },
+
     Switch {
         condition: Box<CXExpr>,
         block: Vec<CXExpr>,
-        cases: Vec<(u64, usize)>,
+        cases: Vec<(u64, usize)>, // (block index, value)
         default_case: Option<usize>
     },
 
@@ -185,6 +194,11 @@ pub enum CXExprKind {
     VarDeclaration {
         type_: CXNaiveType,
         name: CXIdent
+    },
+    TypeConstructor {
+        union_name: CXIdent,
+        variant_name: CXIdent,
+        inner: Box<CXExpr>,
     },
     BinOp {
         lhs: Box<CXExpr>,
@@ -265,10 +279,11 @@ pub enum CXCastType {
     PtrToInt,
     IntToPtr,
     FunctionToPointerDecay,
+    Load,
     
     // The difference between a memory reference and a bare type is that a memory reference
     // is stored in memory. A structured type is itself a memory reference despite this
     // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
     // used to create an explicit no-op to appease the typechecker.
-    FauxLoad,
+    Reinterpret,
 }

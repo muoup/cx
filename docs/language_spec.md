@@ -110,6 +110,31 @@ void func() {
 }
 ```
 
+### 3.3. Tagged Unions
+
+CX provides support for tagged unions, also known as sum types or variants, which are a powerful tool for representing a value that could be one of several types. They are declared using the `union class` keywords.
+
+Each member of a `union class` is a "variant" with a distinct name and type, defined using the `::` separator.
+
+**Syntax Example:**
+```c
+union class Output {
+    integer :: int,
+    fp      :: double,
+    string  :: const char*,
+    data    :: struct { int a; double b; char c; }
+};
+```
+
+To create an instance of a tagged union, you use the `::` operator on the union type, followed by the variant name and the value to be stored.
+
+**Construction Example:**
+```c
+Output o1 = Output::integer(42);
+Output o2 = Output::fp(3.14);
+Output o3 = Output::string("Hello, World!");
+```
+
 ## 4. Templates
 
 CX supports templates, which allow you to write generic functions and types that can work with any type. 
@@ -146,4 +171,55 @@ struct Vec {
 
 Vec<int>::length() { ... }
 Vec<float>::length() { ... } // invalid as Vec::length is already defined, templated types do not currently mangle their own name identifiers.
+```
+
+## 5. Control Flow
+
+### 5.1. Match Expressions
+
+CX includes a `match` expression, which is a semantically enhanced version of the C `switch` statement. It is designed to safely handle different cases of a value, such as the variants of a tagged union.
+
+The key differences from a C `switch` are:
+*   **No Fallthrough:** Each arm of a `match` expression is an independent, scoped block. There is no fallthrough behavior, which eliminates a common source of bugs.
+*   **Tagged Union Support:** It can deconstruct tagged unions, allowing you to handle each variant in a separate arm.
+
+Currently, `match` is primarily used for tagged unions. However, it is planned to support integer-like types in the future, making it a more general-purpose control flow tool.
+
+**Syntax Example:**
+```c
+void print_output(Output out) {
+    match (out) {
+        Output::integer(i) => printf("Integer: %d\n", i);
+        Output.fp(d) => printf("Float: %f\n", d);
+        Output::string(s) => printf("String: %s\n", s);
+        default => printf("Unknown type\n");
+    }
+}
+```
+
+### 5.2. The `is` Operator
+
+The `is` operator is used to check if a tagged union instance corresponds to a specific variant at runtime. It returns a boolean `true` if the instance matches the variant and `false` otherwise.
+
+Its primary use is within conditional statements like `if` and `while` to safely inspect a tagged union's current type.
+
+Regardless of the output of the operatiion, it also extracts the variant's inner value into a new variable that is made available within the conditional's scope.
+
+**Syntax Example:**
+```c
+Output out = generate_output(2);
+
+if (out is Output::string(s)) {
+    // 's' is now available here and holds the string value
+    printf("The output is a string: %s\n", s);
+} else {
+    printf("The output is not a string.\n");
+}
+```
+
+**Important Warning:** The `is` operator is an **unchecked coercion**. It is up to the user to ensure via control flow that the variable is only used if the `is` check passes. Any use
+of the extracted variable when the tagged union instance is not of the expected variant results in **undefined behavior**.
+
+Currently also, tagged unions are not safely deconstructed, any deconstruction logic for a contained variant is not invoked automatically, but this will be changed in the future.
+
 ```

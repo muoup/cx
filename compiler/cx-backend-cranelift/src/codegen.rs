@@ -6,6 +6,7 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_data_mir::{MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue};
+use cx_util::format::dump_data;
 use crate::routines::convert_linkage;
 
 pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &MIRFunctionPrototype) -> Option<()> {
@@ -101,6 +102,8 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
     context.builder.finalize();
 
     let GlobalState { object_module, context, .. } = global_state;
+
+    dump_data(&func);
 
     context.func = func;
     object_module

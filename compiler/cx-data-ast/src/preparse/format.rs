@@ -32,6 +32,13 @@ impl Display for CXNaiveTypeKind {
                     .join(", ");
                 write!(f, "Union<{}> {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
             },
+            CXNaiveTypeKind::TaggedUnion { name, variants } => {
+                let variants_str = variants.iter()
+                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "TaggedUnion<{}> {{ {} }}", name, variants_str)
+            },
             CXNaiveTypeKind::FunctionPointer { prototype } => write!(f, "FunctionPointer({prototype})"),
         }
     }
