@@ -358,7 +358,7 @@ pub(crate) fn perform_job(
             };
 
             if !job.unit.is_std_lib() {
-                dump_data(&format!("{:#?}", tc_ast));
+                dump_data(&tc_ast);
             }
 
             context.module_db.typechecked_ast.insert(job.unit.clone(), tc_ast);
