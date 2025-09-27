@@ -84,8 +84,6 @@ macro_rules! identifier {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
-    Ignore,
-
     Assignment(Option<OperatorType>),
     Operator(OperatorType),
 

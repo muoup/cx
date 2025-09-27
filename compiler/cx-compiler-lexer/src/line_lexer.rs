@@ -18,9 +18,7 @@ pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>) -> Option<Vec<Token>> {
 
 impl<'a> LineLexer<'a> {
     fn add_token(&mut self, token: Token) {
-        if !matches!(token.kind, TokenKind::Ignore) {
-            self.tokens.push(token);
-        }
+        self.tokens.push(token);
     }
 
     pub(crate) fn generate_tokens(&mut self) {
@@ -219,7 +217,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                             break;
                         }
                     }
-                    Some(TokenKind::Ignore)
+                    panic!("Single line comments should not reach the operator lexer")
                 },
                 Some('*') => {
                     iter.next();
@@ -229,7 +227,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                             break;
                         }
                     }
-                    Some(TokenKind::Ignore)
+                    panic!("Multi line comments should not reach the operator lexer")
                 },
                 _ => try_assignment(iter, OperatorType::Slash)
             }

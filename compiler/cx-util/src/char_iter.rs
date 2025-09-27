@@ -53,6 +53,39 @@ impl CharIter<'_> {
             }
         }
     }
+
+    pub fn next_word(&mut self) -> Option<&str> {
+        self.skip_whitespace();
+        let start = self.current_iter;
+
+        while let Some(c) = self.peek() {
+            if c.is_whitespace() {
+                break;
+            } else {
+                self.next();
+            }
+        }
+
+        if start == self.current_iter {
+            None
+        } else {
+            Some(&self.source[start..self.current_iter])
+        }
+    }
+
+    pub fn rest_of_line(&mut self) -> &str {
+        let start = self.current_iter;
+
+        while let Some(c) = self.peek() {
+            if c == '\n' {
+                break;
+            } else {
+                self.next();
+            }
+        }
+
+        &self.source[start..self.current_iter]
+    }
     
     pub fn peek(&self) -> Option<char> {
         self.source.as_bytes().get(self.current_iter)

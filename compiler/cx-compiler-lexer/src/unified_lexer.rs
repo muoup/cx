@@ -7,7 +7,8 @@ use crate::preprocessor::{generate_lexable_slice, handle_comment, handle_directi
 pub(crate) struct Lexer<'a> {
     pub(crate) source: &'a str,
     pub(crate) char_iter: CharIter<'a>,
-    pub(crate) macros: HashMap<String, Box<[Token]>>
+    pub(crate) macros: HashMap<String, Box<[Token]>>,
+    pub(crate) tokens: Vec<Token>
 }
 
 impl<'a> Lexer<'a> {
@@ -15,25 +16,31 @@ impl<'a> Lexer<'a> {
         Lexer {
             source,
             char_iter: CharIter::new(source),
-
-            macros: HashMap::new()
+            macros: HashMap::new(),
+            tokens: Vec::new()
         }
     }
 
-    pub(crate) fn lex_source(&mut self) -> Option<Vec<Token>> {
-        let mut tokens = Vec::new();
-
+    pub(crate) fn lex_source(&mut self) -> Option<()> {
         while self.char_iter.has_next() {
             if let Some(mut lexable_iter) = self.interpret_directive_line() {
                 let tokens_in_line = lex_line(&mut lexable_iter)?;
 
-                tokens.extend(self.expand_macros(tokens_in_line));
+                self.tokens.extend(self.expand_macros(tokens_in_line));
             } else {
                 break;
             }
         }
 
-        Some(tokens)
+        Some(())
+    }
+
+    pub(crate) fn independent_lex(&mut self, str: &str) -> Option<Vec<Token>> {
+        let mut sublexer = Lexer::new(&str);
+        std::mem::swap(&mut sublexer.macros, &mut self.macros);
+        sublexer.lex_source()?;
+        std::mem::swap(&mut sublexer.macros, &mut self.macros);
+        Some(sublexer.tokens)
     }
 
     // returns text that the lexer can lex over, i.e. not comments or preprocessor directives

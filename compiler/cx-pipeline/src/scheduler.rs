@@ -21,7 +21,7 @@ use cx_compiler_typechecker_new::typecheck;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_lexer::TokenIter;
 use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
-use cx_util::format::dump_data;
+use cx_util::format::{dump_data, dump_write};
 use cx_util::scoped_map::ScopedMap;
 use crate::template_realizing::realize_templates;
 
@@ -212,6 +212,7 @@ pub(crate) fn perform_job(
             store_text(context, &job.unit, ".hash", &current_hash);
 
             let tokens = cx_compiler_lexer::lex(file_contents.as_str())?;
+            dump_write("Tokens:\n");
 
             let mut output = preparse(
                 TokenIter {
