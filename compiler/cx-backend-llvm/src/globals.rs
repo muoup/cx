@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicUsize;
 use inkwell::module::Linkage;
-use cx_data_bytecode::{BCGlobalType, BCGlobalValue, LinkageType};
+use cx_data_mir::{MIRGlobalType, MIRGlobalValue, LinkageType};
 use crate::GlobalState;
 use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
 
@@ -11,9 +11,9 @@ fn string_literal_name() -> String {
     format!(".str_{id}")
 }
 
-pub(crate) fn generate_global_variable(state: &mut GlobalState, variable: &BCGlobalValue) -> Option<()> {
+pub(crate) fn generate_global_variable(state: &mut GlobalState, variable: &MIRGlobalValue) -> Option<()> {
     match &variable._type {
-        BCGlobalType::StringLiteral(str) => {
+        MIRGlobalType::StringLiteral(str) => {
             let val = state
                 .context
                 .const_string(str.as_bytes(), true);
@@ -32,7 +32,7 @@ pub(crate) fn generate_global_variable(state: &mut GlobalState, variable: &BCGlo
             state.globals.push(global);
         },
 
-        BCGlobalType::Variable { _type, initial_value } => {
+        MIRGlobalType::Variable { _type, initial_value } => {
             let llvm_type = bc_llvm_type(state.context, _type)?;
             let basic_type = any_to_basic_type(llvm_type)
                 .unwrap_or_else(|| panic!("Unsupported global variable type"));

@@ -5,11 +5,11 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_data_bytecode::{BCFunctionPrototype, BlockID, BytecodeFunction, ElementID, FunctionBlock, MIRValue};
+use cx_data_mir::{MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue};
 use cx_util::format::dump_data;
 use crate::routines::convert_linkage;
 
-pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &BCFunctionPrototype) -> Option<()> {
+pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &MIRFunctionPrototype) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
     let linkage = convert_linkage(prototype.linkage);
 
@@ -48,7 +48,7 @@ pub(crate) fn codegen_block(
     }
 }
 
-pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &BytecodeFunction) -> Option<()> {
+pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &MIRFunction) -> Option<()> {
     let mut func = Function::with_name_signature(
         UserFuncName::user(0, func_id.as_u32()),
         func_sig

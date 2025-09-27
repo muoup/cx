@@ -1,7 +1,7 @@
-use crate::builder::BytecodeBuilder;
+use crate::builder::MIRBuilder;
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::{BCFunctionPrototype, BCParameter, BCPtrBinOp, LinkageType, MIRValue, VirtualInstruction};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_data_mir::{MIRFunctionPrototype, MIRParameter, BCPtrBinOp, LinkageType, MIRValue, VirtualInstruction};
 use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
 use crate::aux_routines::get_cx_struct_field_by_index;
 
@@ -9,17 +9,17 @@ const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
-pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<BCFunctionPrototype> {
+pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
     let Some(name) = type_.get_name() else {
         return None;
     };
     let deconstructor_name = mangle_deconstructor(name);
 
     Some(
-        BCFunctionPrototype {
+        MIRFunctionPrototype {
             name: deconstructor_name,
-            return_type: BCType::unit(),
-            params: vec![BCParameter { name: None, _type: BCType::default_pointer() }],
+            return_type: MIRType::unit(),
+            params: vec![MIRParameter { name: None, _type: MIRType::default_pointer() }],
             var_args: false,
             linkage: LinkageType::ODR
         }
@@ -27,7 +27,7 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<BCFunctionProtot
 }
 
 fn get_deconstructor(
-    builder: &mut BytecodeBuilder,
+    builder: &mut MIRBuilder,
     type_: &CXType
 ) -> Option<String> {
     let Some(type_name) = type_.get_name() else {
@@ -42,7 +42,7 @@ fn get_deconstructor(
     }
 }
 
-pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type: &CXType) -> Option<()> {
+pub fn deconstruct_variable(builder: &mut MIRBuilder, var: &MIRValue, _type: &CXType) -> Option<()> {
     match &_type.kind {
         CXTypeKind::Structured { .. } => {
             if let Some(deconstructor) = get_deconstructor(builder, _type) {
@@ -60,21 +60,21 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
             let zero = builder.int_const(0, 8, true);
             let null = builder.add_instruction(
                 VirtualInstruction::IntToPtr { value: zero },
-                BCType::default_pointer()
+                MIRType::default_pointer()
             )?;
             let cmp = builder.add_instruction(
                 VirtualInstruction::PointerBinOp {
                     op: BCPtrBinOp::EQ,
                     left: inner_val.clone(),
                     right: null,
-                    ptr_type: BCType::default_pointer()
+                    ptr_type: MIRType::default_pointer()
                 },
-                BCType { kind: BCTypeKind::Bool }
+                MIRType { kind: MIRTypeKind::Bool }
             )?;
 
             builder.add_instruction(
                 VirtualInstruction::Branch { condition: cmp, true_block: post_deconstruct, false_block: deconstruct },
-                BCType::unit()
+                MIRType::unit()
             )?;
 
             builder.set_current_block(deconstruct);
@@ -85,13 +85,13 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
                     let deconstructor = builder.fn_ref(&prototype)?;
                     let ptr_to = builder.add_instruction(
                         VirtualInstruction::GetFunctionAddr { func: deconstructor },
-                        BCType::default_pointer()
+                        MIRType::default_pointer()
                     )?;
                     let type_size = builder.convert_cx_type(inner_type.as_ref())?
                         .fixed_size();
                     let size_imm = MIRValue::IntImmediate {
                         val: type_size as i64,
-                        type_: BCTypeKind::Unsigned { bytes: 8 }.into()
+                        type_: MIRTypeKind::Unsigned { bytes: 8 }.into()
                     };
 
                     builder.call(STANDARD_FREE_ARRAY, vec![inner_val, size_imm, ptr_to])?;
@@ -116,7 +116,7 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
 
             builder.add_instruction(
                 VirtualInstruction::Jump { target: post_deconstruct },
-                BCType::unit()
+                MIRType::unit()
             )?;
 
             builder.set_current_block(post_deconstruct);
@@ -128,16 +128,12 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
     Some(())
 }
 
-pub fn generate_deconstructor(builder: &mut BytecodeBuilder, _type: &CXType) -> Option<()> {
+pub fn generate_deconstructor(builder: &mut MIRBuilder, _type: &CXType) -> Option<()> {
     let deconstructor_prototype = deconstructor_prototype(_type)?;
 
     builder.new_function(deconstructor_prototype.clone());
 
-    let self_val = builder.add_instruction(
-        VirtualInstruction::FunctionParameter { param_index: 0 },
-        BCType::default_pointer()
-    )?;
-
+    let self_val = MIRValue::ParameterRef(0);
     let as_bc = builder.convert_cx_type(&_type)?;
 
     match &_type.kind {
@@ -152,7 +148,7 @@ pub fn generate_deconstructor(builder: &mut BytecodeBuilder, _type: &CXType) -> 
                         field_index: i,
                         field_offset: struct_access.offset
                     },
-                    BCType::default_pointer()
+                    MIRType::default_pointer()
                 )?;
 
                 deconstruct_variable(builder, &ptr, field_type)?;

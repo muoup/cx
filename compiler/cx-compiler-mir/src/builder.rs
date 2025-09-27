@@ -1,8 +1,8 @@
 use crate::cx_maps::convert_cx_func_map;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
-use crate::{BytecodeResult, ProgramBytecode};
-use cx_data_bytecode::types::{BCType, BCTypeKind};
-use cx_data_bytecode::*;
+use crate::{BytecodeResult, ProgramMIR};
+use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_data_mir::*;
 use cx_data_typechecker::ast::{TCExpr, TCAST};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType};
 use cx_data_typechecker::CXFnMap;
@@ -14,10 +14,10 @@ use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::deconstructor::deconstruct_variable;
 
 #[derive(Debug)]
-pub struct BytecodeBuilder {
-    functions: Vec<BytecodeFunction>,
+pub struct MIRBuilder {
+    functions: Vec<MIRFunction>,
 
-    global_variables: Vec<BCGlobalValue>,
+    global_variables: Vec<MIRGlobalValue>,
 
     pub fn_map: BCFunctionMap,
     
@@ -30,7 +30,7 @@ pub struct BytecodeBuilder {
 
 #[derive(Debug)]
 pub struct BytecodeFunctionContext {
-    prototype: BCFunctionPrototype,
+    prototype: MIRFunctionPrototype,
     current_block: BlockID,
 
     merge_stack: Vec<BlockID>,
@@ -46,9 +46,9 @@ pub struct DeclarationLifetime {
     pub _type: CXType
 }
 
-impl BytecodeBuilder {
+impl MIRBuilder {
     pub fn new(ast: &TCAST) -> Self {
-        BytecodeBuilder {
+        MIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
 
@@ -62,7 +62,7 @@ impl BytecodeBuilder {
         }
     }
 
-    pub fn new_function(&mut self, fn_prototype: BCFunctionPrototype) {
+    pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype) {
         let defers = false;
         
         self.in_deferred_block = false;
@@ -101,7 +101,7 @@ impl BytecodeBuilder {
         let context = self.function_context.take().unwrap();
 
         self.functions.push(
-            BytecodeFunction {
+            MIRFunction {
                 prototype: context.prototype,
                 
                 blocks: context.blocks,
@@ -162,7 +162,7 @@ impl BytecodeBuilder {
         self.symbol_table.get(name).cloned()
     }
 
-    pub fn insert_global_symbol(&mut self, value: BCGlobalValue) {
+    pub fn insert_global_symbol(&mut self, value: MIRGlobalValue) {
         let key = value.name.to_string();
         self.global_variables.push(value);
         let index = (self.global_variables.len() - 1) as u32;
@@ -182,7 +182,7 @@ impl BytecodeBuilder {
     pub fn add_instruction(
         &mut self,
         instruction: VirtualInstruction,
-        value_type: BCType
+        value_type: MIRType
     ) -> Option<MIRValue> {
         if self.current_block_closed() {
             return Some(MIRValue::NULL);
@@ -246,9 +246,18 @@ impl BytecodeBuilder {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
+            let return_block = self.create_named_block("return");
+            
+            self.add_instruction(
+                VirtualInstruction::Jump { target: return_block },
+                MIRType::unit()
+            );
+            
+            self.set_current_block(return_block);
+            
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
-                BCType::unit()
+                MIRType::unit()
             )
         }
     }
@@ -260,7 +269,7 @@ impl BytecodeBuilder {
     ) -> Option<MIRValue> {
         let inst = self.add_instruction(
             VirtualInstruction::GotoDefer,
-            BCType::unit()
+            MIRType::unit()
         )?;
 
         if let Some(value_id) = value_id {
@@ -296,14 +305,14 @@ impl BytecodeBuilder {
         predecessors.push((value, from_block));
     }
 
-    pub fn match_int_const(&self, value: i32, _type: &BCType) -> MIRValue {
+    pub fn match_int_const(&self, value: i32, _type: &MIRType) -> MIRValue {
         match _type.kind {
-            BCTypeKind::Bool => MIRValue::IntImmediate {
+            MIRTypeKind::Bool => MIRValue::IntImmediate {
                 val: value as i64,
-                type_: BCType::from(BCTypeKind::Bool)
+                type_: MIRType::from(MIRTypeKind::Bool)
             },
-            BCTypeKind::Signed { bytes } => self.int_const(value, bytes, true),
-            BCTypeKind::Unsigned { bytes } => self.int_const(value, bytes, false),
+            MIRTypeKind::Signed { bytes } => self.int_const(value, bytes, true),
+            MIRTypeKind::Unsigned { bytes } => self.int_const(value, bytes, false),
 
             _ => panic!("PANIC: Attempted to match integer constant with non-integer type: {}", _type)
         }
@@ -313,15 +322,15 @@ impl BytecodeBuilder {
         MIRValue::IntImmediate {
             val: value as i64,
             type_: match signed {
-                true => BCType::from(BCTypeKind::Signed { bytes }),
-                false => BCType::from(BCTypeKind::Unsigned { bytes }),
+                true => MIRType::from(MIRTypeKind::Signed { bytes }),
+                false => MIRType::from(MIRTypeKind::Unsigned { bytes }),
             }
         }
     }
 
-    pub fn match_float_const(&self, value: f64, _type: &BCType) -> MIRValue {
+    pub fn match_float_const(&self, value: f64, _type: &MIRType) -> MIRValue {
         match _type.kind {
-            BCTypeKind::Float { bytes } => self.float_const(value, bytes),
+            MIRTypeKind::Float { bytes } => self.float_const(value, bytes),
 
             _ => panic!("PANIC: Attempted to match float constant with non-float type: {}", _type)
         }
@@ -330,7 +339,7 @@ impl BytecodeBuilder {
     pub fn float_const(&self, value: f64, bytes: u8) -> MIRValue {
         MIRValue::FloatImmediate {
             val: value.to_bits() as i64,
-            type_: BCTypeKind::Float { bytes }.into()
+            type_: MIRTypeKind::Float { bytes }.into()
         }
     }
 
@@ -498,14 +507,14 @@ impl BytecodeBuilder {
 
         current_block.body.last()
     }
-    
+
     pub fn current_function_name(&self) -> Option<&str> {
         self.function_context.as_ref().map(|ctx| ctx.prototype.name.as_str())
     }
 
-    pub fn finish(self) -> Option<ProgramBytecode> {
+    pub fn finish(self) -> Option<ProgramMIR> {
         Some(
-            ProgramBytecode {
+            ProgramMIR {
                 fn_map: self.fn_map,
                 fn_defs: self.functions,
 
@@ -531,8 +540,8 @@ impl BytecodeBuilder {
         )
     }
 
-    pub fn struct_access(&mut self, val: MIRValue, _type: &BCType, index: usize) -> Option<MIRValue> {
-        let BCTypeKind::Struct { .. } = &_type.kind else {
+    pub fn struct_access(&mut self, val: MIRValue, _type: &MIRType, index: usize) -> Option<MIRValue> {
+        let MIRTypeKind::Struct { .. } = &_type.kind else {
             return None;
         };
 

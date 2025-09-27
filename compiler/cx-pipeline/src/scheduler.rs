@@ -2,7 +2,7 @@ use speedy::{LittleEndian, Readable, Writable};
 use crate::backends::{cranelift_compile, llvm_compile};
 use cx_compiler_ast::parse::parse_ast;
 use cx_compiler_ast::preparse::preparse;
-use cx_compiler_bytecode::generate_bytecode;
+use cx_compiler_mir::generate_bytecode;
 use cx_data_ast::parse::ast::CXAST;
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_pipeline::db::ModuleMap;
@@ -21,7 +21,7 @@ use cx_compiler_typechecker_new::environment::TCEnvironment;
 use cx_compiler_typechecker_new::typecheck;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_lexer::TokenIter;
-use cx_data_typechecker::ast::{TCStructureData, TCAST};
+use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
 use cx_util::format::dump_data;
 use cx_util::scoped_map::ScopedMap;
 use crate::template_realizing::realize_templates;
@@ -318,7 +318,7 @@ pub(crate) fn perform_job(
             let global_variables = contextualize_globals(&context.module_db, &mut type_data, &self_ast.type_map, &self_ast)
                 .expect("Failed to contextualize global variables");
 
-            let completed_data = TCStructureData {
+            let completed_data = TCBaseMappings {
                 type_data, fn_data, global_variables
             };
 

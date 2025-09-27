@@ -1,5 +1,5 @@
 [package]
-name = "cx-compiler-bytecode"
+name = "cx-compiler-mir"
 version = "0.0.0"
 edition = "2021"
 autotests = false
@@ -9,6 +9,6 @@ cx-compiler-ast = { path = "../cx-compiler-ast" }
 
 cx-data-ast = { path = "../cx-data-ast" }
 cx-data-typechecker = { path = "../cx-data-typechecker" }
-cx-data-bytecode = { path = "../cx-data-bytecode" }
+cx-data-mir = { path = "../cx-data-mir" }
 
 cx-util = { path = "../cx-util" }

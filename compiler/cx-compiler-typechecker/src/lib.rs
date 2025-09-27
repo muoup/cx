@@ -3,7 +3,7 @@ use crate::type_mapping::contextualize_fn_prototype;
 use crate::typechecker::in_method_env;
 use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_data_ast::preparse::templates::CXFunctionTemplate;
-use cx_data_typechecker::ast::{TCFunctionDef, TCStructureData};
+use cx_data_typechecker::ast::{TCFunctionDef, TCBaseMappings};
 use cx_data_typechecker::cx_types::CXTemplateInput;
 use cx_util::mangling::{mangle_destructor, mangle_template};
 use crate::templates::{add_templated_types, restore_template_overwrites};
@@ -60,7 +60,7 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
 
 pub fn realize_fn_implementation(
     env: &mut TCEnvironment,
-    structure_data: &TCStructureData, origin: &CXAST,
+    structure_data: &TCBaseMappings, origin: &CXAST,
     template: &CXFunctionTemplate, input: &CXTemplateInput
 ) -> Option<()> {
     let old_base = env.base_data;

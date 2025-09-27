@@ -1,26 +1,26 @@
 use crate::MIRValue;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct BCType {
-    pub kind: BCTypeKind
+pub struct MIRType {
+    pub kind: MIRTypeKind
 }
 
-impl BCType {
+impl MIRType {
     pub fn unit() -> Self {
-        BCType {
-            kind: BCTypeKind::Unit
+        MIRType {
+            kind: MIRTypeKind::Unit
         }
     }
     
     pub fn default_pointer() -> Self {
-        BCType {
-            kind: BCTypeKind::Pointer { nullable: false, dereferenceable: 0 }
+        MIRType {
+            kind: MIRTypeKind::Pointer { nullable: false, dereferenceable: 0 }
         }
     }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum BCTypeKind {
+pub enum MIRTypeKind {
     Opaque { bytes: usize },
     Signed { bytes: u8 },
     Unsigned { bytes: u8 },
@@ -28,9 +28,9 @@ pub enum BCTypeKind {
     Float { bytes: u8 },
     Pointer { nullable: bool, dereferenceable: u32 },
 
-    Array { element: Box<BCType>, size: usize },
-    Struct { name: String, fields: Vec<(String, BCType)> },
-    Union { name: String, fields: Vec<(String, BCType)> },
+    Array { element: Box<MIRType>, size: usize },
+    Struct { name: String, fields: Vec<(String, MIRType)> },
+    Union { name: String, fields: Vec<(String, MIRType)> },
     
     VariableSized { size: Box<MIRValue>, alignment: u8 },
 
@@ -52,30 +52,30 @@ impl BCTypeSize {
     }
 }
 
-impl From<BCTypeKind> for BCType {
-    fn from(kind: BCTypeKind) -> Self {
-        BCType { kind }
+impl From<MIRTypeKind> for MIRType {
+    fn from(kind: MIRTypeKind) -> Self {
+        MIRType { kind }
     }
 }
 
-impl BCType {
+impl MIRType {
     pub fn size(&self) -> BCTypeSize {
         match &self.kind {
-            BCTypeKind::VariableSized { size, .. } => BCTypeSize::Variable(*size.clone()),
+            MIRTypeKind::VariableSized { size, .. } => BCTypeSize::Variable(*size.clone()),
             _ => BCTypeSize::Fixed(self.fixed_size()),
         }
     }
     
     pub fn fixed_size(&self) -> usize {
         match &self.kind {
-            BCTypeKind::Opaque { bytes } => *bytes,
-            BCTypeKind::Signed { bytes } => *bytes as usize,
-            BCTypeKind::Unsigned { bytes } => *bytes as usize,
-            BCTypeKind::Float { bytes } => *bytes as usize,
-            BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            BCTypeKind::Array { element, size } =>
+            MIRTypeKind::Opaque { bytes } => *bytes,
+            MIRTypeKind::Signed { bytes } => *bytes as usize,
+            MIRTypeKind::Unsigned { bytes } => *bytes as usize,
+            MIRTypeKind::Float { bytes } => *bytes as usize,
+            MIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            MIRTypeKind::Array { element, size } =>
                 element.fixed_size() * size,
-            BCTypeKind::Struct { fields, .. }
+            MIRTypeKind::Struct { fields, .. }
                 => {
                 let mut current_size = 0;
                 
@@ -93,14 +93,14 @@ impl BCType {
                 
                 current_size
             },
-            BCTypeKind::Union { fields, .. }
+            MIRTypeKind::Union { fields, .. }
                 => fields.iter()
                         .map(|(_, field)| field.fixed_size())
                         .max()
                         .unwrap(),
             
-            BCTypeKind::Bool => 1,
-            BCTypeKind::Unit => 0,
+            MIRTypeKind::Bool => 1,
+            MIRTypeKind::Unit => 0,
             
             _ => panic!("Invalid type for fixed size: {:?}", self.kind),
         }
@@ -108,29 +108,29 @@ impl BCType {
     
     pub fn alignment(&self) -> u8 {
         match &self.kind {
-            BCTypeKind::Opaque { bytes } => *bytes as u8,
-            BCTypeKind::Signed { bytes } => *bytes,
-            BCTypeKind::Unsigned { bytes } => *bytes,
-            BCTypeKind::Bool => 1,
-            BCTypeKind::Float { bytes } => *bytes,
-            BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            BCTypeKind::Array { element, .. } => element.alignment(),
-            BCTypeKind::Struct { fields, .. }
+            MIRTypeKind::Opaque { bytes } => *bytes as u8,
+            MIRTypeKind::Signed { bytes } => *bytes,
+            MIRTypeKind::Unsigned { bytes } => *bytes,
+            MIRTypeKind::Bool => 1,
+            MIRTypeKind::Float { bytes } => *bytes,
+            MIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            MIRTypeKind::Array { element, .. } => element.alignment(),
+            MIRTypeKind::Struct { fields, .. }
                 => fields.iter().map(|(_, field)| field.alignment()).max().unwrap_or(1),
-            BCTypeKind::Union { fields, .. }
+            MIRTypeKind::Union { fields, .. }
                 => fields.iter().map(|(_, field)| field.alignment()).max().unwrap_or(1),
-            BCTypeKind::Unit => 1,
-            BCTypeKind::VariableSized { alignment, .. } => *alignment,
+            MIRTypeKind::Unit => 1,
+            MIRTypeKind::VariableSized { alignment, .. } => *alignment,
         }
     }
     
     #[inline]
     pub fn is_void(&self) -> bool {
-        matches!(self.kind, BCTypeKind::Unit)
+        matches!(self.kind, MIRTypeKind::Unit)
     }
     
     #[inline]
     pub fn is_structure(&self) -> bool {
-        matches!(self.kind, BCTypeKind::Struct { .. } | BCTypeKind::Union { .. })
+        matches!(self.kind, MIRTypeKind::Struct { .. })
     }
 }
