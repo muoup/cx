@@ -53,7 +53,7 @@ pub fn deconstruct_variable(builder: &mut BytecodeBuilder, var: &MIRValue, _type
         CXTypeKind::StrongPointer { inner_type, is_array } => {
             let deconstructor = builder.get_deconstructor(inner_type);
 
-            let inner_val = MIRValue::LoadOf(BCType::default_pointer(), Box::new(var.clone()));
+            let inner_val = builder.load_value(var.clone(), BCType::default_pointer())?;
             let deconstruct = builder.create_named_block("ptr_not_null");
             let post_deconstruct = builder.create_named_block("ptr_is_null");
 

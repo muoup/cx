@@ -128,12 +128,13 @@ fn convert_fixed_type(cx_type: &CXType) -> Option<BCType> {
 }
 
 fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
-    match &cx_type.kind {
-        CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } => {
-            Some(BCType::default_pointer())
-        },
-        
-        _ => convert_fixed_type(cx_type)
+    let bc_type = convert_fixed_type(cx_type)?;
+
+    match &bc_type.kind {
+        BCTypeKind::Struct { .. } | BCTypeKind::Union { .. }
+            => Some(BCType::default_pointer()),
+
+        _ => Some(bc_type)
     }
 }
 

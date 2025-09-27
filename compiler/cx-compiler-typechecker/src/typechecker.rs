@@ -515,8 +515,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     kind: TCExprKind::TypeConstructor {
                         name: name.clone(),
 
-                        union_type,
-                        variant_type,
+                        union_type, variant_type,
                         variant_index: i,
 
                         input: Box::new(inner)

@@ -184,6 +184,10 @@ impl BytecodeBuilder {
         instruction: VirtualInstruction,
         value_type: BCType
     ) -> Option<MIRValue> {
+        if self.current_block_closed() {
+            return Some(MIRValue::NULL);
+        }
+
         let context = self.fun_mut();
         let current_block = context.current_block;
 
@@ -204,6 +208,14 @@ impl BytecodeBuilder {
                 value_id: (body.len() - 1) as ElementID,
             }
         )
+    }
+
+    fn current_block_closed(&self) -> bool {
+        let Some(last_inst) = self.current_block_last_inst() else {
+            return false;
+        };
+
+        last_inst.instruction.is_block_terminating()
     }
 
     pub fn add_instruction_cxty(
@@ -234,15 +246,6 @@ impl BytecodeBuilder {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
-            let return_block = self.create_named_block("return");
-            
-            self.add_instruction(
-                VirtualInstruction::Jump { target: return_block },
-                BCType::unit()
-            );
-            
-            self.set_current_block(return_block);
-            
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
                 BCType::unit()
@@ -483,6 +486,18 @@ impl BytecodeBuilder {
 
         context.blocks.last()?.body.last()
     }
+
+    fn current_block_last_inst(&self) -> Option<&BlockInstruction> {
+        let context = self.fun();
+
+        let current_block = match context.current_block {
+            BlockID::Block(id) => context.blocks.get(id as usize)?,
+            BlockID::DeferredBlock(id) => context.deferred_blocks.get(id as usize)?,
+            _ => unreachable!("INTERNAL PANIC: Attempted to access last instruction of invalid block")
+        };
+
+        current_block.body.last()
+    }
     
     pub fn current_function_name(&self) -> Option<&str> {
         self.function_context.as_ref().map(|ctx| ctx.prototype.name.as_str())
@@ -535,13 +550,19 @@ impl BytecodeBuilder {
         )
     }
 
-    pub fn get_tag(&mut self, val: &MIRValue, _type: &BCType) -> Option<MIRValue> {
+    pub fn get_tag_addr(&mut self, val: &MIRValue, _type: &BCType) -> Option<MIRValue> {
         self.struct_access(val.clone(), _type, 1)
+    }
+
+    pub fn get_tag(&mut self, val: &MIRValue, _type: &BCType) -> Option<MIRValue> {
+        let tag_field = self.get_tag_addr(val, _type)?;
+
+        self.load_value(tag_field, BCType::from(BCTypeKind::Unsigned { bytes: 4 }) )
     }
 
     pub fn set_tag(&mut self, val: &MIRValue, _type: &BCType, tag: u32) -> Option<MIRValue> {
         let tag_val = self.int_const(tag as i32, 4, true);
-        let tag_field = self.get_tag(val, _type)?;
+        let tag_field = self.get_tag_addr(val, _type)?;
 
         self.add_instruction(
             VirtualInstruction::Store {
@@ -552,5 +573,11 @@ impl BytecodeBuilder {
             },
             BCType::unit()
         )
+    }
+
+    pub fn load_value(&mut self, ptr: MIRValue, _type: BCType) -> Option<MIRValue> {
+        if _type.is_structure() { return Some(ptr); }
+
+        Some(MIRValue::LoadOf(_type, Box::new(ptr)))
     }
 }

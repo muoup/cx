@@ -14,9 +14,10 @@ Output generate_output(int i) {
         case 1: return Output::fp(3.14);
         case 2: return Output::string("Hello, World!");
         case 3: return Output::data({ 1, 2.0, 'c' });
-        default: exit(1);
+        default:
+            printf("Invalid input, returning integer 0\n");
+            break;
     }
-
     return Output::integer(0); // Fallback, should never reach here
 }
 

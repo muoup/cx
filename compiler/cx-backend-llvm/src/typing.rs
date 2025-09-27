@@ -84,11 +84,6 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
                     })
                     .collect::<Option<Vec<_>>>()?;
 
-                let struct_type = context.struct_type(
-                    _types.as_slice(),
-                    false
-                );
-
                 let struct_name = if name.is_empty() {
                     anonymous_struct_name()
                 } else {
@@ -101,10 +96,13 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
                 return context.get_struct_type(struct_name.as_str())
                     .map(|s| s.as_any_type_enum());
             }
-            BCTypeKind::Union { name, .. } =>
-                context.get_struct_type(name.as_str())
-                    .unwrap_or_else(|| context.opaque_struct_type(name.as_str()))
-                    .as_any_type_enum(),
+
+            BCTypeKind::Union { .. } => {
+                let _type_size = _type.fixed_size();
+                let array_type = context.i8_type().array_type(_type_size as u32);
+
+                array_type.as_any_type_enum()
+            },
 
             _ => panic!("Invalid type: {_type:?}")
         }

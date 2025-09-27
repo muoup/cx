@@ -226,7 +226,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
             },
 
             CXTypeKind::Float { bytes: 8 } => {
-                add_coercion(arg, CXTypeKind::Integer { bytes: 8, signed: false }.into(), CXCastType::BitCast);
+                // Already the correct type for varargs
             },
 
             CXTypeKind::Bool => {

@@ -132,11 +132,12 @@ pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
             => Some(CXCastType::BitCast),
 
         (CXTypeKind::MemoryReference(inner), _)
-            if same_type(inner.as_ref(), to_type) && to_type.is_structured() => Some(CXCastType::FauxLoad),
-        (CXTypeKind::MemoryReference(inner), _) => Some(CXCastType::Load),
+            if same_type(inner.as_ref(), to_type) && to_type.is_structured() => Some(CXCastType::Reinterpret),
+        (CXTypeKind::MemoryReference(inner), _) if same_type(inner, to_type) => Some(CXCastType::Load),
 
+        (_, CXTypeKind::MemoryReference(inner)) |
         (_, CXTypeKind::PointerTo { inner_type: inner, .. })
-            if same_type(inner.as_ref(), from_type) && from_type.is_structured() => Some(CXCastType::FauxLoad),
+            if same_type(inner.as_ref(), from_type) && from_type.is_structured() => Some(CXCastType::Reinterpret),
 
         (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
             if same_type(_type, inner) => Some(CXCastType::BitCast),

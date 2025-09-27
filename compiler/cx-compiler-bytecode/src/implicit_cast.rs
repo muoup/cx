@@ -189,11 +189,11 @@ pub(crate) fn implicit_cast(
 
         CXCastType::Load => {
             let new_type = builder.convert_cx_type(to_type)?;
-            Some(MIRValue::LoadOf(new_type, Box::new(value)))
+            builder.load_value(value, new_type)
         }
         
-        CXCastType::FauxLoad => {
+        CXCastType::Reinterpret => {
             Some(value)
-        },
+        }
     }
 }

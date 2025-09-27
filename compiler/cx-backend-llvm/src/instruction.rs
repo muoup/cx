@@ -5,7 +5,7 @@ use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_bytecode::types::{BCTypeKind, BCTypeSize};
 use cx_data_bytecode::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
-use inkwell::types::BasicType;
+use inkwell::types::{BasicType, IntType};
 use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
@@ -256,12 +256,9 @@ pub(crate) fn generate_instruction<'a>(
                     .get_value(value)
                     .unwrap()
                     .get_value();
-                let any_type = bc_llvm_type(global_state.context, type_).unwrap();
-
                 let basic_val = any_to_basic_val(any_value)
                     .unwrap_or_else(|| panic!("Failed to convert value {any_value:?} to basic value"));
-                let basic_type = any_to_basic_type(any_type).unwrap();
-                
+
                 let memory_val = function_state
                     .get_value(memory)?
                     .get_value()
@@ -275,8 +272,8 @@ pub(crate) fn generate_instruction<'a>(
                             1,
                             basic_val.into_pointer_value(),
                             1,
-                            basic_type.size_of()
-                                .expect("Failed to get size of type")
+                            global_state.context.i64_type()
+                                .const_int(type_.fixed_size() as u64, false)
                         )
                         .unwrap();
                 } else {

@@ -283,5 +283,5 @@ pub enum CXCastType {
     // is stored in memory. A structured type is itself a memory reference despite this
     // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
     // used to create an explicit no-op to appease the typechecker.
-    FauxLoad,
+    Reinterpret,
 }

@@ -21,17 +21,25 @@ pub fn generate_instruction(
             allocate_variable(name.as_str(), builder, type_),
 
         TCExprKind::Assignment { target, value, additional_op } => {
-            let left_id = generate_instruction(builder, target)?;
             let right_id = generate_instruction(builder, value)?;
 
-            if !matches!(target.kind, TCExprKind::VariableDeclaration { .. }) {
+            let target_id = if let TCExprKind::VariableDeclaration { name, .. } = &target.kind {
+                if value._type.is_structured() {
+                    builder.insert_symbol(name.as_string(), right_id.clone());
+                    return Some(right_id);
+                }
+
+                generate_instruction(builder, target.as_ref())?
+            } else {
+                let left_id = generate_instruction(builder, target.as_ref())?;
                 deconstruct_variable(builder, &left_id, &target._type)?;
-            }
+                left_id
+            };
 
             let Some(inner) = target._type.mem_ref_inner()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {}", target._type) };
 
-            assign_value(builder, left_id, right_id, inner, additional_op.as_ref())
+            assign_value(builder, target_id, right_id, inner, additional_op.as_ref())
         },
 
         TCExprKind::Access { target, field } => {
@@ -141,7 +149,7 @@ pub fn generate_instruction(
             }
         },
 
-        TCExprKind::TypeConstructor { union_type, variant_index, input, .. } => {
+        TCExprKind::TypeConstructor { union_type, variant_type, variant_index, input, .. } => {
             let union_bc_type = builder.convert_cx_type(union_type)?;
 
             let alloc = builder.add_instruction(
@@ -154,7 +162,7 @@ pub fn generate_instruction(
 
             let value = generate_instruction(builder, input)?;
 
-            assign_value(builder, alloc.clone(), value, &expr._type, None)?;
+            assign_value(builder, alloc.clone(), value, variant_type, None)?;
             builder.set_tag(&alloc.clone(), &union_bc_type, *variant_index as u32);
 
             Some(alloc)
@@ -192,7 +200,7 @@ pub fn generate_instruction(
                 _ => {
                     let bc_type = builder.convert_cx_type(&expr._type)?;
 
-                    Some(MIRValue::LoadOf(bc_type, Box::new(inner)))
+                    builder.load_value(inner, bc_type)
                 }
             }
         },
@@ -260,16 +268,18 @@ pub fn generate_instruction(
             
             let value = value.as_ref().unwrap().as_ref();
             let value_id = generate_instruction(builder, value)?;
-            let returned_type = builder.convert_cx_type(&value._type)?;
-            
-            if returned_type.is_structure() {
+
+            if value._type.is_memory_reference() {
+                let inner_type = value._type.mem_ref_inner()?;
+                let returned_type = builder.convert_cx_type(inner_type)?;
+
                 let first_param = builder.add_instruction(
                     VirtualInstruction::FunctionParameter {
                         param_index: 0,
                     },
                     BCType::from(BCTypeKind::Pointer { nullable: false, dereferenceable: 0 })
                 )?;
-                
+
                 builder.add_instruction(
                     VirtualInstruction::Store {
                         memory: first_param.clone(),
@@ -278,12 +288,12 @@ pub fn generate_instruction(
                     },
                     BCType::unit()
                 )?;
-                
+
                 builder.add_return(Some(first_param));
             } else {
                 builder.add_return(Some(value_id));
             }
-            
+
             Some(MIRValue::NULL)
         },
         
@@ -340,7 +350,7 @@ pub fn generate_instruction(
 
                     let bc_type = builder.convert_fixed_cx_type(inner.as_ref())?;
 
-                    let loaded_val = MIRValue::LoadOf(bc_type, value.into());
+                    let loaded_val = builder.load_value(value, bc_type)?;
                     let offset = builder.int_const(*off as i32, 8, true);
 
                     let incremented = generate_algebraic_binop(
@@ -369,7 +379,7 @@ pub fn generate_instruction(
 
                     let bc_type = builder.convert_fixed_cx_type(inner.as_ref())?;
 
-                    let loaded_val = MIRValue::LoadOf(bc_type, Box::new(value.clone()));
+                    let loaded_val = builder.load_value(value.clone(), bc_type)?;
 
                     let bytes = match &inner.kind {
                         CXTypeKind::Integer { bytes, .. } => *bytes,
@@ -560,7 +570,7 @@ pub fn generate_instruction(
             let condition_value = generate_instruction(builder, condition)?;
             let condition_type = builder.convert_cx_type(&condition._type)?;
 
-            let tag_value = builder.get_tag(&condition_value, &condition_type)?;
+            let tag_value = builder.get_tag( &condition_value, &condition_type)?;
             let match_block = builder.current_block();
 
             let blocks = cases.iter()
@@ -590,6 +600,7 @@ pub fn generate_instruction(
 
             let merge_block = builder.create_named_block("match merge");
 
+            builder.set_current_block(match_block);
             builder.add_instruction(
                 VirtualInstruction::JumpTable {
                     value: tag_value,
@@ -617,16 +628,16 @@ pub fn generate_instruction(
                 );
             }
 
-            builder.set_current_block(match_block);
+            builder.set_current_block(merge_block);
             Some(MIRValue::NULL)
         },
 
-        TCExprKind::ConstructorMatchIs { expr, var_name, variant_type, variant_tag, union_type } => {
+        TCExprKind::ConstructorMatchIs { expr, var_name, variant_tag, union_type, .. } => {
             let expr_value = generate_instruction(builder, expr.as_ref())?;
             let union_bc_type = builder.convert_cx_type(union_type)?;
 
             let tag_value = builder.get_tag(&expr_value, &union_bc_type)?;
-            let tag_const = builder.match_int_const(*variant_tag as i32, &BCType::from(BCTypeKind::Unsigned { bytes: 8 }));
+            let tag_const = builder.match_int_const(*variant_tag as i32, &BCType::from(BCTypeKind::Unsigned { bytes: 4 }));
 
             let is_match = builder.add_instruction(
                 VirtualInstruction::IntegerBinOp {
@@ -727,9 +738,11 @@ pub fn generate_instruction(
 
         TCExprKind::Move { operand } => {
             let memory = generate_instruction(builder, operand.as_ref())?;
+            let loaded_value = builder.load_value(memory.clone(), BCType::default_pointer())?;
+
             let value = builder.add_instruction(
                 VirtualInstruction::Temp {
-                    value: MIRValue::LoadOf(BCType::default_pointer(), Box::new(memory.clone()))
+                    value: loaded_value,
                 },
                 BCType::default_pointer()
             )?;

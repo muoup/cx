@@ -131,6 +131,6 @@ impl BCType {
     
     #[inline]
     pub fn is_structure(&self) -> bool {
-        matches!(self.kind, BCTypeKind::Struct { .. })
+        matches!(self.kind, BCTypeKind::Struct { .. } | BCTypeKind::Union { .. })
     }
 }
