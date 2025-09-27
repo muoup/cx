@@ -152,9 +152,10 @@ pub fn generate_instruction(
                 BCType::default_pointer()
             )?;
 
-            let value = generate_instruction(builder, input)?;
-
-            assign_value(builder, alloc.clone(), value, variant_type, None)?;
+            if !input._type.is_unit() {
+                let value = generate_instruction(builder, input)?;
+                assign_value(builder, alloc.clone(), value, variant_type, None)?;
+            }
             builder.set_tag(&alloc.clone(), &union_bc_type, *variant_index as u32);
 
             Some(alloc)

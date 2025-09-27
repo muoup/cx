@@ -5,7 +5,8 @@ union class Output {
     integer :: int,
     fp      :: double,
     string  :: const char*,
-    data    :: struct { int a; double b; char c; }
+    data    :: struct { int a; double b; char c; },
+    error   :: void
 };
 
 Output generate_output(int i) {
@@ -14,11 +15,10 @@ Output generate_output(int i) {
         case 1: return Output::fp(3.14);
         case 2: return Output::string("Hello, World!");
         case 3: return Output::data({ 1, 2.0, 'c' });
-        default:
-            printf("Invalid input, returning integer 0\n");
-            break;
+        default: break;
     }
-    return Output::integer(0); // Fallback, should never reach here
+
+    return Output::error();
 }
 
 void print_output(Output out) {
