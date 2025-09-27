@@ -21,25 +21,17 @@ pub fn generate_instruction(
             allocate_variable(name.as_str(), builder, type_),
 
         TCExprKind::Assignment { target, value, additional_op } => {
+            let left_id = generate_instruction(builder, target.as_ref())?;
             let right_id = generate_instruction(builder, value)?;
 
-            let target_id = if let TCExprKind::VariableDeclaration { name, .. } = &target.kind {
-                if value._type.is_structured() {
-                    builder.insert_symbol(name.as_string(), right_id.clone());
-                    return Some(right_id);
-                }
-
-                generate_instruction(builder, target.as_ref())?
-            } else {
-                let left_id = generate_instruction(builder, target.as_ref())?;
+            if !matches!(&target.kind, TCExprKind::VariableDeclaration { .. }) {
                 deconstruct_variable(builder, &left_id, &target._type)?;
-                left_id
-            };
+            }
 
             let Some(inner) = target._type.mem_ref_inner()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {}", target._type) };
 
-            assign_value(builder, target_id, right_id, inner, additional_op.as_ref())
+            assign_value(builder, left_id, right_id, inner, additional_op.as_ref())
         },
 
         TCExprKind::Access { target, field } => {
