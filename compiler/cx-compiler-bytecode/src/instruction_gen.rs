@@ -2,11 +2,11 @@ use std::any::type_name_of_val;
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
 use cx_data_bytecode::types::{BCType, BCTypeKind, BCTypeSize};
-use cx_data_bytecode::{BCFunctionPrototype, BCGlobalType, BCGlobalValue, BCIntUnOp, BCParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction};
+use cx_data_bytecode::{BCFunctionPrototype, BCGlobalType, BCGlobalValue, BCIntBinOp, BCIntUnOp, BCParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
 use cx_util::mangling::mangle_deconstructor;
-use crate::aux_routines::{allocate_variable, get_cx_struct_field_by_index, get_struct_field, try_access_field};
+use crate::aux_routines::{allocate_variable, assign_value, get_cx_struct_field_by_index, get_struct_field, try_access_field};
 use crate::builder::BytecodeBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
@@ -23,8 +23,6 @@ pub fn generate_instruction(
         TCExprKind::Assignment { target, value, additional_op } => {
             let left_id = generate_instruction(builder, target)?;
             let right_id = generate_instruction(builder, value)?;
-            
-            if additional_op.is_some() { todo!("compound assignment") }
 
             if !matches!(target.kind, TCExprKind::VariableDeclaration { .. }) {
                 deconstruct_variable(builder, &left_id, &target._type)?;
@@ -33,16 +31,7 @@ pub fn generate_instruction(
             let Some(inner) = target._type.mem_ref_inner()
                 else { unreachable!("generate_instruction: Expected memory alias type for expr, found {}", target._type) };
 
-            let inner_type = builder.convert_fixed_cx_type(inner)?;
-
-            builder.add_instruction(
-                VirtualInstruction::Store {
-                    memory: left_id,
-                    value: right_id,
-                    type_: inner_type,
-                },
-                BCType::unit()
-            )
+            assign_value(builder, left_id, right_id, inner, additional_op.as_ref())
         },
 
         TCExprKind::Access { target, field } => {
@@ -150,6 +139,25 @@ pub fn generate_instruction(
 
                 type_ => log_error!("Invalid function pointer type: {type_}")
             }
+        },
+
+        TCExprKind::TypeConstructor { union_type, variant_index, input, .. } => {
+            let union_bc_type = builder.convert_cx_type(union_type)?;
+
+            let alloc = builder.add_instruction(
+                VirtualInstruction::Allocate {
+                    alignment: union_bc_type.alignment(),
+                    _type: union_bc_type.clone(),
+                },
+                BCType::default_pointer()
+            )?;
+
+            let value = generate_instruction(builder, input)?;
+
+            assign_value(builder, alloc.clone(), value, &expr._type, None)?;
+            builder.set_tag(&alloc.clone(), &union_bc_type, *variant_index as u32);
+
+            Some(alloc)
         },
 
         TCExprKind::BinOp { lhs, rhs, op } => {
@@ -481,7 +489,7 @@ pub fn generate_instruction(
             Some(MIRValue::NULL)
         },
 
-        TCExprKind::Switch { condition, block, cases, default_case } => {
+        TCExprKind::CSwitch { condition, block, cases, default_case } => {
             let condition_value = generate_instruction(builder, condition);
             
             let default_block = if default_case.is_some() {
@@ -546,6 +554,95 @@ pub fn generate_instruction(
             
             builder.end_scope();
             Some(MIRValue::NULL)
+        },
+
+        TCExprKind::Match { condition, cases, default_case } => {
+            let condition_value = generate_instruction(builder, condition)?;
+            let condition_type = builder.convert_cx_type(&condition._type)?;
+
+            let tag_value = builder.get_tag(&condition_value, &condition_type)?;
+            let match_block = builder.current_block();
+
+            let blocks = cases.iter()
+                .map(|tag_match| {
+                    let block = builder.create_block();
+                    builder.set_current_block(block);
+                    builder.push_scope();
+
+                    builder.insert_symbol(
+                        tag_match.instance_name.as_string(),
+                        condition_value.clone()
+                    );
+                    generate_instruction(builder, &tag_match.body)?;
+
+                    builder.pop_scope();
+                    Some((tag_match.tag_value, block))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let default_block = if let Some(default_case) = default_case {
+                let block = builder.create_named_block("match default");
+                builder.set_current_block(block);
+                generate_instruction(builder, default_case)?;
+                Some(block)
+            } else {
+                None
+            };
+
+            let merge_block = builder.create_named_block("match merge");
+
+            builder.add_instruction(
+                VirtualInstruction::JumpTable {
+                    value: tag_value,
+                    targets: blocks.iter()
+                        .map(|(tag, block)| (*tag, *block))
+                        .collect(),
+                    default: default_block.unwrap_or(merge_block)
+                },
+                BCType::unit()
+            );
+
+            for (_, block) in blocks.iter() {
+                builder.set_current_block(*block);
+                builder.add_instruction(
+                    VirtualInstruction::Jump { target: merge_block },
+                    BCType::unit()
+                );
+            }
+
+            if let Some(default_block) = default_block {
+                builder.set_current_block(default_block);
+                builder.add_instruction(
+                    VirtualInstruction::Jump { target: merge_block },
+                    BCType::unit()
+                );
+            }
+
+            builder.set_current_block(match_block);
+            Some(MIRValue::NULL)
+        },
+
+        TCExprKind::ConstructorMatchIs { expr, var_name, variant_type, variant_tag, union_type } => {
+            let expr_value = generate_instruction(builder, expr.as_ref())?;
+            let union_bc_type = builder.convert_cx_type(union_type)?;
+
+            let tag_value = builder.get_tag(&expr_value, &union_bc_type)?;
+            let tag_const = builder.match_int_const(*variant_tag as i32, &BCType::from(BCTypeKind::Unsigned { bytes: 8 }));
+
+            let is_match = builder.add_instruction(
+                VirtualInstruction::IntegerBinOp {
+                    left: tag_value,
+                    right: tag_const,
+                    op: BCIntBinOp::EQ
+                },
+                BCType::from(BCTypeKind::Bool)
+            )?;
+
+            builder.insert_symbol(
+                var_name.as_string(),
+                expr_value
+            );
+
+            Some(is_match)
         },
 
         TCExprKind::For { init, condition, increment, body } => {

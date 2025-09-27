@@ -186,6 +186,11 @@ pub(crate) fn implicit_cast(
                 to_type.clone()
             )
         },
+
+        CXCastType::Load => {
+            let new_type = builder.convert_cx_type(to_type)?;
+            Some(MIRValue::LoadOf(new_type, Box::new(value)))
+        }
         
         CXCastType::FauxLoad => {
             Some(value)

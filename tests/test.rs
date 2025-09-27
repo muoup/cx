@@ -36,7 +36,8 @@ test_files!(
     vector,
     templated_destructor,
     basic_global_variable,
-    global_in_template
+    global_in_template,
+    sum_type
 );
 
 #[ctor::ctor]

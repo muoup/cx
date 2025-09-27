@@ -44,7 +44,7 @@ impl Display for CXTypeKind {
 
                 write!(f, "struct {name_str} {{ {field_strs} }}")
             },
-            CXTypeKind::Union { fields, name } => {
+            CXTypeKind::Union { variants: fields, name } => {
                 let field_strs = fields.iter()
                     .map(|(name, type_)| format!("{name}: {type_}"))
                     .collect::<Vec<_>>()
@@ -56,6 +56,14 @@ impl Display for CXTypeKind {
                 };
 
                 write!(f, "union {name_str} {{ {field_strs} }}")
+            },
+            CXTypeKind::TaggedUnion { variants: fields, name } => {
+                let variant_strs = fields.iter()
+                    .map(|(name, type_)| format!("{name}: {type_}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "tagged union {name} {{ {variant_strs} }}")
             },
             CXTypeKind::Unit => write!(f, "()"),
             CXTypeKind::PointerTo { inner_type: inner, weak: explicitly_weak, nullable, sizeless_array } => {

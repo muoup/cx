@@ -216,11 +216,29 @@ pub fn precontextualize_type(
                 CXType::from(
                     CXTypeKind::Union {
                         name: name.clone(),
-                        fields,
+                        variants: fields,
                     }
                 )
             )
         }
+
+        CXNaiveTypeKind::TaggedUnion { name, variants } => {
+            let variants = variants.iter()
+                .map(|(name, variant_type)| {
+                    let variant_type = recurse_ty(variant_type)?;
+                    Some((name.clone(), variant_type))
+                })
+                .collect::<Option<Vec<_>>>()?;
+
+            Some(
+                CXType::from(
+                    CXTypeKind::TaggedUnion {
+                        name: name.clone(),
+                        variants: variants,
+                    }
+                )
+            )
+        },
     }
 }
 

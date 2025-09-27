@@ -160,11 +160,27 @@ pub enum TCExprKind {
         body: Box<TCExpr>,
     },
 
-    Switch {
+    CSwitch {
         condition: Box<TCExpr>,
         block: Vec<TCExpr>,
         cases: Vec<(u64, usize)>, // (case value, index of the case body)
         default_case: Option<usize>,
+    },
+
+    Match {
+        condition: Box<TCExpr>,
+        cases: Vec<TCTagMatch>, // (tag value, case body)
+        default_case: Option<Box<TCExpr>>,
+    },
+
+    ConstructorMatchIs {
+        expr: Box<TCExpr>,
+
+        union_type: CXType,
+        variant_type: CXType,
+        variant_tag: u64,
+
+        var_name: CXIdent
     },
 
     ImplicitLoad {
@@ -201,6 +217,16 @@ pub enum TCExprKind {
         indices: Vec<TCInitIndex>,
     },
 
+    TypeConstructor {
+        name: CXIdent,
+
+        union_type: CXType,
+        variant_type: CXType,
+        variant_index: usize,
+
+        input: Box<TCExpr>
+    },
+
     Break,
     Continue,
 
@@ -215,4 +241,12 @@ pub struct TCInitIndex {
     pub name: Option<String>,
     pub value: TCExpr,
     pub index: usize,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct TCTagMatch {
+    pub tag_value: u64,
+    pub body: Box<TCExpr>,
+    pub variant_type: CXType,
+    pub instance_name: CXIdent,
 }

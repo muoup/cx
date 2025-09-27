@@ -1,10 +1,10 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_util::identifier::CXIdent;
-use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
 use cx_data_ast::preparse::naive_types::{CXNaiveType, CX_CONST};
-use cx_data_typechecker::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex};
+use cx_data_typechecker::ast::{TCTagMatch, TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex};
 use cx_util::log_error;
-use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_method_call};
+use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
 use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast, try_implicit_cast};
 use crate::environment::TCEnvironment;
 use crate::realize_fn_implementation;
@@ -395,6 +395,9 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
             },
 
+            CXExprKind::BinOp { op: CXBinOp::Is, lhs, rhs } =>
+                typecheck_is(env, lhs, rhs)?,
+
             CXExprKind::BinOp { op: CXBinOp::Access, lhs, rhs } =>
                 typecheck_access(env, lhs, rhs)?,
 
@@ -487,6 +490,40 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 }
             },
 
+            CXExprKind::TypeConstructor { union_name: type_name, variant_name: name, inner } => {
+                let Some(union_type) = env.get_type(type_name.as_str()) else {
+                    log_error!("TYPE ERROR: Unknown type: {}", type_name);
+                };
+
+                let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
+                    log_error!("TYPE ERROR: Unknown type: {}", type_name);
+                };
+
+                let Some((i, variant_type)) = variants.iter()
+                    .enumerate()
+                    .find(|(_, (variant_name, _))| variant_name == name.as_str())
+                    .map(|(i, (_, variant_type))| (i, variant_type.clone())) else {
+
+                    log_error!("TYPE ERROR: Variant '{}' not found in tagged union type {}", name, type_name);
+                };
+
+                let mut inner = typecheck_expr(env, inner)?;
+                implicit_cast(&mut inner, &variant_type);
+
+                TCExpr {
+                    _type: union_type.clone().mem_ref_to(),
+                    kind: TCExprKind::TypeConstructor {
+                        name: name.clone(),
+
+                        union_type,
+                        variant_type,
+                        variant_index: i,
+
+                        input: Box::new(inner)
+                    }
+                }
+            }
+
             CXExprKind::Unit => {
                 TCExpr {
                     _type: CXType::from(CXTypeKind::Unit),
@@ -513,12 +550,80 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 TCExpr {
                     _type: CXType::from(CXTypeKind::Unit),
-                    kind: TCExprKind::Switch {
+                    kind: TCExprKind::CSwitch {
                         condition: Box::new(tc_condition),
                         block: tc_stmts,
                         cases: cases.clone(),
                         default_case: default_case.clone()
                     }
+                }
+            },
+
+            CXExprKind::Match { condition, arms, default } => {
+                let mut match_value = typecheck_expr(env, condition)?;
+                coerce_value(&mut match_value);
+
+                match &match_value._type.kind {
+                    CXTypeKind::TaggedUnion { name: expected_union_name, variants, .. } => {
+                        let mut tc_arms = Vec::new();
+
+                        for (value, block) in arms.iter() {
+                            env.push_scope();
+
+                            let CXExprKind::TypeConstructor { union_name, variant_name, inner } = &value.kind else {
+                                log_error!("TYPE ERROR: Expected Type Constructor in 'match' arm, found: {}", value);
+                            };
+
+                            let CXExprKind::Identifier(instance_name) = &inner.as_ref().kind else {
+                                log_error!("TYPE ERROR: Expected identifier in 'match' arm, found: {}", inner);
+                            };
+                            let instance_name = instance_name.clone();
+
+                            if union_name.as_str() != expected_union_name.as_str() {
+                                log_error!("TYPE ERROR: Mismatched type in 'match' arm, expected '{}', found '{}'", match_value._type, union_name);
+                            }
+
+                            let Some((idx, variant_type)) = variants.iter()
+                                .enumerate()
+                                .find(|(i, (name, _))| name == variant_name.as_str())
+                                .map(|(i, (_, variant_type))| (i, variant_type.clone())) else {
+                                log_error!("TYPE ERROR: Variant '{}' not found in tagged union type {}", variant_name, union_name);
+                            };
+
+                            env.insert_symbol(instance_name.as_string(), variant_type.clone());
+                            let tc_block = typecheck_expr(env, block)?;
+
+                            tc_arms.push(TCTagMatch {
+                                tag_value: idx as u64,
+                                body: Box::new(tc_block),
+
+                                instance_name, variant_type
+                            });
+
+                            env.pop_scope();
+                        }
+
+                        let default_case = default.as_ref().map(|d| {
+                            env.push_scope();
+                            let Some(tc_default) = typecheck_expr(env, d) else {
+                                log_error!("TYPE ERROR: Failed to typecheck default case in 'match' expression");
+                            };
+                            env.pop_scope();
+
+                            Some(Box::new(tc_default))
+                        })?;
+
+                        TCExpr {
+                            _type: CXType::from(CXTypeKind::Unit),
+                            kind: TCExprKind::Match {
+                                condition: Box::new(match_value),
+                                cases: tc_arms,
+                                default_case
+                            }
+                        }
+                    },
+
+                    _ => todo!("Integer-based matching")
                 }
             },
 

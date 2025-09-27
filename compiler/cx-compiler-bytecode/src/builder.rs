@@ -534,4 +534,23 @@ impl BytecodeBuilder {
             access._type.clone()
         )
     }
+
+    pub fn get_tag(&mut self, val: &MIRValue, _type: &BCType) -> Option<MIRValue> {
+        self.struct_access(val.clone(), _type, 1)
+    }
+
+    pub fn set_tag(&mut self, val: &MIRValue, _type: &BCType, tag: u32) -> Option<MIRValue> {
+        let tag_val = self.int_const(tag as i32, 4, true);
+        let tag_field = self.get_tag(val, _type)?;
+
+        self.add_instruction(
+            VirtualInstruction::Store {
+                memory: tag_field,
+                value: tag_val,
+
+                type_: BCType::from(BCTypeKind::Unsigned { bytes: 4 })
+            },
+            BCType::unit()
+        )
+    }
 }

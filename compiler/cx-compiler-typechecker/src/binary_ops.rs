@@ -23,13 +23,9 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
 
     let fields = match &lhs._type.kind {
         CXTypeKind::Structured { fields, .. } |
-        CXTypeKind::Union { fields, .. } => fields,
+        CXTypeKind::Union { variants: fields, .. } => fields,
 
         _ => log_error!("TYPE ERROR: Member access on {} without a struct or union type", lhs._type),
-    };
-
-    let Some(type_name) = lhs._type.get_identifier() else {
-        log_error!("TYPE ERROR: Member access on {} without a type name", lhs._type);
     };
 
     match &rhs.kind {
@@ -51,6 +47,10 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
                 );
             }
 
+            let Some(type_name) = lhs._type.get_identifier() else {
+                log_error!("TYPE ERROR: Member function call on {} without a type name", lhs._type);
+            };
+
             let member_fn_name = mangle_member_function(name.as_str(), type_name.as_str());
             let Some(prototype) = env.get_func(&member_fn_name) else {
                 log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
@@ -69,6 +69,10 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
         },
 
         CXExprKind::TemplatedIdentifier { name, template_input } => {
+            let Some(type_name) = lhs._type.get_identifier() else {
+                log_error!("TYPE ERROR: Member function call on {} without a type name", lhs._type);
+            };
+
             let member_fn_name = mangle_member_function(type_name, name.as_str());
             let input = contextualize_template_args(env, template_input)?;
 
@@ -240,6 +244,55 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
                 function: Box::new(lhs),
                 arguments: tc_args,
                 direct_call: direct
+            }
+        }
+    )
+}
+
+pub(crate) fn typecheck_is(env: &mut TCEnvironment, expr: &CXExpr, constructor: &CXExpr) -> Option<TCExpr> {
+    let mut expr = typecheck_expr(env, expr)?;
+    coerce_value(&mut expr);
+
+    let CXTypeKind::TaggedUnion { name: expected_union_name, variants, .. } = &expr._type.kind else {
+        log_error!("TYPE ERROR: 'is' operator requires a tagged union on the left-hand side, found {}", expr._type);
+    };
+
+    let CXExprKind::TypeConstructor { union_name, variant_name, inner  } = &constructor.kind else {
+        log_error!("TYPE ERROR: 'is' operator requires a type constructor on the right-hand side, found {:?}", constructor);
+    };
+
+    if expected_union_name != union_name {
+        log_error!("TYPE ERROR: 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}", expected_union_name, union_name.as_string());
+    }
+
+    let CXExprKind::Identifier(inner_var_name) = &inner.kind else {
+        log_error!("TYPE ERROR: 'is' operator requires a variant name identifier in the type constructor, found {:?}", inner);
+    };
+
+    if expr._type.get_name() != Some(union_name.as_str()) {
+        log_error!("TYPE ERROR: 'is' operator left-hand side type {} does not match right-hand side tagged union type {}", expr._type, union_name.as_string());
+    }
+
+    let Some((tag_value, variant_type)) = variants.iter()
+        .enumerate()
+        .find(|(_, (name, _))| name == &variant_name.as_str())
+        .map(|(i, (_, _ty))| (i, _ty)) else {
+        log_error!("TYPE ERROR: 'is' operator variant name '{}' not found in tagged union {}", variant_name, union_name);
+    };
+
+    env.insert_symbol(inner_var_name.as_string(), variant_type.clone());
+
+    let union_type = expr._type.clone();
+    let var_name = inner_var_name.clone();
+    let variant_type = variant_type.clone();
+
+    Some(
+        TCExpr {
+            _type: CXTypeKind::Bool.into(),
+            kind: TCExprKind::ConstructorMatchIs {
+                expr: Box::new(expr),
+                union_type, var_name, variant_type,
+                variant_tag: tag_value as u64,
             }
         }
     )

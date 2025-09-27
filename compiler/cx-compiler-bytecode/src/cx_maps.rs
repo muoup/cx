@@ -88,12 +88,8 @@ impl BytecodeBuilder {
                 CXBinOp::GreaterEqual   => BCIntBinOp::IGE,
                 CXBinOp::Equal          => BCIntBinOp::EQ,
                 CXBinOp::NotEqual       => BCIntBinOp::NE,
-                
-                CXBinOp::Comma |
-                CXBinOp::Assign(_) |
-                CXBinOp::Access |
-                CXBinOp::MethodCall |
-                CXBinOp::ArrayIndex => panic!("Invalid binary operation: {op:?}"),
+
+                _ => return None,
             }
         )
     }
@@ -241,6 +237,20 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
             CXTypeKind::Function { .. } |
             CXTypeKind::PointerTo { nullable: true, .. } =>
                 BCTypeKind::Pointer { nullable: true, dereferenceable: 0 },
+
+            CXTypeKind::TaggedUnion { name, variants } =>
+                BCTypeKind::Struct {
+                    name: name.as_string(),
+                    fields: vec![
+                        ("data".to_string(), BCTypeKind::Union {
+                            name: String::new(),
+                            fields: variants.iter()
+                                .map(|(name, _type)| Some((name.clone(), convert_fixed_type(_type)?)))
+                                .collect::<Option<Vec<_>>>()?
+                        }.into()),
+                        ("tag".to_string(), BCTypeKind::Unsigned { bytes: 4 }.into())
+                    ]
+                },
             
             CXTypeKind::Array { inner_type: _type, size } =>
                 BCTypeKind::Array {
@@ -248,7 +258,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
                     size: *size
                 },
             
-            CXTypeKind::MemoryReference(inner) =>
+            CXTypeKind::MemoryReference(..) =>
                 BCTypeKind::Pointer { nullable: false, dereferenceable: 0 },
             
             CXTypeKind::Structured { fields, name, .. } =>
@@ -261,7 +271,7 @@ pub(crate) fn convert_fixed_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTyp
                         .map(|(_name, _type)| Some((_name.clone(), convert_fixed_type(_type)?)))
                         .collect::<Option<Vec<_>>>()?
                 },
-            CXTypeKind::Union { fields, name } =>
+            CXTypeKind::Union { variants: fields, name } =>
                 BCTypeKind::Union {
                     name: match name {
                         Some(name) => name.as_string(),

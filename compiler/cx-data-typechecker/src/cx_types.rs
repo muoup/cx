@@ -73,7 +73,11 @@ pub enum CXTypeKind {
     },
     Union {
         name: Option<CXIdent>,
-        fields: Vec<(String, CXType)>
+        variants: Vec<(String, CXType)>
+    },
+    TaggedUnion {
+        name: CXIdent,
+        variants: Vec<(String, CXType)>
     },
     Unit,
 
@@ -206,7 +210,7 @@ impl CXType {
     }
 
     pub fn is_structured(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Structured { .. } | CXTypeKind::Union { .. })
+        matches!(self.kind, CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } | CXTypeKind::TaggedUnion { .. })
     }
 
     pub fn is_opaque(&self) -> bool {
@@ -238,7 +242,8 @@ impl CXType {
             CXTypeKind::Structured { name, .. } |
             CXTypeKind::Union { name, .. } => name.as_ref().map(|n| n.as_str()),
             CXTypeKind::Opaque { name, .. } => Some(name),
-            
+            CXTypeKind::TaggedUnion { name, .. } => Some(name.as_str()),
+
             _ => None,
         }
     }
@@ -264,6 +269,26 @@ impl CXType {
             self.set_name(CXIdent::from(new_name));
         }
     }
+
+    /*
+     *   With things like type constructors, they are not per-se function pointers as they
+     *   cannot be called via a function pointer syntax, so this serves as a shortcut to avoid
+     *   having to write out a full type when it is not used.
+     */
+    pub fn internal_function() -> Self {
+        CXType::new(
+            0,
+            CXTypeKind::Function {
+                prototype: Box::new(CXFunctionPrototype {
+                    name: CXIdent::from("__internal_function"),
+                    return_type: CXType::unit(),
+                    params: vec![],
+                    needs_buffer: false,
+                    var_args: false
+                })
+            }
+        )
+    }
 }
 
 impl From<CXTypeKind> for CXType {
@@ -280,6 +305,13 @@ impl From<CXTypeKind> for CXType {
 pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
     if t1.uuid == t2.uuid {
         return true;
+    }
+
+    let t1_name = t1.get_name();
+    let t2_name = t2.get_name();
+
+    if t1_name.is_some() && t2_name.is_some() {
+        return t1_name == t2_name;
     }
 
     match (&t1.kind, &t2.kind) {

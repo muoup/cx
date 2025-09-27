@@ -88,6 +88,10 @@ pub enum CXNaiveTypeKind {
         name: Option<CXIdent>,
         fields: Vec<(String, CXNaiveType)>,
     },
+    TaggedUnion {
+        name: CXIdent,
+        variants: Vec<(String, CXNaiveType)>
+    },
 
     FunctionPointer {
         prototype: Box<CXNaivePrototype>
@@ -122,8 +126,11 @@ impl CXNaiveType {
         match &self.kind {
             CXNaiveTypeKind::Identifier { name, .. } => Some(name),
             CXNaiveTypeKind::TemplatedIdentifier { name, .. } => Some(name),
+            CXNaiveTypeKind::TaggedUnion { name, .. } => Some(name),
+
             CXNaiveTypeKind::Structured { name, .. } => name.as_ref(),
             CXNaiveTypeKind::Union { name, .. } => name.as_ref(),
+
             _ => None,
         }
     }

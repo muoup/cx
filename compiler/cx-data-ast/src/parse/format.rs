@@ -257,7 +257,9 @@ impl Display for CXBinOp {
                 } else {
                     fwrite!(f, "=")
                 }
-            }
+            },
+
+            CXBinOp::Is         => fwrite!(f, "is"),
 
             _ => fwrite!(f, "{:?}", self)
         }

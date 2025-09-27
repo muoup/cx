@@ -72,7 +72,7 @@ pub(crate) fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<(
         return coerce_initializer_list(expr, to_type);
     };
 
-    let Some(cast_type) = valid_implicit_cast(&expr._type, to_type)? else {
+    let Some(cast_type) = valid_implicit_cast(&expr._type, to_type) else {
         return None;
     };
 
@@ -85,7 +85,7 @@ pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<(
         return Some(());
     }
 
-    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type)? else {
+    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type) else {
         return None;
     };
 
@@ -104,70 +104,67 @@ pub fn add_coercion(expr: &mut TCExpr, to_type: CXType, cast_type: CXCastType) {
 }
 
 pub fn valid_implicit_cast(from_type: &CXType, to_type: &CXType)
-                           -> Option<Option<CXCastType>> {
-    Some(
-        match (&from_type.kind, &to_type.kind) {
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
-                Some(CXCastType::PtrToInt)
-            },
+                           -> Option<CXCastType> {
+    match (&from_type.kind, &to_type.kind) {
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
+            Some(CXCastType::PtrToInt)
+        },
 
-            (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. })
-            => if b1 > b2 {
-                Some(CXCastType::IntegralTrunc)
-            } else if b1 < b2 {
-                Some(CXCastType::IntegralCast)
-            } else {
-                Some(CXCastType::BitCast)
-            },
+        (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. })
+        => if b1 > b2 {
+            Some(CXCastType::IntegralTrunc)
+        } else if b1 < b2 {
+            Some(CXCastType::IntegralCast)
+        } else {
+            Some(CXCastType::BitCast)
+        },
 
-            (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => Some(CXCastType::IntegralCast),
+        (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => Some(CXCastType::IntegralCast),
 
-            (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::FloatCast),
+        (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::FloatCast),
 
-            (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
-            (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
+        (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => Some(CXCastType::IntToFloat),
+        (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => Some(CXCastType::FloatToInt),
 
-            (CXTypeKind::MemoryReference(inner), CXTypeKind::Structured { .. })
-                if same_type(inner.as_ref(), to_type) => Some(CXCastType::FauxLoad),
+        (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
+        (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
+            => Some(CXCastType::BitCast),
 
-            (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. }) |
-            (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. }) |
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
-                => Some(CXCastType::BitCast),
+        (CXTypeKind::MemoryReference(inner), _)
+            if same_type(inner.as_ref(), to_type) && to_type.is_structured() => Some(CXCastType::FauxLoad),
+        (CXTypeKind::MemoryReference(inner), _) => Some(CXCastType::Load),
 
-            (CXTypeKind::Structured { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FauxLoad),
+        (_, CXTypeKind::PointerTo { inner_type: inner, .. })
+            if same_type(inner.as_ref(), from_type) && from_type.is_structured() => Some(CXCastType::FauxLoad),
 
-            (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(_type, inner) => Some(CXCastType::BitCast),
+        (CXTypeKind::Array { inner_type: _type, .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
+            if same_type(_type, inner) => Some(CXCastType::BitCast),
 
-            (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
-                if same_type(inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
+        (CXTypeKind::Function { .. }, CXTypeKind::PointerTo { inner_type: inner, .. })
+            if same_type(inner.as_ref(), from_type) => Some(CXCastType::FunctionToPointerDecay),
 
-            _ => None
-        }
-    )
+        _ => None
+    }
 }
 
-pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<Option<CXCastType>> {
-    Some(
-        match (&from_type.kind, &to_type.kind) {
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
+pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<CXCastType> {
+    match (&from_type.kind, &to_type.kind) {
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
             => Some(CXCastType::BitCast),
 
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. })
             if *bytes == 8 => Some(CXCastType::BitCast),
 
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. })
             => Some(CXCastType::IntegralTrunc),
 
-            (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. })
+        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. })
             => Some(CXCastType::IntToPtr),
 
-            (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. })
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. })
             => Some(CXCastType::BitCast),
 
-            _ => None
-        }
-    )
+        _ => None
+    }
 }
