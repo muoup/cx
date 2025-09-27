@@ -278,8 +278,6 @@ fn codegen_block<'a>(
     function_state.builder.position_at_end(block_val);
 
     for (value_id, inst) in block.body.iter().enumerate() {
-        println!("Generating instruction: {inst}");
-
         let Some(value) = instruction::generate_instruction(
             global_state,
             function_state,
