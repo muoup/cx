@@ -10,13 +10,13 @@ pub(crate) struct LineLexer<'a> {
     pub tokens: Vec<Token>,
 }
 
-pub(crate) fn lex_line(iter: &mut CharIter) -> Option<Vec<Token>> {
+pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>) -> Option<Vec<Token>> {
     let mut line_lexer = LineLexer::new(iter);
     line_lexer.generate_tokens();
     Some(line_lexer.tokens)
 }
 
-impl LineLexer<'_> {
+impl<'a> LineLexer<'a> {
     fn add_token(&mut self, token: Token) {
         if !matches!(token.kind, TokenKind::Ignore) {
             self.tokens.push(token);
@@ -56,10 +56,11 @@ impl LineLexer<'_> {
         self.consume(self.iter.current_iter);
     }
 
-    fn new<'a>(iter: &'a mut CharIter<'a>) -> LineLexer<'a> {
+    fn new(iter: &'a mut CharIter<'a>) -> LineLexer<'a> {
+        let last_consume = iter.current_iter;
         LineLexer {
             iter,
-            last_consume: iter.current_iter,
+            last_consume,
             tokens: Vec::new(),
         }
     }

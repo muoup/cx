@@ -2,34 +2,35 @@ use cx_data_lexer::token::{Token, TokenKind};
 use std::collections::HashMap;
 use cx_util::char_iter::CharIter;
 use crate::line_lexer::lex_line;
-use crate::preprocessor::handle_directive;
+use crate::preprocessor::{generate_lexable_slice, handle_comment, handle_directive};
 
 pub(crate) struct Lexer<'a> {
-    source: &'a str,
-    char_iter: CharIter<'a>,
-    macros: HashMap<String, Box<[Token]>>
+    pub(crate) source: &'a str,
+    pub(crate) char_iter: CharIter<'a>,
+    pub(crate) macros: HashMap<String, Box<[Token]>>
 }
 
-impl Lexer<'_> {
-    pub(crate) fn new(source: &str) -> Self {
+impl<'a> Lexer<'a> {
+    pub(crate) fn new(source: &'a str) -> Self {
         Lexer {
             source,
             char_iter: CharIter::new(source),
 
-            in_multiline_comment: false,
             macros: HashMap::new()
         }
     }
 
-    pub(crate) fn lex_source(&mut self, source: &str) -> Option<Vec<Token>> {
+    pub(crate) fn lex_source(&mut self) -> Option<Vec<Token>> {
         let mut tokens = Vec::new();
 
         while self.char_iter.has_next() {
-            let mut lexable_iter = self.interpret_directive_line();
+            if let Some(mut lexable_iter) = self.interpret_directive_line() {
+                let tokens_in_line = lex_line(&mut lexable_iter)?;
 
-            let tokens_in_line = lex_line(&mut lexable_iter)?;
-            self.char_iter.current_iter = lexable_iter.current_iter;
-            tokens.extend(self.expand_macros(tokens_in_line));
+                tokens.extend(self.expand_macros(tokens_in_line));
+            } else {
+                break;
+            }
         }
 
         Some(tokens)
@@ -51,42 +52,15 @@ impl Lexer<'_> {
                 },
 
                 Some('/') => {
-                    self.char_iter.next();
-
-                    match self.char_iter.peek() {
-                        Some('/') => {
-                            self.char_iter.next();
-                            self.char_iter.skip_line();
-                            continue;
-                        },
-
-                        Some('*') => {
-                            self.char_iter.next();
-
-                            while self.char_iter.has_next() {
-                                if self.char_iter.peek() == Some('*') {
-                                    self.char_iter.next();
-
-                                    if self.char_iter.peek() == Some('/') {
-                                        self.char_iter.next();
-                                    }
-                                } else {
-                                    self.char_iter.next();
-                                }
-                            }
-
-                            continue;
-                        },
-
-                        _ => self.char_iter.back(),
+                    if handle_comment(self) {
+                        continue;
                     }
                 },
 
                 _ => ()
             }
 
-            todo!("Find either the end of the line, or the beginning of a comment, and return a CharIter over a slice beginning\
-                    from the beginning of the Lexer slice to the beginning of the comment or the end of the line.")
+            return Some(generate_lexable_slice(self));
         }
     }
 

@@ -13,7 +13,7 @@ impl CharIter<'_> {
         }
     }
 
-    pub fn sub_iter(parent: &CharIter, slice: &str) -> CharIter {
+    pub fn sub_iter<'a>(parent: &CharIter, slice: &'a str) -> CharIter<'a> {
         CharIter {
             source: slice,
 

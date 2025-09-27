@@ -211,7 +211,7 @@ pub(crate) fn perform_job(
             
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let tokens = cx_compiler_lexer::lex(file_contents.as_str());
+            let tokens = cx_compiler_lexer::lex(file_contents.as_str())?;
 
             let mut output = preparse(
                 TokenIter {

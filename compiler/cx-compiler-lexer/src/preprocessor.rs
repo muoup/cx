@@ -1,6 +1,7 @@
+use cx_util::char_iter::CharIter;
 use crate::unified_lexer::Lexer;
 
-pub(crate) fn generate_lexable_slice(lexer: &mut Lexer) -> Lexer {
+pub(crate) fn generate_lexable_slice<'a>(lexer: &'a mut Lexer<'a>) -> CharIter<'a> {
     todo!("\
         Generates a sub iterator which contains lexable text (i.e. no directive or comment in slice),\
         moves lexer's iterator to the end of this slice, and returns that sub iterator which contains\
@@ -8,8 +9,40 @@ pub(crate) fn generate_lexable_slice(lexer: &mut Lexer) -> Lexer {
     ")
 }
 
-pub(crate) fn handle_comment(lexer: &mut Lexer) {
-    todo!("Handle comments, move past comments in the lexer")
+// returns true if a comment was handled, false otherwise
+pub(crate) fn handle_comment(lexer: &mut Lexer) -> bool {
+    assert_eq!(lexer.char_iter.peek(), Some('/'));
+    lexer.char_iter.next();
+
+    match lexer.char_iter.peek() {
+        Some('/') => {
+            lexer.char_iter.next();
+            lexer.char_iter.skip_line();
+            true
+        },
+
+        Some('*') => {
+            lexer.char_iter.next();
+            while lexer.char_iter.has_next() {
+                if lexer.char_iter.peek() == Some('*') {
+                    lexer.char_iter.next();
+
+                    if lexer.char_iter.peek() == Some('/') {
+                        lexer.char_iter.next();
+                    }
+                } else {
+                    lexer.char_iter.next();
+                }
+            }
+
+            true
+        },
+
+        _ => {
+            lexer.char_iter.back();
+            false
+        },
+    }
 }
 
 pub(crate) fn handle_directive(lexer: &mut Lexer) {
