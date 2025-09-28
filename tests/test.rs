@@ -47,9 +47,7 @@ fn init() {
     std::env::set_current_dir(&full_path).unwrap();
 
     std::fs::remove_dir_all(".internal")
-        .unwrap_or({
-            // Ignore error if the directory does not exist
-        });
+        .unwrap_or(());
 }
 
 fn get_output(path: &str) -> String {
@@ -102,6 +100,6 @@ fn test(input: &Path) {
     }
     
     std::fs::remove_file(&obj_output).unwrap_or_else(|_| {
-        panic!("Could not remove output file: {}", obj_output);
+        panic!("Could not remove output file: {obj_output}");
     });
 }

@@ -9,7 +9,7 @@ use inkwell::module::Module;
 use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{AnyType, FunctionType};
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, FunctionValue, GlobalValue};
+use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
 use crate::instruction::{inst_num, reset_num};
@@ -84,7 +84,7 @@ impl<'a> FunctionState<'a, '_> {
                 let load_inst = self.builder.build_load(
                         basic_type,
                         ptr_val.into_pointer_value(),
-                        &*inst_num()
+                        &inst_num()
                     )
                     .ok()?
                     .as_any_value_enum();

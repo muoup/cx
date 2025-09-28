@@ -5,7 +5,6 @@ use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, C
 use cx_util::{log_error};
 use cx_util::mangling::mangle_template;
 use crate::environment::TCEnvironment;
-use crate::templates::instantiate_type_template;
 
 pub(crate) fn assemble_method(name: &CXFunctionIdentifier, mut return_type: CXType, mut params: Vec<CXParameter>, var_args: bool) -> CXFunctionPrototype {
     let needs_buffer = return_type.is_structured();

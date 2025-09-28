@@ -3,7 +3,7 @@ use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierT
 use cx_util::identifier::CXIdent;
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE};
-use cx_data_lexer::{identifier, keyword, operator, punctuator, TokenIter};
+use cx_data_lexer::{keyword, operator, punctuator, TokenIter};
 use cx_util::{log_error, point_log_error, CXResult};
 use crate::preparse::preparser::{goto_statement_end, parse_intrinsic, parse_std_ident};
 

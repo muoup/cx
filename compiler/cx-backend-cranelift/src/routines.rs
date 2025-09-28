@@ -27,7 +27,7 @@ pub fn get_function(context: &mut FunctionState, prototype: &MIRFunctionPrototyp
         return Some(*func_id);
     }
     
-    let Some(signature) = prepare_function_sig(&mut context.object_module, prototype) else {
+    let Some(signature) = prepare_function_sig(context.object_module, prototype) else {
         panic!("Failed to prepare function signature for function: {:?}", prototype.name);
     };
     let linkage = convert_linkage(prototype.linkage);

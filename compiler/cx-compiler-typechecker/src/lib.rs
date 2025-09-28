@@ -83,7 +83,7 @@ pub fn realize_fn_implementation(
             }
         )
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {}", template_name);
+            panic!("Function template body not found for {template_name}");
         })
         .as_ref()
         .clone();

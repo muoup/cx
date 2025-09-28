@@ -32,8 +32,8 @@ impl<'a> LineLexer<'a> {
 
             let previous_lex = self.iter.current_iter;
 
-            if let Some(operator) = operator_lex(&mut self.iter)
-                .or_else(|| punctuator_lex(&mut self.iter)) {
+            if let Some(operator) = operator_lex(self.iter)
+                .or_else(|| punctuator_lex(self.iter)) {
                 self.consume(previous_lex);
 
                 self.add_token(operator);
@@ -87,9 +87,9 @@ impl<'a> LineLexer<'a> {
 
     fn pre_ident_lex(&mut self) -> Option<Token> {
         match self.iter.peek()? {
-            '0' .. '9' => number_lex(&mut self.iter),
-            '"' => string_lex(&mut self.iter),
-            '\'' => char_lex(&mut self.iter),
+            '0' .. '9' => number_lex(self.iter),
+            '"' => string_lex(self.iter),
+            '\'' => char_lex(self.iter),
             _ => None
         }
     }

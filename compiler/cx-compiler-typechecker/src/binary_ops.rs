@@ -1,12 +1,11 @@
 use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_util::identifier::CXIdent;
-use cx_data_typechecker::cx_types::{same_type, CXFunctionPrototype, CXType, CXTypeKind};
+use cx_data_typechecker::cx_types::{same_type, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{log_error, CXResult};
 use cx_util::mangling::mangle_member_function;
-use crate::casting::{add_coercion, coerce_value, implicit_cast, try_implicit_cast};
+use crate::casting::{add_coercion, coerce_value, implicit_cast};
 use crate::environment::TCEnvironment;
-use crate::templates::instantiate_type_template;
 use crate::type_mapping::contextualize_template_args;
 use crate::typechecker::typecheck_expr;
 
@@ -191,8 +190,8 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
     }
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        println!("DEBUG: prototype:\n{:#?}", prototype);
-        println!("DEBUG: tc_args:\n{:#?}", tc_args);
+        println!("DEBUG: prototype:\n{prototype:#?}");
+        println!("DEBUG: tc_args:\n{tc_args:#?}");
         log_error!("TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
     }
 
@@ -275,7 +274,7 @@ pub(crate) fn typecheck_is(env: &mut TCEnvironment, expr: &CXExpr, constructor: 
 
     let Some((tag_value, variant_type)) = variants.iter()
         .enumerate()
-        .find(|(_, (name, _))| name == &variant_name.as_str())
+        .find(|(_, (name, _))| name == variant_name.as_str())
         .map(|(i, (_, _ty))| (i, _ty)) else {
         log_error!("TYPE ERROR: 'is' operator variant name '{}' not found in tagged union {}", variant_name, union_name);
     };

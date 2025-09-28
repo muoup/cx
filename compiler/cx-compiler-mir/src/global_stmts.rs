@@ -17,7 +17,7 @@ pub(crate) fn generate_function(
     let bc_prototype = builder.convert_cx_prototype(prototype).unwrap();
     builder.new_function(bc_prototype.clone());
 
-    generate_params(builder, &prototype, &bc_prototype)?;
+    generate_params(builder, prototype, &bc_prototype)?;
 
     let Some(_) = generate_instruction(builder, body) else {
         panic!("Failed to generate body for function {}", prototype.name.as_str());
@@ -137,7 +137,7 @@ pub(crate) fn generate_global_variable(builder: &mut MIRBuilder, var: &TCGlobalV
                 name: name.clone(),
                 linkage: LinkageType::Standard,
                 _type: MIRGlobalType::Variable {
-                    initial_value: initializer.clone(),
+                    initial_value: *initializer,
                     _type: _type.clone(),
                 }
             };

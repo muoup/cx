@@ -1,5 +1,4 @@
 use cx_util::identifier::CXIdent;
-use std::collections::HashMap;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};

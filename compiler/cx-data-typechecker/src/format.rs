@@ -1,8 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 use super::ast::*;
 use crate::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
-use cx_data_ast::parse::ast::{CXBinOp, CXUnOp, CXCastType};
-use cx_util::identifier::CXIdent;
 
 // Helper struct for indented formatting of TCExpr
 struct TCExprFormatter<'a> {
@@ -29,13 +27,13 @@ impl Display for TCAST {
         if !self.global_variables.is_empty() {
             writeln!(f, "\n-- Global Variables --")?;
             for global in &self.global_variables {
-                writeln!(f, "{}", global)?;
+                writeln!(f, "{global}")?;
             }
         }
         if !self.function_defs.is_empty() {
             writeln!(f, "\n-- Function Definitions --")?;
             for func in &self.function_defs {
-                writeln!(f, "{}", func)?;
+                writeln!(f, "{func}")?;
             }
         }
         Ok(())
@@ -46,15 +44,15 @@ impl Display for TCGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             TCGlobalVariable::UnaddressableConstant { name, val } => {
-                write!(f, "UnaddressableConstant {} = {}", name, val)
+                write!(f, "UnaddressableConstant {name} = {val}")
             }
             TCGlobalVariable::StringLiteral { name, value } => {
                 write!(f, "StringLiteral {} = \"{}\"", name, value.escape_default())
             }
             TCGlobalVariable::Variable { name, _type, initializer } => {
-                write!(f, "Variable {} : {}", name, _type)?;
+                write!(f, "Variable {name} : {_type}")?;
                 if let Some(init) = initializer {
-                    write!(f, " = {}", init)?;
+                    write!(f, " = {init}")?;
                 }
                 Ok(())
             }
@@ -177,7 +175,7 @@ impl<'a> Display for TCExprFormatter<'a> {
                 TCExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for case_ in cases {
                     self.indent(f)?;
-                    writeln!(f, "{}", case_)?;
+                    writeln!(f, "{case_}")?;
                     TCExprFormatter::new(&case_.body, self.depth + 1).fmt(f)?;
                 }
                 if let Some(default_b) = default_case {
@@ -304,16 +302,16 @@ impl Display for CXTypeKind {
                 write!(f, "union {}", name.as_ref().map(|n| n.as_str()).unwrap_or("<anonymous>"))
             }
             CXTypeKind::TaggedUnion { name, .. } => {
-                write!(f, "tagged union {}", name)
+                write!(f, "tagged union {name}")
             }
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "@{}", inner_type),
-            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "*{}", inner_type),
-            CXTypeKind::MemoryReference(inner) => write!(f, "&{}", inner),
-            CXTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
-            CXTypeKind::VariableLengthArray { _type, .. } => write!(f, "[{}..]", _type),
-            CXTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
-            CXTypeKind::Function { prototype } => write!(f, "fn {}", prototype),
+            CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "@{inner_type}"),
+            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "*{inner_type}"),
+            CXTypeKind::MemoryReference(inner) => write!(f, "&{inner}"),
+            CXTypeKind::Array { size, inner_type } => write!(f, "[{inner_type}; {size}]"),
+            CXTypeKind::VariableLengthArray { _type, .. } => write!(f, "[{_type}..]"),
+            CXTypeKind::Opaque { name, .. } => write!(f, "opaque {name}"),
+            CXTypeKind::Function { prototype } => write!(f, "fn {prototype}"),
         }
     }
 }
@@ -325,7 +323,7 @@ impl Display for CXFunctionPrototype {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", param)?;
+            write!(f, "{param}")?;
         }
         if self.var_args {
             if !self.params.is_empty() {

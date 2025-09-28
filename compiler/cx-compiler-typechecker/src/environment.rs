@@ -1,10 +1,9 @@
 use crate::templates::{instantiate_function_template, instantiate_type_template};
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
-use cx_data_typechecker::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
+use cx_data_typechecker::{CXFnMap, CXTypeMap};
 use cx_util::mangling::{mangle_destructor, mangle_template};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
-use cx_data_ast::parse::ast::{CXGlobalVariable, CXAST};
 use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCBaseMappings};
 
 pub struct TCTemplateRequest {
@@ -31,7 +30,7 @@ pub struct TCEnvironment<'a> {
 impl TCEnvironment<'_> {
     pub fn new(structure_data: &TCBaseMappings) -> TCEnvironment {
         TCEnvironment {
-            base_data: &structure_data,
+            base_data: structure_data,
             realized_types: HashMap::new(),
             realized_fns: HashMap::new(),
             realized_globals: HashMap::new(),

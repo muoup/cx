@@ -1,14 +1,11 @@
 use std::collections::HashMap;
 use cranelift::codegen::{ir, Context};
-use cranelift::codegen::ir::GlobalValue;
-use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_util::format::dump_data;
-use cx_data_mir::{BCFunctionMap, MIRFunctionPrototype, BlockID, ProgramMIR, MIRValue};
-use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_data_mir::{BCFunctionMap, BlockID, ProgramMIR, MIRValue};
+use cx_data_mir::types::MIRTypeKind;
 use cx_util::log_error;
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::generate_global;
@@ -73,7 +70,7 @@ impl FunctionState<'_> {
             BlockID::Block(id) => id as usize,
             BlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
 
-            _ => panic!("Invalid block type for block ID: {:?}", block_id)
+            _ => panic!("Invalid block type for block ID: {block_id:?}")
         };
         
         self.block_map.get(id)
@@ -128,8 +125,8 @@ impl FunctionState<'_> {
             MIRValue::Global(id) => {
                 let global_ref = self.object_module
                     .declare_data_in_func(
-                        DataId::from_u32(*id as u32),
-                        &mut self.builder.func
+                        DataId::from_u32(*id),
+                        self.builder.func
                     );
 
                 let gv = self.builder.ins()

@@ -4,10 +4,9 @@ pub mod preparser;
 mod macros;
 mod importing;
 
-use cx_util::identifier::CXIdent;
 use crate::preparse::preparser::{preparse_stmt, PreparseResult};
 use cx_data_ast::parse::parser::VisibilityMode;
-use cx_data_ast::preparse::naive_types::{CXNaiveType, ModuleResource};
+use cx_data_ast::preparse::naive_types::ModuleResource;
 use cx_data_ast::PreparseContents;
 use cx_data_lexer::TokenIter;
 use cx_util::{log_error, point_log_error};

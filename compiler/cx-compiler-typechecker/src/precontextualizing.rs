@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use cx_data_ast::parse::ast::{CXGlobalStmt, CXGlobalVariable, CXAST};
+use cx_data_ast::parse::ast::{CXGlobalStmt, CXAST};
 use cx_util::identifier::CXIdent;
 use cx_util::{log_error, CXResult};
 use cx_data_ast::parse::parser::VisibilityMode;
 use cx_data_ast::preparse::{CXNaiveFnIdent, CXNaiveFnMap, CXNaiveTypeMap};
-use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
+use cx_data_ast::preparse::naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource};
 use cx_data_ast::PreparseContents;
 use cx_data_pipeline::CompilationUnit;
 use cx_data_pipeline::db::ModuleData;
-use cx_util::mangling::{mangle_destructor, mangle_member_function, mangle_template};
+use cx_util::mangling::mangle_template;
 use cx_data_typechecker::cx_types::{CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
 use cx_data_typechecker::{CXFnData, CXTypeData};
 use cx_data_typechecker::ast::TCGlobalVariable;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_TYPES;
-use crate::type_mapping::{assemble_method, contextualize_type};
+use crate::type_mapping::assemble_method;
 
 // As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
 // a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
@@ -168,7 +168,7 @@ pub fn precontextualize_type(
 
         CXNaiveTypeKind::FunctionPointer { prototype } => {
             let prototype = precontextualize_prototype(
-                module_data, cx_map, &naive_type_map,
+                module_data, cx_map, naive_type_map,
                 &ModuleResource {
                     visibility: VisibilityMode::Private,
                     external_module: external_module.cloned(),
@@ -234,7 +234,7 @@ pub fn precontextualize_type(
                 CXType::from(
                     CXTypeKind::TaggedUnion {
                         name: name.clone(),
-                        variants: variants,
+                        variants,
                     }
                 )
             )
@@ -399,28 +399,24 @@ pub fn contextualize_globals(module_data: &ModuleData,
     }
 
     for global in ast.global_stmts.iter() {
-        match global {
-            CXGlobalStmt::GlobalVariable { name, type_, initializer } => {
-                if initializer.is_some() {
-                    todo!("Global variable with initializer")
+        if let CXGlobalStmt::GlobalVariable { name, type_, initializer } = global {
+            if initializer.is_some() {
+                todo!("Global variable with initializer")
+            }
+
+            let _type = precontextualize_type(
+                module_data, type_map, naive_map,
+                None, type_
+            )?;
+
+            tc_globals.insert(
+                name.to_string(),
+                TCGlobalVariable::Variable {
+                    name: name.clone(),
+                    _type,
+                    initializer: None
                 }
-
-                let _type = precontextualize_type(
-                    module_data, type_map, naive_map,
-                    None, type_
-                )?;
-
-                tc_globals.insert(
-                    name.to_string(),
-                    TCGlobalVariable::Variable {
-                        name: name.clone(),
-                        _type,
-                        initializer: None
-                    }
-                );
-            },
-
-            _ => ()
+            );
         }
     }
 

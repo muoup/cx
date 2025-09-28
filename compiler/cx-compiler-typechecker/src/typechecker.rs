@@ -1,14 +1,12 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_util::identifier::CXIdent;
-use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
-use cx_data_ast::preparse::naive_types::{CXNaiveType, CX_CONST};
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_data_ast::preparse::naive_types::CX_CONST;
 use cx_data_typechecker::ast::{TCTagMatch, TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex};
 use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
-use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast, try_implicit_cast};
+use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::environment::TCEnvironment;
-use crate::realize_fn_implementation;
-use crate::templates::instantiate_function_template;
 use crate::type_mapping::{contextualize_template_args, contextualize_type};
 use crate::variable_destruction::visit_destructable_instance;
 
@@ -17,7 +15,7 @@ fn anonymous_name_gen() -> String {
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("__anon_{}", id)
+    format!("__anon_{id}")
 }
 
 pub(crate) fn in_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype, expr: &CXExpr) -> Option<TCExpr> {
@@ -101,7 +99,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::VarDeclaration { type_, name } => {
-                let type_ = contextualize_type(env, &type_)?;
+                let type_ = contextualize_type(env, type_)?;
 
                 env.insert_symbol(name.as_string(), type_.clone());
                 visit_destructable_instance(env, &type_);
@@ -387,10 +385,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     kind: TCExprKind::Assignment {
                         target: Box::new(lhs),
                         value: Box::new(rhs),
-                        additional_op: match op {
-                            Some(op) => Some(*op.clone()),
-                            None => None
-                        },
+                        additional_op: op.as_ref().map(|op| *op.clone()),
                     }
                 }
             },
@@ -412,7 +407,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::Move { expr } => {
-                let mut expr_tc = typecheck_expr(env, expr)?;
+                let expr_tc = typecheck_expr(env, expr)?;
 
                 let Some(inner) = expr_tc._type.mem_ref_inner() else {
                     log_error!("TYPE ERROR: Move expression requires a reference type, found {}", expr_tc._type);
@@ -552,7 +547,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         condition: Box::new(tc_condition),
                         block: tc_stmts,
                         cases: cases.clone(),
-                        default_case: default_case.clone()
+                        default_case: *default_case
                     }
                 }
             },

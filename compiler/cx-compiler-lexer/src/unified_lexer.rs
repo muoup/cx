@@ -36,7 +36,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn independent_lex(&mut self, str: &str) -> Option<Vec<Token>> {
-        let mut sublexer = Lexer::new(&str);
+        let mut sublexer = Lexer::new(str);
         std::mem::swap(&mut sublexer.macros, &mut self.macros);
         sublexer.lex_source()?;
         std::mem::swap(&mut sublexer.macros, &mut self.macros);

@@ -1,8 +1,5 @@
-use cx_util::identifier::CXIdent;
 use crate::environment::TCEnvironment;
-use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
-use cx_util::CXResult;
 
 pub(crate) fn visit_destructable_instance(env: &mut TCEnvironment, ty: &CXType) -> bool {
     if env.deconstructors.contains(ty) {
@@ -21,8 +18,8 @@ pub(crate) fn visit_destructable_instance(env: &mut TCEnvironment, ty: &CXType) 
         },
 
         CXTypeKind::Structured { name: Some(name), fields, .. } => {
-            let any_field_deconstructable = fields.into_iter()
-                .any(|(_, field_type)| visit_destructable_instance(env, &field_type));
+            let any_field_deconstructable = fields.iter()
+                .any(|(_, field_type)| visit_destructable_instance(env, field_type));
 
             if !any_field_deconstructable && !env.destructor_exists(ty) {
                 return false;

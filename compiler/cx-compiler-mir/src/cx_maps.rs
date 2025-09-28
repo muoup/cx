@@ -3,8 +3,8 @@ use crate::instruction_gen::generate_instruction;
 use cx_data_ast::parse::ast::CXBinOp;
 use cx_data_mir::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_data_mir::{BCFloatBinOp, BCFunctionMap, MIRFunctionPrototype, MIRIntBinOp, MIRParameter, BCPtrBinOp, LinkageType, VirtualInstruction};
-use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind};
-use cx_data_typechecker::{CXFnData, CXFnMap};
+use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_data_typechecker::CXFnMap;
 
 impl MIRBuilder {
     pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<MIRType> {

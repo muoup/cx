@@ -37,7 +37,7 @@ impl Display for CXNaiveTypeKind {
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "TaggedUnion<{}> {{ {} }}", name, variants_str)
+                write!(f, "TaggedUnion<{name}> {{ {variants_str} }}")
             },
             CXNaiveTypeKind::FunctionPointer { prototype } => write!(f, "FunctionPointer({prototype})"),
         }
@@ -67,16 +67,16 @@ impl Display for CXNaiveTemplateInput {
 impl Display for CXNaiveFnIdent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXNaiveFnIdent::Standard(name) => write!(f, "{}", name),
+            CXNaiveFnIdent::Standard(name) => write!(f, "{name}"),
             CXNaiveFnIdent::MemberFunction { _type, function_name } => {
                 let Some(name) = _type.get_name() else {
                     unreachable!("Member function type must have a name");
                 };
 
-                write!(f, "_{}_{}", name, function_name)
+                write!(f, "_{name}_{function_name}")
             }
             CXNaiveFnIdent::Destructor(name) => {
-                write!(f, "~{}", name)
+                write!(f, "~{name}")
             }
         }
     }

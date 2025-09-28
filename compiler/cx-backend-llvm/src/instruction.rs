@@ -5,7 +5,7 @@ use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_data_mir::types::{MIRTypeKind, MIRTypeSize};
 use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction};
 use inkwell::attributes::AttributeLoc;
-use inkwell::types::{BasicType, IntType};
+use inkwell::types::BasicType;
 use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
@@ -344,7 +344,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 let signed = match block_instruction.value_type.kind {
                     MIRTypeKind::Signed { .. } => true,
 
-                    MIRTypeKind::Bool { .. } |
+                    MIRTypeKind::Bool |
                     MIRTypeKind::Unsigned { .. } => false,
 
                     _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp

@@ -1,4 +1,3 @@
-use cx_data_ast::parse::ast::CXExprKind;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_util::log_error;
@@ -44,7 +43,7 @@ fn organize_array_initializer(
         }
         
         index.index = counter;
-        implicit_cast(&mut index.value, &inner_type)?;
+        implicit_cast(&mut index.value, inner_type)?;
         
         if let Some(size) = size {
             if i < size {
@@ -92,7 +91,7 @@ fn organize_structured_initializer(
         index.index = counter;
         
         let field_type = &fields[counter].1;
-        implicit_cast(&mut index.value, &field_type)?;
+        implicit_cast(&mut index.value, field_type)?;
         
         if counter < fields.len() {
             counter += 1;

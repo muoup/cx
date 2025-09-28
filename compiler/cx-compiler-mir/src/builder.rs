@@ -4,8 +4,7 @@ use crate::{BytecodeResult, ProgramMIR};
 use cx_data_mir::types::{MIRType, MIRTypeKind};
 use cx_data_mir::*;
 use cx_data_typechecker::ast::{TCExpr, TCAST};
-use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType};
-use cx_data_typechecker::CXFnMap;
+use cx_data_typechecker::cx_types::CXType;
 use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
@@ -314,7 +313,7 @@ impl MIRBuilder {
             MIRTypeKind::Signed { bytes } => self.int_const(value, bytes, true),
             MIRTypeKind::Unsigned { bytes } => self.int_const(value, bytes, false),
 
-            _ => panic!("PANIC: Attempted to match integer constant with non-integer type: {}", _type)
+            _ => panic!("PANIC: Attempted to match integer constant with non-integer type: {_type}")
         }
     }
     
@@ -332,7 +331,7 @@ impl MIRBuilder {
         match _type.kind {
             MIRTypeKind::Float { bytes } => self.float_const(value, bytes),
 
-            _ => panic!("PANIC: Attempted to match float constant with non-float type: {}", _type)
+            _ => panic!("PANIC: Attempted to match float constant with non-float type: {_type}")
         }
     }
 

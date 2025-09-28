@@ -3,7 +3,6 @@ use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource
 use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use speedy::{Readable, Writable};
 use std::collections::HashMap;
-use std::fmt::Display;
 use cx_util::mangling::{mangle_destructor, mangle_member_function};
 
 pub mod templates;
