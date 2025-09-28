@@ -1,6 +1,16 @@
 use std::path::Path;
 use cx_data_lexer::token::Token;
 
+fn leading_whitespace_count(s: &str) -> usize {
+    s.chars().take_while(|c| c.is_whitespace()).count()
+}
+
+fn line_as_spacing(line: &str) -> String {
+    line.chars()
+        .map(|c| if c.is_whitespace() { c } else { ' ' })
+        .collect()
+}
+
 fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
     let mut acc = index;
 
@@ -34,14 +44,19 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
     let link = format!("{} {}:{}", file_path.to_str().unwrap(), error_line, error_padding);
     println!("{}\n\t--> {}", message, link);
 
-    for line in file_contents[error_line_start..].lines() {
-        let lpad = " ".repeat(error_padding);
+    let mut iter = file_contents[error_line_start..].lines().peekable();
+
+    while let Some(line) = iter.next() {
+        // capture the leading whitespace
+        let lpad = line_as_spacing(&line[..error_padding.min(line.len())]);
         let underline = "~".repeat((line.len() - error_padding).min(remaining_error_chars));
 
         println!("{}", line);
         println!("{}{}", lpad, underline);
 
-        error_padding = 0;
+        error_padding = iter.peek()
+            .map(|next_line| leading_whitespace_count(next_line))
+            .unwrap_or(0);
         remaining_error_chars -= underline.len();
 
         if remaining_error_chars <= 0 {

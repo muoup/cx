@@ -191,8 +191,6 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
     }
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        println!("DEBUG: prototype:\n{prototype:#?}");
-        println!("DEBUG: tc_args:\n{tc_args:#?}");
         log_typecheck_error!(env, expr, "TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
     }
 
