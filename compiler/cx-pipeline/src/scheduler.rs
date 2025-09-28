@@ -192,7 +192,7 @@ pub(crate) fn perform_job(
     match job.step {
         CompilationStep::PreParse => {
             let file_path = job.unit.with_extension("cx");
-            let file_contents = std::fs::read_to_string(file_path)
+            let file_contents = std::fs::read_to_string(&file_path)
                 .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
 
             let mut hasher = DefaultHasher::new();
@@ -212,12 +212,8 @@ pub(crate) fn perform_job(
             let tokens = cx_compiler_lexer::lex(file_contents.as_str())?;
             dump_write("Tokens:\n");
 
-            let mut output = preparse(
-                TokenIter {
-                    slice: &tokens,
-                    index: 0,
-                }
-            ).unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
+            let mut output = preparse(TokenIter::new(&tokens, file_path))
+                .unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
             output.module = job.unit.to_string();
 
             if !job.unit.as_str().contains("std") {
@@ -294,7 +290,7 @@ pub(crate) fn perform_job(
                 ..Default::default()
             };
 
-            let parsed_ast = parse_ast(TokenIter::new(&lexemes), base_ast)
+            let parsed_ast = parse_ast(TokenIter::new(&lexemes, job.unit.with_extension("cx")), base_ast)
                 .expect("AST parsing failed");
 
             if !job.unit.is_std_lib() {

@@ -16,7 +16,7 @@ fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
 
     for (line_num, line) in file_contents.lines().enumerate() {
         if line.len() + 1 > acc {
-            return (line_num + 1, acc - 1);
+            return (line_num + 1, acc);
         }
 
         acc -= line.len() + 1; // +1 for the newline character
@@ -38,11 +38,11 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
 
     let (error_line, mut error_padding) = get_error_loc(&file_contents, start_index);
 
-    let error_line_start = start_index - error_padding - 1;
+    let error_line_start = start_index - error_padding;
     let mut remaining_error_chars = end_index - start_index;
 
-    let link = format!("{} {}:{}", file_path.to_str().unwrap(), error_line, error_padding);
-    println!("{}\n\t--> {}", message, link);
+    let link = format!("{} {}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
+    println!("{} \n\t--> {}", message, link);
 
     let mut iter = file_contents[error_line_start..].lines().peekable();
 
@@ -62,6 +62,27 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         if remaining_error_chars <= 0 {
             break;
         }
+    }
+
+    std::process::exit(1);
+}
+
+pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
+    let start_index = token.start_index;
+
+    let file_contents = std::fs::read_to_string(file_path)
+        .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()));
+
+    let (error_line, error_padding) = get_error_loc(&file_contents, start_index);
+    let error_line_start = start_index - error_padding;
+
+    let link = format!("{} {}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
+    println!("{} \n\t --> {}", message, link);
+
+    if let Some(line) = file_contents[error_line_start..].lines().next() {
+        let lpad = line_as_spacing(&line[..error_padding]);
+        println!("{}", line);
+        println!("{}^", lpad);
     }
 
     std::process::exit(1);

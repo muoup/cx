@@ -7,7 +7,7 @@ use cx_data_ast::preparse::naive_types::CXNaiveTypeKind;
 use cx_util::identifier::CXIdent;
 use cx_data_lexer::{operator, punctuator};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
-use cx_util::{log_error, point_log_error};
+use cx_util::log_error;
 use crate::parse::structured_initialization::parse_structured_initialization;
 use crate::parse::typing::is_type_decl;
 use crate::preparse::preparser::{parse_intrinsic, parse_std_ident};
@@ -67,8 +67,8 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let (name, mut type_) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
-            point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type declaration");
+        let Some((name, mut type_)) = parse_base_mods(&mut data.tokens, base_type.clone()) else {
+            log_parse_error!(data, "PARSER ERROR: Failed to parse type declaration");
         };
 
         if let Some(name) = name {
@@ -80,7 +80,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
 
             let Some(name) = parse_std_ident(&mut data.tokens) else {
-                point_log_error!(data.tokens, "PARSER ERROR: Identifier expected")
+                log_parse_error!(data, "PARSER ERROR: Identifier expected")
             };
 
             let CXNaiveTypeKind::Identifier { name: type_name, .. } = type_.kind else {
@@ -320,7 +320,7 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind>
     data.tokens.back();
 
     let Some(args) = parse_template_args(&mut data.tokens) else {
-        point_log_error!(data.tokens, "PARSER ERROR: Failed to parse template arguments for function identifier: {:#?}", ident);
+        log_parse_error!(data, "PARSER ERROR: Failed to parse template arguments for function identifier: {:#?}", ident);
     };
 
     Some(

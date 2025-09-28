@@ -4,7 +4,7 @@ use cx_data_ast::parse::ast::CXGlobalStmt;
 use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::preparse::naive_types::{CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
-use cx_util::{point_log_error, CXResult};
+use cx_util::CXResult;
 use crate::parse::global_scope::{destructor_prototype, parse_global_stmt};
 
 pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
@@ -77,10 +77,10 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         },
 
         CXGlobalStmt::TemplatedFunction { .. } =>
-            point_log_error!(data.tokens, "PARSER ERROR: Nested templated generators are not supported!"),
+            log_parse_error!(data, "PARSER ERROR: Nested templated generators are not supported!"),
         CXGlobalStmt::GlobalVariable { .. } =>
-            point_log_error!(data.tokens, "PARSER ERROR: Templated global variables are not supported!"),
+            log_parse_error!(data, "PARSER ERROR: Templated global variables are not supported!"),
         CXGlobalStmt::FunctionPrototype { .. } =>
-            point_log_error!(data.tokens, "PARSER ERROR: Templated functions predeclarations are not supported!"),
+            log_parse_error!(data, "PARSER ERROR: Templated functions predeclarations are not supported!"),
     }
 }
