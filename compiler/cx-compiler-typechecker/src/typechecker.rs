@@ -125,7 +125,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 } else if let Some(global) = env.get_global_var(name.as_str()) {
                     global_constant_expr(global)?
                 } else {
-                    log_error!("Identifier '{}' not found", name);
+                    log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
                 }
             },
 
@@ -135,7 +135,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 let input = contextualize_template_args(env, template_input)?;
                 let Some(function) = env.get_templated_func(name.as_str(), &input) else {
-                    log_error!("Function template '{}' not found", name);
+                    log_typecheck_error!(env, expr, "Function template '{}' not found", name);
                 };
 
                 TCExpr {
@@ -284,14 +284,14 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     CXUnOp::PreIncrement(_) |
                     CXUnOp::PostIncrement(_) => {
                         let Some(inner) = operand_tc._type.mem_ref_inner() else {
-                            log_error!("TYPE ERROR: Cannot apply pre-increment to a non-reference {}", operand_tc._type);
+                            log_typecheck_error!(env, operand, "TYPE ERROR: Cannot apply pre-increment to a non-reference {}", operand_tc._type);
                         };
 
                         match &inner.kind {
                             CXTypeKind::Integer { .. } |
                             CXTypeKind::PointerTo { .. } => (),
 
-                            _ => log_error!("TYPE ERROR: Pre-increment operator requires an integer or pointer type, found {}", inner),
+                            _ => log_typecheck_error!(env, operand, "TYPE ERROR: Pre-increment operator requires an integer or pointer type, found {}", inner),
                         }
 
                         TCExpr {
@@ -327,7 +327,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                     CXUnOp::AddressOf => {
                         let Some(inner) = operand_tc._type.mem_ref_inner() else {
-                            log_error!("TYPE ERROR: Cannot take address of a non-reference type");
+                            log_typecheck_error!(env, operand, "TYPE ERROR: Cannot take address of a non-reference type");
                         };
 
                         TCExpr {
@@ -343,7 +343,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         coerce_value(&mut operand_tc);
 
                         let Some(inner) = operand_tc._type.ptr_inner().cloned() else {
-                            log_error!("TYPE ERROR: Cannot dereference a non-pointer type {}", operand_tc._type);
+                            log_typecheck_error!(env, operand, "TYPE ERROR: Cannot dereference a non-pointer type {}", operand_tc._type);
                         };
 
                         coerce_value(&mut operand_tc);
@@ -396,30 +396,30 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             },
 
             CXExprKind::BinOp { op: CXBinOp::Is, lhs, rhs } =>
-                typecheck_is(env, lhs, rhs)?,
+                typecheck_is(env, lhs, rhs, expr)?,
 
             CXExprKind::BinOp { op: CXBinOp::Access, lhs, rhs } =>
-                typecheck_access(env, lhs, rhs)?,
+                typecheck_access(env, lhs, rhs, expr)?,
 
             CXExprKind::BinOp { op: CXBinOp::MethodCall, lhs, rhs } =>
-                typecheck_method_call(env, lhs, rhs)?,
+                typecheck_method_call(env, lhs, rhs, expr)?,
 
             CXExprKind::BinOp { op, lhs, rhs } => {
                 let lhs = typecheck_expr(env, lhs)?;
                 let rhs = typecheck_expr(env, rhs)?;
 
-                typecheck_binop(op.clone(), lhs, rhs)?
+                typecheck_binop(env, op.clone(), lhs, rhs, expr)?
             },
 
-            CXExprKind::Move { expr } => {
-                let expr_tc = typecheck_expr(env, expr)?;
+            CXExprKind::Move { expr: move_expr } => {
+                let expr_tc = typecheck_expr(env, move_expr)?;
 
                 let Some(inner) = expr_tc._type.mem_ref_inner() else {
-                    log_error!("TYPE ERROR: Move expression requires a reference type, found {}", expr_tc._type);
+                    log_typecheck_error!(env, move_expr, "TYPE ERROR: Move expression requires a reference type, found {}", expr_tc._type);
                 };
 
                 if !inner.is_strong_pointer() {
-                    log_error!("TYPE ERROR: Move expression requires a strong pointer type, found {}", expr_tc._type);
+                    log_typecheck_error!(env, move_expr, "TYPE ERROR: Move expression requires a strong pointer type, found {}", expr_tc._type);
                 }
 
                 TCExpr {
@@ -492,11 +492,11 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             CXExprKind::TypeConstructor { union_name: type_name, variant_name: name, inner } => {
                 let Some(union_type) = env.get_type(type_name.as_str()) else {
-                    log_error!("TYPE ERROR: Unknown type: {}", type_name);
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Unknown type: {}", type_name);
                 };
 
                 let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
-                    log_error!("TYPE ERROR: Unknown type: {}", type_name);
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Unknown type: {}", type_name);
                 };
 
                 let Some((i, variant_type)) = variants.iter()
@@ -504,7 +504,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     .find(|(_, (variant_name, _))| variant_name == name.as_str())
                     .map(|(i, (_, variant_type))| (i, variant_type.clone())) else {
 
-                    log_error!("TYPE ERROR: Variant '{}' not found in tagged union type {}", name, type_name);
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Variant '{}' not found in tagged union type {}", name, type_name);
                 };
 
                 let mut inner = typecheck_expr(env, inner)?;
@@ -569,23 +569,23 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                             env.push_scope();
 
                             let CXExprKind::TypeConstructor { union_name, variant_name, inner } = &value.kind else {
-                                log_error!("TYPE ERROR: Expected Type Constructor in 'match' arm, found: {}", value);
+                                log_typecheck_error!(env, value, "TYPE ERROR: Expected Type Constructor in 'match' arm, found: {}", value);
                             };
 
                             let CXExprKind::Identifier(instance_name) = &inner.as_ref().kind else {
-                                log_error!("TYPE ERROR: Expected identifier in 'match' arm, found: {}", inner);
+                                log_typecheck_error!(env, inner.as_ref(), "TYPE ERROR: Expected identifier in 'match' arm, found: {}", inner);
                             };
                             let instance_name = instance_name.clone();
 
                             if union_name.as_str() != expected_union_name.as_str() {
-                                log_error!("TYPE ERROR: Mismatched type in 'match' arm, expected '{}', found '{}'", match_value._type, union_name);
+                                log_typecheck_error!(env, value, "TYPE ERROR: Mismatched type in 'match' arm, expected '{}', found '{}'", match_value._type, union_name);
                             }
 
                             let Some((idx, variant_type)) = variants.iter()
                                 .enumerate()
                                 .find(|(i, (name, _))| name == variant_name.as_str())
                                 .map(|(i, (_, variant_type))| (i, variant_type.clone())) else {
-                                log_error!("TYPE ERROR: Variant '{}' not found in tagged union type {}", variant_name, union_name);
+                                log_typecheck_error!(env, value, "TYPE ERROR: Variant '{}' not found in tagged union type {}", variant_name, union_name);
                             };
 
                             env.insert_symbol(instance_name.as_string(), variant_type.clone());
@@ -604,7 +604,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         let default_case = default.as_ref().map(|d| {
                             env.push_scope();
                             let Some(tc_default) = typecheck_expr(env, d) else {
-                                log_error!("TYPE ERROR: Failed to typecheck default case in 'match' expression");
+                                log_typecheck_error!(env, d, "TYPE ERROR: Failed to typecheck default case in 'match' expression");
                             };
                             env.pop_scope();
 

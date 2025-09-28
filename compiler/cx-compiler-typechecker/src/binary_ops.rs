@@ -6,25 +6,26 @@ use cx_util::{log_error, CXResult};
 use cx_util::mangling::mangle_member_function;
 use crate::casting::{add_coercion, coerce_value, implicit_cast};
 use crate::environment::TCEnvironment;
+use crate::log_typecheck_error;
 use crate::type_mapping::contextualize_template_args;
 use crate::typechecker::typecheck_expr;
 
-pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr) -> Option<TCExpr> {
-    let mut lhs = typecheck_expr(env, lhs)?;
-    coerce_value(&mut lhs);
+pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr, expr: &CXExpr) -> Option<TCExpr> {
+    let mut tc_lhs = typecheck_expr(env, lhs)?;
+    coerce_value(&mut tc_lhs);
 
-    if let CXTypeKind::PointerTo { inner_type, .. } = &lhs._type.kind {
-        lhs = TCExpr {
+    if let CXTypeKind::PointerTo { inner_type, .. } = &tc_lhs._type.kind {
+        tc_lhs = TCExpr {
             _type: *inner_type.clone(),
-            kind: TCExprKind::ImplicitLoad { operand: Box::new(lhs) },
+            kind: TCExprKind::ImplicitLoad { operand: Box::new(tc_lhs) },
         };
     }
 
-    let fields = match &lhs._type.kind {
+    let fields = match &tc_lhs._type.kind {
         CXTypeKind::Structured { fields, .. } |
         CXTypeKind::Union { variants: fields, .. } => fields,
 
-        _ => log_error!("TYPE ERROR: Member access on {} without a struct or union type", lhs._type),
+        _ => log_typecheck_error!(env, expr, "TYPE ERROR: Member access on {} without a struct or union type", tc_lhs._type),
     };
 
     match &rhs.kind {
@@ -39,20 +40,20 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
                     TCExpr {
                         _type: field_type,
                         kind: TCExprKind::Access {
-                            target: Box::new(lhs),
+                            target: Box::new(tc_lhs),
                             field: field_name
                         }
                     }
                 );
             }
 
-            let Some(type_name) = lhs._type.get_identifier() else {
-                log_error!("TYPE ERROR: Member function call on {} without a type name", lhs._type);
+            let Some(type_name) = tc_lhs._type.get_identifier() else {
+                log_typecheck_error!(env, expr, "TYPE ERROR: Member function call on {} without a type name", tc_lhs._type);
             };
 
             let member_fn_name = mangle_member_function(name.as_str(), type_name.as_str());
             let Some(prototype) = env.get_func(&member_fn_name) else {
-                log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
+                log_typecheck_error!(env, expr, "TYPE ERROR: Member access on {} with invalid member name {name}", tc_lhs._type);
             };
             let name = prototype.name.clone();
 
@@ -60,7 +61,7 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
                 TCExpr {
                     _type: CXTypeKind::Function { prototype: Box::new(prototype) }.into(),
                     kind: TCExprKind::MemberFunctionReference {
-                        target: Box::new(lhs),
+                        target: Box::new(tc_lhs),
                         mangled_name: name
                     }
                 }
@@ -68,15 +69,15 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
         },
 
         CXExprKind::TemplatedIdentifier { name, template_input } => {
-            let Some(type_name) = lhs._type.get_identifier() else {
-                log_error!("TYPE ERROR: Member function call on {} without a type name", lhs._type);
+            let Some(type_name) = tc_lhs._type.get_identifier() else {
+                log_typecheck_error!(env, expr, "TYPE ERROR: Member function call on {} without a type name", tc_lhs._type);
             };
 
             let member_fn_name = mangle_member_function(type_name, name.as_str());
             let input = contextualize_template_args(env, template_input)?;
 
             let Some(prototype) = env.get_templated_func(&member_fn_name, &input) else {
-                log_error!("TYPE ERROR: Member access on {} with invalid member name {name}", lhs._type);
+                log_typecheck_error!(env, expr, "TYPE ERROR: Member access on {} with invalid member name {name}", tc_lhs._type);
             };
             let name = prototype.name.clone();
 
@@ -84,14 +85,14 @@ pub(crate) fn typecheck_access(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXEx
                 TCExpr {
                     _type: CXTypeKind::Function { prototype: Box::new(prototype) }.into(),
                     kind: TCExprKind::MemberFunctionReference {
-                        target: Box::new(lhs),
+                        target: Box::new(tc_lhs),
                         mangled_name: name,
                     }
                 }
             )
         },
 
-        _ => log_error!("TYPE ERROR: Invalid rhs for access expression, found {:?}", rhs),
+        _ => log_typecheck_error!(env, expr, "TYPE ERROR: Invalid rhs for access expression, found {:?}", rhs),
     }
 }
 
@@ -114,14 +115,14 @@ pub(crate) fn comma_separated(env: &mut TCEnvironment, expr: &CXExpr) -> Option<
     Some(exprs)
 }
 
-pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr) -> Option<TCExpr> {
-    let mut lhs = typecheck_expr(env, lhs)?;
+pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr, expr: &CXExpr) -> Option<TCExpr> {
+    let mut tc_lhs = typecheck_expr(env, lhs)?;
     let mut tc_args = comma_separated(env, rhs)?;
 
-    let (direct, prototype) = match lhs.kind {
+    let (direct, prototype) = match tc_lhs.kind {
         TCExprKind::FunctionReference { ref name } => {
             let Some(prototype) = env.get_func(name.as_str()) else {
-                log_error!("TYPE ERROR: Function '{}' not found in the current environment", name.as_string());
+                log_typecheck_error!(env, expr, "TYPE ERROR: Function '{}' not found in the current environment", name.as_string());
             };
 
             (true, prototype)
@@ -129,15 +130,15 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
 
         TCExprKind::MemberFunctionReference { target, mangled_name } => {
             let Some(target_name) = target._type.get_name() else {
-                unreachable!("TYPE ERROR: Expected named type for method call target, found {}", target._type);
+                unreachable!("PANIC: Expected named type for method call target, found {}", target._type);
             };
 
             let Some(prototype) = env.get_func(mangled_name.as_str()) else {
-                log_error!("TYPE ERROR: Method '{}' not found for type {}", mangled_name.as_string(), target_name);
+                log_typecheck_error!(env, expr, "TYPE ERROR: Method '{}' not found for type {}", mangled_name.as_string(), target_name);
             };
             tc_args.insert(0, *target);
 
-            lhs = TCExpr {
+            tc_lhs = TCExpr {
                 _type: CXTypeKind::Function { prototype: Box::new(prototype.clone()) }.into(),
                 kind: TCExprKind::FunctionReference { name: mangled_name.clone() }
             };
@@ -147,14 +148,14 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
 
         _ => {
             let mut try_mem_ref = || -> Option<_> {
-                let Some(inner) = lhs._type.mem_ref_inner() else {
+                let Some(inner) = tc_lhs._type.mem_ref_inner() else {
                     return None;
                 };
 
                 if let CXTypeKind::Function { prototype } = &inner.kind {
                     Some(prototype.as_ref().clone())
                 } else {
-                    coerce_value(&mut lhs);
+                    coerce_value(&mut tc_lhs);
                     None
                 }
             };
@@ -162,12 +163,12 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
             if let Some(prototype) = try_mem_ref() {
                 (false, prototype)
             } else {
-                let Some(inner) = lhs._type.ptr_inner() else {
-                    log_error!("TYPE ERROR: Attempted to call non-function type {}", lhs._type);
+                let Some(inner) = tc_lhs._type.ptr_inner() else {
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Attempted to call non-function type {}", tc_lhs._type);
                 };
 
                 let CXTypeKind::Function { prototype } = &inner.kind else {
-                    log_error!("TYPE ERROR: Attempted to call non-function type {}", lhs._type);
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Attempted to call non-function type {}", tc_lhs._type);
                 };
 
                 (false, *prototype.clone())
@@ -192,11 +193,11 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
         println!("DEBUG: prototype:\n{prototype:#?}");
         println!("DEBUG: tc_args:\n{tc_args:#?}");
-        log_error!("TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
+        log_typecheck_error!(env, expr, "TYPE ERROR: Method {} expects {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
     }
 
     if tc_args.len() < prototype.params.len() {
-        log_error!("TYPE ERROR: Method {} expects at least {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
+        log_typecheck_error!(env, expr, "TYPE ERROR: Method {} expects at least {} arguments, found {}", prototype.name.as_string(), prototype.params.len(), tc_args.len());
     }
 
     let canon_params = prototype.params.len();
@@ -232,7 +233,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
                 implicit_cast(arg, &CXTypeKind::Integer { bytes: 8, signed: false }.into())?;
             },
 
-            _ => log_error!("TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", arg._type),
+            _ => log_typecheck_error!(env, expr, "TYPE ERROR: Cannot coerce value {} for varargs, expected intrinsic type or pointer!", arg._type),
         }
     }
 
@@ -240,7 +241,7 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
         TCExpr {
             _type: prototype.return_type.clone(),
             kind: TCExprKind::FunctionCall {
-                function: Box::new(lhs),
+                function: Box::new(tc_lhs),
                 arguments: tc_args,
                 direct_call: direct
             }
@@ -248,40 +249,40 @@ pub(crate) fn typecheck_method_call(env: &mut TCEnvironment, lhs: &CXExpr, rhs: 
     )
 }
 
-pub(crate) fn typecheck_is(env: &mut TCEnvironment, expr: &CXExpr, constructor: &CXExpr) -> Option<TCExpr> {
-    let mut expr = typecheck_expr(env, expr)?;
-    coerce_value(&mut expr);
+pub(crate) fn typecheck_is(env: &mut TCEnvironment, lhs: &CXExpr, rhs: &CXExpr, expr: &CXExpr) -> Option<TCExpr> {
+    let mut tc_expr = typecheck_expr(env, lhs)?;
+    coerce_value(&mut tc_expr);
 
-    let CXTypeKind::TaggedUnion { name: expected_union_name, variants, .. } = &expr._type.kind else {
-        log_error!("TYPE ERROR: 'is' operator requires a tagged union on the left-hand side, found {}", expr._type);
+    let CXTypeKind::TaggedUnion { name: expected_union_name, variants, .. } = &tc_expr._type.kind else {
+        log_typecheck_error!(env, expr, "TYPE ERROR: 'is' operator requires a tagged union on the left-hand side, found {}", tc_expr._type);
     };
 
-    let CXExprKind::TypeConstructor { union_name, variant_name, inner  } = &constructor.kind else {
-        log_error!("TYPE ERROR: 'is' operator requires a type constructor on the right-hand side, found {:?}", constructor);
+    let CXExprKind::TypeConstructor { union_name, variant_name, inner  } = &rhs.kind else {
+        log_typecheck_error!(env, expr, "TYPE ERROR: 'is' operator requires a type constructor on the right-hand side, found {:?}", rhs);
     };
 
     if expected_union_name != union_name {
-        log_error!("TYPE ERROR: 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}", expected_union_name, union_name.as_string());
+        log_typecheck_error!(env, expr, "TYPE ERROR: 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}", expected_union_name, union_name.as_string());
     }
 
     let CXExprKind::Identifier(inner_var_name) = &inner.kind else {
-        log_error!("TYPE ERROR: 'is' operator requires a variant name identifier in the type constructor, found {:?}", inner);
+        log_typecheck_error!(env, inner, "TYPE ERROR: 'is' operator requires a variant name identifier in the type constructor, found {:?}", inner);
     };
 
-    if expr._type.get_name() != Some(union_name.as_str()) {
-        log_error!("TYPE ERROR: 'is' operator left-hand side type {} does not match right-hand side tagged union type {}", expr._type, union_name.as_string());
+    if tc_expr._type.get_name() != Some(union_name.as_str()) {
+        log_typecheck_error!(env, expr, "TYPE ERROR: 'is' operator left-hand side type {} does not match right-hand side tagged union type {}", tc_expr._type, union_name.as_string());
     }
 
     let Some((tag_value, variant_type)) = variants.iter()
         .enumerate()
         .find(|(_, (name, _))| name == variant_name.as_str())
         .map(|(i, (_, _ty))| (i, _ty)) else {
-        log_error!("TYPE ERROR: 'is' operator variant name '{}' not found in tagged union {}", variant_name, union_name);
+        log_typecheck_error!(env, expr, "TYPE ERROR: 'is' operator variant name '{}' not found in tagged union {}", variant_name, union_name);
     };
 
     env.insert_symbol(inner_var_name.as_string(), variant_type.clone());
 
-    let union_type = expr._type.clone();
+    let union_type = tc_expr._type.clone();
     let var_name = inner_var_name.clone();
     let variant_type = variant_type.clone();
 
@@ -289,7 +290,7 @@ pub(crate) fn typecheck_is(env: &mut TCEnvironment, expr: &CXExpr, constructor: 
         TCExpr {
             _type: CXTypeKind::Bool.into(),
             kind: TCExprKind::ConstructorMatchIs {
-                expr: Box::new(expr),
+                expr: Box::new(tc_expr),
                 union_type, var_name, variant_type,
                 variant_tag: tag_value as u64,
             }
@@ -297,28 +298,28 @@ pub(crate) fn typecheck_is(env: &mut TCEnvironment, expr: &CXExpr, constructor: 
     )
 }
 
-pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> Option<TCExpr> {
+pub(crate) fn typecheck_binop(env: &TCEnvironment, op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr, expr: &CXExpr) -> Option<TCExpr> {
     coerce_value(&mut lhs);
     coerce_value(&mut rhs);
 
     let final_type = match (&lhs._type.kind, &rhs._type.kind) {
         (_, _) if same_type(&lhs._type, &rhs._type) => {
-            binop_type(&op, &lhs)?
+            binop_type(env, &op, &lhs, expr)?
         },
 
         (CXTypeKind::PointerTo { inner_type: l_inner, .. }, CXTypeKind::Integer { .. }) => {
             ptr_int_binop_coercion(op.clone(), l_inner.as_ref(), &mut rhs);
-            binop_type(&op, &lhs)?
+            binop_type(env, &op, &lhs, expr)?
         },
 
         (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { inner_type: r_inner, .. }) => {
             if matches!(op, CXBinOp::Subtract) {
-                log_error!("TYPE ERROR: Invalid operation [integer] - [pointer] for types {} and {}",
+                log_typecheck_error!(env, expr, "TYPE ERROR: Invalid operation [integer] - [pointer] for types {} and {}",
                     lhs._type, rhs._type);
             }
 
             ptr_int_binop_coercion(op.clone(), r_inner.as_ref(), &mut lhs);
-            binop_type(&op, &rhs)?
+            binop_type(env, &op, &rhs, expr)?
         },
 
         (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. }) => {
@@ -328,25 +329,25 @@ pub(crate) fn typecheck_binop(op: CXBinOp, mut lhs: TCExpr, mut rhs: TCExpr) -> 
                 add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
             }
 
-            binop_type(&op, &lhs)?
+            binop_type(env, &op, &lhs, expr)?
         },
 
         (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => {
             add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
-            binop_type(&op, &rhs)?
+            binop_type(env, &op, &rhs, expr)?
         },
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => {
             add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
-            binop_type(&op, &rhs)?
+            binop_type(env, &op, &rhs, expr)?
         },
 
         (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. })
-            => ptr_ptr_binop_coercion(op.clone(), &lhs._type, &mut rhs)?,
+            => ptr_ptr_binop_coercion(env, op.clone(), &lhs._type, &mut rhs, expr)?,
 
         (CXTypeKind::StrongPointer { .. }, _) |
         (_, CXTypeKind::StrongPointer { .. }) => {
-            log_error!("R-value strong pointers must be assigned to an l-value before being used \
+            log_typecheck_error!(env, expr, "R-value strong pointers must be assigned to an l-value before being used \
                 in binary operations, found '{op}' with types {} and {}",
                 lhs._type, rhs._type);
         },
@@ -386,7 +387,7 @@ pub(crate) fn ptr_int_binop_coercion(op: CXBinOp, pointer_inner: &CXType, non_po
     };
 }
 
-pub(crate) fn ptr_ptr_binop_coercion(op: CXBinOp, pointer_inner: &CXType, non_pointer: &mut TCExpr)
+pub(crate) fn ptr_ptr_binop_coercion(env: &TCEnvironment, op: CXBinOp, pointer_inner: &CXType, non_pointer: &mut TCExpr, expr: &CXExpr)
     -> CXResult<CXType> {
     match op {
         // Requires two pointers
@@ -397,11 +398,11 @@ pub(crate) fn ptr_ptr_binop_coercion(op: CXBinOp, pointer_inner: &CXType, non_po
             Some(CXTypeKind::Bool.into())
         },
 
-        _ => log_error!("Invalid binary operation {op} for pointer type")
+        _ => log_typecheck_error!(env, expr, "Invalid binary operation {op} for pointer type")
     }
 }
 
-pub(crate) fn binop_type(op: &CXBinOp, lhs: &TCExpr) -> Option<CXType> {
+pub(crate) fn binop_type(env: &TCEnvironment, op: &CXBinOp, lhs: &TCExpr, expr: &CXExpr) -> Option<CXType> {
     match op {
         CXBinOp::Add | CXBinOp::Subtract | CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => {
             Some(lhs._type.clone())
@@ -422,6 +423,6 @@ pub(crate) fn binop_type(op: &CXBinOp, lhs: &TCExpr) -> Option<CXType> {
         CXBinOp::LessEqual | CXBinOp::GreaterEqual |
         CXBinOp::Equal | CXBinOp::NotEqual => Some(CXTypeKind::Bool.into()),
 
-        _ => log_error!("Invalid binary operation {op} for type {:?}", lhs)
+        _ => log_typecheck_error!(env, expr, "Invalid binary operation {op} for type {:?}", lhs)
     }
 }
