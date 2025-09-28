@@ -159,7 +159,7 @@ fn op_to_binop(op: OperatorType) -> Option<CXBinOp> {
 
             OperatorType::Is                => CXBinOp::Is,
 
-            _ => log_error!("PARSER ERROR: Invalid binary operator: {:?}", op)
+            _ => log_error!("Invalid binary operator: {:?}", op)
         }
     )
 }

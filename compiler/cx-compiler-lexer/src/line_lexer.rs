@@ -69,6 +69,8 @@ impl<'a> LineLexer<'a> {
         }
 
         let str = self.iter.source[self.last_consume.. up_to].to_string();
+        let str_start = self.last_consume;
+
         self.last_consume = self.iter.current_iter;
 
         if str.chars().any(|c| !c.is_whitespace()) {
@@ -78,7 +80,7 @@ impl<'a> LineLexer<'a> {
                 Token {
                     kind,
                     line: self.iter.line,
-                    start_index: self.last_consume,
+                    start_index: str_start,
                     end_index: up_to,
                 }
             )

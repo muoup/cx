@@ -680,7 +680,7 @@ pub fn generate_instruction(
 
         TCExprKind::Break => {
             let Some(merge) = builder.get_merge() else {
-                log_error!("TYPE ERROR: Invalid break in outermost scope");
+                log_error!(" Invalid break in outermost scope");
             };
 
             builder.add_instruction(
@@ -693,7 +693,7 @@ pub fn generate_instruction(
 
         TCExprKind::Continue => {
             let Some(cond) = builder.get_continue() else {
-                log_error!("TYPE ERROR: Invalid continue in outermost scope");
+                log_error!(" Invalid continue in outermost scope");
             };
 
             builder.add_instruction(

@@ -77,10 +77,10 @@ pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalS
         },
 
         CXGlobalStmt::TemplatedFunction { .. } =>
-            log_parse_error!(data, "PARSER ERROR: Nested templated generators are not supported!"),
+            log_parse_error!(data, "Nested templated generators are not supported!"),
         CXGlobalStmt::GlobalVariable { .. } =>
-            log_parse_error!(data, "PARSER ERROR: Templated global variables are not supported!"),
+            log_parse_error!(data, "Templated global variables are not supported!"),
         CXGlobalStmt::FunctionPrototype { .. } =>
-            log_parse_error!(data, "PARSER ERROR: Templated functions predeclarations are not supported!"),
+            log_parse_error!(data, "Templated functions predeclarations are not supported!"),
     }
 }

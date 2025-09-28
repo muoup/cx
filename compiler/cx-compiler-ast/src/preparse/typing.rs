@@ -24,7 +24,7 @@ pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<(Option<CXIdent>,
 
     while !try_next!(tokens, punctuator!(CloseBrace)) {
         let Some((name, _type)) = parse_initializer(tokens) else {
-            point_log_error!(tokens, "PARSER ERROR: Failed to parse struct member type");
+            point_log_error!(tokens, "Failed to parse struct member type");
         };
 
         let Some(name) = name else {
@@ -72,7 +72,7 @@ pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<(Option<CXIde
 
     loop {
         let Some(name) = parse_std_ident(tokens) else {
-            point_log_error!(tokens, "PARSER ERROR: Expected variant name in tagged union");
+            point_log_error!(tokens, "Expected variant name in tagged union");
         };
 
         assert_token_matches!(tokens, operator!(ScopeRes));
@@ -81,9 +81,9 @@ pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<(Option<CXIde
             // Success Path - Valid Type + No Name
             Some((None, _type)) => variants.push((name.to_string(), _type)),
 
-            Some((Some(_), _)) => point_log_error!(tokens, "PARSER ERROR: Tagged union variant may not have a named type"),
+            Some((Some(_), _)) => point_log_error!(tokens, "Tagged union variant may not have a named type"),
 
-            None => point_log_error!(tokens, "PARSER ERROR: Failed to parse tagged union variant type"),
+            None => point_log_error!(tokens, "Failed to parse tagged union variant type"),
         }
 
         if !try_next!(tokens, operator!(Comma)) {
@@ -210,7 +210,7 @@ pub(crate) fn parse_typemods(tokens: &mut TokenIter, acc_type: CXNaiveType) -> O
                     true
                 },
 
-                _ => log_error!("PARSER ERROR: Expected '*' or '[]' after 'strong' keyword")
+                _ => log_error!("Expected '*' or '[]' after 'strong' keyword")
             };
 
             let specs = parse_specifier(tokens);
@@ -321,7 +321,7 @@ pub(crate) fn parse_template_args(tokens: &mut TokenIter) -> Option<CXNaiveTempl
 
     loop {
         let Some((None, _type)) = parse_initializer(tokens) else {
-            point_log_error!(tokens, "PARSER ERROR: Expected type declaration in template arguments!");
+            point_log_error!(tokens, "Expected type declaration in template arguments!");
         };
 
         input_types.push(_type);

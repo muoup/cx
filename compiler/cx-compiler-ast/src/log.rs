@@ -2,7 +2,7 @@
 macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
+            let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
             cx_log::pretty_point_error(&message, &$data.tokens.file, &$data.tokens.slice[$data.tokens.index]);
 
@@ -19,9 +19,9 @@ macro_rules! log_parse_error {
 macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
+            let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            cx_log::pretty_point_error(&message, &$toks.file, &$toks.slice[$toks.index]);
+            cx_log::pretty_point_error(&message, &$toks.file, $toks.peek().unwrap());
 
             if cfg!(debug_assertions) {
                 panic!("Preprocessing error: {}", message);

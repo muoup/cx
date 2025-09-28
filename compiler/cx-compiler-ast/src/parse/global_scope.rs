@@ -45,7 +45,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
         SpecifierType::Public => data.visibility = VisibilityMode::Public,
         SpecifierType::Private => data.visibility = VisibilityMode::Private,
 
-        _ => log_parse_error!(data, "PARSER ERROR: Unexpected specifier in global scope"),
+        _ => log_parse_error!(data, "Unexpected specifier in global scope"),
     };
     
     try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
@@ -56,7 +56,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 pub(crate) fn parse_destructor(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Operator(OperatorType::Tilda));
     let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
-        log_parse_error!(data, "PARSER ERROR: Failed to parse type in destructor definition!");
+        log_parse_error!(data, "Failed to parse type in destructor definition!");
     };
     assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
     assert_token_matches!(data.tokens, identifier!(this));
@@ -142,7 +142,7 @@ fn parse_fn_merge(data: &mut ParserData, prototype: CXNaivePrototype) -> CXResul
 
 pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     let Some((name, return_type)) = parse_initializer(&mut data.tokens) else {
-        log_parse_error!(data, "PARSER ERROR: Failed to parse initializer in global expression!");
+        log_parse_error!(data, "Failed to parse initializer in global expression!");
     };
     
     let Some(name) = name else {
@@ -151,7 +151,7 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
     };
     
     if !data.tokens.has_next() {
-        log_parse_error!(data, "PARSER ERROR: Reached end of token stream when parsing global expression!");
+        log_parse_error!(data, "Reached end of token stream when parsing global expression!");
     }
     
     if let Some(func) = try_function_parse(&mut data.tokens, return_type.clone(), name.clone())? {
@@ -186,7 +186,7 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
             )
         },
 
-        _ => log_parse_error!(data, "PARSER ERROR: Unexpected token in global expression: {:#?}", data.tokens.peek()),
+        _ => log_parse_error!(data, "Unexpected token in global expression: {:#?}", data.tokens.peek()),
     }
 }
 

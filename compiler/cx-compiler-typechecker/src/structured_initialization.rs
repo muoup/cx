@@ -22,7 +22,7 @@ pub fn coerce_initializer_list(
         CXTypeKind::Structured { .. } =>
             organize_structured_initializer(initializer, to_type),
         
-        _ => log_error!("TYPE ERROR: Cannot coerce initializer to type {to_type}"),
+        _ => log_error!(" Cannot coerce initializer to type {to_type}"),
     }
 }
 
@@ -39,7 +39,7 @@ fn organize_array_initializer(
     
     for (i, index) in indices.iter_mut().enumerate() {
         if let Some(name) = index.name.as_ref() {
-            log_error!("TYPE ERROR: Array initializer cannot have named indices, found: {name}");
+            log_error!(" Array initializer cannot have named indices, found: {name}");
         }
         
         index.index = counter;
@@ -74,7 +74,7 @@ fn organize_structured_initializer(
         unreachable!("PANIC: organize_structured_initializer expected initialzer, found: {initializer:?}");
     };
     let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
-        log_error!("TYPE ERROR: Expected structured type for initializer, found: {to_type}");
+        log_error!(" Expected structured type for initializer, found: {to_type}");
     };
     
     let mut counter = 0;
@@ -82,7 +82,7 @@ fn organize_structured_initializer(
     for index in indices.iter_mut() {
         if let Some(name) = &index.name {
             let Some(index) = fields.iter().position(|(field_name, _)| name == field_name) else {
-                log_error!("TYPE ERROR: Structured initializer has unexpected field: {name}");
+                log_error!(" Structured initializer has unexpected field: {name}");
             };
             
             counter = index;

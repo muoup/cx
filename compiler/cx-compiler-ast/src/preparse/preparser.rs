@@ -35,7 +35,7 @@ pub(crate) fn preparse_stmt(data: &mut PreparseData) -> Option<PreparseResult> {
         operator!(Tilda) => {
             data.tokens.next();
             let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
-                log_preparse_error!(data.tokens, "PARSER ERROR: Failed to parse type in destructor definition!");
+                log_preparse_error!(data.tokens, "Failed to parse type in destructor definition!");
             };
             goto_statement_end(&mut data.tokens);
             
@@ -90,7 +90,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
     assert_token_matches!(data.tokens, operator!(Greater));
     
     let stmt = preparse_stmt(data)
-        .expect("PARSER ERROR: Failed to parse global expression in template declaration!");
+        .expect("Failed to parse global expression in template declaration!");
     
     match stmt {
         PreparseResult::FunctionDefinition(signature) => {
@@ -137,7 +137,7 @@ pub(crate) fn parse_template(data: &mut PreparseData) -> Option<PreparseResult> 
             )
         },
 
-        _ => log_preparse_error!(data.tokens, "PARSER ERROR: Invalid statement in template declaration!"),
+        _ => log_preparse_error!(data.tokens, "Invalid statement in template declaration!"),
     }
 }
 
@@ -172,8 +172,12 @@ pub(crate) fn parse_typedef(tokens: &mut TokenIter) -> Option<PreparseResult> {
     assert_token_matches!(tokens, keyword!(Typedef));
     let start_index = tokens.index;
 
-    let (Some(name), type_) = parse_initializer(tokens)? else {
-        log_preparse_error!(tokens.with_index(start_index), "Invalid typedef, name not found!");
+    let (name, type_) = parse_initializer(tokens)? else {
+        log_preparse_error!(tokens.with_index(start_index), "Could not parse typedef.");
+    };
+
+    let Some(name) = name else {
+        log_preparse_error!(tokens.with_index(start_index), "Typedef must have a name!");
     };
     
     assert_token_matches!(tokens, punctuator!(Semicolon));
@@ -193,7 +197,7 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
         //         ^
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
             let Some(args) = parse_params(tokens) else {
-                log_preparse_error!(tokens, "PARSER ERROR: Failed to parse parameters in function declaration!");
+                log_preparse_error!(tokens, "Failed to parse parameters in function declaration!");
             };
             
             Some(
@@ -224,11 +228,11 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
             let fn_name = CXIdent::from(name.as_str());
             
             if !peek_next!(tokens, TokenKind::Punctuator(PunctuatorType::OpenParen)) {
-                log_preparse_error!(tokens, "PARSER ERROR: Expected '(' after template arguments in function declaration!");
+                log_preparse_error!(tokens, "Expected '(' after template arguments in function declaration!");
             };
 
             let Some(args) = parse_params(tokens) else {
-                log_preparse_error!(tokens, "PARSER ERROR: Failed to parse parameters in function declaration!");
+                log_preparse_error!(tokens, "Failed to parse parameters in function declaration!");
             };
             
             let name = CXNaiveFnIdent::MemberFunction {
@@ -266,7 +270,7 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
                 function_name: CXIdent::from(name.as_str())
             };
             let Some(params) = parse_params(tokens) else {
-                log_preparse_error!(tokens, "PARSER ERROR: Failed to parse parameters in member function declaration!");
+                log_preparse_error!(tokens, "Failed to parse parameters in member function declaration!");
             };
 
             Some(

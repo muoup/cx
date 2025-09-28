@@ -45,7 +45,7 @@ pub(crate) fn coerce_condition(expr: &mut TCExpr) -> Option<()> {
 
 pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     let Some(_) = try_implicit_cast(expr, to_type) else {
-        log_error!("TYPE ERROR: Cannot implicitly cast value of type {} to type {}", expr._type, to_type);
+        log_error!(" Cannot implicitly cast value of type {} to type {}", expr._type, to_type);
     };
 
     Some(())
@@ -53,7 +53,7 @@ pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
 
 pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     let Some(_) = try_explicit_cast(expr, to_type) else {
-        log_error!("TYPE ERROR: Cannot explicitly cast value of type {} to type {}", expr._type, to_type);
+        log_error!(" Cannot explicitly cast value of type {} to type {}", expr._type, to_type);
     };
 
     Some(())
