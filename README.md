@@ -60,16 +60,25 @@ Good luck :)
     cargo build --release [--features llvm-backend]
     ```
     
-use the LLVM backend, first you must install LLVM 18.1.X
-
 ## Usage
 
 For information regarding the CX language syntax, see the [Language Specification](docs/language_spec.md) document.
 
-To compile a CX file, use the following command:
+To compile a file in your IDE during development, use the following command:
 
 ```bash
 cargo run --release -- [-O0, -O1, -O2, -O3, -Ofast, -Osize] [-o <output_file>] <file_name>
+```
+
+For convenience, you may find it useful to create a link to the 'cx' executable reachable by your OS's path to allow easier compilation after building the project.
+
+e.g. for Ubuntu/Debian, while in the base of the project directory:
+```bash
+# Create a symbolic link to the debug build of the project, if desired, the release build will be located in target/release/cx 
+ln -s target/debug/cx /usr/bin/cx
+
+# Compile using the symbol link you created, this link only needs to be created once assuming your project's directory does not change 
+cx [-O0, -O1, etc.] [-o <output_file>] <file_name>
 ```
 
 ### Options
