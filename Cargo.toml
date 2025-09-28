@@ -1,5 +1,5 @@
 [workspace]
 resolver = "2"
 members = [
-    "compiler/cx", "compiler/cx-compiler-typechecker", "compiler/cx-data-typechecker", "tests"
+    "compiler/cx", "compiler/cx-compiler-typechecker", "compiler/cx-data-typechecker", "compiler/cx-log", "tests"
 ]

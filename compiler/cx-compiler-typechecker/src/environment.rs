@@ -4,6 +4,8 @@ use cx_data_typechecker::{CXFnMap, CXTypeMap};
 use cx_util::mangling::{mangle_destructor, mangle_template};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use cx_data_lexer::token::Token;
 use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCBaseMappings};
 
 pub struct TCTemplateRequest {
@@ -13,7 +15,11 @@ pub struct TCTemplateRequest {
 }
 
 pub struct TCEnvironment<'a> {
+    pub tokens: &'a [Token],
+    pub current_file: &'a Path,
+
     pub base_data: &'a TCBaseMappings,
+
     pub realized_types: CXTypeMap,
     pub realized_fns: CXFnMap,
     pub realized_globals: HashMap<String, TCGlobalVariable>,
@@ -28,8 +34,11 @@ pub struct TCEnvironment<'a> {
 }
 
 impl TCEnvironment<'_> {
-    pub fn new(structure_data: &TCBaseMappings) -> TCEnvironment {
+    pub fn new<'a>(tokens: &'a [Token], file_path: &'a Path, structure_data: &'a TCBaseMappings) -> TCEnvironment<'a> {
         TCEnvironment {
+            tokens,
+            current_file: file_path,
+
             base_data: structure_data,
             realized_types: HashMap::new(),
             realized_fns: HashMap::new(),

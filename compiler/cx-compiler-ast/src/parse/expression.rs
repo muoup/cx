@@ -70,7 +70,6 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
         let (name, mut type_) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
             point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type declaration");
         };
-        type_.specifiers = specifiers;
 
         if let Some(name) = name {
             decls.push(

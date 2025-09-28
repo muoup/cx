@@ -78,7 +78,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
                 log_error!("Unknown type: {name}");
             };
 
-            Some(_type)
+            Some(_type.add_specifier(naive_type.specifiers))
         },
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
@@ -101,7 +101,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::Array {
                         inner_type: Box::new(inner_type),
                         size: *size,
@@ -114,7 +114,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::PointerTo {
                         inner_type: Box::new(inner_type),
                         weak: false,
@@ -130,7 +130,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::PointerTo {
                         inner_type: Box::new(inner_type),
                         weak: *weak,
@@ -146,7 +146,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::StrongPointer {
                         inner_type: Box::new(inner_type),
                         is_array: *is_array,
@@ -165,7 +165,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::Structured {
                         name: name.clone(),
                         base_identifier: name.clone(),
@@ -185,7 +185,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::Union {
                         name: name.clone(),
                         variants: fields,
@@ -204,7 +204,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::TaggedUnion {
                         name: name.clone(),
                         variants,
@@ -218,7 +218,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
             Some(
                 CXType::new(
-                    0,
+                    naive_type.specifiers,
                     CXTypeKind::Function {
                         prototype: Box::new(prototype),
                     }

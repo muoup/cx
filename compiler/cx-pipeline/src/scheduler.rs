@@ -327,11 +327,14 @@ pub(crate) fn perform_job(
                 .get(&job.unit);
             let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
+            let lexemes = context.module_db.lex_tokens
+                .get(&job.unit);
 
-            let mut env = TCEnvironment::new(structure_data.as_ref());
+            let path = job.unit.with_extension("cx");
+            let mut env = TCEnvironment::new(lexemes.as_ref(), &path, structure_data.as_ref());
+
             typecheck(&mut env, &self_ast)
                 .expect("Typechecking failed");
-
             realize_templates(context, &job.unit, &mut env)
                 .expect("Template realization failed");
 

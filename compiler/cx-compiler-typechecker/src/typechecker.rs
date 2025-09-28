@@ -7,6 +7,7 @@ use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
 use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::environment::TCEnvironment;
+use crate::log_typecheck_error;
 use crate::type_mapping::{contextualize_template_args, contextualize_type};
 use crate::variable_destruction::visit_destructable_instance;
 
@@ -106,7 +107,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 TCExpr {
                     _type: type_.clone().mem_ref_to(),
-                    kind: TCExprKind::VariableDeclaration { name: name.clone(), type_: type_.clone() }
+                    kind: TCExprKind::VariableDeclaration { name: name.clone(), type_ }
                 }
             },
 
@@ -245,13 +246,17 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     (None, _) if return_type.is_unit() => {},
 
                     (Some(_), _) => {
-                        log_error!("TYPE ERROR: Cannot return from function {:?} with no return type",
-                            env.current_function().name);
+                        log_typecheck_error!(env, expr,
+                            "TYPE ERROR: Cannot return from function {} with a void return type",
+                            env.current_function().name
+                        );
                     },
 
                     (None, _) => {
-                        log_error!("TYPE ERROR: Function {:?} expects a return value, but none was provided",
-                            env.current_function().name);
+                        log_typecheck_error!(env, expr,
+                            "TYPE ERROR: Function {} expects a return value, but none was provided",
+                            env.current_function().name
+                        );
                     },
                 }
 
@@ -366,15 +371,15 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 let lhs = typecheck_expr(env, lhs)?;
                 let mut rhs = typecheck_expr(env, rhs)?;
 
-                if lhs._type.get_specifier(CX_CONST) {
-                    log_error!("TYPE ERROR: Assignment operator cannot be applied to const variables");
-                }
-
                 coerce_value(&mut rhs);
 
                 let Some(inner) = lhs._type.mem_ref_inner() else {
-                    log_error!("TYPE ERROR: Cannot assign to a non-reference type {}", lhs._type);
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Cannot assign to non-reference type {}", lhs._type);
                 };
+
+                if inner.get_specifier(CX_CONST) && !matches!(lhs.kind, TCExprKind::VariableDeclaration { .. }) {
+                    log_typecheck_error!(env, expr, "TYPE ERROR: Cannot assign to a const type");
+                }
 
                 if !inner.is_structured() {
                     implicit_cast(&mut rhs, inner);
