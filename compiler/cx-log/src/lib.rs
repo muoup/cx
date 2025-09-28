@@ -41,7 +41,7 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
     let error_line_start = start_index - error_padding;
     let mut remaining_error_chars = end_index - start_index;
 
-    let link = format!("{} {}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
+    let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
     println!("{} \n\t--> {}", message, link);
 
     let mut iter = file_contents[error_line_start..].lines().peekable();
@@ -76,7 +76,7 @@ pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
     let (error_line, error_padding) = get_error_loc(&file_contents, start_index);
     let error_line_start = start_index - error_padding;
 
-    let link = format!("{} {}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
+    let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
     println!("{} \n\t --> {}", message, link);
 
     if let Some(line) = file_contents[error_line_start..].lines().next() {
