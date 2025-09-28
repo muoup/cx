@@ -23,21 +23,21 @@ impl Display for CXNaiveTypeKind {
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "Structured<{}> {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
+                write!(f, "struct {} {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
             },
             CXNaiveTypeKind::Union { name, fields } => {
                 let fields_str = fields.iter()
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "Union<{}> {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
+                write!(f, "union {} {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
             },
             CXNaiveTypeKind::TaggedUnion { name, variants } => {
                 let variants_str = variants.iter()
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "TaggedUnion<{name}> {{ {variants_str} }}")
+                write!(f, "union class {name} {{ {variants_str} }}")
             },
             CXNaiveTypeKind::FunctionPointer { prototype } => write!(f, "FunctionPointer({prototype})"),
         }
