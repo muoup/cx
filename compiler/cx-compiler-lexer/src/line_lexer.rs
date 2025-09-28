@@ -3,42 +3,26 @@ use cx_data_lexer::punctuator;
 use cx_data_lexer::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
 
-pub(crate) struct Lexer<'a> {
-    source: &'a str,
-
+pub(crate) struct LineLexer<'a> {
     last_consume: usize,
-    iter: CharIter<'a>,
+    iter: &'a mut CharIter<'a>,
 
     pub tokens: Vec<Token>,
 }
 
-impl Lexer<'_> {
-    pub(crate) fn add_token(&mut self, token: Token) {
-        if !matches!(token.kind, TokenKind::Ignore) {
-            self.tokens.push(token);
-        }
-    }
+pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>) -> Option<Vec<Token>> {
+    let mut line_lexer = LineLexer::new(iter);
+    line_lexer.generate_tokens();
+    Some(line_lexer.tokens)
 }
 
-impl Lexer<'_> {
-    pub fn new(source: &str) -> Lexer {
-        Lexer {
-            source,
-
-            last_consume: 0,
-            iter: CharIter {
-                source,
-                
-                current_iter: 0,
-                line: 1,
-            },
-
-            tokens: Vec::new(),
-        }
+impl<'a> LineLexer<'a> {
+    fn add_token(&mut self, token: Token) {
+        self.tokens.push(token);
     }
 
-    pub fn generate_tokens(&mut self) {
-        while self.iter.has_next() {
+    pub(crate) fn generate_tokens(&mut self) {
+        while self.iter.has_next() && self.iter.peek() != Some('\n') {
             if self.last_consume == self.iter.current_iter {
                 if let Some(token) = self.pre_ident_lex() {
                     self.tokens.push(token);
@@ -48,8 +32,8 @@ impl Lexer<'_> {
 
             let previous_lex = self.iter.current_iter;
 
-            if let Some(operator) = operator_lex(&mut self.iter)
-                .or_else(|| punctuator_lex(&mut self.iter)) {
+            if let Some(operator) = operator_lex(self.iter)
+                .or_else(|| punctuator_lex(self.iter)) {
                 self.consume(previous_lex);
 
                 self.add_token(operator);
@@ -66,6 +50,17 @@ impl Lexer<'_> {
                 self.iter.next();
             }
         }
+
+        self.consume(self.iter.current_iter);
+    }
+
+    fn new(iter: &'a mut CharIter<'a>) -> LineLexer<'a> {
+        let last_consume = iter.current_iter;
+        LineLexer {
+            iter,
+            last_consume,
+            tokens: Vec::new(),
+        }
     }
 
     fn consume(&mut self, up_to: usize) {
@@ -73,7 +68,9 @@ impl Lexer<'_> {
             return;
         }
 
-        let str = self.source[self.last_consume.. up_to].to_string();
+        let str = self.iter.source[self.last_consume.. up_to].to_string();
+        let str_start = self.last_consume;
+
         self.last_consume = self.iter.current_iter;
 
         if str.chars().any(|c| !c.is_whitespace()) {
@@ -83,7 +80,7 @@ impl Lexer<'_> {
                 Token {
                     kind,
                     line: self.iter.line,
-                    start_index: self.last_consume,
+                    start_index: str_start,
                     end_index: up_to,
                 }
             )
@@ -92,9 +89,9 @@ impl Lexer<'_> {
 
     fn pre_ident_lex(&mut self) -> Option<Token> {
         match self.iter.peek()? {
-            '0' .. '9' => number_lex(&mut self.iter),
-            '"' => string_lex(&mut self.iter),
-            '\'' => char_lex(&mut self.iter),
+            '0' .. '9' => number_lex(self.iter),
+            '"' => string_lex(self.iter),
+            '\'' => char_lex(self.iter),
             _ => None
         }
     }
@@ -222,7 +219,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                             break;
                         }
                     }
-                    Some(TokenKind::Ignore)
+                    panic!("Single line comments should not reach the operator lexer")
                 },
                 Some('*') => {
                     iter.next();
@@ -232,7 +229,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                             break;
                         }
                     }
-                    Some(TokenKind::Ignore)
+                    panic!("Multi line comments should not reach the operator lexer")
                 },
                 _ => try_assignment(iter, OperatorType::Slash)
             }

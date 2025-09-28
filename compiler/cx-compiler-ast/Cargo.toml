@@ -12,3 +12,4 @@ cx-data-lexer = { path = "../cx-data-lexer" }
 cx-data-typechecker = { path = "../cx-data-typechecker" }
 
 cx-data-pipeline = { path = "../cx-data-pipeline" }
+cx-log = { path = "../cx-log" }

@@ -279,6 +279,7 @@ dependencies = [
  "cx-data-lexer",
  "cx-data-pipeline",
  "cx-data-typechecker",
+ "cx-log",
  "cx-util",
 ]
 
@@ -310,6 +311,7 @@ dependencies = [
  "cx-data-lexer",
  "cx-data-pipeline",
  "cx-data-typechecker",
+ "cx-log",
  "cx-util",
 ]
 
@@ -326,9 +328,6 @@ dependencies = [
 [[package]]
 name = "cx-data-lexer"
 version = "0.1.0"
-dependencies = [
- "cx-util",
-]
 
 [[package]]
 name = "cx-data-mir"
@@ -356,6 +355,14 @@ dependencies = [
  "cx-util",
  "speedy",
  "uuid",
+]
+
+[[package]]
+name = "cx-log"
+version = "0.1.0"
+dependencies = [
+ "cx-data-lexer",
+ "cx-util",
 ]
 
 [[package]]

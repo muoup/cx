@@ -10,20 +10,17 @@ use cx_data_pipeline::directories::internal_directory;
 use cx_data_pipeline::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue};
 use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use fs2::FileExt;
 use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
-use cx_compiler_lexer::lex::lex;
-use cx_compiler_lexer::preprocessor::preprocess;
 use cx_compiler_typechecker_new::environment::TCEnvironment;
 use cx_compiler_typechecker_new::typecheck;
 use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_data_lexer::TokenIter;
 use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
-use cx_util::format::dump_data;
-use cx_util::scoped_map::ScopedMap;
+use cx_util::format::{dump_data, dump_write};
 use crate::template_realizing::realize_templates;
 
 pub(crate) fn scheduling_loop(context: &GlobalCompilationContext, initial_job: CompilationJob) -> Option<()> {
@@ -195,7 +192,7 @@ pub(crate) fn perform_job(
     match job.step {
         CompilationStep::PreParse => {
             let file_path = job.unit.with_extension("cx");
-            let file_contents = std::fs::read_to_string(file_path)
+            let file_contents = std::fs::read_to_string(&file_path)
                 .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
 
             let mut hasher = DefaultHasher::new();
@@ -212,15 +209,11 @@ pub(crate) fn perform_job(
             
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let preprocess = preprocess(file_contents.as_str());
-            let tokens = lex(preprocess.as_str());
+            let tokens = cx_compiler_lexer::lex(file_contents.as_str())?;
+            dump_write("Tokens:\n");
 
-            let mut output = preparse(
-                TokenIter {
-                    slice: &tokens,
-                    index: 0,
-                }
-            ).unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
+            let mut output = preparse(TokenIter::new(&tokens, file_path))
+                .unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
             output.module = job.unit.to_string();
 
             if !job.unit.as_str().contains("std") {
@@ -297,7 +290,7 @@ pub(crate) fn perform_job(
                 ..Default::default()
             };
 
-            let parsed_ast = parse_ast(TokenIter::new(&lexemes), base_ast)
+            let parsed_ast = parse_ast(TokenIter::new(&lexemes, job.unit.with_extension("cx")), base_ast)
                 .expect("AST parsing failed");
 
             if !job.unit.is_std_lib() {
@@ -330,11 +323,14 @@ pub(crate) fn perform_job(
                 .get(&job.unit);
             let self_ast = context.module_db.naive_ast
                 .get(&job.unit);
+            let lexemes = context.module_db.lex_tokens
+                .get(&job.unit);
 
-            let mut env = TCEnvironment::new(structure_data.as_ref());
+            let path = job.unit.with_extension("cx");
+            let mut env = TCEnvironment::new(lexemes.as_ref(), &path, structure_data.as_ref());
+
             typecheck(&mut env, &self_ast)
                 .expect("Typechecking failed");
-
             realize_templates(context, &job.unit, &mut env)
                 .expect("Template realization failed");
 
@@ -347,9 +343,7 @@ pub(crate) fn perform_job(
 
                 type_map: env.realized_types,
                 fn_map: env.realized_fns,
-                global_variables: env.realized_globals
-                    .into_iter()
-                    .map(|(_, gv)| gv)
+                global_variables: env.realized_globals.into_values()
                     .collect(),
 
                 destructors_required: env.deconstructors.into_iter()

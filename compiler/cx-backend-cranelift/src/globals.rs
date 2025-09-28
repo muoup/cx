@@ -36,7 +36,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &MIRGlobalValue
 
             if let Some(initial_value) = initial_value {
                 let bytes : [u8; 8] =
-                    unsafe { std::mem::transmute(*initial_value) };
+                    unsafe { i64::to_ne_bytes(*initial_value) };
                 let type_size = _type.fixed_size();
                 let relevant_data = bytes.iter()
                     .skip(8 - type_size)

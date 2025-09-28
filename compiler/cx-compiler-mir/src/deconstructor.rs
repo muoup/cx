@@ -134,7 +134,7 @@ pub fn generate_deconstructor(builder: &mut MIRBuilder, _type: &CXType) -> Optio
     builder.new_function(deconstructor_prototype.clone());
 
     let self_val = MIRValue::ParameterRef(0);
-    let as_bc = builder.convert_cx_type(&_type)?;
+    let as_bc = builder.convert_cx_type(_type)?;
 
     match &_type.kind {
         CXTypeKind::Structured { fields, .. } => {
@@ -154,12 +154,12 @@ pub fn generate_deconstructor(builder: &mut MIRBuilder, _type: &CXType) -> Optio
                 deconstruct_variable(builder, &ptr, field_type)?;
             }
 
-            if let Some(destructor) = builder.get_destructor(&_type) {
+            if let Some(destructor) = builder.get_destructor(_type) {
                 builder.call(&destructor, vec![self_val])?;
             }
         },
 
-        _ => panic!("PANIC: Deconstructor generation for type kind {} not implemented", _type),
+        _ => panic!("PANIC: Deconstructor generation for type kind {_type} not implemented"),
     }
 
     builder.finish_function();

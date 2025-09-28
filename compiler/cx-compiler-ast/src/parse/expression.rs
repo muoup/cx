@@ -1,13 +1,13 @@
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use crate::parse::global_scope::{parse_body};
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::preparse::naive_types::CXNaiveTypeKind;
 use cx_util::identifier::CXIdent;
-use cx_data_lexer::{identifier, operator, punctuator};
+use cx_data_lexer::{operator, punctuator};
 use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
-use cx_util::{log_error, point_log_error};
+use cx_util::log_error;
 use crate::parse::structured_initialization::parse_structured_initialization;
 use crate::parse::typing::is_type_decl;
 use crate::preparse::preparser::{parse_intrinsic, parse_std_ident};
@@ -51,7 +51,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
     };
 
     if !expr_stack.is_empty() {
-        log_error!("PARSER ERROR: Expression stack is not empty after parsing expression: {:#?} {:#?}", expr_stack, op_stack);
+        log_error!("Expression stack is not empty after parsing expression: {:#?} {:#?}", expr_stack, op_stack);
     }
 
     Some(expr)
@@ -67,10 +67,9 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let (name, mut type_) = parse_base_mods(&mut data.tokens, base_type.clone())? else {
-            point_log_error!(data.tokens, "PARSER ERROR: Failed to parse type declaration");
+        let Some((name, mut type_)) = parse_base_mods(&mut data.tokens, base_type.clone()) else {
+            log_parse_error!(data, "Failed to parse type declaration");
         };
-        type_.specifiers = specifiers;
 
         if let Some(name) = name {
             decls.push(
@@ -81,11 +80,11 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
 
             let Some(name) = parse_std_ident(&mut data.tokens) else {
-                point_log_error!(data.tokens, "PARSER ERROR: Identifier expected")
+                log_parse_error!(data, "Identifier expected")
             };
 
             let CXNaiveTypeKind::Identifier { name: type_name, .. } = type_.kind else {
-                log_error!("PARSER ERROR: Identifier expected")
+                log_error!("Identifier expected")
             };
 
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
@@ -127,7 +126,7 @@ pub(crate) fn parse_expr_op_concat(data: &mut ParserData, expr_stack: &mut Vec<C
     op_stack.push(PrecOperator::BinOp(op));
 
     let Some(_) = parse_expr_val(data, expr_stack, op_stack) else {
-        log_error!("PARSER ERROR: Failed to parse expression value after operator: {:#?}", data.tokens.peek());
+        log_error!("Failed to parse expression value after operator: {:#?}", data.tokens.peek());
     };
 
     Some(())
@@ -258,7 +257,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
             
             let return_type = if is_type_decl(data) {
                 let Some((None, type_)) = parse_initializer(&mut data.tokens) else {
-                    log_error!("PARSER ERROR: Failed to parse type declaration for sizeof");
+                    log_error!("Failed to parse type declaration for sizeof");
                 };
 
                 CXExprKind::SizeOf {
@@ -284,7 +283,7 @@ pub(crate) fn parse_expr_val(data: &mut ParserData, expr_stack: &mut Vec<CXExpr>
         
         TokenKind::Keyword(KeywordType::New) => {
             let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
-                log_error!("PARSER ERROR: Failed to parse type declaration for new");
+                log_error!("Failed to parse type declaration for new");
             };
             
             
@@ -321,7 +320,7 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind>
     data.tokens.back();
 
     let Some(args) = parse_template_args(&mut data.tokens) else {
-        point_log_error!(data.tokens, "PARSER ERROR: Failed to parse template arguments for function identifier: {:#?}", ident);
+        log_parse_error!(data, "Failed to parse template arguments for function identifier: {:#?}", ident);
     };
 
     Some(
@@ -394,7 +393,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                 } else if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Default)) {
                     assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Colon));
                     if default_case.is_some() {
-                        log_error!("PARSER ERROR: Multiple default cases in switch statement");
+                        log_error!("Multiple default cases in switch statement");
                     }
                     default_case = Some(index as usize);
                     continue;
@@ -434,7 +433,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                 if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Default)) {
                     assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::ThickArrow));
                     if default_arm.is_some() {
-                        log_error!("PARSER ERROR: Multiple default cases in match statement");
+                        log_error!("Multiple default cases in match statement");
                     }
                     default_arm = Some(Box::new(parse_body(data)?));
                     continue;

@@ -138,7 +138,7 @@ impl CXType {
 
     pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
+            uuid: self.uuid,
             visibility_mode: self.visibility_mode,
             specifiers: self.specifiers | specifier,
             kind: self.kind.clone()

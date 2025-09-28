@@ -22,18 +22,14 @@ pub(crate) fn coerce_value(expr: &mut TCExpr) {
         };
     }
 
-    match &expr._type.kind {
-        CXTypeKind::Function { prototype } => {
-            *expr = TCExpr {
-                _type: prototype.return_type.clone(),
-                kind: TCExprKind::Coercion {
-                    operand: Box::new(std::mem::take(expr)),
-                    cast_type: CXCastType::FunctionToPointerDecay
-                }
-            };
-        },
-
-        _ => {}
+    if let CXTypeKind::Function { prototype } = &expr._type.kind {
+        *expr = TCExpr {
+            _type: prototype.return_type.clone(),
+            kind: TCExprKind::Coercion {
+                operand: Box::new(std::mem::take(expr)),
+                cast_type: CXCastType::FunctionToPointerDecay
+            }
+        };
     }
 }
 
@@ -49,7 +45,7 @@ pub(crate) fn coerce_condition(expr: &mut TCExpr) -> Option<()> {
 
 pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     let Some(_) = try_implicit_cast(expr, to_type) else {
-        log_error!("TYPE ERROR: Cannot implicitly cast value of type {} to type {}", expr._type, to_type);
+        log_error!(" Cannot implicitly cast value of type {} to type {}", expr._type, to_type);
     };
 
     Some(())
@@ -57,14 +53,14 @@ pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
 
 pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
     let Some(_) = try_explicit_cast(expr, to_type) else {
-        log_error!("TYPE ERROR: Cannot explicitly cast value of type {} to type {}", expr._type, to_type);
+        log_error!(" Cannot explicitly cast value of type {} to type {}", expr._type, to_type);
     };
 
     Some(())
 }
 
 pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
-    if let Some(_) = try_implicit_cast(expr, to_type) {
+    if try_implicit_cast(expr, to_type).is_some() {
         return Some(());
     }
 

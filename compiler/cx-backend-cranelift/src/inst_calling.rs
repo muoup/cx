@@ -31,7 +31,7 @@ pub(crate) fn prepare_method_call<'a>(
     func: &MIRValue,
     args: &'a [MIRValue],
 ) -> Option<(CodegenValue, Vec<Value>)> {
-    let val = context.get_value(&func).unwrap();
+    let val = context.get_value(func).unwrap();
 
     Some((val, prepare_parameters(context, args)?))
 }

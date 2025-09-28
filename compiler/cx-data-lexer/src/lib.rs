@@ -1,4 +1,5 @@
 use crate::token::Token;
+use std::path::PathBuf;
 
 pub mod token;
 pub mod format;
@@ -7,13 +8,15 @@ pub mod format;
 pub struct TokenIter<'a> {
     pub slice: &'a [Token],
     pub index: usize,
+    pub file: PathBuf,
 }
 
 impl<'a> TokenIter<'a> {
-    pub fn new(slice: &'a [Token]) -> Self {
+    pub fn new(slice: &'a [Token], file: PathBuf) -> Self {
         TokenIter {
             slice,
             index: 0,
+            file,
         }
     }
 
@@ -44,5 +47,13 @@ impl<'a> TokenIter<'a> {
 
     pub fn has_next(&self) -> bool {
         self.slice.get(self.index).is_some()
+    }
+
+    pub fn with_index(&mut self, index: usize) -> Self {
+        TokenIter {
+            slice: self.slice,
+            index,
+            file: self.file.clone(),
+        }
     }
 }

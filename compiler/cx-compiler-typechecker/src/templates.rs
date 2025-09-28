@@ -45,7 +45,7 @@ pub(crate) fn instantiate_type_template(env: &mut TCEnvironment, name: &str, inp
 
     let destructor_name = mangle_destructor(name);
 
-    if let Some(_) = env.base_data.fn_data.get_template(&destructor_name) {
+    if env.base_data.fn_data.get_template(&destructor_name).is_some() {
         instantiate_function_template(env, &destructor_name, input);
     }
 

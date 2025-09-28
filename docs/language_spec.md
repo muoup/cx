@@ -13,6 +13,8 @@ is not a priority, however can be added in the future if deemed necessary. Any d
 the semantics of the language, or much less likely syntax, will be noted in the document, but
 all syntax available in the [C99 Standard](https://www.dii.uchile.cl/~daespino/files/Iso_C_1999_definition.pdf) should be available in CX.
 
+A significant divergence from C/C++ is that CX is not order-dependent. Types and functions can be declared in any order, as the compiler resolves all declarations within a module before compilation begins. This means a function can be called by another function that appears earlier in the same source file without needing a forward declaration.
+
 ## 2. Lexical Conventions
 
 ### 2.1. Identifiers
@@ -27,12 +29,8 @@ The only exception to section #1 with regards to CX's backwards compatibility is
 of additional keywords. Any programs using the following keywords may not compile in CX without
 slight modifications. The following keywords are currently reserved in addition to the C99 keywords:
 
-*   `import` for module imports
-*   `defer` for deferring semantics until the end of the function
-*   `strong` and `weak` for strong and weak pointers respectively
-*   `new` for allocating memory for strong pointers
-*   `template` for defining templates
-*   `type` representing the sum of all types in template definitions
+*   `import`, `defer`, `strong`, `weak`, `new`, `template`, `type`, `match`, `is`, `private`, `public`, `class`.
+
 
 The meaning of these keywords will be explained in their respective sections.
 
@@ -203,7 +201,7 @@ The `is` operator is used to check if a tagged union instance corresponds to a s
 
 Its primary use is within conditional statements like `if` and `while` to safely inspect a tagged union's current type.
 
-Regardless of the output of the operatiion, it also extracts the variant's inner value into a new variable that is made available within the conditional's scope.
+When the `is` operator evaluates to true, it also extracts the variant's inner value into a new variable that is made available within the conditional's scope.
 
 **Syntax Example:**
 ```c
@@ -217,9 +215,25 @@ if (out is Output::string(s)) {
 }
 ```
 
-**Important Warning:** The `is` operator is an **unchecked coercion**. It is up to the user to ensure via control flow that the variable is only used if the `is` check passes. Any use
-of the extracted variable when the tagged union instance is not of the expected variant results in **undefined behavior**.
-
+**Important Warning:** The `is` operator also performs an **unchecked coercion**. If used outside of a conditional check where the type is not guaranteed, it will still attempt to extract the value. Accessing this extracted variable when the tagged union instance is not of the expected variant results in **undefined behavior**. 
 Currently also, tagged unions are not safely deconstructed, any deconstruction logic for a contained variant is not invoked automatically, but this will be changed in the future.
+
+## 6. Modules and Visibility
+
+CX includes a simple and powerful module system to help organize code.
+
+### 6.1. Importing Modules
+
+The `import` keyword brings all public declarations from another module into the current file's scope. Once imported, a module's public functions and types can be used directly. Note that any
+imported information is implicitly privately declared, so no information imported will be available to any module that imports the current one, as one might expect with #include and a header file.
+
+### 6.2. Visibility Control
+
+The visibility of declarations within a module is controlled by `public:` and `private:` headers.
+
+*   `public:`: All declarations following this header will be visible to other modules that `import` this one.
+*   `private:`: All declarations following this header will be local to the current module and cannot be accessed from outside.
+
+These headers can be used multiple times within a file to toggle the visibility of different sections of code. If no visibility header is specified, declarations are `private` by default.
 
 ```

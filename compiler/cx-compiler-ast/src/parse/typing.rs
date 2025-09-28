@@ -1,7 +1,7 @@
 use cx_data_lexer::token::TokenKind;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_lexer::{identifier, intrinsic, keyword, specifier};
-use cx_data_typechecker::intrinsic_types::{is_intrinsic_type, INTRINSIC_TYPES};
+use cx_data_typechecker::intrinsic_types::is_intrinsic_type;
 
 pub fn is_type_decl(data: &mut ParserData) -> bool {
     let tok = data.tokens.peek();

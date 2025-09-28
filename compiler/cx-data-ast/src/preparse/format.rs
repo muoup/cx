@@ -23,21 +23,21 @@ impl Display for CXNaiveTypeKind {
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "Structured<{}> {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
+                write!(f, "struct {} {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
             },
             CXNaiveTypeKind::Union { name, fields } => {
                 let fields_str = fields.iter()
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "Union<{}> {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
+                write!(f, "union {} {{ {} }}", name.as_ref().map(|n| n.as_str()).unwrap_or(""), fields_str)
             },
             CXNaiveTypeKind::TaggedUnion { name, variants } => {
                 let variants_str = variants.iter()
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "TaggedUnion<{}> {{ {} }}", name, variants_str)
+                write!(f, "union class {name} {{ {variants_str} }}")
             },
             CXNaiveTypeKind::FunctionPointer { prototype } => write!(f, "FunctionPointer({prototype})"),
         }
@@ -67,16 +67,16 @@ impl Display for CXNaiveTemplateInput {
 impl Display for CXNaiveFnIdent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXNaiveFnIdent::Standard(name) => write!(f, "{}", name),
+            CXNaiveFnIdent::Standard(name) => write!(f, "{name}"),
             CXNaiveFnIdent::MemberFunction { _type, function_name } => {
                 let Some(name) = _type.get_name() else {
                     unreachable!("Member function type must have a name");
                 };
 
-                write!(f, "_{}_{}", name, function_name)
+                write!(f, "_{name}_{function_name}")
             }
             CXNaiveFnIdent::Destructor(name) => {
-                write!(f, "~{}", name)
+                write!(f, "~{name}")
             }
         }
     }

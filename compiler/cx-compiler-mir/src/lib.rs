@@ -1,7 +1,7 @@
 use crate::builder::MIRBuilder;
 use crate::global_stmts::{generate_function, generate_global_variable};
 use cx_data_mir::ProgramMIR;
-use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
+use cx_data_typechecker::ast::TCAST;
 use cx_util::bytecode_error_log;
 use crate::deconstructor::{deconstructor_prototype, generate_deconstructor};
 

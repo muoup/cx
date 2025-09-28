@@ -11,7 +11,7 @@ pub(crate) fn parse_import(tokens: &mut TokenIter) -> Option<PreparseResult> {
 
     loop {
         let Some(tok) = tokens.next() else {
-            log_error!("PARSER ERROR: Reached end of token stream when parsing import!");
+            log_error!("Reached end of token stream when parsing import!");
         };
 
         match &tok.kind {
@@ -19,7 +19,7 @@ pub(crate) fn parse_import(tokens: &mut TokenIter) -> Option<PreparseResult> {
             TokenKind::Operator(OperatorType::ScopeRes) => import_path.push('/'),
             TokenKind::Identifier(ident) => import_path.push_str(ident),
 
-            _ => log_error!("PARSER ERROR: Reached invalid token in import path: {:?}", tok)
+            _ => log_error!("Reached invalid token in import path: {:?}", tok)
         }
     };
     

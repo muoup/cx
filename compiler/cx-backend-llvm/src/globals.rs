@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicUsize;
 use inkwell::module::Linkage;
 use cx_data_mir::{MIRGlobalType, MIRGlobalValue, LinkageType};
 use crate::GlobalState;
-use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
+use crate::typing::{any_to_basic_type, bc_llvm_type};
 
 fn string_literal_name() -> String {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);

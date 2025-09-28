@@ -1,14 +1,10 @@
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind};
+use cx_data_ast::parse::ast::CXBinOp;
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_data_mir::{MIRValue, VirtualInstruction};
 use cx_data_mir::types::{MIRType, MIRTypeKind};
-use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::bytecode_error_log;
-use cx_util::mangling::{mangle_destructor};
 use crate::builder::{MIRBuilder, DeclarationLifetime};
 use crate::BytecodeResult;
-use crate::deconstructor::deconstruct_variable;
-use crate::instruction_gen::generate_instruction;
 
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
@@ -33,7 +29,7 @@ pub(crate) fn try_access_field(
     match ltype.kind {
         MIRTypeKind::Struct { .. } => {
             let struct_access = get_struct_field(
-                builder, &ltype, field_name
+                builder, ltype, field_name
             ).unwrap_or_else(|| {
                 panic!("PANIC: Attempting to access non-existent field {field_name} in struct {ltype:?}");
             });
@@ -168,7 +164,7 @@ pub(crate) fn assign_value(builder: &mut MIRBuilder, target: MIRValue, source: M
 
     if additional_op.is_some() { todo!("compound assignment") }
 
-    let inner_type = builder.convert_fixed_cx_type(&_type)?;
+    let inner_type = builder.convert_fixed_cx_type(_type)?;
 
     builder.add_instruction(
         VirtualInstruction::Store {

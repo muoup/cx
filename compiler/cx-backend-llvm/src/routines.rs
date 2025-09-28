@@ -1,7 +1,7 @@
 use inkwell::values::FunctionValue;
 use cx_data_mir::MIRFunctionPrototype;
 use cx_util::log_error;
-use crate::{FunctionState, GlobalState};
+use crate::GlobalState;
 use crate::typing::bc_llvm_prototype;
 
 pub(crate) fn get_function<'a>(global_state: &GlobalState<'a>, prototype: &MIRFunctionPrototype) -> Option<FunctionValue<'a>> {

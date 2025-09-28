@@ -1,4 +1,3 @@
-use cx_data_ast::parse::ast::CXExprKind;
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_data_typechecker::cx_types::{CXType, CXTypeKind};
 use cx_util::log_error;
@@ -23,7 +22,7 @@ pub fn coerce_initializer_list(
         CXTypeKind::Structured { .. } =>
             organize_structured_initializer(initializer, to_type),
         
-        _ => log_error!("TYPE ERROR: Cannot coerce initializer to type {to_type}"),
+        _ => log_error!(" Cannot coerce initializer to type {to_type}"),
     }
 }
 
@@ -40,11 +39,11 @@ fn organize_array_initializer(
     
     for (i, index) in indices.iter_mut().enumerate() {
         if let Some(name) = index.name.as_ref() {
-            log_error!("TYPE ERROR: Array initializer cannot have named indices, found: {name}");
+            log_error!(" Array initializer cannot have named indices, found: {name}");
         }
         
         index.index = counter;
-        implicit_cast(&mut index.value, &inner_type)?;
+        implicit_cast(&mut index.value, inner_type)?;
         
         if let Some(size) = size {
             if i < size {
@@ -75,7 +74,7 @@ fn organize_structured_initializer(
         unreachable!("PANIC: organize_structured_initializer expected initialzer, found: {initializer:?}");
     };
     let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
-        log_error!("TYPE ERROR: Expected structured type for initializer, found: {to_type}");
+        log_error!(" Expected structured type for initializer, found: {to_type}");
     };
     
     let mut counter = 0;
@@ -83,7 +82,7 @@ fn organize_structured_initializer(
     for index in indices.iter_mut() {
         if let Some(name) = &index.name {
             let Some(index) = fields.iter().position(|(field_name, _)| name == field_name) else {
-                log_error!("TYPE ERROR: Structured initializer has unexpected field: {name}");
+                log_error!(" Structured initializer has unexpected field: {name}");
             };
             
             counter = index;
@@ -92,7 +91,7 @@ fn organize_structured_initializer(
         index.index = counter;
         
         let field_type = &fields[counter].1;
-        implicit_cast(&mut index.value, &field_type)?;
+        implicit_cast(&mut index.value, field_type)?;
         
         if counter < fields.len() {
             counter += 1;

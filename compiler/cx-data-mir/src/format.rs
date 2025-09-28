@@ -93,9 +93,9 @@ impl Display for MIRGlobalType {
             MIRGlobalType::StringLiteral(s) => write!(f, "string_literal \"{}\"", s.replace('\n', "\\n")),
             MIRGlobalType::Variable { _type, initial_value } => {
                 if let Some(initial_value) = initial_value {
-                    write!(f, "variable {} = {}", _type, initial_value)
+                    write!(f, "variable {_type} = {initial_value}")
                 } else {
-                    write!(f, "variable {}", _type)
+                    write!(f, "variable {_type}")
                 }
             },
         }
@@ -114,8 +114,8 @@ impl Display for MIRValue {
             },
             MIRValue::LoadOf(_, value) => write!(f, "*{value}"),
             MIRValue::FunctionRef(name) => write!(f, "{name}"),
-            MIRValue::Global(id) => write!(f, "g{}", id),
-            MIRValue::BlockResult { block_id, value_id } => write!(f, "{}:v{}", block_id, value_id),
+            MIRValue::Global(id) => write!(f, "g{id}"),
+            MIRValue::BlockResult { block_id, value_id } => write!(f, "{block_id}:v{value_id}"),
         }
     }
 }
@@ -123,8 +123,8 @@ impl Display for MIRValue {
 impl Display for BlockID {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            BlockID::Block(id) => write!(f, "b{}", id),
-            BlockID::DeferredBlock(id) => write!(f, "d{}", id),
+            BlockID::Block(id) => write!(f, "b{id}"),
+            BlockID::DeferredBlock(id) => write!(f, "d{id}"),
         }
     }
 }

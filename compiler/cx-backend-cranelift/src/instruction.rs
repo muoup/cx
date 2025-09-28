@@ -117,7 +117,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::GetFunctionAddr { func } => {
             let Some(id) = context.function_ids.get(func.as_str()).cloned() else {
-                panic!("INTERNAL ERROR: Function not found in codegen for GetFunctionAddr: {}", func);
+                panic!("INTERNAL ERROR: Function not found in codegen for GetFunctionAddr: {func}");
             };
 
             let func_ref = context.object_module.declare_func_in_func(
@@ -576,7 +576,7 @@ pub(crate) fn codegen_instruction(context: &mut FunctionState, instruction: &Blo
 
         VirtualInstruction::BitCast { value } => {
             let Some(val) = context.get_value(value) else {
-                panic!("Value not found for BitCast: {:?}", value);
+                panic!("Value not found for BitCast: {value:?}");
             };
 
             Some(val)

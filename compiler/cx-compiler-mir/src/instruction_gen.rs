@@ -1,12 +1,10 @@
-use std::any::type_name_of_val;
-use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
+use cx_data_ast::parse::ast::{CXBinOp, CXUnOp};
 use cx_data_typechecker::cx_types::{CXTypeKind, CXType};
 use cx_data_mir::types::{MIRType, MIRTypeKind, MIRTypeSize};
-use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, BCIntUnOp, MIRParameter, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction, MIRIntBinOp};
+use cx_data_mir::{MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, BCIntUnOp, BCPtrBinOp, BlockID, LinkageType, MIRValue, VirtualInstruction, MIRIntBinOp};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
 use cx_util::{bytecode_error_log, log_error};
-use cx_util::mangling::mangle_deconstructor;
-use crate::aux_routines::{allocate_variable, assign_value, get_cx_struct_field_by_index, get_struct_field, try_access_field};
+use crate::aux_routines::{allocate_variable, assign_value, get_cx_struct_field_by_index, try_access_field};
 use crate::builder::MIRBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
@@ -101,12 +99,8 @@ pub fn generate_instruction(
             }
 
             // Functions that require special intrinsic parameters
-            match &function.kind {
-                TCExprKind::MemberFunctionReference { target, mangled_name: name } => {
-                    args.push(generate_instruction(builder, target.as_ref())?);
-                },
-
-                _ => {}
+            if let TCExprKind::MemberFunctionReference { target, mangled_name: name } = &function.kind {
+                args.push(generate_instruction(builder, target.as_ref())?);
             }
 
             for arg in arguments.iter() {
@@ -686,7 +680,7 @@ pub fn generate_instruction(
 
         TCExprKind::Break => {
             let Some(merge) = builder.get_merge() else {
-                log_error!("TYPE ERROR: Invalid break in outermost scope");
+                log_error!(" Invalid break in outermost scope");
             };
 
             builder.add_instruction(
@@ -699,7 +693,7 @@ pub fn generate_instruction(
 
         TCExprKind::Continue => {
             let Some(cond) = builder.get_continue() else {
-                log_error!("TYPE ERROR: Invalid continue in outermost scope");
+                log_error!(" Invalid continue in outermost scope");
             };
 
             builder.add_instruction(

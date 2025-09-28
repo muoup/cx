@@ -20,6 +20,7 @@ pub mod environment;
 
 pub mod type_mapping;
 pub mod precontextualizing;
+mod log;
 
 pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
     for stmt in ast.global_stmts.iter() {
@@ -83,7 +84,7 @@ pub fn realize_fn_implementation(
             }
         )
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {}", template_name);
+            panic!("Function template body not found for {template_name}");
         })
         .as_ref()
         .clone();
