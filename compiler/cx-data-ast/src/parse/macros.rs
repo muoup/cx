@@ -44,13 +44,14 @@ pub fn error_pointer(toks: &TokenIter) -> String {
 #[macro_export]
 macro_rules! assert_token_matches {
     ($data:expr, $pattern:pat) => {
-        let $pattern = &$data.next()?.kind else {
+        let Some($pattern) = &$data.next().map(|t| &t.kind) else {
             use cx_data_ast::parse::macros::error_pointer;
             use cx_util::log_error;
             
             $data.back();
             eprintln!("{}", error_pointer(&$data));
-            log_error!("Expected token to match pattern: {:#?}\n Found: {}", stringify!($pattern), $data.peek().unwrap());
+            
+            log_preparse_error!($data, "Expected token to match pattern: {:#?}\n Found: {}", stringify!($pattern), $data.peek().unwrap());
         };
     }
 }

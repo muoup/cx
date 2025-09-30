@@ -5,7 +5,7 @@ use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::preparse::naive_types::{CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
 use cx_util::CXResult;
-use crate::parse::global_scope::{destructor_prototype, parse_global_stmt};
+use crate::definitions::global_scope::parse_global_stmt;
 
 pub(crate) fn parse_template(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     assert_token_matches!(data.tokens, TokenKind::Keyword(KeywordType::Template));

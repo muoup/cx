@@ -1,6 +1,5 @@
 use cx_data_ast::{assert_token_matches, next_kind, try_next};
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use crate::parse::expression::{parse_expr, requires_semicolon};
 use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXGlobalStmt};
 use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
@@ -8,9 +7,9 @@ use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
 use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
 use cx_util::{log_error, CXResult};
-use crate::parse::template::parse_template;
-use crate::preparse::preparser::{goto_statement_end, parse_std_ident, try_function_parse};
-use crate::preparse::typing::parse_initializer;
+
+use crate::declarations::type_parsing::parse_initializer;
+use crate::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     match data.tokens.peek()

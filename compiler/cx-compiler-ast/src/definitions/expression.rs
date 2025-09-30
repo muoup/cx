@@ -1,17 +1,35 @@
 use cx_data_lexer::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use crate::parse::global_scope::{parse_body};
-use cx_data_ast::parse::ast::{CXExpr, CXExprKind};
+use cx_data_ast::parse::ast::{CXExpr, CXExprKind, CXInitIndex};
 use cx_data_ast::parse::parser::ParserData;
 use cx_data_ast::{assert_token_matches, try_next};
 use cx_data_ast::preparse::naive_types::CXNaiveTypeKind;
+use cx_data_typechecker::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
-use cx_data_lexer::{operator, punctuator};
-use crate::parse::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
+use cx_data_lexer::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_util::log_error;
-use crate::parse::structured_initialization::parse_structured_initialization;
-use crate::parse::typing::is_type_decl;
-use crate::preparse::preparser::{parse_intrinsic, parse_std_ident};
-use crate::preparse::typing::{parse_base_mods, parse_initializer, parse_specifier, parse_template_args, parse_type_base};
+
+use crate::declarations::identifier_parsing::parse_std_ident;
+use crate::declarations::type_parsing::{parse_base_mods, parse_specifier, parse_type_base};
+
+pub fn is_type_decl(data: &mut ParserData) -> bool {
+    let tok = data.tokens.peek();
+
+    if tok.is_none() {
+        return false;
+    }
+
+    match &tok.unwrap().kind {
+        intrinsic!() |
+        specifier!() |
+        keyword!(Struct, Union, Enum) => true,
+        
+        identifier!(name) if is_intrinsic_type(name) => true,
+        identifier!(name) if data.ast.type_map.templates.contains_key(name) => true,
+        identifier!(name) if data.ast.type_map.standard.contains_key(name) => true,
+
+        _ => false
+    }
+}
 
 pub(crate) fn requires_semicolon(expr: &CXExpr) -> bool {
     match expr.kind {
@@ -523,4 +541,40 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             return None
         }
     }.map(|e| e.into_expr(start_index, data.tokens.index))
+}
+
+pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<CXExpr> {
+    let init_index = data.tokens.index;
+    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::OpenBrace));
+    
+    let mut inits = Vec::new();
+    
+    while !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
+        let field_name = if try_next!(data.tokens, TokenKind::Operator(OperatorType::Access)) {
+            assert_token_matches!(data.tokens, TokenKind::Identifier(field_name));
+            let field_name = field_name.clone();
+            assert_token_matches!(data.tokens, TokenKind::Assignment(None));
+            Some(field_name)
+        } else { None };
+        
+        data.change_comma_mode(false);
+        let val = parse_expr(data)?;
+        data.pop_comma_mode();
+        
+        inits.push(CXInitIndex { name: field_name, value: val, index: 0 });
+        
+        if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {
+            // If we didn't find a comma, it must be the end of the initializer list
+            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace));
+            break;
+        }
+    }
+    
+    Some(
+        CXExprKind::InitializerList { indices: inits, }
+            .into_expr(
+                init_index,
+                data.tokens.index,
+            )
+    )
 }

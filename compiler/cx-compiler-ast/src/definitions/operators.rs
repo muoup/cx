@@ -3,8 +3,9 @@ use cx_data_lexer::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_data_ast::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_data_ast::parse::parser::ParserData;
 use cx_util::log_error;
-use crate::parse::typing::is_type_decl;
-use crate::preparse::typing::parse_initializer;
+
+use crate::declarations::type_parsing::parse_initializer;
+use crate::definitions::typing::is_type_decl;
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {
