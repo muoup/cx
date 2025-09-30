@@ -99,10 +99,10 @@ CX supports the following backends for code generation:
 
 ## Testing
 
-To run the test suite, use the following command:
+To run the test suite, use the following command. The tests must be ran single-threaded as the compiler currently cannot ensure correctness with overlapping parallel compilation requests.
 
 ```bash
-cargo test
+cargo test -- --test-threads = 1
 ```
 
 ## Contributing
