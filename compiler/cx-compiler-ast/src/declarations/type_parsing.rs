@@ -1,89 +1,19 @@
 use cx_data_ast::preparse::naive_types::{
-    CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
-    CXTypeSpecifier, ModuleResource, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
+    CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST,
+    CX_RESTRICT, CX_VOLATILE,
 };
-use cx_data_ast::preparse::templates::{CXTemplatePrototype, CXTypeTemplate};
 use cx_data_ast::preparse::CXNaiveFnIdent;
-use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, try_next};
+use cx_data_ast::{assert_token_matches, next_kind, peek_next, try_next};
 use cx_data_lexer::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_data_lexer::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
-use cx_util::identifier::{CXIdent};
+use cx_util::identifier::CXIdent;
 use cx_util::{log_error, point_log_error, CXResult};
 
-use crate::declarations::decl_parsing::parse_template_prototype;
-use crate::declarations::identifier_parsing::{parse_intrinsic, parse_std_ident};
-use crate::parsing_tools::goto_statement_end;
-use crate::preparse::PreparseData;
-
-#[non_exhaustive]
-pub(crate) enum TypeDeclaration {
-    Standard {
-        name: Option<CXIdent>,
-        type_: CXNaiveType,
-    },
-
-    Template {
-        name: Option<CXIdent>,
-        template_prototype: CXTemplatePrototype,
-        type_: CXNaiveType,
-    },
-}
-
-impl TypeDeclaration {
-    pub(crate) fn new(
-        name: Option<CXIdent>,
-        type_: CXNaiveType,
-        template_prototype: Option<CXTemplatePrototype>,
-    ) -> Self {
-        if let Some(template_prototype) = template_prototype {
-            TypeDeclaration::Template {
-                name,
-                template_prototype,
-                type_,
-            }
-        } else {
-            TypeDeclaration::Standard { name, type_ }
-        }
-    }
-
-    pub(crate) fn assert_standard_type(self, iter: &TokenIter) -> CXNaiveType {
-        match self {
-            TypeDeclaration::Standard { type_, .. } => type_,
-
-            _ => log_preparse_error!(iter, "Expected standard type declaration."),
-        }
-    }
-
-    pub(crate) fn add_to(self, data: &mut PreparseData) {
-        match self {
-            TypeDeclaration::Standard { name: None, .. } => {}
-            TypeDeclaration::Standard {
-                name: Some(name),
-                type_,
-            } => data.contents.type_definitions.insert_standard(
-                name.as_string(),
-                ModuleResource::with_visibility(type_, data.visibility_mode),
-            ),
-
-            TypeDeclaration::Template { name: None, .. } => {}
-            TypeDeclaration::Template {
-                name: Some(name),
-                template_prototype,
-                type_,
-            } => data.contents.type_definitions.insert_template(
-                name.as_string(),
-                ModuleResource::with_visibility(
-                    CXTypeTemplate {
-                        name: name.clone(),
-                        prototype: template_prototype,
-                        shell: type_,
-                    },
-                    data.visibility_mode,
-                ),
-            ),
-        }
-    }
-}
+use crate::declarations::data_parsing::{
+    parse_intrinsic, parse_std_ident, parse_template_args, try_parse_template,
+};
+use crate::declarations::function_parsing::{parse_params, ParseParamsResult};
+use crate::declarations::TypeDeclaration;
 
 fn predeclaration_identifier(
     name: Option<CXIdent>,
@@ -99,14 +29,6 @@ fn predeclaration_identifier(
             },
         ),
     })
-}
-
-pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
-    if peek_next!(tokens, operator!(Less)) {
-        parse_template_prototype(tokens)
-    } else {
-        None
-    }
 }
 
 pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<TypeDeclaration> {
@@ -138,13 +60,11 @@ pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<TypeDeclaration> 
         assert_token_matches!(tokens, punctuator!(Semicolon));
     }
 
-    Some(
-        TypeDeclaration::new(
-            name.clone(),
-            CXNaiveType::new(0, CXNaiveTypeKind::Structured { name: name, fields }),
-            template_prototype,
-        )
-    )
+    Some(TypeDeclaration::new(
+        name.clone(),
+        CXNaiveType::new(0, CXNaiveTypeKind::Structured { name: name, fields }),
+        template_prototype,
+    ))
 }
 
 pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
@@ -157,21 +77,19 @@ pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
     }
 
     tokens.back();
-    goto_statement_end(tokens);
+    tokens.goto_statement_end()?;
     tokens.back();
 
-    Some(
-        TypeDeclaration::Standard {
-            name,
-            type_: CXNaiveType::new(
-                0,
-                CXNaiveTypeKind::Identifier {
-                    name: CXIdent::from("int"),
-                    predeclaration: PredeclarationType::Enum,
-                },
-            ),
-        }
-    )
+    Some(TypeDeclaration::Standard {
+        name,
+        type_: CXNaiveType::new(
+            0,
+            CXNaiveTypeKind::Identifier {
+                name: CXIdent::from("int"),
+                predeclaration: PredeclarationType::Enum,
+            },
+        ),
+    })
 }
 
 pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
@@ -271,61 +189,6 @@ pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
         ),
         template_prototype,
     ))
-}
-
-pub(crate) struct ParseParamsResult {
-    pub(crate) params: Vec<CXNaiveParameter>,
-    pub(crate) var_args: bool,
-    pub(crate) contains_this: bool,
-}
-
-pub(crate) fn parse_params(tokens: &mut TokenIter) -> CXResult<ParseParamsResult> {
-    assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::OpenParen));
-
-    let mut params = Vec::new();
-    let mut contains_this = false;
-
-    if let Some(TokenKind::Identifier(this)) = peek_next_kind!(tokens) {
-        if this.as_str() == "this" {
-            tokens.next();
-            contains_this = true;
-            try_next!(tokens, operator!(Comma));
-        }
-    };
-
-    while !try_next!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen)) {
-        if try_next!(tokens, TokenKind::Punctuator(PunctuatorType::Ellipsis)) {
-            assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
-            return Some(
-                ParseParamsResult {
-                    params,
-                    var_args: true,
-                    contains_this,
-                }
-            );
-        }
-
-        if let Some((name, type_)) = parse_initializer(tokens) {
-            let name = name;
-
-            params.push(CXNaiveParameter { name, _type: type_ });
-        } else {
-            point_log_error!(tokens, "Failed to parse parameter in function call");
-        }
-
-        if !try_next!(tokens, TokenKind::Operator(OperatorType::Comma)) {
-            assert_token_matches!(tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
-            break;
-        }
-    }
-
-    Some(
-        ParseParamsResult {
-            params,
-            var_args: false,
-            contains_this,
-        }
-    )
 }
 
 pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
@@ -477,30 +340,6 @@ pub(crate) fn parse_suffix_typemod(
 
         _ => Some(acc_type),
     }
-}
-
-pub(crate) fn parse_template_args(tokens: &mut TokenIter) -> Option<CXNaiveTemplateInput> {
-    assert_token_matches!(tokens, operator!(Less));
-
-    let mut input_types = Vec::new();
-
-    loop {
-        let Some((None, _type)) = parse_initializer(tokens) else {
-            point_log_error!(tokens, "Expected type declaration in template arguments!");
-        };
-
-        input_types.push(_type);
-
-        if !try_next!(tokens, operator!(Comma)) {
-            break;
-        }
-    }
-
-    assert_token_matches!(tokens, operator!(Greater));
-
-    Some(CXNaiveTemplateInput {
-        params: input_types,
-    })
 }
 
 pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXNaiveType> {

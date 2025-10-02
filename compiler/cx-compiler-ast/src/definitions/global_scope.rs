@@ -6,14 +6,13 @@ use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
 use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
-use cx_util::{log_error, CXResult};
+use cx_util::CXResult;
 
-use crate::declarations::decl_parsing::try_function_parse;
-use crate::declarations::identifier_parsing::parse_std_ident;
+use crate::declarations::data_parsing::parse_std_ident;
+use crate::declarations::function_parsing::try_function_parse;
 use crate::declarations::type_parsing::parse_initializer;
 use crate::definitions::expression::{parse_expr, expression_requires_semicolon};
 use crate::definitions::template::parse_template;
-use crate::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     match data.tokens.peek()
@@ -22,7 +21,7 @@ pub(crate) fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlob
         
         keyword!(Typedef) |
         keyword!(Import) => {
-            goto_statement_end(&mut data.tokens);
+            data.tokens.goto_statement_end();
             Some(None)
         },
         
@@ -149,7 +148,7 @@ pub(crate) fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlob
     };
     
     let Some(name) = name else {
-        goto_statement_end(&mut data.tokens);
+        data.tokens.goto_statement_end();
         return Some(None);
     };
     

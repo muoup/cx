@@ -68,13 +68,13 @@ macro_rules! try_token_matches {
 #[macro_export]
 macro_rules! try_next {
     ($data:expr, $pattern:pat) => {
-        if let Some($pattern) = $data.peek().map(|k| &k.kind) {
+        if matches!($data.peek().map(|k| &k.kind), Some($pattern)) {
             $data.next();
             true
         } else {
             false
         }
-    }
+    };
 }
 
 #[macro_export]

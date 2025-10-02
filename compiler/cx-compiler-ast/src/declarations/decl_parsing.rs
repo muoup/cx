@@ -1,8 +1,76 @@
-use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, preparse::{naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType}, templates::{CXTemplatePrototype, CXTypeTemplate}, CXNaiveFnIdent}, try_next};
-use cx_data_lexer::{identifier, keyword, operator, punctuator, token::TokenKind, TokenIter};
+use cx_data_ast::{
+    assert_token_matches,
+    parse::parser::VisibilityMode,
+    peek_next_kind,
+    preparse::naive_types::{CXNaiveTypeKind, ModuleResource, PredeclarationType},
+    try_next,
+};
+use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{identifier::CXIdent, log_error, CXResult};
 
-use crate::{declarations::type_parsing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union, try_parse_template, TypeDeclaration}, preparse::{preparse_global_expr, PreparseData}};
+use crate::{
+    declarations::{
+        data_parsing::parse_template_prototype,
+        function_parsing::try_function_parse,
+        type_parsing::{parse_enum, parse_initializer, parse_struct, parse_union}, TypeDeclaration,
+    },
+    definitions::global_scope::destructor_prototype,
+    preparse::PreparseData,
+};
+
+pub(crate) fn preparse_decl_stmt(data: &mut PreparseData) -> CXResult<()> {
+    let Some(next_token) = data.tokens.peek() else {
+        return Some(());
+    };
+
+    match &next_token.kind {
+        keyword!(Import) => {
+            let import = parse_import(&mut data.tokens)?;
+            data.contents.imports.push(import);
+        }
+
+        keyword!(Struct, Enum, Union) => parse_plain_typedef(data)?,
+        keyword!(Typedef) => parse_typedef(data)?,
+
+        operator!(Tilda) => {
+            data.tokens.next();
+            assert_token_matches!(data.tokens, identifier!(destructor_type_name));
+            let destructor_type = CXNaiveTypeKind::Identifier {
+                name: CXIdent::from(destructor_type_name.as_str()),
+                predeclaration: PredeclarationType::None,
+            }
+            .to_type();
+
+            let prototype = destructor_prototype(destructor_type);
+            data.contents.function_definitions.insert_standard(
+                prototype.name.mangle(),
+                ModuleResource::with_visibility(prototype, data.visibility_mode),
+            );
+
+            data.tokens.goto_statement_end()?;
+        }
+
+        specifier!(Public) => {
+            data.tokens.next();
+            data.visibility_mode = VisibilityMode::Public;
+            try_next!(data.tokens, punctuator!(Colon));
+        }
+
+        specifier!(Private) => {
+            data.tokens.next();
+            data.visibility_mode = VisibilityMode::Private;
+            try_next!(data.tokens, punctuator!(Colon));
+        }
+
+        punctuator!(Semicolon) => {
+            data.tokens.next();
+        }
+
+        _ => preparse_global_expr(data)?,
+    }
+
+    Some(())
+}
 
 pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
     assert_token_matches!(tokens, keyword!(Import));
@@ -19,55 +87,57 @@ pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
             operator!(ScopeRes) => import_path.push('/'),
             identifier!(ident) => import_path.push_str(ident),
 
-            _ => log_error!("Reached invalid token in import path: {:?}", tok)
+            _ => log_error!("Reached invalid token in import path: {:?}", tok),
         }
-    };
-    
+    }
+
     Some(import_path)
 }
 
 pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> CXResult<()> {
     let starting_index = data.tokens.index;
-    
+
     let Some(decl_start) = peek_next_kind!(data.tokens) else {
         panic!("EOF Reached")
     };
-    
+
     let decl = match decl_start {
         keyword!(Struct) => parse_struct(&mut data.tokens)?,
         keyword!(Enum) => parse_enum(&mut data.tokens)?,
         keyword!(Union) => parse_union(&mut data.tokens)?,
 
-        tok => todo!("parse_plain_typedef: {tok:?}")
+        tok => todo!("parse_plain_typedef: {tok:?}"),
     };
 
     match &decl {
-        TypeDeclaration::Standard { name: Some(_), type_ }
-            if matches!(type_.kind, CXNaiveTypeKind::Identifier { predeclaration, .. } 
-                if predeclaration == PredeclarationType::None) => {
-                    
+        TypeDeclaration::Standard {
+            name: Some(_),
+            type_,
+        } if matches!(type_.kind, CXNaiveTypeKind::Identifier { predeclaration, .. }
+                if predeclaration == PredeclarationType::None) =>
+        {
             // If we reach some `struct [name]` `enum [name]` or `union [name]`
             // that is actually used either to declare a variable or a function,
             // we can't quite differentiate it from a non-typedef declaration
             // until we realize it isn't one, so we have to backtrack and try parsing
             // it as a full expression.
-                
+
             data.tokens.index = starting_index;
             return preparse_global_expr(data);
         }
-        
-        _ => decl.add_to(data)
+
+        _ => decl.add_to(data),
     }
-    
+
     assert_token_matches!(data.tokens, punctuator!(Semicolon));
-    
+
     Some(())
 }
 
 pub(crate) fn parse_typedef(data: &mut PreparseData) -> CXResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef));
     let start_index = data.tokens.index;
-    
+
     let template_prototype = if peek_next_kind!(data.tokens) == Some(&operator!(Less)) {
         parse_template_prototype(&mut data.tokens)
     } else {
@@ -75,139 +145,48 @@ pub(crate) fn parse_typedef(data: &mut PreparseData) -> CXResult<()> {
     };
 
     let Some((name, type_)) = parse_initializer(&mut data.tokens) else {
-        log_preparse_error!(data.tokens.with_index(start_index), "Could not parse typedef.");
+        log_preparse_error!(
+            data.tokens.with_index(start_index),
+            "Could not parse typedef."
+        );
     };
 
     let Some(name) = name else {
-        log_preparse_error!(data.tokens.with_index(start_index), "Typedef must have a name!");
+        log_preparse_error!(
+            data.tokens.with_index(start_index),
+            "Typedef must have a name!"
+        );
     };
-    
+
     assert_token_matches!(data.tokens, punctuator!(Semicolon));
-    
-    TypeDeclaration::new(
-        Some(name.clone()), type_, template_prototype
-    ).add_to(data);
-    
+
+    TypeDeclaration::new(Some(name.clone()), type_, template_prototype).add_to(data);
     Some(())
 }
 
-pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name: CXIdent) -> CXResult<Option<CXNaivePrototype>> {
-    match tokens.peek()?.kind {
-        // e.g:
-        // int main()
-        //         ^
-        punctuator!(OpenParen) => {
-            let template_prototype = try_parse_template(tokens);
-            
-            let Some(args) = parse_params(tokens) else {
-                log_preparse_error!(tokens, "Failed to parse parameters in function declaration!");
-            };
-            
-            Some(
-                Some(
-                    CXNaivePrototype {
-                        return_type,
-                        name: CXNaiveFnIdent::Standard(name),
-                        params: args.params,
-                        var_args: args.var_args,
-                        this_param: args.contains_this
-                    }
-                )
-            )
-        },
+pub(crate) fn preparse_global_expr(data: &mut PreparseData) -> CXResult<()> {
+    let Some((name, return_type)) = parse_initializer(&mut data.tokens) else {
+        log_preparse_error!(data.tokens, "Could not parse type for global expression!");
+    };
 
-        // e.g:
-        // void vec<int>::push()
-        //         ^
-        operator!(Less) => {
-            let Some(params) = parse_template_args(tokens) else {
-                return Some(None);
-            };
-            
-            let _type = name;
+    let Some(name) = name else {
+        log_preparse_error!(data.tokens, "Invalid global expression, name not found!");
+    };
 
-            assert_token_matches!(tokens, operator!(ScopeRes));
-            assert_token_matches!(tokens, identifier!(name));
-            let fn_name = CXIdent::from(name.as_str());
-            
-            if !peek_next!(tokens, punctuator!(OpenParen)) {
-                log_preparse_error!(tokens, "Expected '(' after template arguments in function declaration!");
-            };
+    let Some(method) = try_function_parse(&mut data.tokens, return_type, name.clone()).flatten()
+        else {
+        // Global variables are parsed during the full parse, variable identifiers are not
+        // at least currently, needed in the process of full parsing an AST like type names are.
 
-            let Some(args) = parse_params(tokens) else {
-                log_preparse_error!(tokens, "Failed to parse parameters in function declaration!");
-            };
-            
-            let name = CXNaiveFnIdent::MemberFunction {
-                _type: CXNaiveTypeKind::TemplatedIdentifier {
-                    name: CXIdent::from(_type.as_str()),
-                    input: params
-                }.to_type(), 
-                function_name: fn_name
-            };
+        return data.tokens.goto_statement_end();
+    };
 
-            Some(
-                Some(
-                    CXNaivePrototype {
-                        return_type, name,
-                        params: args.params,
-                        var_args: args.var_args,
-                        this_param: args.contains_this
-                    }
-                )
-            )
-        }
+    data.tokens.goto_statement_end()?;
 
-        // e.g:
-        // void renderer::draw()
-        //              ^
-        operator!(ScopeRes) => {
-            tokens.next();
-            let _type = name.as_string();
-            assert_token_matches!(tokens, TokenKind::Identifier(name));
-            let name = CXNaiveFnIdent::MemberFunction {
-                _type: CXNaiveTypeKind::Identifier {
-                    name: CXIdent::from(_type.as_str()),
-                    predeclaration: PredeclarationType::None
-                }.to_type(),
-                function_name: CXIdent::from(name.as_str())
-            };
-            let Some(params) = parse_params(tokens) else {
-                log_preparse_error!(tokens, "Failed to parse parameters in member function declaration!");
-            };
+    data.contents.function_definitions.insert_standard(
+        name.as_string(),
+        ModuleResource::with_visibility(method, data.visibility_mode),
+    );
 
-            Some(
-                Some(
-                    CXNaivePrototype {
-                        return_type, name,
-                        params: params.params,
-                        var_args: params.var_args,
-                        this_param: params.contains_this
-                    }
-                )
-            )
-        },
-
-        _ => Some(None)
-    }
-}
-
-pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
-    assert_token_matches!(tokens, operator!(Less));
-    
-    let mut type_decls = Vec::new();
-    
-    loop {
-        assert_token_matches!(tokens, TokenKind::Identifier(template_name));
-        let template_name = template_name.clone();
-        type_decls.push(template_name);
-        
-        if !try_next!(tokens, operator!(Comma)) {
-            break;
-        }
-    }
-    
-    assert_token_matches!(tokens, operator!(Greater));
-    
-    Some(CXTemplatePrototype { types: type_decls })
+    Some(())
 }

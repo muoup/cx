@@ -8,8 +8,8 @@ use cx_util::identifier::CXIdent;
 use cx_data_lexer::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_util::log_error;
 
-use crate::declarations::identifier_parsing::{parse_intrinsic, parse_std_ident};
-use crate::declarations::type_parsing::{parse_base_mods, parse_initializer, parse_specifier, parse_template_args, parse_type_base};
+use crate::declarations::data_parsing::{parse_intrinsic, parse_std_ident, parse_template_args};
+use crate::declarations::type_parsing::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::definitions::global_scope::parse_body;
 use crate::definitions::operators::{binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator};
 
