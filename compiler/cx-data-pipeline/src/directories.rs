@@ -5,10 +5,11 @@ use crate::{compilation_hash, CompilationUnit, GlobalCompilationContext};
 pub fn stdlib_directory(inner_path: &str) -> String {
     let current_exe = std::env::current_exe()
         .expect("Failed to get current executable path");
-
-    if cfg!(feature = "test") {
+ 
+    // TODO: This is a bit hacky, find a better way to do this
+    if current_exe.parent().unwrap().ends_with("deps") {
         format!("{}/../../../lib/{}", current_exe.parent().unwrap().display(), inner_path)
-    } else {
+    } else {      
         format!("{}/../../lib/{}", current_exe.parent().unwrap().display(), inner_path)
     }
 }

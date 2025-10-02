@@ -109,12 +109,10 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> CXResult<()> {
         tok => todo!("parse_plain_typedef: {tok:?}"),
     };
 
-    match &decl {
-        TypeDeclaration::Standard {
-            name: Some(_),
-            type_,
-        } if matches!(type_.kind, CXNaiveTypeKind::Identifier { predeclaration, .. }
-                if predeclaration == PredeclarationType::None) =>
+    match (&decl.name, &decl.type_) {
+        (Some(_), type_)
+            if matches!(type_.kind, CXNaiveTypeKind::Identifier { predeclaration, .. }
+                if predeclaration != PredeclarationType::None) =>
         {
             // If we reach some `struct [name]` `enum [name]` or `union [name]`
             // that is actually used either to declare a variable or a function,
@@ -160,7 +158,12 @@ pub(crate) fn parse_typedef(data: &mut PreparseData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon));
 
-    TypeDeclaration::new(Some(name.clone()), type_, template_prototype).add_to(data);
+    TypeDeclaration {
+        name: Some(name.clone()),
+        type_,
+        template_prototype,
+    }.add_to(data);
+    
     Some(())
 }
 
