@@ -1,10 +1,9 @@
 use cx_data_ast::{
-    assert_token_matches, peek_next, peek_next_kind,
+    assert_token_matches, peek_next_kind,
     preparse::{
         naive_types::{
             CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
         },
-        templates::CXTemplatePrototype,
         CXNaiveFnIdent,
     },
     try_next,
@@ -12,21 +11,62 @@ use cx_data_ast::{
 use cx_data_lexer::{identifier, operator, punctuator, TokenIter};
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::declarations::{
-    data_parsing::{parse_template_args, parse_template_prototype, try_parse_template},
+use crate::{declarations::{
+    data_parsing::{convert_template_proto_to_args, parse_std_ident, try_parse_template},
     type_parsing::parse_initializer,
     FunctionDeclaration,
-};
+}, definitions::global_scope::destructor_prototype};
+
+pub fn parse_destructor_prototype(tokens: &mut TokenIter) -> CXResult<FunctionDeclaration> {
+    assert_token_matches!(tokens, operator!(Tilda));
+
+    let Some(name) = parse_std_ident(tokens) else {
+        log_preparse_error!(tokens, "Expected type name.");
+    };
+    
+    let template_prototype = try_parse_template(tokens);
+    
+    assert_token_matches!(tokens, punctuator!(OpenParen));
+    assert_token_matches!(tokens, identifier!(this));
+    if this.as_str() != "this" {
+        log_preparse_error!(tokens, "Destructor can only have 'this' as parameter.");
+    }
+    assert_token_matches!(tokens, punctuator!(CloseParen));
+    
+    let _type = match &template_prototype {
+        Some(prototype) => CXNaiveTypeKind::TemplatedIdentifier {
+            name: name.clone(),
+            input: convert_template_proto_to_args(prototype.clone()),
+        },
+        None => CXNaiveTypeKind::Identifier {
+            name: name.clone(),
+            predeclaration: PredeclarationType::None,
+        },
+    };
+    
+    let prototype = destructor_prototype(_type.to_type());
+    
+    Some(
+        FunctionDeclaration {
+            prototype,
+            template_prototype,
+        }
+    )
+}
 
 pub fn try_function_parse(
     tokens: &mut TokenIter,
     return_type: CXNaiveType,
     name: CXIdent,
 ) -> CXResult<Option<FunctionDeclaration>> {
+    let template_prototype = try_parse_template(tokens);
+
     match tokens.peek()?.kind {
         // e.g:
         // int main()
         //         ^
+        // void template_func<int>()
+        //                        ^
         punctuator!(OpenParen) => {
             let Some(args) = parse_params(tokens) else {
                 log_preparse_error!(
@@ -43,77 +83,6 @@ pub fn try_function_parse(
                     var_args: args.var_args,
                     this_param: args.contains_this,
                 },
-                template_prototype: None,
-            }))
-        }
-
-        // e.g: void templated_function<T>()
-        //                             ^
-        operator!(Less) => {
-            let Some(template_prototype) = parse_template_prototype(tokens) else {
-                return Some(None);
-            };
-
-            let Some(params) = parse_params(tokens) else {
-                log_preparse_error!(
-                    tokens,
-                    "Failed to parse parameters in function declaration!"
-                );
-            };
-
-            Some(Some(FunctionDeclaration {
-                prototype: CXNaivePrototype {
-                    return_type,
-                    name: CXNaiveFnIdent::Standard(name),
-                    params: params.params,
-                    var_args: params.var_args,
-                    this_param: params.contains_this,
-                },
-                template_prototype: Some(template_prototype),
-            }))
-        }
-
-        // e.g:
-        // void vec<int>::push()
-        //         ^
-        operator!(Less) => {
-            let Some(params) = parse_template_args(tokens) else {
-                return Some(None);
-            };
-
-            let _type = name;
-
-            assert_token_matches!(tokens, operator!(ScopeRes));
-            assert_token_matches!(tokens, identifier!(name));
-            let fn_name = CXIdent::from(name.as_str());
-
-            let template_prototype = try_parse_template(tokens);
-            assert_token_matches!(tokens, punctuator!(OpenParen));
-
-            let Some(args) = parse_params(tokens) else {
-                log_preparse_error!(
-                    tokens,
-                    "Failed to parse parameters in function declaration!"
-                );
-            };
-
-            let name = CXNaiveFnIdent::MemberFunction {
-                _type: CXNaiveTypeKind::TemplatedIdentifier {
-                    name: CXIdent::from(_type.as_str()),
-                    input: params,
-                }
-                .to_type(),
-                function_name: fn_name,
-            };
-
-            Some(Some(FunctionDeclaration {
-                prototype: CXNaivePrototype {
-                    return_type,
-                    name,
-                    params: args.params,
-                    var_args: args.var_args,
-                    this_param: args.contains_this,
-                },
                 template_prototype,
             }))
         }
@@ -123,18 +92,33 @@ pub fn try_function_parse(
         //              ^
         operator!(ScopeRes) => {
             tokens.next();
-            let _type = name.as_string();
-            assert_token_matches!(tokens, identifier!(name));
-            let name = CXNaiveFnIdent::MemberFunction {
-                _type: CXNaiveTypeKind::Identifier {
-                    name: CXIdent::from(_type.as_str()),
+
+            let _type = match template_prototype {
+                // e.g:
+                // void vector<int>::push()
+                //                 ^
+                // We have parsed the `<int>` part as a template prototype rather than
+                // a template argument list, so we need to convert it here.
+                Some(prototype) => CXNaiveTypeKind::TemplatedIdentifier {
+                    name,
+                    input: convert_template_proto_to_args(prototype),
+                },
+
+                None => CXNaiveTypeKind::Identifier {
+                    name,
                     predeclaration: PredeclarationType::None,
-                }
-                .to_type(),
+                },
+            }.to_type();
+
+            assert_token_matches!(tokens, identifier!(name));
+            let name = name.clone();
+            let template_prototype = try_parse_template(tokens);
+
+            let name = CXNaiveFnIdent::MemberFunction {
+                _type,
                 function_name: CXIdent::from(name.as_str()),
             };
 
-            let template_prototype = try_parse_template(tokens);
             let Some(params) = parse_params(tokens) else {
                 log_preparse_error!(
                     tokens,

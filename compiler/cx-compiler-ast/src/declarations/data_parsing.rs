@@ -1,6 +1,6 @@
 use cx_data_ast::{
     assert_token_matches, peek_next, peek_next_kind,
-    preparse::{naive_types::CXNaiveTemplateInput, templates::CXTemplatePrototype},
+    preparse::{naive_types::{CXNaiveTemplateInput, CXNaiveTypeKind, PredeclarationType}, templates::CXTemplatePrototype},
     try_next,
 };
 use cx_data_lexer::{operator, token::TokenKind, TokenIter};
@@ -34,6 +34,21 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> Option<CXTempl
     assert_token_matches!(tokens, operator!(Greater));
 
     Some(CXTemplatePrototype { types: type_decls })
+}
+
+pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXNaiveTemplateInput {
+    let params = prototype
+        .types
+        .into_iter()
+        .map(|name| {
+            CXNaiveTypeKind::Identifier {
+                name: CXIdent::from(name),
+                predeclaration: PredeclarationType::None,
+            }.to_type()
+        })
+        .collect();
+
+    CXNaiveTemplateInput { params }
 }
 
 pub(crate) fn parse_template_args(tokens: &mut TokenIter) -> Option<CXNaiveTemplateInput> {

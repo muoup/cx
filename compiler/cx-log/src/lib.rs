@@ -30,8 +30,12 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         panic!("No tokens provided for error reporting");
     }
 
-    let start_index = tokens[start_index].start_index;
-    let end_index = tokens[end_index].end_index;
+    let start_index = tokens.get(start_index)
+        .map(|t| t.start_index)
+        .unwrap_or(0);
+    let end_index = tokens.get(end_index - 1)
+        .map(|t| t.end_index)
+        .unwrap_or(0);
 
     let file_contents = std::fs::read_to_string(file_path)
         .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()));

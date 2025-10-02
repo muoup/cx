@@ -2,19 +2,19 @@ use cx_data_ast::{
     assert_token_matches,
     parse::parser::VisibilityMode,
     peek_next_kind,
-    preparse::naive_types::{CXNaiveTypeKind, ModuleResource, PredeclarationType},
+    preparse::naive_types::{CXNaiveTypeKind, PredeclarationType},
     try_next,
 };
 use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_util::{identifier::CXIdent, log_error, CXResult};
+use cx_util::{log_error, CXResult};
 
 use crate::{
     declarations::{
         data_parsing::parse_template_prototype,
-        function_parsing::try_function_parse,
-        type_parsing::{parse_enum, parse_initializer, parse_struct, parse_union}, TypeDeclaration,
+        function_parsing::{parse_destructor_prototype, try_function_parse},
+        type_parsing::{parse_enum, parse_initializer, parse_struct, parse_union},
+        TypeDeclaration,
     },
-    definitions::global_scope::destructor_prototype,
     preparse::PreparseData,
 };
 
@@ -31,24 +31,12 @@ pub(crate) fn preparse_decl_stmt(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Struct, Enum, Union) => parse_plain_typedef(data)?,
         keyword!(Typedef) => parse_typedef(data)?,
-
+        
         operator!(Tilda) => {
-            data.tokens.next();
-            assert_token_matches!(data.tokens, identifier!(destructor_type_name));
-            let destructor_type = CXNaiveTypeKind::Identifier {
-                name: CXIdent::from(destructor_type_name.as_str()),
-                predeclaration: PredeclarationType::None,
-            }
-            .to_type();
-
-            let prototype = destructor_prototype(destructor_type);
-            data.contents.function_definitions.insert_standard(
-                prototype.name.mangle(),
-                ModuleResource::with_visibility(prototype, data.visibility_mode),
-            );
-
+            let decl = parse_destructor_prototype(&mut data.tokens)?.add_to(data);
             data.tokens.goto_statement_end()?;
-        }
+            decl
+        },
 
         specifier!(Public) => {
             data.tokens.next();
@@ -162,8 +150,9 @@ pub(crate) fn parse_typedef(data: &mut PreparseData) -> CXResult<()> {
         name: Some(name.clone()),
         type_,
         template_prototype,
-    }.add_to(data);
-    
+    }
+    .add_to(data);
+
     Some(())
 }
 
@@ -177,7 +166,7 @@ pub(crate) fn preparse_global_expr(data: &mut PreparseData) -> CXResult<()> {
     };
 
     let Some(method) = try_function_parse(&mut data.tokens, return_type, name.clone()).flatten()
-        else {
+    else {
         // Global variables are parsed during the full parse, variable identifiers are not
         // at least currently, needed in the process of full parsing an AST like type names are.
 
