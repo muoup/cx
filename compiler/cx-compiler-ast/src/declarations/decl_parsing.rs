@@ -186,10 +186,6 @@ pub(crate) fn preparse_global_expr(data: &mut PreparseData) -> CXResult<()> {
 
     data.tokens.goto_statement_end()?;
 
-    data.contents.function_definitions.insert_standard(
-        name.as_string(),
-        ModuleResource::with_visibility(method, data.visibility_mode),
-    );
-
+    method.add_to(data);
     Some(())
 }

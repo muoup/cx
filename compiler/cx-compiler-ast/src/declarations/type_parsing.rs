@@ -376,9 +376,7 @@ pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXNaiveType> {
         ),
 
         keyword!(Struct) => Some(parse_struct(tokens)?.type_),
-
         keyword!(Enum) => Some(parse_enum(tokens)?.type_),
-
         keyword!(Union) => Some(parse_union(tokens)?.type_),
 
         _ => return None,

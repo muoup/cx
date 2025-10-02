@@ -1,11 +1,9 @@
 #include <stdio.h>
 
-template <T : type>
-struct templated_object {
+struct templated_object<T> {
     T value;
 };
 
-template <T : type>
 ~templated_object<T>(this) {
     printf("~templated_object\n");
 }

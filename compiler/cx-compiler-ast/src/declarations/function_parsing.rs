@@ -1,30 +1,28 @@
 use cx_data_ast::{
-    assert_token_matches, peek_next, peek_next_kind, preparse::{
-        naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType},
+    assert_token_matches, peek_next, peek_next_kind,
+    preparse::{
+        naive_types::{
+            CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
+        },
         templates::CXTemplatePrototype,
         CXNaiveFnIdent,
-    }, try_next
+    },
+    try_next,
 };
-use cx_data_lexer::{operator, punctuator, identifier, TokenIter};
+use cx_data_lexer::{identifier, operator, punctuator, TokenIter};
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::declarations::{data_parsing::parse_template_args, type_parsing::parse_initializer};
-
-pub(crate) enum FunctionDeclaration {
-    Standard {
-        fn_prototype: CXNaivePrototype,
-    },
-    Template {
-        fn_prototype: CXNaivePrototype,
-        template_proto: CXTemplatePrototype,
-    },
-}
+use crate::declarations::{
+    data_parsing::{parse_template_args, parse_template_prototype, try_parse_template},
+    type_parsing::parse_initializer,
+    FunctionDeclaration,
+};
 
 pub fn try_function_parse(
     tokens: &mut TokenIter,
     return_type: CXNaiveType,
     name: CXIdent,
-) -> CXResult<Option<CXNaivePrototype>> {
+) -> CXResult<Option<FunctionDeclaration>> {
     match tokens.peek()?.kind {
         // e.g:
         // int main()
@@ -37,12 +35,41 @@ pub fn try_function_parse(
                 );
             };
 
-            Some(Some(CXNaivePrototype {
-                return_type,
-                name: CXNaiveFnIdent::Standard(name),
-                params: args.params,
-                var_args: args.var_args,
-                this_param: args.contains_this,
+            Some(Some(FunctionDeclaration {
+                prototype: CXNaivePrototype {
+                    return_type,
+                    name: CXNaiveFnIdent::Standard(name),
+                    params: args.params,
+                    var_args: args.var_args,
+                    this_param: args.contains_this,
+                },
+                template_prototype: None,
+            }))
+        }
+
+        // e.g: void templated_function<T>()
+        //                             ^
+        operator!(Less) => {
+            let Some(template_prototype) = parse_template_prototype(tokens) else {
+                return Some(None);
+            };
+
+            let Some(params) = parse_params(tokens) else {
+                log_preparse_error!(
+                    tokens,
+                    "Failed to parse parameters in function declaration!"
+                );
+            };
+
+            Some(Some(FunctionDeclaration {
+                prototype: CXNaivePrototype {
+                    return_type,
+                    name: CXNaiveFnIdent::Standard(name),
+                    params: params.params,
+                    var_args: params.var_args,
+                    this_param: params.contains_this,
+                },
+                template_prototype: Some(template_prototype),
             }))
         }
 
@@ -60,12 +87,8 @@ pub fn try_function_parse(
             assert_token_matches!(tokens, identifier!(name));
             let fn_name = CXIdent::from(name.as_str());
 
-            if !peek_next!(tokens, punctuator!(OpenParen)) {
-                log_preparse_error!(
-                    tokens,
-                    "Expected '(' after template arguments in function declaration!"
-                );
-            };
+            let template_prototype = try_parse_template(tokens);
+            assert_token_matches!(tokens, punctuator!(OpenParen));
 
             let Some(args) = parse_params(tokens) else {
                 log_preparse_error!(
@@ -83,12 +106,15 @@ pub fn try_function_parse(
                 function_name: fn_name,
             };
 
-            Some(Some(CXNaivePrototype {
-                return_type,
-                name,
-                params: args.params,
-                var_args: args.var_args,
-                this_param: args.contains_this,
+            Some(Some(FunctionDeclaration {
+                prototype: CXNaivePrototype {
+                    return_type,
+                    name,
+                    params: args.params,
+                    var_args: args.var_args,
+                    this_param: args.contains_this,
+                },
+                template_prototype,
             }))
         }
 
@@ -107,6 +133,8 @@ pub fn try_function_parse(
                 .to_type(),
                 function_name: CXIdent::from(name.as_str()),
             };
+
+            let template_prototype = try_parse_template(tokens);
             let Some(params) = parse_params(tokens) else {
                 log_preparse_error!(
                     tokens,
@@ -114,12 +142,15 @@ pub fn try_function_parse(
                 );
             };
 
-            Some(Some(CXNaivePrototype {
-                return_type,
-                name,
-                params: params.params,
-                var_args: params.var_args,
-                this_param: params.contains_this,
+            Some(Some(FunctionDeclaration {
+                prototype: CXNaivePrototype {
+                    return_type,
+                    name,
+                    params: params.params,
+                    var_args: params.var_args,
+                    this_param: params.contains_this,
+                },
+                template_prototype,
             }))
         }
 
@@ -142,10 +173,10 @@ pub(crate) fn parse_params(tokens: &mut TokenIter) -> CXResult<ParseParamsResult
     if matches!(peek_next_kind!(tokens), Some(identifier!(this)) if this.as_str() == "this") {
         tokens.next();
         contains_this = true;
-        
+
         if !try_next!(tokens, operator!(Comma)) {
             assert_token_matches!(tokens, punctuator!(CloseParen));
-      
+
             return Some(ParseParamsResult {
                 params,
                 var_args: false,

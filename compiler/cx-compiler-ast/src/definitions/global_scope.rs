@@ -11,6 +11,7 @@ use cx_util::CXResult;
 use crate::declarations::data_parsing::parse_std_ident;
 use crate::declarations::function_parsing::try_function_parse;
 use crate::declarations::type_parsing::parse_initializer;
+use crate::declarations::FunctionDeclaration;
 use crate::definitions::expression::{parse_expr, expression_requires_semicolon};
 use crate::definitions::template::parse_template;
 
@@ -133,12 +134,39 @@ pub(crate) fn parse_enum_constants(data: &mut ParserData) -> Option<Option<CXGlo
     Some(None)
 }
 
-fn parse_fn_merge(data: &mut ParserData, prototype: CXNaivePrototype) -> CXResult<Option<CXGlobalStmt>> {
+fn parse_fn_merge(data: &mut ParserData, prototype: FunctionDeclaration) -> CXResult<Option<CXGlobalStmt>> {
     if try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon)) {
-        Some(Some(CXGlobalStmt::FunctionPrototype { prototype }))
+        if prototype.template_prototype.is_some() {
+            log_parse_error!(data, "Templated functions must be defined in place.");
+        }
+        
+        Some(Some(CXGlobalStmt::FunctionPrototype { prototype: prototype.prototype }))
     } else {
         let body = Box::new(parse_body(data)?);
-        Some(Some(CXGlobalStmt::FunctionDefinition { prototype, body }))
+    
+        match prototype.template_prototype {
+            Some(_) => {
+                Some(
+                    Some(
+                        CXGlobalStmt::TemplatedFunction {
+                            prototype: prototype.prototype,
+                            body,
+                        }
+                    )
+                )
+            },
+    
+            None => {
+                Some(
+                    Some(
+                        CXGlobalStmt::FunctionDefinition {
+                            prototype: prototype.prototype,
+                            body,
+                        }
+                    )
+                )
+            }
+        }
     }
 }
 

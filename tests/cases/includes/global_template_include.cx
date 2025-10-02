@@ -2,8 +2,7 @@ int x;
 
 public:
 
-template <T : type>
-T increment() {
+T increment<T>() {
     x++;
     return x;
 }

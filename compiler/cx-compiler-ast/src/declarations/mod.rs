@@ -1,4 +1,4 @@
-use cx_data_ast::preparse::{naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource}, templates::{CXTemplatePrototype, CXTypeTemplate}};
+use cx_data_ast::preparse::{naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource}, templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate}};
 use cx_data_lexer::TokenIter;
 use cx_data_typechecker::cx_types::CXFunctionIdentifier;
 use cx_util::identifier::CXIdent;
@@ -26,16 +26,15 @@ pub enum DeclarationStatement {
 
 #[non_exhaustive]
 pub struct TypeDeclaration {
-    name: Option<CXIdent>,
-    type_: CXNaiveType,
-    template_prototype: Option<CXTemplatePrototype>
+    pub name: Option<CXIdent>,
+    pub type_: CXNaiveType,
+    pub template_prototype: Option<CXTemplatePrototype>
 }
 
 #[non_exhaustive]
 pub struct FunctionDeclaration {
-    name: CXFunctionIdentifier,
-    prototype: CXNaivePrototype,
-    template_prototype: Option<CXTemplatePrototype>,
+    pub prototype: CXNaivePrototype,
+    pub template_prototype: Option<CXTemplatePrototype>,
 }
 
 impl TypeDeclaration {
@@ -65,6 +64,36 @@ impl TypeDeclaration {
                     name.as_string(),
                     ModuleResource::with_visibility(
                         self.type_,
+                        data.visibility_mode,
+                    ),
+                );
+            }
+        }
+    }
+}
+
+impl FunctionDeclaration {
+    pub(crate) fn add_to(self, data: &mut PreparseData) {
+        match self.template_prototype {
+            Some(prototype) => {
+                data.contents.function_definitions.insert_template(
+                    self.prototype.name.mangle(),
+                    ModuleResource::with_visibility(
+                        CXFunctionTemplate {
+                            name: CXIdent::from(self.prototype.name.mangle()),
+                            prototype,
+                            shell: self.prototype
+                        },
+                        data.visibility_mode,
+                    ),
+                );
+            }
+            
+            None => {
+                data.contents.function_definitions.insert_standard(
+                    self.prototype.name.mangle(),
+                    ModuleResource::with_visibility(
+                        self.prototype,
                         data.visibility_mode,
                     ),
                 );
