@@ -8,7 +8,11 @@ use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXN
 use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
 use cx_util::{log_error, CXResult};
 
+use crate::declarations::decl_parsing::try_function_parse;
+use crate::declarations::identifier_parsing::parse_std_ident;
 use crate::declarations::type_parsing::parse_initializer;
+use crate::definitions::expression::{parse_expr, expression_requires_semicolon};
+use crate::definitions::template::parse_template;
 use crate::parsing_tools::goto_statement_end;
 
 pub(crate) fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
@@ -195,21 +199,15 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         let mut body = Vec::new();
 
         while !try_next!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseBrace)) {
-            let start_index = data.tokens.index;
+            let Some(stmt) = parse_expr(data) else {               
+                log_parse_error!(data, "Failed to parse statement in body: {:#?}", data.tokens.peek());
+            };
 
-            if let Some(stmt) = parse_expr(data) {
-                if requires_semicolon(&stmt) {
-                    assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon));
-                }
-
-                body.push(stmt);
-            } else {
-                for i in start_index.. data.tokens.index {
-                    eprintln!("Token: {:#?}", data.tokens.slice[i]);
-                }
-
-                log_error!("Failed to parse statement in body: {:#?}", data.tokens.peek());
+            if expression_requires_semicolon(&stmt) {
+                assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon));
             }
+
+            body.push(stmt);
         }
 
         Some (
@@ -220,7 +218,7 @@ pub(crate) fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
     } else {
         let body = parse_expr(data)?;
 
-        if requires_semicolon(&body) {
+        if expression_requires_semicolon(&body) {
             assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::Semicolon));
         }
 

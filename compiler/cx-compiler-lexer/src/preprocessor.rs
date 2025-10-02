@@ -1,4 +1,4 @@
-use cx_data_pipeline::libary_path_prefix;
+use cx_data_pipeline::directories::stdlib_directory;
 use cx_util::char_iter::CharIter;
 use crate::unified_lexer::Lexer;
 
@@ -77,7 +77,7 @@ pub(crate) fn handle_directive(lexer: &mut Lexer) {
             let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
                 "".to_string()
             } else if file_name.starts_with("<") && file_name.ends_with(">") {
-                format!("{}/libc/", libary_path_prefix())
+                stdlib_directory("libc/")
             } else {
                 panic!("Invalid include statement: {file_name}");
             };

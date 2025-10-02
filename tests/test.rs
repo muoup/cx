@@ -10,35 +10,40 @@ macro_rules! test_files {
             fn $name() {
                 let path = format!("{}.cx", stringify!($name));
 
-                test(&Path::new(&path));
+                execute_test(&Path::new(&path));
             }
         )*
     };
 }
 
-test_files!(
-    hello_world,
-    basic_arithmetic,
-    basic_for,
-    basic_strong_ptr,
-    basic_template,
-    basic_template_type,
-    basic_while,
-    bool_tests,
-    complex_expressions,
-    conditional_lifetime,
-    deferring,
-    enum_type,
-    short_circuit_eval,
-    struct_and_pointers,
-    struct_parameter,
-    template_include,
-    vector,
-    templated_destructor,
-    basic_global_variable,
-    global_in_template,
-    sum_type
-);
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    
+    test_files!(
+        hello_world,
+        basic_arithmetic,
+        basic_for,
+        basic_strong_ptr,
+        basic_template,
+        basic_template_type,
+        basic_while,
+        bool_tests,
+        complex_expressions,
+        conditional_lifetime,
+        deferring,
+        enum_type,
+        short_circuit_eval,
+        struct_and_pointers,
+        struct_parameter,
+        template_include,
+        vector,
+        templated_destructor,
+        basic_global_variable,
+        global_in_template,
+        sum_type
+    );
+}
 
 #[ctor::ctor]
 fn init() {
@@ -56,7 +61,7 @@ fn get_output(path: &str) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-fn test(input: &Path) {
+fn execute_test(input: &Path) {
     if !input.exists() {
         panic!("[{}] Test file does not exist", input.display());
     }

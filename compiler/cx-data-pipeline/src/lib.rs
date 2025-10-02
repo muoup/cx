@@ -163,34 +163,3 @@ impl CompilationUnit {
         self.identifier.starts_with("std/")
     }
 }
-
-pub fn libary_path_prefix() -> String {
-    let path = std::env::current_exe()
-        .expect("Failed to get current executable path")
-        .parent()
-        .expect("Failed to get parent directory of executable")
-        .to_str()
-        .expect("Failed to convert path to string")
-        .to_string();
-
-    if cfg!(feature = "test") {
-        format!("{path}/../../../lib/")
-    } else {
-        format!("{path}/../../lib/")
-    }
-}
-
-pub fn cx_path_str(path: &str) -> String {
-    if path.starts_with("std") {
-        let current_exe = std::env::current_exe()
-            .expect("Failed to get current executable path");
-
-        if cfg!(feature = "test") {
-            format!("{}/../../../lib/{}.cx", current_exe.parent().unwrap().display(), &path)
-        } else {
-            format!("{}/../../lib/{}.cx", current_exe.parent().unwrap().display(), &path)
-        }
-    } else {
-        format!("{path}.cx")
-    }
-}

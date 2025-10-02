@@ -64,7 +64,11 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         }
     }
 
-    std::process::exit(1);
+    if cfg!(debug_assertions) {
+        panic!("Error encountered: {}", message);
+    } else {
+        std::process::exit(1);
+    }
 }
 
 pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
@@ -85,5 +89,9 @@ pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
         println!("{}^", lpad);
     }
 
-    std::process::exit(1);
+    if cfg!(debug_assertions) {
+        panic!("Error encountered: {}", message);
+    } else {
+        std::process::exit(1);
+    }
 }

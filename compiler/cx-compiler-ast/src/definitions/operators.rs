@@ -5,7 +5,7 @@ use cx_data_ast::parse::parser::ParserData;
 use cx_util::log_error;
 
 use crate::declarations::type_parsing::parse_initializer;
-use crate::definitions::typing::is_type_decl;
+use crate::definitions::expression::is_type_decl;
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {

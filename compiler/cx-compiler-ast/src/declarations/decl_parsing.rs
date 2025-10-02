@@ -1,8 +1,8 @@
-use cx_data_ast::{assert_token_matches, next_kind, peek_next, preparse::{naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType}, CXNaiveFnIdent}};
+use cx_data_ast::{assert_token_matches, next_kind, peek_next, peek_next_kind, preparse::{naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType}, templates::{CXTemplatePrototype, CXTypeTemplate}, CXNaiveFnIdent}, try_next};
 use cx_data_lexer::{identifier, keyword, operator, punctuator, token::TokenKind, TokenIter};
 use cx_util::{identifier::CXIdent, log_error, CXResult};
 
-use crate::{declarations::type_parsing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union, TypeDeclaration}, preparse::{preparse_global_expr, PreparseData}};
+use crate::{declarations::type_parsing::{parse_enum, parse_initializer, parse_params, parse_struct, parse_template_args, parse_union, try_parse_template, TypeDeclaration}, preparse::{preparse_global_expr, PreparseData}};
 
 pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
     assert_token_matches!(tokens, keyword!(Import));
@@ -29,7 +29,7 @@ pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
 pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> CXResult<()> {
     let starting_index = data.tokens.index;
     
-    let Some(decl_start) = next_kind!(data.tokens) else {
+    let Some(decl_start) = peek_next_kind!(data.tokens) else {
         panic!("EOF Reached")
     };
     
@@ -41,10 +41,11 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> CXResult<()> {
         tok => todo!("parse_plain_typedef: {tok:?}")
     };
 
-    if let TypeDeclaration::Standard { name: Some(name), type_ } = decl {
-        if matches!(type_.kind, CXNaiveTypeKind::Identifier { predeclaration, ..  } 
-            if predeclaration != PredeclarationType::None) {
-            
+    match &decl {
+        TypeDeclaration::Standard { name: Some(_), type_ }
+            if matches!(type_.kind, CXNaiveTypeKind::Identifier { predeclaration, .. } 
+                if predeclaration == PredeclarationType::None) => {
+                    
             // If we reach some `struct [name]` `enum [name]` or `union [name]`
             // that is actually used either to declare a variable or a function,
             // we can't quite differentiate it from a non-typedef declaration
@@ -53,7 +54,9 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> CXResult<()> {
                 
             data.tokens.index = starting_index;
             return preparse_global_expr(data);
-        }      
+        }
+        
+        _ => decl.add_to(data)
     }
     
     assert_token_matches!(data.tokens, punctuator!(Semicolon));
@@ -64,6 +67,12 @@ pub(crate) fn parse_plain_typedef(data: &mut PreparseData) -> CXResult<()> {
 pub(crate) fn parse_typedef(data: &mut PreparseData) -> CXResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef));
     let start_index = data.tokens.index;
+    
+    let template_prototype = if peek_next_kind!(data.tokens) == Some(&operator!(Less)) {
+        parse_template_prototype(&mut data.tokens)
+    } else {
+        None
+    };
 
     let Some((name, type_)) = parse_initializer(&mut data.tokens) else {
         log_preparse_error!(data.tokens.with_index(start_index), "Could not parse typedef.");
@@ -74,7 +83,10 @@ pub(crate) fn parse_typedef(data: &mut PreparseData) -> CXResult<()> {
     };
     
     assert_token_matches!(data.tokens, punctuator!(Semicolon));
-    data.contents.type_definitions.insert_standard(name.as_string(), ModuleResource::with_visibility(type_, data.visibility_mode));
+    
+    TypeDeclaration::new(
+        Some(name.clone()), type_, template_prototype
+    ).add_to(data);
     
     Some(())
 }
@@ -85,6 +97,8 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
         // int main()
         //         ^
         punctuator!(OpenParen) => {
+            let template_prototype = try_parse_template(tokens);
+            
             let Some(args) = parse_params(tokens) else {
                 log_preparse_error!(tokens, "Failed to parse parameters in function declaration!");
             };
@@ -176,4 +190,24 @@ pub fn try_function_parse(tokens: &mut TokenIter, return_type: CXNaiveType, name
 
         _ => Some(None)
     }
+}
+
+pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
+    assert_token_matches!(tokens, operator!(Less));
+    
+    let mut type_decls = Vec::new();
+    
+    loop {
+        assert_token_matches!(tokens, TokenKind::Identifier(template_name));
+        let template_name = template_name.clone();
+        type_decls.push(template_name);
+        
+        if !try_next!(tokens, operator!(Comma)) {
+            break;
+        }
+    }
+    
+    assert_token_matches!(tokens, operator!(Greater));
+    
+    Some(CXTemplatePrototype { types: type_decls })
 }

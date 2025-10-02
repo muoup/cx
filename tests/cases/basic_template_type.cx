@@ -1,10 +1,8 @@
 import std::io;
 
-template <T : type>
-typedef T* Ptr;
+typedef<T> T* Ptr;
 
-template <T : type>
-struct Data {
+struct Data<T> {
     Ptr<T> ptr;
 };
 

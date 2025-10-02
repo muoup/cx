@@ -49,7 +49,6 @@ macro_rules! assert_token_matches {
             use cx_util::log_error;
             
             $data.back();
-            eprintln!("{}", error_pointer(&$data));
             
             log_preparse_error!($data, "Expected token to match pattern: {:#?}\n Found: {}", stringify!($pattern), $data.peek().unwrap());
         };
