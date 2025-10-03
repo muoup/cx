@@ -1,6 +1,5 @@
 use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
-use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{
     BCFunctionMap, BlockID, ElementID, FunctionBlock, MIRFunction, MIRFunctionPrototype, MIRValue,
     ProgramMIR,
@@ -9,9 +8,9 @@ use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::passes::{PassBuilderOptions, PassManagerSubType};
+use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::types::{AnyType, FunctionType};
+use inkwell::types::FunctionType;
 use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
@@ -133,7 +132,6 @@ impl<'a> FunctionState<'a, '_> {
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue<'a> {
     Value(AnyValueEnum<'a>),
-    FunctionRef(String),
     NULL,
 }
 
@@ -143,14 +141,6 @@ impl<'a> CodegenValue<'a> {
             CodegenValue::Value(value) => *value,
 
             _ => panic!("Expected a value, found: {self:?}"),
-        }
-    }
-
-    pub fn get_function_ref(&self) -> &str {
-        match self {
-            CodegenValue::FunctionRef(name) => name,
-
-            _ => panic!("Expected a function reference, found: {self:?}"),
         }
     }
 }
@@ -351,27 +341,6 @@ fn codegen_block<'a, 'b>(
             break;
         }
     }
-}
-
-fn cache_type<'a>(global_state: &GlobalState<'a>, _type: &MIRType) -> Option<()> {
-    let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
-        return Some(());
-    };
-
-    let fields = fields
-        .iter()
-        .map(|(_, field_type)| {
-            let type_ = bc_llvm_type(global_state.context, field_type)?;
-
-            any_to_basic_type(type_)
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    let struct_type = bc_llvm_type(global_state.context, _type)?.into_struct_type();
-    struct_type.set_body(&fields, false);
-    struct_type.as_any_type_enum();
-
-    Some(())
 }
 
 fn cache_prototype<'a>(
