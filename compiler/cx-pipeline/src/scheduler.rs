@@ -20,7 +20,7 @@ use cx_typechecker::precontextualizing::{
 use cx_typechecker::typecheck;
 use cx_typechecker_data::ast::{TCAST, TCBaseMappings};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
-use cx_util::format::{dump_data, dump_write};
+use cx_util::format::dump_data;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;

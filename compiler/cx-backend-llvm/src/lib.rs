@@ -124,7 +124,6 @@ impl<'a> FunctionState<'a, '_> {
                 .get_basic_blocks()
                 .get(id as usize + self.defer_block_offset)
                 .cloned(),
-            _ => None,
         }
     }
 }
@@ -286,7 +285,6 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
         codegen_block(
             global_state,
             &mut function_state,
-            &func_val,
             BlockID::Block(block_id as ElementID),
             block,
         );
@@ -298,7 +296,6 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
         codegen_block(
             global_state,
             &mut function_state,
-            &func_val,
             BlockID::DeferredBlock(block_id as ElementID),
             block,
         );
@@ -310,7 +307,6 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
 fn codegen_block<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &mut FunctionState<'a, 'b>,
-    func_val: &FunctionValue<'a>,
     block_id: BlockID,
     block: &FunctionBlock,
 ) {
@@ -321,7 +317,7 @@ fn codegen_block<'a, 'b>(
 
     for (value_id, inst) in block.body.iter().enumerate() {
         let Some(value) =
-            instruction::generate_instruction(global_state, function_state, func_val, inst)
+            instruction::generate_instruction(global_state, function_state, inst)
         else {
             panic!(
                 "Failed to generate instruction: {inst} in function: {}",

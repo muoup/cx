@@ -1,4 +1,4 @@
-use cx_ast_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
+use cx_ast_data::parse::ast::{CXBinOp, CXUnOp};
 use cx_ast_data::parse::parser::ParserData;
 use cx_ast_data::{assert_token_matches, next_kind};
 use cx_lexer_data::token::{OperatorType, PunctuatorType, TokenKind};
@@ -19,14 +19,6 @@ impl PrecOperator {
             PrecOperator::BinOp(op) => binop_prec(op.clone()),
             PrecOperator::UnOp(op) => unop_prec(op.clone()),
         }
-    }
-
-    pub(crate) fn is_binop(&self) -> bool {
-        matches!(self, PrecOperator::BinOp(_))
-    }
-
-    pub(crate) fn is_unop(&self) -> bool {
-        matches!(self, PrecOperator::UnOp(_))
     }
 }
 
@@ -197,56 +189,4 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
             return None;
         }
     })
-}
-
-pub fn comma_separated_mut<'a>(expr: &'a mut CXExpr) -> Vec<&'a mut CXExpr> {
-    if matches!(expr.kind, CXExprKind::Unit) {
-        return vec![];
-    }
-
-    if !matches!(
-        &expr.kind,
-        CXExprKind::BinOp {
-            op: CXBinOp::Comma,
-            ..
-        }
-    ) {
-        return vec![expr];
-    }
-
-    let CXExprKind::BinOp {
-        lhs,
-        rhs,
-        op: CXBinOp::Comma,
-    } = &mut expr.kind
-    else {
-        unreachable!()
-    };
-
-    let mut lresults: Vec<&'a mut CXExpr> = comma_separated_mut(lhs.as_mut());
-    let rresults: Vec<&'a mut CXExpr> = comma_separated_mut(rhs.as_mut());
-
-    lresults.extend(rresults);
-    lresults
-}
-
-pub fn comma_separated(expr: &CXExpr) -> Vec<&CXExpr> {
-    if matches!(expr.kind, CXExprKind::Unit) {
-        return vec![];
-    }
-
-    let CXExprKind::BinOp {
-        lhs,
-        rhs,
-        op: CXBinOp::Comma,
-    } = &expr.kind
-    else {
-        return vec![expr];
-    };
-
-    let mut lresults = comma_separated(lhs.as_ref());
-    let rresults = comma_separated(rhs.as_ref());
-
-    lresults.extend(rresults);
-    lresults
 }

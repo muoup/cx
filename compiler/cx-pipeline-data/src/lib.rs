@@ -21,14 +21,14 @@ pub fn compilation_hash() -> u64 {
 
     // TODO: Find a more defined way to generate a unique hash for each time the compiler is compiled.
 
-    static lazy_static: LazyLock<u64> = LazyLock::new(|| {
+    static LAZY_STATIC: LazyLock<u64> = LazyLock::new(|| {
         let type_id = std::any::TypeId::of::<PlaceHolder>();
         let mut hasher = DefaultHasher::new();
         type_id.hash(&mut hasher);
         hasher.finish()
     });
 
-    *lazy_static
+    *LAZY_STATIC
 }
 
 #[derive(Debug)]

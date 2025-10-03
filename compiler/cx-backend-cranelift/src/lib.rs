@@ -7,7 +7,7 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_mir_data::types::MIRTypeKind;
-use cx_mir_data::{BCFunctionMap, BlockID, MIRValue, ProgramMIR};
+use cx_mir_data::{BlockID, MIRValue, ProgramMIR};
 use cx_util::log_error;
 use std::collections::HashMap;
 
@@ -41,7 +41,6 @@ pub struct FunctionState<'a> {
     pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
     pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
-    pub(crate) fn_map: &'a BCFunctionMap,
 
     pub(crate) block_map: Vec<Block>,
     pub(crate) builder: FunctionBuilder<'a>,
@@ -58,8 +57,6 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) object_module: ObjectModule,
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
-    pub(crate) fn_map: &'a BCFunctionMap,
-
     pub(crate) function_ids: HashMap<String, FuncId>,
     pub(crate) function_sigs: &'a mut HashMap<String, ir::Signature>,
 }
@@ -69,8 +66,6 @@ impl FunctionState<'_> {
         let id = match block_id {
             BlockID::Block(id) => id as usize,
             BlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
-
-            _ => panic!("Invalid block type for block ID: {block_id:?}"),
         };
 
         self.block_map
@@ -163,8 +158,6 @@ pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
             )
             .unwrap(),
         ),
-
-        fn_map: &bc.fn_map,
 
         context: Context::new(),
         target_frontend_config: isa.frontend_config(),

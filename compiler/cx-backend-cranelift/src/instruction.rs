@@ -332,8 +332,6 @@ pub(crate) fn codegen_instruction(
                     left,
                     right,
                 ),
-
-                _ => unimplemented!("Operator not implemented: {:?}", op),
             };
 
             Some(CodegenValue::Value(inst))

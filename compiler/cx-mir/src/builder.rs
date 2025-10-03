@@ -190,10 +190,6 @@ impl MIRBuilder {
         let body = match current_block {
             BlockID::Block(id) => &mut context.blocks.get_mut(id as usize)?.body,
             BlockID::DeferredBlock(id) => &mut context.deferred_blocks.get_mut(id as usize)?.body,
-
-            _ => unreachable!(
-                "INTERNAL PANIC: Attempted to add instruction to invalid block {current_block}"
-            ),
         };
 
         body.push(BlockInstruction {
@@ -491,9 +487,6 @@ impl MIRBuilder {
         let current_block = match context.current_block {
             BlockID::Block(id) => context.blocks.get(id as usize)?,
             BlockID::DeferredBlock(id) => context.deferred_blocks.get(id as usize)?,
-            _ => unreachable!(
-                "INTERNAL PANIC: Attempted to access last instruction of invalid block"
-            ),
         };
 
         current_block.body.last()

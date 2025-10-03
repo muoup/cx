@@ -75,8 +75,6 @@ pub(crate) fn codegen_function(
 
         function_ids: &mut global_state.function_ids,
 
-        fn_map: global_state.fn_map,
-
         defer_offset: bc_func.blocks.len(),
 
         variable_table: VariableTable::new(),

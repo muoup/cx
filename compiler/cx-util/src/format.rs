@@ -67,7 +67,7 @@ macro_rules! fwriteln {
 
             let static_ident = cx_util::format::static_ident().lock().unwrap();
             for _ in 0..*static_ident {
-                fwrite!($f, "\t");
+                fwrite!($f, "\t")?;
             }
 
             val

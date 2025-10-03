@@ -1,14 +1,12 @@
 use crate::aux_routines::allocate_variable;
 use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
-use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_mir_data::types::MIRType;
 use cx_mir_data::{
-    LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRParameter, MIRValue,
-    VirtualInstruction,
+    LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRValue, VirtualInstruction,
 };
 use cx_typechecker_data::ast::{TCExpr, TCGlobalVariable};
 use cx_typechecker_data::cx_types::CXFunctionPrototype;
-use cx_util::mangling::mangle_destructor;
 
 pub(crate) fn generate_function(
     builder: &mut MIRBuilder,
@@ -27,41 +25,6 @@ pub(crate) fn generate_function(
             "Failed to generate body for function {}",
             prototype.name.as_str()
         );
-    };
-
-    builder.pop_scope();
-    builder.finish_function();
-
-    Some(())
-}
-
-pub(crate) fn generate_destructor(
-    builder: &mut MIRBuilder,
-    type_name: &str,
-    body: &TCExpr,
-) -> Option<()> {
-    let destructor_name = mangle_destructor(type_name);
-    let prototype = MIRFunctionPrototype {
-        return_type: MIRType::unit(),
-        name: destructor_name,
-        params: vec![MIRParameter {
-            name: Some("this".to_string()),
-            _type: MIRType::from(MIRTypeKind::Pointer {
-                nullable: false,
-                dereferenceable: 0,
-            }),
-        }],
-        var_args: false,
-        linkage: LinkageType::Standard,
-    };
-
-    builder.push_scope();
-    builder.new_function(prototype);
-
-    builder.insert_symbol("this".to_string(), MIRValue::ParameterRef(0));
-
-    let Some(_) = generate_instruction(builder, body) else {
-        panic!("Failed to generate body for destructor: {type_name}");
     };
 
     builder.pop_scope();

@@ -38,7 +38,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &MIRGlobalValue
             let mut data = DataDescription::new();
 
             if let Some(initial_value) = initial_value {
-                let bytes: [u8; 8] = unsafe { i64::to_ne_bytes(*initial_value) };
+                let bytes: [u8; 8] = i64::to_ne_bytes(*initial_value);
                 let type_size = _type.fixed_size();
                 let relevant_data = bytes
                     .iter()

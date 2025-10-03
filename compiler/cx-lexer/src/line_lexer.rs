@@ -1,7 +1,6 @@
 use cx_lexer_data::punctuator;
 use cx_lexer_data::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
-use std::io::BufRead;
 
 pub(crate) struct LineLexer<'a> {
     last_consume: usize,

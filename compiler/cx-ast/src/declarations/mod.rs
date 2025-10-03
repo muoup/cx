@@ -11,6 +11,7 @@ pub mod decl_parsing;
 pub mod function_parsing;
 pub mod type_parsing;
 
+#[allow(unused)]
 pub enum DeclarationStatement {
     Import(String),
     TypeDeclaration(TypeDeclaration),

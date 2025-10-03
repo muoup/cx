@@ -9,8 +9,7 @@ use cx_mir_data::{
 };
 use cx_util::log_error;
 use inkwell::attributes::AttributeLoc;
-use inkwell::types::BasicType;
-use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue};
+use inkwell::values::{AnyValue, AnyValueEnum};
 use inkwell::{AddressSpace, Either};
 use std::sync::Mutex;
 
@@ -31,7 +30,6 @@ pub(crate) fn inst_num() -> String {
 pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    function_val: &FunctionValue<'a>,
     block_instruction: &BlockInstruction,
 ) -> Option<CodegenValue<'a>> {
     Some(match &block_instruction.instruction {
