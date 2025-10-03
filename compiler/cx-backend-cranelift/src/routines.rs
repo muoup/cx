@@ -4,7 +4,7 @@ use cranelift::codegen::gimli::ReaderOffset;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::prelude::{InstBuilder, StackSlotData, StackSlotKind, Value};
 use cranelift_module::{FuncId, Linkage, Module};
-use cx_data_mir::{MIRFunctionPrototype, LinkageType};
+use cx_mir_data::{MIRFunctionPrototype, LinkageType};
 
 pub(crate) fn allocate_variable(context: &mut FunctionState, bytes: u32, initial_value: Option<Value>) -> Option<Value> {
     let stack_slot_data = StackSlotData::new(

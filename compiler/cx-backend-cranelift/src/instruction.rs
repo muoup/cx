@@ -7,8 +7,8 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_data_mir::types::{MIRTypeKind, MIRTypeSize};
-use cx_data_mir::{BCFloatBinOp, BCFloatUnOp, MIRIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
+use cx_mir_data::types::{MIRTypeKind, MIRTypeSize};
+use cx_mir_data::{BCFloatBinOp, BCFloatUnOp, MIRIntBinOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, VirtualInstruction};
 use std::ops::IndexMut;
 use crate::routines::get_function;
 

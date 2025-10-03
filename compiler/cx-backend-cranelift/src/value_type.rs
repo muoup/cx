@@ -1,5 +1,5 @@
 use cranelift::codegen::ir;
-use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_mir_data::types::{MIRType, MIRTypeKind};
 
 pub(crate) fn get_cranelift_abi_type(val_type: &MIRType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type))

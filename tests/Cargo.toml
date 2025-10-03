@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["cx-data-pipeline/test", "cx-data-pipeline/test"]
+default = ["cx-pipeline-data/test", "cx-pipeline-data/test"]
 backend-llvm = ["cx-pipeline/backend-llvm"]
 
 [[test]]
@@ -13,7 +13,7 @@ path = "test.rs"
 harness = true
 
 [dependencies]
-cx-data-pipeline = { path = "../compiler/cx-data-pipeline" }
+cx-pipeline-data = { path = "../compiler/cx-pipeline-data" }
 cx-pipeline = { path = "../compiler/cx-pipeline" }
 
 ctor = "0.1.23"

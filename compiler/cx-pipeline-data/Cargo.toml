@@ -1,0 +1,17 @@
+[package]
+name = "cx-pipeline-data"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+backend-llvm = []
+test = []
+
+[dependencies]
+speedy = { version = "0.8.7" }
+
+cx-lexer-data = { path = "../cx-lexer-data" }
+cx-ast-data  = { path = "../cx-ast-data" }
+cx-typechecker-data = { path = "../cx-typechecker-data" }
+cx-mir-data = { path = "../cx-mir-data" }

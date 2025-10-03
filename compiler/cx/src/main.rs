@@ -2,7 +2,7 @@ mod args;
 
 use std::path::{Path, PathBuf};
 use cx_pipeline::standard_compilation;
-use cx_data_pipeline::CompilerConfig;
+use cx_pipeline_data::CompilerConfig;
 
 fn main() {
     let args = match args::parse_args() {

@@ -1,5 +1,5 @@
 use std::path::Path;
-use cx_data_lexer::token::Token;
+use cx_lexer_data::token::Token;
 
 fn leading_whitespace_count(s: &str) -> usize {
     s.chars().take_while(|c| c.is_whitespace()).count()

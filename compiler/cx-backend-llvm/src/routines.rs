@@ -1,5 +1,5 @@
 use inkwell::values::FunctionValue;
-use cx_data_mir::MIRFunctionPrototype;
+use cx_mir_data::MIRFunctionPrototype;
 use cx_util::log_error;
 use crate::GlobalState;
 use crate::typing::bc_llvm_prototype;

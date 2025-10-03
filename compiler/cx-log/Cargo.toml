@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 cx-util = { path = "../cx-util" }
-cx-data-lexer = { path = "../cx-data-lexer" }
+cx-lexer-data = { path = "../cx-lexer-data" }

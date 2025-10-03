@@ -5,8 +5,8 @@ edition = "2024"
 autotests = false
 
 [dependencies]
-cx-data-mir = { path = "../cx-data-mir" }
-cx-data-pipeline = { path = "../cx-data-pipeline" }
+cx-mir-data = { path = "../cx-mir-data" }
+cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-util = { path = "../cx-util" }
 
 inkwell = { version="0.6.0", default-features = false, features=["llvm18-1"] }

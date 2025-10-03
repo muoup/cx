@@ -1,0 +1,10 @@
+[package]
+name = "cx-lexer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cx-lexer-data = { path = "../cx-lexer-data" }
+cx-pipeline-data = { path = "../cx-pipeline-data" }
+
+cx-util = { path = "../cx-util" }
