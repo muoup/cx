@@ -1,5 +1,5 @@
 use std::process::Command;
-use cx_data_pipeline::GlobalCompilationContext;
+use cx_pipeline_data::GlobalCompilationContext;
 
 pub(crate) fn link(context: &GlobalCompilationContext) -> Option<()> {
     let mut cmd = Command::new("gcc");

@@ -1,7 +1,7 @@
 use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
-use cx_data_mir::types::{MIRType, MIRTypeKind};
-use cx_data_mir::{BCFunctionMap, MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue, ProgramMIR};
+use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_mir_data::{BCFunctionMap, MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue, ProgramMIR};
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -13,7 +13,7 @@ use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
 use crate::instruction::{inst_num, reset_num};
-use cx_data_pipeline::OptimizationLevel;
+use cx_pipeline_data::OptimizationLevel;
 use cx_util::format::dump_data;
 use inkwell::basic_block::BasicBlock;
 use std::collections::HashMap;

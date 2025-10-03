@@ -1,25 +1,25 @@
 use speedy::{LittleEndian, Readable, Writable};
 use crate::backends::{cranelift_compile, llvm_compile};
-use cx_compiler_ast::parse::parse_ast;
-use cx_compiler_ast::preparse::preparse;
-use cx_compiler_mir::generate_bytecode;
-use cx_data_ast::parse::ast::CXAST;
-use cx_data_ast::parse::parser::VisibilityMode;
-use cx_data_pipeline::db::ModuleMap;
-use cx_data_pipeline::directories::internal_directory;
-use cx_data_pipeline::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
-use cx_data_pipeline::jobs::{CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue};
-use cx_data_pipeline::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
+use cx_ast::parse::parse_ast;
+use cx_ast::preparse::preparse;
+use cx_mir::generate_bytecode;
+use cx_ast_data::parse::ast::CXAST;
+use cx_ast_data::parse::parser::VisibilityMode;
+use cx_pipeline_data::db::ModuleMap;
+use cx_pipeline_data::directories::internal_directory;
+use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
+use cx_pipeline_data::jobs::{CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue};
+use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use fs2::FileExt;
-use cx_compiler_typechecker_new::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
-use cx_compiler_typechecker_new::environment::TCEnvironment;
-use cx_compiler_typechecker_new::typecheck;
-use cx_data_typechecker::intrinsic_types::INTRINSIC_IMPORTS;
-use cx_data_lexer::TokenIter;
-use cx_data_typechecker::ast::{TCBaseMappings, TCAST};
+use cx_typechecker::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
+use cx_typechecker::environment::TCEnvironment;
+use cx_typechecker::typecheck;
+use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_lexer_data::TokenIter;
+use cx_typechecker_data::ast::{TCBaseMappings, TCAST};
 use cx_util::format::{dump_data, dump_write};
 use crate::template_realizing::realize_templates;
 
@@ -209,7 +209,7 @@ pub(crate) fn perform_job(
             
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let tokens = cx_compiler_lexer::lex(file_contents.as_str())?;
+            let tokens = cx_lexer::lex(file_contents.as_str())?;
             dump_write("Tokens:\n");
 
             let mut output = preparse(TokenIter::new(&tokens, file_path))

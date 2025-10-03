@@ -1,7 +1,7 @@
 use std::collections::HashSet;
-use cx_compiler_typechecker_new::environment::TCEnvironment;
-use cx_compiler_typechecker_new::realize_fn_implementation;
-use cx_data_pipeline::{CompilationUnit, GlobalCompilationContext};
+use cx_typechecker::environment::TCEnvironment;
+use cx_typechecker::realize_fn_implementation;
+use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::mangling::mangle_template;
 
 pub(crate) fn realize_templates(

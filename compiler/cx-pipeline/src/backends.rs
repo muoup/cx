@@ -1,5 +1,5 @@
-use cx_data_mir::ProgramMIR;
-use cx_data_pipeline::OptimizationLevel;
+use cx_mir_data::ProgramMIR;
+use cx_pipeline_data::OptimizationLevel;
 
 #[cfg(feature = "backend-llvm")]
 pub(crate) fn llvm_compile(bytecode: &ProgramMIR, output: &str, optimization_level: OptimizationLevel) -> Option<Vec<u8>> {

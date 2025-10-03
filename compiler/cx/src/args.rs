@@ -1,4 +1,4 @@
-use cx_data_pipeline::{CompilerBackend, OptimizationLevel};
+use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
 
 #[derive(Debug)]
 pub struct AppArgs {

@@ -244,8 +244,30 @@ dependencies = [
 name = "cx"
 version = "0.0.0"
 dependencies = [
- "cx-data-pipeline",
  "cx-pipeline",
+ "cx-pipeline-data",
+]
+
+[[package]]
+name = "cx-ast"
+version = "0.0.0"
+dependencies = [
+ "cx-ast-data",
+ "cx-lexer-data",
+ "cx-log",
+ "cx-pipeline-data",
+ "cx-typechecker-data",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-ast-data"
+version = "0.0.0"
+dependencies = [
+ "cx-lexer-data",
+ "cx-util",
+ "speedy",
+ "uuid",
 ]
 
 [[package]]
@@ -256,8 +278,8 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
- "cx-data-ast",
- "cx-data-mir",
+ "cx-ast-data",
+ "cx-mir-data",
  "cx-util",
 ]
 
@@ -265,103 +287,48 @@ dependencies = [
 name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
- "cx-data-mir",
- "cx-data-pipeline",
+ "cx-mir-data",
+ "cx-pipeline-data",
  "cx-util",
  "inkwell",
 ]
 
 [[package]]
-name = "cx-compiler-ast"
-version = "0.0.0"
-dependencies = [
- "cx-data-ast",
- "cx-data-lexer",
- "cx-data-pipeline",
- "cx-data-typechecker",
- "cx-log",
- "cx-util",
-]
-
-[[package]]
-name = "cx-compiler-lexer"
+name = "cx-lexer"
 version = "0.1.0"
 dependencies = [
- "cx-data-lexer",
- "cx-data-pipeline",
+ "cx-lexer-data",
+ "cx-pipeline-data",
  "cx-util",
 ]
 
 [[package]]
-name = "cx-compiler-mir"
-version = "0.0.0"
-dependencies = [
- "cx-compiler-ast",
- "cx-data-ast",
- "cx-data-mir",
- "cx-data-typechecker",
- "cx-util",
-]
-
-[[package]]
-name = "cx-compiler-typechecker-new"
+name = "cx-lexer-data"
 version = "0.1.0"
-dependencies = [
- "cx-data-ast",
- "cx-data-lexer",
- "cx-data-pipeline",
- "cx-data-typechecker",
- "cx-log",
- "cx-util",
-]
-
-[[package]]
-name = "cx-data-ast"
-version = "0.0.0"
-dependencies = [
- "cx-data-lexer",
- "cx-util",
- "speedy",
- "uuid",
-]
-
-[[package]]
-name = "cx-data-lexer"
-version = "0.1.0"
-
-[[package]]
-name = "cx-data-mir"
-version = "0.0.0"
-dependencies = [
- "cx-util",
-]
-
-[[package]]
-name = "cx-data-pipeline"
-version = "0.1.0"
-dependencies = [
- "cx-data-ast",
- "cx-data-lexer",
- "cx-data-mir",
- "cx-data-typechecker",
- "speedy",
-]
-
-[[package]]
-name = "cx-data-typechecker"
-version = "0.1.0"
-dependencies = [
- "cx-data-ast",
- "cx-util",
- "speedy",
- "uuid",
-]
 
 [[package]]
 name = "cx-log"
 version = "0.1.0"
 dependencies = [
- "cx-data-lexer",
+ "cx-lexer-data",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-mir"
+version = "0.0.0"
+dependencies = [
+ "cx-ast",
+ "cx-ast-data",
+ "cx-mir-data",
+ "cx-typechecker-data",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-mir-data"
+version = "0.0.0"
+dependencies = [
  "cx-util",
 ]
 
@@ -369,20 +336,53 @@ dependencies = [
 name = "cx-pipeline"
 version = "0.1.0"
 dependencies = [
+ "cx-ast",
+ "cx-ast-data",
  "cx-backend-cranelift",
  "cx-backend-llvm",
- "cx-compiler-ast",
- "cx-compiler-lexer",
- "cx-compiler-mir",
- "cx-compiler-typechecker-new",
- "cx-data-ast",
- "cx-data-lexer",
- "cx-data-mir",
- "cx-data-pipeline",
- "cx-data-typechecker",
+ "cx-lexer",
+ "cx-lexer-data",
+ "cx-mir",
+ "cx-mir-data",
+ "cx-pipeline-data",
+ "cx-typechecker",
+ "cx-typechecker-data",
  "cx-util",
  "fs2",
  "speedy",
+]
+
+[[package]]
+name = "cx-pipeline-data"
+version = "0.1.0"
+dependencies = [
+ "cx-ast-data",
+ "cx-lexer-data",
+ "cx-mir-data",
+ "cx-typechecker-data",
+ "speedy",
+]
+
+[[package]]
+name = "cx-typechecker"
+version = "0.1.0"
+dependencies = [
+ "cx-ast-data",
+ "cx-lexer-data",
+ "cx-log",
+ "cx-pipeline-data",
+ "cx-typechecker-data",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-typechecker-data"
+version = "0.1.0"
+dependencies = [
+ "cx-ast-data",
+ "cx-util",
+ "speedy",
+ "uuid",
 ]
 
 [[package]]
@@ -498,8 +498,8 @@ name = "integration-tests"
 version = "0.1.0"
 dependencies = [
  "ctor",
- "cx-data-pipeline",
  "cx-pipeline",
+ "cx-pipeline-data",
 ]
 
 [[package]]

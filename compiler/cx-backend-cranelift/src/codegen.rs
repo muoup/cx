@@ -5,7 +5,7 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_data_mir::{MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue};
+use cx_mir_data::{MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue};
 use cx_util::format::dump_data;
 use crate::routines::convert_linkage;
 

@@ -1,6 +1,6 @@
 use inkwell::attributes::Attribute;
 use inkwell::context::Context;
-use cx_data_mir::types::{MIRType, MIRTypeKind};
+use cx_mir_data::types::{MIRType, MIRTypeKind};
 
 pub(crate) fn attr_noundef(context: &Context) -> Attribute {
     context.create_enum_attribute(

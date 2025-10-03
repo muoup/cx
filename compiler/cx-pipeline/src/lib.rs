@@ -5,9 +5,9 @@ mod template_realizing;
 
 use crate::linker::link;
 use crate::scheduler::scheduling_loop;
-use cx_data_pipeline::db::ModuleData;
-use cx_data_pipeline::jobs::{CompilationJob, CompilationStep};
-use cx_data_pipeline::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
+use cx_pipeline_data::db::ModuleData;
+use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
+use cx_pipeline_data::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;

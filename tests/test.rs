@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::process::Command;
-use cx_data_pipeline::{CompilerBackend, CompilerConfig, OptimizationLevel};
+use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
 use cx_pipeline::standard_compilation;
 
 macro_rules! test_files {

@@ -1,5 +1,5 @@
 use cranelift_module::{DataDescription, Linkage, Module};
-use cx_data_mir::{MIRGlobalType, MIRGlobalValue};
+use cx_mir_data::{MIRGlobalType, MIRGlobalValue};
 use crate::GlobalState;
 use crate::routines::convert_linkage;
 

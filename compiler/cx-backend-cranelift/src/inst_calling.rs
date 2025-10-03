@@ -5,7 +5,7 @@ use cranelift::codegen::ir::{FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_data_mir::{MIRFunctionPrototype, MIRParameter, MIRValue};
+use cx_mir_data::{MIRFunctionPrototype, MIRParameter, MIRValue};
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,

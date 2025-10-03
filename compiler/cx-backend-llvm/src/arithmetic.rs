@@ -1,6 +1,6 @@
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
-use cx_data_mir::{MIRIntBinOp, BCPtrBinOp};
-use cx_data_mir::types::MIRType;
+use cx_mir_data::{MIRIntBinOp, BCPtrBinOp};
+use cx_mir_data::types::MIRType;
 use crate::{CodegenValue, FunctionState, GlobalState};
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 

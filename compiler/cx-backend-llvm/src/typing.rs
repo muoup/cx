@@ -1,6 +1,6 @@
 use crate::GlobalState;
-use cx_data_mir::types::{MIRType, MIRTypeKind};
-use cx_data_mir::{MIRFunctionPrototype, LinkageType};
+use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_mir_data::{MIRFunctionPrototype, LinkageType};
 use inkwell::types::{AnyType, AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{AnyValueEnum, BasicValueEnum};
 use inkwell::AddressSpace;
