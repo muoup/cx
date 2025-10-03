@@ -135,40 +135,62 @@ Output o3 = Output::string("Hello, World!");
 
 ## 4. Templates
 
-CX supports templates, which allow you to write generic functions and types that can work with any type. 
-Templates are declared using the `template` keyword, followed by a list of type parameters enclosed in
-angle brackets. Note that while the `type` keyword may seem redundant, future syntax will allow for
-restrictions on the type parameters, requiring either a specific subset of types, or certain guarantees
-about the type itself (e.g an integer being divisible by N, or certain methods being defined on a type).
+CX supports templates, which allow you to write generic functions and types that can work with any type.
+Templates are declared using angle brackets (`<>`) containing the generic type parameters.
 
-The language currently cannot do type inference for templates, and uses C++'s model of copy and paste
-instantiation. In the future, it may be required that the function is partially compilable before instantiation,
-like as in Rust where templates can only assume the information that is guaranteed by the type bounds, but
-for now this is not the case.
+For functions, the template declaration comes after the function name. For type definitions like `struct` or `typedef`, it comes after the type name. This syntax is similar to templates in Rust or generics in Java/C#.
 
-```c++
-template <T1 : type, T2 : type, Ret : type>
-Ret add(T1 a, T2 b) {
+**Function Syntax Example:**
+```c
+// A generic 'add' function
+T add<T>(T a, T b) {
     return a + b;
 }
 
 int main() {
-    int x = add<int, int, int>(1, 2); // x is 3
-    float y = add<float, float, float>(1.0, 2.0); // y is 3.0
+    int ix = 5;
+    int iy = 10;
+    float fx = 5.5;
+    float fy = 10.5;
+
+    int int_result = add<int>(ix, iy);       // int_result is 15
+    float float_result = add<float>(fx, fy); // float_result is 16.0
 }
 ```
 
-One other current limitation of the language is that it only supports one definition per type and function name,
-see below. This is likely to be changed with a different ABI scheme.
+**Type Syntax Example:**
+```c
+// A generic 'Ptr' type alias
+typedef<T> T* Ptr;
 
-```c++
-template <T : type>
-struct Vec {
-    ...
+// A generic 'Data' struct
+struct Data<T> {
+    Ptr<T> ptr;
 };
 
-Vec<int>::length() { ... }
-Vec<float>::length() { ... } // invalid as Vec::length is already defined, templated types do not currently mangle their own name identifiers.
+int main() {
+    int val = 0;
+    Data<int> data;
+    data.ptr = &val;
+    *data.ptr = 42; // val is now 42
+}
+```
+
+### 4.1. Current Limitations
+
+**Type Inference:** The language currently does not perform type inference for template arguments during instantiation. You must explicitly specify the types in angle brackets (e.g., `add<int>(...)`).
+
+**Specialization:** When declaring a templated type or function, only one definition is allowed per function identifier (i.e. standard function name, member function type + name, etc.). With member functions on templated types, this restriction is to one type parameterization + function name combination. 
+
+```c
+struct Vec<T> {
+    // ...
+};
+
+// If this is declared:
+void Vec<int>::some_function() { /* ... */ }
+// This will throw an error:
+void Vec<float>::some_function() { /* ... */ } 
 ```
 
 ## 5. Control Flow
