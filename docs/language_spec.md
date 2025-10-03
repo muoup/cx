@@ -210,7 +210,7 @@ Currently, `match` is primarily used for tagged unions. However, it is planned t
 void print_output(Output out) {
     match (out) {
         Output::integer(i) => printf("Integer: %d\n", i);
-        Output.fp(d) => printf("Float: %f\n", d);
+        Output::fp(d) => printf("Float: %f\n", d);
         Output::string(s) => printf("String: %s\n", s);
         default => printf("Unknown type\n");
     }
