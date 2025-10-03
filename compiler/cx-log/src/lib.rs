@@ -30,8 +30,12 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         panic!("No tokens provided for error reporting");
     }
 
-    let start_index = tokens[start_index].start_index;
-    let end_index = tokens[end_index].end_index;
+    let start_index = tokens.get(start_index)
+        .map(|t| t.start_index)
+        .unwrap_or(0);
+    let end_index = tokens.get(end_index - 1)
+        .map(|t| t.end_index)
+        .unwrap_or(0);
 
     let file_contents = std::fs::read_to_string(file_path)
         .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()));
@@ -42,7 +46,7 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
     let mut remaining_error_chars = end_index - start_index;
 
     let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
-    println!("{} \n\t--> {}", message, link);
+    println!("{message} \n\t--> {link}");
 
     let mut iter = file_contents[error_line_start..].lines().peekable();
 
@@ -51,8 +55,8 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         let lpad = line_as_spacing(&line[..error_padding.min(line.len())]);
         let underline = "~".repeat((line.len() - error_padding).min(remaining_error_chars));
 
-        println!("{}", line);
-        println!("{}{}", lpad, underline);
+        println!("{line}");
+        println!("{lpad}{underline}");
 
         error_padding = iter.peek()
             .map(|next_line| leading_whitespace_count(next_line))
@@ -64,7 +68,11 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         }
     }
 
-    std::process::exit(1);
+    if cfg!(debug_assertions) {
+        panic!("Error encountered: {message}");
+    } else {
+        std::process::exit(1);
+    }
 }
 
 pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
@@ -77,13 +85,17 @@ pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
     let error_line_start = start_index - error_padding;
 
     let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
-    println!("{} \n\t --> {}", message, link);
+    println!("{message} \n\t --> {link}");
 
     if let Some(line) = file_contents[error_line_start..].lines().next() {
         let lpad = line_as_spacing(&line[..error_padding]);
-        println!("{}", line);
-        println!("{}^", lpad);
+        println!("{line}");
+        println!("{lpad}^");
     }
 
-    std::process::exit(1);
+    if cfg!(debug_assertions) {
+        panic!("Error encountered: {message}");
+    } else {
+        std::process::exit(1);
+    }
 }

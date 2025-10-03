@@ -19,66 +19,66 @@ pub struct Token {
 #[macro_export]
 macro_rules! keyword {
     () => {
-        TokenKind::Keyword(_)
+        cx_data_lexer::token::TokenKind::Keyword(_)
     };
 
     ($($name:ident),+) => {
-        $(TokenKind::Keyword(cx_data_lexer::token::KeywordType::$name))|+
+        $(cx_data_lexer::token::TokenKind::Keyword(cx_data_lexer::token::KeywordType::$name))|+
     };
 }
 
 #[macro_export]
 macro_rules! specifier {
     () => {
-        TokenKind::Specifier(_)
+        cx_data_lexer::token::TokenKind::Specifier(_)
     };
 
     ($($name:ident),+) => {
-        $(TokenKind::Specifier(cx_data_lexer::token::SpecifierType::$name))|+
+        $(cx_data_lexer::token::TokenKind::Specifier(cx_data_lexer::token::SpecifierType::$name))|+
     }
 }
 
 #[macro_export]
 macro_rules! intrinsic {
     () => {
-        TokenKind::Intrinsic(_)
+        cx_data_lexer::token::TokenKind::Intrinsic(_)
     };
 
     ($name:ident) => {
-        TokenKind::Intrinsic(cx_data_lexer::token::IntrinsicType::$name)
+        cx_data_lexer::token::TokenKind::Intrinsic(cx_data_lexer::token::IntrinsicType::$name)
     };
 }
 
 #[macro_export]
 macro_rules! operator {
     () => {
-        TokenKind::Operator(_)
+        cx_data_lexer::token::TokenKind::Operator(_)
     };
 
     ($name:ident) => {
-        TokenKind::Operator(cx_data_lexer::token::OperatorType::$name)
+        cx_data_lexer::token::TokenKind::Operator(cx_data_lexer::token::OperatorType::$name)
     }
 }
 
 #[macro_export]
 macro_rules! punctuator {
     () => {
-        TokenKind::Punctuator(_)
+        cx_data_lexer::token::TokenKind::Punctuator(_)
     };
 
     ($name:ident) => {
-        TokenKind::Punctuator(cx_data_lexer::token::PunctuatorType::$name)
+        cx_data_lexer::token::TokenKind::Punctuator(cx_data_lexer::token::PunctuatorType::$name)
     }
 }
 
 #[macro_export]
 macro_rules! identifier {
     () => {
-        TokenKind::Identifier(_)
+        cx_data_lexer::token::TokenKind::Identifier(_)
     };
 
     ($name:ident) => {
-        TokenKind::Identifier($name)
+        cx_data_lexer::token::TokenKind::Identifier($name)
     }
 }
 

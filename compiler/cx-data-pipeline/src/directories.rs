@@ -2,16 +2,21 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use crate::{compilation_hash, CompilationUnit, GlobalCompilationContext};
 
+pub fn stdlib_directory(inner_path: &str) -> String {
+    let current_exe = std::env::current_exe()
+        .expect("Failed to get current executable path");
+ 
+    // TODO: This is a bit hacky, find a better way to do this
+    if current_exe.parent().unwrap().ends_with("deps") {
+        format!("{}/../../../lib/{}", current_exe.parent().unwrap().display(), inner_path)
+    } else {      
+        format!("{}/../../lib/{}", current_exe.parent().unwrap().display(), inner_path)
+    }
+}
+
 pub fn file_path(path: &str) -> String {
     if path.starts_with("std") {
-        let current_exe = std::env::current_exe()
-            .expect("Failed to get current executable path");
-
-        if cfg!(feature = "test") {
-            format!("{}/../../../lib/{}", current_exe.parent().unwrap().display(), &path)
-        } else {
-            format!("{}/../../lib/{}", current_exe.parent().unwrap().display(), &path)
-        }
+        stdlib_directory(&format!("{}/{}.cx", "std", &path[3..]))
     } else {
         path.to_string()
     }

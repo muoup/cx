@@ -2,7 +2,7 @@ use cx_data_ast::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_util::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{same_type, CXType, CXTypeKind};
 use cx_data_typechecker::ast::{TCExpr, TCExprKind};
-use cx_util::{log_error, CXResult};
+use cx_util::CXResult;
 use cx_util::mangling::mangle_member_function;
 use crate::casting::{add_coercion, coerce_value, implicit_cast};
 use crate::environment::TCEnvironment;

@@ -3,7 +3,6 @@ use cx_util::identifier::CXIdent;
 use cx_data_typechecker::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
 use cx_data_ast::preparse::naive_types::CX_CONST;
 use cx_data_typechecker::ast::{TCTagMatch, TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex};
-use cx_util::log_error;
 use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
 use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::environment::TCEnvironment;
@@ -529,6 +528,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     kind: TCExprKind::Unit
                 }
             },
+            
             CXExprKind::SizeOf { expr } => {
                 let tc_expr = typecheck_expr(env, expr)?;
 

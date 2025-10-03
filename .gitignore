@@ -1,6 +1,6 @@
 /target
 **/.internal/*
-.idea
+.*
 
 *.exe
 *.out

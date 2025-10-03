@@ -7,5 +7,6 @@ pub(crate) mod preprocessor;
 pub fn lex(source: &str) -> Option<Vec<Token>> {
     let mut lexer = crate::unified_lexer::Lexer::new(source);
     lexer.lex_source();
+    
     Some(lexer.tokens)
 }

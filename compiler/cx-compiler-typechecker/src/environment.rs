@@ -4,7 +4,7 @@ use cx_data_typechecker::{CXFnMap, CXTypeMap};
 use cx_util::mangling::{mangle_destructor, mangle_template};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use cx_data_lexer::token::Token;
 use cx_data_typechecker::ast::{TCFunctionDef, TCGlobalVariable, TCBaseMappings};
 

@@ -1,3 +1,4 @@
+
 use crate::environment::TCEnvironment;
 use crate::type_mapping::contextualize_fn_prototype;
 use crate::typechecker::in_method_env;
@@ -65,6 +66,7 @@ pub fn realize_fn_implementation(
     template: &CXFunctionTemplate, input: &CXTemplateInput
 ) -> Option<()> {
     let old_base = env.base_data;
+    
     unsafe {
         env.base_data = std::mem::transmute(structure_data);
     }

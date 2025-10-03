@@ -45,6 +45,9 @@ pub fn precontextualize_type(
     ty: &CXNaiveType,
 ) -> Option<CXType> {
     let mut naive_type_map = naive_type_map;
+    
+    // This variable is here for a top-level-scope lock in case we need to load an external module.
+    #[allow(unused)]
     let mut pp_lock: Option<Arc<PreparseContents>> = None;
 
     let mut recurse_ty = |ty: &CXNaiveType| {

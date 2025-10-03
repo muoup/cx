@@ -1,4 +1,8 @@
 #[macro_use]
-pub mod log;
+mod log;
+
+pub(crate) mod declarations;
+pub(crate) mod definitions;
+
 pub mod parse;
 pub mod preparse;
