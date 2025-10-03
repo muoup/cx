@@ -30,7 +30,7 @@ macro_rules! expr_error_log {
 macro_rules! bytecode_error_log {
     ($builder:ident, $($arg:tt)*) => {
         {
-            use cx_ast_data::parse::macros::error_pointer;
+            use cx_parsing_data::parse::macros::error_pointer;
             use cx_util::log_error;
 
             eprintln!("Error in method {}", $builder.current_function_name().unwrap_or("<unknown>"));
@@ -43,7 +43,7 @@ macro_rules! bytecode_error_log {
 macro_rules! point_log_error {
     ($toks:expr, $($arg:tt)*) => {
         {
-            use cx_ast_data::parse::macros::error_pointer;
+            use cx_parsing_data::parse::macros::error_pointer;
             use cx_util::log_error;
 
             eprintln!("{}", error_pointer(&$toks));

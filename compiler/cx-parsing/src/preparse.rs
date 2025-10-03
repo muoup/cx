@@ -1,5 +1,5 @@
-use cx_ast_data::{parse::parser::VisibilityMode, PreparseContents};
 use cx_lexer_data::TokenIter;
+use cx_parsing_data::{parse::parser::VisibilityMode, PreparseContents};
 
 use crate::declarations::decl_parsing::preparse_decl_stmt;
 
@@ -19,9 +19,11 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
     };
 
     while data.tokens.has_next() {
-        let Some(_) = preparse_decl_stmt(&mut data) else {
+        let Some(stmt) = preparse_decl_stmt(&mut data.tokens) else {
             log_preparse_error!(data.tokens, "Failed to preparse statement")
         };
+
+        stmt.add_to(&mut data);
     }
 
     Some(contents)

@@ -5,7 +5,7 @@ use crate::builder::MIRBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
 use crate::implicit_cast::implicit_cast;
-use cx_ast_data::parse::ast::{CXBinOp, CXUnOp};
+use cx_parsing_data::parse::ast::{CXBinOp, CXUnOp};
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
     BCIntUnOp, BCPtrBinOp, BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType,

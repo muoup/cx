@@ -1,5 +1,5 @@
 [package]
-name = "cx-ast-data"
+name = "cx-parsing-data"
 version = "0.0.0"
 edition = "2021"
 autotests = false

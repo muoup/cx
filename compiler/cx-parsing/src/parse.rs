@@ -1,4 +1,4 @@
-use cx_ast_data::parse::{ast::CXAST, parser::ParserData};
+use cx_parsing_data::parse::{ast::CXAST, parser::{ParserData, VisibilityMode}};
 use cx_lexer_data::TokenIter;
 
 use crate::definitions::global_scope::parse_global_stmt;
@@ -7,7 +7,7 @@ pub fn parse_ast(iter: TokenIter, base_ast: CXAST) -> Option<CXAST> {
     let mut data = ParserData {
         ast: base_ast,
         tokens: iter,
-        visibility: cx_ast_data::parse::parser::VisibilityMode::Package,
+        visibility: VisibilityMode::Package,
         expr_commas: vec![true],
     };
 

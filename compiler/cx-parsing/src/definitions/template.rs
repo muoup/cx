@@ -1,8 +1,8 @@
-use cx_ast_data::parse::parser::ParserData;
-use cx_ast_data::preparse::naive_types::{
+use cx_parsing_data::parse::parser::ParserData;
+use cx_parsing_data::preparse::naive_types::{
     CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType,
 };
-use cx_ast_data::preparse::templates::CXTemplatePrototype;
+use cx_parsing_data::preparse::templates::CXTemplatePrototype;
 use cx_util::identifier::CXIdent;
 
 pub(crate) fn note_templated_types(

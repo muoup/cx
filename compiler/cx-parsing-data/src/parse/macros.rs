@@ -44,7 +44,7 @@ pub fn error_pointer(toks: &TokenIter) -> String {
 macro_rules! assert_token_matches {
     ($data:expr, $pattern:pat) => {
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
-            use cx_ast_data::parse::macros::error_pointer;
+            use cx_parsing_data::parse::macros::error_pointer;
             use cx_util::log_error;
 
             $data.back();

@@ -5,8 +5,8 @@ pub mod intrinsic_types;
 pub mod format;
 
 use crate::cx_types::{CXFunctionPrototype, CXTemplateInput};
-use cx_ast_data::preparse::naive_types::ModuleResource;
-use cx_ast_data::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
+use cx_parsing_data::preparse::naive_types::ModuleResource;
+use cx_parsing_data::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use cx_types::CXType;
 use speedy::{Readable, Writable};
 use std::collections::{HashMap, HashSet};

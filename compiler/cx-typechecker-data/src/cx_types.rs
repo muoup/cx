@@ -1,6 +1,6 @@
 use crate::ast::TCExpr;
-use cx_ast_data::parse::parser::VisibilityMode;
-use cx_ast_data::preparse::naive_types::CXTypeSpecifier;
+use cx_parsing_data::parse::parser::VisibilityMode;
+use cx_parsing_data::preparse::naive_types::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
 use cx_util::mangling::{mangle_destructor, mangle_member_function};
 use speedy::{Readable, Writable};

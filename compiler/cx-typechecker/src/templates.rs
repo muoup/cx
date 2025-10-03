@@ -1,6 +1,6 @@
 use crate::environment::{TCEnvironment, TCTemplateRequest};
 use crate::type_mapping::{contextualize_fn_prototype, contextualize_type};
-use cx_ast_data::preparse::templates::CXTemplatePrototype;
+use cx_parsing_data::preparse::templates::CXTemplatePrototype;
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::mangling::{mangle_destructor, mangle_template};

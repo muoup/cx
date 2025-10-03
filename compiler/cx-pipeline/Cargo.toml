@@ -12,7 +12,7 @@ speedy = { version = "0.8.7" }
 fs2 = { version = "0.4.3" }
 
 cx-lexer = { path = "../cx-lexer" }
-cx-ast = { path = "../cx-ast" }
+cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-mir = { path = "../cx-mir" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
@@ -20,7 +20,7 @@ cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-lexer-data = { path = "../cx-lexer-data" }
-cx-ast-data = { path = "../cx-ast-data" }
+cx-parsing-data = { path = "../cx-parsing-data" }
 cx-typechecker-data = { path = "../cx-typechecker-data" }
 cx-mir-data = { path = "../cx-mir-data" }
 cx-util = { path = "../cx-util" }

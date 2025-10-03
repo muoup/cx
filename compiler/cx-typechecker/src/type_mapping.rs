@@ -1,6 +1,6 @@
 use crate::environment::TCEnvironment;
-use cx_ast_data::preparse::CXNaiveFnIdent;
-use cx_ast_data::preparse::naive_types::{
+use cx_parsing_data::preparse::CXNaiveFnIdent;
+use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
 };
 use cx_typechecker_data::cx_types::{

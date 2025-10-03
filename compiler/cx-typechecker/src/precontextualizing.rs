@@ -1,11 +1,11 @@
 use crate::type_mapping::assemble_method;
-use cx_ast_data::PreparseContents;
-use cx_ast_data::parse::ast::{CXAST, CXGlobalStmt};
-use cx_ast_data::parse::parser::VisibilityMode;
-use cx_ast_data::preparse::naive_types::{
+use cx_parsing_data::PreparseContents;
+use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
+use cx_parsing_data::parse::parser::VisibilityMode;
+use cx_parsing_data::preparse::naive_types::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource,
 };
-use cx_ast_data::preparse::{CXNaiveFnIdent, CXNaiveFnMap, CXNaiveTypeMap};
+use cx_parsing_data::preparse::{CXNaiveFnIdent, CXNaiveFnMap, CXNaiveTypeMap};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::ast::TCGlobalVariable;

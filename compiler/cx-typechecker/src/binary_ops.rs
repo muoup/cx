@@ -3,7 +3,7 @@ use crate::environment::TCEnvironment;
 use crate::log_typecheck_error;
 use crate::type_mapping::contextualize_template_args;
 use crate::typechecker::typecheck_expr;
-use cx_ast_data::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
+use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_util::CXResult;

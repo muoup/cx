@@ -1,6 +1,6 @@
 use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
-use cx_ast_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
+use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use std::collections::HashMap;

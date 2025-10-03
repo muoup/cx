@@ -1,10 +1,10 @@
-use cx_ast_data::parse::ast::{CXExpr, CXExprKind, CXGlobalStmt};
-use cx_ast_data::parse::parser::{ParserData, VisibilityMode};
-use cx_ast_data::preparse::naive_types::{
+use cx_parsing_data::parse::ast::{CXExpr, CXExprKind, CXGlobalStmt};
+use cx_parsing_data::parse::parser::{ParserData, VisibilityMode};
+use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
 };
-use cx_ast_data::preparse::CXNaiveFnIdent;
-use cx_ast_data::{assert_token_matches, next_kind, try_next};
+use cx_parsing_data::preparse::CXNaiveFnIdent;
+use cx_parsing_data::{assert_token_matches, next_kind, try_next};
 use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{keyword, operator, punctuator, specifier};
 use cx_util::identifier::CXIdent;

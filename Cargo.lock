@@ -249,28 +249,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-ast"
-version = "0.0.0"
-dependencies = [
- "cx-ast-data",
- "cx-lexer-data",
- "cx-log",
- "cx-pipeline-data",
- "cx-typechecker-data",
- "cx-util",
-]
-
-[[package]]
-name = "cx-ast-data"
-version = "0.0.0"
-dependencies = [
- "cx-lexer-data",
- "cx-util",
- "speedy",
- "uuid",
-]
-
-[[package]]
 name = "cx-backend-cranelift"
 version = "0.0.0"
 dependencies = [
@@ -278,8 +256,8 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
- "cx-ast-data",
  "cx-mir-data",
+ "cx-parsing-data",
  "cx-util",
 ]
 
@@ -318,9 +296,9 @@ dependencies = [
 name = "cx-mir"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
- "cx-ast-data",
  "cx-mir-data",
+ "cx-parsing",
+ "cx-parsing-data",
  "cx-typechecker-data",
  "cx-util",
 ]
@@ -333,17 +311,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-parsing"
+version = "0.0.0"
+dependencies = [
+ "cx-lexer-data",
+ "cx-log",
+ "cx-parsing-data",
+ "cx-pipeline-data",
+ "cx-typechecker-data",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-parsing-data"
+version = "0.0.0"
+dependencies = [
+ "cx-lexer-data",
+ "cx-util",
+ "speedy",
+ "uuid",
+]
+
+[[package]]
 name = "cx-pipeline"
 version = "0.1.0"
 dependencies = [
- "cx-ast",
- "cx-ast-data",
  "cx-backend-cranelift",
  "cx-backend-llvm",
  "cx-lexer",
  "cx-lexer-data",
  "cx-mir",
  "cx-mir-data",
+ "cx-parsing",
+ "cx-parsing-data",
  "cx-pipeline-data",
  "cx-typechecker",
  "cx-typechecker-data",
@@ -356,9 +356,9 @@ dependencies = [
 name = "cx-pipeline-data"
 version = "0.1.0"
 dependencies = [
- "cx-ast-data",
  "cx-lexer-data",
  "cx-mir-data",
+ "cx-parsing-data",
  "cx-typechecker-data",
  "speedy",
 ]
@@ -367,9 +367,9 @@ dependencies = [
 name = "cx-typechecker"
 version = "0.1.0"
 dependencies = [
- "cx-ast-data",
  "cx-lexer-data",
  "cx-log",
+ "cx-parsing-data",
  "cx-pipeline-data",
  "cx-typechecker-data",
  "cx-util",
@@ -379,7 +379,7 @@ dependencies = [
 name = "cx-typechecker-data"
 version = "0.1.0"
 dependencies = [
- "cx-ast-data",
+ "cx-parsing-data",
  "cx-util",
  "speedy",
  "uuid",

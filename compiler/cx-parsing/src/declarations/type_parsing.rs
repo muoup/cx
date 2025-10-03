@@ -1,9 +1,9 @@
-use cx_ast_data::preparse::naive_types::{
+use cx_parsing_data::preparse::naive_types::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST,
     CX_RESTRICT, CX_VOLATILE,
 };
-use cx_ast_data::preparse::CXNaiveFnIdent;
-use cx_ast_data::{assert_token_matches, next_kind, peek_next, try_next};
+use cx_parsing_data::preparse::CXNaiveFnIdent;
+use cx_parsing_data::{assert_token_matches, next_kind, peek_next, try_next};
 use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_util::identifier::CXIdent;

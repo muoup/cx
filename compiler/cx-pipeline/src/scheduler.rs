@@ -1,9 +1,9 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
-use cx_ast::parse::parse_ast;
-use cx_ast::preparse::preparse;
-use cx_ast_data::parse::ast::CXAST;
-use cx_ast_data::parse::parser::VisibilityMode;
+use cx_parsing::parse::parse_ast;
+use cx_parsing::preparse::preparse;
+use cx_parsing_data::parse::ast::CXAST;
+use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_lexer_data::TokenIter;
 use cx_mir::generate_bytecode;
 use cx_pipeline_data::db::ModuleMap;

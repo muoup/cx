@@ -1,7 +1,7 @@
-use cx_ast_data::preparse::{
+use cx_parsing_data::{parse::parser::VisibilityMode, preparse::{
     naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource},
     templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
-};
+}};
 use cx_util::identifier::CXIdent;
 
 use crate::preparse::PreparseData;
@@ -15,7 +15,8 @@ pub mod type_parsing;
 pub enum DeclarationStatement {
     Import(String),
     TypeDeclaration(TypeDeclaration),
-    FunctionDeclaration,
+    FunctionDeclaration(FunctionDeclaration),
+    ChangeVisibility(VisibilityMode),
 
     /**
      *  Not indicative of an error, there are statements the Preparser can recognize, but has no
@@ -37,6 +38,24 @@ pub struct TypeDeclaration {
 pub struct FunctionDeclaration {
     pub prototype: CXNaivePrototype,
     pub template_prototype: Option<CXTemplatePrototype>,
+}
+
+impl DeclarationStatement {
+    pub(crate) fn add_to(self, data: &mut PreparseData) {
+        match self {
+            DeclarationStatement::FunctionDeclaration(decl) =>
+                decl.add_to(data),
+            DeclarationStatement::TypeDeclaration(decl) =>
+                decl.add_to(data),
+
+            DeclarationStatement::Import(import) =>
+                data.contents.imports.push(import),
+            DeclarationStatement::ChangeVisibility(mode) =>
+                data.visibility_mode = mode,
+
+            DeclarationStatement::None => {}
+        }
+    }
 }
 
 impl TypeDeclaration {

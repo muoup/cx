@@ -1,5 +1,5 @@
 use crate::builder::MIRBuilder;
-use cx_ast_data::parse::ast::CXCastType;
+use cx_parsing_data::parse::ast::CXCastType;
 use cx_mir_data::types::MIRTypeKind;
 use cx_mir_data::VirtualInstruction::IntToPtrDiff;
 use cx_mir_data::{MIRValue, VirtualInstruction};

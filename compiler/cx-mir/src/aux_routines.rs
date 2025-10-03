@@ -1,6 +1,6 @@
 use crate::builder::{DeclarationLifetime, MIRBuilder};
 use crate::BytecodeResult;
-use cx_ast_data::parse::ast::CXBinOp;
+use cx_parsing_data::parse::ast::CXBinOp;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{MIRValue, VirtualInstruction};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};

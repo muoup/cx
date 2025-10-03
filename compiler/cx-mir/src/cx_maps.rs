@@ -1,6 +1,6 @@
 use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
-use cx_ast_data::parse::ast::CXBinOp;
+use cx_parsing_data::parse::ast::CXBinOp;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
     BCFloatBinOp, BCFunctionMap, BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRIntBinOp,

@@ -1,4 +1,4 @@
-use cx_ast_data::{
+use cx_parsing_data::{
     assert_token_matches, peek_next_kind,
     preparse::{
         naive_types::{

@@ -1,7 +1,7 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast_data::PreparseContents;
-use cx_ast_data::parse::ast::CXAST;
+use cx_parsing_data::PreparseContents;
+use cx_parsing_data::parse::ast::CXAST;
 use cx_lexer_data::token::Token;
 use cx_mir_data::ProgramMIR;
 use cx_typechecker_data::ast::{TCAST, TCBaseMappings};

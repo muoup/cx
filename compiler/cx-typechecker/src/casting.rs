@@ -1,5 +1,5 @@
 use crate::structured_initialization::coerce_initializer_list;
-use cx_ast_data::parse::ast::CXCastType;
+use cx_parsing_data::parse::ast::CXCastType;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_util::log_error;

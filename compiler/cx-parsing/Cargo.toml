@@ -1,5 +1,5 @@
 [package]
-name = "cx-ast"
+name = "cx-parsing"
 version = "0.0.0"
 edition = "2021"
 autotests = false
@@ -7,7 +7,7 @@ autotests = false
 [dependencies]
 cx-util = { path = "../cx-util" }
 
-cx-ast-data = { path = "../cx-ast-data" }
+cx-parsing-data = { path = "../cx-parsing-data" }
 cx-lexer-data = { path = "../cx-lexer-data" }
 cx-typechecker-data = { path = "../cx-typechecker-data" }
 

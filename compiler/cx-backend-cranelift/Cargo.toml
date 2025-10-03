@@ -7,7 +7,7 @@ autotests = false
 [dependencies]
 cx-util = { path = "../cx-util" }
 cx-mir-data = { path = "../cx-mir-data" }
-cx-ast-data = { path = "../cx-ast-data" }
+cx-parsing-data = { path = "../cx-parsing-data" }
 
 cranelift = "0.120.0"
 cranelift-module = "0.120.0"
