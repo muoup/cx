@@ -458,9 +458,7 @@ impl MIRBuilder {
     }
 
     pub fn get_deconstructor(&self, _type: &CXType) -> Option<String> {
-        let Some(name) = _type.get_name() else {
-            return None;
-        };
+        let name = _type.get_name()?;
 
         let mangled_name = mangle_deconstructor(name);
 

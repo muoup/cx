@@ -248,13 +248,10 @@ pub enum VirtualInstruction {
 
 impl VirtualInstruction {
     pub fn is_block_terminating(&self) -> bool {
-        match self {
-            VirtualInstruction::JumpTable { .. }
+        matches!(self, VirtualInstruction::JumpTable { .. }
             | VirtualInstruction::Branch { .. }
             | VirtualInstruction::Jump { .. }
-            | VirtualInstruction::Return { .. } => true,
-            _ => false,
-        }
+            | VirtualInstruction::Return { .. })
     }
 }
 

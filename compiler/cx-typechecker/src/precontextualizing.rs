@@ -86,7 +86,7 @@ pub fn precontextualize_type(
 
             if let Some((_, intrinsic)) = INTRINSIC_TYPES
                 .iter()
-                .find(|(intrinsic_name, ty)| name.as_str() == *intrinsic_name)
+                .find(|(intrinsic_name, _ty)| name.as_str() == *intrinsic_name)
             {
                 return Some(intrinsic.clone().into());
             };

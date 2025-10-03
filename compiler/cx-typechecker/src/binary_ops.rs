@@ -225,9 +225,7 @@ pub(crate) fn typecheck_method_call(
 
         _ => {
             let mut try_mem_ref = || -> Option<_> {
-                let Some(inner) = tc_lhs._type.mem_ref_inner() else {
-                    return None;
-                };
+                let inner = tc_lhs._type.mem_ref_inner()?;
 
                 if let CXTypeKind::Function { prototype } = &inner.kind {
                     Some(prototype.as_ref().clone())

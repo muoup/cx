@@ -130,11 +130,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             }
 
             // Functions that require special intrinsic parameters
-            if let TCExprKind::MemberFunctionReference {
-                target,
-                mangled_name: name,
-            } = &function.kind
-            {
+            if let TCExprKind::MemberFunctionReference { target, .. } = &function.kind {
                 args.push(generate_instruction(builder, target.as_ref())?);
             }
 
@@ -163,8 +159,6 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                         prototype.return_type.clone(),
                     )
                 }
-
-                type_ => log_error!("Invalid function pointer type: {type_}"),
             }
         }
 
@@ -267,10 +261,12 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
         }
 
         TCExprKind::MemberFunctionReference {
-            mangled_name: name, ..
+            mangled_name: _, ..
         }
-        | TCExprKind::FunctionReference { name } => {
-            unreachable!("INTERNAL ERROR: Function references should not be used in instruction generation directly!");
+        | TCExprKind::FunctionReference { name: _ } => {
+            unreachable!(
+                "INTERNAL ERROR: Function references should not be used in instruction generation directly!"
+            );
         }
 
         TCExprKind::TemporaryBuffer { _type } => {
@@ -355,13 +351,13 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                         MIRType::from(MIRTypeKind::Bool)
                     )
                 },
-                
+
                 // No-op - only changes the type information for the typechecker
                 CXUnOp::AddressOf |
-                
+
                 // No-op - handled by a typechecker-generated implicit load
                 CXUnOp::Dereference => generate_instruction(builder, operand.as_ref()),
-                
+
                 CXUnOp::PreIncrement(off) => {
                     let value = generate_instruction(builder, operand.as_ref())?;
                     let val_type = &operand._type.kind;
@@ -833,7 +829,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             match array_length {
                 Some(len) => {
-                    let func = builder
+                    let _func = builder
                         .fn_ref(STANDARD_ARRAY_ALLOC)
                         .expect("INTERNAL PANIC: Standard array alloc function not found");
                     let len = generate_instruction(builder, len.as_ref())?;
@@ -848,7 +844,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 }
 
                 None => {
-                    let func = builder
+                    let _func = builder
                         .fn_ref(STANDARD_ALLOC)
                         .expect("INTERNAL PANIC: Standard alloc function not found");
 

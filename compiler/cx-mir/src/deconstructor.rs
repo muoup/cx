@@ -12,9 +12,7 @@ const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
 pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
-    let Some(name) = type_.get_name() else {
-        return None;
-    };
+    let name = type_.get_name()?;
     let deconstructor_name = mangle_deconstructor(name);
 
     Some(MIRFunctionPrototype {
@@ -30,9 +28,7 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionProto
 }
 
 fn get_deconstructor(builder: &mut MIRBuilder, type_: &CXType) -> Option<String> {
-    let Some(type_name) = type_.get_name() else {
-        return None;
-    };
+    let type_name = type_.get_name()?;
     let deconstructor_name = mangle_destructor(type_name);
 
     if builder.fn_map.contains_key(&deconstructor_name) {

@@ -18,7 +18,7 @@ pub(crate) fn visit_destructable_instance(env: &mut TCEnvironment, ty: &CXType) 
         }
 
         CXTypeKind::Structured {
-            name: Some(name),
+            name: Some(_name),
             fields,
             ..
         } => {

@@ -67,7 +67,7 @@ pub fn realize_fn_implementation(
     let old_base = env.base_data;
 
     unsafe {
-        env.base_data = std::mem::transmute(structure_data);
+        env.base_data = std::mem::transmute::<&cx_typechecker_data::ast::TCBaseMappings, &cx_typechecker_data::ast::TCBaseMappings>(structure_data);
     }
 
     let overwrites = add_templated_types(env, &template.prototype, input);

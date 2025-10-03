@@ -77,9 +77,7 @@ pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<(
         return Some(());
     }
 
-    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type) else {
-        return None;
-    };
+    let cast_type = valid_explicit_cast(&expr._type, to_type)?;
 
     add_coercion(expr, to_type.clone(), cast_type);
     Some(())

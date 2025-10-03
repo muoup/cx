@@ -722,7 +722,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         let Some((idx, variant_type)) = variants
                             .iter()
                             .enumerate()
-                            .find(|(i, (name, _))| name == variant_name.as_str())
+                            .find(|(_i, (name, _))| name == variant_name.as_str())
                             .map(|(i, (_, variant_type))| (i, variant_type.clone()))
                         else {
                             log_typecheck_error!(

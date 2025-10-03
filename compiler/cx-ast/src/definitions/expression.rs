@@ -36,16 +36,12 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
 }
 
 pub(crate) fn expression_requires_semicolon(expr: &CXExpr) -> bool {
-    match expr.kind {
-        CXExprKind::Defer { .. }
+    !matches!(expr.kind, CXExprKind::Defer { .. }
         | CXExprKind::If { .. }
         | CXExprKind::While { .. }
         | CXExprKind::For { .. }
         | CXExprKind::Match { .. }
-        | CXExprKind::Switch { .. } => false,
-
-        _ => true,
-    }
+        | CXExprKind::Switch { .. })
 }
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
@@ -152,9 +148,7 @@ pub(crate) fn parse_expr_op_concat(
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
 ) -> Option<()> {
-    let Some(op) = parse_binop(data) else {
-        return None;
-    };
+    let op = parse_binop(data)?;
 
     let op_prec = binop_prec(op.clone());
     compress_stack(expr_stack, op_stack, op_prec)?;

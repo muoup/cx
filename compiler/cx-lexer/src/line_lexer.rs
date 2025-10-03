@@ -86,7 +86,7 @@ impl<'a> LineLexer<'a> {
 
     fn pre_ident_lex(&mut self) -> Option<Token> {
         match self.iter.peek()? {
-            '0'..'9' => number_lex(self.iter),
+            '0'..='9' => number_lex(self.iter),
             '"' => string_lex(self.iter),
             '\'' => char_lex(self.iter),
             _ => None,
