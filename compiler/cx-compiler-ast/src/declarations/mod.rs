@@ -1,6 +1,4 @@
 use cx_data_ast::preparse::{naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource}, templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate}};
-use cx_data_lexer::TokenIter;
-use cx_data_typechecker::cx_types::CXFunctionIdentifier;
 use cx_util::identifier::CXIdent;
 
 use crate::preparse::PreparseData;
@@ -50,7 +48,7 @@ impl TypeDeclaration {
                     name.as_string(),
                     ModuleResource::with_visibility(
                         CXTypeTemplate {
-                            name: name,
+                            name,
                             prototype,
                             shell: self.type_
                         },

@@ -5,7 +5,7 @@ use cx_util::identifier::CXIdent;
 use cx_data_ast::parse::parser::{ParserData, VisibilityMode};
 use cx_data_ast::preparse::CXNaiveFnIdent;
 use cx_data_ast::preparse::naive_types::{CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType};
-use cx_data_lexer::{identifier, keyword, operator, punctuator, specifier};
+use cx_data_lexer::{keyword, operator, punctuator, specifier};
 use cx_util::CXResult;
 
 use crate::declarations::data_parsing::parse_std_ident;

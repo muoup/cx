@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 
 use crate::environment::TCEnvironment;
 use crate::type_mapping::contextualize_fn_prototype;

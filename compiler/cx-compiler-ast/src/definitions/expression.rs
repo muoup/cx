@@ -87,7 +87,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let Some((name, mut type_)) = parse_base_mods(&mut data.tokens, base_type.clone()) else {
+        let Some((name, type_)) = parse_base_mods(&mut data.tokens, base_type.clone()) else {
             log_parse_error!(data, "Failed to parse type declaration");
         };
 

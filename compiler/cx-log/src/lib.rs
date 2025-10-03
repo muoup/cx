@@ -46,7 +46,7 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
     let mut remaining_error_chars = end_index - start_index;
 
     let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
-    println!("{} \n\t--> {}", message, link);
+    println!("{message} \n\t--> {link}");
 
     let mut iter = file_contents[error_line_start..].lines().peekable();
 
@@ -55,8 +55,8 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         let lpad = line_as_spacing(&line[..error_padding.min(line.len())]);
         let underline = "~".repeat((line.len() - error_padding).min(remaining_error_chars));
 
-        println!("{}", line);
-        println!("{}{}", lpad, underline);
+        println!("{line}");
+        println!("{lpad}{underline}");
 
         error_padding = iter.peek()
             .map(|next_line| leading_whitespace_count(next_line))
@@ -69,7 +69,7 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
     }
 
     if cfg!(debug_assertions) {
-        panic!("Error encountered: {}", message);
+        panic!("Error encountered: {message}");
     } else {
         std::process::exit(1);
     }
@@ -85,16 +85,16 @@ pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
     let error_line_start = start_index - error_padding;
 
     let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
-    println!("{} \n\t --> {}", message, link);
+    println!("{message} \n\t --> {link}");
 
     if let Some(line) = file_contents[error_line_start..].lines().next() {
         let lpad = line_as_spacing(&line[..error_padding]);
-        println!("{}", line);
-        println!("{}^", lpad);
+        println!("{line}");
+        println!("{lpad}^");
     }
 
     if cfg!(debug_assertions) {
-        panic!("Error encountered: {}", message);
+        panic!("Error encountered: {message}");
     } else {
         std::process::exit(1);
     }

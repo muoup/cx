@@ -33,9 +33,9 @@ pub(crate) fn preparse_decl_stmt(data: &mut PreparseData) -> CXResult<()> {
         keyword!(Typedef) => parse_typedef(data)?,
         
         operator!(Tilda) => {
-            let decl = parse_destructor_prototype(&mut data.tokens)?.add_to(data);
+            parse_destructor_prototype(&mut data.tokens)?.add_to(data);
             data.tokens.goto_statement_end()?;
-            decl
+            
         },
 
         specifier!(Public) => {
