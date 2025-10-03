@@ -292,8 +292,28 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             TCExpr {
                 _type: CXType::from(CXTypeKind::Unit),
-                kind: TCExprKind::Return {
-                    value: value_tc.map(Box::new),
+                kind: match env.current_function().needs_buffer {
+                    true => {
+                        let mut expr = value_tc.unwrap();
+                        
+                        match expr._type.kind {
+                            CXTypeKind::MemoryReference(inner)
+                                => expr._type = *inner,
+                                
+                            CXTypeKind::PointerTo { inner_type, .. } 
+                                => expr._type = *inner_type,
+                                
+                            _ => {}
+                        }
+                        
+                        TCExprKind::BufferReturn {
+                            value: Box::new(expr),
+                        }
+                    }
+
+                    false => TCExprKind::Return {
+                        value: value_tc.map(Box::new),
+                    },
                 },
             }
         }

@@ -25,22 +25,36 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             target,
             value,
             additional_op,
-        } => {
-            let left_id = generate_instruction(builder, target.as_ref())?;
+        } => {           
             let right_id = generate_instruction(builder, value)?;
-
-            if !matches!(&target.kind, TCExprKind::VariableDeclaration { .. }) {
-                deconstruct_variable(builder, &left_id, &target._type)?;
+            
+            match &target.kind {
+                TCExprKind::VariableDeclaration { type_, name } if type_.is_structured() => {
+                    builder.insert_symbol(name.as_string(), right_id.clone());
+                    
+                    Some(right_id)
+                },
+                
+                TCExprKind::VariableDeclaration { type_, name } => {
+                    let left_id = allocate_variable(name.as_str(), builder, type_)?;
+                    assign_value(builder, left_id.clone(), right_id, type_, additional_op.as_ref())?;
+                    Some(left_id)
+                },
+                
+                _ => {
+                    let left_id = generate_instruction(builder, target.as_ref())?;
+                    deconstruct_variable(builder, &left_id, &target._type)?;
+                    
+                    let Some(inner) = target._type.mem_ref_inner() else {
+                        unreachable!(
+                            "generate_instruction: Expected memory alias type for expr, found {}",
+                            target._type
+                        )
+                    };
+                    
+                    assign_value(builder, left_id, right_id, inner, additional_op.as_ref())
+                },
             }
-
-            let Some(inner) = target._type.mem_ref_inner() else {
-                unreachable!(
-                    "generate_instruction: Expected memory alias type for expr, found {}",
-                    target._type
-                )
-            };
-
-            assign_value(builder, left_id, right_id, inner, additional_op.as_ref())
         }
 
         TCExprKind::Access { target, field } => {
@@ -293,26 +307,32 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let value = value.as_ref().unwrap().as_ref();
             let value_id = generate_instruction(builder, value)?;
 
-            if value._type.is_memory_reference() {
-                let inner_type = value._type.mem_ref_inner()?;
-                let returned_type = builder.convert_cx_type(inner_type)?;
-
-                builder.add_instruction(
-                    VirtualInstruction::Store {
-                        memory: MIRValue::ParameterRef(0),
-                        value: value_id,
-                        type_: returned_type,
-                    },
-                    MIRType::unit(),
-                )?;
-
-                builder.add_return(Some(MIRValue::ParameterRef(0)));
-            } else {
-                builder.add_return(Some(value_id));
-            }
+            builder.add_return(Some(value_id));
 
             Some(MIRValue::NULL)
-        }
+        },
+        
+        TCExprKind::BufferReturn { value } => {
+            if !value._type.is_structured() {
+                unreachable!("Buffer return type must be a structure");
+            }
+            
+            let buffer_type = builder.convert_cx_type(&value._type)?;
+            let value = generate_instruction(builder, value)?;
+            
+            builder.add_instruction(
+                VirtualInstruction::Store {
+                    memory: MIRValue::ParameterRef(0),
+                    value,
+                    type_: buffer_type,
+                },
+                MIRType::unit(),
+            );
+            
+            builder.add_return(Some(MIRValue::ParameterRef(0)));
+            
+            Some(MIRValue::NULL)
+        },
 
         TCExprKind::Defer { operand } => {
             let previous_block = builder.current_block();

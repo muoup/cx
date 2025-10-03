@@ -286,6 +286,10 @@ impl<'a> Display for TCExprFormatter<'a> {
                     TCExprFormatter::new(val, self.depth + 1).fmt(f)?;
                 }
             }
+            TCExprKind::BufferReturn { value } => {
+                writeln!(f, "BufferReturn {}", self.expr._type)?;
+                TCExprFormatter::new(value, self.depth + 1).fmt(f)?;
+            }
             TCExprKind::InitializerList { indices } => {
                 writeln!(f, "InitializerList {}", self.expr._type)?;
                 for index in indices {

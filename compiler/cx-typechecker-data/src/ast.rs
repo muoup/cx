@@ -212,6 +212,10 @@ pub enum TCExprKind {
     Return {
         value: Option<Box<TCExpr>>,
     },
+    
+    BufferReturn {
+        value: Box<TCExpr>,
+    },
 
     InitializerList {
         indices: Vec<TCInitIndex>,

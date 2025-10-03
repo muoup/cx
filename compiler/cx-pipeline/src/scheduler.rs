@@ -220,7 +220,6 @@ pub(crate) fn perform_job(
             store_text(context, &job.unit, ".hash", &current_hash);
 
             let tokens = cx_lexer::lex(file_contents.as_str())?;
-            dump_write("Tokens:\n");
 
             let mut output = preparse(TokenIter::new(&tokens, file_path))
                 .unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
