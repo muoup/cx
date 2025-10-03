@@ -122,7 +122,9 @@ pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<TypeDeclarati
             // Success Path = Valid Type + No Name
             Some((None, _type)) => variants.push((name.to_string(), _type)),
 
-            Some((Some(_), _)) => log_preparse_error!(tokens, "Tagged union variant may not have a named type"),
+            Some((Some(_), _)) => {
+                log_preparse_error!(tokens, "Tagged union variant may not have a named type")
+            }
             None => log_preparse_error!(tokens, "Failed to parse tagged union variant type"),
         }
 

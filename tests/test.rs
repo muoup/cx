@@ -1,7 +1,7 @@
+use cx_pipeline::standard_compilation;
+use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
 use std::path::Path;
 use std::process::Command;
-use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
-use cx_pipeline::standard_compilation;
 
 macro_rules! test_files {
     ($($name:ident),*) => {
@@ -19,7 +19,7 @@ macro_rules! test_files {
 #[cfg(test)]
 mod regression_tests {
     use super::*;
-    
+
     test_files!(
         hello_world,
         basic_arithmetic,
@@ -51,8 +51,7 @@ fn init() {
     let full_path = format!("{root}/cases");
     std::env::set_current_dir(&full_path).unwrap();
 
-    std::fs::remove_dir_all(".internal")
-        .unwrap_or(());
+    std::fs::remove_dir_all(".internal").unwrap_or(());
 }
 
 fn get_output(path: &str) -> String {
@@ -77,33 +76,47 @@ fn execute_test(input: &Path) {
     let cranelift_config = CompilerConfig {
         backend: CompilerBackend::Cranelift,
         optimization_level: OptimizationLevel::O0,
-        output: (&obj_output).into()
+        output: (&obj_output).into(),
     };
     let llvm_config = CompilerConfig {
         backend: CompilerBackend::LLVM,
         optimization_level: OptimizationLevel::O1,
-        output: (&obj_output).into()
+        output: (&obj_output).into(),
     };
 
     let Some(expected_output) = std::fs::read_to_string(&expected_output).ok() else {
-        eprintln!("[{}] No expected output file found, skipping...", input.display());
+        eprintln!(
+            "[{}] No expected output file found, skipping...",
+            input.display()
+        );
         return;
     };
 
     println!("[{}] Compiling...", input.display());
 
-    standard_compilation(cranelift_config.clone(), input)
-        .expect("Cranelift compilation failed");
-    assert_eq!(expected_output, get_output(&obj_output), "Cranelift output does not match expected output for {}", input.display());
-    println!("[{}] Cranelift output matches expected output.", input.display());
+    standard_compilation(cranelift_config.clone(), input).expect("Cranelift compilation failed");
+    assert_eq!(
+        expected_output,
+        get_output(&obj_output),
+        "Cranelift output does not match expected output for {}",
+        input.display()
+    );
+    println!(
+        "[{}] Cranelift output matches expected output.",
+        input.display()
+    );
 
     if cfg!(feature = "backend-llvm") {
-        standard_compilation(llvm_config.clone(), input)
-            .expect("LLVM compilation failed");
-        assert_eq!(expected_output, get_output(&obj_output), "LLVM output does not match expected output for {}", input.display());
+        standard_compilation(llvm_config.clone(), input).expect("LLVM compilation failed");
+        assert_eq!(
+            expected_output,
+            get_output(&obj_output),
+            "LLVM output does not match expected output for {}",
+            input.display()
+        );
         println!("[{}] LLVM output matches expected output.", input.display());
     }
-    
+
     std::fs::remove_file(&obj_output).unwrap_or_else(|_| {
         panic!("Could not remove output file: {obj_output}");
     });

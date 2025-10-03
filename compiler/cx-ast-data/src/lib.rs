@@ -1,6 +1,6 @@
-use speedy::{Readable, Writable};
 use crate::parse::ast::CXAST;
 use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
+use speedy::{Readable, Writable};
 
 pub mod parse;
 pub mod preparse;

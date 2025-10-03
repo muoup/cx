@@ -1,6 +1,6 @@
+use crate::unified_lexer::Lexer;
 use cx_pipeline_data::directories::stdlib_directory;
 use cx_util::char_iter::CharIter;
-use crate::unified_lexer::Lexer;
 
 pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIter<'a>> {
     lexer.char_iter.skip_whitespace();
@@ -17,7 +17,7 @@ pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIt
                     break;
                 }
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -25,12 +25,11 @@ pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIt
         return None;
     }
 
-    Some(
-        CharIter::sub_iter(
-            &lexer.char_iter, start,
-            &lexer.source[0 .. lexer.char_iter.current_iter]
-        )
-    )
+    Some(CharIter::sub_iter(
+        &lexer.char_iter,
+        start,
+        &lexer.source[0..lexer.char_iter.current_iter],
+    ))
 }
 
 // returns true if a comment was handled, false otherwise
@@ -43,7 +42,7 @@ pub(crate) fn handle_comment(lexer: &mut Lexer) -> bool {
             lexer.char_iter.next();
             lexer.char_iter.skip_line();
             true
-        },
+        }
 
         Some('*') => {
             lexer.char_iter.next();
@@ -60,12 +59,12 @@ pub(crate) fn handle_comment(lexer: &mut Lexer) -> bool {
             }
 
             true
-        },
+        }
 
         _ => {
             lexer.char_iter.back();
             false
-        },
+        }
     }
 }
 
@@ -82,15 +81,16 @@ pub(crate) fn handle_directive(lexer: &mut Lexer) {
                 panic!("Invalid include statement: {file_name}");
             };
 
-            let path = format!("{}{}", prefix, &file_name[1.. file_name.len() - 1]);
+            let path = format!("{}{}", prefix, &file_name[1..file_name.len() - 1]);
             let string = std::fs::read_to_string(path.as_str())
                 .unwrap_or_else(|_| panic!("Failed to read file: {path}"));
 
-            let tokens = lexer.independent_lex(&string)
+            let tokens = lexer
+                .independent_lex(&string)
                 .unwrap_or_else(|| panic!("Failed to lex included file: {path}"));
 
             lexer.tokens.extend(tokens);
-        },
+        }
 
         "#define" => {
             let name = lexer.char_iter.next_word().unwrap().to_string();
@@ -98,13 +98,14 @@ pub(crate) fn handle_directive(lexer: &mut Lexer) {
             lexer.char_iter.skip_whitespace();
             let rest_of_line = lexer.char_iter.rest_of_line().to_string();
 
-            let tokens = lexer.independent_lex(&rest_of_line)
+            let tokens = lexer
+                .independent_lex(&rest_of_line)
                 .unwrap_or_else(|| panic!("Failed to lex macro definition for: {name}"));
 
             lexer.macros.insert(name, tokens.into_boxed_slice());
-        },
+        }
 
-        dir => todo!("Preprocessor directive not implemented: {dir}")
+        dir => todo!("Preprocessor directive not implemented: {dir}"),
     }
 }
 

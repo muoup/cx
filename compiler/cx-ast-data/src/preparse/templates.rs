@@ -1,10 +1,10 @@
-use speedy::{Readable, Writable};
-use cx_util::identifier::CXIdent;
 use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType};
+use cx_util::identifier::CXIdent;
+use speedy::{Readable, Writable};
 
 #[derive(Debug, Default, Clone, Hash, Readable, Writable)]
 pub struct CXTemplatePrototype {
-    pub types: Vec<String>
+    pub types: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Readable, Writable)]

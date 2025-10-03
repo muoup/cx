@@ -31,12 +31,11 @@ pub(crate) fn preparse_decl_stmt(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Struct, Enum, Union) => parse_plain_typedef(data)?,
         keyword!(Typedef) => parse_typedef(data)?,
-        
+
         operator!(Tilda) => {
             parse_destructor_prototype(&mut data.tokens)?.add_to(data);
             data.tokens.goto_statement_end()?;
-            
-        },
+        }
 
         specifier!(Public) => {
             data.tokens.next();

@@ -11,11 +11,14 @@ use cx_ast_data::{
 use cx_lexer_data::{identifier, operator, punctuator, TokenIter};
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::{declarations::{
-    data_parsing::{convert_template_proto_to_args, parse_std_ident, try_parse_template},
-    type_parsing::parse_initializer,
-    FunctionDeclaration,
-}, definitions::global_scope::destructor_prototype};
+use crate::{
+    declarations::{
+        data_parsing::{convert_template_proto_to_args, parse_std_ident, try_parse_template},
+        type_parsing::parse_initializer,
+        FunctionDeclaration,
+    },
+    definitions::global_scope::destructor_prototype,
+};
 
 pub fn parse_destructor_prototype(tokens: &mut TokenIter) -> CXResult<FunctionDeclaration> {
     assert_token_matches!(tokens, operator!(Tilda));
@@ -23,16 +26,16 @@ pub fn parse_destructor_prototype(tokens: &mut TokenIter) -> CXResult<FunctionDe
     let Some(name) = parse_std_ident(tokens) else {
         log_preparse_error!(tokens, "Expected type name.");
     };
-    
+
     let template_prototype = try_parse_template(tokens);
-    
+
     assert_token_matches!(tokens, punctuator!(OpenParen));
     assert_token_matches!(tokens, identifier!(this));
     if this.as_str() != "this" {
         log_preparse_error!(tokens, "Destructor can only have 'this' as parameter.");
     }
     assert_token_matches!(tokens, punctuator!(CloseParen));
-    
+
     let _type = match &template_prototype {
         Some(prototype) => CXNaiveTypeKind::TemplatedIdentifier {
             name: name.clone(),
@@ -43,15 +46,13 @@ pub fn parse_destructor_prototype(tokens: &mut TokenIter) -> CXResult<FunctionDe
             predeclaration: PredeclarationType::None,
         },
     };
-    
+
     let prototype = destructor_prototype(_type.to_type());
-    
-    Some(
-        FunctionDeclaration {
-            prototype,
-            template_prototype,
-        }
-    )
+
+    Some(FunctionDeclaration {
+        prototype,
+        template_prototype,
+    })
 }
 
 pub fn try_function_parse(
@@ -108,7 +109,8 @@ pub fn try_function_parse(
                     name,
                     predeclaration: PredeclarationType::None,
                 },
-            }.to_type();
+            }
+            .to_type();
 
             assert_token_matches!(tokens, identifier!(name));
             let name = name.clone();

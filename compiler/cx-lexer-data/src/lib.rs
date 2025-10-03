@@ -1,8 +1,8 @@
 use crate::token::{PunctuatorType, Token, TokenKind};
 use std::path::PathBuf;
 
-pub mod token;
 pub mod format;
+pub mod token;
 
 #[derive(Debug, Clone)]
 pub struct TokenIter<'a> {
@@ -56,29 +56,30 @@ impl<'a> TokenIter<'a> {
             file: self.file.clone(),
         }
     }
-    
+
     pub fn goto_statement_end(&mut self) -> Option<()> {
         let mut bracket_stack = 0;
-        
+
         while let Some(token) = self.next() {
             match token.kind {
                 TokenKind::Punctuator(PunctuatorType::OpenBrace) => bracket_stack += 1,
                 TokenKind::Punctuator(PunctuatorType::CloseBrace) => {
                     bracket_stack -= 1;
-                    
+
                     if bracket_stack == 0 {
-                        if matches!(self.peek(), Some(t) if t.kind == TokenKind::Punctuator(PunctuatorType::Semicolon)) {
+                        if matches!(self.peek(), Some(t) if t.kind == TokenKind::Punctuator(PunctuatorType::Semicolon))
+                        {
                             self.next();
                         }
                         break;
                     }
-                },
-                TokenKind::Punctuator(PunctuatorType::Semicolon) if bracket_stack == 0 => { break },
-                
-                _ => ()
+                }
+                TokenKind::Punctuator(PunctuatorType::Semicolon) if bracket_stack == 0 => break,
+
+                _ => (),
             }
         }
-    
+
         Some(())
     }
 }

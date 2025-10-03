@@ -2,7 +2,7 @@ use cx_lexer_data::TokenIter;
 
 pub fn token_string(toks: &TokenIter, start_index: usize, end_index: usize) -> String {
     let mut tokens = String::new();
-    
+
     for tok in &toks.slice[start_index..end_index] {
         tokens.push_str(&format!("{tok} "));
     }
@@ -18,7 +18,7 @@ pub fn error_pointer(toks: &TokenIter) -> String {
 
     let mut error_tokens = String::new();
 
-    for tok in &toks.slice[toks.index - previous_tokens.. toks.index] {
+    for tok in &toks.slice[toks.index - previous_tokens..toks.index] {
         error_tokens.push_str(&format!("{tok} "));
     }
 
@@ -40,19 +40,23 @@ pub fn error_pointer(toks: &TokenIter) -> String {
     error_tokens
 }
 
-
 #[macro_export]
 macro_rules! assert_token_matches {
     ($data:expr, $pattern:pat) => {
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
             use cx_ast_data::parse::macros::error_pointer;
             use cx_util::log_error;
-            
+
             $data.back();
-            
-            log_preparse_error!($data, "Expected token to match pattern: {:#?}\n Found: {}", stringify!($pattern), $data.peek().unwrap());
+
+            log_preparse_error!(
+                $data,
+                "Expected token to match pattern: {:#?}\n Found: {}",
+                stringify!($pattern),
+                $data.peek().unwrap()
+            );
         };
-    }
+    };
 }
 
 #[macro_export]
@@ -62,7 +66,7 @@ macro_rules! try_token_matches {
             return None;
         };
         $data.toks.next();
-    }
+    };
 }
 
 #[macro_export]
@@ -81,19 +85,19 @@ macro_rules! try_next {
 macro_rules! peek_next {
     ($data:expr, $pattern:pat) => {
         matches!($data.peek().map(|k| &k.kind), Some($pattern))
-    }
+    };
 }
 
 #[macro_export]
 macro_rules! next_kind {
     ($data:expr) => {
         $data.next().cloned().map(|k| k.kind);
-    }
+    };
 }
 
 #[macro_export]
 macro_rules! peek_next_kind {
     ($data:expr) => {
         $data.peek().map(|k| &k.kind)
-    }
+    };
 }

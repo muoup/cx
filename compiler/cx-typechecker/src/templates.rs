@@ -1,13 +1,17 @@
-use cx_ast_data::preparse::templates::CXTemplatePrototype;
 use crate::environment::{TCEnvironment, TCTemplateRequest};
 use crate::type_mapping::{contextualize_fn_prototype, contextualize_type};
-use cx_util::identifier::CXIdent;
+use cx_ast_data::preparse::templates::CXTemplatePrototype;
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_util::identifier::CXIdent;
 use cx_util::mangling::{mangle_destructor, mangle_template};
 
 pub(crate) type Overwrites = Vec<(String, CXType)>;
 
-pub(crate) fn add_templated_types(env: &mut TCEnvironment, prototype: &CXTemplatePrototype, input: &CXTemplateInput) -> Overwrites {
+pub(crate) fn add_templated_types(
+    env: &mut TCEnvironment,
+    prototype: &CXTemplatePrototype,
+    input: &CXTemplateInput,
+) -> Overwrites {
     let mut overwrites = Vec::new();
 
     for (ident, arg_type) in prototype.types.iter().zip(input.args.iter()) {
@@ -25,15 +29,24 @@ pub(crate) fn restore_template_overwrites(env: &mut TCEnvironment, overwrites: O
     }
 }
 
-pub(crate) fn instantiate_type_template(env: &mut TCEnvironment, name: &str, input: &CXTemplateInput) -> Option<CXType> {
+pub(crate) fn instantiate_type_template(
+    env: &mut TCEnvironment,
+    name: &str,
+    input: &CXTemplateInput,
+) -> Option<CXType> {
     let mangled_name = mangle_template(name, &input.args);
 
     if let Some(type_) = env.get_type(&mangled_name) {
         return Some(type_.clone());
     }
 
-    let template = env.base_data.type_data.get_template(name)?
-        .template.resource.clone();
+    let template = env
+        .base_data
+        .type_data
+        .get_template(name)?
+        .template
+        .resource
+        .clone();
     let shell = template.shell.clone();
 
     let overwrites = add_templated_types(env, &template.prototype, input);
@@ -41,11 +54,17 @@ pub(crate) fn instantiate_type_template(env: &mut TCEnvironment, name: &str, inp
     let mut instantiated = contextualize_type(env, &shell)?;
     instantiated.map_name(|name| mangle_template(name, &input.args));
 
-    env.realized_types.insert(mangled_name.clone(), instantiated.clone());
+    env.realized_types
+        .insert(mangled_name.clone(), instantiated.clone());
 
     let destructor_name = mangle_destructor(name);
 
-    if env.base_data.fn_data.get_template(&destructor_name).is_some() {
+    if env
+        .base_data
+        .fn_data
+        .get_template(&destructor_name)
+        .is_some()
+    {
         instantiate_function_template(env, &destructor_name, input);
     }
 
@@ -54,7 +73,11 @@ pub(crate) fn instantiate_type_template(env: &mut TCEnvironment, name: &str, inp
     Some(instantiated)
 }
 
-pub(crate) fn instantiate_function_template(env: &mut TCEnvironment, name: &str, input: &CXTemplateInput) -> Option<CXFunctionPrototype> {
+pub(crate) fn instantiate_function_template(
+    env: &mut TCEnvironment,
+    name: &str,
+    input: &CXTemplateInput,
+) -> Option<CXFunctionPrototype> {
     let mangled_name = mangle_template(name, &input.args);
 
     if env.base_data.fn_data.standard.contains_key(&mangled_name) {

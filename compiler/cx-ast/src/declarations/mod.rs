@@ -1,18 +1,21 @@
-use cx_ast_data::preparse::{naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource}, templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate}};
+use cx_ast_data::preparse::{
+    naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource},
+    templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
+};
 use cx_util::identifier::CXIdent;
 
 use crate::preparse::PreparseData;
 
-pub mod type_parsing;
-pub mod decl_parsing;
 pub mod data_parsing;
+pub mod decl_parsing;
 pub mod function_parsing;
+pub mod type_parsing;
 
 pub enum DeclarationStatement {
     Import(String),
     TypeDeclaration(TypeDeclaration),
     FunctionDeclaration,
-    
+
     /**
      *  Not indicative of an error, there are statements the Preparser can recognize, but has no
      *  use for. Most commonly, this is either extraneous semicolons that can be safely ignored, or
@@ -26,7 +29,7 @@ pub enum DeclarationStatement {
 pub struct TypeDeclaration {
     pub name: Option<CXIdent>,
     pub type_: CXNaiveType,
-    pub template_prototype: Option<CXTemplatePrototype>
+    pub template_prototype: Option<CXTemplatePrototype>,
 }
 
 #[non_exhaustive]
@@ -41,7 +44,7 @@ impl TypeDeclaration {
             // We cannot add unnamed types to the global scope.
             return;
         };
-        
+
         match self.template_prototype {
             Some(prototype) => {
                 data.contents.type_definitions.insert_template(
@@ -50,20 +53,17 @@ impl TypeDeclaration {
                         CXTypeTemplate {
                             name,
                             prototype,
-                            shell: self.type_
+                            shell: self.type_,
                         },
                         data.visibility_mode,
                     ),
                 );
-            },
-            
+            }
+
             None => {
                 data.contents.type_definitions.insert_standard(
                     name.as_string(),
-                    ModuleResource::with_visibility(
-                        self.type_,
-                        data.visibility_mode,
-                    ),
+                    ModuleResource::with_visibility(self.type_, data.visibility_mode),
                 );
             }
         }
@@ -80,20 +80,17 @@ impl FunctionDeclaration {
                         CXFunctionTemplate {
                             name: CXIdent::from(self.prototype.name.mangle()),
                             prototype,
-                            shell: self.prototype
+                            shell: self.prototype,
                         },
                         data.visibility_mode,
                     ),
                 );
             }
-            
+
             None => {
                 data.contents.function_definitions.insert_standard(
                     self.prototype.name.mangle(),
-                    ModuleResource::with_visibility(
-                        self.prototype,
-                        data.visibility_mode,
-                    ),
+                    ModuleResource::with_visibility(self.prototype, data.visibility_mode),
                 );
             }
         }

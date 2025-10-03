@@ -1,9 +1,9 @@
-use std::hash::Hash;
-use speedy::{Readable, Writable};
-use uuid::Uuid;
-use cx_util::identifier::CXIdent;
 use crate::parse::parser::VisibilityMode;
 use crate::preparse::CXNaiveFnIdent;
+use cx_util::identifier::CXIdent;
+use speedy::{Readable, Writable};
+use std::hash::Hash;
+use uuid::Uuid;
 
 pub type CXTypeSpecifier = u8;
 
@@ -17,8 +17,8 @@ pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 pub struct ModuleResource<Resource> {
     pub visibility: VisibilityMode,
     pub external_module: Option<String>,
-    
-    pub resource: Resource
+
+    pub resource: Resource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
@@ -34,7 +34,7 @@ pub enum PredeclarationType {
     None,
     Struct,
     Union,
-    Enum
+    Enum,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
@@ -43,7 +43,7 @@ pub struct CXNaivePrototype {
     pub params: Vec<CXNaiveParameter>,
     pub return_type: CXNaiveType,
     pub var_args: bool,
-    pub this_param: bool
+    pub this_param: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
@@ -54,18 +54,18 @@ pub struct CXNaiveParameter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveTemplateInput {
-    pub params: Vec<CXNaiveType>
+    pub params: Vec<CXNaiveType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum CXNaiveTypeKind {
     Identifier {
         name: CXIdent,
-        predeclaration: PredeclarationType
+        predeclaration: PredeclarationType,
     },
     TemplatedIdentifier {
         name: CXIdent,
-        input: CXNaiveTemplateInput
+        input: CXNaiveTemplateInput,
     },
 
     ExplicitSizedArray(Box<CXNaiveType>, usize),
@@ -90,11 +90,11 @@ pub enum CXNaiveTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
-        variants: Vec<(String, CXNaiveType)>
+        variants: Vec<(String, CXNaiveType)>,
     },
 
     FunctionPointer {
-        prototype: Box<CXNaivePrototype>
+        prototype: Box<CXNaivePrototype>,
     },
 }
 
@@ -110,10 +110,10 @@ impl CXNaiveType {
     pub fn pointer_to(self, weak: bool, specifier: CXTypeSpecifier) -> Self {
         Self::new(
             specifier,
-          CXNaiveTypeKind::PointerTo {
+            CXNaiveTypeKind::PointerTo {
                 inner_type: Box::new(self),
                 weak,
-            }
+            },
         )
     }
 
@@ -150,7 +150,7 @@ impl<T: Clone> ModuleResource<T> {
             resource: self.resource.clone(),
         }
     }
-    
+
     pub fn standard(resource: T) -> ModuleResource<T> {
         ModuleResource {
             visibility: VisibilityMode::Private,
@@ -158,7 +158,7 @@ impl<T: Clone> ModuleResource<T> {
             resource,
         }
     }
-    
+
     pub fn with_visibility(resource: T, visibility: VisibilityMode) -> ModuleResource<T> {
         ModuleResource {
             visibility,

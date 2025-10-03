@@ -1,17 +1,17 @@
-pub mod jobs;
 pub mod db;
 pub mod directories;
 pub mod internal_storage;
+pub mod jobs;
 
+use crate::db::ModuleData;
+use crate::directories::file_path;
+use speedy::{Context, Readable, Writable};
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use crate::db::ModuleData;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{LazyLock, Mutex};
-use speedy::{Context, Readable, Writable};
-use crate::directories::file_path;
 
 /*
  *  Returns a unique identifier for each time this program is compiled.
@@ -20,7 +20,7 @@ pub fn compilation_hash() -> u64 {
     struct PlaceHolder;
 
     // TODO: Find a more defined way to generate a unique hash for each time the compiler is compiled.
-    
+
     static lazy_static: LazyLock<u64> = LazyLock::new(|| {
         let type_id = std::any::TypeId::of::<PlaceHolder>();
         let mut hasher = DefaultHasher::new();
@@ -35,8 +35,8 @@ pub fn compilation_hash() -> u64 {
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
     pub module_db: ModuleData,
-    
-    pub linking_files: Mutex<HashSet<PathBuf>>
+
+    pub linking_files: Mutex<HashSet<PathBuf>>,
 }
 
 impl Drop for GlobalCompilationContext {
@@ -68,7 +68,7 @@ pub enum OptimizationLevel {
 pub enum CompilerBackend {
     #[default]
     LLVM,
-    Cranelift
+    Cranelift,
 }
 
 #[cfg(not(feature = "backend-llvm"))]
@@ -76,13 +76,13 @@ pub enum CompilerBackend {
 pub enum CompilerBackend {
     #[default]
     Cranelift,
-    LLVM
+    LLVM,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct CompilationUnit {
     identifier: Rc<String>,
-    path: Rc<Path>
+    path: Rc<Path>,
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
@@ -90,26 +90,23 @@ impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
         let identifier: String = String::read_from(reader)?;
         let path: PathBuf = PathBuf::from(String::read_from(reader)?);
 
-        Ok(
-            Self {
-                identifier: identifier.into(),
-                path: path.into_boxed_path().into()
-            }
-        )
+        Ok(Self {
+            identifier: identifier.into(),
+            path: path.into_boxed_path().into(),
+        })
     }
 }
 
-impl <C: Context> Writable<C> for CompilationUnit {
+impl<C: Context> Writable<C> for CompilationUnit {
     fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
     where
-        W: ?Sized + speedy::Writer<C>
+        W: ?Sized + speedy::Writer<C>,
     {
         self.identifier.as_str().write_to(writer)?;
         self.path.to_str().unwrap().write_to(writer)?;
         Ok(())
     }
 }
-
 
 impl Hash for CompilationUnit {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -135,10 +132,10 @@ impl CompilationUnit {
 
         Self {
             identifier: Rc::new(path.to_string()),
-            path: path_buf.into_boxed_path().into()
+            path: path_buf.into_boxed_path().into(),
         }
     }
-    
+
     pub fn identifier(&self) -> &str {
         self.identifier.as_str()
     }

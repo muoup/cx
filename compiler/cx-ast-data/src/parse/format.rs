@@ -22,16 +22,16 @@ impl Display for CXGlobalStmt {
                 } else {
                     fwriteln!(f, "type {}", type_)
                 }
-            },
-            
+            }
+
             CXGlobalStmt::GlobalVariable { name, type_, .. } => {
                 fwriteln!(f, "{}: {}", name, type_)
-            },
-            
+            }
+
             CXGlobalStmt::FunctionPrototype { prototype } => {
                 fwriteln!(f, "{};", prototype)
-            },
-            
+            }
+
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
                 indent();
                 fwriteln!(f, "{} {{", prototype)?;
@@ -40,7 +40,7 @@ impl Display for CXGlobalStmt {
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")?;
                 Ok(())
-            },
+            }
 
             CXGlobalStmt::DestructorDefinition { _type, body } => {
                 indent();
@@ -50,8 +50,8 @@ impl Display for CXGlobalStmt {
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")?;
                 Ok(())
-            },
-            
+            }
+
             CXGlobalStmt::TemplatedFunction { prototype, body } => {
                 indent();
                 fwriteln!(f, "template {prototype} {{")?;
@@ -60,7 +60,7 @@ impl Display for CXGlobalStmt {
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")?;
                 Ok(())
-            },
+            }
         }
     }
 }
@@ -77,30 +77,34 @@ impl Display for CXExprKind {
             CXExprKind::Block { exprs, .. } => {
                 for (i, stmt) in exprs.iter().enumerate() {
                     fwrite!(f, "{}", stmt)?;
-                    
+
                     if i != exprs.len() - 1 {
                         fwriteln!(f, "")?;
                     }
                 }
                 Ok(())
-            },
+            }
 
             CXExprKind::Identifier(ident) => fwrite!(f, "{}", ident),
-            CXExprKind::TemplatedIdentifier { name: fn_name, template_input } => {
-                let arg_string = template_input.params
+            CXExprKind::TemplatedIdentifier {
+                name: fn_name,
+                template_input,
+            } => {
+                let arg_string = template_input
+                    .params
                     .iter()
                     .map(|arg| arg.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                
+
                 fwrite!(f, "{}<{}>", fn_name, arg_string)
-            },
-            
+            }
+
             CXExprKind::VarDeclaration { name, type_ } => {
                 fwrite!(f, "let {}: {}", name, type_)?;
 
                 Ok(())
-            },
+            }
 
             CXExprKind::IntLiteral { val, .. } => fwrite!(f, "{}", val),
             CXExprKind::FloatLiteral { val, .. } => fwrite!(f, "{}", val),
@@ -113,7 +117,7 @@ impl Display for CXExprKind {
                     .replace('\r', "\\r")
                     .replace('\t', "\\t");
                 fwrite!(f, "\"{}\"", sanitized)
-            },
+            }
 
             CXExprKind::Return { value } => {
                 fwrite!(f, "return")?;
@@ -121,27 +125,39 @@ impl Display for CXExprKind {
                     fwrite!(f, " {}", value)?;
                 }
                 Ok(())
-            },
+            }
 
-            CXExprKind::BinOp { lhs, rhs, op: CXBinOp::MethodCall } => {
+            CXExprKind::BinOp {
+                lhs,
+                rhs,
+                op: CXBinOp::MethodCall,
+            } => {
                 fwrite!(f, "{}({})", lhs, rhs)
-            },
+            }
 
-            CXExprKind::BinOp { lhs, rhs, op: CXBinOp::ArrayIndex } => {
+            CXExprKind::BinOp {
+                lhs,
+                rhs,
+                op: CXBinOp::ArrayIndex,
+            } => {
                 fwrite!(f, "{}[{}]", lhs, rhs)
-            },
+            }
 
-            CXExprKind::BinOp { lhs, rhs, op: CXBinOp::Access } => {
+            CXExprKind::BinOp {
+                lhs,
+                rhs,
+                op: CXBinOp::Access,
+            } => {
                 fwrite!(f, "{}.{}", lhs, rhs)
-            },
-            
+            }
+
             CXExprKind::BinOp { lhs, rhs, op } => {
                 fwrite!(f, "{} {} {}", lhs, op, rhs)
-            },
-            
+            }
+
             CXExprKind::Move { expr } => {
                 fwrite!(f, "(move {})", expr)
-            },
+            }
 
             CXExprKind::InitializerList { indices } => {
                 indent();
@@ -156,30 +172,32 @@ impl Display for CXExprKind {
                     fwriteln!(f, "")?;
                 }
                 fwrite!(f, "}}")
-            },
+            }
 
-            CXExprKind::UnOp { operator, operand } => {
-                match operator {
-                    CXUnOp::Negative => fwrite!(f, "-({})", operand),
-                    CXUnOp::LNot => fwrite!(f, "!({})", operand),
-                    CXUnOp::BNot => fwrite!(f, "~({})", operand),
-                    CXUnOp::Dereference => fwrite!(f, "*({})", operand),
-                    CXUnOp::AddressOf => fwrite!(f, "&({})", operand),
+            CXExprKind::UnOp { operator, operand } => match operator {
+                CXUnOp::Negative => fwrite!(f, "-({})", operand),
+                CXUnOp::LNot => fwrite!(f, "!({})", operand),
+                CXUnOp::BNot => fwrite!(f, "~({})", operand),
+                CXUnOp::Dereference => fwrite!(f, "*({})", operand),
+                CXUnOp::AddressOf => fwrite!(f, "&({})", operand),
 
-                    CXUnOp::PreIncrement(1) => fwrite!(f, "++{}", operand),
-                    CXUnOp::PostIncrement(1) => fwrite!(f, "{}++", operand),
-                    CXUnOp::PreIncrement(-1) => fwrite!(f, "--{}", operand),
-                    CXUnOp::PostIncrement(-1) => fwrite!(f, "{}--", operand),
+                CXUnOp::PreIncrement(1) => fwrite!(f, "++{}", operand),
+                CXUnOp::PostIncrement(1) => fwrite!(f, "{}++", operand),
+                CXUnOp::PreIncrement(-1) => fwrite!(f, "--{}", operand),
+                CXUnOp::PostIncrement(-1) => fwrite!(f, "{}--", operand),
 
-                    CXUnOp::ExplicitCast(to_type)
-                        => fwrite!(f, "({to_type}) ({operand})"),
+                CXUnOp::ExplicitCast(to_type) => fwrite!(f, "({to_type}) ({operand})"),
 
-                    CXUnOp::PreIncrement(_) |
-                    CXUnOp::PostIncrement(_) => panic!("Invalid increment operator"),
+                CXUnOp::PreIncrement(_) | CXUnOp::PostIncrement(_) => {
+                    panic!("Invalid increment operator")
                 }
             },
 
-            CXExprKind::If { condition, then_branch, else_branch } => {
+            CXExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
                 indent();
                 fwriteln!(f, "if {} {{", condition)?;
                 fwrite!(f, "{}", then_branch)?;
@@ -191,41 +209,48 @@ impl Display for CXExprKind {
                     fwrite!(f, "{}", else_branch)?;
                     dedent();
                     fwriteln!(f, "")?;
-                } 
+                }
                 fwrite!(f, "}}")
-            },
+            }
 
-            CXExprKind::For { init, condition, increment, body } => {
+            CXExprKind::For {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
                 indent();
                 fwriteln!(f, "for ({}; {}; {}) {{", init, condition, increment)?;
                 fwrite!(f, "{}", body)?;
                 dedent();
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")
-            },
+            }
 
-            CXExprKind::While { condition, body, .. } => {
+            CXExprKind::While {
+                condition, body, ..
+            } => {
                 indent();
                 fwriteln!(f, "while ({condition}) {{")?;
                 fwrite!(f, "{}", body)?;
                 dedent();
                 fwriteln!(f, "")?;
                 fwrite!(f, "}}")
-            },
+            }
 
             CXExprKind::Defer { expr } => {
                 fwrite!(f, "defer {}", expr)
-            },
-            
+            }
+
             CXExprKind::New { _type } => {
                 fwrite!(f, "new {}", _type)
-            },
-            
+            }
+
             CXExprKind::SizeOf { expr } => {
                 fwrite!(f, "sizeof({})", expr)
-            },
+            }
 
-            _ => fwrite!(f, "{:?}", self)
+            _ => fwrite!(f, "{:?}", self),
         }
     }
 }
@@ -233,23 +258,23 @@ impl Display for CXExprKind {
 impl Display for CXBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXBinOp::Add        => fwrite!(f, "+"),
-            CXBinOp::Subtract   => fwrite!(f, "-"),
-            CXBinOp::Multiply   => fwrite!(f, "*"),
-            CXBinOp::Divide     => fwrite!(f, "/"),
-            CXBinOp::Modulus    => fwrite!(f, "%"),
+            CXBinOp::Add => fwrite!(f, "+"),
+            CXBinOp::Subtract => fwrite!(f, "-"),
+            CXBinOp::Multiply => fwrite!(f, "*"),
+            CXBinOp::Divide => fwrite!(f, "/"),
+            CXBinOp::Modulus => fwrite!(f, "%"),
 
-            CXBinOp::Equal      => fwrite!(f, "=="),
-            CXBinOp::NotEqual   => fwrite!(f, "!="),
+            CXBinOp::Equal => fwrite!(f, "=="),
+            CXBinOp::NotEqual => fwrite!(f, "!="),
 
-            CXBinOp::Less       => fwrite!(f, "<"),
-            CXBinOp::LessEqual  => fwrite!(f, "<="),
-            CXBinOp::Greater    => fwrite!(f, ">"),
+            CXBinOp::Less => fwrite!(f, "<"),
+            CXBinOp::LessEqual => fwrite!(f, "<="),
+            CXBinOp::Greater => fwrite!(f, ">"),
             CXBinOp::GreaterEqual => fwrite!(f, ">="),
 
-            CXBinOp::Access     => fwrite!(f, "."),
+            CXBinOp::Access => fwrite!(f, "."),
 
-            CXBinOp::Comma      => fwrite!(f, ","),
+            CXBinOp::Comma => fwrite!(f, ","),
 
             CXBinOp::Assign(add) => {
                 if let Some(add) = add {
@@ -257,11 +282,11 @@ impl Display for CXBinOp {
                 } else {
                     fwrite!(f, "=")
                 }
-            },
+            }
 
-            CXBinOp::Is         => fwrite!(f, "is"),
+            CXBinOp::Is => fwrite!(f, "is"),
 
-            _ => fwrite!(f, "{:?}", self)
+            _ => fwrite!(f, "{:?}", self),
         }
     }
 }

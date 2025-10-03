@@ -1,6 +1,6 @@
-use std::fmt::{Display, Formatter, Result};
 use super::ast::*;
 use crate::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
+use std::fmt::{Display, Formatter, Result};
 
 // Helper struct for indented formatting of TCExpr
 struct TCExprFormatter<'a> {
@@ -49,7 +49,11 @@ impl Display for TCGlobalVariable {
             TCGlobalVariable::StringLiteral { name, value } => {
                 write!(f, "StringLiteral {} = \"{}\"", name, value.escape_default())
             }
-            TCGlobalVariable::Variable { name, _type, initializer } => {
+            TCGlobalVariable::Variable {
+                name,
+                _type,
+                initializer,
+            } => {
                 write!(f, "Variable {name} : {_type}")?;
                 if let Some(init) = initializer {
                     write!(f, " = {init}")?;
@@ -99,7 +103,11 @@ impl<'a> Display for TCExprFormatter<'a> {
                 writeln!(f, "SizeOf {} {}", _type, self.expr._type)?;
             }
             TCExprKind::VariableDeclaration { type_, name } => {
-                writeln!(f, "VariableDeclaration {} {} {}", name, type_, self.expr._type)?;
+                writeln!(
+                    f,
+                    "VariableDeclaration {} {} {}",
+                    name, type_, self.expr._type
+                )?;
             }
             TCExprKind::GlobalVariableReference { name } => {
                 writeln!(f, "GlobalVariableReference {} {}", name, self.expr._type)?;
@@ -110,12 +118,27 @@ impl<'a> Display for TCExprFormatter<'a> {
             TCExprKind::FunctionReference { name } => {
                 writeln!(f, "FunctionReference {} {}", name, self.expr._type)?;
             }
-            TCExprKind::MemberFunctionReference { target, mangled_name } => {
-                writeln!(f, "MemberFunctionReference {} {}", mangled_name, self.expr._type)?;
+            TCExprKind::MemberFunctionReference {
+                target,
+                mangled_name,
+            } => {
+                writeln!(
+                    f,
+                    "MemberFunctionReference {} {}",
+                    mangled_name, self.expr._type
+                )?;
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
             }
-            TCExprKind::FunctionCall { function, arguments, direct_call } => {
-                writeln!(f, "FunctionCall (direct: {}) {}", direct_call, self.expr._type)?;
+            TCExprKind::FunctionCall {
+                function,
+                arguments,
+                direct_call,
+            } => {
+                writeln!(
+                    f,
+                    "FunctionCall (direct: {}) {}",
+                    direct_call, self.expr._type
+                )?;
                 TCExprFormatter::new(function, self.depth + 1).fmt(f)?;
                 for arg in arguments {
                     TCExprFormatter::new(arg, self.depth + 1).fmt(f)?;
@@ -125,7 +148,11 @@ impl<'a> Display for TCExprFormatter<'a> {
                 writeln!(f, "Access .{} {}", field, self.expr._type)?;
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
             }
-            TCExprKind::Assignment { target, value, additional_op } => {
+            TCExprKind::Assignment {
+                target,
+                value,
+                additional_op,
+            } => {
                 if let Some(op) = additional_op {
                     writeln!(f, "Assignment (op={:?}) {}", op, self.expr._type)?;
                 } else {
@@ -143,7 +170,11 @@ impl<'a> Display for TCExprFormatter<'a> {
                 writeln!(f, "UnOp {:?} {}", operator, self.expr._type)?;
                 TCExprFormatter::new(operand, self.depth + 1).fmt(f)?;
             }
-            TCExprKind::If { condition, then_branch, else_branch } => {
+            TCExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
                 writeln!(f, "If {}", self.expr._type)?;
                 TCExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 TCExprFormatter::new(then_branch, self.depth + 1).fmt(f)?;
@@ -151,26 +182,48 @@ impl<'a> Display for TCExprFormatter<'a> {
                     TCExprFormatter::new(else_b, self.depth + 1).fmt(f)?;
                 }
             }
-            TCExprKind::While { condition, body, pre_eval } => {
+            TCExprKind::While {
+                condition,
+                body,
+                pre_eval,
+            } => {
                 writeln!(f, "While (pre_eval: {}) {}", pre_eval, self.expr._type)?;
                 TCExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 TCExprFormatter::new(body, self.depth + 1).fmt(f)?;
             }
-            TCExprKind::For { init, condition, increment, body } => {
+            TCExprKind::For {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
                 writeln!(f, "For {}", self.expr._type)?;
                 TCExprFormatter::new(init, self.depth + 1).fmt(f)?;
                 TCExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 TCExprFormatter::new(increment, self.depth + 1).fmt(f)?;
                 TCExprFormatter::new(body, self.depth + 1).fmt(f)?;
             }
-            TCExprKind::CSwitch { condition, block, cases, default_case } => {
-                writeln!(f, "CSwitch cases: {:?}, default: {:?} {}", cases, default_case, self.expr._type)?;
+            TCExprKind::CSwitch {
+                condition,
+                block,
+                cases,
+                default_case,
+            } => {
+                writeln!(
+                    f,
+                    "CSwitch cases: {:?}, default: {:?} {}",
+                    cases, default_case, self.expr._type
+                )?;
                 TCExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for stmt in block {
                     TCExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
             }
-            TCExprKind::Match { condition, cases, default_case } => {
+            TCExprKind::Match {
+                condition,
+                cases,
+                default_case,
+            } => {
                 writeln!(f, "Match {}", self.expr._type)?;
                 TCExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for case_ in cases {
@@ -184,8 +237,17 @@ impl<'a> Display for TCExprFormatter<'a> {
                     TCExprFormatter::new(default_b, self.depth + 1).fmt(f)?;
                 }
             }
-            TCExprKind::ConstructorMatchIs { expr, union_type, var_name, .. } => {
-                writeln!(f, "ConstructorMatchIs is {}::{} {}", union_type, var_name, self.expr._type)?;
+            TCExprKind::ConstructorMatchIs {
+                expr,
+                union_type,
+                var_name,
+                ..
+            } => {
+                writeln!(
+                    f,
+                    "ConstructorMatchIs is {}::{} {}",
+                    union_type, var_name, self.expr._type
+                )?;
                 TCExprFormatter::new(expr, self.depth + 1).fmt(f)?;
             }
             TCExprKind::ImplicitLoad { operand } => {
@@ -203,7 +265,10 @@ impl<'a> Display for TCExprFormatter<'a> {
                 writeln!(f, "Defer {}", self.expr._type)?;
                 TCExprFormatter::new(operand, self.depth + 1).fmt(f)?;
             }
-            TCExprKind::New { _type, array_length } => {
+            TCExprKind::New {
+                _type,
+                array_length,
+            } => {
                 if let Some(len) = array_length {
                     writeln!(f, "New[] {} {}", _type, self.expr._type)?;
                     TCExprFormatter::new(len, self.depth + 1).fmt(f)?;
@@ -227,8 +292,17 @@ impl<'a> Display for TCExprFormatter<'a> {
                     TCInitIndexFormatter::new(index, self.depth + 1).fmt(f)?;
                 }
             }
-            TCExprKind::TypeConstructor { name, union_type, input, .. } => {
-                writeln!(f, "TypeConstructor {}::{} {}", union_type, name, self.expr._type)?;
+            TCExprKind::TypeConstructor {
+                name,
+                union_type,
+                input,
+                ..
+            } => {
+                writeln!(
+                    f,
+                    "TypeConstructor {}::{} {}",
+                    union_type, name, self.expr._type
+                )?;
                 TCExprFormatter::new(input, self.depth + 1).fmt(f)?;
             }
             TCExprKind::Break => writeln!(f, "Break {}", self.expr._type)?,
@@ -296,10 +370,18 @@ impl Display for CXTypeKind {
             CXTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
             CXTypeKind::Bool => write!(f, "bool"),
             CXTypeKind::Structured { name, .. } => {
-                write!(f, "struct {}", name.as_ref().map(|n| n.as_str()).unwrap_or("<anonymous>"))
+                write!(
+                    f,
+                    "struct {}",
+                    name.as_ref().map(|n| n.as_str()).unwrap_or("<anonymous>")
+                )
             }
             CXTypeKind::Union { name, .. } => {
-                write!(f, "union {}", name.as_ref().map(|n| n.as_str()).unwrap_or("<anonymous>"))
+                write!(
+                    f,
+                    "union {}",
+                    name.as_ref().map(|n| n.as_str()).unwrap_or("<anonymous>")
+                )
             }
             CXTypeKind::TaggedUnion { name, .. } => {
                 write!(f, "tagged union {name}")

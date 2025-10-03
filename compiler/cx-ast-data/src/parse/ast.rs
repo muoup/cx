@@ -1,8 +1,8 @@
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType};
+use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
-use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
-use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType};
 
 #[derive(Debug, Default)]
 pub struct CXAST {
@@ -11,54 +11,56 @@ pub struct CXAST {
 
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
-    
+
     pub imports: Vec<String>,
     pub global_stmts: Vec<CXGlobalStmt>,
-    
+
     pub type_map: CXNaiveTypeMap,
     pub function_map: CXNaiveFnMap,
-    
-    pub enum_constants: Vec<(String, i64)>
+
+    pub enum_constants: Vec<(String, i64)>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalStmt {
     TypeDecl {
         name: Option<String>,
-        type_: CXNaiveType
+        type_: CXNaiveType,
     },
 
     GlobalVariable {
         name: CXIdent,
         type_: CXNaiveType,
-        initializer: Option<CXExpr>
+        initializer: Option<CXExpr>,
     },
 
     FunctionPrototype {
         prototype: CXNaivePrototype,
     },
-    
+
     FunctionDefinition {
         prototype: CXNaivePrototype,
         body: Box<CXExpr>,
     },
-    
+
     DestructorDefinition {
         _type: CXNaiveType,
         body: Box<CXExpr>,
     },
-    
+
     TemplatedFunction {
         prototype: CXNaivePrototype,
-        body: Box<CXExpr>
+        body: Box<CXExpr>,
     },
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXUnOp {
-    Dereference, AddressOf,
+    Dereference,
+    AddressOf,
     Negative,
-    BNot, LNot,
+    BNot,
+    LNot,
 
     ExplicitCast(CXNaiveType),
 
@@ -68,20 +70,35 @@ pub enum CXUnOp {
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXBinOp {
-    Add, Subtract, Multiply, Divide, Modulus,
-    Less, Greater, LessEqual, GreaterEqual,
-    Equal, NotEqual,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulus,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
+    Equal,
+    NotEqual,
 
-    LAnd, LOr, BitAnd, BitOr, BitXor,
-    LShift, RShift,
+    LAnd,
+    LOr,
+    BitAnd,
+    BitOr,
+    BitXor,
+    LShift,
+    RShift,
 
     Comma,
 
     Assign(Option<Box<CXBinOp>>),
 
-    Access, MethodCall, ArrayIndex,
+    Access,
+    MethodCall,
+    ArrayIndex,
 
-    Is
+    Is,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -98,7 +115,7 @@ pub enum CXGlobalVariable {
         type_: CXNaiveType,
         is_mutable: bool,
         initializer: Option<CXExpr>,
-    }
+    },
 }
 
 #[derive(Debug, Readable, Writable)]
@@ -138,10 +155,10 @@ impl Default for CXExpr {
 pub enum CXExprKind {
     Taken,
     Unit,
-    
+
     TemplatedIdentifier {
         name: CXIdent,
-        template_input: CXNaiveTemplateInput
+        template_input: CXNaiveTemplateInput,
     },
     Identifier(CXIdent),
 
@@ -160,39 +177,39 @@ pub enum CXExprKind {
     If {
         condition: Box<CXExpr>,
         then_branch: Box<CXExpr>,
-        else_branch: Option<Box<CXExpr>>
+        else_branch: Option<Box<CXExpr>>,
     },
     While {
         condition: Box<CXExpr>,
         body: Box<CXExpr>,
-        pre_eval: bool
+        pre_eval: bool,
     },
     For {
         init: Box<CXExpr>,
         condition: Box<CXExpr>,
         increment: Box<CXExpr>,
-        body: Box<CXExpr>
+        body: Box<CXExpr>,
     },
 
     Match {
         condition: Box<CXExpr>,
         arms: Vec<(CXExpr, CXExpr)>, // (value, block)
-        default: Option<Box<CXExpr>>
+        default: Option<Box<CXExpr>>,
     },
 
     Switch {
         condition: Box<CXExpr>,
         block: Vec<CXExpr>,
         cases: Vec<(u64, usize)>, // (block index, value)
-        default_case: Option<usize>
+        default_case: Option<usize>,
     },
 
     SizeOf {
-        expr: Box<CXExpr>
+        expr: Box<CXExpr>,
     },
     VarDeclaration {
         type_: CXNaiveType,
-        name: CXIdent
+        name: CXIdent,
     },
     TypeConstructor {
         union_name: CXIdent,
@@ -202,11 +219,11 @@ pub enum CXExprKind {
     BinOp {
         lhs: Box<CXExpr>,
         rhs: Box<CXExpr>,
-        op: CXBinOp
+        op: CXBinOp,
     },
     UnOp {
         operand: Box<CXExpr>,
-        operator: CXUnOp
+        operator: CXUnOp,
     },
 
     Block {
@@ -217,21 +234,21 @@ pub enum CXExprKind {
     Continue,
 
     Return {
-        value: Option<Box<CXExpr>>
+        value: Option<Box<CXExpr>>,
     },
-    
+
     Defer {
-        expr: Box<CXExpr>
+        expr: Box<CXExpr>,
     },
-    
+
     New {
         _type: CXNaiveType,
     },
-    
+
     Move {
-        expr: Box<CXExpr>
+        expr: Box<CXExpr>,
     },
-    
+
     InitializerList {
         indices: Vec<CXInitIndex>,
     },
@@ -244,7 +261,7 @@ impl CXExprKind {
         } else {
             (start_index, end_index)
         };
-        
+
         CXExpr {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
@@ -255,11 +272,12 @@ impl CXExprKind {
     }
 
     pub fn block_terminating(&self) -> bool {
-        matches!(self,
-            CXExprKind::Return { .. } |
-            CXExprKind::Break       |
-            CXExprKind::Continue    |
-            CXExprKind::Taken
+        matches!(
+            self,
+            CXExprKind::Return { .. }
+                | CXExprKind::Break
+                | CXExprKind::Continue
+                | CXExprKind::Taken
         )
     }
 }
@@ -279,7 +297,7 @@ pub enum CXCastType {
     IntToPtr,
     FunctionToPointerDecay,
     Load,
-    
+
     // The difference between a memory reference and a bare type is that a memory reference
     // is stored in memory. A structured type is itself a memory reference despite this
     // dichotomy, so when attempting to convert from a mem(struct) to struct, this is

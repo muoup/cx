@@ -1,4 +1,6 @@
+use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::cx_maps::convert_cx_func_map;
+use crate::deconstructor::deconstruct_variable;
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 use crate::{BytecodeResult, ProgramMIR};
 use cx_mir_data::types::{MIRType, MIRTypeKind};
@@ -9,8 +11,6 @@ use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
 use cx_util::scoped_map::ScopedMap;
-use crate::aux_routines::get_cx_struct_field_by_index;
-use crate::deconstructor::deconstruct_variable;
 
 #[derive(Debug)]
 pub struct MIRBuilder {
@@ -19,12 +19,12 @@ pub struct MIRBuilder {
     global_variables: Vec<MIRGlobalValue>,
 
     pub fn_map: BCFunctionMap,
-    
+
     symbol_table: ScopedMap<MIRValue>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
 
     in_deferred_block: bool,
-    function_context: Option<BytecodeFunctionContext>
+    function_context: Option<BytecodeFunctionContext>,
 }
 
 #[derive(Debug)]
@@ -42,7 +42,7 @@ pub struct BytecodeFunctionContext {
 #[derive(Debug, Clone)]
 pub struct DeclarationLifetime {
     pub value_id: MIRValue,
-    pub _type: CXType
+    pub _type: CXType,
 }
 
 impl MIRBuilder {
@@ -57,73 +57,69 @@ impl MIRBuilder {
             symbol_table: ScopedMap::new(),
             declaration_scope: Vec::new(),
 
-            function_context: None
+            function_context: None,
         }
     }
 
     pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype) {
         let defers = false;
-        
-        self.in_deferred_block = false;
-        self.function_context = Some(
-            BytecodeFunctionContext {
-                prototype: fn_prototype,
-                current_block: BlockID::Block(0),
 
-                merge_stack: Vec::new(),
-                continue_stack: Vec::new(),
-                
-                blocks: Vec::new(),
-                deferred_blocks: Vec::new(),
-            }
-        );
+        self.in_deferred_block = false;
+        self.function_context = Some(BytecodeFunctionContext {
+            prototype: fn_prototype,
+            current_block: BlockID::Block(0),
+
+            merge_stack: Vec::new(),
+            continue_stack: Vec::new(),
+
+            blocks: Vec::new(),
+            deferred_blocks: Vec::new(),
+        });
 
         let entry_block = self.create_block();
-        
+
         if defers {
             self.setup_deferring_block();
         }
-        
-        self.set_current_block(
-            entry_block
-        );
+
+        self.set_current_block(entry_block);
     }
 
     pub fn finish_function(&mut self) {
         let prototype = self.fun().prototype.clone();
-        
+
         implicit_return(self, &prototype)
             .expect("INTERNAL PANIC: Failed to add implicit return to function");
         implicit_defer_return(self, &prototype)
             .expect("INTERNAL PANIC: Failed to add implicit defer return to function");
-        
+
         let context = self.function_context.take().unwrap();
 
-        self.functions.push(
-            MIRFunction {
-                prototype: context.prototype,
-                
-                blocks: context.blocks,
-                defer_blocks: context.deferred_blocks,
-            }
-        );
+        self.functions.push(MIRFunction {
+            prototype: context.prototype,
+
+            blocks: context.blocks,
+            defer_blocks: context.deferred_blocks,
+        });
     }
-    
+
     pub fn dump_current_fn(&self) {
         dump_all(self.fun().blocks.iter());
         dump_all(self.fun().deferred_blocks.iter());
     }
 
     fn fun_mut(&mut self) -> &mut BytecodeFunctionContext {
-        self.function_context.as_mut()
+        self.function_context
+            .as_mut()
             .expect("Attempted to access function context with no current function selected")
     }
 
     fn fun(&self) -> &BytecodeFunctionContext {
-        self.function_context.as_ref()
+        self.function_context
+            .as_ref()
             .expect("Attempted to access function context with no current function selected")
     }
-    
+
     pub fn push_scope(&mut self) {
         self.symbol_table.push_scope();
         self.declaration_scope.push(Vec::new());
@@ -148,7 +144,8 @@ impl MIRBuilder {
     }
 
     pub fn insert_declaration(&mut self, declaration: DeclarationLifetime) {
-        self.declaration_scope.last_mut()
+        self.declaration_scope
+            .last_mut()
             .expect("INTERNAL PANIC: Attempted to insert declaration with no current scope")
             .push(declaration);
     }
@@ -181,7 +178,7 @@ impl MIRBuilder {
     pub fn add_instruction(
         &mut self,
         instruction: VirtualInstruction,
-        value_type: MIRType
+        value_type: MIRType,
     ) -> Option<MIRValue> {
         if self.current_block_closed() {
             return Some(MIRValue::NULL);
@@ -191,22 +188,23 @@ impl MIRBuilder {
         let current_block = context.current_block;
 
         let body = match current_block {
-            BlockID::Block(id)
-                => &mut context.blocks.get_mut(id as usize)?.body,
-            BlockID::DeferredBlock(id)
-                => &mut context.deferred_blocks.get_mut(id as usize)?.body,
+            BlockID::Block(id) => &mut context.blocks.get_mut(id as usize)?.body,
+            BlockID::DeferredBlock(id) => &mut context.deferred_blocks.get_mut(id as usize)?.body,
 
-            _ => unreachable!("INTERNAL PANIC: Attempted to add instruction to invalid block {current_block}")
+            _ => unreachable!(
+                "INTERNAL PANIC: Attempted to add instruction to invalid block {current_block}"
+            ),
         };
 
-        body.push(BlockInstruction { instruction, value_type });
+        body.push(BlockInstruction {
+            instruction,
+            value_type,
+        });
 
-        Some(
-            MIRValue::BlockResult {
-                block_id: context.current_block, 
-                value_id: (body.len() - 1) as ElementID,
-            }
-        )
+        Some(MIRValue::BlockResult {
+            block_id: context.current_block,
+            value_id: (body.len() - 1) as ElementID,
+        })
     }
 
     fn current_block_closed(&self) -> bool {
@@ -220,16 +218,13 @@ impl MIRBuilder {
     pub fn add_instruction_cxty(
         &mut self,
         instruction: VirtualInstruction,
-        value_type: CXType
+        value_type: CXType,
     ) -> Option<MIRValue> {
         let value_type = self.convert_cx_type(&value_type)?;
-        
-        self.add_instruction(
-            instruction,
-            value_type
-        )
+
+        self.add_instruction(instruction, value_type)
     }
-    
+
     pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<String> {
         if self.fn_map.contains_key(name) {
             Some(name.to_string())
@@ -237,53 +232,46 @@ impl MIRBuilder {
             None
         }
     }
-    
-    pub(crate) fn add_return(
-        &mut self,
-        value_id: Option<MIRValue>
-    ) -> Option<MIRValue> {
+
+    pub(crate) fn add_return(&mut self, value_id: Option<MIRValue>) -> Option<MIRValue> {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
             let return_block = self.create_named_block("return");
-            
+
             self.add_instruction(
-                VirtualInstruction::Jump { target: return_block },
-                MIRType::unit()
+                VirtualInstruction::Jump {
+                    target: return_block,
+                },
+                MIRType::unit(),
             );
-            
+
             self.set_current_block(return_block);
-            
+
             self.add_instruction(
                 VirtualInstruction::Return { value: value_id },
-                MIRType::unit()
+                MIRType::unit(),
             )
         }
     }
-    
+
     pub(crate) fn add_defer_jump(
         &mut self,
         block_id: BlockID,
-        value_id: Option<MIRValue>
+        value_id: Option<MIRValue>,
     ) -> Option<MIRValue> {
-        let inst = self.add_instruction(
-            VirtualInstruction::GotoDefer,
-            MIRType::unit()
-        )?;
+        let inst = self.add_instruction(VirtualInstruction::GotoDefer, MIRType::unit())?;
 
         if let Some(value_id) = value_id {
             self.add_defer_merge(block_id, value_id);
         };
-        
+
         Some(inst)
     }
-    
-    pub fn add_defer_merge(
-        &mut self,
-        from_block: BlockID,
-        value: MIRValue
-    ) {
-        let first_defer_inst = &mut self.fun_mut()
+
+    pub fn add_defer_merge(&mut self, from_block: BlockID, value: MIRValue) {
+        let first_defer_inst = &mut self
+            .fun_mut()
             .deferred_blocks
             .first_mut()
             .unwrap()
@@ -291,16 +279,16 @@ impl MIRBuilder {
             .first_mut()
             .unwrap()
             .instruction;
-        
+
         let VirtualInstruction::Phi { predecessors } = first_defer_inst else {
             let fdi = format!("{first_defer_inst}");
-            
+
             self.dump_current_fn();
-            
+
             panic!("INTERNAL PANIC: Attempted to add defer merge to non-Phi instruction for function {} block {}, first instruction: {}",
                 self.fun().prototype.name, self.fun().current_block, fdi);
         };
-        
+
         predecessors.push((value, from_block));
     }
 
@@ -308,22 +296,24 @@ impl MIRBuilder {
         match _type.kind {
             MIRTypeKind::Bool => MIRValue::IntImmediate {
                 val: value as i64,
-                type_: MIRType::from(MIRTypeKind::Bool)
+                type_: MIRType::from(MIRTypeKind::Bool),
             },
             MIRTypeKind::Signed { bytes } => self.int_const(value, bytes, true),
             MIRTypeKind::Unsigned { bytes } => self.int_const(value, bytes, false),
 
-            _ => panic!("PANIC: Attempted to match integer constant with non-integer type: {_type}")
+            _ => {
+                panic!("PANIC: Attempted to match integer constant with non-integer type: {_type}")
+            }
         }
     }
-    
+
     pub fn int_const(&self, value: i32, bytes: u8, signed: bool) -> MIRValue {
         MIRValue::IntImmediate {
             val: value as i64,
             type_: match signed {
                 true => MIRType::from(MIRTypeKind::Signed { bytes }),
                 false => MIRType::from(MIRTypeKind::Unsigned { bytes }),
-            }
+            },
         }
     }
 
@@ -331,14 +321,14 @@ impl MIRBuilder {
         match _type.kind {
             MIRTypeKind::Float { bytes } => self.float_const(value, bytes),
 
-            _ => panic!("PANIC: Attempted to match float constant with non-float type: {_type}")
+            _ => panic!("PANIC: Attempted to match float constant with non-float type: {_type}"),
         }
     }
 
     pub fn float_const(&self, value: f64, bytes: u8) -> MIRValue {
         MIRValue::FloatImmediate {
             val: value.to_bits() as i64,
-            type_: MIRTypeKind::Float { bytes }.into()
+            type_: MIRTypeKind::Float { bytes }.into(),
         }
     }
 
@@ -351,49 +341,51 @@ impl MIRBuilder {
 
         cond_block
     }
-    
-    pub fn setup_deferring_block(&mut self){
+
+    pub fn setup_deferring_block(&mut self) {
         self.in_deferred_block = true;
         self.set_current_block(BlockID::DeferredBlock(0));
-        
+
         let context = self.fun_mut();
-        
+
         context.deferred_blocks.push(FunctionBlock {
             debug_name: "deferred".to_owned(),
-            body: Vec::new()
+            body: Vec::new(),
         });
-        
+
         let return_type = context.prototype.return_type.clone();
-        
+
         if !context.prototype.return_type.is_void() {
             self.add_instruction(
-                VirtualInstruction::Phi { predecessors: Vec::new() },
-                return_type
+                VirtualInstruction::Phi {
+                    predecessors: Vec::new(),
+                },
+                return_type,
             );
         }
-        
+
         self.in_deferred_block = false;
     }
-    
+
     pub fn enter_deferred_logic(&mut self) {
         if !self.function_defers() {
             self.setup_deferring_block();
         }
-        
+
         self.in_deferred_block = true;
-        
+
         let context = self.fun_mut();
         let last_block = BlockID::DeferredBlock(context.deferred_blocks.len() as ElementID - 1);
-        
+
         self.set_current_block(last_block);
     }
-    
+
     pub fn exit_deferred_logic(&mut self) {
         self.in_deferred_block = false;
 
         let context = self.fun_mut();
         let last_block = BlockID::Block(context.blocks.len() as ElementID - 1);
-        
+
         self.set_current_block(last_block);
     }
 
@@ -437,7 +429,7 @@ impl MIRBuilder {
     pub fn set_current_block(&mut self, block: BlockID) {
         self.fun_mut().current_block = block;
     }
-    
+
     pub fn current_block(&self) -> BlockID {
         self.fun().current_block
     }
@@ -445,7 +437,7 @@ impl MIRBuilder {
     pub fn create_block(&mut self) -> BlockID {
         self.create_named_block("")
     }
-    
+
     pub fn create_named_block(&mut self, name: &str) -> BlockID {
         let context = self.fun_mut();
 
@@ -453,15 +445,15 @@ impl MIRBuilder {
             BlockID::Block(_) => &mut context.blocks,
             BlockID::DeferredBlock(_) => &mut context.deferred_blocks,
         };
-        
+
         add_to.push(FunctionBlock {
             debug_name: name.to_string(),
-            body: Vec::new()
+            body: Vec::new(),
         });
 
         match &context.current_block {
             BlockID::Block(_) => BlockID::Block((add_to.len() - 1) as ElementID),
-            BlockID::DeferredBlock(_) => BlockID::DeferredBlock((add_to.len() - 1) as ElementID)
+            BlockID::DeferredBlock(_) => BlockID::DeferredBlock((add_to.len() - 1) as ElementID),
         }
     }
 
@@ -481,7 +473,7 @@ impl MIRBuilder {
 
     pub fn get_destructor(&self, _type: &CXType) -> Option<String> {
         let mangled_name = mangle_destructor(_type.get_name()?);
-        
+
         if self.fn_map.contains_key(&mangled_name) {
             Some(mangled_name)
         } else {
@@ -501,25 +493,27 @@ impl MIRBuilder {
         let current_block = match context.current_block {
             BlockID::Block(id) => context.blocks.get(id as usize)?,
             BlockID::DeferredBlock(id) => context.deferred_blocks.get(id as usize)?,
-            _ => unreachable!("INTERNAL PANIC: Attempted to access last instruction of invalid block")
+            _ => unreachable!(
+                "INTERNAL PANIC: Attempted to access last instruction of invalid block"
+            ),
         };
 
         current_block.body.last()
     }
 
     pub fn current_function_name(&self) -> Option<&str> {
-        self.function_context.as_ref().map(|ctx| ctx.prototype.name.as_str())
+        self.function_context
+            .as_ref()
+            .map(|ctx| ctx.prototype.name.as_str())
     }
 
     pub fn finish(self) -> Option<ProgramMIR> {
-        Some(
-            ProgramMIR {
-                fn_map: self.fn_map,
-                fn_defs: self.functions,
+        Some(ProgramMIR {
+            fn_map: self.fn_map,
+            fn_defs: self.functions,
 
-                global_vars: self.global_variables,
-            }
-        )
+            global_vars: self.global_variables,
+        })
     }
 
     // Common helper routines
@@ -533,13 +527,18 @@ impl MIRBuilder {
         self.add_instruction(
             VirtualInstruction::DirectCall {
                 args,
-                method_sig: fn_prototype
+                method_sig: fn_prototype,
             },
-            ret_type
+            ret_type,
         )
     }
 
-    pub fn struct_access(&mut self, val: MIRValue, _type: &MIRType, index: usize) -> Option<MIRValue> {
+    pub fn struct_access(
+        &mut self,
+        val: MIRValue,
+        _type: &MIRType,
+        index: usize,
+    ) -> Option<MIRValue> {
         let MIRTypeKind::Struct { .. } = &_type.kind else {
             return None;
         };
@@ -552,9 +551,9 @@ impl MIRBuilder {
                 field_index: access.index,
 
                 struct_: val,
-                struct_type: _type.clone()
+                struct_type: _type.clone(),
             },
-            access._type.clone()
+            access._type.clone(),
         )
     }
 
@@ -565,7 +564,7 @@ impl MIRBuilder {
     pub fn get_tag(&mut self, val: &MIRValue, _type: &MIRType) -> Option<MIRValue> {
         let tag_field = self.get_tag_addr(val, _type)?;
 
-        self.load_value(tag_field, MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }) )
+        self.load_value(tag_field, MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }))
     }
 
     pub fn set_tag(&mut self, val: &MIRValue, _type: &MIRType, tag: u32) -> Option<MIRValue> {
@@ -577,14 +576,16 @@ impl MIRBuilder {
                 memory: tag_field,
                 value: tag_val,
 
-                type_: MIRType::from(MIRTypeKind::Unsigned { bytes: 4 })
+                type_: MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }),
             },
-            MIRType::unit()
+            MIRType::unit(),
         )
     }
 
     pub fn load_value(&mut self, ptr: MIRValue, _type: MIRType) -> Option<MIRValue> {
-        if _type.is_structure() { return Some(ptr); }
+        if _type.is_structure() {
+            return Some(ptr);
+        }
 
         Some(MIRValue::LoadOf(_type, Box::new(ptr)))
     }

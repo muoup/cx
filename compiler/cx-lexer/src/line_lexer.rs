@@ -1,7 +1,7 @@
-use std::io::BufRead;
 use cx_lexer_data::punctuator;
 use cx_lexer_data::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
+use std::io::BufRead;
 
 pub(crate) struct LineLexer<'a> {
     last_consume: usize,
@@ -32,8 +32,7 @@ impl<'a> LineLexer<'a> {
 
             let previous_lex = self.iter.current_iter;
 
-            if let Some(operator) = operator_lex(self.iter)
-                .or_else(|| punctuator_lex(self.iter)) {
+            if let Some(operator) = operator_lex(self.iter).or_else(|| punctuator_lex(self.iter)) {
                 self.consume(previous_lex);
 
                 self.add_token(operator);
@@ -68,31 +67,29 @@ impl<'a> LineLexer<'a> {
             return;
         }
 
-        let str = self.iter.source[self.last_consume.. up_to].to_string();
+        let str = self.iter.source[self.last_consume..up_to].to_string();
         let str_start = self.last_consume;
 
         self.last_consume = self.iter.current_iter;
 
         if str.chars().any(|c| !c.is_whitespace()) {
             let kind = TokenKind::from_str(str);
-            
-            self.add_token(
-                Token {
-                    kind,
-                    line: self.iter.line,
-                    start_index: str_start,
-                    end_index: up_to,
-                }
-            )
+
+            self.add_token(Token {
+                kind,
+                line: self.iter.line,
+                start_index: str_start,
+                end_index: up_to,
+            })
         }
     }
 
     fn pre_ident_lex(&mut self) -> Option<Token> {
         match self.iter.peek()? {
-            '0' .. '9' => number_lex(self.iter),
+            '0'..'9' => number_lex(self.iter),
             '"' => string_lex(self.iter),
             '\'' => char_lex(self.iter),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -112,17 +109,18 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
     let kind = if dot {
         TokenKind::FloatLiteral(num.parse().unwrap())
     } else {
-        TokenKind::IntLiteral(num.parse().unwrap_or_else(|_| panic!("Invalid number: {num}\n")))
+        TokenKind::IntLiteral(
+            num.parse()
+                .unwrap_or_else(|_| panic!("Invalid number: {num}\n")),
+        )
     };
-    
-    Some(
-        Token {
-            kind,
-            line: iter.line,
-            start_index,
-            end_index: iter.current_iter,
-        }
-    )
+
+    Some(Token {
+        kind,
+        line: iter.line,
+        start_index,
+        end_index: iter.current_iter,
+    })
 }
 
 fn string_lex(iter: &mut CharIter) -> Option<Token> {
@@ -138,22 +136,19 @@ fn string_lex(iter: &mut CharIter) -> Option<Token> {
             break;
         }
     }
-    let string =
-        iter.source[start_iter..iter.current_iter - 1]
-            .replace("\\n", "\n")
-            .replace("\\t", "\t")
-            .replace("\\r", "\r")
-            .replace("\\\"", "\"");
+    let string = iter.source[start_iter..iter.current_iter - 1]
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r")
+        .replace("\\\"", "\"");
 
-    Some(
-        Token {
-            kind: TokenKind::StringLiteral(string),
-        
-            line: iter.line,
-            start_index: start_iter,
-            end_index: iter.current_iter - 1,
-        }
-    )
+    Some(Token {
+        kind: TokenKind::StringLiteral(string),
+
+        line: iter.line,
+        start_index: start_iter,
+        end_index: iter.current_iter - 1,
+    })
 }
 
 fn char_lex(iter: &mut CharIter) -> Option<Token> {
@@ -167,33 +162,31 @@ fn char_lex(iter: &mut CharIter) -> Option<Token> {
             assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
             TokenKind::IntLiteral(0)
-        },
+        }
         'n' => {
             assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
             TokenKind::IntLiteral('\n' as i64)
-        },
+        }
         't' => {
             assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
             TokenKind::IntLiteral('\t' as i64)
-        },
+        }
         'r' => {
             assert_eq!(c, '\\');
             assert_eq!(iter.next(), Some('\''));
             TokenKind::IntLiteral('\r' as i64)
-        },
-        _ => panic!("Invalid character literal: '{c}'")
-    };
-    
-    Some(
-        Token {
-            kind,
-            line: iter.line,
-            start_index,
-            end_index: iter.current_iter,
         }
-    )
+        _ => panic!("Invalid character literal: '{c}'"),
+    };
+
+    Some(Token {
+        kind,
+        line: iter.line,
+        start_index,
+        end_index: iter.current_iter,
+    })
 }
 
 fn operator_lex(iter: &mut CharIter) -> Option<Token> {
@@ -205,34 +198,32 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             Some(TokenKind::Operator(operator))
         }
     }
-    
+
     let start_index = iter.current_iter;
 
     let kind = match iter.next()? {
         '*' => try_assignment(iter, OperatorType::Asterisk),
-        '/' => {
-            match iter.peek() {
-                Some('/') => {
-                    iter.next();
-                    while let Some(c) = iter.next() {
-                        if c == '\n' {
-                            break;
-                        }
+        '/' => match iter.peek() {
+            Some('/') => {
+                iter.next();
+                while let Some(c) = iter.next() {
+                    if c == '\n' {
+                        break;
                     }
-                    panic!("Single line comments should not reach the operator lexer")
-                },
-                Some('*') => {
-                    iter.next();
-                    while let Some(c) = iter.next() {
-                        if c == '*' && iter.peek() == Some('/') {
-                            iter.next();
-                            break;
-                        }
-                    }
-                    panic!("Multi line comments should not reach the operator lexer")
-                },
-                _ => try_assignment(iter, OperatorType::Slash)
+                }
+                panic!("Single line comments should not reach the operator lexer")
             }
+            Some('*') => {
+                iter.next();
+                while let Some(c) = iter.next() {
+                    if c == '*' && iter.peek() == Some('/') {
+                        iter.next();
+                        break;
+                    }
+                }
+                panic!("Multi line comments should not reach the operator lexer")
+            }
+            _ => try_assignment(iter, OperatorType::Slash),
         },
         '%' => try_assignment(iter, OperatorType::Percent),
 
@@ -240,19 +231,19 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             Some('+') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::Increment))
-            },
-            _ => try_assignment(iter, OperatorType::Plus)
-        }
+            }
+            _ => try_assignment(iter, OperatorType::Plus),
+        },
         '-' => match iter.peek() {
             Some('>') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::Access))
-            },
+            }
             Some('-') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::Decrement))
-            },
-            _ => try_assignment(iter, OperatorType::Minus)
+            }
+            _ => try_assignment(iter, OperatorType::Minus),
         },
         '.' => {
             if iter.next() == Some('.') && iter.peek() == Some('.') {
@@ -262,21 +253,21 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                 iter.back();
                 Some(TokenKind::Operator(OperatorType::Access))
             }
-        },
+        }
 
         '|' => match iter.peek() {
             Some('|') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::DoubleBar))
-            },
-            _ => Some(TokenKind::Operator(OperatorType::Bar))
+            }
+            _ => Some(TokenKind::Operator(OperatorType::Bar)),
         },
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::DoubleAmpersand))
-            },
-            _ => Some(TokenKind::Operator(OperatorType::Ampersand))
+            }
+            _ => Some(TokenKind::Operator(OperatorType::Ampersand)),
         },
         '^' => Some(TokenKind::Operator(OperatorType::Caret)),
         '!' => {
@@ -286,7 +277,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             } else {
                 Some(TokenKind::Operator(OperatorType::Exclamation))
             }
-        },
+        }
         '~' => Some(TokenKind::Operator(OperatorType::Tilda)),
 
         ':' => {
@@ -297,40 +288,40 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
                 iter.back();
                 None
             }
-        },
+        }
 
         '>' => match iter.peek() {
             Some('>') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::DoubleGT))
-            },
+            }
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::GreaterEqual))
-            },
-            _ => Some(TokenKind::Operator(OperatorType::Greater))
+            }
+            _ => Some(TokenKind::Operator(OperatorType::Greater)),
         },
         '<' => match iter.peek() {
             Some('<') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::DoubleLT))
-            },
+            }
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::LessEqual))
-            },
-            _ => Some(TokenKind::Operator(OperatorType::Less))
+            }
+            _ => Some(TokenKind::Operator(OperatorType::Less)),
         },
         '=' => match iter.peek() {
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::Equal))
-            },
+            }
             Some('>') => {
                 iter.next();
                 Some(punctuator!(ThickArrow))
-            },
-            _ => Some(TokenKind::Assignment(None))
+            }
+            _ => Some(TokenKind::Assignment(None)),
         },
         ',' => Some(TokenKind::Operator(OperatorType::Comma)),
         _ => {
@@ -338,15 +329,13 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             None
         }
     }?;
-    
-    Some(
-        Token {
-            kind,
-            line: iter.line,
-            start_index,
-            end_index: iter.current_iter,
-        }
-    )
+
+    Some(Token {
+        kind,
+        line: iter.line,
+        start_index,
+        end_index: iter.current_iter,
+    })
 }
 
 fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
@@ -372,13 +361,11 @@ fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
             None
         }
     }?;
-    
-    Some(
-        Token {
-            kind,
-            line: iter.line,
-            start_index,
-            end_index: iter.current_iter,
-        }
-    )
+
+    Some(Token {
+        kind,
+        line: iter.line,
+        start_index,
+        end_index: iter.current_iter,
+    })
 }

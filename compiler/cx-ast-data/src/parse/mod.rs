@@ -1,6 +1,5 @@
 pub mod ast;
-pub mod parser;
 pub mod macros;
+pub mod parser;
 
 mod format;
-

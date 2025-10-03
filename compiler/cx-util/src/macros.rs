@@ -32,7 +32,7 @@ macro_rules! bytecode_error_log {
         {
             use cx_ast_data::parse::macros::error_pointer;
             use cx_util::log_error;
-            
+
             eprintln!("Error in method {}", $builder.current_function_name().unwrap_or("<unknown>"));
             log_error!($($arg)*);
         }
@@ -45,7 +45,7 @@ macro_rules! point_log_error {
         {
             use cx_ast_data::parse::macros::error_pointer;
             use cx_util::log_error;
-            
+
             eprintln!("{}", error_pointer(&$toks));
             log_error!($($arg)*);
         }
@@ -63,5 +63,5 @@ macro_rules! try_routine {
             *$iter = iter_save;
             None
         }
-    }
+    };
 }

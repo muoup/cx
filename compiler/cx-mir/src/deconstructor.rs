@@ -1,9 +1,11 @@
-use crate::builder::MIRBuilder;
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
-use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{MIRFunctionPrototype, MIRParameter, BCPtrBinOp, LinkageType, MIRValue, VirtualInstruction};
-use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
 use crate::aux_routines::get_cx_struct_field_by_index;
+use crate::builder::MIRBuilder;
+use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_mir_data::{
+    BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRParameter, MIRValue, VirtualInstruction,
+};
+use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
+use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
 
 const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
@@ -15,21 +17,19 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionProto
     };
     let deconstructor_name = mangle_deconstructor(name);
 
-    Some(
-        MIRFunctionPrototype {
-            name: deconstructor_name,
-            return_type: MIRType::unit(),
-            params: vec![MIRParameter { name: None, _type: MIRType::default_pointer() }],
-            var_args: false,
-            linkage: LinkageType::ODR
-        }
-    )
+    Some(MIRFunctionPrototype {
+        name: deconstructor_name,
+        return_type: MIRType::unit(),
+        params: vec![MIRParameter {
+            name: None,
+            _type: MIRType::default_pointer(),
+        }],
+        var_args: false,
+        linkage: LinkageType::ODR,
+    })
 }
 
-fn get_deconstructor(
-    builder: &mut MIRBuilder,
-    type_: &CXType
-) -> Option<String> {
+fn get_deconstructor(builder: &mut MIRBuilder, type_: &CXType) -> Option<String> {
     let Some(type_name) = type_.get_name() else {
         return None;
     };
@@ -42,15 +42,22 @@ fn get_deconstructor(
     }
 }
 
-pub fn deconstruct_variable(builder: &mut MIRBuilder, var: &MIRValue, _type: &CXType) -> Option<()> {
+pub fn deconstruct_variable(
+    builder: &mut MIRBuilder,
+    var: &MIRValue,
+    _type: &CXType,
+) -> Option<()> {
     match &_type.kind {
         CXTypeKind::Structured { .. } => {
             if let Some(deconstructor) = get_deconstructor(builder, _type) {
                 builder.call(&deconstructor, vec![var.clone()])?;
             }
-        },
+        }
 
-        CXTypeKind::StrongPointer { inner_type, is_array } => {
+        CXTypeKind::StrongPointer {
+            inner_type,
+            is_array,
+        } => {
             let deconstructor = builder.get_deconstructor(inner_type);
 
             let inner_val = builder.load_value(var.clone(), MIRType::default_pointer())?;
@@ -60,21 +67,27 @@ pub fn deconstruct_variable(builder: &mut MIRBuilder, var: &MIRValue, _type: &CX
             let zero = builder.int_const(0, 8, true);
             let null = builder.add_instruction(
                 VirtualInstruction::IntToPtr { value: zero },
-                MIRType::default_pointer()
+                MIRType::default_pointer(),
             )?;
             let cmp = builder.add_instruction(
                 VirtualInstruction::PointerBinOp {
                     op: BCPtrBinOp::EQ,
                     left: inner_val.clone(),
                     right: null,
-                    ptr_type: MIRType::default_pointer()
+                    ptr_type: MIRType::default_pointer(),
                 },
-                MIRType { kind: MIRTypeKind::Bool }
+                MIRType {
+                    kind: MIRTypeKind::Bool,
+                },
             )?;
 
             builder.add_instruction(
-                VirtualInstruction::Branch { condition: cmp, true_block: post_deconstruct, false_block: deconstruct },
-                MIRType::unit()
+                VirtualInstruction::Branch {
+                    condition: cmp,
+                    true_block: post_deconstruct,
+                    false_block: deconstruct,
+                },
+                MIRType::unit(),
             )?;
 
             builder.set_current_block(deconstruct);
@@ -84,45 +97,48 @@ pub fn deconstruct_variable(builder: &mut MIRBuilder, var: &MIRValue, _type: &CX
                     // Array of objects with deconstructor
                     let deconstructor = builder.fn_ref(&prototype)?;
                     let ptr_to = builder.add_instruction(
-                        VirtualInstruction::GetFunctionAddr { func: deconstructor },
-                        MIRType::default_pointer()
+                        VirtualInstruction::GetFunctionAddr {
+                            func: deconstructor,
+                        },
+                        MIRType::default_pointer(),
                     )?;
-                    let type_size = builder.convert_cx_type(inner_type.as_ref())?
-                        .fixed_size();
+                    let type_size = builder.convert_cx_type(inner_type.as_ref())?.fixed_size();
                     let size_imm = MIRValue::IntImmediate {
                         val: type_size as i64,
-                        type_: MIRTypeKind::Unsigned { bytes: 8 }.into()
+                        type_: MIRTypeKind::Unsigned { bytes: 8 }.into(),
                     };
 
                     builder.call(STANDARD_FREE_ARRAY, vec![inner_val, size_imm, ptr_to])?;
-                },
+                }
 
                 (None, true) => {
                     // Array of objects without deconstructor
                     builder.call(STANDARD_FREE_ARRAY_NOOP, vec![inner_val])?;
-                },
+                }
 
                 (Some(prototype), false) => {
                     // Single object with deconstructor
                     builder.call(&prototype, vec![inner_val.clone()])?;
                     builder.call(STANDARD_FREE, vec![inner_val])?;
-                },
+                }
 
                 (None, false) => {
                     // Single object without deconstructor
                     builder.call(STANDARD_FREE, vec![inner_val])?;
-                },
+                }
             }
 
             builder.add_instruction(
-                VirtualInstruction::Jump { target: post_deconstruct },
-                MIRType::unit()
+                VirtualInstruction::Jump {
+                    target: post_deconstruct,
+                },
+                MIRType::unit(),
             )?;
 
             builder.set_current_block(post_deconstruct);
-        },
+        }
 
-        _ => ()
+        _ => (),
     }
 
     Some(())
@@ -146,9 +162,9 @@ pub fn generate_deconstructor(builder: &mut MIRBuilder, _type: &CXType) -> Optio
                         struct_type: as_bc.clone(),
 
                         field_index: i,
-                        field_offset: struct_access.offset
+                        field_offset: struct_access.offset,
                     },
-                    MIRType::default_pointer()
+                    MIRType::default_pointer(),
                 )?;
 
                 deconstruct_variable(builder, &ptr, field_type)?;
@@ -157,7 +173,7 @@ pub fn generate_deconstructor(builder: &mut MIRBuilder, _type: &CXType) -> Optio
             if let Some(destructor) = builder.get_destructor(_type) {
                 builder.call(&destructor, vec![self_val])?;
             }
-        },
+        }
 
         _ => panic!("PANIC: Deconstructor generation for type kind {_type} not implemented"),
     }

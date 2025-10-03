@@ -37,7 +37,7 @@ pub fn parse_args() -> Result<AppArgs, String> {
     let mut output_file = "a.out".to_string(); // Default output file
     let mut backend = Default::default();
     let mut optimization_level = Default::default();
-    
+
     let mut args_iter = args.iter().skip(1);
 
     if args_iter.len() == 0 {

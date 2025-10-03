@@ -1,10 +1,10 @@
-use cx_ast_data::parse::ast::CXBinOp;
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
-use cx_mir_data::{MIRValue, VirtualInstruction};
-use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_util::bytecode_error_log;
-use crate::builder::{MIRBuilder, DeclarationLifetime};
+use crate::builder::{DeclarationLifetime, MIRBuilder};
 use crate::BytecodeResult;
+use cx_ast_data::parse::ast::CXBinOp;
+use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_mir_data::{MIRValue, VirtualInstruction};
+use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
+use cx_util::bytecode_error_log;
 
 pub(crate) struct CXStructAccess {
     pub(crate) offset: usize,
@@ -41,86 +41,99 @@ pub(crate) fn try_access_field(
                     field_offset: struct_access.offset,
                     field_index: struct_access.index,
                 },
-                struct_access._type
+                struct_access._type,
             )
-        },
+        }
 
         MIRTypeKind::Union { .. } => Some(left_id),
 
-        _ => unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
+        _ => {
+            unreachable!("generate_instruction: Expected structured type for access, found {ltype}")
+        }
     }
 }
 
 pub(crate) fn get_struct_field(
     builder: &MIRBuilder,
     _type: &MIRType,
-    name: &str
+    name: &str,
 ) -> Option<CXStructAccess> {
     let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
-        bytecode_error_log!(builder, "PANIC: Expected struct type on access {name}, got: {:?}", _type);
+        bytecode_error_log!(
+            builder,
+            "PANIC: Expected struct type on access {name}, got: {:?}",
+            _type
+        );
     };
-    
+
     let mut offset = 0;
-    
+
     for (index, (field_name, field_type)) in fields.iter().enumerate() {
         offset = align_offset(offset, field_type.alignment() as usize);
-        
+
         if field_name.as_str() == name {
             return Some(CXStructAccess {
-                offset, index,
-                _type: field_type.clone()
+                offset,
+                index,
+                _type: field_type.clone(),
             });
         }
-        
+
         offset += field_type.fixed_size();
     }
-    
+
     None
 }
 
 pub(crate) fn get_cx_struct_field_by_index(
     builder: &MIRBuilder,
     _type: &MIRType,
-    index: usize
+    index: usize,
 ) -> Option<CXStructAccess> {
     let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
-        bytecode_error_log!(builder, "PANIC: Expected struct type on access by index {index}, got: {:?}", _type);
+        bytecode_error_log!(
+            builder,
+            "PANIC: Expected struct type on access by index {index}, got: {:?}",
+            _type
+        );
     };
-    
+
     if index >= fields.len() {
-        bytecode_error_log!(builder, "PANIC: Index out of bounds for struct access by index {index}");
+        bytecode_error_log!(
+            builder,
+            "PANIC: Index out of bounds for struct access by index {index}"
+        );
     }
-    
+
     let mut offset = 0;
     let mut field_iter = fields.iter().peekable();
-    
+
     for _ in 0..index {
         let (_, field_type) = field_iter.next()?;
 
         offset += field_type.fixed_size();
-        
-        let alignment = field_iter.peek()
+
+        let alignment = field_iter
+            .peek()
             .map(|(_, next_type)| next_type.alignment() as usize)
             .expect("get_cx_struct_field_by_index: Out of bounds access");
         offset = align_offset(offset, alignment);
     }
-    
+
     let field_type = fields[index].1.clone();
-    
+
     Some(CXStructAccess {
-        offset, index,
-        _type: field_type
+        offset,
+        index,
+        _type: field_type,
     })
 }
 
-fn variable_requires_nulling(
-    builder: &MIRBuilder,
-    cx_type: &CXType
-) -> bool {
+fn variable_requires_nulling(builder: &MIRBuilder, cx_type: &CXType) -> bool {
     match cx_type.kind {
         CXTypeKind::StrongPointer { .. } => true,
 
-        _ => builder.get_destructor(cx_type).is_some()
+        _ => builder.get_destructor(cx_type).is_some(),
     }
 }
 
@@ -135,34 +148,38 @@ pub(crate) fn allocate_variable(
             _type: bc_type.clone(),
             alignment: bc_type.alignment(),
         },
-        MIRType::default_pointer()
+        MIRType::default_pointer(),
     )?;
 
     builder.insert_symbol(name.to_owned(), memory.clone());
-    builder.insert_declaration(
-        DeclarationLifetime {
-            value_id: memory.clone(),
-            _type: var_type.clone()
-        }
-    );
-    
+    builder.insert_declaration(DeclarationLifetime {
+        value_id: memory.clone(),
+        _type: var_type.clone(),
+    });
+
     if variable_requires_nulling(builder, var_type) {
         builder.add_instruction(
             VirtualInstruction::ZeroMemory {
                 memory: memory.clone(),
                 _type: bc_type.clone(),
             },
-            MIRType::unit()
+            MIRType::unit(),
         )?;
     }
 
     Some(memory)
 }
 
-pub(crate) fn assign_value(builder: &mut MIRBuilder, target: MIRValue, source: MIRValue, _type: &CXType, additional_op: Option<&CXBinOp>)
-    -> BytecodeResult<MIRValue> {
-
-    if additional_op.is_some() { todo!("compound assignment") }
+pub(crate) fn assign_value(
+    builder: &mut MIRBuilder,
+    target: MIRValue,
+    source: MIRValue,
+    _type: &CXType,
+    additional_op: Option<&CXBinOp>,
+) -> BytecodeResult<MIRValue> {
+    if additional_op.is_some() {
+        todo!("compound assignment")
+    }
 
     let inner_type = builder.convert_fixed_cx_type(_type)?;
 
@@ -172,6 +189,6 @@ pub(crate) fn assign_value(builder: &mut MIRBuilder, target: MIRValue, source: M
             value: source,
             type_: inner_type,
         },
-        MIRType::unit()
+        MIRType::unit(),
     )
 }
