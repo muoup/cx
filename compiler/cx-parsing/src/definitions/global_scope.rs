@@ -62,12 +62,8 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 }
 
 pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
-    let Some(name) = _type.get_name().cloned() else {
-        unreachable!("CRITICAL: destructor_prototype() called with unnamed type!");
-    };
-
     CXNaivePrototype {
-        name: CXNaiveFnIdent::Destructor(name),
+        name: CXNaiveFnIdent::Destructor(_type.clone()),
 
         return_type: CXNaiveTypeKind::Identifier {
             name: CXIdent::from("void"),

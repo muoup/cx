@@ -1,25 +1,49 @@
 use crate::environment::TCEnvironment;
-use crate::templates::{add_templated_types, mangle_template_name, restore_template_overwrites};
-use crate::type_mapping::contextualize_fn_prototype;
-use crate::typechecker::in_method_env;
+use crate::expr_checking::typechecker::in_method_env;
+use crate::type_completion::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
+use crate::type_completion::templates::{add_templated_types, mangle_template_name, restore_template_overwrites};
+use crate::type_completion::type_mapping::contextualize_fn_prototype;
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::preparse::templates::CXFunctionTemplate;
+use cx_pipeline_data::GlobalCompilationContext;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef};
 use cx_typechecker_data::cx_types::CXTemplateInput;
 use cx_util::mangling::mangle_destructor;
 
-mod binary_ops;
-mod casting;
-mod typechecker;
 mod log;
 
-pub(crate) mod structured_initialization;
-pub(crate) mod move_semantics;
+pub mod expr_checking;
+pub mod type_completion;
 
-pub mod templates;
 pub mod environment;
-pub mod precontextualizing;
-pub mod type_mapping;
+
+pub fn create_base_types(context: &GlobalCompilationContext, cx_ast: &CXAST) -> Option<TCBaseMappings> {
+    let mut type_data = contextualize_type_map(&context.module_db, &cx_ast.type_map)
+        .expect("Failed to contextualize type map");
+    
+    let fn_data = contextualize_fn_map(
+        &context.module_db,
+        &cx_ast.function_map,
+        &mut type_data,
+        &cx_ast.type_map,
+    )
+    .expect("Failed to contextualize function map");
+    let global_variables = contextualize_globals(
+        &context.module_db,
+        &mut type_data,
+        &cx_ast.type_map,
+        &cx_ast,
+    )
+    .expect("Failed to contextualize global variables");
+
+    Some(
+        TCBaseMappings {
+            type_data,
+            fn_data,
+            global_variables,
+        }
+    )
+}
 
 pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
     for stmt in ast.global_stmts.iter() {

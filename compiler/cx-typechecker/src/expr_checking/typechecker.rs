@@ -1,9 +1,9 @@
-use crate::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
-use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::environment::TCEnvironment;
+use crate::expr_checking::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
+use crate::expr_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
+use crate::expr_checking::move_semantics::acknowledge_declared_type;
 use crate::log_typecheck_error;
-use crate::type_mapping::{contextualize_template_args, contextualize_type};
-use crate::move_semantics::acknowledge_declared_type;
+use crate::type_completion::type_mapping::{contextualize_template_args, contextualize_type};
 use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_parsing_data::preparse::naive_types::CX_CONST;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex, TCTagMatch};

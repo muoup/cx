@@ -1,5 +1,5 @@
 use crate::environment::TCEnvironment;
-use crate::templates::mangle_template_name;
+use crate::type_completion::templates::mangle_template_name;
 use cx_parsing_data::preparse::CXNaiveFnIdent;
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
@@ -60,7 +60,7 @@ pub fn contextualize_template_args(
     Some(CXTemplateInput { args })
 }
 
-fn contextualize_fn_ident(
+pub(crate) fn contextualize_fn_ident(
     env: &mut TCEnvironment,
     ident: &CXNaiveFnIdent,
 ) -> Option<CXFunctionIdentifier> {
@@ -76,10 +76,16 @@ fn contextualize_fn_ident(
                 _type,
             })
         }
+                
+        CXNaiveFnIdent::Destructor(name) => {
+            let cx_type = contextualize_type(env, name)?;
+            let name = cx_type.get_identifier()?;
+
+            Some(CXFunctionIdentifier::Destructor(name.clone()))
+        },
 
         CXNaiveFnIdent::Standard(name) => Some(CXFunctionIdentifier::Standard(name.clone())),
 
-        CXNaiveFnIdent::Destructor(name) => Some(CXFunctionIdentifier::Destructor(name.clone())),
     }
 }
 

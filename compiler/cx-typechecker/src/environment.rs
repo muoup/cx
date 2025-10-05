@@ -1,4 +1,3 @@
-use crate::templates::{instantiate_function_template, instantiate_type_template};
 use cx_lexer_data::token::Token;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
@@ -7,6 +6,8 @@ use cx_util::mangling::mangle_destructor;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+use crate::type_completion::templates::{instantiate_function_template, instantiate_type_template};
 
 pub struct TCTemplateRequest {
     pub module_origin: Option<String>,

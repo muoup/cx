@@ -5,7 +5,7 @@ use cx_mir_data::{
     BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRParameter, MIRValue, VirtualInstruction,
 };
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
-use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
+use cx_util::mangling::mangle_deconstructor;
 
 const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";

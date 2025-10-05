@@ -56,7 +56,7 @@ pub enum CXNaiveFnIdent {
         _type: CXNaiveType,
         function_name: CXIdent,
     },
-    Destructor(CXIdent),
+    Destructor(CXNaiveType),
 }
 
 impl CXNaiveFnIdent {
@@ -73,7 +73,13 @@ impl CXNaiveFnIdent {
 
                 mangle_member_function(name.to_string(), function_name.as_str())
             }
-            CXNaiveFnIdent::Destructor(name) => mangle_destructor(name.as_str()),
+            CXNaiveFnIdent::Destructor(_ty) => {
+                let Some(name) = _ty.get_name() else {
+                    unreachable!("Destructor's type must have a name");
+                };
+                
+                mangle_destructor(name)
+            },
         }
     }
 }

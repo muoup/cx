@@ -14,11 +14,8 @@ use cx_pipeline_data::jobs::{
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::precontextualizing::{
-    contextualize_fn_map, contextualize_globals, contextualize_type_map,
-};
-use cx_typechecker::typecheck;
-use cx_typechecker_data::ast::{TCAST, TCBaseMappings};
+use cx_typechecker::{create_base_types, typecheck};
+use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
 use fs2::FileExt;
@@ -333,34 +330,13 @@ pub(crate) fn perform_job(
 
         CompilationStep::TypeCompletion => {
             let self_ast = context.module_db.naive_ast.get(&job.unit);
-
-            let mut type_data = contextualize_type_map(&context.module_db, &self_ast.type_map)
-                .expect("Failed to contextualize type map");
-            let fn_data = contextualize_fn_map(
-                &context.module_db,
-                &self_ast.function_map,
-                &mut type_data,
-                &self_ast.type_map,
-            )
-            .expect("Failed to contextualize function map");
-            let global_variables = contextualize_globals(
-                &context.module_db,
-                &mut type_data,
-                &self_ast.type_map,
-                &self_ast,
-            )
-            .expect("Failed to contextualize global variables");
-
-            let completed_data = TCBaseMappings {
-                type_data,
-                fn_data,
-                global_variables,
-            };
+            let completed_data = create_base_types(context, &self_ast)
+                .expect("Failed to create base types");
 
             context
                 .module_db
                 .structure_data
-                .insert(job.unit.clone(), completed_data.clone());
+                .insert(job.unit.clone(), completed_data);
         }
 
         CompilationStep::Typechecking => {
@@ -374,6 +350,7 @@ pub(crate) fn perform_job(
             typecheck(&mut env, &self_ast).expect("Typechecking failed");
             realize_templates(context, &job.unit, &mut env).expect("Template realization failed");
 
+            // FIXME: Is this necessary?
             env.realized_types
                 .extend(structure_data.type_data.standard.clone());
             env.realized_fns

@@ -1,19 +1,33 @@
+use std::hash::{Hash, Hasher};
+
 use crate::ast::TCExpr;
+use crate::format::type_mangle;
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_parsing_data::preparse::naive_types::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
 use cx_util::mangling::{mangle_destructor, mangle_member_function};
 use speedy::{Readable, Writable};
-use std::hash::{Hash, Hasher};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {
-    pub uuid: u64,
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
     
     pub kind: CXTypeKind,
+}
+
+impl CXType {
+    pub fn mangle(&self) -> String {
+        type_mangle(self)
+    }
+}
+
+impl Hash for CXType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.visibility.hash(state);
+        self.specifiers.hash(state);
+        state.write(&self.mangle().into_bytes());
+    }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -32,29 +46,22 @@ pub struct CXFunctionPrototype {
     pub var_args: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXTemplateInput {
     pub args: Vec<CXType>,
 }
 
 impl PartialEq<Self> for CXType {
     fn eq(&self, other: &Self) -> bool {
-        self.uuid == other.uuid
+        same_type(self, other)
     }
 }
 
 impl Eq for CXType {}
 
-impl Hash for CXType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.uuid)
-    }
-}
-
 impl Default for CXType {
     fn default() -> Self {
         CXType {
-            uuid: 0,
             visibility: VisibilityMode::Private,
             specifiers: 0,
             
@@ -126,7 +133,6 @@ pub enum CXTypeKind {
 impl CXType {
     pub fn unit() -> Self {
         CXType {
-            uuid: 0,
             specifiers: 0,
             visibility: VisibilityMode::Private,
             
@@ -136,7 +142,6 @@ impl CXType {
 
     pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
             visibility: VisibilityMode::Private,
             specifiers,
             
@@ -182,7 +187,6 @@ impl CXType {
     }
     pub fn pointer_to(self) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
             visibility: VisibilityMode::Private,
             
@@ -198,7 +202,6 @@ impl CXType {
 
     pub fn mem_ref_to(self) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
             visibility: VisibilityMode::Private,
             kind: CXTypeKind::MemoryReference(Box::new(self)),
@@ -333,7 +336,6 @@ impl CXType {
 impl From<CXTypeKind> for CXType {
     fn from(kind: CXTypeKind) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
             visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
@@ -342,10 +344,6 @@ impl From<CXTypeKind> for CXType {
 }
 
 pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
-    if t1.uuid == t2.uuid {
-        return true;
-    }
-
     let t1_name = t1.get_name();
     let t2_name = t2.get_name();
 

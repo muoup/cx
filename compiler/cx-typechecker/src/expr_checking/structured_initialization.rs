@@ -1,7 +1,8 @@
-use crate::casting::implicit_cast;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 use cx_util::log_error;
+
+use crate::expr_checking::casting::implicit_cast;
 
 pub fn coerce_initializer_list(initializer: &mut TCExpr, to_type: &CXType) -> Option<()> {
     let to_type = match &to_type.kind {

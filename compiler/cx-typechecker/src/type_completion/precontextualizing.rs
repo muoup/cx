@@ -1,5 +1,3 @@
-use crate::templates::mangle_template_name;
-use crate::type_mapping::assemble_method;
 use cx_parsing_data::PreparseContents;
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::parse::parser::VisibilityMode;
@@ -19,6 +17,9 @@ use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use crate::type_completion::templates::mangle_template_name;
+use crate::type_completion::type_mapping::assemble_method;
 
 // As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
 // a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
@@ -298,7 +299,14 @@ pub(crate) fn precontextualize_fn_ident(
             })
         }
 
-        CXNaiveFnIdent::Destructor(ty) => Some(CXFunctionIdentifier::Destructor(ty.clone())),
+        CXNaiveFnIdent::Destructor(ty) => {
+            let cx_type = precontextualize_type(module_data, type_map, naive_type_map, None, ty)?;
+            let Some(type_name) = cx_type.get_identifier() else {
+                panic!("Destructor type must have a name: {ty}");
+            };
+            
+            Some(CXFunctionIdentifier::Destructor(type_name.clone()))
+        },
     }
 }
 
