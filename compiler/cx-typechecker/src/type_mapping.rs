@@ -1,4 +1,5 @@
 use crate::environment::TCEnvironment;
+use crate::templates::mangle_template_name;
 use cx_parsing_data::preparse::CXNaiveFnIdent;
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
@@ -8,11 +9,10 @@ use cx_typechecker_data::cx_types::{
 };
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
-use cx_util::mangling::mangle_template;
 
 pub(crate) fn assemble_method(
     name: &CXFunctionIdentifier,
-    mut return_type: CXType,
+    return_type: CXType,
     mut params: Vec<CXParameter>,
     var_args: bool,
 ) -> CXFunctionPrototype {
@@ -36,8 +36,6 @@ pub(crate) fn assemble_method(
                 _type: return_type.clone().pointer_to(),
             },
         );
-
-        return_type = return_type.mem_ref_to();
     }
 
     CXFunctionPrototype {
@@ -124,7 +122,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
             let input = contextualize_template_args(env, input)?;
-            let mangled_name = mangle_template(name.as_str(), &input.args);
+            let mangled_name = mangle_template_name(name.as_str(), &input);
 
             if let Some(existing) = env.get_type(&mangled_name) {
                 return Some(existing.clone());
@@ -206,6 +204,8 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
                     name: name.clone(),
                     base_identifier: name.clone(),
                     fields,
+                    move_semantics: false,
+                    copyable: true
                 },
             ))
         }

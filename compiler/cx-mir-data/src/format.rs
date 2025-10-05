@@ -148,10 +148,10 @@ impl Display for VirtualInstruction {
                 write!(f, "stackallocate {_type}")
             }
             VirtualInstruction::Store { value, memory, .. } => {
-                write!(f, "{memory} := {value}")
+                write!(f, "*{memory} := {value}")
             }
             VirtualInstruction::ZeroMemory { memory, _type } => {
-                write!(f, "{memory} := 0")
+                write!(f, "*{memory} := 0")
             }
             VirtualInstruction::StructAccess {
                 struct_,

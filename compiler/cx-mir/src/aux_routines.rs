@@ -61,7 +61,7 @@ pub(crate) fn get_struct_field(
     let MIRTypeKind::Struct { fields, .. } = &_type.kind else {
         bytecode_error_log!(
             builder,
-            "PANIC: Expected struct type on access {name}, got: {:?}",
+            "PANIC: Expected struct type on access {name}, got: {}",
             _type
         );
     };

@@ -1,14 +1,14 @@
 use crate::environment::TCEnvironment;
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 
-pub(crate) fn visit_destructable_instance(env: &mut TCEnvironment, ty: &CXType) -> bool {
+pub(crate) fn acknowledge_declared_type(env: &mut TCEnvironment, ty: &CXType) -> bool {
     if env.deconstructors.contains(ty) {
         return true;
     }
 
     match &ty.kind {
         CXTypeKind::StrongPointer { inner_type, .. } => {
-            let _ = visit_destructable_instance(env, inner_type);
+            let _ = acknowledge_declared_type(env, inner_type);
 
             // Strong pointers, due to some problems with how identically defined types
             // defined separately have different UUIDs, we just handle all strong pointers
@@ -24,7 +24,7 @@ pub(crate) fn visit_destructable_instance(env: &mut TCEnvironment, ty: &CXType) 
         } => {
             let any_field_deconstructable = fields
                 .iter()
-                .any(|(_, field_type)| visit_destructable_instance(env, field_type));
+                .any(|(_, field_type)| acknowledge_declared_type(env, field_type));
 
             if !any_field_deconstructable && !env.destructor_exists(ty) {
                 return false;

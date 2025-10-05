@@ -1,7 +1,7 @@
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
 use cx_typechecker::realize_fn_implementation;
-use cx_util::mangling::mangle_template;
+use cx_typechecker::templates::mangle_template_name;
 use std::collections::HashSet;
 
 pub(crate) fn realize_templates(
@@ -16,7 +16,7 @@ pub(crate) fn realize_templates(
             Some(module) => CompilationUnit::from_str(module.as_str()),
             None => job.clone(),
         };
-        let mangle_name = mangle_template(request.name.as_str(), &request.input.args);
+        let mangle_name = mangle_template_name(request.name.as_str(), &request.input);
 
         if requests_fulfilled.contains(&mangle_name) {
             continue;

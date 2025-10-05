@@ -120,6 +120,7 @@ pub enum TCExprKind {
     },
 
     Access {
+        struct_type: CXType,
         target: Box<TCExpr>,
         field: CXIdent,
     },
@@ -219,6 +220,10 @@ pub enum TCExprKind {
 
     InitializerList {
         indices: Vec<TCInitIndex>,
+    },
+    
+    Copy {
+        expr: Box<TCExpr>,
     },
 
     TypeConstructor {

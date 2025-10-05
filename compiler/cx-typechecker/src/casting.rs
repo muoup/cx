@@ -4,30 +4,28 @@ use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_util::log_error;
 
-pub(crate) fn coerce_value(expr: &mut TCExpr) {
-    if let Some(inner) = expr._type.mem_ref_inner() {
-        let _type = match &inner.kind {
-            CXTypeKind::StrongPointer { inner_type, .. } => inner_type.clone().pointer_to(),
+pub(crate) fn coerce_value(expr: &mut TCExpr) -> Option<()> {
+    match &expr._type.kind {
+        CXTypeKind::MemoryReference(inner) => {
+            let inner = *inner.clone();
+            implicit_cast(expr, &inner)
+        }
 
-            _ => inner.clone(),
-        };
+        CXTypeKind::Function { .. } => {
+            let pointer_to = expr._type.clone().pointer_to();
 
-        *expr = TCExpr {
-            _type,
-            kind: TCExprKind::ImplicitLoad {
-                operand: Box::new(std::mem::take(expr)),
-            },
-        };
-    }
+            *expr = TCExpr {
+                _type: pointer_to,
+                kind: TCExprKind::Coercion {
+                    operand: Box::new(std::mem::take(expr)),
+                    cast_type: CXCastType::FunctionToPointerDecay,
+                },
+            };
 
-    if let CXTypeKind::Function { prototype } = &expr._type.kind {
-        *expr = TCExpr {
-            _type: prototype.return_type.clone(),
-            kind: TCExprKind::Coercion {
-                operand: Box::new(std::mem::take(expr)),
-                cast_type: CXCastType::FunctionToPointerDecay,
-            },
-        };
+            Some(())
+        }
+
+        _ => Some(()),
     }
 }
 
@@ -132,13 +130,30 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
         }
 
         (CXTypeKind::MemoryReference(inner), _)
-            if same_type(inner.as_ref(), to_type) && to_type.is_structured() =>
+            if same_type(inner.as_ref(), to_type) && to_type.has_move_semantics() =>
+        {
+            if !inner.copyable() {
+                log_error!(
+                    "Cannot implicitly move value of type {} to type {}",
+                    from_type,
+                    to_type
+                );
+            }
+
+            *expr = TCExpr {
+                _type: *inner.clone(),
+                kind: TCExprKind::Copy {
+                    expr: Box::new(std::mem::take(expr)),
+                },
+            };
+        }
+
+        (CXTypeKind::MemoryReference(inner), _)
+            if inner.is_structured() && same_type(inner, to_type) =>
         {
             coerce(CXCastType::Reinterpret)
         }
-        (CXTypeKind::MemoryReference(inner), _) if same_type(inner, to_type) => {
-            coerce(CXCastType::Load)
-        }
+
         (CXTypeKind::MemoryReference(inner), _) => {
             let mut loaded = TCExpr {
                 _type: *inner.clone(),

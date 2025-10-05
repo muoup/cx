@@ -1,24 +1,23 @@
 use crate::environment::TCEnvironment;
-use crate::templates::{add_templated_types, restore_template_overwrites};
+use crate::templates::{add_templated_types, mangle_template_name, restore_template_overwrites};
 use crate::type_mapping::contextualize_fn_prototype;
 use crate::typechecker::in_method_env;
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::preparse::templates::CXFunctionTemplate;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef};
 use cx_typechecker_data::cx_types::CXTemplateInput;
-use cx_util::mangling::{mangle_destructor, mangle_template};
+use cx_util::mangling::mangle_destructor;
 
 mod binary_ops;
 mod casting;
 mod typechecker;
+mod log;
 
 pub(crate) mod structured_initialization;
-pub(crate) mod templates;
-pub(crate) mod variable_destruction;
+pub(crate) mod move_semantics;
 
+pub mod templates;
 pub mod environment;
-
-mod log;
 pub mod precontextualizing;
 pub mod type_mapping;
 
@@ -73,7 +72,7 @@ pub fn realize_fn_implementation(
     let overwrites = add_templated_types(env, &template.prototype, input);
 
     let template_name = template.shell.name.mangle();
-    let mangled_name = mangle_template(&template_name, &input.args);
+    let mangled_name = mangle_template_name(&template_name, &input);
     let prototype = env.get_func(&mangled_name)?.clone();
 
     let body = origin

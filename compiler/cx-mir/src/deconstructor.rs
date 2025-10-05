@@ -28,12 +28,12 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionProto
 }
 
 fn get_deconstructor(builder: &mut MIRBuilder, type_: &CXType) -> Option<String> {
-    let type_name = type_.get_name()?;
-    let deconstructor_name = mangle_destructor(type_name);
-
+    let deconstructor_name = mangle_deconstructor(type_.get_name()?);
+    
     if builder.fn_map.contains_key(&deconstructor_name) {
         Some(deconstructor_name)
     } else {
+        println!("Destructor {} not found", deconstructor_name);
         None
     }
 }

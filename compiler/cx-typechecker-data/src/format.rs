@@ -144,8 +144,8 @@ impl<'a> Display for TCExprFormatter<'a> {
                     TCExprFormatter::new(arg, self.depth + 1).fmt(f)?;
                 }
             }
-            TCExprKind::Access { target, field } => {
-                writeln!(f, "Access .{} {}", field, self.expr._type)?;
+            TCExprKind::Access { target, field, struct_type } => {
+                writeln!(f, "Access .{} {}", field, struct_type)?;
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
             }
             TCExprKind::Assignment {
@@ -156,7 +156,7 @@ impl<'a> Display for TCExprFormatter<'a> {
                 if let Some(op) = additional_op {
                     writeln!(f, "Assignment (op={:?}) {}", op, self.expr._type)?;
                 } else {
-                    writeln!(f, "Assignment {}", self.expr._type)?;
+                    writeln!(f, "Assignment {}", self.expr._type.mem_ref_inner().unwrap())?;
                 }
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
                 TCExprFormatter::new(value, self.depth + 1).fmt(f)?;
@@ -308,6 +308,10 @@ impl<'a> Display for TCExprFormatter<'a> {
                     union_type, name, self.expr._type
                 )?;
                 TCExprFormatter::new(input, self.depth + 1).fmt(f)?;
+            }
+            TCExprKind::Copy { expr } => {
+                writeln!(f, "Copy {}", self.expr._type)?;
+                TCExprFormatter::new(expr, self.depth + 1).fmt(f)?;
             }
             TCExprKind::Break => writeln!(f, "Break {}", self.expr._type)?,
             TCExprKind::Continue => writeln!(f, "Continue {}", self.expr._type)?,

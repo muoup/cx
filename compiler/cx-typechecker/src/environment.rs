@@ -3,7 +3,7 @@ use cx_lexer_data::token::Token;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_typechecker_data::{CXFnMap, CXTypeMap};
-use cx_util::mangling::{mangle_destructor, mangle_template};
+use cx_util::mangling::mangle_destructor;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -98,17 +98,11 @@ impl TCEnvironment<'_> {
         name: &str,
         input: &CXTemplateInput,
     ) -> Option<CXFunctionPrototype> {
-        let mangled_name = mangle_template(name, &input.args);
-
-        self.get_func(&mangled_name)
-            .or_else(|| instantiate_function_template(self, name, input))
+        instantiate_function_template(self, name, input)
     }
 
     pub fn get_templated_type(&mut self, name: &str, input: &CXTemplateInput) -> Option<CXType> {
-        let mangled_name = mangle_template(name, &input.args);
-
-        self.get_type(&mangled_name)
-            .or_else(|| instantiate_type_template(self, name, input))
+        instantiate_type_template(self, name, input)
     }
 
     pub fn destructor_exists(&self, _type: &CXType) -> bool {

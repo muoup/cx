@@ -3,7 +3,7 @@ use crate::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cas
 use crate::environment::TCEnvironment;
 use crate::log_typecheck_error;
 use crate::type_mapping::{contextualize_template_args, contextualize_type};
-use crate::variable_destruction::visit_destructable_instance;
+use crate::move_semantics::acknowledge_declared_type;
 use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_parsing_data::preparse::naive_types::CX_CONST;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex, TCTagMatch};
@@ -106,7 +106,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             let type_ = contextualize_type(env, type_)?;
 
             env.insert_symbol(name.as_string(), type_.clone());
-            visit_destructable_instance(env, &type_);
+            acknowledge_declared_type(env, &type_);
 
             TCExpr {
                 _type: type_.clone().mem_ref_to(),
@@ -446,8 +446,6 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             let lhs = typecheck_expr(env, lhs)?;
             let mut rhs = typecheck_expr(env, rhs)?;
 
-            coerce_value(&mut rhs);
-
             let Some(inner) = lhs._type.mem_ref_inner() else {
                 log_typecheck_error!(
                     env,
@@ -463,9 +461,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            if !inner.is_structured() {
-                implicit_cast(&mut rhs, inner);
-            }
+            implicit_cast(&mut rhs, inner);
 
             TCExpr {
                 _type: lhs._type.clone(),
@@ -514,12 +510,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 );
             };
 
-            if !inner.is_strong_pointer() {
+            if !inner.has_move_semantics() {
                 log_typecheck_error!(
                     env,
                     move_expr,
-                    " Move expression requires a strong pointer type, found {}",
-                    expr_tc._type
+                    "Value of type {} has no move semantics",
+                    inner
                 );
             }
 

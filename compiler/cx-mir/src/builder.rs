@@ -132,6 +132,7 @@ impl MIRBuilder {
         for DeclarationLifetime { value_id, _type } in decls.into_iter().rev() {
             deconstruct_variable(self, &value_id, &_type)?;
         }
+        
         Some(())
     }
 

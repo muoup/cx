@@ -10,8 +10,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {
     pub uuid: u64,
-    pub visibility_mode: VisibilityMode,
+    pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
+    
     pub kind: CXTypeKind,
 }
 
@@ -54,8 +55,9 @@ impl Default for CXType {
     fn default() -> Self {
         CXType {
             uuid: 0,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             specifiers: 0,
+            
             kind: CXTypeKind::Unit,
         }
     }
@@ -75,6 +77,9 @@ pub enum CXTypeKind {
         name: Option<CXIdent>,
         base_identifier: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
+        
+        move_semantics: bool,
+        copyable: bool
     },
     Union {
         name: Option<CXIdent>,
@@ -89,6 +94,8 @@ pub enum CXTypeKind {
     StrongPointer {
         inner_type: Box<CXType>,
         is_array: bool,
+        
+        // move_semantics always true
     },
 
     PointerTo {
@@ -121,7 +128,8 @@ impl CXType {
         CXType {
             uuid: 0,
             specifiers: 0,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
+            
             kind: CXTypeKind::Unit,
         }
     }
@@ -129,33 +137,28 @@ impl CXType {
     pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             specifiers,
+            
             kind: underlying_type,
         }
     }
 
     pub fn set_visibility_mode(&mut self, visibility: VisibilityMode) -> &mut Self {
-        self.visibility_mode = visibility;
+        self.visibility = visibility;
         self
     }
 
     pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        CXType {
-            uuid: self.uuid,
-            visibility_mode: self.visibility_mode,
-            specifiers: self.specifiers | specifier,
-            kind: self.kind.clone(),
-        }
+        let mut clone = self.clone();
+        clone.specifiers |= specifier;
+        clone
     }
 
     pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
-            visibility_mode: self.visibility_mode,
-            specifiers: self.specifiers & !specifier,
-            kind: self.kind.clone(),
-        }
+        let mut clone = self.clone();
+        clone.specifiers &= !specifier;
+        clone
     }
 
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
@@ -181,7 +184,8 @@ impl CXType {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
+            
             kind: CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
 
@@ -196,7 +200,7 @@ impl CXType {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             kind: CXTypeKind::MemoryReference(Box::new(self)),
         }
     }
@@ -285,6 +289,25 @@ impl CXType {
             self.set_name(CXIdent::from(new_name));
         }
     }
+    
+    pub fn has_move_semantics(&self) -> bool {
+        match &self.kind {
+            CXTypeKind::Structured { move_semantics, .. } => *move_semantics,
+            CXTypeKind::StrongPointer { .. } => true,
+            CXTypeKind::TaggedUnion { variants, .. } => variants.iter().any(|(_, t)| t.has_move_semantics()),
+            
+            _ => false,
+        }
+    }
+    
+    pub fn copyable(&self) -> bool {
+        match &self.kind {
+            CXTypeKind::Structured { copyable, .. } => *copyable,
+            CXTypeKind::TaggedUnion { variants, .. } => variants.iter().all(|(_, t)| t.copyable()),
+            
+            _ => true,
+        }
+    }
 
     /*
      *   With things like type constructors, they are not per-se function pointers as they
@@ -311,7 +334,7 @@ impl From<CXTypeKind> for CXType {
     fn from(kind: CXTypeKind) -> Self {
         CXType {
             uuid: Uuid::new_v4().as_u128() as u64,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
         }

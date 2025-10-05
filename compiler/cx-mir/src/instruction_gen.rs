@@ -57,10 +57,10 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             }
         }
 
-        TCExprKind::Access { target, field } => {
+        TCExprKind::Access { target, field, struct_type } => {
             let left_id = generate_instruction(builder, target.as_ref())?;
-            let ltype = builder.convert_cx_type(&target._type)?;
-
+            let ltype = builder.convert_cx_type(struct_type)?;
+            
             if let Some(id) = try_access_field(builder, &ltype, left_id, field.as_str()) {
                 return Some(id);
             }
@@ -296,7 +296,31 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     dereferenceable: type_as_bc.fixed_size() as u32,
                 }),
             )
-        }
+        },
+        
+        TCExprKind::Copy { expr: inner_expr } => {
+            let _type = builder.convert_cx_type(&expr._type)?;
+            let copy = generate_instruction(builder, inner_expr.as_ref())?;
+            
+            let buffer = builder.add_instruction(
+                VirtualInstruction::Allocate {
+                    alignment: _type.alignment(),
+                    _type: _type.clone(),
+                },
+                MIRType::default_pointer(),
+            )?;
+            
+            builder.add_instruction(
+                VirtualInstruction::Store {
+                    memory: buffer.clone(),
+                    value: copy,
+                    type_: _type,
+                },
+                MIRType::unit(),
+            )?;
+            
+            Some(buffer)
+        },
 
         TCExprKind::Return { value } => {
             if value.is_none() {
@@ -880,6 +904,10 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
         }
 
         TCExprKind::InitializerList { indices } => {
+            if expr._type.is_unit() {
+                panic!("PANIC: Uncontextualized unit initializer list found: {expr}");
+            }
+            
             let expr_type = builder.convert_cx_type(&expr._type)?;
 
             let alloc = builder.add_instruction(

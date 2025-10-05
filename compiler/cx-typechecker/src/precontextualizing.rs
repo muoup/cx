@@ -1,21 +1,21 @@
+use crate::templates::mangle_template_name;
 use crate::type_mapping::assemble_method;
 use cx_parsing_data::PreparseContents;
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_parsing_data::preparse::naive_types::{
-    CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, ModuleResource,
+    CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource
 };
 use cx_parsing_data::preparse::{CXNaiveFnIdent, CXNaiveFnMap, CXNaiveTypeMap};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::ast::TCGlobalVariable;
 use cx_typechecker_data::cx_types::{
-    CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXType, CXTypeKind,
+    CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind
 };
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::{CXFnData, CXTypeData};
 use cx_util::identifier::CXIdent;
-use cx_util::mangling::mangle_template;
 use cx_util::{CXResult, log_error};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -39,6 +39,30 @@ fn reduce_ident_ident<'a>(
 
         _ => Some(cx_type),
     }
+}
+
+fn precontextualize_template_input(
+    module_data: &ModuleData,
+    cx_map: &mut CXTypeData,
+    naive_type_map: &CXNaiveTypeMap,
+    external_module: Option<&String>,
+    input: &CXNaiveTemplateInput,
+) -> Option<CXTemplateInput> {
+    let _ty = input.params
+        .iter()
+        .map(|param| {
+            precontextualize_type(
+                module_data,
+                cx_map,
+                naive_type_map,
+                external_module,
+                param,
+            )
+            .unwrap_or_else(|| panic!("Failed to precontextualize template input type: {param}"))
+        })
+        .collect::<Vec<_>>();
+    
+    Some(CXTemplateInput { args: _ty })
 }
 
 pub fn precontextualize_type(
@@ -95,12 +119,20 @@ pub fn precontextualize_type(
         }
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input, .. } => {
-            let template_name = mangle_template(name.as_str(), &input.params);
-
+            let contextualized_input = precontextualize_template_input(
+                module_data,
+                cx_map,
+                naive_type_map,
+                external_module,
+                input,
+            )?;
+            
+            let template_name = mangle_template_name(name.as_str(), &contextualized_input);
+                                    
             if let Some(template) = cx_map.get(template_name.as_str()) {
                 return Some(template.clone());
             }
-
+            
             let Some(template) = naive_type_map.templates.get(name.as_str()) else {
                 log_error!(
                     "Template not found: {name}<{}>",
@@ -123,16 +155,15 @@ pub fn precontextualize_type(
                 .iter()
                 .zip(input.params.iter())
             {
-                let reduced_type = reduce_ident_ident(naive_type, &map_clone)?;
-
+                let reduced_type = reduce_ident_ident(naive_type, naive_type_map)?;
+                
                 map_clone
                     .insert_standard(name.clone(), ModuleResource::standard(reduced_type.clone()));
             }
 
             let mut cx_type = precontextualize_type(module_data, cx_map, &map_clone, None, &shell)?;
-            cx_type.map_name(|name| mangle_template(name, &input.params));
-
-            cx_map.insert_standard(template_name.clone(), cx_type.clone());
+            cx_type.set_name(CXIdent::from(template_name.as_str()));
+            cx_map.insert_standard(template_name, cx_type.clone());
             Some(cx_type)
         }
 
@@ -207,6 +238,9 @@ pub fn precontextualize_type(
                 name: name.clone(),
                 base_identifier: name.clone(),
                 fields,
+
+                move_semantics: true,
+                copyable: true,
             }))
         }
 
@@ -268,19 +302,19 @@ pub(crate) fn precontextualize_fn_ident(
     }
 }
 
-fn add_if_not_exists(cx_map: &mut CXTypeData, naive: &CXNaiveType, cx_type: &CXType) {
-    if let CXNaiveTypeKind::Identifier { name, .. } = &naive.kind {
-        if !cx_map.standard.contains_key(name.as_str()) {
-            cx_map.insert_standard(name.as_string(), cx_type.clone());
-        }
-    } else if let CXNaiveTypeKind::TemplatedIdentifier { name, input } = &naive.kind {
-        let mangled_name = mangle_template(name.as_str(), &input.params);
+// fn add_if_not_exists(cx_map: &mut CXTypeData, naive: &CXNaiveType, cx_type: &CXType) {
+//     if let CXNaiveTypeKind::Identifier { name, .. } = &naive.kind {
+//         if !cx_map.standard.contains_key(name.as_str()) {
+//             cx_map.insert_standard(name.as_string(), cx_type.clone());
+//         }
+//     } else if let CXNaiveTypeKind::TemplatedIdentifier { name, input } = &naive.kind {
+//         let mangled_name = mangle_template_name(name.as_str(), &input);
 
-        if !cx_map.templates.contains_key(mangled_name.as_str()) {
-            cx_map.insert_standard(mangled_name, cx_type.clone());
-        }
-    }
-}
+//         if !cx_map.templates.contains_key(mangled_name.as_str()) {
+//             cx_map.insert_standard(mangled_name, cx_type.clone());
+//         }
+//     }
+// }
 
 pub fn precontextualize_prototype(
     module_data: &ModuleData,
@@ -325,15 +359,6 @@ pub fn precontextualize_prototype(
     )?;
 
     let cx_proto = assemble_method(&ident, return_type, parameters, prototype.resource.var_args);
-
-    add_if_not_exists(
-        type_map,
-        &prototype.resource.return_type,
-        &cx_proto.return_type,
-    );
-    for (naive_param, param) in prototype.resource.params.iter().zip(&cx_proto.params) {
-        add_if_not_exists(type_map, &naive_param._type, &param._type);
-    }
 
     Some(cx_proto)
 }

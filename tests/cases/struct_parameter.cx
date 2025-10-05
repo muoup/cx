@@ -20,7 +20,7 @@ int main() {
 }
 
 void pass_by_reference(Test* t) {   
-    printf("Struct Parameter:\n");
+    printf("Pass By Reference:\n");
     printf("t.inner.a: %d\n", t.inner.a);
     printf("t.inner.b: %d\n", t.inner.b);
     printf("t.c: %d\n", t.c);
@@ -28,7 +28,7 @@ void pass_by_reference(Test* t) {
 }
 
 void pass_by_value(Test t, int c) {
-    printf("Struct Parameter:\n");
+    printf("Pass By Value:\n");
     printf("t.inner.a: %d\n", t.inner.a);
     printf("t.inner.b: %d\n", t.inner.b);
     printf("t.c: %d\n", t.c);

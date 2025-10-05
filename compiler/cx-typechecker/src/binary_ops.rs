@@ -17,18 +17,20 @@ pub(crate) fn typecheck_access(
     expr: &CXExpr,
 ) -> Option<TCExpr> {
     let mut tc_lhs = typecheck_expr(env, lhs)?;
-    coerce_value(&mut tc_lhs);
 
-    if let CXTypeKind::PointerTo { inner_type, .. } = &tc_lhs._type.kind {
-        tc_lhs = TCExpr {
-            _type: *inner_type.clone(),
-            kind: TCExprKind::ImplicitLoad {
-                operand: Box::new(tc_lhs),
-            },
-        };
-    }
+    let inner = match tc_lhs._type.mem_ref_inner() {
+        Some(inner) if inner.is_pointer() => {
+            coerce_value(&mut tc_lhs);
+            &tc_lhs._type
+        },
+        Some(inner) => inner,
+        _ => &tc_lhs._type,
+    };
+    
+    let inner = inner.ptr_inner()
+        .unwrap_or(inner);
 
-    let fields = match &tc_lhs._type.kind {
+    let fields = match &inner.kind {
         CXTypeKind::Structured { fields, .. }
         | CXTypeKind::Union {
             variants: fields, ..
@@ -37,8 +39,8 @@ pub(crate) fn typecheck_access(
         _ => log_typecheck_error!(
             env,
             expr,
-            " Member access on {} without a struct or union type",
-            tc_lhs._type
+            "Member access on {}, expected struct or union type",
+            inner
         ),
     };
 
@@ -52,10 +54,11 @@ pub(crate) fn typecheck_access(
 
                 let field_name = CXIdent::from(field_name.as_str());
                 let field_type = field_type.clone().mem_ref_to();
-
+                
                 return Some(TCExpr {
                     _type: field_type,
                     kind: TCExprKind::Access {
+                        struct_type: inner.clone(),
                         target: Box::new(tc_lhs),
                         field: field_name,
                     },
@@ -262,18 +265,10 @@ pub(crate) fn typecheck_method_call(
     };
 
     if prototype.needs_buffer {
-        let CXTypeKind::MemoryReference(inner_type) = &prototype.return_type.kind else {
-            unreachable!(
-                "PANIC: Method {} requires a temporary buffer, but has non-pointer return type {}",
-                prototype.name.as_string(),
-                prototype.return_type
-            );
-        };
-
         let temporary_buffer = TCExpr {
-            _type: inner_type.clone().pointer_to(),
+            _type: prototype.return_type.clone(),
             kind: TCExprKind::TemporaryBuffer {
-                _type: *inner_type.clone(),
+                _type: prototype.return_type.clone(),
             },
         };
 
