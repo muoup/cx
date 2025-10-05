@@ -9,6 +9,7 @@ use cx_pipeline_data::GlobalCompilationContext;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef};
 use cx_typechecker_data::cx_types::CXTemplateInput;
 use cx_util::mangling::mangle_destructor;
+use cx_util::CXResult;
 
 mod log;
 
@@ -17,7 +18,7 @@ pub mod type_completion;
 
 pub mod environment;
 
-pub fn create_base_types(context: &GlobalCompilationContext, cx_ast: &CXAST) -> Option<TCBaseMappings> {
+pub fn create_base_types(context: &GlobalCompilationContext, cx_ast: &CXAST) -> CXResult<TCBaseMappings> {
     let mut type_data = contextualize_type_map(&context.module_db, &cx_ast.type_map)
         .expect("Failed to contextualize type map");
     
@@ -45,7 +46,7 @@ pub fn create_base_types(context: &GlobalCompilationContext, cx_ast: &CXAST) -> 
     )
 }
 
-pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> Option<()> {
+pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> CXResult<()> {
     for stmt in ast.global_stmts.iter() {
         match stmt {
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
@@ -86,12 +87,14 @@ pub fn realize_fn_implementation(
     origin: &CXAST,
     template: &CXFunctionTemplate,
     input: &CXTemplateInput,
-) -> Option<()> {
+) -> CXResult<()> {
     let old_base = env.base_data;
 
-    unsafe {
-        env.base_data = std::mem::transmute::<&cx_typechecker_data::ast::TCBaseMappings, &cx_typechecker_data::ast::TCBaseMappings>(structure_data);
-    }
+    // SAFETY: The lifetimes will technically be unsound here, but the unsoundness only matters
+    // if the reference here escapes the function, which we ensure it does not. The lifetime
+    // of structure_data will not outlive env's underlying struct, but will outlive its existence
+    // in the struct, which is sufficient for this constrained context.
+    env.base_data = unsafe { std::mem::transmute(structure_data) };
 
     let overwrites = add_templated_types(env, &template.prototype, input);
 
@@ -122,8 +125,6 @@ pub fn realize_fn_implementation(
 
     restore_template_overwrites(env, overwrites);
 
-    unsafe {
-        *(&mut env.base_data as *mut &_) = old_base;
-    }
+    env.base_data = old_base;
     Some(())
 }
