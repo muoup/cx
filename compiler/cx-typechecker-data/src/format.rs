@@ -498,7 +498,7 @@ impl Display for CXTypeKind {
 
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}(", self.name)?;
+        write!(f, "{}(", self.name.mangle(self))?;
         for (i, param) in self.params.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;

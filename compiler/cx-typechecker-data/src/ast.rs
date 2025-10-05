@@ -1,5 +1,6 @@
 use crate::cx_types::{CXFunctionPrototype, CXType};
-use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
+use crate::function_map::CXFnMap;
+use crate::{CXTypeData, CXTypeMap};
 use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCBaseMappings {
     pub type_data: CXTypeData,
-    pub fn_data: CXFnData,
+    pub fn_map: CXFnMap,
     pub global_variables: HashMap<String, TCGlobalVariable>,
 }
 

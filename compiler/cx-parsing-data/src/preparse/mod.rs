@@ -1,7 +1,6 @@
 use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource};
 use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use cx_util::identifier::CXIdent;
-use cx_util::mangling::{mangle_destructor, mangle_member_function};
 use speedy::{Readable, Writable};
 use std::collections::HashMap;
 
@@ -9,48 +8,10 @@ mod format;
 pub mod naive_types;
 pub mod templates;
 
-#[derive(Debug, Clone, Readable, Writable)]
-pub struct GenericNaiveMap<Standard, Template> {
-    pub standard: HashMap<String, ModuleResource<Standard>>,
-    pub templates: HashMap<String, ModuleResource<Template>>,
-}
+pub type NaiveTypeIdent = String;
 
-pub type CXNaiveTypeMap = GenericNaiveMap<CXNaiveType, CXTypeTemplate>;
-pub type CXNaiveFnMap = GenericNaiveMap<CXNaivePrototype, CXFunctionTemplate>;
-
-impl<Standard, Template> Default for GenericNaiveMap<Standard, Template> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<Standard, Template> GenericNaiveMap<Standard, Template> {
-    pub fn new() -> Self {
-        GenericNaiveMap {
-            standard: HashMap::new(),
-            templates: HashMap::new(),
-        }
-    }
-
-    pub fn insert_standard(&mut self, name: String, item: ModuleResource<Standard>) {
-        self.standard.insert(name, item);
-    }
-
-    pub fn insert_template(&mut self, name: String, item: ModuleResource<Template>) {
-        self.templates.insert(name, item);
-    }
-
-    pub fn get(&self, name: &str) -> Option<&ModuleResource<Standard>> {
-        self.standard.get(name)
-    }
-
-    pub fn get_template(&self, name: &str) -> Option<&ModuleResource<Template>> {
-        self.templates.get(name)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-pub enum CXNaiveFnIdent {
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum NaiveFnIdent {
     Standard(CXIdent),
     MemberFunction {
         _type: CXNaiveType,
@@ -59,27 +20,44 @@ pub enum CXNaiveFnIdent {
     Destructor(CXNaiveType),
 }
 
-impl CXNaiveFnIdent {
-    pub fn mangle(&self) -> String {
-        match self {
-            CXNaiveFnIdent::Standard(name) => name.to_string(),
-            CXNaiveFnIdent::MemberFunction {
-                _type,
-                function_name,
-            } => {
-                let Some(name) = _type.get_name() else {
-                    unreachable!("Member function's type must have a name");
-                };
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct CXNaiveMap<Identifier: Eq + std::hash::Hash, Standard, Template> {
+    standard: HashMap<Identifier, ModuleResource<Standard>>,
+    templates: HashMap<Identifier, ModuleResource<Template>>
+}
 
-                mangle_member_function(name.to_string(), function_name.as_str())
-            }
-            CXNaiveFnIdent::Destructor(_ty) => {
-                let Some(name) = _ty.get_name() else {
-                    unreachable!("Destructor's type must have a name");
-                };
-                
-                mangle_destructor(name)
-            },
+pub type CXNaiveTypeMap = CXNaiveMap<NaiveTypeIdent, CXNaiveType, CXTypeTemplate>;
+pub type CXNaiveFnMap = CXNaiveMap<NaiveFnIdent, CXNaivePrototype, CXFunctionTemplate>;
+
+impl<Identifier, Standard, Template> Default for CXNaiveMap<Identifier, Standard, Template> 
+    where Identifier: Eq + std::hash::Hash {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<Identifier, Standard, Template> CXNaiveMap<Identifier, Standard, Template> 
+    where Identifier: Eq + std::hash::Hash {
+    pub fn new() -> Self {
+        Self {
+            standard: HashMap::new(),
+            templates: HashMap::new(),
         }
+    }
+
+    pub fn insert_standard(&mut self, name: Identifier, item: ModuleResource<Standard>) {
+        self.standard.insert(name, item);
+    }
+
+    pub fn insert_template(&mut self, name: Identifier, item: ModuleResource<Template>) {
+        self.templates.insert(name, item);
+    }
+ 
+    pub fn get(&self, ident: &Identifier) -> Option<&ModuleResource<Standard>> {
+        self.standard.get(ident)
+    }
+
+    pub fn get_template(&self, ident: &Identifier) -> Option<&ModuleResource<Template>> {
+        self.templates.get(ident)
     }
 }

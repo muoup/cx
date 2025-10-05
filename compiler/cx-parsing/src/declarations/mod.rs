@@ -95,10 +95,10 @@ impl FunctionDeclaration {
         match self.template_prototype {
             Some(prototype) => {
                 data.contents.function_definitions.insert_template(
-                    self.prototype.name.mangle(),
+                    self.prototype.name.clone(),
                     ModuleResource::with_visibility(
                         CXFunctionTemplate {
-                            name: CXIdent::from(self.prototype.name.mangle()),
+                            name, 
                             prototype,
                             shell: self.prototype,
                         },
@@ -109,7 +109,7 @@ impl FunctionDeclaration {
 
             None => {
                 data.contents.function_definitions.insert_standard(
-                    self.prototype.name.mangle(),
+                    self.prototype.name.clone(),
                     ModuleResource::with_visibility(self.prototype, data.visibility_mode),
                 );
             }

@@ -1,12 +1,13 @@
 pub mod ast;
 pub mod cx_types;
 pub mod intrinsic_types;
+pub mod function_map;
 
-pub mod format;
+mod format;
 
-use crate::cx_types::{CXFunctionPrototype, CXTemplateInput};
+use crate::cx_types::CXTemplateInput;
 use cx_parsing_data::preparse::naive_types::ModuleResource;
-use cx_parsing_data::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
+use cx_parsing_data::preparse::templates::CXTypeTemplate;
 use cx_types::CXType;
 use speedy::{Readable, Writable};
 use std::collections::{HashMap, HashSet};
@@ -26,10 +27,7 @@ pub struct GenericData<Standard, Template> {
 pub type GenericMap<Type> = HashMap<String, Type>;
 
 pub type CXTypeData = GenericData<CXType, CXTypeTemplate>;
-pub type CXFnData = GenericData<CXFunctionPrototype, CXFunctionTemplate>;
-
 pub type CXTypeMap = GenericMap<CXType>;
-pub type CXFnMap = GenericMap<CXFunctionPrototype>;
 
 impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
     pub fn new() -> Self {

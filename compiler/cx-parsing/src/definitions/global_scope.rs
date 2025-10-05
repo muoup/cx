@@ -3,7 +3,7 @@ use cx_parsing_data::parse::parser::{ParserData, VisibilityMode};
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
 };
-use cx_parsing_data::preparse::CXNaiveFnIdent;
+use cx_parsing_data::preparse::NaiveFnIdent;
 use cx_parsing_data::{assert_token_matches, next_kind, try_next};
 use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{keyword, operator, punctuator, specifier};
@@ -63,7 +63,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 
 pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
     CXNaivePrototype {
-        name: CXNaiveFnIdent::Destructor(_type.clone()),
+        name: NaiveFnIdent::Destructor(_type.clone()),
 
         return_type: CXNaiveTypeKind::Identifier {
             name: CXIdent::from("void"),

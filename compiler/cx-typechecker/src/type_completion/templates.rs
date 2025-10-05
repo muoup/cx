@@ -3,7 +3,6 @@ use crate::expr_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::type_mapping::{contextualize_fn_prototype, contextualize_type};
 use cx_parsing_data::preparse::templates::CXTemplatePrototype;
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
-use cx_util::identifier::CXIdent;
 use cx_util::mangling::mangle_destructor;
 
 pub(crate) type Overwrites = Vec<(String, CXType)>;
@@ -78,7 +77,7 @@ pub(crate) fn instantiate_type_template(
 
     if env
         .base_data
-        .fn_data
+        .fn_map
         .get_template(&destructor_name)
         .is_some()
     {
@@ -95,19 +94,22 @@ pub(crate) fn instantiate_function_template(
 ) -> Option<CXFunctionPrototype> {
     let mangled_name = mangle_template_name(name, input);
 
-    if env.base_data.fn_data.standard.contains_key(&mangled_name) {
-        return env.get_func(&mangled_name);
+    if let Some(generated) = env.get_func(&mangled_name) {
+        return Some(generated);
     }
 
-    let cache = env.base_data.fn_data.get_template(name)?;
-    let module_origin = cache.template.external_module.clone();
-    let template = cache.template.resource.clone();
+    let cache = env.base_data.fn_map.get_template(name)?;
+    let resource = &cache.resource;
+    
+    let module_origin = &cache.external_module;
+    let template_prototype = &resource.prototype;
+    let shell = &resource.shell;
 
-    let overwrites = add_templated_types(env, &template.prototype, input);
+    let overwrites = add_templated_types(env, template_prototype, input);
 
-    let mut instantiated = contextualize_fn_prototype(env, &template.shell.clone())?;
-    instantiated.name = CXIdent::from(mangled_name.as_str());
-
+    let mut instantiated = contextualize_fn_prototype(env, shell)?;
+    instantiated.name.set_templated();
+    
     env.realized_fns.insert(mangled_name.clone(), instantiated);
     env.requests.push(TCTemplateRequest {
         module_origin: module_origin.clone(),

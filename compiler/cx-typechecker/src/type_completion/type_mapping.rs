@@ -1,29 +1,30 @@
 use crate::environment::TCEnvironment;
 use crate::type_completion::templates::mangle_template_name;
-use cx_parsing_data::preparse::CXNaiveFnIdent;
+use cx_parsing_data::preparse::NaiveFnIdent;
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
 };
 use cx_typechecker_data::cx_types::{
-    CXFunctionIdentifier, CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind,
+    CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind,
 };
+use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 
 pub(crate) fn assemble_method(
-    name: &CXFunctionIdentifier,
+    name: CXFunctionIdentifier,
     return_type: CXType,
     mut params: Vec<CXParameter>,
     var_args: bool,
 ) -> CXFunctionPrototype {
     let needs_buffer = return_type.is_structured();
 
-    if let CXFunctionIdentifier::MemberFunction { _type, .. } = name {
+    if let Some(implicit_member) = name.implicit_member() {
         params.insert(
             0,
             CXParameter {
                 name: Some(CXIdent::from("this")),
-                _type: _type.clone().pointer_to(),
+                _type: implicit_member.clone(),
             },
         );
     }
@@ -39,7 +40,7 @@ pub(crate) fn assemble_method(
     }
 
     CXFunctionPrototype {
-        name: name.as_ident(),
+        name,
         return_type,
         params,
         needs_buffer,
@@ -62,30 +63,33 @@ pub fn contextualize_template_args(
 
 pub(crate) fn contextualize_fn_ident(
     env: &mut TCEnvironment,
-    ident: &CXNaiveFnIdent,
+    ident: &NaiveFnIdent,
 ) -> Option<CXFunctionIdentifier> {
     match ident {
-        CXNaiveFnIdent::MemberFunction {
+        NaiveFnIdent::MemberFunction {
             function_name,
             _type,
         } => {
             let _type = contextualize_type(env, _type)?;
 
-            Some(CXFunctionIdentifier::MemberFunction {
-                function_name: function_name.clone(),
-                _type,
-            })
+            Some(
+                CXFunctionKind::Member {
+                    base_type: _type,
+                    name: function_name.clone(),
+                }
+                .into(),
+            )
         }
-                
-        CXNaiveFnIdent::Destructor(name) => {
+
+        NaiveFnIdent::Destructor(name) => {
             let cx_type = contextualize_type(env, name)?;
-            let name = cx_type.get_identifier()?;
 
-            Some(CXFunctionIdentifier::Destructor(name.clone()))
-        },
+            Some(CXFunctionKind::Destructor { base_type: cx_type }.into())
+        }
 
-        CXNaiveFnIdent::Standard(name) => Some(CXFunctionIdentifier::Standard(name.clone())),
-
+        NaiveFnIdent::Standard(name) => {
+            Some(CXFunctionKind::Standard { name: name.clone() }.into())
+        }
     }
 }
 
@@ -109,7 +113,7 @@ pub fn contextualize_fn_prototype(
         .collect::<Option<Vec<_>>>()?;
 
     Some(assemble_method(
-        &ident,
+        ident,
         return_type,
         parameters,
         prototype.var_args,
@@ -211,7 +215,7 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
                     base_identifier: name.clone(),
                     fields,
                     move_semantics: false,
-                    copyable: true
+                    copyable: true,
                 },
             ))
         }

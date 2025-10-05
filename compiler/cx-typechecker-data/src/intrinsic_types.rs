@@ -74,14 +74,14 @@ pub const INTRINSIC_TYPES: &[(&str, CXTypeKind)] = &[
         "usize",
         CXTypeKind::Integer {
             signed: false,
-            bytes: 8,
+            bytes: std::mem::size_of::<usize>() as u8,
         },
     ),
     (
         "isize",
         CXTypeKind::Integer {
             signed: true,
-            bytes: 8,
+            bytes: std::mem::size_of::<isize>() as u8,
         },
     ),
     ("f32", CXTypeKind::Float { bytes: 4 }),

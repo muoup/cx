@@ -1,11 +1,10 @@
 use std::hash::{Hash, Hasher};
 
-use crate::ast::TCExpr;
+use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
 use crate::format::type_mangle;
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_parsing_data::preparse::naive_types::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
-use cx_util::mangling::{mangle_destructor, mangle_member_function};
 use speedy::{Readable, Writable};
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -38,7 +37,7 @@ pub struct CXParameter {
 
 #[derive(Debug, Clone, Default, Readable, Writable)]
 pub struct CXFunctionPrototype {
-    pub name: CXIdent,
+    pub name: CXFunctionIdentifier,
     pub return_type: CXType,
     pub params: Vec<CXParameter>,
 
@@ -322,7 +321,7 @@ impl CXType {
             0,
             CXTypeKind::Function {
                 prototype: Box::new(CXFunctionPrototype {
-                    name: CXIdent::from("__internal_function"),
+                    name: CXFunctionIdentifier::default(),
                     return_type: CXType::unit(),
                     params: vec![],
                     needs_buffer: false,
@@ -424,39 +423,5 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
         (CXTypeKind::Bool, CXTypeKind::Bool) | (CXTypeKind::Unit, CXTypeKind::Unit) => true,
 
         _ => false,
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-pub enum CXFunctionIdentifier {
-    Standard(CXIdent),
-    MemberFunction {
-        _type: CXType,
-        function_name: CXIdent,
-    },
-    Destructor(CXIdent),
-}
-
-impl CXFunctionIdentifier {
-    pub fn as_ident(&self) -> CXIdent {
-        CXIdent::from(self.as_string())
-    }
-
-    pub fn as_string(&self) -> String {
-        match self {
-            CXFunctionIdentifier::Standard(name) => name.to_string(),
-            CXFunctionIdentifier::MemberFunction {
-                _type,
-                function_name,
-                ..
-            } => {
-                let Some(name) = _type.get_identifier() else {
-                    unreachable!("Member function's type must have a name");
-                };
-
-                mangle_member_function(name.to_string(), function_name.as_str())
-            }
-            CXFunctionIdentifier::Destructor(name) => mangle_destructor(name),
-        }
     }
 }

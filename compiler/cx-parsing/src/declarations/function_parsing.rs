@@ -4,7 +4,7 @@ use cx_parsing_data::{
         naive_types::{
             CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
         },
-        CXNaiveFnIdent,
+        NaiveFnIdent,
     },
     try_next,
 };
@@ -79,7 +79,7 @@ pub fn try_function_parse(
             Some(Some(FunctionDeclaration {
                 prototype: CXNaivePrototype {
                     return_type,
-                    name: CXNaiveFnIdent::Standard(name),
+                    name: NaiveFnIdent::Standard(name),
                     params: args.params,
                     var_args: args.var_args,
                     this_param: args.contains_this,
@@ -116,7 +116,7 @@ pub fn try_function_parse(
             let name = name.clone();
             let template_prototype = try_parse_template(tokens);
 
-            let name = CXNaiveFnIdent::MemberFunction {
+            let name = NaiveFnIdent::MemberFunction {
                 _type,
                 function_name: CXIdent::from(name.as_str()),
             };

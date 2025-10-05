@@ -1,7 +1,7 @@
 use crate::preparse::naive_types::{
     CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
 };
-use crate::preparse::CXNaiveFnIdent;
+use crate::preparse::NaiveFnIdent;
 use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter};
 
@@ -95,11 +95,11 @@ impl Display for CXNaiveTemplateInput {
     }
 }
 
-impl Display for CXNaiveFnIdent {
+impl Display for NaiveFnIdent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXNaiveFnIdent::Standard(name) => write!(f, "{name}"),
-            CXNaiveFnIdent::MemberFunction {
+            NaiveFnIdent::Standard(name) => write!(f, "{name}"),
+            NaiveFnIdent::MemberFunction {
                 _type,
                 function_name,
             } => {
@@ -109,7 +109,7 @@ impl Display for CXNaiveFnIdent {
 
                 write!(f, "_{name}_{function_name}")
             }
-            CXNaiveFnIdent::Destructor(name) => {
+            NaiveFnIdent::Destructor(name) => {
                 write!(f, "~{name}")
             }
         }

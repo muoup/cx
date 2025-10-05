@@ -27,7 +27,7 @@ pub(crate) fn realize_templates(
 
         let template = env
             .base_data
-            .fn_data
+            .fn_map
             .get_template(request.name.as_str())?
             .template
             .resource

@@ -1,7 +1,8 @@
 use cx_lexer_data::token::Token;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
-use cx_typechecker_data::{CXFnMap, CXTypeMap};
+use cx_typechecker_data::function_map::{CXFnMap, CXFnBaseMap};
+use cx_typechecker_data::CXTypeMap;
 use cx_util::mangling::mangle_destructor;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
@@ -22,7 +23,7 @@ pub struct TCEnvironment<'a> {
     pub base_data: &'a TCBaseMappings,
 
     pub realized_types: CXTypeMap,
-    pub realized_fns: CXFnMap,
+    pub realized_fns: CXFnBaseMap,
     pub realized_globals: HashMap<String, TCGlobalVariable>,
 
     pub requests: Vec<TCTemplateRequest>,
@@ -73,12 +74,16 @@ impl TCEnvironment<'_> {
     pub fn symbol_type(&self, name: &str) -> Option<&CXType> {
         self.symbol_table.get(name)
     }
+    
+    pub fn func_exists(&self, name: &str) -> bool {
+        self.realized_fns.contains_key(name) || self.base_data.fn_map.contains_generated(name)
+    }
 
     pub fn get_func(&self, name: &str) -> Option<CXFunctionPrototype> {
         self.realized_fns
             .get(name)
             .cloned()
-            .or_else(|| self.base_data.fn_data.get(name).cloned())
+            .or_else(|| self.base_data.fn_map.get(name).cloned())
     }
 
     pub fn get_type(&self, name: &str) -> Option<CXType> {

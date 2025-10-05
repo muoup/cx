@@ -1,5 +1,5 @@
 use crate::parse::parser::VisibilityMode;
-use crate::preparse::CXNaiveFnIdent;
+use crate::preparse::NaiveFnIdent;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use std::hash::Hash;
@@ -39,7 +39,7 @@ pub enum PredeclarationType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaivePrototype {
-    pub name: CXNaiveFnIdent,
+    pub name: NaiveFnIdent,
     pub params: Vec<CXNaiveParameter>,
     pub return_type: CXNaiveType,
     pub var_args: bool,

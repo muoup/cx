@@ -354,7 +354,7 @@ pub(crate) fn perform_job(
             env.realized_types
                 .extend(structure_data.type_data.standard.clone());
             env.realized_fns
-                .extend(structure_data.fn_data.standard.clone());
+                .extend(structure_data.fn_map.standard.clone());
             env.realized_globals
                 .extend(structure_data.global_variables.clone());
 
