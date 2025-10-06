@@ -61,10 +61,11 @@ pub(crate) fn instantiate_type_template(
         .resource
         .clone();
     let shell = template.shell.clone();
-
+    
     let overwrites = add_templated_types(env, &template.prototype, input);
 
-    let mut instantiated = contextualize_type(env, &shell)?;
+    let mut instantiated = contextualize_type(env, &shell)
+        .expect("Failed to contextualize templated type");
     instantiated.map_name(|name| mangle_template_name(name, &input));
 
     env.realized_types
@@ -76,7 +77,9 @@ pub(crate) fn instantiate_type_template(
     let instantiated_ident = instantiated.get_identifier()?;
     let destructor_ident = CXFunctionKind::Destructor { base_type: instantiated_ident.clone() };
     
-    instantiate_function_template(env, &destructor_ident, input)?;
+    if env.base_data.fn_map.get_template(&destructor_ident.clone().into()).is_some() {
+        instantiate_function_template(env, &destructor_ident, input)?;
+    }
     
     Some(instantiated)
 }

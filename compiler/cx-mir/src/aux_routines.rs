@@ -109,7 +109,7 @@ pub(crate) fn get_cx_struct_field_by_index(
     let mut field_iter = fields.iter().peekable();
 
     for _ in 0..index {
-        let (_, field_type) = field_iter.next()?;
+        let (_, field_type) = field_iter.next().unwrap();
 
         offset += field_type.fixed_size();
 

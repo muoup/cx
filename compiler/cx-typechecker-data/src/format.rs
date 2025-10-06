@@ -231,10 +231,10 @@ impl<'a> Display for TCExprFormatter<'a> {
                 writeln!(f, "FunctionReference {} {}", prototype, self.expr._type)?;
             }
             TCExprKind::MemberFunctionReference {
-                target,
+                target, target_type
             } => {
-                let CXTypeKind::Function { prototype } = &self.expr._type.kind else {
-                    writeln!(f, "MemberFunctionReference <invalid type> {}", self.expr._type)?;
+                let CXTypeKind::Function { prototype } = &target_type.kind else {
+                    writeln!(f, "MemberFunctionReference <invalid type> {}", target_type)?;
                     return Ok(());
                 };
                 

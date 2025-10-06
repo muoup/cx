@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::cx_maps::convert_cx_func_map;
-use crate::deconstructor::deconstruct_variable;
+use crate::deconstructor::{deconstruct_variable, deconstructor_prototype};
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
 use crate::{BytecodeResult, ProgramMIR};
 use cx_mir_data::types::{MIRType, MIRTypeKind};
@@ -22,6 +24,7 @@ pub struct MIRBuilder {
 
     symbol_table: ScopedMap<MIRValue>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
+    pub(crate) defined_deconstructors: HashSet<CXType>,
 
     in_deferred_block: bool,
     function_context: Option<BytecodeFunctionContext>,
@@ -56,6 +59,7 @@ impl MIRBuilder {
 
             symbol_table: ScopedMap::new(),
             declaration_scope: Vec::new(),
+            defined_deconstructors: HashSet::new(),
 
             function_context: None,
         }
@@ -454,12 +458,9 @@ impl MIRBuilder {
         }
     }
 
-    pub fn get_deconstructor(&self, _type: &CXType) -> Option<String> {
-        let Some(mangled_name) = CXFunctionKind::deconstructor_mangle_ty(_type)
-            else { return None; };
-
-        if self.fn_map.contains_key(&mangled_name) {
-            Some(mangled_name)
+    pub fn get_deconstructor(&self, _type: &CXType) -> Option<MIRFunctionPrototype> {
+        if self.defined_deconstructors.contains(_type) {
+            deconstructor_prototype(_type)
         } else {
             None
         }
@@ -514,12 +515,16 @@ impl MIRBuilder {
             log_error!("Attempted to call unknown function: {}", name);
         };
 
-        let ret_type = fn_prototype.return_type.clone();
+        Self::call_proto(self, fn_prototype, args)
+    }
+    
+    pub fn call_proto(&mut self, prototype: MIRFunctionPrototype, args: Vec<MIRValue>) -> Option<MIRValue> {
+        let ret_type = prototype.return_type.clone();
 
         self.add_instruction(
             VirtualInstruction::DirectCall {
                 args,
-                method_sig: fn_prototype,
+                method_sig: prototype,
             },
             ret_type,
         )

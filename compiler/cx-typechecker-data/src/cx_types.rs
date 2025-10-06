@@ -255,7 +255,17 @@ impl CXType {
     
     pub fn was_template_instantiated(&self) -> bool {
         match &self.kind {
-            CXTypeKind::Structured { base_identifier, .. } => base_identifier.is_some(),
+            CXTypeKind::Structured { base_identifier, .. } => {
+                let Some(base_name) = base_identifier else {
+                    return false;
+                };
+                
+                let Some(name) = self.get_name() else {
+                    return false;
+                };
+                
+                base_name.as_str() != name
+            },
             
             _ => false,
         }
@@ -285,15 +295,20 @@ impl CXType {
             CXTypeKind::Structured {
                 base_identifier, ..
             } => base_identifier.as_ref(),
+            
             _ => None,
         }
     }
 
     pub fn set_name(&mut self, name: CXIdent) {
         match &mut self.kind {
-            CXTypeKind::Structured { name: n, .. } | CXTypeKind::Union { name: n, .. } => {
+            CXTypeKind::Structured { name: n, base_identifier, .. } => {
+                *base_identifier = n.clone();
                 *n = Some(name)
-            }
+            },
+            CXTypeKind::Union { name: n, .. } => {
+                *n = Some(name)
+            },
             _ => {}
         }
     }

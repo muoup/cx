@@ -1,9 +1,7 @@
 use crate::builder::MIRBuilder;
-use crate::deconstructor::{deconstructor_prototype, generate_deconstructor};
 use crate::global_stmts::{generate_function, generate_global_variable};
 use cx_mir_data::ProgramMIR;
 use cx_typechecker_data::ast::TCAST;
-use cx_util::bytecode_error_log;
 
 mod aux_routines;
 pub mod builder;
@@ -24,6 +22,11 @@ pub fn generate_bytecode(ast: TCAST) -> Option<ProgramMIR> {
 
     for fn_def in ast.function_defs.iter() {
         generate_function(&mut builder, &fn_def.prototype, &fn_def.body)?;
+    }
+    
+    for deconstructor in builder.defined_deconstructors.clone().into_iter() {
+        deconstructor::generate_deconstructor(&mut builder, &deconstructor)
+            .unwrap_or_else(|| panic!("Failed to generate deconstructor for type {}", deconstructor));
     }
 
     builder.finish()

@@ -108,6 +108,7 @@ pub enum TCExprKind {
 
     MemberFunctionReference {
         target: Box<TCExpr>,
+        target_type: CXType
     },
 
     FunctionCall {

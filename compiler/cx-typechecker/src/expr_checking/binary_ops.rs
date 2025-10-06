@@ -64,24 +64,24 @@ pub(crate) fn typecheck_access(
                 });
             }
 
-            let Some(type_name) = tc_lhs._type.get_identifier() else {
+            let Some(type_name) = inner.get_name() else {
                 log_typecheck_error!(
                     env,
-                    expr,
+                    lhs,
                     " Member function call on {} without a type name",
-                    tc_lhs._type
+                    inner
                 );
             };
 
             let fn_ident = CXFunctionKind::Member {
-                base_type: type_name.clone(),
+                base_type: CXIdent::from(type_name),
                 name: name.clone(),
             };
 
             let Some(prototype) = env.get_func(&fn_ident.into()) else {
                 log_typecheck_error!(
                     env,
-                    expr,
+                    lhs,
                     " Member access on {} with invalid member name {name}",
                     tc_lhs._type
                 );
@@ -93,6 +93,7 @@ pub(crate) fn typecheck_access(
                 }
                 .into(),
                 kind: TCExprKind::MemberFunctionReference {
+                    target_type: inner.clone(),
                     target: Box::new(tc_lhs),
                 },
             })
@@ -102,12 +103,12 @@ pub(crate) fn typecheck_access(
             name,
             template_input,
         } => {
-            let Some(type_name) = tc_lhs._type.get_identifier() else {
+            let Some(type_name) = inner.get_identifier() else {
                 log_typecheck_error!(
                     env,
-                    expr,
-                    " Member function call on {} without a type name",
-                    tc_lhs._type
+                    lhs,
+                    " Member function call on {} without a base name",
+                    inner
                 );
             };
 
@@ -118,11 +119,14 @@ pub(crate) fn typecheck_access(
             let input = contextualize_template_args(env, template_input)?;
 
             let Some(prototype) = env.get_templated_func(&ident, &input) else {
+                println!("Templated functions: {:?}", env.base_data.fn_map);
+                
                 log_typecheck_error!(
                     env,
                     expr,
-                    " Member access on {} with invalid member name {name}",
-                    tc_lhs._type
+                    " Could not find templated member function '{}' for type {}",
+                    name,
+                    tc_lhs._type,
                 );
             };
 
@@ -132,6 +136,7 @@ pub(crate) fn typecheck_access(
                 }
                 .into(),
                 kind: TCExprKind::MemberFunctionReference {
+                    target_type: inner.clone(),
                     target: Box::new(tc_lhs),
                 },
             })
@@ -187,7 +192,7 @@ pub(crate) fn typecheck_method_call(
                     tc_lhs._type
                 );
             };
-            
+
             let Some(prototype) = env.get_func(&prototype.name) else {
                 log_typecheck_error!(
                     env,
@@ -200,17 +205,15 @@ pub(crate) fn typecheck_method_call(
             (true, prototype)
         }
 
-        TCExprKind::MemberFunctionReference {
-            target,
-        } => {
+        TCExprKind::MemberFunctionReference { target, target_type } => {
             let CXTypeKind::Function { prototype } = &tc_lhs._type.kind else {
                 unreachable!(
                     "PANIC: Expected function type for function call, found {}",
                     tc_lhs._type
                 );
             };
-            
-            let Some(target_name) = target._type.get_name() else {
+
+            let Some(target_name) = target_type.get_name() else {
                 unreachable!(
                     "PANIC: Expected named type for method call target, found {}",
                     target._type

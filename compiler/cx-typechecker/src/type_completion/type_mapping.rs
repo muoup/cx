@@ -1,5 +1,4 @@
 use crate::environment::TCEnvironment;
-use crate::type_completion::templates::mangle_template_name;
 use cx_parsing_data::preparse::NaiveFnIdent;
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind,
@@ -130,16 +129,11 @@ pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> 
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
             let input = contextualize_template_args(env, input)?;
-            let mangled_name = mangle_template_name(name.as_str(), &input);
-
-            if let Some(existing) = env.get_type(&mangled_name) {
-                return Some(existing.clone());
-            }
 
             if let Some(template) = env.get_templated_type(name.as_str(), &input) {
                 return Some(template);
             }
-
+            
             log_error!("Unknown templated type: {name}");
         }
 

@@ -5,6 +5,7 @@ __stdfreearray: calling destructor for element 1
 ~strong_ptr_container
 ~strong_ptr_container
 __stdfree
+__stdfree
 ~strong_ptr_container
 __stdfree
 __stdfreearray_destructor_noop

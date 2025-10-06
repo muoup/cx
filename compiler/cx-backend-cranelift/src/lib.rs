@@ -185,7 +185,7 @@ pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
             .function_sigs
             .remove(&func.prototype.name)
             .unwrap_or_else(|| {
-                panic!("Function signature redefine: {}", func.prototype.name);
+                panic!("Function prototype not found for: {}", func.prototype.name);
             });
 
         codegen_function(&mut global_state, func_id, func_sig, func)?;
