@@ -139,16 +139,19 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIR
                 _type: MIRType::default_pointer(),
             },
         );
+        
         return_type = MIRType::default_pointer();
     }
-
-    Some(MIRFunctionPrototype {
+    
+    let prototype = MIRFunctionPrototype {
         name: cx_proto.mangle_name(),
-        return_type,
-        params,
+        return_type: return_type.clone(),
+        params: params.clone(),
         var_args: cx_proto.var_args,
         linkage: LinkageType::Standard,
-    })
+    };
+
+    Some(prototype)
 }
 
 pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {

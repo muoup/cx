@@ -398,10 +398,6 @@ impl<'a> Display for TCExprFormatter<'a> {
                     TCExprFormatter::new(val, self.depth + 1).fmt(f)?;
                 }
             }
-            TCExprKind::BufferReturn { value } => {
-                writeln!(f, "BufferReturn {}", self.expr._type)?;
-                TCExprFormatter::new(value, self.depth + 1).fmt(f)?;
-            }
             TCExprKind::InitializerList { indices } => {
                 writeln!(f, "InitializerList {}", self.expr._type)?;
                 for index in indices {
@@ -520,7 +516,7 @@ impl Display for CXTypeKind {
 
 impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}(", self.name.mangle(self))?;
+        write!(f, "{}(", self.mangle_name())?;
         for (i, param) in self.params.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;

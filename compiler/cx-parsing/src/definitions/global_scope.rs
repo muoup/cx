@@ -1,12 +1,12 @@
+use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use cx_lexer_data::{keyword, operator, punctuator, specifier};
 use cx_parsing_data::parse::ast::{CXExpr, CXExprKind, CXGlobalStmt};
 use cx_parsing_data::parse::parser::{ParserData, VisibilityMode};
 use cx_parsing_data::preparse::naive_types::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
 };
-use cx_parsing_data::preparse::NaiveFnIdent;
+use cx_parsing_data::preparse::{FunctionTypeIdent, NaiveFnIdent};
 use cx_parsing_data::{assert_token_matches, next_kind, try_next};
-use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_lexer_data::{keyword, operator, punctuator, specifier};
 use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
 
@@ -63,7 +63,7 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 
 pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
     CXNaivePrototype {
-        name: NaiveFnIdent::Destructor(_type.get_name().unwrap().clone()),
+        name: NaiveFnIdent::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
 
         return_type: CXNaiveTypeKind::Identifier {
             name: CXIdent::from("void"),

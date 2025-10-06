@@ -3,8 +3,7 @@ use cx_parsing_data::{
     preparse::{
         naive_types::{
             CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
-        },
-        NaiveFnIdent,
+        }, FunctionTypeIdent, NaiveFnIdent
     },
     try_next,
 };
@@ -48,7 +47,7 @@ pub fn parse_destructor_prototype(tokens: &mut TokenIter) -> CXResult<FunctionDe
     };
 
     let prototype = destructor_prototype(_type.to_type());
-
+    
     Some(FunctionDeclaration {
         prototype,
         template_prototype,
@@ -117,7 +116,7 @@ pub fn try_function_parse(
             let template_prototype = try_parse_template(tokens);
 
             let name = NaiveFnIdent::MemberFunction {
-                _type: _type.get_name().unwrap().clone(),
+                _type: FunctionTypeIdent::from_type(&_type).unwrap(),
                 function_name: CXIdent::from(name.as_str()),
             };
 

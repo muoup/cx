@@ -14,11 +14,15 @@ void strong[] __stdallocarray(u64 elem_size, u64 elem_count) {
 }
 
 void __stdfree(void* ptr) {
+    if (!ptr) return;
+
     printf("__stdfree\n", ptr);
     free(ptr);
 }
 
 void __stdfreearray(void* ptr, usize type_size, void(*destructor)(void*)) {
+    if (!ptr) return;
+
     u64 length = *((long*) ptr - 1);
     printf("__stdfreearray length = %d\n", length, ptr);
 
@@ -31,6 +35,8 @@ void __stdfreearray(void* ptr, usize type_size, void(*destructor)(void*)) {
 }
 
 void __stdfreearray_destructor_noop(void* ptr) {
+    if (!ptr) return;
+
     printf("__stdfreearray_destructor_noop\n", ptr);
     free((u8*) ptr - 8);
 }

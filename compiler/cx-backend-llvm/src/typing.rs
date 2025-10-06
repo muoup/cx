@@ -111,15 +111,6 @@ pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &MIRFunctionPrototype,
 ) -> Option<FunctionType<'a>> {
-    let return_type = match bc_llvm_type(state.context, &prototype.return_type)? {
-        AnyTypeEnum::StructType(_) => state
-            .context
-            .ptr_type(AddressSpace::from(0))
-            .as_any_type_enum(),
-
-        any_type => any_type,
-    };
-
     let args = prototype
         .params
         .iter()
@@ -133,18 +124,15 @@ pub(crate) fn bc_llvm_prototype<'a>(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    Some(match return_type {
+    Some(match bc_llvm_type(state.context, &prototype.return_type).unwrap() {
         AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
         AnyTypeEnum::FloatType(float_type) => {
             float_type.fn_type(args.as_slice(), prototype.var_args)
         }
         AnyTypeEnum::PointerType(ptr_type) => ptr_type.fn_type(args.as_slice(), prototype.var_args),
-        AnyTypeEnum::StructType(struct_type) => {
-            struct_type.fn_type(args.as_slice(), prototype.var_args)
-        }
         AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), prototype.var_args),
 
-        _ => panic!("Invalid return type, found: {return_type:?}"),
+        _ty => panic!("Invalid return type, found: {_ty:?}"),
     })
 }
 

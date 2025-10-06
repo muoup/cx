@@ -11,44 +11,21 @@ use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 
-pub(crate) fn assemble_method(
-    env: &mut TCEnvironment,
-    name: CXFunctionIdentifier,
-    return_type: CXType,
-    mut params: Vec<CXParameter>,
-    var_args: bool,
-) -> CXFunctionPrototype {
-    let needs_buffer = return_type.is_structured();
-
-    if let Some(implicit_member) = name.implicit_member() {
-        let _ty = env.get_type(implicit_member.as_str())
-            .unwrap();
-        
-        params.insert(
+pub(crate) fn apply_implicit_fn_attr(
+    mut proto: CXNaivePrototype,
+) -> CXNaivePrototype {
+    if let Some(implicit_member) = proto.name.implicit_member() {
+        proto.params.insert(
             0,
-            CXParameter {
+            CXNaiveParameter {
                 name: Some(CXIdent::from("this")),
-                _type: _ty,
+                _type: implicit_member.as_type()
+                    .pointer_to(false, 0)
             },
         );
     }
-
-    if needs_buffer {
-        params.insert(
-            0,
-            CXParameter {
-                name: Some(CXIdent::from("__internal_buffer")),
-                _type: return_type.clone().pointer_to(),
-            },
-        );
-    }
-
-    CXFunctionPrototype {
-        name,
-        return_type,
-        params,
-        var_args,
-    }
+    
+    proto
 }
 
 pub fn contextualize_template_args(
@@ -73,7 +50,8 @@ pub(crate) fn contextualize_fn_ident(
             function_name,
             _type,
         } => {
-            let Some(_ty) = env.get_type(_type.as_str()) else {
+            let base = _type.as_type();
+            let Some(_ty) = contextualize_type(env, &base) else {
                 log_error!("Unknown type for member function: {function_name} of type {_type}");
             };
             
@@ -91,7 +69,8 @@ pub(crate) fn contextualize_fn_ident(
         }
 
         NaiveFnIdent::Destructor(name) => {
-            let Some(_ty) = env.get_type(name.as_str()) else {
+            let base = name.as_type();
+            let Some(_ty) = contextualize_type(env, &base) else {
                 log_error!("Unknown type for destructor: {name}");
             };
             
@@ -112,8 +91,10 @@ pub fn contextualize_fn_prototype(
     env: &mut TCEnvironment,
     prototype: &CXNaivePrototype,
 ) -> Option<CXFunctionPrototype> {
+    let prototype = apply_implicit_fn_attr(prototype.clone());
     let ident = contextualize_fn_ident(env, &prototype.name)?;
     let return_type = contextualize_type(env, &prototype.return_type)?;
+    
     let parameters = prototype
         .params
         .iter()
@@ -127,13 +108,14 @@ pub fn contextualize_fn_prototype(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    Some(assemble_method(
-        env,
-        ident,
-        return_type,
-        parameters,
-        prototype.var_args,
-    ))
+    Some(
+        CXFunctionPrototype {
+            name: ident,
+            return_type,
+            params: parameters,
+            var_args: prototype.var_args,
+        }
+    )
 }
 
 pub fn contextualize_type(env: &mut TCEnvironment, naive_type: &CXNaiveType) -> Option<CXType> {

@@ -476,6 +476,7 @@ impl MIRBuilder {
         if self.fn_map.contains_key(&key) {
             Some(key)
         } else {
+            println!("Destructor not found: {}", key);
             None
         }
     }
@@ -486,7 +487,7 @@ impl MIRBuilder {
         context.blocks.last()?.body.last()
     }
 
-    fn current_block_last_inst(&self) -> Option<&BlockInstruction> {
+    pub fn current_block_last_inst(&self) -> Option<&BlockInstruction> {
         let context = self.fun();
 
         let current_block = match context.current_block {

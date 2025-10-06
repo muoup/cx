@@ -2,23 +2,20 @@ use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::builder::MIRBuilder;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{
-    BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRParameter, MIRValue, VirtualInstruction,
+    LinkageType, MIRFunctionPrototype, MIRParameter, MIRValue, VirtualInstruction,
 };
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
+use cx_typechecker_data::function_map::CXFunctionKind;
 
 const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
-fn mangle_deconstructor(type_name: &str) -> String {
-    format!("__deconstructor_{}", type_name)
-}
-
 pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
     let name = type_.get_name()?;
 
     Some(MIRFunctionPrototype {
-        name: mangle_deconstructor(&name),
+        name: CXFunctionKind::deconstructor_mangle(name),
         return_type: MIRType::unit(),
         params: vec![MIRParameter {
             name: None,
@@ -46,38 +43,7 @@ pub fn deconstruct_variable(
             is_array,
         } => {
             let deconstructor = builder.get_deconstructor(inner_type);
-
             let inner_val = builder.load_value(var.clone(), MIRType::default_pointer())?;
-            let deconstruct = builder.create_named_block("ptr_not_null");
-            let post_deconstruct = builder.create_named_block("ptr_is_null");
-
-            let zero = builder.int_const(0, 8, true);
-            let null = builder.add_instruction(
-                VirtualInstruction::IntToPtr { value: zero },
-                MIRType::default_pointer(),
-            )?;
-            let cmp = builder.add_instruction(
-                VirtualInstruction::PointerBinOp {
-                    op: BCPtrBinOp::EQ,
-                    left: inner_val.clone(),
-                    right: null,
-                    ptr_type: MIRType::default_pointer(),
-                },
-                MIRType {
-                    kind: MIRTypeKind::Bool,
-                },
-            )?;
-
-            builder.add_instruction(
-                VirtualInstruction::Branch {
-                    condition: cmp,
-                    true_block: post_deconstruct,
-                    false_block: deconstruct,
-                },
-                MIRType::unit(),
-            )?;
-
-            builder.set_current_block(deconstruct);
 
             match (deconstructor, is_array) {
                 (Some(prototype), true) => {
@@ -114,15 +80,6 @@ pub fn deconstruct_variable(
                     builder.call(STANDARD_FREE, vec![inner_val])?;
                 }
             }
-
-            builder.add_instruction(
-                VirtualInstruction::Jump {
-                    target: post_deconstruct,
-                },
-                MIRType::unit(),
-            )?;
-
-            builder.set_current_block(post_deconstruct);
         }
 
         _ => (),

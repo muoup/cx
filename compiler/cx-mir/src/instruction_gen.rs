@@ -337,30 +337,23 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             let value = value.as_ref().unwrap().as_ref();
             let value_id = generate_instruction(builder, value)?;
-
-            builder.add_return(Some(value_id));
-
-            Some(MIRValue::NULL)
-        }
-
-        TCExprKind::BufferReturn { value } => {
-            if !value._type.is_structured() {
-                unreachable!("Buffer return type must be a structure");
+            
+            if value._type.is_structured() {
+                let bc_ty = builder.convert_cx_type(&value._type)?;
+                
+                builder.add_instruction(
+                    VirtualInstruction::Store {
+                        memory: MIRValue::ParameterRef(0),
+                        value: value_id.clone(),
+                        type_: bc_ty,
+                    },
+                    MIRType::unit()
+                );
+                
+                builder.add_return(Some(MIRValue::ParameterRef(0)));
+            } else {
+                builder.add_return(Some(value_id));
             }
-
-            let buffer_type = builder.convert_cx_type(&value._type)?;
-            let value = generate_instruction(builder, value)?;
-
-            builder.add_instruction(
-                VirtualInstruction::Store {
-                    memory: MIRValue::ParameterRef(0),
-                    value,
-                    type_: buffer_type,
-                },
-                MIRType::unit(),
-            );
-
-            builder.add_return(Some(MIRValue::ParameterRef(0)));
 
             Some(MIRValue::NULL)
         }
@@ -1133,8 +1126,8 @@ pub(crate) fn implicit_return(
     builder: &mut MIRBuilder,
     prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
-    let last_instruction = builder.last_instruction();
-
+    let last_instruction = builder.current_block_last_inst();
+    
     if let Some(last_instruction) = last_instruction {
         match last_instruction.instruction {
             VirtualInstruction::Return { .. } => {
@@ -1149,15 +1142,6 @@ pub(crate) fn implicit_return(
             _ => {}
         }
     }
-
-    let return_block = builder.create_block();
-    builder.add_instruction(
-        VirtualInstruction::Jump {
-            target: return_block,
-        },
-        MIRType::unit(),
-    );
-    builder.set_current_block(return_block);
 
     if prototype.name == "main" {
         builder.add_return(Some(MIRValue::IntImmediate {

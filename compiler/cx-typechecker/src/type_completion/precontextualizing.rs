@@ -2,7 +2,7 @@ use cx_parsing_data::PreparseContents;
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_parsing_data::preparse::naive_types::{
-    CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType
+    CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource
 };
 use cx_parsing_data::preparse::{NaiveFnIdent, CXNaiveFnMap, CXNaiveTypeMap};
 use cx_pipeline_data::CompilationUnit;
@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::type_completion::templates::mangle_template_name;
+use crate::type_completion::type_mapping::apply_implicit_fn_attr;
 
 // As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
 // a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
@@ -39,6 +40,28 @@ fn reduce_ident_ident<'a>(
         }
 
         _ => Some(cx_type),
+    }
+}
+
+fn ident_root<'a>(naive_map: &'a CXNaiveTypeMap, ty: &'a CXNaiveType) -> &'a CXNaiveType {
+    match &ty.kind {
+        CXNaiveTypeKind::Identifier { name, .. } => {
+            if let Some(inner) = naive_map.get(&name.as_string()) {
+                ident_root(naive_map, &inner.resource)
+            } else {
+                ty
+            }
+        },
+        
+        CXNaiveTypeKind::TemplatedIdentifier { name, .. } => {
+            if let Some(template) = naive_map.get_template(&name.as_string()) {
+                ident_root(naive_map, &template.resource.shell)
+            } else {
+                ty
+            }
+        },
+
+        _ => ty,
     }
 }
 
@@ -290,12 +313,11 @@ pub(crate) fn precontextualize_fn_ident(
             _type,
             function_name,
         } => {
-            let base = CXNaiveTypeKind::Identifier { name: _type.clone(), predeclaration: PredeclarationType::None }
-                .to_type();
-            let _type = precontextualize_type(module_data, type_map, naive_type_map, None, &base)?;
+            let base = _type.as_type();
+            let root = ident_root(naive_type_map, &base);
             
-            let Some(name) = _type.get_identifier() else {
-                panic!("Member function base type has no name: {_type}");
+            let Some(name) = root.get_name() else {
+                panic!("Member function base type has no name: {root}");
             };
             
             Some(CXFunctionKind::Member {
@@ -305,12 +327,11 @@ pub(crate) fn precontextualize_fn_ident(
         }
 
         NaiveFnIdent::Destructor(ty) => {
-            let base = CXNaiveTypeKind::Identifier { name: ty.clone(), predeclaration: PredeclarationType::None }
-                .to_type();
-            let cx_type = precontextualize_type(module_data, type_map, naive_type_map, None, &base)?;
+            let base = ty.as_type();
+            let root = ident_root(naive_type_map, &base);
             
-            let Some(type_name) = cx_type.get_identifier() else {
-                panic!("Destructor base type has no name: {cx_type}");
+            let Some(type_name) = root.get_name() else {
+                panic!("Destructor base type has no name: {root}");
             };
             
             Some(CXFunctionKind::Destructor { base_type: type_name.clone() }.into())
@@ -336,26 +357,26 @@ pub fn precontextualize_prototype(
     module_data: &ModuleData,
     type_map: &mut CXTypeData,
     naive_type_map: &CXNaiveTypeMap,
-    prototype: &ModuleResource<CXNaivePrototype>,
+    prototype_resource: &ModuleResource<CXNaivePrototype>,
 ) -> Option<CXFunctionPrototype> {
+    let prototype = apply_implicit_fn_attr(prototype_resource.resource.clone());
+    
     let return_type = precontextualize_type(
         module_data,
         type_map,
         naive_type_map,
-        prototype.external_module.as_ref(),
-        &prototype.resource.return_type,
+        prototype_resource.external_module.as_ref(),
+        &prototype.return_type,
     )?;
 
-    let parameters = prototype
-        .resource
-        .params
+    let parameters = prototype.params
         .iter()
         .map(|param| {
             let ty = precontextualize_type(
                 module_data,
                 type_map,
                 naive_type_map,
-                prototype.external_module.as_ref(),
+                prototype_resource.external_module.as_ref(),
                 &param._type,
             )
             .unwrap();
@@ -366,20 +387,20 @@ pub fn precontextualize_prototype(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-
+    
     let ident = precontextualize_fn_ident(
         module_data,
         type_map,
         naive_type_map,
-        &prototype.resource.name,
+        &prototype.name,
     )?;
 
     Some(
         CXFunctionPrototype {
             name: ident,
-            return_type, 
+            return_type,
             params: parameters,
-            var_args: prototype.resource.var_args
+            var_args: prototype.var_args,
         }
     )
 }

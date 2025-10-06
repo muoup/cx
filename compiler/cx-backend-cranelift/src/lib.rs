@@ -180,6 +180,7 @@ pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
                 func.prototype.name
             );
         };
+        
         let func_sig = global_state
             .function_sigs
             .remove(&func.prototype.name)

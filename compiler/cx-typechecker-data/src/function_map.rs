@@ -60,14 +60,12 @@ impl CXFnData {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct CXFunctionIdentifier {
-    is_templated: bool,
     pub kind: CXFunctionKind,
 }
 
 impl Default for CXFunctionIdentifier {
     fn default() -> Self {
         CXFunctionIdentifier {
-            is_templated: false,
             kind: CXFunctionKind::Standard {
                 name: CXIdent::from(""),
             },
@@ -78,7 +76,6 @@ impl Default for CXFunctionIdentifier {
 impl From<CXFunctionKind> for CXFunctionIdentifier {
     fn from(kind: CXFunctionKind) -> Self {
         CXFunctionIdentifier {
-            is_templated: false,
             kind,
         }
     }
@@ -104,14 +101,8 @@ impl CXFunctionKind {
     pub fn deconstructor_mangle(base_type: &str) -> String {
         format!("_DC{}", base_type)
     }
-}
-
-impl CXFunctionIdentifier {
-    fn template_mangle(&self, prototype: &CXFunctionPrototype) -> String {
-        if !self.is_templated {
-            return String::new();
-        }
-
+    
+    pub fn standard_template_mangle(name: &str, prototype: &CXFunctionPrototype) -> String {
         let mut mangled = String::from("_t");
         mangled.push_str(prototype.return_type.mangle().as_str());
 
@@ -119,32 +110,21 @@ impl CXFunctionIdentifier {
             mangled.push_str(param._type.mangle().as_str());
         }
 
-        mangled
+        format!("{}{}", mangled, name)
     }
+}
 
-    pub fn mangle(&self, prototype: &CXFunctionPrototype) -> String {
+impl CXFunctionIdentifier {
+    pub fn mangle(&self) -> String {
         match &self.kind {
             CXFunctionKind::Standard { name } => 
-                format!("{}{}", name.as_str(), self.template_mangle(prototype)),
+                name.as_string(),
             CXFunctionKind::Member { base_type, name } =>
                 CXFunctionKind::member_mangle(base_type.as_str(), name.as_str()),
             CXFunctionKind::Destructor { base_type } =>
                 CXFunctionKind::destructor_mangle(base_type.as_str()),
             CXFunctionKind::Deconstructor { base_type } =>
                 CXFunctionKind::deconstructor_mangle(base_type.as_str()),
-        }
-    }
-
-    pub fn set_templated(&mut self) {
-        self.is_templated = true;
-    }
-
-    pub fn implicit_member(&self) -> Option<&CXIdent> {
-        match &self.kind {
-            CXFunctionKind::Member { base_type, .. } => Some(base_type),
-            CXFunctionKind::Destructor { base_type } => Some(base_type),
-            CXFunctionKind::Deconstructor { base_type } => Some(base_type),
-            _ => None,
         }
     }
 }

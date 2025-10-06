@@ -1,4 +1,4 @@
-use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource};
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType};
 use crate::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
@@ -11,13 +11,19 @@ pub mod templates;
 pub type NaiveTypeIdent = String;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum FunctionTypeIdent {
+    Standard(CXIdent),
+    Templated(CXIdent, CXNaiveTemplateInput)
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum NaiveFnIdent {
     Standard(CXIdent),
     MemberFunction {
-        _type: CXIdent,
+        _type: FunctionTypeIdent,
         function_name: CXIdent,
     },
-    Destructor(CXIdent),
+    Destructor(FunctionTypeIdent),
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -89,5 +95,36 @@ impl<Identifier, Standard, Template> CXNaiveMap<Identifier, Standard, Template>
     
     pub fn is_key_any(&self, ident: &Identifier) -> bool {
         self.is_key_std(ident) || self.is_key_template(ident)
+    }
+}
+
+impl NaiveFnIdent {
+    pub fn implicit_member(&self) -> Option<&FunctionTypeIdent> {
+        match self {
+            NaiveFnIdent::MemberFunction { _type, .. } => Some(_type),
+            NaiveFnIdent::Destructor(name) => Some(name),
+            NaiveFnIdent::Standard(_) => None,
+        }
+    }
+}
+
+impl FunctionTypeIdent {
+    pub fn as_type(&self) -> CXNaiveType {
+        match self {
+            FunctionTypeIdent::Standard(name) => {
+                CXNaiveType::new(0, CXNaiveTypeKind::Identifier { name: name.clone(), predeclaration: PredeclarationType::None })
+            }
+            FunctionTypeIdent::Templated(name, input) => {
+                CXNaiveType::new(0, CXNaiveTypeKind::TemplatedIdentifier { name: name.clone(), input: input.clone() })
+            }
+        }
+    }
+    
+    pub fn from_type(naive_type: &CXNaiveType) -> Option<Self> {
+        match &naive_type.kind {
+            CXNaiveTypeKind::Identifier { name, .. } => Some(FunctionTypeIdent::Standard(name.clone())),
+            CXNaiveTypeKind::TemplatedIdentifier { name, input } => Some(FunctionTypeIdent::Templated(name.clone(), input.clone())),
+            _ => None,
+        }
     }
 }

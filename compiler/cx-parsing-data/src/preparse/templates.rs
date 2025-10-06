@@ -1,7 +1,7 @@
 use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveType};
 use speedy::{Readable, Writable};
 
-#[derive(Debug, Default, Clone, Hash, Readable, Writable)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct CXTemplatePrototype {
     pub types: Vec<String>,
 }

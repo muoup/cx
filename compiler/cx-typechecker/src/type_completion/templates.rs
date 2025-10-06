@@ -93,20 +93,21 @@ pub(crate) fn instantiate_function_template(
     let template_prototype = &resource.prototype;
     let shell = &resource.shell;
 
-    let overwrites = add_templated_types(env, template_prototype, input);   
-
+    let overwrites = add_templated_types(env, template_prototype, input);
+    
     let mut instantiated = contextualize_fn_prototype(env, shell)?;
-       
+    let base_name = instantiated.name.kind.clone();
+    
+    instantiated.apply_template_mangling();
+     
     if let Some(generated) = env.get_func(&instantiated.name.kind) {
         return Some(generated);
     }
     
-    instantiated.name.set_templated();
-    
     env.realized_fns.insert(instantiated.name.kind.clone(), instantiated.clone());
     env.requests.push(TCTemplateRequest {
         module_origin: module_origin.clone(),
-        name: name.clone(),
+        name: base_name,
         input: input.clone(),
     });
 

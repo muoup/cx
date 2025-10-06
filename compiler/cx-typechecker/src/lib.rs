@@ -52,7 +52,7 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> CXResult<()> {
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
                 let prototype = contextualize_fn_prototype(env, prototype)?;
                 let body = in_method_env(env, &prototype, body).unwrap_or_else(|| {
-                    panic!("Failed to typecheck function body for {}", prototype.name.mangle(&prototype))
+                    panic!("Failed to typecheck function body for {}", prototype.name)
                 });
 
                 env.declared_functions.push(TCFunctionDef {
@@ -105,8 +105,8 @@ pub fn realize_fn_implementation(
     env.base_data = unsafe { std::mem::transmute(structure_data) };
 
     let overwrites = add_templated_types(env, &template.prototype, input);
-    let prototype = contextualize_fn_prototype(env, &template.shell)?;
-
+    let mut prototype = contextualize_fn_prototype(env, &template.shell)?;
+    
     let body = origin
         .global_stmts
         .iter()
@@ -117,11 +117,15 @@ pub fn realize_fn_implementation(
             _ => None,
         })
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {}", prototype);
+            println!("Available: {:#?}", origin.global_stmts);
+            
+            panic!("Function template body not found for {}", template.shell.name);
         })
         .as_ref()
         .clone();
-
+   
+    prototype.apply_template_mangling();
+    
     let tc_body = in_method_env(env, &prototype, &body)?;
     env.declared_functions.push(TCFunctionDef {
         prototype: prototype.clone(),

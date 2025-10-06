@@ -37,7 +37,7 @@ pub enum PredeclarationType {
     Enum,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaivePrototype {
     pub name: NaiveFnIdent,
     pub params: Vec<CXNaiveParameter>,
@@ -46,13 +46,13 @@ pub struct CXNaivePrototype {
     pub this_param: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveParameter {
     pub name: Option<CXIdent>,
     pub _type: CXNaiveType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveTemplateInput {
     pub params: Vec<CXNaiveType>,
 }

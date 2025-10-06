@@ -16,17 +16,18 @@ pub(crate) fn realize_templates(
             None => job.clone(),
         };
 
-        if !requests_fulfilled.insert(request.name.clone()) {
+        if !requests_fulfilled.insert((request.name.clone(), request.input.clone())) {
             continue;
         }
 
         let other_ast = context.module_db.naive_ast.get(&origin);
         let other_data = context.module_db.structure_data.get(&origin);
-
+        
         let template = env
             .base_data
-            .fn_map
-            .get_template(&request.name)?
+            .fn_map 
+            .get_template(&request.name)
+            .unwrap()
             .resource
             .clone();
         
@@ -36,7 +37,7 @@ pub(crate) fn realize_templates(
             other_ast.as_ref(),
             &template,
             &request.input,
-        )?;
+        ).unwrap();
     }
 
     Some(())

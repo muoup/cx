@@ -1,5 +1,6 @@
 use std::hash::{Hash, Hasher};
 
+use crate::function_map::CXFunctionKind;
 use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
 use crate::format::type_mangle;
 use cx_parsing_data::parse::parser::VisibilityMode;
@@ -432,6 +433,22 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
 
 impl CXFunctionPrototype {
     pub fn mangle_name(&self) -> String {
-        self.name.mangle(self)
+        self.name.mangle()
+    }
+    
+    pub fn apply_template_mangling(&mut self) {
+        match &self.name.kind {
+            CXFunctionKind::Standard { name } => {               
+                let new_name = CXIdent::from(CXFunctionKind::standard_template_mangle(name.as_str(), &self));
+            
+                let CXFunctionKind::Standard { name } = &mut self.name.kind else {
+                    unreachable!();
+                };
+                
+                *name = new_name;
+            }
+                
+            _ => {}
+        }
     }
 }

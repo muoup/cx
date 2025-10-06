@@ -274,14 +274,14 @@ pub(crate) fn perform_job(
                         .insert_template(name.clone(), template.transfer(import));
                 }
 
-                for (name, prototype) in other_pp_data.function_definitions.template_iter() {
+                for (name, prototype) in other_pp_data.function_definitions.standard_iter() {
                     if prototype.visibility < required_visiblity {
                         continue;
                     };
 
                     pp_data
                         .function_definitions
-                        .insert_template(name.clone(), prototype.transfer(import));
+                        .insert_standard(name.clone(), prototype.transfer(import));
                 }
 
                 for (name, template) in other_pp_data.function_definitions.template_iter() {
@@ -294,7 +294,7 @@ pub(crate) fn perform_job(
                         .insert_template(name.clone(), template.transfer(import));
                 }
             }
-
+            
             context
                 .module_db
                 .preparse_full
