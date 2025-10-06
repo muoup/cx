@@ -301,8 +301,8 @@ pub fn precontextualize_type(
 }
 
 pub(crate) fn precontextualize_fn_ident(
-    module_data: &ModuleData,
-    type_map: &mut CXTypeData,
+    _: &ModuleData,
+    _: &mut CXTypeData,
     naive_type_map: &CXNaiveTypeMap,
     ident: &NaiveFnIdent,
 ) -> Option<CXFunctionIdentifier> {
@@ -465,7 +465,7 @@ pub fn contextualize_fn_map(
             &template.resource.shell.name,
         )?;
         
-        cx_fn_map.insert_template(ident.kind, template.clone());
+        cx_fn_map.insert_template(ident, template.clone());
     }
 
     Some(cx_fn_map)

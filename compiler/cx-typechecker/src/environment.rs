@@ -1,7 +1,7 @@
 use cx_lexer_data::token::Token;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
-use cx_typechecker_data::function_map::{CXFnMap, CXFunctionKind};
+use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier, CXFunctionKind};
 use cx_typechecker_data::CXTypeMap;
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
@@ -11,7 +11,7 @@ use crate::type_completion::templates::{instantiate_function_template, instantia
 
 pub struct TCTemplateRequest {
     pub module_origin: Option<String>,
-    pub name: CXFunctionKind,
+    pub name: CXFunctionIdentifier,
     pub input: CXTemplateInput,
 }
 
@@ -74,11 +74,11 @@ impl TCEnvironment<'_> {
         self.symbol_table.get(name)
     }
     
-    pub fn func_exists(&self, name: &CXFunctionKind) -> bool {
+    pub fn func_exists(&self, name: &CXFunctionIdentifier) -> bool {
         self.realized_fns.contains_key(name) || self.base_data.fn_map.contains_generated(name)
     }
-
-    pub fn get_func(&self, name: &CXFunctionKind) -> Option<CXFunctionPrototype> {
+    
+    pub fn get_func(&self, name: &CXFunctionIdentifier) -> Option<CXFunctionPrototype> {
         self.realized_fns
             .get(name)
             .cloned()
@@ -115,7 +115,7 @@ impl TCEnvironment<'_> {
             return false;
         };
         
-        self.get_func(&CXFunctionKind::Destructor { base_type: type_name.clone() }).is_some()
+        self.get_func(&CXFunctionKind::Destructor { base_type: type_name.clone() }.into()).is_some()
     }
 
     pub fn current_function(&self) -> &CXFunctionPrototype {

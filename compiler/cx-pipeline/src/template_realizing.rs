@@ -26,7 +26,7 @@ pub(crate) fn realize_templates(
         let template = env
             .base_data
             .fn_map 
-            .get_template(&request.name)
+            .get_template(&request.name.into())
             .unwrap()
             .resource
             .clone();

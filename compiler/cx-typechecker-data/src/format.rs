@@ -98,9 +98,13 @@ struct TCExprFormatter<'a> {
     depth: usize,
 }
 impl Display for CXFunctionIdentifier {
-
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
+        let kind = match &self {
+            CXFunctionIdentifier::Standard { kind } => kind,
+            CXFunctionIdentifier::Templated { kind, .. } => kind,
+        };
+        
+        match &kind {
             CXFunctionKind::Standard { name } => write!(f, "{}", name.as_string()),
             CXFunctionKind::Member { base_type, name } => {
                 write!(f, "{}::{}", base_type.as_string(), name.as_string())

@@ -355,7 +355,7 @@ pub(crate) fn perform_job(
                 .extend(structure_data.type_data.standard.clone());
             env.realized_fns
                 .extend(structure_data.fn_map.iter()
-                    .map(|(_, v)| (v.name.kind.clone(), v.clone())));
+                    .map(|(_, v)| (v.name.clone(), v.clone())));
             env.realized_globals
                 .extend(structure_data.global_variables.clone());
 
@@ -366,7 +366,6 @@ pub(crate) fn perform_job(
                 fn_map: env.realized_fns,
                 global_variables: env.realized_globals.into_values().collect(),
 
-                destructors_required: env.deconstructors.into_iter().collect::<_>(),
                 function_defs: env.declared_functions,
             };
 

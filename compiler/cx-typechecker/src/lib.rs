@@ -71,7 +71,7 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> CXResult<()> {
                     base_type: type_name.clone(),
                 };
                 
-                let Some(prototype) = env.get_func(&ident) else {
+                let Some(prototype) = env.get_func(&ident.into()) else {
                     unreachable!("Destructor prototype should not be missing: {}", _type);
                 };
 
@@ -128,7 +128,7 @@ pub fn realize_fn_implementation(
     
     let tc_body = in_method_env(env, &prototype, &body)?;
     env.declared_functions.push(TCFunctionDef {
-        prototype: prototype.clone(),
+        prototype: prototype,
         body: Box::new(tc_body.clone()),
     });
 

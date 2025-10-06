@@ -18,21 +18,6 @@ pub type BytecodeResult<T> = Option<T>;
 pub fn generate_bytecode(ast: TCAST) -> Option<ProgramMIR> {
     let mut builder = MIRBuilder::new(&ast);
 
-    for _type in ast.destructors_required.iter() {
-        let prototype = deconstructor_prototype(_type)?;
-        builder.fn_map.insert(prototype.name.clone(), prototype);
-    }
-
-    for _type in ast.destructors_required.iter() {
-        let Some(_) = generate_deconstructor(&mut builder, _type) else {
-            bytecode_error_log!(
-                builder,
-                "Failed to generate deconstructor for type {}",
-                _type
-            );
-        };
-    }
-
     for global_var in ast.global_variables.iter() {
         generate_global_variable(&mut builder, global_var);
     }

@@ -1,10 +1,11 @@
 use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::builder::MIRBuilder;
+use crate::cx_maps::convert_cx_prototype;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{
-    LinkageType, MIRFunctionPrototype, MIRParameter, MIRValue, VirtualInstruction,
+    MIRFunctionPrototype, MIRValue, VirtualInstruction,
 };
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
+use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
 
 const STANDARD_FREE: &str = "__stdfree";
@@ -12,18 +13,23 @@ const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
 pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
-    let name = type_.get_name()?;
-
-    Some(MIRFunctionPrototype {
-        name: CXFunctionKind::deconstructor_mangle(name),
-        return_type: MIRType::unit(),
-        params: vec![MIRParameter {
+    let name = type_.get_identifier()?;
+    
+    let mut prototype = CXFunctionPrototype {
+        name: CXFunctionKind::Deconstructor { base_type: name.clone() }.into(),
+        return_type: CXType::unit(),
+        params: vec![CXParameter {
             name: None,
-            _type: MIRType::default_pointer(),
+            _type: type_.clone().pointer_to()
         }],
-        var_args: false,
-        linkage: LinkageType::ODR,
-    })
+        var_args: false
+    };
+    
+    if type_.was_template_instantiated() {
+        prototype.apply_template_mangling();
+    }
+    
+    convert_cx_prototype(&prototype)
 }
 
 pub fn deconstruct_variable(
@@ -33,6 +39,8 @@ pub fn deconstruct_variable(
 ) -> Option<()> {
     match &_type.kind {
         CXTypeKind::Structured { .. } => {
+            // FIXME: Generate deconstructor here if type needs one
+            
             if let Some(deconstructor) = builder.get_deconstructor(_type) {
                 builder.call(&deconstructor, vec![var.clone()])?;
             }

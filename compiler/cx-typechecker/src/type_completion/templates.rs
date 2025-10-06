@@ -86,7 +86,7 @@ pub(crate) fn instantiate_function_template(
     name: &CXFunctionKind,
     input: &CXTemplateInput,
 ) -> Option<CXFunctionPrototype> {
-    let cache = env.base_data.fn_map.get_template(name)?;
+    let cache = env.base_data.fn_map.get_template(&name.clone().into())?;
     let resource = &cache.resource;
     
     let module_origin = &cache.external_module;
@@ -96,18 +96,18 @@ pub(crate) fn instantiate_function_template(
     let overwrites = add_templated_types(env, template_prototype, input);
     
     let mut instantiated = contextualize_fn_prototype(env, shell)?;
-    let base_name = instantiated.name.kind.clone();
+    let base_name = instantiated.name.clone();
     
     instantiated.apply_template_mangling();
      
-    if let Some(generated) = env.get_func(&instantiated.name.kind) {
+    if let Some(generated) = env.get_func(&instantiated.name) {
         return Some(generated);
     }
     
-    env.realized_fns.insert(instantiated.name.kind.clone(), instantiated.clone());
+    env.realized_fns.insert(instantiated.name.clone(), instantiated.clone());
     env.requests.push(TCTemplateRequest {
         module_origin: module_origin.clone(),
-        name: base_name,
+        name: base_name.standardized(),
         input: input.clone(),
     });
 

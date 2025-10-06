@@ -78,7 +78,7 @@ pub(crate) fn typecheck_access(
                 name: name.clone(),
             };
 
-            let Some(prototype) = env.get_func(&fn_ident) else {
+            let Some(prototype) = env.get_func(&fn_ident.into()) else {
                 log_typecheck_error!(
                     env,
                     expr,
@@ -188,7 +188,7 @@ pub(crate) fn typecheck_method_call(
                 );
             };
             
-            let Some(prototype) = env.get_func(&prototype.name.kind) else {
+            let Some(prototype) = env.get_func(&prototype.name) else {
                 log_typecheck_error!(
                     env,
                     expr,
@@ -217,7 +217,7 @@ pub(crate) fn typecheck_method_call(
                 );
             };
 
-            let Some(prototype) = env.get_func(&prototype.name.kind) else {
+            let Some(prototype) = env.get_func(&prototype.name) else {
                 log_typecheck_error!(
                     env,
                     expr,

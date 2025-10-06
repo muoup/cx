@@ -3,7 +3,6 @@ use crate::preparse::NaiveFnIdent;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use std::hash::Hash;
-use uuid::Uuid;
 
 pub type CXTypeSpecifier = u8;
 
@@ -21,14 +20,13 @@ pub struct ModuleResource<Resource> {
     pub resource: Resource,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveType {
-    pub uuid: u64,
     pub kind: CXNaiveTypeKind,
     pub specifiers: CXTypeSpecifier,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum PredeclarationType {
     #[default]
     None,
@@ -57,7 +55,7 @@ pub struct CXNaiveTemplateInput {
     pub params: Vec<CXNaiveType>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXNaiveTypeKind {
     Identifier {
         name: CXIdent,
@@ -101,7 +99,6 @@ pub enum CXNaiveTypeKind {
 impl CXNaiveType {
     pub fn new(specifiers: CXTypeSpecifier, kind: CXNaiveTypeKind) -> Self {
         Self {
-            uuid: Uuid::new_v4().as_u64_pair().0,
             kind,
             specifiers,
         }
@@ -165,11 +162,5 @@ impl<T: Clone> ModuleResource<T> {
             external_module: None,
             resource,
         }
-    }
-}
-
-impl Hash for CXNaiveType {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.uuid.hash(state);
     }
 }

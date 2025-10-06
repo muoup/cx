@@ -20,7 +20,6 @@ pub struct TCAST {
     pub type_map: CXTypeMap,
     pub fn_map: CXFnMap,
 
-    pub destructors_required: Vec<CXType>,
     pub global_variables: Vec<TCGlobalVariable>,
     pub function_defs: Vec<TCFunctionDef>,
 }

@@ -124,7 +124,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     _type: symbol_type.clone().mem_ref_to(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
-            } else if let Some(function_type) = env.get_func(&CXFunctionKind::Standard { name: name.clone() }) {
+            } else if let Some(function_type) = env.get_func(&CXFunctionKind::Standard { name: name.clone() }.into()) {
                 TCExpr {
                     _type: CXTypeKind::Function {
                         prototype: Box::new(function_type.clone()),

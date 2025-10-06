@@ -1,6 +1,5 @@
 use std::hash::{Hash, Hasher};
 
-use crate::function_map::CXFunctionKind;
 use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
 use crate::format::type_mangle;
 use cx_parsing_data::parse::parser::VisibilityMode;
@@ -253,6 +252,14 @@ impl CXType {
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, CXTypeKind::MemoryReference(_))
     }
+    
+    pub fn was_template_instantiated(&self) -> bool {
+        match &self.kind {
+            CXTypeKind::Structured { base_identifier, .. } => base_identifier.is_some(),
+            
+            _ => false,
+        }
+    }
 
     pub fn get_name(&self) -> Option<&str> {
         match &self.kind {
@@ -437,18 +444,20 @@ impl CXFunctionPrototype {
     }
     
     pub fn apply_template_mangling(&mut self) {
-        match &self.name.kind {
-            CXFunctionKind::Standard { name } => {               
-                let new_name = CXIdent::from(CXFunctionKind::standard_template_mangle(name.as_str(), &self));
+        self.name.template_mangle2(&self.return_type, self.params.iter().map(|p| &p._type));
+        
+        // match &self.name.kind {
+        //     CXFunctionKind::Standard { name } => {               
+        //         let new_name = CXIdent::from(CXFunctionKind::standard_template_mangle(name.as_str(), &self));
             
-                let CXFunctionKind::Standard { name } = &mut self.name.kind else {
-                    unreachable!();
-                };
+        //         let CXFunctionKind::Standard { name } = &mut self.name.kind else {
+        //             unreachable!();
+        //         };
                 
-                *name = new_name;
-            }
-                
-            _ => {}
-        }
+        //         *name = new_name;
+        //     },
+            
+        //     _ => {}
+        // }
     }
 }

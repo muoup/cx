@@ -455,9 +455,8 @@ impl MIRBuilder {
     }
 
     pub fn get_deconstructor(&self, _type: &CXType) -> Option<String> {
-        let name = _type.get_name()?;
-
-        let mangled_name = CXFunctionKind::deconstructor_mangle(name);
+        let Some(mangled_name) = CXFunctionKind::deconstructor_mangle_ty(_type)
+            else { return None; };
 
         if self.fn_map.contains_key(&mangled_name) {
             Some(mangled_name)
@@ -467,16 +466,12 @@ impl MIRBuilder {
     }
 
     pub fn get_destructor(&self, _type: &CXType) -> Option<String> {
-        let Some(name) = _type.get_name() else {
-            return None;
-        };
-        
-        let key = CXFunctionKind::destructor_mangle(&name);
-        
-        if self.fn_map.contains_key(&key) {
-            Some(key)
+        let Some(mangled_name) = CXFunctionKind::destructor_mangle_ty(_type)
+            else { return None; };
+
+        if self.fn_map.contains_key(&mangled_name) {
+            Some(mangled_name)
         } else {
-            println!("Destructor not found: {}", key);
             None
         }
     }
