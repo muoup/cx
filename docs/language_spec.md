@@ -138,6 +138,8 @@ Output o3 = Output::string("Hello, World!");
 CX supports templates, which allow you to write generic functions and types that can work with any type.
 Templates are declared using angle brackets (`<>`) containing the generic type parameters.
 
+For information regarding templated symbols, see the [name mangling documentation](name_mangling.md).
+
 For functions, the template declaration comes after the function name. For type definitions like `struct` or `typedef`, it comes after the type name. This syntax is similar to templates in Rust or generics in Java/C#.
 
 **Function Syntax Example:**

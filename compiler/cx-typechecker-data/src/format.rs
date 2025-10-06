@@ -48,8 +48,17 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
             }
             mangled.push(prototype.var_args as u8 as char);
         }
-        CXTypeKind::Structured { fields, .. } => {
+        CXTypeKind::Structured { name, fields, .. } => {
             mangled.push('S');
+            
+            if let Some(n) = name {
+                mangled.push('n');
+                mangled.push_str(n.as_str().len().to_string().as_str());
+                mangled.push('_');
+                mangled.push_str(n.as_str());
+            }
+            
+            mangled.push('f');
             mangled.push_str(&fields.len().to_string());
             mangled.push('_');
             for field in fields {
