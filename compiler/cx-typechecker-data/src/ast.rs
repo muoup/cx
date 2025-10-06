@@ -1,14 +1,15 @@
-use std::collections::HashMap;
-use speedy::{Readable, Writable};
-use cx_ast_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
-use cx_util::identifier::CXIdent;
 use crate::cx_types::{CXFunctionPrototype, CXType};
-use crate::{CXFnData, CXFnMap, CXTypeData, CXTypeMap};
+use crate::function_map::{CXFnData, CXFnMap};
+use crate::{CXTypeData, CXTypeMap};
+use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
+use cx_util::identifier::CXIdent;
+use speedy::{Readable, Writable};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCBaseMappings {
     pub type_data: CXTypeData,
-    pub fn_data: CXFnData,
+    pub fn_map: CXFnData,
     pub global_variables: HashMap<String, TCGlobalVariable>,
 }
 
@@ -19,7 +20,6 @@ pub struct TCAST {
     pub type_map: CXTypeMap,
     pub fn_map: CXFnMap,
 
-    pub destructors_required: Vec<CXType>,
     pub global_variables: Vec<TCGlobalVariable>,
     pub function_defs: Vec<TCFunctionDef>,
 }
@@ -28,13 +28,13 @@ pub struct TCAST {
 pub struct FunctionTemplateRequest {
     pub module_origin: Option<CXIdent>,
     pub name: CXIdent,
-    pub type_arguments: Vec<CXType>
+    pub type_arguments: Vec<CXType>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCFunctionDef {
     pub prototype: CXFunctionPrototype,
-    pub body: Box<TCExpr>
+    pub body: Box<TCExpr>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -42,16 +42,16 @@ pub enum TCGlobalVariable {
     // Currently used with enum constants
     UnaddressableConstant {
         name: CXIdent,
-        val: i64
+        val: i64,
     },
     StringLiteral {
         name: CXIdent,
-        value: String
+        value: String,
     },
     Variable {
         name: CXIdent,
         _type: CXType,
-        initializer: Option<i64>
+        initializer: Option<i64>,
     },
 }
 
@@ -80,11 +80,11 @@ pub enum TCExprKind {
     },
 
     IntLiteral {
-        value: i64
+        value: i64,
     },
 
     FloatLiteral {
-        value: f64
+        value: f64,
     },
 
     SizeOf {
@@ -97,29 +97,28 @@ pub enum TCExprKind {
     },
 
     GlobalVariableReference {
-        name: CXIdent
+        name: CXIdent,
     },
 
     VariableReference {
-        name: CXIdent
+        name: CXIdent,
     },
 
-    FunctionReference {
-        name: CXIdent
-    },
+    FunctionReference,
 
     MemberFunctionReference {
         target: Box<TCExpr>,
-        mangled_name: CXIdent,
+        target_type: CXType
     },
 
     FunctionCall {
         function: Box<TCExpr>,
         arguments: Vec<TCExpr>,
-        direct_call: bool
+        direct_call: bool,
     },
 
     Access {
+        struct_type: CXType,
         target: Box<TCExpr>,
         field: CXIdent,
     },
@@ -127,18 +126,18 @@ pub enum TCExprKind {
     Assignment {
         target: Box<TCExpr>,
         value: Box<TCExpr>,
-        additional_op: Option<CXBinOp>
+        additional_op: Option<CXBinOp>,
     },
 
     BinOp {
         lhs: Box<TCExpr>,
         rhs: Box<TCExpr>,
-        op: CXBinOp
+        op: CXBinOp,
     },
 
     UnOp {
         operand: Box<TCExpr>,
-        operator: CXUnOp
+        operator: CXUnOp,
     },
 
     If {
@@ -180,24 +179,24 @@ pub enum TCExprKind {
         variant_type: CXType,
         variant_tag: u64,
 
-        var_name: CXIdent
+        var_name: CXIdent,
     },
 
     ImplicitLoad {
-        operand: Box<TCExpr>
+        operand: Box<TCExpr>,
     },
 
     TemporaryBuffer {
-        _type: CXType
+        _type: CXType,
     },
 
     Coercion {
         operand: Box<TCExpr>,
-        cast_type: CXCastType
+        cast_type: CXCastType,
     },
 
     Defer {
-        operand: Box<TCExpr>
+        operand: Box<TCExpr>,
     },
 
     New {
@@ -206,15 +205,19 @@ pub enum TCExprKind {
     },
 
     Move {
-        operand: Box<TCExpr>
+        operand: Box<TCExpr>,
     },
 
     Return {
-        value: Option<Box<TCExpr>>
+        value: Option<Box<TCExpr>>,
     },
 
     InitializerList {
         indices: Vec<TCInitIndex>,
+    },
+    
+    Copy {
+        expr: Box<TCExpr>,
     },
 
     TypeConstructor {
@@ -224,11 +227,11 @@ pub enum TCExprKind {
         variant_type: CXType,
         variant_index: usize,
 
-        input: Box<TCExpr>
+        input: Box<TCExpr>,
     },
 
     Break,
-    Continue
+    Continue,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

@@ -12,7 +12,7 @@ void access(Data<int> *data) {
 
 int main() {
     int val;
-    Data<int> data = (Data<int>) {
+    Data<int> data = {
         .ptr = &val
     };
 

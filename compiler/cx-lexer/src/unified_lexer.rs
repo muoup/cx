@@ -1,14 +1,14 @@
-use cx_lexer_data::token::{Token, TokenKind};
-use std::collections::HashMap;
-use cx_util::char_iter::CharIter;
 use crate::line_lexer::lex_line;
 use crate::preprocessor::{generate_lexable_slice, handle_comment, handle_directive};
+use cx_lexer_data::token::{Token, TokenKind};
+use cx_util::char_iter::CharIter;
+use std::collections::HashMap;
 
 pub(crate) struct Lexer<'a> {
     pub(crate) source: &'a str,
     pub(crate) char_iter: CharIter<'a>,
     pub(crate) macros: HashMap<String, Box<[Token]>>,
-    pub(crate) tokens: Vec<Token>
+    pub(crate) tokens: Vec<Token>,
 }
 
 impl<'a> Lexer<'a> {
@@ -17,7 +17,7 @@ impl<'a> Lexer<'a> {
             source,
             char_iter: CharIter::new(source),
             macros: HashMap::new(),
-            tokens: Vec::new()
+            tokens: Vec::new(),
         }
     }
 
@@ -56,15 +56,15 @@ impl<'a> Lexer<'a> {
                 Some('#') => {
                     handle_directive(self);
                     continue;
-                },
+                }
 
                 Some('/') => {
                     if handle_comment(self) {
                         continue;
                     }
-                },
+                }
 
-                _ => ()
+                _ => (),
             }
 
             return generate_lexable_slice(self);
@@ -72,7 +72,8 @@ impl<'a> Lexer<'a> {
     }
 
     fn expand_macros(&self, base_tokens: Vec<Token>) -> Vec<Token> {
-        base_tokens.into_iter()
+        base_tokens
+            .into_iter()
             .flat_map(|token| {
                 if let TokenKind::Identifier(name) = &token.kind {
                     if let Some(macro_body) = self.macros.get(name) {

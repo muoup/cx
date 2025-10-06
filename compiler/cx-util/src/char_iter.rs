@@ -26,7 +26,7 @@ impl CharIter<'_> {
         if self.peek() == Some('\n') {
             self.line += 1;
         }
-        
+
         if let Some(c) = self.peek() {
             self.current_iter += 1;
             Some(c)
@@ -86,9 +86,11 @@ impl CharIter<'_> {
 
         &self.source[start..self.current_iter]
     }
-    
+
     pub fn peek(&self) -> Option<char> {
-        self.source.as_bytes().get(self.current_iter)
+        self.source
+            .as_bytes()
+            .get(self.current_iter)
             .map(|&c| c as char)
     }
 

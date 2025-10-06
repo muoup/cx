@@ -5,9 +5,9 @@ edition = "2021"
 autotests = false
 
 [dependencies]
-cx-ast = { path = "../cx-ast" }
+cx-parsing = { path = "../cx-parsing" }
 
-cx-ast-data = { path = "../cx-ast-data" }
+cx-parsing-data = { path = "../cx-parsing-data" }
 cx-typechecker-data = { path = "../cx-typechecker-data" }
 cx-mir-data = { path = "../cx-mir-data" }
 

@@ -10,7 +10,7 @@ pub struct TokenData {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
-    
+
     pub line: u32,
     pub start_index: usize,
     pub end_index: usize,
@@ -57,7 +57,7 @@ macro_rules! operator {
 
     ($name:ident) => {
         cx_lexer_data::token::TokenKind::Operator(cx_lexer_data::token::OperatorType::$name)
-    }
+    };
 }
 
 #[macro_export]
@@ -68,7 +68,7 @@ macro_rules! punctuator {
 
     ($name:ident) => {
         cx_lexer_data::token::TokenKind::Punctuator(cx_lexer_data::token::PunctuatorType::$name)
-    }
+    };
 }
 
 #[macro_export]
@@ -79,7 +79,7 @@ macro_rules! identifier {
 
     ($name:ident) => {
         cx_lexer_data::token::TokenKind::Identifier($name)
-    }
+    };
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -100,69 +100,125 @@ pub enum TokenKind {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum OperatorType {
-    Plus, Minus, Asterisk, Slash, Percent,
-    NotEqual, Less, Greater, Equal, LessEqual, GreaterEqual,
+    Plus,
+    Minus,
+    Asterisk,
+    Slash,
+    Percent,
+    NotEqual,
+    Less,
+    Greater,
+    Equal,
+    LessEqual,
+    GreaterEqual,
 
-    DoubleAmpersand, DoubleBar,
-    Exclamation, Ampersand,
-    Bar, Caret, Tilda,
-    DoubleLT, DoubleGT,
+    DoubleAmpersand,
+    DoubleBar,
+    Exclamation,
+    Ampersand,
+    Bar,
+    Caret,
+    Tilda,
+    DoubleLT,
+    DoubleGT,
 
-    Increment, Decrement,
+    Increment,
+    Decrement,
 
-    Comma, ArrayIndex,
-    Access, ScopeRes,
-    
-    Move, Is
+    Comma,
+    ArrayIndex,
+    Access,
+    ScopeRes,
+
+    Move,
+    Is,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum PunctuatorType {
-    OpenParen, CloseParen,
-    OpenBracket, CloseBracket,
-    OpenBrace, CloseBrace,
+    OpenParen,
+    CloseParen,
+    OpenBracket,
+    CloseBracket,
+    OpenBrace,
+    CloseBrace,
     Semicolon,
     Ellipsis,
-    Colon, Period,
+    Colon,
+    Period,
     QuestionMark,
 
-    ThickArrow /* (=>) */
+    ThickArrow, /* (=>) */
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum KeywordType {
-    If, Else,
-    While, For, Do,
-    Break, Continue, Return,
-    Switch, Case, Default,
+    If,
+    Else,
+    While,
+    For,
+    Do,
+    Break,
+    Continue,
+    Return,
+    Switch,
+    Case,
+    Default,
 
-    Struct, Enum, Union,
+    Struct,
+    Enum,
+    Union,
 
     Typedef,
 
-    Static, Extern, Const, Register,
-    Volatile, Inline, Restrict,
+    Static,
+    Extern,
+    Const,
+    Register,
+    Volatile,
+    Inline,
+    Restrict,
 
     Sizeof,
 
     // CX Specific
-    Import, Defer, Strong, Weak, New, 
-    Template, Type, Class, Match
+    Import,
+    Defer,
+    Strong,
+    Weak,
+    New,
+    Template,
+    Type,
+    Class,
+    Match,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum IntrinsicType {
-    Void, Bool, Char, Short, Int, Long, Auto,
-    Float, Double,
-    Unsigned, Signed,
+    Void,
+    Bool,
+    Char,
+    Short,
+    Int,
+    Long,
+    Auto,
+    Float,
+    Double,
+    Unsigned,
+    Signed,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SpecifierType {
-    Const, Volatile, Restrict,
-    Inline, Extern, Static,
-    Public, Private,
-    ThreadLocal
+    Const,
+    Volatile,
+    Restrict,
+    Inline,
+    Extern,
+    Static,
+    Public,
+    Private,
+    ThreadLocal,
 }
 
 impl TokenKind {
@@ -183,7 +239,7 @@ impl TokenKind {
             "enum" => TokenKind::Keyword(KeywordType::Enum),
             "union" => TokenKind::Keyword(KeywordType::Union),
             "typedef" => TokenKind::Keyword(KeywordType::Typedef),
-            
+
             "int" => TokenKind::Intrinsic(IntrinsicType::Int),
             "long" => TokenKind::Intrinsic(IntrinsicType::Long),
             "short" => TokenKind::Intrinsic(IntrinsicType::Short),
@@ -205,7 +261,7 @@ impl TokenKind {
             "restrict" => TokenKind::Specifier(SpecifierType::Restrict),
             "const" => TokenKind::Specifier(SpecifierType::Const),
             "thread_local" => TokenKind::Specifier(SpecifierType::ThreadLocal),
-            
+
             // CX Extensions
             "import" => TokenKind::Keyword(KeywordType::Import),
             "defer" => TokenKind::Keyword(KeywordType::Defer),
@@ -222,7 +278,7 @@ impl TokenKind {
             "class" => TokenKind::Keyword(KeywordType::Class),
 
             "match" => TokenKind::Keyword(KeywordType::Match),
-            "is"    => TokenKind::Operator(OperatorType::Is),
+            "is" => TokenKind::Operator(OperatorType::Is),
 
             _ => TokenKind::Identifier(str),
         }

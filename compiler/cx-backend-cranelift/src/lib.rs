@@ -1,27 +1,27 @@
-use std::collections::HashMap;
+use crate::codegen::{codegen_fn_prototype, codegen_function};
+use crate::globals::generate_global;
+use crate::value_type::get_cranelift_type;
 use cranelift::codegen::{ir, Context};
 use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_mir_data::{BCFunctionMap, BlockID, ProgramMIR, MIRValue};
 use cx_mir_data::types::MIRTypeKind;
+use cx_mir_data::{BlockID, MIRValue, ProgramMIR};
 use cx_util::log_error;
-use crate::codegen::{codegen_fn_prototype, codegen_function};
-use crate::globals::generate_global;
-use crate::value_type::get_cranelift_type;
+use std::collections::HashMap;
 
 mod codegen;
-mod value_type;
-mod routines;
-mod instruction;
-mod inst_calling;
 mod globals;
+mod inst_calling;
+mod instruction;
+mod routines;
+mod value_type;
 
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
     Value(Value),
-    NULL
+    NULL,
 }
 
 impl CodegenValue {
@@ -29,7 +29,7 @@ impl CodegenValue {
         match self {
             CodegenValue::Value(value) => *value,
 
-            _ => panic!("Expected Value, got: {self:?}")
+            _ => panic!("Expected Value, got: {self:?}"),
         }
     }
 }
@@ -41,12 +41,11 @@ pub struct FunctionState<'a> {
     pub(crate) target_frontend_config: &'a TargetFrontendConfig,
 
     pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
-    pub(crate) fn_map: &'a BCFunctionMap,
 
     pub(crate) block_map: Vec<Block>,
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) fn_params: Vec<Value>,
-    
+
     pub(crate) defer_offset: usize,
 
     pub(crate) variable_table: VariableTable,
@@ -58,8 +57,6 @@ pub(crate) struct GlobalState<'a> {
     pub(crate) object_module: ObjectModule,
     pub(crate) target_frontend_config: TargetFrontendConfig,
 
-    pub(crate) fn_map: &'a BCFunctionMap,
-
     pub(crate) function_ids: HashMap<String, FuncId>,
     pub(crate) function_sigs: &'a mut HashMap<String, ir::Signature>,
 }
@@ -69,11 +66,10 @@ impl FunctionState<'_> {
         let id = match block_id {
             BlockID::Block(id) => id as usize,
             BlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
-
-            _ => panic!("Invalid block type for block ID: {block_id:?}")
         };
-        
-        self.block_map.get(id)
+
+        self.block_map
+            .get(id)
             .cloned()
             .unwrap_or_else(|| panic!("Block with ID {id} not found in block map"))
     }
@@ -88,7 +84,7 @@ impl FunctionState<'_> {
                 let int_type = get_cranelift_type(type_);
                 let value = self.builder.ins().iconst(int_type, *val);
                 Some(CodegenValue::Value(value))
-            },
+            }
 
             MIRValue::FloatImmediate { val, type_ } => {
                 let value = f64::from_bits(*val as u64);
@@ -97,14 +93,14 @@ impl FunctionState<'_> {
                     MIRTypeKind::Float { bytes: 4 } => {
                         let value = self.builder.ins().f32const(value as f32);
                         Some(CodegenValue::Value(value))
-                    },
+                    }
                     MIRTypeKind::Float { bytes: 8 } => {
                         let value = self.builder.ins().f64const(value);
                         Some(CodegenValue::Value(value))
-                    },
-                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_)
+                    }
+                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_),
                 }
-            },
+            }
 
             MIRValue::LoadOf(_type, val) => {
                 let Some(addr) = self.get_value(val) else {
@@ -116,24 +112,24 @@ impl FunctionState<'_> {
                     get_cranelift_type(_type),
                     ir::MemFlags::new(),
                     addr,
-                    0
+                    0,
                 );
 
                 Some(CodegenValue::Value(loaded))
-            },
+            }
 
             MIRValue::Global(id) => {
-                let global_ref = self.object_module
-                    .declare_data_in_func(
-                        DataId::from_u32(*id),
-                        self.builder.func
-                    );
+                let global_ref = self
+                    .object_module
+                    .declare_data_in_func(DataId::from_u32(*id), self.builder.func);
 
-                let gv = self.builder.ins()
+                let gv = self
+                    .builder
+                    .ins()
                     .global_value(self.pointer_type, global_ref);
 
                 Some(CodegenValue::Value(gv))
-            },
+            }
 
             _ => {
                 let Some(var) = self.variable_table.get(mir_value).cloned() else {
@@ -159,10 +155,9 @@ pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
                 isa.clone(),
                 output,
                 cranelift_module::default_libcall_names(),
-            ).unwrap()
+            )
+            .unwrap(),
         ),
-
-        fn_map: &bc.fn_map,
 
         context: Context::new(),
         target_frontend_config: isa.frontend_config(),
@@ -185,14 +180,16 @@ pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
                 func.prototype.name
             );
         };
-        let func_sig = global_state.function_sigs.remove(&func.prototype.name).unwrap_or_else(|| {
-            panic!("Function signature redefine: {}", func.prototype.name);
-        });
+        
+        let func_sig = global_state
+            .function_sigs
+            .remove(&func.prototype.name)
+            .unwrap_or_else(|| {
+                panic!("Function prototype not found for: {}", func.prototype.name);
+            });
 
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    global_state.object_module.finish()
-        .emit()
-        .ok()
+    global_state.object_module.finish().emit().ok()
 }

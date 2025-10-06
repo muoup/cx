@@ -18,19 +18,17 @@ pub fn dump_all(data: impl Iterator<Item = impl std::fmt::Display>) {
     dump_write("\n\n\n//////////////\n\n\n\n");
 }
 
-
 pub fn dump_write(str: &str) {
     const DUMP_PATH: &str = ".internal/compiler-dump.data";
-    
+
     let path = std::path::Path::new(DUMP_PATH);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    
-    let mut dump_file =
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(DUMP_PATH)
-            .expect("Failed to open dump file");
+
+    let mut dump_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(DUMP_PATH)
+        .expect("Failed to open dump file");
 
     dump_file
         .write_all(str.as_bytes())
@@ -69,7 +67,7 @@ macro_rules! fwriteln {
 
             let static_ident = cx_util::format::static_ident().lock().unwrap();
             for _ in 0..*static_ident {
-                fwrite!($f, "\t");
+                fwrite!($f, "\t")?;
             }
 
             val

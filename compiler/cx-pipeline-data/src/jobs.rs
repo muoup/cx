@@ -6,12 +6,12 @@ use std::hash::Hash;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum JobState {
     InQueue,
-    Completed
+    Completed,
 }
 
 pub struct JobQueue {
     progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
-    data: VecDeque<CompilationJob>
+    data: VecDeque<CompilationJob>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,14 +19,14 @@ pub struct CompilationJob {
     pub step: CompilationStep,
     pub unit: CompilationUnit,
     pub requirements: Vec<CompilationJobRequirement>,
-    
-    pub compilation_exists: bool
+
+    pub compilation_exists: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilationJobRequirement {
     pub step: CompilationStep,
-    pub unit: CompilationUnit
+    pub unit: CompilationUnit,
 }
 
 pub type CompilationStepRepr = u16;
@@ -36,7 +36,6 @@ pub type CompilationStepRepr = u16;
 pub enum CompilationStep {
     // Note: for the sake of simplicity and the relatively minimal computational complexity,
     // preprocessing and lexing are done for now whenever the source code is needed.
-
     /**
      *  Parses all type and function definitions from the source compilation unit. This will produce
      *  a (most of the time) incomplete type and function map, which can contain unresolved references
@@ -132,30 +131,30 @@ pub enum CompilationStep {
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 6
-    
-    // For now, linking is a single step that is done after all compilation above is done. This 
-    // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
-    // per-compilation unit, it handled as its own mechanism.
+    Codegen = 1 << 6, // For now, linking is a single step that is done after all compilation above is done. This
+                      // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
+                      // per-compilation unit, it handled as its own mechanism.
 }
 
 impl CompilationJob {
     pub fn new(
         requirements: Vec<CompilationJobRequirement>,
         step: CompilationStep,
-        unit: CompilationUnit
+        unit: CompilationUnit,
     ) -> Self {
         CompilationJob {
-            requirements, step, unit,
-            
-            compilation_exists: false
+            requirements,
+            step,
+            unit,
+
+            compilation_exists: false,
         }
     }
-    
+
     pub fn as_requirement(&self) -> CompilationJobRequirement {
         CompilationJobRequirement {
             step: self.step,
-            unit: self.unit.clone()
+            unit: self.unit.clone(),
         }
     }
 }
@@ -177,22 +176,22 @@ impl JobQueue {
     pub fn new() -> Self {
         JobQueue {
             progress_map: HashMap::new(),
-            data: VecDeque::new()
+            data: VecDeque::new(),
         }
     }
 
     pub fn push_new_job(&mut self, job: CompilationJob) {
         let pair = (job.unit.clone(), job.step);
-        
+
         if !self.progress_map.contains_key(&pair) {
             self.data.push_back(job);
             self.progress_map.insert(pair, JobState::InQueue);
         }
     }
-    
+
     pub fn push_job(&mut self, job: CompilationJob) {
         let pair = (job.unit.clone(), job.step);
-        
+
         self.data.push_back(job);
         self.progress_map.insert(pair, JobState::InQueue);
     }
@@ -200,31 +199,48 @@ impl JobQueue {
     pub fn pop_job(&mut self) -> Option<CompilationJob> {
         self.data.pop_front()
     }
-    
+
     pub fn complete_job(&mut self, job: &CompilationJob) {
-        self.progress_map.insert((job.unit.clone(), job.step), JobState::Completed);
+        self.progress_map
+            .insert((job.unit.clone(), job.step), JobState::Completed);
     }
-    
+
     pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
-        self.progress_map.insert((unit.clone(), CompilationStep::PreParse), JobState::Completed);
-        self.progress_map.insert((unit.clone(), CompilationStep::ASTParse), JobState::Completed);
-        self.progress_map.insert((unit.clone(), CompilationStep::TypeCompletion), JobState::Completed);
-        self.progress_map.insert((unit.clone(), CompilationStep::BytecodeGen), JobState::Completed);
-        self.progress_map.insert((unit.clone(), CompilationStep::Codegen), JobState::Completed);
+        self.progress_map.insert(
+            (unit.clone(), CompilationStep::PreParse),
+            JobState::Completed,
+        );
+        self.progress_map.insert(
+            (unit.clone(), CompilationStep::ASTParse),
+            JobState::Completed,
+        );
+        self.progress_map.insert(
+            (unit.clone(), CompilationStep::TypeCompletion),
+            JobState::Completed,
+        );
+        self.progress_map.insert(
+            (unit.clone(), CompilationStep::BytecodeGen),
+            JobState::Completed,
+        );
+        self.progress_map.insert(
+            (unit.clone(), CompilationStep::Codegen),
+            JobState::Completed,
+        );
     }
-    
+
     pub fn job_complete(&self, job: &CompilationJob) -> bool {
         self.progress_map.get(&(job.unit.clone(), job.step)) == Some(&JobState::Completed)
     }
-    
+
     pub fn requirements_complete(&self, job: &CompilationJob) -> bool {
         job.requirements.iter().all(|req| {
             self.progress_map.get(&(req.unit.clone(), req.step)) == Some(&JobState::Completed)
         })
     }
-    
+
     pub fn finish_job(&mut self, job: &CompilationJob) {
-        self.progress_map.insert((job.unit.clone(), job.step), JobState::Completed);
+        self.progress_map
+            .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 
     pub fn is_empty(&self) -> bool {

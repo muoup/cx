@@ -1,24 +1,32 @@
 use crate::inst_calling::prepare_function_sig;
 use crate::instruction::codegen_instruction;
+use crate::routines::convert_linkage;
 use crate::value_type::get_cranelift_type;
 use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_mir_data::{MIRFunctionPrototype, BlockID, MIRFunction, ElementID, FunctionBlock, MIRValue};
+use cx_mir_data::{BlockID, ElementID, FunctionBlock, MIRFunction, MIRFunctionPrototype, MIRValue};
 use cx_util::format::dump_data;
-use crate::routines::convert_linkage;
 
-pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &MIRFunctionPrototype) -> Option<()> {
+pub(crate) fn codegen_fn_prototype(
+    global_state: &mut GlobalState,
+    prototype: &MIRFunctionPrototype,
+) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
     let linkage = convert_linkage(prototype.linkage);
 
-    let id = global_state.object_module
+    let id = global_state
+        .object_module
         .declare_function(prototype.name.as_str(), linkage, &sig)
         .unwrap();
 
-    global_state.function_ids.insert(prototype.name.to_owned(), id);
-    global_state.function_sigs.insert(prototype.name.to_owned(), sig);
+    global_state
+        .function_ids
+        .insert(prototype.name.to_owned(), id);
+    global_state
+        .function_sigs
+        .insert(prototype.name.to_owned(), sig);
 
     Some(())
 }
@@ -26,7 +34,7 @@ pub(crate) fn codegen_fn_prototype(global_state: &mut GlobalState, prototype: &M
 pub(crate) fn codegen_block(
     context: &mut FunctionState,
     fn_block: &FunctionBlock,
-    block_id: BlockID
+    block_id: BlockID,
 ) {
     let block = context.get_block(block_id);
     context.builder.switch_to_block(block);
@@ -36,9 +44,9 @@ pub(crate) fn codegen_block(
             context.variable_table.insert(
                 MIRValue::BlockResult {
                     block_id,
-                    value_id: value_id as u32
+                    value_id: value_id as u32,
                 },
-                val
+                val,
             );
         };
 
@@ -48,12 +56,14 @@ pub(crate) fn codegen_block(
     }
 }
 
-pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, func_sig: Signature, bc_func: &MIRFunction) -> Option<()> {
-    let mut func = Function::with_name_signature(
-        UserFuncName::user(0, func_id.as_u32()),
-        func_sig
-    );
-    
+pub(crate) fn codegen_function(
+    global_state: &mut GlobalState,
+    func_id: FuncId,
+    func_sig: Signature,
+    bc_func: &MIRFunction,
+) -> Option<()> {
+    let mut func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), func_sig);
+
     let mut binding = FunctionBuilderContext::new();
     let builder = FunctionBuilder::new(&mut func, &mut binding);
 
@@ -65,8 +75,6 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
 
         function_ids: &mut global_state.function_ids,
 
-        fn_map: global_state.fn_map,
-        
         defer_offset: bc_func.blocks.len(),
 
         variable_table: VariableTable::new(),
@@ -85,23 +93,37 @@ pub(crate) fn codegen_function(global_state: &mut GlobalState, func_id: FuncId, 
 
     for arg in bc_func.prototype.params.iter() {
         let cranelift_type = get_cranelift_type(&arg._type);
-        let arg = context.builder.append_block_param(first_block, cranelift_type);
+        let arg = context
+            .builder
+            .append_block_param(first_block, cranelift_type);
 
         context.fn_params.push(arg);
     }
-    
+
     for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
-        codegen_block(&mut context, fn_block, BlockID::Block(block_id as ElementID));
+        codegen_block(
+            &mut context,
+            fn_block,
+            BlockID::Block(block_id as ElementID),
+        );
     }
 
     for (block_id, fn_block) in bc_func.defer_blocks.iter().enumerate() {
-        codegen_block(&mut context, fn_block, BlockID::DeferredBlock(block_id as ElementID));
+        codegen_block(
+            &mut context,
+            fn_block,
+            BlockID::DeferredBlock(block_id as ElementID),
+        );
     }
-    
+
     context.builder.seal_all_blocks();
     context.builder.finalize();
 
-    let GlobalState { object_module, context, .. } = global_state;
+    let GlobalState {
+        object_module,
+        context,
+        ..
+    } = global_state;
 
     dump_data(&func);
 

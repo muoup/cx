@@ -1,18 +1,32 @@
 use std::hash::{Hash, Hasher};
-use speedy::{Readable, Writable};
+
+use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
+use crate::format::type_mangle;
+use cx_parsing_data::parse::parser::VisibilityMode;
+use cx_parsing_data::preparse::naive_types::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
-use cx_ast_data::parse::parser::VisibilityMode;
-use cx_ast_data::preparse::naive_types::CXTypeSpecifier;
-use uuid::Uuid;
-use cx_util::mangling::{mangle_destructor, mangle_member_function};
-use crate::ast::TCExpr;
+use speedy::{Readable, Writable};
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct CXType {
-    pub uuid: u64,
-    pub visibility_mode: VisibilityMode,
+    pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
+    
     pub kind: CXTypeKind,
+}
+
+impl CXType {
+    pub fn mangle(&self) -> String {
+        type_mangle(self)
+    }
+}
+
+impl Hash for CXType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.visibility.hash(state);
+        self.specifiers.hash(state);
+        state.write(&self.mangle().into_bytes());
+    }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -23,80 +37,82 @@ pub struct CXParameter {
 
 #[derive(Debug, Clone, Default, Readable, Writable)]
 pub struct CXFunctionPrototype {
-    pub name: CXIdent,
+    pub name: CXFunctionIdentifier,
     pub return_type: CXType,
     pub params: Vec<CXParameter>,
-
-    pub needs_buffer: bool,
-    pub var_args: bool
+    pub var_args: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXTemplateInput {
     pub args: Vec<CXType>,
 }
 
 impl PartialEq<Self> for CXType {
     fn eq(&self, other: &Self) -> bool {
-        self.uuid == other.uuid
+        same_type(self, other)
     }
 }
 
 impl Eq for CXType {}
 
-impl Hash for CXType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.uuid)
-    }
-}
-
 impl Default for CXType {
     fn default() -> Self {
         CXType {
-            uuid: 0,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             specifiers: 0,
-            kind: CXTypeKind::Unit
+            
+            kind: CXTypeKind::Unit,
         }
     }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXTypeKind {
-    Integer { bytes: u8, signed: bool },
-    Float { bytes: u8 },
+    Integer {
+        bytes: u8,
+        signed: bool,
+    },
+    Float {
+        bytes: u8,
+    },
     Bool,
     Structured {
         name: Option<CXIdent>,
         base_identifier: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
+        
+        move_semantics: bool,
+        copyable: bool
     },
     Union {
         name: Option<CXIdent>,
-        variants: Vec<(String, CXType)>
+        variants: Vec<(String, CXType)>,
     },
     TaggedUnion {
         name: CXIdent,
-        variants: Vec<(String, CXType)>
+        variants: Vec<(String, CXType)>,
     },
     Unit,
 
-    StrongPointer { 
+    StrongPointer {
         inner_type: Box<CXType>,
         is_array: bool,
+        
+        // move_semantics always true
     },
 
     PointerTo {
         inner_type: Box<CXType>,
-        
+
         sizeless_array: bool,
         weak: bool,
-        nullable: bool
+        nullable: bool,
     },
     MemoryReference(Box<CXType>),
     Array {
         size: usize,
-        inner_type: Box<CXType>
+        inner_type: Box<CXType>,
     },
     VariableLengthArray {
         size: Box<TCExpr>,
@@ -104,65 +120,58 @@ pub enum CXTypeKind {
     },
     Opaque {
         name: String,
-        size: usize
+        size: usize,
     },
     Function {
         prototype: Box<CXFunctionPrototype>,
     },
 }
 
-
 impl CXType {
     pub fn unit() -> Self {
         CXType {
-            uuid: 0,
             specifiers: 0,
-            visibility_mode: VisibilityMode::Private,
-            kind: CXTypeKind::Unit
+            visibility: VisibilityMode::Private,
+            
+            kind: CXTypeKind::Unit,
         }
     }
 
     pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
-            visibility_mode: VisibilityMode::Private, 
+            visibility: VisibilityMode::Private,
             specifiers,
-            kind: underlying_type
+            
+            kind: underlying_type,
         }
     }
-    
+
     pub fn set_visibility_mode(&mut self, visibility: VisibilityMode) -> &mut Self {
-        self.visibility_mode = visibility;
+        self.visibility = visibility;
         self
     }
 
     pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        CXType {
-            uuid: self.uuid,
-            visibility_mode: self.visibility_mode,
-            specifiers: self.specifiers | specifier,
-            kind: self.kind.clone()
-        }
+        let mut clone = self.clone();
+        clone.specifiers |= specifier;
+        clone
     }
 
     pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
-            visibility_mode: self.visibility_mode,
-            specifiers: self.specifiers & !specifier,
-            kind: self.kind.clone()
-        }
+        let mut clone = self.clone();
+        clone.specifiers &= !specifier;
+        clone
     }
 
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
     }
-    
+
     pub fn mem_ref_inner(&self) -> Option<&CXType> {
         let CXTypeKind::MemoryReference(inner) = &self.kind else {
             return None;
         };
-        
+
         Some(inner.as_ref())
     }
 
@@ -175,25 +184,24 @@ impl CXType {
     }
     pub fn pointer_to(self) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
+            
             kind: CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
-                
+
                 sizeless_array: false,
                 weak: false,
-                nullable: true
-            }
+                nullable: true,
+            },
         }
     }
 
     pub fn mem_ref_to(self) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
             specifiers: 0,
-            visibility_mode: VisibilityMode::Private,
-            kind: CXTypeKind::MemoryReference(Box::new(self))
+            visibility: VisibilityMode::Private,
+            kind: CXTypeKind::MemoryReference(Box::new(self)),
         }
     }
 
@@ -206,11 +214,19 @@ impl CXType {
     }
 
     pub fn is_array(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Array { .. } | CXTypeKind::VariableLengthArray { .. })
+        matches!(
+            self.kind,
+            CXTypeKind::Array { .. } | CXTypeKind::VariableLengthArray { .. }
+        )
     }
 
     pub fn is_structured(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Structured { .. } | CXTypeKind::Union { .. } | CXTypeKind::TaggedUnion { .. })
+        matches!(
+            self.kind,
+            CXTypeKind::Structured { .. }
+                | CXTypeKind::Union { .. }
+                | CXTypeKind::TaggedUnion { .. }
+        )
     }
 
     pub fn is_opaque(&self) -> bool {
@@ -237,28 +253,62 @@ impl CXType {
         matches!(self.kind, CXTypeKind::MemoryReference(_))
     }
     
+    pub fn was_template_instantiated(&self) -> bool {
+        match &self.kind {
+            CXTypeKind::Structured { base_identifier, .. } => {
+                let Some(base_name) = base_identifier else {
+                    return false;
+                };
+                
+                let Some(name) = self.get_name() else {
+                    return false;
+                };
+                
+                base_name.as_str() != name
+            },
+            
+            _ => false,
+        }
+    }
+
     pub fn get_name(&self) -> Option<&str> {
         match &self.kind {
-            CXTypeKind::Structured { name, .. } |
-            CXTypeKind::Union { name, .. } => name.as_ref().map(|n| n.as_str()),
+            CXTypeKind::Structured { name, .. } | CXTypeKind::Union { name, .. } => {
+                name.as_ref().map(|n| n.as_str())
+            }
             CXTypeKind::Opaque { name, .. } => Some(name),
             CXTypeKind::TaggedUnion { name, .. } => Some(name.as_str()),
 
             _ => None,
         }
     }
+    
+    pub fn get_fn_ident(&self) -> Option<&CXFunctionIdentifier> {
+        match &self.kind {
+            CXTypeKind::Function { prototype } => Some(&prototype.name),
+            _ => None,
+        }
+    }
 
     pub fn get_identifier(&self) -> Option<&CXIdent> {
         match &self.kind {
-            CXTypeKind::Structured { base_identifier, .. } => base_identifier.as_ref(),
+            CXTypeKind::Structured {
+                base_identifier, ..
+            } => base_identifier.as_ref(),
+            
             _ => None,
         }
     }
 
     pub fn set_name(&mut self, name: CXIdent) {
         match &mut self.kind {
-            CXTypeKind::Structured { name: n, .. } |
-            CXTypeKind::Union { name: n, .. } => *n = Some(name),
+            CXTypeKind::Structured { name: n, base_identifier, .. } => {
+                *base_identifier = n.clone();
+                *n = Some(name)
+            },
+            CXTypeKind::Union { name: n, .. } => {
+                *n = Some(name)
+            },
             _ => {}
         }
     }
@@ -267,6 +317,25 @@ impl CXType {
         if let Some(name) = self.get_name() {
             let new_name = f(name);
             self.set_name(CXIdent::from(new_name));
+        }
+    }
+    
+    pub fn has_move_semantics(&self) -> bool {
+        match &self.kind {
+            CXTypeKind::Structured { move_semantics, .. } => *move_semantics,
+            CXTypeKind::StrongPointer { .. } => true,
+            CXTypeKind::TaggedUnion { variants, .. } => variants.iter().any(|(_, t)| t.has_move_semantics()),
+            
+            _ => false,
+        }
+    }
+    
+    pub fn copyable(&self) -> bool {
+        match &self.kind {
+            CXTypeKind::Structured { copyable, .. } => *copyable,
+            CXTypeKind::TaggedUnion { variants, .. } => variants.iter().all(|(_, t)| t.copyable()),
+            
+            _ => true,
         }
     }
 
@@ -280,13 +349,12 @@ impl CXType {
             0,
             CXTypeKind::Function {
                 prototype: Box::new(CXFunctionPrototype {
-                    name: CXIdent::from("__internal_function"),
+                    name: CXFunctionIdentifier::default(),
                     return_type: CXType::unit(),
                     params: vec![],
-                    needs_buffer: false,
-                    var_args: false
-                })
-            }
+                    var_args: false,
+                }),
+            },
         )
     }
 }
@@ -294,8 +362,7 @@ impl CXType {
 impl From<CXTypeKind> for CXType {
     fn from(kind: CXTypeKind) -> Self {
         CXType {
-            uuid: Uuid::new_v4().as_u128() as u64,
-            visibility_mode: VisibilityMode::Private,
+            visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
         }
@@ -303,10 +370,6 @@ impl From<CXTypeKind> for CXType {
 }
 
 pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
-    if t1.uuid == t2.uuid {
-        return true;
-    }
-
     let t1_name = t1.get_name();
     let t2_name = t2.get_name();
 
@@ -315,75 +378,101 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
     }
 
     match (&t1.kind, &t2.kind) {
-        (CXTypeKind::Array { inner_type: t1_type, .. },
-         CXTypeKind::Array { inner_type: t2_type, .. }) =>
-            same_type(t1_type, t2_type),
+        (
+            CXTypeKind::Array {
+                inner_type: t1_type,
+                ..
+            },
+            CXTypeKind::Array {
+                inner_type: t2_type,
+                ..
+            },
+        ) => same_type(t1_type, t2_type),
 
-        (CXTypeKind::PointerTo { inner_type: t1_type, .. },
-         CXTypeKind::PointerTo { inner_type: t2_type, .. }) =>
-            same_type(t1_type, t2_type),
+        (
+            CXTypeKind::PointerTo {
+                inner_type: t1_type,
+                ..
+            },
+            CXTypeKind::PointerTo {
+                inner_type: t2_type,
+                ..
+            },
+        ) => same_type(t1_type, t2_type),
 
-        (CXTypeKind::StrongPointer { inner_type: t1_inner, .. },
-         CXTypeKind::StrongPointer { inner_type: t2_inner, .. }) =>
-            same_type(t1_inner, t2_inner),
+        (
+            CXTypeKind::StrongPointer {
+                inner_type: t1_inner,
+                ..
+            },
+            CXTypeKind::StrongPointer {
+                inner_type: t2_inner,
+                ..
+            },
+        ) => same_type(t1_inner, t2_inner),
 
-        (CXTypeKind::Structured { fields: t1_fields, .. },
-         CXTypeKind::Structured { fields: t2_fields, .. }) => {
-            t1_fields.iter().zip(t2_fields.iter())
-                .all(|(f1, f2)|
-                    same_type(&f1.1, &f2.1))
-        },
+        (
+            CXTypeKind::Structured {
+                fields: t1_fields, ..
+            },
+            CXTypeKind::Structured {
+                fields: t2_fields, ..
+            },
+        ) => t1_fields
+            .iter()
+            .zip(t2_fields.iter())
+            .all(|(f1, f2)| same_type(&f1.1, &f2.1)),
 
-        (CXTypeKind::Function { prototype: p1 },
-         CXTypeKind::Function { prototype: p2 }) =>
-            same_type(&p1.return_type, &p2.return_type) &&
-                p1.params.iter().zip(p2.params.iter())
-                    .all(|(a1, a2)| same_type(&a1._type, &a2._type)),
+        (CXTypeKind::Function { prototype: p1 }, CXTypeKind::Function { prototype: p2 }) => {
+            same_type(&p1.return_type, &p2.return_type)
+                && p1
+                    .params
+                    .iter()
+                    .zip(p2.params.iter())
+                    .all(|(a1, a2)| same_type(&a1._type, &a2._type))
+        }
 
-        (CXTypeKind::Integer { bytes: t1_bytes, signed: t1_signed },
-         CXTypeKind::Integer { bytes: t2_bytes, signed: t2_signed }) =>
-            *t1_bytes == *t2_bytes && *t1_signed == *t2_signed,
+        (
+            CXTypeKind::Integer {
+                bytes: t1_bytes,
+                signed: t1_signed,
+            },
+            CXTypeKind::Integer {
+                bytes: t2_bytes,
+                signed: t2_signed,
+            },
+        ) => *t1_bytes == *t2_bytes && *t1_signed == *t2_signed,
 
-        (CXTypeKind::Float { bytes: t1_bytes },
-         CXTypeKind::Float { bytes: t2_bytes }) =>
-            *t1_bytes == *t2_bytes,
+        (CXTypeKind::Float { bytes: t1_bytes }, CXTypeKind::Float { bytes: t2_bytes }) => {
+            *t1_bytes == *t2_bytes
+        }
 
-        (CXTypeKind::Bool, CXTypeKind::Bool) |
-        (CXTypeKind::Unit, CXTypeKind::Unit) =>
-            true,
+        (CXTypeKind::Bool, CXTypeKind::Bool) | (CXTypeKind::Unit, CXTypeKind::Unit) => true,
 
         _ => false,
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-pub enum CXFunctionIdentifier {
-    Standard(CXIdent),
-    MemberFunction {
-        _type: CXType,
-        function_name: CXIdent
-    },
-    Destructor(CXIdent)
-}
-
-impl CXFunctionIdentifier {
-    pub fn as_ident(&self) -> CXIdent {
-        CXIdent::from(self.as_string())
+impl CXFunctionPrototype {
+    pub fn mangle_name(&self) -> String {
+        self.name.mangle()
     }
-
-    pub fn as_string(&self) -> String {
-        match self {
-            CXFunctionIdentifier::Standard(name) => name.to_string(),
-            CXFunctionIdentifier::MemberFunction { _type, function_name, .. } => {
-                let Some(name) = _type.get_identifier() else {
-                    unreachable!("Member function's type must have a name");
-                };
-
-                mangle_member_function(name.to_string(), function_name.as_str())
-            },
-            CXFunctionIdentifier::Destructor(name) => {
-                mangle_destructor(name)
-            }
-        }
+    
+    pub fn apply_template_mangling(&mut self) {
+        self.name.template_mangle2(&self.return_type, self.params.iter().map(|p| &p._type));
+        
+        // match &self.name.kind {
+        //     CXFunctionKind::Standard { name } => {               
+        //         let new_name = CXIdent::from(CXFunctionKind::standard_template_mangle(name.as_str(), &self));
+            
+        //         let CXFunctionKind::Standard { name } = &mut self.name.kind else {
+        //             unreachable!();
+        //         };
+                
+        //         *name = new_name;
+        //     },
+            
+        //     _ => {}
+        // }
     }
 }

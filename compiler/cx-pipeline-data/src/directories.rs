@@ -1,16 +1,23 @@
+use crate::{CompilationUnit, GlobalCompilationContext, compilation_hash};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
-use crate::{compilation_hash, CompilationUnit, GlobalCompilationContext};
 
 pub fn stdlib_directory(inner_path: &str) -> String {
-    let current_exe = std::env::current_exe()
-        .expect("Failed to get current executable path");
- 
+    let current_exe = std::env::current_exe().expect("Failed to get current executable path");
+
     // TODO: This is a bit hacky, find a better way to do this
     if current_exe.parent().unwrap().ends_with("deps") {
-        format!("{}/../../../lib/{}", current_exe.parent().unwrap().display(), inner_path)
-    } else {      
-        format!("{}/../../lib/{}", current_exe.parent().unwrap().display(), inner_path)
+        format!(
+            "{}/../../../lib/{}",
+            current_exe.parent().unwrap().display(),
+            inner_path
+        )
+    } else {
+        format!(
+            "{}/../../lib/{}",
+            current_exe.parent().unwrap().display(),
+            inner_path
+        )
     }
 }
 
@@ -31,13 +38,17 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
 
     let mut complete_path = PathBuf::from(".internal");
     complete_path.push(profile_hash);
-    
+
     let mut identifier_string = unit.identifier.to_string();
     identifier_string.push_str(".cx");
     complete_path.push(identifier_string);
 
-    std::fs::create_dir_all(&complete_path)
-        .unwrap_or_else(|_| panic!("Failed to create internal directory: {}", complete_path.display()));
+    std::fs::create_dir_all(&complete_path).unwrap_or_else(|_| {
+        panic!(
+            "Failed to create internal directory: {}",
+            complete_path.display()
+        )
+    });
 
     complete_path
 }

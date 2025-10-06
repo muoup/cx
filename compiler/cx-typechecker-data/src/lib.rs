@@ -1,20 +1,21 @@
 pub mod ast;
 pub mod cx_types;
 pub mod intrinsic_types;
+pub mod function_map;
 
-pub mod format;
+mod format;
 
-use std::collections::{HashMap, HashSet};
-use speedy::{Readable, Writable};
-use cx_ast_data::preparse::naive_types::ModuleResource;
-use cx_ast_data::preparse::templates::{CXFunctionTemplate, CXTypeTemplate};
+use crate::cx_types::CXTemplateInput;
+use cx_parsing_data::preparse::naive_types::ModuleResource;
+use cx_parsing_data::preparse::templates::CXTypeTemplate;
 use cx_types::CXType;
-use crate::cx_types::{CXFunctionPrototype, CXTemplateInput};
- 
+use speedy::{Readable, Writable};
+use std::collections::{HashMap, HashSet};
+
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct TemplateCache<Template> {
     pub template: ModuleResource<Template>,
-    pub instantiated: HashSet<CXTemplateInput>
+    pub instantiated: HashSet<CXTemplateInput>,
 }
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
@@ -26,10 +27,7 @@ pub struct GenericData<Standard, Template> {
 pub type GenericMap<Type> = HashMap<String, Type>;
 
 pub type CXTypeData = GenericData<CXType, CXTypeTemplate>;
-pub type CXFnData = GenericData<CXFunctionPrototype, CXFunctionTemplate>;
-
 pub type CXTypeMap = GenericMap<CXType>;
-pub type CXFnMap = GenericMap<CXFunctionPrototype>;
 
 impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
     pub fn new() -> Self {
@@ -44,10 +42,13 @@ impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
     }
 
     pub fn insert_template(&mut self, name: String, item: ModuleResource<TemplatedType>) {
-        self.templates.insert(name, TemplateCache {
-            template: item,
-            instantiated: HashSet::new(),
-        });
+        self.templates.insert(
+            name,
+            TemplateCache {
+                template: item,
+                instantiated: HashSet::new(),
+            },
+        );
     }
 
     pub fn get(&self, name: &str) -> Option<&Type> {
@@ -55,12 +56,10 @@ impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
     }
 
     pub fn get_template(&self, name: &str) -> Option<&TemplateCache<TemplatedType>> {
-        self.templates
-            .get(name)
+        self.templates.get(name)
     }
 
     pub fn get_template_mut(&mut self, name: &str) -> Option<&mut TemplateCache<TemplatedType>> {
-        self.templates
-            .get_mut(name)
+        self.templates.get_mut(name)
     }
 }

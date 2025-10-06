@@ -1,5 +1,5 @@
-use std::path::Path;
 use cx_lexer_data::token::Token;
+use std::path::Path;
 
 fn leading_whitespace_count(s: &str) -> usize {
     s.chars().take_while(|c| c.is_whitespace()).count()
@@ -25,17 +25,19 @@ fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
     panic!("Index out of bounds");
 }
 
-pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token], start_index: usize, end_index: usize) {
+pub fn pretty_underline_error(
+    message: &str,
+    file_path: &Path,
+    tokens: &[Token],
+    start_index: usize,
+    end_index: usize,
+) {
     if tokens.is_empty() {
         panic!("No tokens provided for error reporting");
     }
 
-    let start_index = tokens.get(start_index)
-        .map(|t| t.start_index)
-        .unwrap_or(0);
-    let end_index = tokens.get(end_index - 1)
-        .map(|t| t.end_index)
-        .unwrap_or(0);
+    let start_index = tokens.get(start_index).map(|t| t.start_index).unwrap_or(0);
+    let end_index = tokens.get(end_index - 1).map(|t| t.end_index).unwrap_or(0);
 
     let file_contents = std::fs::read_to_string(file_path)
         .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()));
@@ -45,7 +47,12 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
     let error_line_start = start_index - error_padding;
     let mut remaining_error_chars = end_index - start_index;
 
-    let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
+    let link = format!(
+        "{}:{}:{}",
+        file_path.to_str().unwrap(),
+        error_line,
+        error_padding + 1
+    );
     println!("{message} \n\t--> {link}");
 
     let mut iter = file_contents[error_line_start..].lines().peekable();
@@ -58,7 +65,8 @@ pub fn pretty_underline_error(message: &str, file_path: &Path, tokens: &[Token],
         println!("{line}");
         println!("{lpad}{underline}");
 
-        error_padding = iter.peek()
+        error_padding = iter
+            .peek()
             .map(|next_line| leading_whitespace_count(next_line))
             .unwrap_or(0);
         remaining_error_chars -= underline.len();
@@ -84,7 +92,12 @@ pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
     let (error_line, error_padding) = get_error_loc(&file_contents, start_index);
     let error_line_start = start_index - error_padding;
 
-    let link = format!("{}:{}:{}", file_path.to_str().unwrap(), error_line, error_padding + 1);
+    let link = format!(
+        "{}:{}:{}",
+        file_path.to_str().unwrap(),
+        error_line,
+        error_padding + 1
+    );
     println!("{message} \n\t --> {link}");
 
     if let Some(line) = file_contents[error_line_start..].lines().next() {
