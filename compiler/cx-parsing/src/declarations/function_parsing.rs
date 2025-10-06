@@ -117,7 +117,7 @@ pub fn try_function_parse(
             let template_prototype = try_parse_template(tokens);
 
             let name = NaiveFnIdent::MemberFunction {
-                _type,
+                _type: _type.get_name().unwrap().clone(),
                 function_name: CXIdent::from(name.as_str()),
             };
 

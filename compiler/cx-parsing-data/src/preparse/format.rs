@@ -103,11 +103,7 @@ impl Display for NaiveFnIdent {
                 _type,
                 function_name,
             } => {
-                let Some(name) = _type.get_name() else {
-                    unreachable!("Member function type must have a name");
-                };
-
-                write!(f, "_{name}_{function_name}")
+                write!(f, "_{_type}_{function_name}")
             }
             NaiveFnIdent::Destructor(name) => {
                 write!(f, "~{name}")

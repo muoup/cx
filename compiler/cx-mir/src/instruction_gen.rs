@@ -5,12 +5,12 @@ use crate::builder::MIRBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
 use crate::implicit_cast::implicit_cast;
-use cx_parsing_data::parse::ast::{CXBinOp, CXUnOp};
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
     BCIntUnOp, BCPtrBinOp, BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType,
     MIRGlobalValue, MIRIntBinOp, MIRValue, VirtualInstruction,
 };
+use cx_parsing_data::parse::ast::{CXBinOp, CXUnOp};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 use cx_util::{bytecode_error_log, log_error};
@@ -25,42 +25,52 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             target,
             value,
             additional_op,
-        } => {           
+        } => {
             let right_id = generate_instruction(builder, value)?;
-            
+
             match &target.kind {
                 TCExprKind::VariableDeclaration { type_, name } if type_.is_structured() => {
                     builder.insert_symbol(name.as_string(), right_id.clone());
-                    
+
                     Some(right_id)
-                },
-                
+                }
+
                 TCExprKind::VariableDeclaration { type_, name } => {
                     let left_id = allocate_variable(name.as_str(), builder, type_)?;
-                    assign_value(builder, left_id.clone(), right_id, type_, additional_op.as_ref())?;
+                    assign_value(
+                        builder,
+                        left_id.clone(),
+                        right_id,
+                        type_,
+                        additional_op.as_ref(),
+                    )?;
                     Some(left_id)
-                },
-                
+                }
+
                 _ => {
                     let left_id = generate_instruction(builder, target.as_ref())?;
                     deconstruct_variable(builder, &left_id, &target._type)?;
-                    
+
                     let Some(inner) = target._type.mem_ref_inner() else {
                         unreachable!(
                             "generate_instruction: Expected memory alias type for expr, found {}",
                             target._type
                         )
                     };
-                    
+
                     assign_value(builder, left_id, right_id, inner, additional_op.as_ref())
-                },
+                }
             }
         }
 
-        TCExprKind::Access { target, field, struct_type } => {
+        TCExprKind::Access {
+            target,
+            field,
+            struct_type,
+        } => {
             let left_id = generate_instruction(builder, target.as_ref())?;
             let ltype = builder.convert_cx_type(struct_type)?;
-            
+
             if let Some(id) = try_access_field(builder, &ltype, left_id, field.as_str()) {
                 return Some(id);
             }
@@ -274,10 +284,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.get_symbol(name.as_str())
         }
 
-        TCExprKind::MemberFunctionReference {
-            mangled_name: _, ..
-        }
-        | TCExprKind::FunctionReference { name: _ } => {
+        TCExprKind::MemberFunctionReference { .. } | TCExprKind::FunctionReference { .. } => {
             unreachable!(
                 "INTERNAL ERROR: Function references should not be used in instruction generation directly!"
             );
@@ -296,12 +303,12 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     dereferenceable: type_as_bc.fixed_size() as u32,
                 }),
             )
-        },
-        
+        }
+
         TCExprKind::Copy { expr: inner_expr } => {
             let _type = builder.convert_cx_type(&expr._type)?;
             let copy = generate_instruction(builder, inner_expr.as_ref())?;
-            
+
             let buffer = builder.add_instruction(
                 VirtualInstruction::Allocate {
                     alignment: _type.alignment(),
@@ -309,7 +316,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 },
                 MIRType::default_pointer(),
             )?;
-            
+
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: buffer.clone(),
@@ -318,9 +325,9 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 },
                 MIRType::unit(),
             )?;
-            
+
             Some(buffer)
-        },
+        }
 
         TCExprKind::Return { value } => {
             if value.is_none() {
@@ -334,16 +341,16 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.add_return(Some(value_id));
 
             Some(MIRValue::NULL)
-        },
-        
+        }
+
         TCExprKind::BufferReturn { value } => {
             if !value._type.is_structured() {
                 unreachable!("Buffer return type must be a structure");
             }
-            
+
             let buffer_type = builder.convert_cx_type(&value._type)?;
             let value = generate_instruction(builder, value)?;
-            
+
             builder.add_instruction(
                 VirtualInstruction::Store {
                     memory: MIRValue::ParameterRef(0),
@@ -352,11 +359,11 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 },
                 MIRType::unit(),
             );
-            
+
             builder.add_return(Some(MIRValue::ParameterRef(0)));
-            
+
             Some(MIRValue::NULL)
-        },
+        }
 
         TCExprKind::Defer { operand } => {
             let previous_block = builder.current_block();
@@ -907,7 +914,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             if expr._type.is_unit() {
                 panic!("PANIC: Uncontextualized unit initializer list found: {expr}");
             }
-            
+
             let expr_type = builder.convert_cx_type(&expr._type)?;
 
             let alloc = builder.add_instruction(

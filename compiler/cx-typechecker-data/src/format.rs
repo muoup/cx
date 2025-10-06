@@ -1,5 +1,5 @@
 use super::ast::*;
-use crate::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
+use crate::{cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind}, function_map::{CXFunctionIdentifier, CXFunctionKind}};
 use std::fmt::{Display, Formatter, Result};
 
 pub(crate) fn type_mangle(ty: &CXType) -> String {
@@ -96,6 +96,19 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
 struct TCExprFormatter<'a> {
     expr: &'a TCExpr,
     depth: usize,
+}
+impl Display for CXFunctionIdentifier {
+
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            CXFunctionKind::Standard { name } => write!(f, "{}", name.as_string()),
+            CXFunctionKind::Member { base_type, name } => {
+                write!(f, "{}::{}", base_type.as_string(), name.as_string())
+            }
+            CXFunctionKind::Destructor { base_type } => write!(f, "{}::~{}", base_type.as_string(), base_type.as_string()),
+            CXFunctionKind::Deconstructor { base_type } => write!(f, "{}::__deconstruct", base_type.as_string()),
+        }
+    }
 }
 
 impl<'a> TCExprFormatter<'a> {
@@ -205,17 +218,26 @@ impl<'a> Display for TCExprFormatter<'a> {
             TCExprKind::VariableReference { name } => {
                 writeln!(f, "VariableReference {} {}", name, self.expr._type)?;
             }
-            TCExprKind::FunctionReference { name } => {
-                writeln!(f, "FunctionReference {} {}", name, self.expr._type)?;
+            TCExprKind::FunctionReference => {
+                let CXTypeKind::Function { prototype } = &self.expr._type.kind else {
+                    writeln!(f, "FunctionReference <invalid type> {}", self.expr._type)?;
+                    return Ok(());
+                };
+                
+                writeln!(f, "FunctionReference {} {}", prototype, self.expr._type)?;
             }
             TCExprKind::MemberFunctionReference {
                 target,
-                mangled_name,
             } => {
+                let CXTypeKind::Function { prototype } = &self.expr._type.kind else {
+                    writeln!(f, "MemberFunctionReference <invalid type> {}", self.expr._type)?;
+                    return Ok(());
+                };
+                
                 writeln!(
                     f,
                     "MemberFunctionReference {} {}",
-                    mangled_name, self.expr._type
+                    prototype, self.expr._type
                 )?;
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
             }

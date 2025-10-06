@@ -14,10 +14,10 @@ pub type NaiveTypeIdent = String;
 pub enum NaiveFnIdent {
     Standard(CXIdent),
     MemberFunction {
-        _type: CXNaiveType,
+        _type: CXIdent,
         function_name: CXIdent,
     },
-    Destructor(CXNaiveType),
+    Destructor(CXIdent),
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -52,6 +52,24 @@ impl<Identifier, Standard, Template> CXNaiveMap<Identifier, Standard, Template>
     pub fn insert_template(&mut self, name: Identifier, item: ModuleResource<Template>) {
         self.templates.insert(name, item);
     }
+    
+    pub fn remove_standard(&mut self, name: &Identifier) -> Option<(Identifier, ModuleResource<Standard>)> 
+        where Identifier: Clone {
+        self.standard.remove_entry(name)
+    }
+    
+    pub fn remove_template(&mut self, name: &Identifier) -> Option<(Identifier, ModuleResource<Template>)> 
+        where Identifier: Clone {
+        self.templates.remove_entry(name)
+    }
+    
+    pub fn standard_iter(&self) -> impl Iterator<Item = (&Identifier, &ModuleResource<Standard>)> {
+        self.standard.iter()
+    }
+    
+    pub fn template_iter(&self) -> impl Iterator<Item = (&Identifier, &ModuleResource<Template>)> {
+        self.templates.iter()
+    }
  
     pub fn get(&self, ident: &Identifier) -> Option<&ModuleResource<Standard>> {
         self.standard.get(ident)
@@ -59,5 +77,17 @@ impl<Identifier, Standard, Template> CXNaiveMap<Identifier, Standard, Template>
 
     pub fn get_template(&self, ident: &Identifier) -> Option<&ModuleResource<Template>> {
         self.templates.get(ident)
+    }
+    
+    pub fn is_key_std(&self, ident: &Identifier) -> bool {
+        self.standard.contains_key(ident)
+    }
+    
+    pub fn is_key_template(&self, ident: &Identifier) -> bool {
+        self.templates.contains_key(ident)
+    }
+    
+    pub fn is_key_any(&self, ident: &Identifier) -> bool {
+        self.is_key_std(ident) || self.is_key_template(ident)
     }
 }

@@ -71,7 +71,6 @@ impl TypeDeclaration {
                     name.as_string(),
                     ModuleResource::with_visibility(
                         CXTypeTemplate {
-                            name,
                             prototype,
                             shell: self.type_,
                         },
@@ -98,7 +97,6 @@ impl FunctionDeclaration {
                     self.prototype.name.clone(),
                     ModuleResource::with_visibility(
                         CXFunctionTemplate {
-                            name, 
                             prototype,
                             shell: self.prototype,
                         },

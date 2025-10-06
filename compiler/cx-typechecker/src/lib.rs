@@ -1,14 +1,14 @@
 use crate::environment::TCEnvironment;
 use crate::expr_checking::typechecker::in_method_env;
 use crate::type_completion::precontextualizing::{contextualize_fn_map, contextualize_globals, contextualize_type_map};
-use crate::type_completion::templates::{add_templated_types, mangle_template_name, restore_template_overwrites};
-use crate::type_completion::type_mapping::contextualize_fn_prototype;
+use crate::type_completion::templates::{add_templated_types, restore_template_overwrites};
+use crate::type_completion::type_mapping::{contextualize_fn_prototype, contextualize_type};
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::preparse::templates::CXFunctionTemplate;
 use cx_pipeline_data::GlobalCompilationContext;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef};
 use cx_typechecker_data::cx_types::CXTemplateInput;
-use cx_util::mangling::mangle_destructor;
+use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::CXResult;
 
 mod log;
@@ -62,9 +62,17 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> CXResult<()> {
             }
 
             CXGlobalStmt::DestructorDefinition { _type, body } => {
-                let destructor = mangle_destructor(_type);
-                let Some(prototype) = env.get_func(&destructor) else {
-                    unreachable!("Destructor prototype should not be missing: {}", destructor);
+                let cx_type = contextualize_type(env, _type)?;
+                let Some(type_name) = cx_type.get_identifier() else {
+                    unreachable!("Destructor type should be known: {}", _type);
+                };
+                
+                let ident = CXFunctionKind::Destructor {
+                    base_type: type_name.clone(),
+                };
+                
+                let Some(prototype) = env.get_func(&ident) else {
+                    unreachable!("Destructor prototype should not be missing: {}", _type);
                 };
 
                 let body = in_method_env(env, &prototype, body)?;
@@ -97,10 +105,7 @@ pub fn realize_fn_implementation(
     env.base_data = unsafe { std::mem::transmute(structure_data) };
 
     let overwrites = add_templated_types(env, &template.prototype, input);
-
-    let template_name = template.shell.name.mangle();
-    let mangled_name = mangle_template_name(&template_name, &input);
-    let prototype = env.get_func(&mangled_name)?.clone();
+    let prototype = contextualize_fn_prototype(env, &template.shell)?;
 
     let body = origin
         .global_stmts
@@ -108,11 +113,11 @@ pub fn realize_fn_implementation(
         .find_map(|stmt| match stmt {
             CXGlobalStmt::TemplatedFunction {
                 prototype, body, ..
-            } if prototype.name.mangle() == template_name => Some(body),
+            } if prototype.name == template.shell.name => Some(body),
             _ => None,
         })
         .unwrap_or_else(|| {
-            panic!("Function template body not found for {template_name}");
+            panic!("Function template body not found for {}", prototype);
         })
         .as_ref()
         .clone();

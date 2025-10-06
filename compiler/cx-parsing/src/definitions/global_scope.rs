@@ -1,7 +1,7 @@
 use cx_parsing_data::parse::ast::{CXExpr, CXExprKind, CXGlobalStmt};
 use cx_parsing_data::parse::parser::{ParserData, VisibilityMode};
 use cx_parsing_data::preparse::naive_types::{
-    CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
+    CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
 };
 use cx_parsing_data::preparse::NaiveFnIdent;
 use cx_parsing_data::{assert_token_matches, next_kind, try_next};
@@ -63,17 +63,14 @@ pub(crate) fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlob
 
 pub(crate) fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
     CXNaivePrototype {
-        name: NaiveFnIdent::Destructor(_type.clone()),
+        name: NaiveFnIdent::Destructor(_type.get_name().unwrap().clone()),
 
         return_type: CXNaiveTypeKind::Identifier {
             name: CXIdent::from("void"),
             predeclaration: PredeclarationType::None,
         }
         .to_type(),
-        params: vec![CXNaiveParameter {
-            name: Some(CXIdent::from("this")),
-            _type: _type.pointer_to(true, 0),
-        }],
+        params: vec![],
         var_args: false,
         this_param: true,
     }

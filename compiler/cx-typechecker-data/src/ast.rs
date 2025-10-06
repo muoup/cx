@@ -1,5 +1,5 @@
 use crate::cx_types::{CXFunctionPrototype, CXType};
-use crate::function_map::CXFnMap;
+use crate::function_map::{CXFnData, CXFnMap};
 use crate::{CXTypeData, CXTypeMap};
 use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
 use cx_util::identifier::CXIdent;
@@ -9,7 +9,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCBaseMappings {
     pub type_data: CXTypeData,
-    pub fn_map: CXFnMap,
+    pub fn_map: CXFnData,
     pub global_variables: HashMap<String, TCGlobalVariable>,
 }
 
@@ -105,13 +105,10 @@ pub enum TCExprKind {
         name: CXIdent,
     },
 
-    FunctionReference {
-        name: CXIdent,
-    },
+    FunctionReference,
 
     MemberFunctionReference {
         target: Box<TCExpr>,
-        mangled_name: CXIdent,
     },
 
     FunctionCall {

@@ -8,6 +8,7 @@ use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_parsing_data::preparse::naive_types::CX_CONST;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex, TCTagMatch};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::identifier::CXIdent;
 
 fn anonymous_name_gen() -> String {
@@ -123,13 +124,13 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     _type: symbol_type.clone().mem_ref_to(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
-            } else if let Some(function_type) = env.get_func(name.as_str()) {
+            } else if let Some(function_type) = env.get_func(&CXFunctionKind::Standard { name: name.clone() }) {
                 TCExpr {
                     _type: CXTypeKind::Function {
                         prototype: Box::new(function_type.clone()),
                     }
                     .into(),
-                    kind: TCExprKind::FunctionReference { name: name.clone() }, // Placeholder for args
+                    kind: TCExprKind::FunctionReference
                 }
             } else if let Some(global) = env.get_global_var(name.as_str()) {
                 global_constant_expr(global)?
@@ -146,7 +147,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             // in CXNaiveType contexts.
 
             let input = contextualize_template_args(env, template_input)?;
-            let Some(function) = env.get_templated_func(name.as_str(), &input) else {
+            let Some(function) = env.get_templated_func(&CXFunctionKind::Standard { name: name.clone() }, &input) else {
                 log_typecheck_error!(env, expr, "Function template '{}' not found", name);
             };
 
@@ -155,9 +156,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     prototype: Box::new(function.clone()),
                 }
                 .into(),
-                kind: TCExprKind::FunctionReference {
-                    name: function.name.clone(),
-                },
+                kind: TCExprKind::FunctionReference
             }
         }
 
@@ -276,7 +275,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         env,
                         expr,
                         " Cannot return from function {} with a void return type",
-                        env.current_function().name
+                        env.current_function()
                     );
                 }
 
@@ -285,35 +284,15 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         env,
                         expr,
                         " Function {} expects a return value, but none was provided",
-                        env.current_function().name
+                        env.current_function()
                     );
                 }
             }
-
+            
             TCExpr {
                 _type: CXType::from(CXTypeKind::Unit),
-                kind: match env.current_function().needs_buffer {
-                    true => {
-                        let mut expr = value_tc.unwrap();
-                        
-                        match expr._type.kind {
-                            CXTypeKind::MemoryReference(inner)
-                                => expr._type = *inner,
-                                
-                            CXTypeKind::PointerTo { inner_type, .. } 
-                                => expr._type = *inner_type,
-                                
-                            _ => {}
-                        }
-                        
-                        TCExprKind::BufferReturn {
-                            value: Box::new(expr),
-                        }
-                    }
-
-                    false => TCExprKind::Return {
-                        value: value_tc.map(Box::new),
-                    },
+                kind: TCExprKind::Return {
+                    value: value_tc.map(Box::new),
                 },
             }
         }

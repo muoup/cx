@@ -40,8 +40,6 @@ pub struct CXFunctionPrototype {
     pub name: CXFunctionIdentifier,
     pub return_type: CXType,
     pub params: Vec<CXParameter>,
-
-    pub needs_buffer: bool,
     pub var_args: bool,
 }
 
@@ -266,6 +264,13 @@ impl CXType {
             _ => None,
         }
     }
+    
+    pub fn get_fn_ident(&self) -> Option<&CXFunctionIdentifier> {
+        match &self.kind {
+            CXTypeKind::Function { prototype } => Some(&prototype.name),
+            _ => None,
+        }
+    }
 
     pub fn get_identifier(&self) -> Option<&CXIdent> {
         match &self.kind {
@@ -324,7 +329,6 @@ impl CXType {
                     name: CXFunctionIdentifier::default(),
                     return_type: CXType::unit(),
                     params: vec![],
-                    needs_buffer: false,
                     var_args: false,
                 }),
             },
@@ -423,5 +427,11 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
         (CXTypeKind::Bool, CXTypeKind::Bool) | (CXTypeKind::Unit, CXTypeKind::Unit) => true,
 
         _ => false,
+    }
+}
+
+impl CXFunctionPrototype {
+    pub fn mangle_name(&self) -> String {
+        self.name.mangle(self)
     }
 }

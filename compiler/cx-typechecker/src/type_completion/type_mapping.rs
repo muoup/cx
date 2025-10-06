@@ -12,6 +12,7 @@ use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 
 pub(crate) fn assemble_method(
+    env: &mut TCEnvironment,
     name: CXFunctionIdentifier,
     return_type: CXType,
     mut params: Vec<CXParameter>,
@@ -20,11 +21,14 @@ pub(crate) fn assemble_method(
     let needs_buffer = return_type.is_structured();
 
     if let Some(implicit_member) = name.implicit_member() {
+        let _ty = env.get_type(implicit_member.as_str())
+            .unwrap();
+        
         params.insert(
             0,
             CXParameter {
                 name: Some(CXIdent::from("this")),
-                _type: implicit_member.clone(),
+                _type: _ty,
             },
         );
     }
@@ -43,7 +47,6 @@ pub(crate) fn assemble_method(
         name,
         return_type,
         params,
-        needs_buffer,
         var_args,
     }
 }
@@ -70,11 +73,17 @@ pub(crate) fn contextualize_fn_ident(
             function_name,
             _type,
         } => {
-            let _type = contextualize_type(env, _type)?;
-
+            let Some(_ty) = env.get_type(_type.as_str()) else {
+                log_error!("Unknown type for member function: {function_name} of type {_type}");
+            };
+            
+            let Some(cx_type) = _ty.get_identifier() else {
+                log_error!("Member function base type should be identifiable: {function_name} of type {_type}");
+            };
+            
             Some(
                 CXFunctionKind::Member {
-                    base_type: _type,
+                    base_type: cx_type.clone(),
                     name: function_name.clone(),
                 }
                 .into(),
@@ -82,9 +91,15 @@ pub(crate) fn contextualize_fn_ident(
         }
 
         NaiveFnIdent::Destructor(name) => {
-            let cx_type = contextualize_type(env, name)?;
+            let Some(_ty) = env.get_type(name.as_str()) else {
+                log_error!("Unknown type for destructor: {name}");
+            };
+            
+            let Some(cx_type) = _ty.get_identifier() else {
+                log_error!("Destructor base type should be identifiable: {name}");
+            };
 
-            Some(CXFunctionKind::Destructor { base_type: cx_type }.into())
+            Some(CXFunctionKind::Destructor { base_type: cx_type.clone() }.into())
         }
 
         NaiveFnIdent::Standard(name) => {
@@ -113,6 +128,7 @@ pub fn contextualize_fn_prototype(
         .collect::<Option<Vec<_>>>()?;
 
     Some(assemble_method(
+        env,
         ident,
         return_type,
         parameters,

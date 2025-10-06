@@ -13,8 +13,7 @@ pub(crate) fn note_templated_types(
         if data
             .ast
             .type_map
-            .standard
-            .contains_key(template_name.as_str())
+            .is_key_std(&template_name)
         {
             continue;
         }
@@ -40,8 +39,7 @@ pub(crate) fn unnote_templated_types(
         let (name, _type) = data
             .ast
             .type_map
-            .standard
-            .remove_entry(template_name.as_str())
+            .remove_standard(&template_name)
             .unwrap();
 
         if let CXNaiveTypeKind::Identifier {
@@ -54,6 +52,6 @@ pub(crate) fn unnote_templated_types(
             }
         }
 
-        data.ast.type_map.standard.insert(name, _type);
+        data.ast.type_map.insert_standard(name, _type);
     }
 }

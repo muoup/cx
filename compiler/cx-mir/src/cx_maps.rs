@@ -7,7 +7,7 @@ use cx_mir_data::{
     MIRParameter, VirtualInstruction,
 };
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
-use cx_typechecker_data::CXFnMap;
+use cx_typechecker_data::function_map::CXFnMap;
 
 impl MIRBuilder {
     pub(crate) fn convert_cx_type(&mut self, cx_type: &CXType) -> Option<MIRType> {
@@ -143,7 +143,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIR
     }
 
     Some(MIRFunctionPrototype {
-        name: cx_proto.name.as_string(),
+        name: cx_proto.mangle_name(),
         return_type,
         params,
         var_args: cx_proto.var_args,
@@ -154,7 +154,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIR
 pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
     cx_proto
         .iter()
-        .map(|(name, cx_proto)| (name.clone(), convert_cx_prototype(cx_proto).unwrap()))
+        .map(|(_, cx_proto)| (cx_proto.mangle_name(), convert_cx_prototype(cx_proto).unwrap()))
         .collect::<BCFunctionMap>()
 }
 

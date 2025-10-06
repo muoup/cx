@@ -5,18 +5,20 @@ use cx_mir_data::{
     BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRParameter, MIRValue, VirtualInstruction,
 };
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
-use cx_util::mangling::mangle_deconstructor;
 
 const STANDARD_FREE: &str = "__stdfree";
 const STANDARD_FREE_ARRAY: &str = "__stdfreearray";
 const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 
+fn mangle_deconstructor(type_name: &str) -> String {
+    format!("__deconstructor_{}", type_name)
+}
+
 pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
     let name = type_.get_name()?;
-    let deconstructor_name = mangle_deconstructor(name);
 
     Some(MIRFunctionPrototype {
-        name: deconstructor_name,
+        name: mangle_deconstructor(&name),
         return_type: MIRType::unit(),
         params: vec![MIRParameter {
             name: None,
@@ -27,17 +29,6 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionProto
     })
 }
 
-fn get_deconstructor(builder: &mut MIRBuilder, type_: &CXType) -> Option<String> {
-    let deconstructor_name = mangle_deconstructor(type_.get_name()?);
-    
-    if builder.fn_map.contains_key(&deconstructor_name) {
-        Some(deconstructor_name)
-    } else {
-        println!("Destructor {} not found", deconstructor_name);
-        None
-    }
-}
-
 pub fn deconstruct_variable(
     builder: &mut MIRBuilder,
     var: &MIRValue,
@@ -45,7 +36,7 @@ pub fn deconstruct_variable(
 ) -> Option<()> {
     match &_type.kind {
         CXTypeKind::Structured { .. } => {
-            if let Some(deconstructor) = get_deconstructor(builder, _type) {
+            if let Some(deconstructor) = builder.get_deconstructor(_type) {
                 builder.call(&deconstructor, vec![var.clone()])?;
             }
         }

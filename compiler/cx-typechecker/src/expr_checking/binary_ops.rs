@@ -6,9 +6,9 @@ use crate::type_completion::type_mapping::contextualize_template_args;
 use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
+use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::mangling::mangle_member_function;
 
 pub(crate) fn typecheck_access(
     env: &mut TCEnvironment,
@@ -22,13 +22,12 @@ pub(crate) fn typecheck_access(
         Some(inner) if inner.is_pointer() => {
             coerce_value(&mut tc_lhs);
             &tc_lhs._type
-        },
+        }
         Some(inner) => inner,
         _ => &tc_lhs._type,
     };
-    
-    let inner = inner.ptr_inner()
-        .unwrap_or(inner);
+
+    let inner = inner.ptr_inner().unwrap_or(inner);
 
     let fields = match &inner.kind {
         CXTypeKind::Structured { fields, .. }
@@ -54,7 +53,7 @@ pub(crate) fn typecheck_access(
 
                 let field_name = CXIdent::from(field_name.as_str());
                 let field_type = field_type.clone().mem_ref_to();
-                
+
                 return Some(TCExpr {
                     _type: field_type,
                     kind: TCExprKind::Access {
@@ -74,8 +73,12 @@ pub(crate) fn typecheck_access(
                 );
             };
 
-            let member_fn_name = mangle_member_function(name.as_str(), type_name.as_str());
-            let Some(prototype) = env.get_func(&member_fn_name) else {
+            let fn_ident = CXFunctionKind::Member {
+                base_type: type_name.clone(),
+                name: name.clone(),
+            };
+
+            let Some(prototype) = env.get_func(&fn_ident) else {
                 log_typecheck_error!(
                     env,
                     expr,
@@ -83,7 +86,6 @@ pub(crate) fn typecheck_access(
                     tc_lhs._type
                 );
             };
-            let name = prototype.name.clone();
 
             Some(TCExpr {
                 _type: CXTypeKind::Function {
@@ -92,7 +94,6 @@ pub(crate) fn typecheck_access(
                 .into(),
                 kind: TCExprKind::MemberFunctionReference {
                     target: Box::new(tc_lhs),
-                    mangled_name: name,
                 },
             })
         }
@@ -110,10 +111,13 @@ pub(crate) fn typecheck_access(
                 );
             };
 
-            let member_fn_name = mangle_member_function(type_name, name.as_str());
+            let ident = CXFunctionKind::Member {
+                base_type: type_name.clone(),
+                name: name.clone(),
+            };
             let input = contextualize_template_args(env, template_input)?;
 
-            let Some(prototype) = env.get_templated_func(&member_fn_name, &input) else {
+            let Some(prototype) = env.get_templated_func(&ident, &input) else {
                 log_typecheck_error!(
                     env,
                     expr,
@@ -121,7 +125,6 @@ pub(crate) fn typecheck_access(
                     tc_lhs._type
                 );
             };
-            let name = prototype.name.clone();
 
             Some(TCExpr {
                 _type: CXTypeKind::Function {
@@ -130,7 +133,6 @@ pub(crate) fn typecheck_access(
                 .into(),
                 kind: TCExprKind::MemberFunctionReference {
                     target: Box::new(tc_lhs),
-                    mangled_name: name,
                 },
             })
         }
@@ -178,13 +180,20 @@ pub(crate) fn typecheck_method_call(
     let mut tc_args = comma_separated(env, rhs)?;
 
     let (direct, prototype) = match tc_lhs.kind {
-        TCExprKind::FunctionReference { ref name } => {
-            let Some(prototype) = env.get_func(name.as_str()) else {
+        TCExprKind::FunctionReference => {
+            let CXTypeKind::Function { prototype } = &tc_lhs._type.kind else {
+                unreachable!(
+                    "PANIC: Expected function type for function call, found {}",
+                    tc_lhs._type
+                );
+            };
+            
+            let Some(prototype) = env.get_func(&prototype.name.kind) else {
                 log_typecheck_error!(
                     env,
                     expr,
                     " Function '{}' not found in the current environment",
-                    name.as_string()
+                    prototype
                 );
             };
 
@@ -193,8 +202,14 @@ pub(crate) fn typecheck_method_call(
 
         TCExprKind::MemberFunctionReference {
             target,
-            mangled_name,
         } => {
+            let CXTypeKind::Function { prototype } = &tc_lhs._type.kind else {
+                unreachable!(
+                    "PANIC: Expected function type for function call, found {}",
+                    tc_lhs._type
+                );
+            };
+            
             let Some(target_name) = target._type.get_name() else {
                 unreachable!(
                     "PANIC: Expected named type for method call target, found {}",
@@ -202,12 +217,12 @@ pub(crate) fn typecheck_method_call(
                 );
             };
 
-            let Some(prototype) = env.get_func(mangled_name.as_str()) else {
+            let Some(prototype) = env.get_func(&prototype.name.kind) else {
                 log_typecheck_error!(
                     env,
                     expr,
                     " Method '{}' not found for type {}",
-                    mangled_name.as_string(),
+                    prototype,
                     target_name
                 );
             };
@@ -218,9 +233,7 @@ pub(crate) fn typecheck_method_call(
                     prototype: Box::new(prototype.clone()),
                 }
                 .into(),
-                kind: TCExprKind::FunctionReference {
-                    name: mangled_name.clone(),
-                },
+                kind: TCExprKind::FunctionReference,
             };
 
             (true, prototype)
@@ -264,23 +277,12 @@ pub(crate) fn typecheck_method_call(
         }
     };
 
-    if prototype.needs_buffer {
-        let temporary_buffer = TCExpr {
-            _type: prototype.return_type.clone(),
-            kind: TCExprKind::TemporaryBuffer {
-                _type: prototype.return_type.clone(),
-            },
-        };
-
-        tc_args.insert(0, temporary_buffer);
-    }
-
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
         log_typecheck_error!(
             env,
             expr,
             " Method {} expects {} arguments, found {}",
-            prototype.name.as_string(),
+            prototype,
             prototype.params.len(),
             tc_args.len()
         );
@@ -291,7 +293,7 @@ pub(crate) fn typecheck_method_call(
             env,
             expr,
             " Method {} expects at least {} arguments, found {}",
-            prototype.name.as_string(),
+            prototype,
             prototype.params.len(),
             tc_args.len()
         );

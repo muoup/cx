@@ -7,9 +7,9 @@ use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::*;
 use cx_typechecker_data::ast::{TCExpr, TCAST};
 use cx_typechecker_data::cx_types::CXType;
+use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::format::dump_all;
 use cx_util::log_error;
-use cx_util::mangling::{mangle_deconstructor, mangle_destructor};
 use cx_util::scoped_map::ScopedMap;
 
 #[derive(Debug)]
@@ -457,7 +457,7 @@ impl MIRBuilder {
     pub fn get_deconstructor(&self, _type: &CXType) -> Option<String> {
         let name = _type.get_name()?;
 
-        let mangled_name = mangle_deconstructor(name);
+        let mangled_name = CXFunctionKind::deconstructor_mangle(name);
 
         if self.fn_map.contains_key(&mangled_name) {
             Some(mangled_name)
@@ -467,10 +467,14 @@ impl MIRBuilder {
     }
 
     pub fn get_destructor(&self, _type: &CXType) -> Option<String> {
-        let mangled_name = mangle_destructor(_type.get_name()?);
-
-        if self.fn_map.contains_key(&mangled_name) {
-            Some(mangled_name)
+        let Some(name) = _type.get_name() else {
+            return None;
+        };
+        
+        let key = CXFunctionKind::destructor_mangle(&name);
+        
+        if self.fn_map.contains_key(&key) {
+            Some(key)
         } else {
             None
         }

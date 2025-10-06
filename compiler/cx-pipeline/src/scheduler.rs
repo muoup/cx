@@ -254,7 +254,7 @@ pub(crate) fn perform_job(
                     .get(&CompilationUnit::from_str(import.as_str()));
                 let required_visiblity = VisibilityMode::Public;
 
-                for (name, _type) in other_pp_data.type_definitions.standard.iter() {
+                for (name, _type) in other_pp_data.type_definitions.standard_iter() {
                     if _type.visibility < required_visiblity {
                         continue;
                     };
@@ -264,7 +264,7 @@ pub(crate) fn perform_job(
                         .insert_standard(name.clone(), _type.transfer(import));
                 }
 
-                for (name, template) in other_pp_data.type_definitions.templates.iter() {
+                for (name, template) in other_pp_data.type_definitions.template_iter() {
                     if template.visibility < required_visiblity {
                         continue;
                     };
@@ -274,17 +274,17 @@ pub(crate) fn perform_job(
                         .insert_template(name.clone(), template.transfer(import));
                 }
 
-                for (name, prototype) in other_pp_data.function_definitions.standard.iter() {
+                for (name, prototype) in other_pp_data.function_definitions.template_iter() {
                     if prototype.visibility < required_visiblity {
                         continue;
                     };
 
                     pp_data
                         .function_definitions
-                        .insert_standard(name.clone(), prototype.transfer(import));
+                        .insert_template(name.clone(), prototype.transfer(import));
                 }
 
-                for (name, template) in other_pp_data.function_definitions.templates.iter() {
+                for (name, template) in other_pp_data.function_definitions.template_iter() {
                     if template.visibility < required_visiblity {
                         continue;
                     };
@@ -354,7 +354,8 @@ pub(crate) fn perform_job(
             env.realized_types
                 .extend(structure_data.type_data.standard.clone());
             env.realized_fns
-                .extend(structure_data.fn_map.standard.clone());
+                .extend(structure_data.fn_map.iter()
+                    .map(|(_, v)| (v.name.kind.clone(), v.clone())));
             env.realized_globals
                 .extend(structure_data.global_variables.clone());
 

@@ -1,7 +1,6 @@
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
 use cx_typechecker::realize_fn_implementation;
-use cx_typechecker::type_completion::templates::mangle_template_name;
 use std::collections::HashSet;
 
 pub(crate) fn realize_templates(
@@ -16,9 +15,8 @@ pub(crate) fn realize_templates(
             Some(module) => CompilationUnit::from_str(module.as_str()),
             None => job.clone(),
         };
-        let mangle_name = mangle_template_name(request.name.as_str(), &request.input);
 
-        if requests_fulfilled.contains(&mangle_name) {
+        if !requests_fulfilled.insert(request.name.clone()) {
             continue;
         }
 
@@ -28,10 +26,10 @@ pub(crate) fn realize_templates(
         let template = env
             .base_data
             .fn_map
-            .get_template(request.name.as_str())?
-            .template
+            .get_template(&request.name)?
             .resource
             .clone();
+        
         realize_fn_implementation(
             env,
             other_data.as_ref(),
@@ -39,8 +37,6 @@ pub(crate) fn realize_templates(
             &template,
             &request.input,
         )?;
-
-        requests_fulfilled.insert(mangle_name);
     }
 
     Some(())
