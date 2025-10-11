@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-backend-llvm = ["cx-backend-llvm"]
+backend-llvm = ["dep:cx-backend-llvm"]
 
 [dependencies]
 speedy = { version = "0.8.7" }
