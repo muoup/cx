@@ -77,8 +77,8 @@ impl<'a> Lexer<'a> {
         base_tokens
             .into_iter()
             .flat_map(|token| {
-                if let TokenKind::Identifier(name) = &token.kind {
-                    if let Some(macro_body) = self.macros.get(name) {
+                if let TokenKind::Identifier(name) = &token.kind
+                    && let Some(macro_body) = self.macros.get(name) {
                         // This is a macro. Expand it.
                         let expansion_start = token.start_index;
                         let expansion_end = token.end_index;
@@ -97,7 +97,6 @@ impl<'a> Lexer<'a> {
                             })
                             .collect::<Vec<_>>();
                     }
-                }
 
                 // Not an identifier or not a macro, just return the token as is.
                 vec![token]

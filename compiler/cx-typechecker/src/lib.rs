@@ -33,7 +33,7 @@ pub fn create_base_types(context: &GlobalCompilationContext, cx_ast: &CXAST) -> 
         &context.module_db,
         &mut type_data,
         &cx_ast.type_map,
-        &cx_ast,
+        cx_ast,
     )
     .expect("Failed to contextualize global variables");
 
@@ -128,7 +128,7 @@ pub fn realize_fn_implementation(
     
     let tc_body = in_method_env(env, &prototype, &body)?;
     env.declared_functions.push(TCFunctionDef {
-        prototype: prototype,
+        prototype,
         body: Box::new(tc_body.clone()),
     });
 

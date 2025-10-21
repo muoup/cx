@@ -13,7 +13,7 @@ pub(crate) struct CXStructAccess {
 }
 
 fn align_offset(current_offset: usize, alignment: usize) -> usize {
-    if current_offset % alignment != 0 {
+    if !current_offset.is_multiple_of(alignment) {
         current_offset + (alignment - (current_offset % alignment))
     } else {
         current_offset

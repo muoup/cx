@@ -32,12 +32,11 @@ impl<'a> LineLexer<'a> {
 
     pub(crate) fn generate_tokens(&mut self) {
         while self.iter.has_next() && self.iter.peek() != Some('\n') {
-            if self.last_consume == self.iter.current_iter {
-                if let Some(token) = self.pre_ident_lex() {
+            if self.last_consume == self.iter.current_iter
+                && let Some(token) = self.pre_ident_lex() {
                     self.add_token(token);
                     self.last_consume = self.iter.current_iter;
                 }
-            }
 
             let previous_lex = self.iter.current_iter;
 

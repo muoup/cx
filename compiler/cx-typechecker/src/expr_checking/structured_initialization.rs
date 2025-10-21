@@ -49,11 +49,10 @@ fn organize_array_initializer(
         index.index = counter;
         implicit_cast(&mut index.value, inner_type)?;
 
-        if let Some(size) = size {
-            if i < size {
+        if let Some(size) = size
+            && i < size {
                 counter += 1;
             }
-        }
     }
 
     let array_size = match size {

@@ -284,7 +284,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.get_symbol(name.as_str())
         }
 
-        TCExprKind::MemberFunctionReference { .. } | TCExprKind::FunctionReference { .. } => {
+        TCExprKind::MemberFunctionReference { .. } | TCExprKind::FunctionReference => {
             unreachable!(
                 "INTERNAL ERROR: Function references should not be used in instruction generation directly!"
             );

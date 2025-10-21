@@ -158,5 +158,5 @@ fn struct_deconstruction(builder: &mut MIRBuilder, _type: &CXType) -> Option<MIR
     }
     
     builder.defined_deconstructors.insert(_type.clone());
-    return deconstructor_prototype(_type);
+    deconstructor_prototype(_type)
 }

@@ -98,7 +98,7 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
         }
     }
 
-    return mangled;
+    mangled
 }
 
 // Helper struct for indented formatting of TCExpr

@@ -185,7 +185,7 @@ pub fn precontextualize_type(
                     .insert_standard(name.clone(), ModuleResource::standard(reduced_type.clone()));
             }
 
-            let mut cx_type = precontextualize_type(module_data, cx_map, &map_clone, None, &shell)?;
+            let mut cx_type = precontextualize_type(module_data, cx_map, &map_clone, None, shell)?;
             cx_type.set_name(CXIdent::from(template_name.as_str()));
             cx_map.insert_standard(template_name, cx_type.clone());
             Some(cx_type)

@@ -66,7 +66,7 @@ pub(crate) fn instantiate_type_template(
 
     let mut instantiated = contextualize_type(env, &shell)
         .expect("Failed to contextualize templated type");
-    instantiated.map_name(|name| mangle_template_name(name, &input));
+    instantiated.map_name(|name| mangle_template_name(name, input));
 
     env.realized_types
         .insert(mangled_name.clone(), instantiated.clone());

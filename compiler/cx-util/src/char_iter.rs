@@ -5,7 +5,7 @@ pub struct CharIter<'a> {
 }
 
 impl CharIter<'_> {
-    pub fn new(source: &str) -> CharIter {
+    pub fn new(source: &str) -> CharIter<'_> {
         CharIter {
             source,
             current_iter: 0,

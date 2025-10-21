@@ -155,9 +155,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIR
 }
 
 pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
-    cx_proto
-        .iter()
-        .map(|(_, cx_proto)| (cx_proto.mangle_name(), convert_cx_prototype(cx_proto).unwrap()))
+    cx_proto.values().map(|cx_proto| (cx_proto.mangle_name(), convert_cx_prototype(cx_proto).unwrap()))
         .collect::<BCFunctionMap>()
 }
 
