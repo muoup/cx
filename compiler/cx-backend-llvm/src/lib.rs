@@ -112,7 +112,7 @@ impl<'a> FunctionState<'a, '_> {
         }
     }
 
-    pub(crate) fn get_block(&self, block_id: BlockID) -> Option<BasicBlock> {
+    pub(crate) fn get_block(&self, block_id: BlockID) -> Option<BasicBlock<'_>> {
         match block_id {
             BlockID::Block(id) => self
                 .function_value

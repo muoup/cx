@@ -71,7 +71,7 @@ pub fn pretty_underline_error(
             .unwrap_or(0);
         remaining_error_chars -= underline.len();
 
-        if remaining_error_chars <= 0 {
+        if remaining_error_chars == 0 {
             break;
         }
     }

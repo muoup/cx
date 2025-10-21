@@ -22,9 +22,11 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn lex_source(&mut self) -> Option<()> {
+        let source = self.source.to_string();
+        
         while self.char_iter.has_next() {
             if let Some(mut lexable_iter) = self.interpret_directive_line() {
-                let tokens_in_line = lex_line(&mut lexable_iter)?;
+                let tokens_in_line = lex_line(&mut lexable_iter, source.clone())?;
 
                 self.tokens.extend(self.expand_macros(tokens_in_line));
             } else {
@@ -44,7 +46,7 @@ impl<'a> Lexer<'a> {
     }
 
     // returns text that the lexer can lex over, i.e. not comments or preprocessor directives
-    fn interpret_directive_line(&mut self) -> Option<CharIter> {
+    fn interpret_directive_line(&mut self) -> Option<CharIter<'_>> {
         loop {
             self.char_iter.skip_whitespace();
 
