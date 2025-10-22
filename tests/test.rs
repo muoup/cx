@@ -23,6 +23,7 @@ mod regression_tests {
     test_files!(
         hello_world,
         basic_arithmetic,
+        basic_compound_expr,
         basic_for,
         basic_strong_ptr,
         basic_template,
