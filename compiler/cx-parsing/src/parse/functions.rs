@@ -11,10 +11,7 @@ use cx_lexer_data::{identifier, operator, punctuator, TokenIter};
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::{
-    declarations::{
-        data_parsing::{convert_template_proto_to_args, parse_std_ident, try_parse_template},
-        FunctionDeclaration,
-    }, parse::types::parse_initializer,
+    declarations::FunctionDeclaration, parse::{parse_std_ident, templates::{convert_template_proto_to_args, try_parse_template}, types::parse_initializer},
 };
 
 fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {

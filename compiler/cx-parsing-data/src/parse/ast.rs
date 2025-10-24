@@ -33,11 +33,7 @@ pub enum CXGlobalStmt {
         type_: CXNaiveType,
         initializer: Option<CXExpr>,
     },
-
-    FunctionPrototype {
-        prototype: CXNaivePrototype,
-    },
-
+    
     FunctionDefinition {
         prototype: CXNaivePrototype,
         body: Box<CXExpr>,

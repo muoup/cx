@@ -28,10 +28,6 @@ impl Display for CXGlobalStmt {
                 fwriteln!(f, "{}: {}", name, type_)
             }
 
-            CXGlobalStmt::FunctionPrototype { prototype } => {
-                fwriteln!(f, "{};", prototype)
-            }
-
             CXGlobalStmt::FunctionDefinition { prototype, body } => {
                 indent();
                 fwriteln!(f, "{} {{", prototype)?;

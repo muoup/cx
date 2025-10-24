@@ -8,11 +8,11 @@ use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 
-use crate::declarations::data_parsing::{parse_intrinsic, parse_std_ident, parse_template_args};
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator,
 };
-use crate::parse::parse_body;
+use crate::parse::templates::parse_template_args;
+use crate::parse::{parse_body, parse_intrinsic, parse_std_ident};
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 
 pub fn is_type_decl(data: &mut ParserData) -> bool {

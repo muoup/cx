@@ -1,4 +1,11 @@
-use crate::{parse::ast::CXAST, PreparseContents};
+use crate::{
+    parse::ast::CXAST,
+    preparse::{
+        naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource},
+        templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
+    },
+    PreparseContents,
+};
 use cx_lexer_data::TokenIter;
 use speedy::{Readable, Writable};
 
@@ -52,5 +59,60 @@ impl<'a> ParserData<'a> {
             .expr_commas
             .last()
             .expect("CRITICAL: No comma mode to get!")
+    }
+
+    pub fn add_type(
+        &mut self,
+        name: String,
+        type_: CXNaiveType,
+        prototype: Option<CXTemplatePrototype>,
+    ) {
+        match prototype {
+            Some(proto) => {
+                self.ast.type_map.insert_template(
+                    name,
+                    ModuleResource::with_visibility(
+                        CXTypeTemplate {
+                            prototype: proto.clone(),
+                            shell: type_,
+                        },
+                        self.visibility,
+                    ),
+                );
+            }
+            None => {
+                self.ast.type_map.insert_standard(
+                    name,
+                    ModuleResource::with_visibility(type_, self.visibility),
+                );
+            }
+        }
+    }
+
+    pub fn add_function(
+        &mut self,
+        function: CXNaivePrototype,
+        prototype: Option<CXTemplatePrototype>,
+    ) {
+        match prototype {
+            Some(proto) => {
+                self.ast.function_map.insert_template(
+                    function.name.clone(),
+                    ModuleResource::with_visibility(
+                        CXFunctionTemplate {
+                            prototype: proto.clone(),
+                            shell: function,
+                        },
+                        self.visibility,
+                    ),
+                );
+            }
+            None => {
+                self.ast.function_map.insert_standard(
+                    function.name.clone(),
+                    ModuleResource::with_visibility(function, self.visibility),
+                );
+            }
+        }
     }
 }
