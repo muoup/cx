@@ -1,15 +1,17 @@
-use cx_parsing_data::{parse::parser::VisibilityMode, preparse::{
-    naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource},
-    templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
-}};
+use cx_parsing_data::{
+    parse::parser::VisibilityMode,
+    preparse::{
+        naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource},
+        templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
+        CXNaiveFnMap, CXNaiveTypeMap,
+    },
+};
 use cx_util::identifier::CXIdent;
 
 use crate::preparse::PreparseData;
 
 pub mod data_parsing;
 pub mod decl_parsing;
-pub mod function_parsing;
-pub mod type_parsing;
 
 #[allow(unused)]
 pub enum DeclarationStatement {
@@ -43,72 +45,49 @@ pub struct FunctionDeclaration {
 impl DeclarationStatement {
     pub(crate) fn add_to(self, data: &mut PreparseData) {
         match self {
-            DeclarationStatement::FunctionDeclaration(decl) =>
-                decl.add_to(data),
-            DeclarationStatement::TypeDeclaration(decl) =>
-                decl.add_to(data),
+            DeclarationStatement::FunctionDeclaration(decl) => decl.add_to(data),
+            DeclarationStatement::TypeDeclaration(decl) => decl.add_pp(data),
 
-            DeclarationStatement::Import(import) =>
-                data.contents.imports.push(import),
-            DeclarationStatement::ChangeVisibility(mode) =>
-                data.visibility_mode = mode,
+            DeclarationStatement::Import(import) => data.contents.imports.push(import),
+            DeclarationStatement::ChangeVisibility(mode) => data.visibility_mode = mode,
 
             DeclarationStatement::None => {}
         }
     }
 }
 
-impl TypeDeclaration {
-    pub(crate) fn add_to(self, data: &mut PreparseData) {
-        let Some(name) = self.name else {
-            // We cannot add unnamed types to the global scope.
-            return;
-        };
-
-        match self.template_prototype {
-            Some(prototype) => {
-                data.contents.type_definitions.insert_template(
-                    name.as_string(),
-                    ModuleResource::with_visibility(
-                        CXTypeTemplate {
-                            prototype,
-                            shell: self.type_,
-                        },
-                        data.visibility_mode,
-                    ),
-                );
-            }
-
-            None => {
-                data.contents.type_definitions.insert_standard(
-                    name.as_string(),
-                    ModuleResource::with_visibility(self.type_, data.visibility_mode),
-                );
-            }
-        }
-    }
-}
-
 impl FunctionDeclaration {
     pub(crate) fn add_to(self, data: &mut PreparseData) {
+        data.contents
+            .func_idents
+            .push(ModuleResource::with_visibility(
+                match self.template_prototype {
+                    Some(prototype) => {
+                        PreparseIdentifier::Templated(self.prototype.name.clone(), prototype)
+                    }
+                    None => PreparseIdentifier::Standard(self.prototype.name.clone()),
+                },
+                data.visibility_mode,
+            ));
+    }
+
+    pub(crate) fn add_map(self, map: &mut CXNaiveFnMap, visibility: VisibilityMode) {
         match self.template_prototype {
             Some(prototype) => {
-                data.contents.function_definitions.insert_template(
-                    self.prototype.name.clone(),
-                    ModuleResource::with_visibility(
-                        CXFunctionTemplate {
-                            prototype,
-                            shell: self.prototype,
-                        },
-                        data.visibility_mode,
-                    ),
+                let template = CXFunctionTemplate {
+                    prototype,
+                    shell: self.prototype,
+                };
+
+                map.insert_template(
+                    template.shell.name.clone(),
+                    ModuleResource::with_visibility(template, visibility),
                 );
             }
-
             None => {
-                data.contents.function_definitions.insert_standard(
+                map.insert_standard(
                     self.prototype.name.clone(),
-                    ModuleResource::with_visibility(self.prototype, data.visibility_mode),
+                    ModuleResource::with_visibility(self.prototype, visibility),
                 );
             }
         }

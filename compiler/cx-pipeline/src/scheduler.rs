@@ -2,7 +2,6 @@ use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
-use cx_parsing_data::parse::ast::CXAST;
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_lexer_data::TokenIter;
 use cx_mir::generate_bytecode;
@@ -254,44 +253,24 @@ pub(crate) fn perform_job(
                     .get(&CompilationUnit::from_str(import.as_str()));
                 let required_visiblity = VisibilityMode::Public;
 
-                for (name, _type) in other_pp_data.type_definitions.standard_iter() {
-                    if _type.visibility < required_visiblity {
+                for resource in other_pp_data.type_idents.iter() {
+                    if resource.visibility < required_visiblity {
                         continue;
                     };
 
                     pp_data
-                        .type_definitions
-                        .insert_standard(name.clone(), _type.transfer(import));
+                        .type_idents
+                        .push(resource.transfer(import));
                 }
 
-                for (name, template) in other_pp_data.type_definitions.template_iter() {
-                    if template.visibility < required_visiblity {
+                for resource in other_pp_data.func_idents.iter() {
+                    if resource.visibility < required_visiblity {
                         continue;
                     };
 
                     pp_data
-                        .type_definitions
-                        .insert_template(name.clone(), template.transfer(import));
-                }
-
-                for (name, prototype) in other_pp_data.function_definitions.standard_iter() {
-                    if prototype.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data
-                        .function_definitions
-                        .insert_standard(name.clone(), prototype.transfer(import));
-                }
-
-                for (name, template) in other_pp_data.function_definitions.template_iter() {
-                    if template.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data
-                        .function_definitions
-                        .insert_template(name.clone(), template.transfer(import));
+                        .func_idents
+                        .push(resource.transfer(import));
                 }
             }
             
@@ -302,19 +281,12 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::ASTParse => {
-            let pp_data = context.module_db.preparse_full.get(&job.unit);
+            let preparse = context.module_db.preparse_full.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
-            let base_ast = CXAST {
-                type_map: pp_data.type_definitions.to_owned(),
-                function_map: pp_data.function_definitions.to_owned(),
-
-                ..Default::default()
-            };
 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.with_extension("cx")),
-                base_ast,
+                preparse.as_ref(),
             )
             .expect("AST parsing failed");
 

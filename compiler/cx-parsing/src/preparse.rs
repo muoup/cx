@@ -1,5 +1,6 @@
-use cx_lexer_data::TokenIter;
-use cx_parsing_data::{parse::parser::VisibilityMode, PreparseContents};
+use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
+use cx_parsing_data::{assert_token_matches, next_kind, parse::parser::VisibilityMode, peek_kind, preparse::naive_types::ModuleResource, PreparseContents};
+use cx_util::{identifier::CXIdent, log_error, CXResult};
 
 use crate::declarations::decl_parsing::preparse_decl_stmt;
 
@@ -27,4 +28,109 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
     }
 
     Some(contents)
+}
+
+fn consume_token(tokens: &mut TokenIter, data: &mut PreparseData) -> CXResult<()> {
+    match next_kind!(tokens)? {
+        keyword!(Struct) | keyword!(Enum) => {
+            let Some(identifier!(ident)) = next_kind!(tokens) else {
+                return Some(());
+            };
+
+            data.contents
+                .type_idents
+                .push(ModuleResource::with_visibility(
+                    CXIdent::from(ident.as_str()),
+                    data.visibility_mode,
+                ));
+        },
+        
+        keyword!(Union) => {
+            if peek_kind!(tokens, keyword!(Class)) {
+                tokens.next();
+            };
+            
+            let Some(identifier!(ident)) = next_kind!(tokens) else {
+                return Some(());
+            };
+            
+            data.contents
+                .type_idents
+                .push(ModuleResource::with_visibility(
+                    CXIdent::from(ident.as_str()),
+                    data.visibility_mode,
+                ));
+        },
+        
+        keyword!(Typedef) => {
+            while !peek_kind!(tokens, punctuator!(Semicolon)) && tokens.has_next() {
+                tokens.next();
+            }
+          
+            if !peek_kind!(tokens, punctuator!(Semicolon)) {
+                return None;
+            }
+            
+            let Some(identifier!(ident)) = next_kind!(tokens) else {
+                return Some(());
+            };
+            
+            data.contents
+                .type_idents
+                .push(ModuleResource::with_visibility(
+                    CXIdent::from(ident.as_str()),
+                    data.visibility_mode,
+                ));
+        },
+        
+        keyword!(Import) => {
+            tokens.back();
+            let import_path = parse_import(tokens)?;
+            data.contents.imports.push(import_path);
+        },
+        
+        specifier!(Public) => {
+            data.visibility_mode = VisibilityMode::Public;
+            assert_token_matches!(tokens, punctuator!(Colon));
+        },
+        
+        specifier!(Private) => {
+            data.visibility_mode = VisibilityMode::Private;
+            assert_token_matches!(tokens, punctuator!(Colon));
+        },
+
+        _ => (),
+    }
+    
+    Some(())
+}
+
+pub(crate) fn iterate_tokens(tokens: &mut TokenIter, data: &mut PreparseData) -> CXResult<()> {
+    while tokens.has_next() {
+        consume_token(tokens, data)?;
+    }
+
+    Some(())
+}
+
+pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
+    assert_token_matches!(tokens, keyword!(Import));
+
+    let mut import_path = String::new();
+
+    loop {
+        let Some(tok) = tokens.next() else {
+            log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
+        };
+
+        match &tok.kind {
+            punctuator!(Semicolon) => break,
+            operator!(ScopeRes) => import_path.push('/'),
+            identifier!(ident) => import_path.push_str(ident),
+
+            _ => log_error!("Reached invalid token in import path: {:?}", tok),
+        }
+    }
+
+    Some(import_path)
 }

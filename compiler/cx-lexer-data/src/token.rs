@@ -7,7 +7,7 @@ pub struct Token {
     pub line: u32,
     pub start_index: usize,
     pub end_index: usize,
-    pub file_origin: Arc<str>
+    pub file_origin: Arc<str>,
 }
 
 #[macro_export]
@@ -185,6 +185,9 @@ pub enum KeywordType {
     Type,
     Class,
     Match,
+    Where,
+    Precondition,
+    Postcondition,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -273,6 +276,10 @@ impl TokenKind {
 
             "match" => TokenKind::Keyword(KeywordType::Match),
             "is" => TokenKind::Operator(OperatorType::Is),
+
+            "where" => TokenKind::Keyword(KeywordType::Where),
+            "precondition" => TokenKind::Keyword(KeywordType::Precondition),
+            "postcondition" => TokenKind::Keyword(KeywordType::Postcondition),
 
             _ => TokenKind::Identifier(str),
         }

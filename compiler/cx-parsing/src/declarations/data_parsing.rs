@@ -1,5 +1,5 @@
 use cx_parsing_data::{
-    assert_token_matches, peek_next, peek_next_kind,
+    assert_token_matches, peek_kind, peek_next_kind,
     preparse::{
         naive_types::{CXNaiveTemplateInput, CXNaiveTypeKind, PredeclarationType},
         templates::CXTemplatePrototype,
@@ -12,7 +12,7 @@ use cx_util::identifier::CXIdent;
 use crate::declarations::type_parsing::parse_initializer;
 
 pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
-    if peek_next!(tokens, operator!(Less)) {
+    if peek_kind!(tokens, operator!(Less)) {
         parse_template_prototype(tokens)
     } else {
         None

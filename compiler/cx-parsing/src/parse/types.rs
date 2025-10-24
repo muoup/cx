@@ -3,7 +3,7 @@ use cx_parsing_data::preparse::naive_types::{
     CX_RESTRICT, CX_VOLATILE,
 };
 use cx_parsing_data::preparse::NaiveFnIdent;
-use cx_parsing_data::{assert_token_matches, next_kind, peek_next, try_next};
+use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_util::identifier::CXIdent;
@@ -32,7 +32,7 @@ fn predeclaration_identifier(
     })
 }
 
-pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<TypeDeclaration> {
+pub(crate) fn parse_struct_def(tokens: &mut TokenIter) -> CXResult<TypeDeclaration> {
     assert_token_matches!(tokens, keyword!(Struct));
 
     let name = parse_std_ident(tokens);
@@ -74,7 +74,7 @@ pub(crate) fn parse_struct(tokens: &mut TokenIter) -> CXResult<TypeDeclaration> 
     })
 }
 
-pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
+pub(crate) fn parse_enum_def(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
     assert_token_matches!(tokens, keyword!(Enum));
 
     let name = parse_std_ident(tokens);
@@ -100,7 +100,7 @@ pub(crate) fn parse_enum(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
     })
 }
 
-pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
+pub(crate) fn parse_tagged_union_def(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
     assert_token_matches!(tokens, keyword!(Union));
     assert_token_matches!(tokens, keyword!(Class));
 
@@ -142,12 +142,12 @@ pub(crate) fn parse_tagged_union(tokens: &mut TokenIter) -> Option<TypeDeclarati
     })
 }
 
-pub(crate) fn parse_union(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
+pub(crate) fn parse_union_def(tokens: &mut TokenIter) -> Option<TypeDeclaration> {
     assert_token_matches!(tokens, keyword!(Union));
 
-    if peek_next!(tokens, keyword!(Class)) {
+    if peek_kind!(tokens, keyword!(Class)) {
         tokens.back();
-        return parse_tagged_union(tokens);
+        return parse_tagged_union_def(tokens);
     }
 
     let name = parse_std_ident(tokens);
@@ -348,7 +348,7 @@ pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXNaiveType> {
         identifier!() => {
             let ident = parse_std_ident(tokens)?;
 
-            if peek_next!(tokens, operator!(Less)) {
+            if peek_kind!(tokens, operator!(Less)) {
                 let params = parse_template_args(tokens)?;
 
                 Some(
@@ -377,9 +377,9 @@ pub(crate) fn parse_type_base(tokens: &mut TokenIter) -> Option<CXNaiveType> {
             .to_type(),
         ),
 
-        keyword!(Struct) => Some(parse_struct(tokens)?.type_),
-        keyword!(Enum) => Some(parse_enum(tokens)?.type_),
-        keyword!(Union) => Some(parse_union(tokens)?.type_),
+        keyword!(Struct) => Some(parse_struct_def(tokens)?.type_),
+        keyword!(Enum) => Some(parse_enum_def(tokens)?.type_),
+        keyword!(Union) => Some(parse_union_def(tokens)?.type_),
 
         _ => return None,
     };

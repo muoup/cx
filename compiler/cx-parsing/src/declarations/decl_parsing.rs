@@ -1,4 +1,4 @@
-use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
+use cx_lexer_data::{keyword, operator, punctuator, specifier, TokenIter};
 use cx_parsing_data::{
     assert_token_matches,
     parse::parser::VisibilityMode,
@@ -6,12 +6,12 @@ use cx_parsing_data::{
     preparse::naive_types::{CXNaiveTypeKind, PredeclarationType},
     try_next,
 };
-use cx_util::{log_error, CXResult};
+use cx_util::CXResult;
 
 use crate::declarations::{
     data_parsing::parse_template_prototype,
     function_parsing::{parse_destructor_prototype, try_function_parse},
-    type_parsing::{parse_enum, parse_initializer, parse_struct, parse_union},
+    type_parsing::{parse_enum_def, parse_initializer, parse_struct_def, parse_union_def},
     DeclarationStatement, TypeDeclaration,
 };
 
@@ -53,28 +53,6 @@ pub(crate) fn preparse_decl_stmt(tokens: &mut TokenIter) -> CXResult<Declaration
     })
 }
 
-pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
-    assert_token_matches!(tokens, keyword!(Import));
-
-    let mut import_path = String::new();
-
-    loop {
-        let Some(tok) = tokens.next() else {
-            log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
-        };
-
-        match &tok.kind {
-            punctuator!(Semicolon) => break,
-            operator!(ScopeRes) => import_path.push('/'),
-            identifier!(ident) => import_path.push_str(ident),
-
-            _ => log_error!("Reached invalid token in import path: {:?}", tok),
-        }
-    }
-
-    Some(import_path)
-}
-
 pub(crate) fn parse_plain_typedef(tokens: &mut TokenIter) -> CXResult<DeclarationStatement> {
     let starting_index = tokens.index;
 
@@ -83,9 +61,9 @@ pub(crate) fn parse_plain_typedef(tokens: &mut TokenIter) -> CXResult<Declaratio
     };
 
     let decl = match decl_start {
-        keyword!(Struct) => parse_struct(tokens)?,
-        keyword!(Enum) => parse_enum(tokens)?,
-        keyword!(Union) => parse_union(tokens)?,
+        keyword!(Struct) => parse_struct_def(tokens)?,
+        keyword!(Enum) => parse_enum_def(tokens)?,
+        keyword!(Union) => parse_union_def(tokens)?,
 
         tok => todo!("parse_plain_typedef: {tok:?}"),
     };

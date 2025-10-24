@@ -28,7 +28,9 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
 
         identifier!(name) if is_intrinsic_type(name) => true,
-        identifier!(name) if data.ast.type_map.is_key_any(name) => true,
+        identifier!(name) if data.pp_contents.type_idents
+            .iter()
+            .any(|t| t.resource.as_str() == name) => true,
 
         _ => false,
     }

@@ -1,5 +1,6 @@
 use crate::parse::ast::CXAST;
-use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
+use crate::preparse::naive_types::ModuleResource;
+use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
 pub mod parse;
@@ -9,9 +10,7 @@ pub mod preparse;
 pub struct PreparseContents {
     pub module: String,
     pub imports: Vec<String>,
-
-    pub type_definitions: CXNaiveTypeMap,
-    pub function_definitions: CXNaiveFnMap,
+    pub type_idents: Vec<ModuleResource<CXIdent>>,
 }
 
 pub type ParseContents = CXAST;

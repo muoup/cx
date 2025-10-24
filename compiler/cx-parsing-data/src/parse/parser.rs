@@ -1,4 +1,4 @@
-use crate::parse::ast::CXAST;
+use crate::{parse::ast::CXAST, PreparseContents};
 use cx_lexer_data::TokenIter;
 use speedy::{Readable, Writable};
 
@@ -15,6 +15,7 @@ pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
     pub expr_commas: Vec<bool>,
+    pub pp_contents: &'a PreparseContents,
 
     pub ast: CXAST,
 }

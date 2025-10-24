@@ -82,7 +82,7 @@ macro_rules! try_next {
 }
 
 #[macro_export]
-macro_rules! peek_next {
+macro_rules! peek_kind {
     ($data:expr, $pattern:pat) => {
         matches!($data.peek().map(|k| &k.kind), Some($pattern))
     };

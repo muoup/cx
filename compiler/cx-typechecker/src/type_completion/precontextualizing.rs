@@ -1,4 +1,3 @@
-use cx_parsing_data::PreparseContents;
 use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_parsing_data::preparse::naive_types::{
@@ -100,7 +99,7 @@ pub fn precontextualize_type(
 
     // This variable is here for a top-level-scope lock in case we need to load an external module.
     #[allow(unused)]
-    let mut pp_lock: Option<Arc<PreparseContents>> = None;
+    let mut ast_lock: Option<Arc<_>> = None;
 
     let mut recurse_ty = |ty: &CXNaiveType| {
         Some(
@@ -110,14 +109,14 @@ pub fn precontextualize_type(
     };
 
     if let Some(module) = external_module {
-        pp_lock = Some(
+        ast_lock = Some(
             module_data
-                .preparse_full
+                .naive_ast
                 .get(&CompilationUnit::from_str(module)),
         );
-        let pp = pp_lock.as_ref().unwrap().as_ref();
+        let ast = ast_lock.as_ref().unwrap().as_ref();
 
-        naive_type_map = &pp.type_definitions;
+        naive_type_map = &ast.type_map;
     }
 
     match &ty.kind {
