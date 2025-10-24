@@ -9,8 +9,6 @@ use cx_parsing_data::{
 use cx_lexer_data::{operator, token::TokenKind, TokenIter};
 use cx_util::identifier::CXIdent;
 
-use crate::declarations::type_parsing::parse_initializer;
-
 pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
     if peek_kind!(tokens, operator!(Less)) {
         parse_template_prototype(tokens)

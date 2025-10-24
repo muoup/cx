@@ -56,22 +56,36 @@ impl DeclarationStatement {
     }
 }
 
-impl FunctionDeclaration {
-    pub(crate) fn add_to(self, data: &mut PreparseData) {
-        data.contents
-            .func_idents
-            .push(ModuleResource::with_visibility(
-                match self.template_prototype {
-                    Some(prototype) => {
-                        PreparseIdentifier::Templated(self.prototype.name.clone(), prototype)
-                    }
-                    None => PreparseIdentifier::Standard(self.prototype.name.clone()),
-                },
-                data.visibility_mode,
-            ));
+impl TypeDeclaration {
+    pub fn add_to_map(self, map: &mut CXNaiveTypeMap, visibility: VisibilityMode) {
+        let Some(name) = self.name else {
+            return;
+        };
+        
+        match self.template_prototype {
+            Some(prototype) => {
+                let template = CXTypeTemplate {
+                    prototype,
+                    shell: self.type_,
+                };
+                
+                map.insert_template(
+                    name.as_string(),
+                    ModuleResource::with_visibility(template, visibility),
+                );
+            }
+            None => {
+                map.insert_standard(
+                    name.as_string(),
+                    ModuleResource::with_visibility(self.type_, visibility),
+                );
+            }
+        }
     }
+}
 
-    pub(crate) fn add_map(self, map: &mut CXNaiveFnMap, visibility: VisibilityMode) {
+impl FunctionDeclaration {
+    pub fn add_to_map(self, map: &mut CXNaiveFnMap, visibility: VisibilityMode) {
         match self.template_prototype {
             Some(prototype) => {
                 let template = CXFunctionTemplate {

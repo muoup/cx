@@ -1,19 +1,19 @@
+use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_parsing_data::preparse::naive_types::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST,
     CX_RESTRICT, CX_VOLATILE,
 };
 use cx_parsing_data::preparse::NaiveFnIdent;
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, try_next};
-use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_util::identifier::CXIdent;
 use cx_util::{log_error, point_log_error, CXResult};
 
 use crate::declarations::data_parsing::{
     parse_intrinsic, parse_std_ident, parse_template_args, try_parse_template,
 };
-use crate::declarations::function_parsing::{parse_params, ParseParamsResult};
 use crate::declarations::TypeDeclaration;
+use crate::parse::functions::{parse_params, ParseParamsResult};
 
 fn predeclaration_identifier(
     name: Option<CXIdent>,

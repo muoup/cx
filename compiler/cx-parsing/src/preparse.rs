@@ -1,8 +1,9 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_parsing_data::{assert_token_matches, next_kind, parse::parser::VisibilityMode, peek_kind, preparse::naive_types::ModuleResource, PreparseContents};
+use cx_parsing_data::{
+    assert_token_matches, next_kind, parse::parser::VisibilityMode, peek_kind,
+    preparse::naive_types::ModuleResource, PreparseContents,
+};
 use cx_util::{identifier::CXIdent, log_error, CXResult};
-
-use crate::declarations::decl_parsing::preparse_decl_stmt;
 
 pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
@@ -20,20 +21,24 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
     };
 
     while data.tokens.has_next() {
-        let Some(stmt) = preparse_decl_stmt(&mut data.tokens) else {
-            log_preparse_error!(data.tokens, "Failed to preparse statement")
-        };
-
-        stmt.add_to(&mut data);
+        iterate_tokens(&mut data);
     }
 
     Some(contents)
 }
 
-fn consume_token(tokens: &mut TokenIter, data: &mut PreparseData) -> CXResult<()> {
-    match next_kind!(tokens)? {
+fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
+    while data.tokens.has_next() {
+        consume_token(data)?;
+    }
+
+    Some(())
+}
+
+fn consume_token(data: &mut PreparseData) -> CXResult<()> {
+    match next_kind!(data.tokens)? {
         keyword!(Struct) | keyword!(Enum) => {
-            let Some(identifier!(ident)) = next_kind!(tokens) else {
+            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
                 return Some(());
             };
 
@@ -43,77 +48,69 @@ fn consume_token(tokens: &mut TokenIter, data: &mut PreparseData) -> CXResult<()
                     CXIdent::from(ident.as_str()),
                     data.visibility_mode,
                 ));
-        },
-        
+        }
+
         keyword!(Union) => {
-            if peek_kind!(tokens, keyword!(Class)) {
-                tokens.next();
+            if peek_kind!(data.tokens, keyword!(Class)) {
+                data.tokens.next();
             };
-            
-            let Some(identifier!(ident)) = next_kind!(tokens) else {
+
+            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
                 return Some(());
             };
-            
+
             data.contents
                 .type_idents
                 .push(ModuleResource::with_visibility(
                     CXIdent::from(ident.as_str()),
                     data.visibility_mode,
                 ));
-        },
-        
+        }
+
         keyword!(Typedef) => {
-            while !peek_kind!(tokens, punctuator!(Semicolon)) && tokens.has_next() {
-                tokens.next();
+            while !peek_kind!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
+                data.tokens.next();
             }
-          
-            if !peek_kind!(tokens, punctuator!(Semicolon)) {
+
+            if !peek_kind!(data.tokens, punctuator!(Semicolon)) {
                 return None;
             }
-            
-            let Some(identifier!(ident)) = next_kind!(tokens) else {
+
+            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
                 return Some(());
             };
-            
+
             data.contents
                 .type_idents
                 .push(ModuleResource::with_visibility(
                     CXIdent::from(ident.as_str()),
                     data.visibility_mode,
                 ));
-        },
-        
+        }
+
         keyword!(Import) => {
-            tokens.back();
-            let import_path = parse_import(tokens)?;
+            data.tokens.back();
+            let import_path = parse_import(&mut data.tokens)?;
             data.contents.imports.push(import_path);
-        },
-        
+        }
+
         specifier!(Public) => {
             data.visibility_mode = VisibilityMode::Public;
-            assert_token_matches!(tokens, punctuator!(Colon));
-        },
-        
+            assert_token_matches!(data.tokens, punctuator!(Colon));
+        }
+
         specifier!(Private) => {
             data.visibility_mode = VisibilityMode::Private;
-            assert_token_matches!(tokens, punctuator!(Colon));
-        },
+            assert_token_matches!(data.tokens, punctuator!(Colon));
+        }
 
         _ => (),
     }
-    
-    Some(())
-}
-
-pub(crate) fn iterate_tokens(tokens: &mut TokenIter, data: &mut PreparseData) -> CXResult<()> {
-    while tokens.has_next() {
-        consume_token(tokens, data)?;
-    }
 
     Some(())
 }
 
-pub(crate) fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
+fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
     assert_token_matches!(tokens, keyword!(Import));
 
     let mut import_path = String::new();

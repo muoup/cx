@@ -1,14 +1,37 @@
-use cx_parsing_data::{assert_token_matches, next_kind, parse::{ast::{CXExpr, CXExprKind, CXGlobalStmt, CXAST}, parser::{ParserData, VisibilityMode}}, preparse::{naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType}, FunctionTypeIdent, NaiveFnIdent}, try_next, PreparseContents};
-use cx_lexer_data::{keyword, operator, punctuator, specifier, token::{SpecifierType, TokenKind}, TokenIter};
+use cx_lexer_data::{
+    keyword, operator, punctuator, specifier,
+    token::{SpecifierType, TokenKind},
+    TokenIter,
+};
+use cx_parsing_data::{
+    assert_token_matches, next_kind,
+    parse::{
+        ast::{CXExpr, CXExprKind, CXGlobalStmt, CXAST},
+        parser::{ParserData, VisibilityMode},
+    },
+    preparse::{
+        naive_types::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType},
+        FunctionTypeIdent, NaiveFnIdent,
+    },
+    try_next, PreparseContents,
+};
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::{declarations::{decl_parsing::parse_typedef, function_parsing::{parse_destructor_prototype, try_function_parse}, type_parsing::parse_initializer, FunctionDeclaration}, definitions::{expr_parsing::{expression_requires_semicolon, parse_expr}, template::{note_templated_types, unnote_templated_types}}};
+use crate::{
+    declarations::{decl_parsing::parse_typedef, FunctionDeclaration},
+    parse::{
+        expressions::{expression_requires_semicolon, parse_expr},
+        functions::{parse_destructor_prototype, try_function_parse},
+        templates::{note_templated_types, unnote_templated_types},
+        types::parse_initializer,
+    },
+};
 
 mod expressions;
 mod functions;
-mod types;
-mod templates;
 mod operators;
+mod templates;
+mod types;
 
 pub fn parse_ast(iter: TokenIter, pp_contents: &PreparseContents) -> Option<CXAST> {
     let mut data = ParserData {
@@ -39,11 +62,10 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
             data.tokens.goto_statement_end();
             Some(None)
         }
-        
+
         keyword!(Typedef) => {
-            let typedef = parse_typedef(&mut data.tokens)?;
-            typedef.add_map(&mut data.ast.type_map, data.visibility);
-            
+            parse_typedef(&mut data.tokens)?.add_to_map(&mut data.ast.type_map, data.visibility);
+
             Some(None)
         }
 
@@ -53,7 +75,7 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
         }
 
         keyword!(Struct) => todo!(), //parse_struct(data),
-        keyword!(Enum) => todo!(), //parse_enum(data),
+        keyword!(Enum) => todo!(),   //parse_enum(data),
         specifier!() => parse_access_mods(data),
 
         operator!(Tilda) => {
@@ -80,29 +102,11 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     Some(None)
 }
 
-fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
-    CXNaivePrototype {
-        name: NaiveFnIdent::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
-
-        return_type: CXNaiveTypeKind::Identifier {
-            name: CXIdent::from("void"),
-            predeclaration: PredeclarationType::None,
-        }
-        .to_type(),
-        params: vec![],
-        var_args: false,
-        this_param: true,
-    }
-}
-
 fn parse_fn_merge(
     data: &mut ParserData,
     prototype: FunctionDeclaration,
 ) -> CXResult<Option<CXGlobalStmt>> {
-    if try_next!(
-        data.tokens,
-        punctuator!(Semicolon)
-    ) {
+    if try_next!(data.tokens, punctuator!(Semicolon)) {
         if prototype.template_prototype.is_some() {
             log_parse_error!(data, "Templated functions must be defined in place.");
         }
@@ -154,10 +158,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
     match next_kind!(data.tokens) {
         Some(TokenKind::Assignment(_)) => {
             let initial_value = parse_expr(data)?;
-            assert_token_matches!(
-                data.tokens,
-                punctuator!(Semicolon)
-            );
+            assert_token_matches!(data.tokens, punctuator!(Semicolon));
 
             Some(Some(CXGlobalStmt::GlobalVariable {
                 name,
@@ -166,13 +167,11 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
             }))
         }
 
-        Some(punctuator!(Semicolon)) => {
-            Some(Some(CXGlobalStmt::GlobalVariable {
-                name,
-                type_: return_type,
-                initializer: None,
-            }))
-        }
+        Some(punctuator!(Semicolon)) => Some(Some(CXGlobalStmt::GlobalVariable {
+            name,
+            type_: return_type,
+            initializer: None,
+        })),
 
         _ => log_parse_error!(
             data,
@@ -208,10 +207,7 @@ fn parse_body(data: &mut ParserData) -> Option<CXExpr> {
         let body = parse_expr(data)?;
 
         if expression_requires_semicolon(&body) {
-            assert_token_matches!(
-                data.tokens,
-                punctuator!(Semicolon)
-            );
+            assert_token_matches!(data.tokens, punctuator!(Semicolon));
         }
 
         Some(body)

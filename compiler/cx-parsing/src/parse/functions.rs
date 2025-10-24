@@ -13,11 +13,24 @@ use cx_util::{identifier::CXIdent, CXResult};
 use crate::{
     declarations::{
         data_parsing::{convert_template_proto_to_args, parse_std_ident, try_parse_template},
-        type_parsing::parse_initializer,
         FunctionDeclaration,
-    },
-    definitions::global_scope::destructor_prototype,
+    }, parse::types::parse_initializer,
 };
+
+fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
+    CXNaivePrototype {
+        name: NaiveFnIdent::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
+
+        return_type: CXNaiveTypeKind::Identifier {
+            name: CXIdent::from("void"),
+            predeclaration: PredeclarationType::None,
+        }
+        .to_type(),
+        params: vec![],
+        var_args: false,
+        this_param: true,
+    }
+}
 
 pub fn parse_destructor_prototype(tokens: &mut TokenIter) -> CXResult<FunctionDeclaration> {
     assert_token_matches!(tokens, operator!(Tilda));
