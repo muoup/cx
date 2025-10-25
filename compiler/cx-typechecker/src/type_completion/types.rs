@@ -1,23 +1,19 @@
-use cx_parsing_data::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource};
-use cx_parsing_data::preparse::{CXNaiveTypeMap, NaiveFnIdent};
+use cx_parsing_data::preparse::naive_types::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
+use cx_parsing_data::preparse::{CXNaiveTypeMap, NaiveFnKind};
 use cx_pipeline_data::CompilationUnit;
-use cx_pipeline_data::db::ModuleData;
-use cx_typechecker_data::CXTypeMap;
-use cx_typechecker_data::cx_types::{
-    CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind,
-};
+use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
-use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
-use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 
-use crate::type_completion::templates::{instantiate_type_temp, mangle_template_name};
-use crate::type_completion::prototypes::apply_implicit_fn_attr;
+use crate::environment::TCEnvironment;
+use crate::type_completion::complete_prototype;
+use crate::type_completion::templates::instantiate_type_template;
 
 // As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
 // a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
 // there will not always be an available one-degree-away mapping for a type.
 
+#[allow(dead_code)]
 fn reduce_ident_ident<'a>(
     cx_type: &'a CXNaiveType,
     type_map: &'a CXNaiveTypeMap,
@@ -58,9 +54,7 @@ fn ident_root<'a>(naive_map: &'a CXNaiveTypeMap, ty: &'a CXNaiveType) -> &'a CXN
 }
 
 pub(crate) fn _complete_template_input(
-    module_data: &ModuleData,
-    cx_acc_types: &mut CXTypeMap,
-    naive_type_map: &CXNaiveTypeMap,
+    env: &mut TCEnvironment,
     external_module: Option<&String>,
     input: &CXNaiveTemplateInput,
 ) -> Option<CXTemplateInput> {
@@ -68,10 +62,9 @@ pub(crate) fn _complete_template_input(
         .params
         .iter()
         .map(|param| {
-            _complete_type(module_data, cx_acc_types, naive_type_map, external_module, param)
-                .unwrap_or_else(|| {
-                    panic!("Failed to precontextualize template input type: {param}")
-                })
+            _complete_type(env, external_module, param).unwrap_or_else(|| {
+                panic!("Failed to precontextualize template input type: {param}")
+            })
         })
         .collect::<Vec<_>>();
 
@@ -79,63 +72,44 @@ pub(crate) fn _complete_template_input(
 }
 
 pub(crate) fn _complete_type(
-    module_data: &ModuleData,
-    cx_acc_types: &mut CXTypeMap,
-    base_naive_types: &CXNaiveTypeMap,
+    env: &mut TCEnvironment,
     external_module: Option<&String>,
     ty: &CXNaiveType,
 ) -> Option<CXType> {
-    let base_type_map = match external_module {
-        Some(module) => &module_data
-            .accumulated_interface
-            .get(&CompilationUnit::from_str(module))
-            .0,
-        None => base_naive_types,
+    let (_, base_data) = match external_module {
+        Some(module) => {
+            let arc = env
+                .module_data
+                .base_mappings
+                .get(&CompilationUnit::from_str(module));
+
+            (Some(arc.clone()), unsafe { std::mem::transmute(arc.as_ref()) })
+        }
+        None => (None, env.base_data),
     };
 
     let mut recurse_ty = |ty: &CXNaiveType| {
         Some(
-            _complete_type(module_data, cx_acc_types, base_naive_types, None, ty)
+            _complete_type(env, None, ty)
                 .unwrap_or_else(|| panic!("Failed to precontextualize type: {ty}")),
         )
     };
 
     match &ty.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
-            if let Some(existing) = cx_acc_types.get(&name.as_string()) {
+            if let Some(existing) = env.realized_types.get(&name.as_string()) {
                 return Some(existing.clone());
             };
-            
-            if let Some(inner) = base_type_map.get_standard(&name.as_string()) {
-                return _complete_type(
-                    module_data,
-                    cx_acc_types,
-                    base_naive_types,
-                    inner.external_module.as_ref(),
-                    &inner.resource,
-                );
-            };
 
-            if let Some((_, intrinsic)) = INTRINSIC_TYPES
-                .iter()
-                .find(|(intrinsic_name, _ty)| name.as_str() == *intrinsic_name)
-            {
-                return Some(intrinsic.clone().into());
+            if let Some(inner) = base_data.type_data.get_standard(&name.as_string()) {
+                return _complete_type(env, inner.external_module.as_ref(), &inner.resource);
             };
 
             log_error!("Type not found: {name}");
         }
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input, .. } => {
-            let contextualized_input = _complete_template_input(
-                module_data,
-                cx_acc_types,
-                base_type_map,
-                external_module,
-                input,
-            )?;
-
-            instantiate_type_temp(module_data, cx_acc_types, base_type_map, &contextualized_input, name.as_str())
+            instantiate_type_template(env, input, name.as_str())
         }
 
         CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {
@@ -179,10 +153,8 @@ pub(crate) fn _complete_type(
         }
 
         CXNaiveTypeKind::FunctionPointer { prototype } => {
-            let prototype = _complete_prototype(
-                module_data,
-                cx_acc_types,
-                base_type_map,
+            let prototype = complete_prototype(
+                env,
                 external_module,
                 prototype,
             )
@@ -245,17 +217,15 @@ pub(crate) fn _complete_type(
 }
 
 pub(crate) fn complete_fn_ident(
-    _: &ModuleData,
-    _: &mut CXTypeMap,
     naive_type_map: &CXNaiveTypeMap,
-    ident: &NaiveFnIdent,
+    ident: &NaiveFnKind,
 ) -> Option<CXFunctionIdentifier> {
     match ident {
-        NaiveFnIdent::Standard(name) => {
+        NaiveFnKind::Standard(name) => {
             Some(CXFunctionKind::Standard { name: name.clone() }.into())
         }
 
-        NaiveFnIdent::MemberFunction {
+        NaiveFnKind::MemberFunction {
             _type,
             function_name,
         } => {
@@ -275,7 +245,7 @@ pub(crate) fn complete_fn_ident(
             )
         }
 
-        NaiveFnIdent::Destructor(ty) => {
+        NaiveFnKind::Destructor(ty) => {
             let base = ty.as_type();
             let root = ident_root(naive_type_map, &base);
 
@@ -292,52 +262,3 @@ pub(crate) fn complete_fn_ident(
         }
     }
 }
-
-pub(crate) fn _complete_prototype(
-    module_data: &ModuleData,
-    cx_acc_map: &mut CXTypeMap,
-    naive_type_map: &CXNaiveTypeMap,
-    external_module: Option<&String>,
-    prototype: &CXNaivePrototype,
-) -> Option<CXFunctionPrototype> {
-    let prototype = apply_implicit_fn_attr(prototype.clone());
-
-    let return_type = _complete_type(
-        module_data,
-        cx_acc_map,
-        naive_type_map,
-        external_module,
-        &prototype.return_type,
-    )?;
-
-    let parameters = prototype
-        .params
-        .iter()
-        .map(|param| {
-            let ty = _complete_type(
-                module_data,
-                cx_acc_map,
-                naive_type_map,
-                external_module,
-                &param._type,
-            )
-            .unwrap();
-
-            Some(CXParameter {
-                name: param.name.clone(),
-                _type: ty,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    let ident = complete_fn_ident(module_data, cx_acc_map, naive_type_map, &prototype.name)?;
-
-    Some(CXFunctionPrototype {
-        name: ident,
-        return_type,
-        params: parameters,
-        var_args: prototype.var_args,
-    })
-}
-
-

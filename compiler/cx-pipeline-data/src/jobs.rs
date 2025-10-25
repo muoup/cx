@@ -82,25 +82,6 @@ pub enum CompilationStep {
     InterfaceCombine = 1 << 3,
 
     /**
-     *  Part 2 of type completion: Ensures that all expressions in directly implemented functions and
-     *  types are type-correct, including adding implicit type coercion where necessary.
-     *
-     *  Importantly, and why two steps are needed, this creates a fully-contextual type and function map
-     *  that combines declarations from other ASTs. Meaning templates declared in other compilation units
-     *  require that those units are typechecked with this step before they can be realized. In theory, this
-     *  step could be limited to just generating the type and function map of the current compilation unit,
-     *  and then all functions and templates could be typechecked in a single pass, but realizing templates,
-     *  requires cooperation with the pipeline to be given the needed context, meaning indirect and direct
-     *  typechecking would just be unignorably two separate mechanisms included in the same step.
-     *
-     *  Requires: The naive AST, along with the type and function definitions of imports and self.
-     *
-     *  Outputs:  A type-checked AST of direct implementation, including to-be type-checked requests to
-     *  be fulfilled.
-     */
-    TypeCompletion = 1 << 4,
-
-    /**
      *  Typechecks all indirectly implemented functions and types to a type-checked
      *  AST. This for the most part consists of realizing templated functions, however in the future other
      *  use-cases may arise related to the implementation of dependent types or other advanced type system features.
@@ -112,7 +93,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A fully type-checked AST.
      */
-    Typechecking = 1 << 5,
+    Typechecking = 1 << 4,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -125,7 +106,7 @@ pub enum CompilationStep {
      *            implementations of templated functions, types, and potentially in the future small
      *            always-inlined functions.
      */
-    BytecodeGen = 1 << 6,
+    BytecodeGen = 1 << 5,
 
     /**
      *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
@@ -137,7 +118,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 7, // For now, linking is a single step that is done after all compilation above is done. This
+    Codegen = 1 << 6, // For now, linking is a single step that is done after all compilation above is done. This
                       // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
                       // per-compilation unit, it handled as its own mechanism.
 }
@@ -221,7 +202,7 @@ impl JobQueue {
             JobState::Completed,
         );
         self.progress_map.insert(
-            (unit.clone(), CompilationStep::TypeCompletion),
+            (unit.clone(), CompilationStep::ImportCombine),
             JobState::Completed,
         );
         self.progress_map.insert(

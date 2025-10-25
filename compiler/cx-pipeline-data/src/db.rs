@@ -1,6 +1,5 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_parsing_data::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_parsing_data::PreparseContents;
 use cx_parsing_data::parse::ast::CXAST;
 use cx_lexer_data::token::Token;

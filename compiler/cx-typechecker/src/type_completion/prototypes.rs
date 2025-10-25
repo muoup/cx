@@ -1,11 +1,9 @@
 use crate::environment::TCEnvironment;
-use cx_parsing_data::preparse::NaiveFnIdent;
+use cx_parsing_data::preparse::NaiveFnKind;
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput,
 };
-use cx_typechecker_data::cx_types::{
-    CXFunctionPrototype, CXParameter, CXTemplateInput,
-};
+use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXParameter, CXTemplateInput};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
@@ -18,12 +16,11 @@ pub(crate) fn apply_implicit_fn_attr(
             0,
             CXNaiveParameter {
                 name: Some(CXIdent::from("this")),
-                _type: implicit_member.as_type()
-                    .pointer_to(false, 0)
+                _type: implicit_member.as_type().pointer_to(false, 0),
             },
         );
     }
-    
+
     proto
 }
 
@@ -42,10 +39,10 @@ pub fn contextualize_template_args(
 
 pub(crate) fn contextualize_fn_ident(
     env: &mut TCEnvironment,
-    ident: &NaiveFnIdent,
+    ident: &NaiveFnKind,
 ) -> Option<CXFunctionIdentifier> {
     match ident {
-        NaiveFnIdent::MemberFunction {
+        NaiveFnKind::MemberFunction {
             function_name,
             _type,
         } => {
@@ -53,11 +50,13 @@ pub(crate) fn contextualize_fn_ident(
             let Some(_ty) = env.complete_type(&base) else {
                 log_error!("Unknown type for member function: {function_name} of type {_type}");
             };
-            
+
             let Some(cx_type) = _ty.get_identifier() else {
-                log_error!("Member function base type should be identifiable: {function_name} of type {_type}");
+                log_error!(
+                    "Member function base type should be identifiable: {function_name} of type {_type}"
+                );
             };
-            
+
             Some(
                 CXFunctionKind::Member {
                     base_type: cx_type.clone(),
@@ -67,20 +66,25 @@ pub(crate) fn contextualize_fn_ident(
             )
         }
 
-        NaiveFnIdent::Destructor(name) => {
+        NaiveFnKind::Destructor(name) => {
             let base = name.as_type();
             let Some(_ty) = env.complete_type(&base) else {
                 log_error!("Unknown type for destructor: {name}");
             };
-            
+
             let Some(cx_type) = _ty.get_identifier() else {
                 log_error!("Destructor base type should be identifiable: {name}");
             };
 
-            Some(CXFunctionKind::Destructor { base_type: cx_type.clone() }.into())
+            Some(
+                CXFunctionKind::Destructor {
+                    base_type: cx_type.clone(),
+                }
+                .into(),
+            )
         }
 
-        NaiveFnIdent::Standard(name) => {
+        NaiveFnKind::Standard(name) => {
             Some(CXFunctionKind::Standard { name: name.clone() }.into())
         }
     }
@@ -92,13 +96,13 @@ pub fn contextualize_fn_prototype(
 ) -> Option<CXFunctionPrototype> {
     let ident = contextualize_fn_ident(env, &prototype.name)?;
 
-    if let Some(existing) = env.get_func(&ident) {
+    if let Some(existing) = env.get_realized_func(&ident) {
         return Some(existing.clone());
     }
-    
+
     let prototype = apply_implicit_fn_attr(prototype.clone());
     let return_type = env.complete_type(&prototype.return_type)?;
-    
+
     let parameters = prototype
         .params
         .iter()
@@ -112,12 +116,10 @@ pub fn contextualize_fn_prototype(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    Some(
-        CXFunctionPrototype {
-            name: ident,
-            return_type,
-            params: parameters,
-            var_args: prototype.var_args,
-        }
-    )
+    Some(CXFunctionPrototype {
+        name: ident,
+        return_type,
+        params: parameters,
+        var_args: prototype.var_args,
+    })
 }

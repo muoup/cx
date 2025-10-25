@@ -36,7 +36,7 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> CXResult<()> {
                     base_type: type_name.clone(),
                 };
 
-                let Some(prototype) = env.get_func(&ident.into()) else {
+                let Some(prototype) = env.get_realized_func(&ident.into()) else {
                     unreachable!("Destructor prototype should not be missing: {}", _type);
                 };
 

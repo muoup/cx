@@ -8,7 +8,7 @@ use cx_parsing_data::{
             CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
         },
         templates::CXTemplatePrototype,
-        FunctionTypeIdent, NaiveFnIdent,
+        FunctionTypeIdent, NaiveFnKind,
     },
     try_next,
 };
@@ -27,7 +27,7 @@ pub struct FunctionDeclaration {
 
 fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
     CXNaivePrototype {
-        name: NaiveFnIdent::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
+        name: NaiveFnKind::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
 
         return_type: CXNaiveTypeKind::Identifier {
             name: CXIdent::from("void"),
@@ -95,7 +95,7 @@ pub fn try_function_parse(
 
             let prototype = CXNaivePrototype {
                 return_type,
-                name: NaiveFnIdent::Standard(name.clone()),
+                name: NaiveFnKind::Standard(name.clone()),
                 params: args.params,
                 var_args: args.var_args,
                 this_param: args.contains_this,
@@ -136,7 +136,7 @@ pub fn try_function_parse(
             let name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens);
 
-            let name = NaiveFnIdent::MemberFunction {
+            let name = NaiveFnKind::MemberFunction {
                 _type: FunctionTypeIdent::from_type(&_type).unwrap(),
                 function_name: CXIdent::from(name.as_str()),
             };

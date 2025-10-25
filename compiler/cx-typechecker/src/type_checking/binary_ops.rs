@@ -4,6 +4,7 @@ use crate::type_checking::typechecker::typecheck_expr;
 use crate::log_typecheck_error;
 use crate::type_completion::prototypes::contextualize_template_args;
 use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
+use cx_parsing_data::preparse::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_typechecker_data::function_map::CXFunctionKind;
@@ -78,7 +79,7 @@ pub(crate) fn typecheck_access(
                 name: name.clone(),
             };
 
-            let Some(prototype) = env.get_func(&fn_ident.into()) else {
+            let Some(prototype) = env.get_realized_func(&fn_ident.into()) else {
                 log_typecheck_error!(
                     env,
                     lhs,
@@ -112,13 +113,13 @@ pub(crate) fn typecheck_access(
                 );
             };
 
-            let ident = CXFunctionKind::Member {
-                base_type: type_name.clone(),
-                name: name.clone(),
+            let ident = NaiveFnKind::MemberFunction {
+                function_name: CXIdent::from(name.as_str()),
+                _type: FunctionTypeIdent::Standard(type_name.clone()),
             };
             let input = contextualize_template_args(env, template_input)?;
 
-            let Some(prototype) = env.get_templated_func(&ident, &input) else {
+            let Some(prototype) = env.get_func_templated(&ident, &input) else {
                 println!("Templated functions: {:?}", env.base_data.fn_data);
                 
                 log_typecheck_error!(
@@ -193,7 +194,7 @@ pub(crate) fn typecheck_method_call(
                 );
             };
 
-            let Some(prototype) = env.get_func(&prototype.name) else {
+            let Some(prototype) = env.get_realized_func(&prototype.name) else {
                 log_typecheck_error!(
                     env,
                     expr,
@@ -220,7 +221,7 @@ pub(crate) fn typecheck_method_call(
                 );
             };
 
-            let Some(prototype) = env.get_func(&prototype.name) else {
+            let Some(prototype) = env.get_realized_func(&prototype.name) else {
                 log_typecheck_error!(
                     env,
                     expr,

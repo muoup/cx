@@ -6,7 +6,7 @@ use cx_parsing_data::preparse::naive_types::{
     CX_RESTRICT, CX_VOLATILE,
 };
 use cx_parsing_data::preparse::templates::CXTemplatePrototype;
-use cx_parsing_data::preparse::NaiveFnIdent;
+use cx_parsing_data::preparse::NaiveFnKind;
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_util::identifier::CXIdent;
 use cx_util::{log_error, point_log_error, CXResult};
@@ -340,7 +340,7 @@ pub(crate) fn parse_typemods(
             } = parse_params(data)?;
 
             let prototype = CXNaivePrototype {
-                name: NaiveFnIdent::Standard(CXIdent::from("__internal_fnptr")),
+                name: NaiveFnKind::Standard(CXIdent::from("__internal_fnptr")),
                 return_type: acc_type,
                 params,
                 var_args,

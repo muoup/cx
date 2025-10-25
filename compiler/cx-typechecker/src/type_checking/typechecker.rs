@@ -6,9 +6,9 @@ use crate::log_typecheck_error;
 use crate::type_completion::prototypes::{contextualize_template_args};
 use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_parsing_data::preparse::naive_types::CX_CONST;
+use cx_parsing_data::preparse::{NaiveFnIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex, TCTagMatch};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
-use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::identifier::CXIdent;
 
 fn anonymous_name_gen() -> String {
@@ -94,7 +94,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             TCExpr {
                 _type: env
-                    .get_type("char")
+                    .get_realized_type("char")
                     .unwrap()
                     .clone()
                     .pointer_to()
@@ -124,7 +124,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     _type: symbol_type.clone().mem_ref_to(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
-            } else if let Some(function_type) = env.get_func(&CXFunctionKind::Standard { name: name.clone() }.into()) {
+            } else if let Some(function_type) = env.get_func(&NaiveFnIdent::Standard(name.clone())) {
                 TCExpr {
                     _type: CXTypeKind::Function {
                         prototype: Box::new(function_type.clone()),
@@ -147,7 +147,9 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             // in CXNaiveType contexts.
 
             let input = contextualize_template_args(env, template_input)?;
-            let Some(function) = env.get_templated_func(&CXFunctionKind::Standard { name: name.clone() }, &input) else {
+            let ident = NaiveFnKind::Standard(name.clone());
+            
+            let Some(function) = env.get_func_templated(&ident, &input) else {
                 log_typecheck_error!(env, expr, "Function template '{}' not found", name);
             };
 
@@ -577,7 +579,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             variant_name: name,
             inner,
         } => {
-            let Some(union_type) = env.get_type(type_name.as_str()) else {
+            let Some(union_type) = env.get_realized_type(type_name.as_str()) else {
                 log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
 

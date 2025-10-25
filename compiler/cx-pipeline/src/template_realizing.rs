@@ -1,3 +1,4 @@
+use cx_parsing_data::preparse::NaiveFnIdent;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker::{environment::TCEnvironment, type_checking::realize_fn_implementation};
 use std::collections::HashSet;
@@ -25,7 +26,7 @@ pub(crate) fn realize_templates(
         let template = env
             .base_data
             .fn_data 
-            .get_template(&request.name)
+            .get_template(&NaiveFnIdent::from(&request.name))
             .unwrap()
             .resource
             .clone();

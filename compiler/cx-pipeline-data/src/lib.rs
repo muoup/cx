@@ -128,7 +128,7 @@ impl CompilationUnit {
             path
         };
 
-        let path_buf = PathBuf::from(file_path(path)).with_extension("");
+        let path_buf = PathBuf::from(file_path(path)).with_extension("cx");
 
         Self {
             identifier: Rc::new(path.to_string()),

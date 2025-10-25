@@ -14,7 +14,7 @@ use cx_pipeline_data::jobs::{
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
 use cx_typechecker::type_checking::typecheck;
-use cx_typechecker::{create_base_types, gather_interface};
+use cx_typechecker::gather_interface;
 use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
@@ -155,9 +155,8 @@ pub(crate) fn handle_job(
         CompilationStep::ImportCombine => map_reqs_new_stage(job, CompilationStep::ASTParse),
         CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
         CompilationStep::InterfaceCombine => {
-            map_reqs_new_stage(job, CompilationStep::TypeCompletion)
+            map_reqs_new_stage(job, CompilationStep::Typechecking)
         }
-        CompilationStep::TypeCompletion => map_reqs_new_stage(job, CompilationStep::Typechecking),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::BytecodeGen),
         CompilationStep::BytecodeGen => map_reqs_new_stage(job, CompilationStep::Codegen),
         CompilationStep::Codegen => Some([].into()),
@@ -310,18 +309,6 @@ pub(crate) fn perform_job(
 
             typecheck(&mut env, &self_ast).expect("Typechecking failed");
             realize_templates(context, &job.unit, &mut env).expect("Template realization failed");
-
-            // FIXME: Is this necessary?
-            env.realized_types
-                .extend(structure_data.type_data.standard.clone());
-            env.realized_fns.extend(
-                structure_data
-                    .fn_data
-                    .iter()
-                    .map(|(_, v)| (v.name.clone(), v.clone())),
-            );
-            env.realized_globals
-                .extend(structure_data.global_variables.clone());
 
             let tc_ast = TCAST {
                 source_file: self_ast.file_path.clone(),

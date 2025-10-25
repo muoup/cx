@@ -1,20 +1,22 @@
 use cx_lexer_data::token::Token;
 use cx_parsing_data::preparse::naive_types::{CXNaivePrototype, CXNaiveType};
+use cx_parsing_data::preparse::{NaiveFnIdent, NaiveFnKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
+use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
-use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier, CXFunctionKind};
+use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
 
-use crate::type_completion::templates::{instantiate_function_template};
+use crate::type_completion::templates::instantiate_function_template;
 use crate::type_completion::{complete_prototype, complete_type};
 
 pub struct TCTemplateRequest {
     pub module_origin: Option<String>,
-    pub name: CXFunctionIdentifier,
+    pub name: NaiveFnKind,
     pub input: CXTemplateInput,
 }
 
@@ -46,6 +48,11 @@ impl TCEnvironment<'_> {
         structure_data: &'a TCBaseMappings,
         module_data: &'a ModuleData,
     ) -> TCEnvironment<'a> {
+        let intrinsic_types = INTRINSIC_TYPES
+            .iter()
+            .map(|(name, ty)| (name.to_string(), ty.clone().into()))
+            .collect::<HashMap<_, _>>();
+        
         TCEnvironment {
             tokens,
             compilation_unit,
@@ -53,7 +60,7 @@ impl TCEnvironment<'_> {
             module_data,
 
             base_data: structure_data,
-            realized_types: HashMap::new(),
+            realized_types: intrinsic_types,
             realized_fns: HashMap::new(),
             realized_globals: HashMap::new(),
 
@@ -78,26 +85,36 @@ impl TCEnvironment<'_> {
         self.symbol_table.insert(name, ty);
     }
 
+    pub fn add_type(&mut self, name: String, ty: CXType) {
+        self.realized_types.insert(name, ty);
+    }
+
     pub fn symbol_type(&self, name: &str) -> Option<&CXType> {
         self.symbol_table.get(name)
     }
 
-    pub fn func_exists(&self, name: &CXFunctionIdentifier) -> bool {
-        self.realized_fns.contains_key(name) || self.base_data.fn_data.contains_generated(name)
+    pub fn get_func(&mut self, name: &NaiveFnIdent) -> Option<CXFunctionPrototype> {
+        let Some(base_fn) = self.base_data.fn_data.get_standard(name) else {
+            return None;
+        };
+
+        complete_prototype(self, base_fn.external_module.as_ref(), &base_fn.resource)
     }
 
-    pub fn get_func(&self, name: &CXFunctionIdentifier) -> Option<CXFunctionPrototype> {
-        self.realized_fns
-            .get(name)
-            .cloned()
-            .or_else(|| self.base_data.fn_data.get(name).cloned())
+    pub fn get_func_templated(
+        &mut self,
+        name: &NaiveFnKind,
+        input: &CXTemplateInput,
+    ) -> Option<CXFunctionPrototype> {
+        instantiate_function_template(self, name, input)
     }
 
-    pub fn get_type(&self, name: &str) -> Option<CXType> {
-        self.realized_types
-            .get(name)
-            .cloned()
-            .or_else(|| self.base_data.type_data.get(name).cloned())
+    pub fn get_realized_func(&self, name: &CXFunctionIdentifier) -> Option<CXFunctionPrototype> {
+        self.realized_fns.get(name).cloned()
+    }
+
+    pub fn get_realized_type(&self, name: &str) -> Option<CXType> {
+        self.realized_types.get(name).cloned()
     }
 
     pub fn get_global_var(&self, name: &str) -> Option<&TCGlobalVariable> {
@@ -106,26 +123,14 @@ impl TCEnvironment<'_> {
             .or_else(|| self.base_data.global_variables.get(name))
     }
 
-    pub fn get_templated_func(
-        &mut self,
-        name: &CXFunctionKind,
-        input: &CXTemplateInput,
-    ) -> Option<CXFunctionPrototype> {
-        instantiate_function_template(self, name, input)
-    }
-
     pub fn destructor_exists(&self, _type: &CXType) -> bool {
         let Some(type_name) = _type.get_identifier() else {
             return false;
         };
 
-        self.get_func(
-            &CXFunctionKind::Destructor {
-                base_type: type_name.clone(),
-            }
-            .into(),
-        )
-        .is_some()
+        self.base_data
+            .fn_data
+            .is_key_any(&NaiveFnIdent::Destructor(type_name.clone()))
     }
 
     pub fn current_function(&self) -> &CXFunctionPrototype {
@@ -133,33 +138,21 @@ impl TCEnvironment<'_> {
     }
 
     pub fn complete_type(&mut self, _type: &CXNaiveType) -> Option<CXType> {
-        complete_type(
-            self.module_data,
-            &self.compilation_unit,
-            None,
-            &mut self.realized_types,
-            _type,
-        )
+        complete_type(self, None, _type)
     }
 
     pub fn complete_prototype(
         &mut self,
         prototype: &CXNaivePrototype,
     ) -> Option<CXFunctionPrototype> {
-        complete_prototype(
-            self.module_data,
-            &self.compilation_unit,
-            None,
-            &mut self.realized_types,
-            prototype,
-        )
+        complete_prototype(self, None, prototype)
     }
 
     pub fn complete_fn_ident(
         &mut self,
         ident: &CXFunctionIdentifier,
     ) -> Option<CXFunctionPrototype> {
-        if let Some(prototype) = self.get_func(ident) {
+        if let Some(prototype) = self.get_realized_func(ident) {
             return Some(prototype);
         }
 
