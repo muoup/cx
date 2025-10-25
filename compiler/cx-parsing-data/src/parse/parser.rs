@@ -69,7 +69,7 @@ impl<'a> ParserData<'a> {
     ) {
         match prototype {
             Some(proto) => {
-                self.ast.type_map.insert_template(
+                self.ast.type_data.insert_template(
                     name,
                     ModuleResource::with_visibility(
                         CXTypeTemplate {
@@ -81,7 +81,7 @@ impl<'a> ParserData<'a> {
                 );
             }
             None => {
-                self.ast.type_map.insert_standard(
+                self.ast.type_data.insert_standard(
                     name,
                     ModuleResource::with_visibility(type_, self.visibility),
                 );
@@ -96,7 +96,7 @@ impl<'a> ParserData<'a> {
     ) {
         match prototype {
             Some(proto) => {
-                self.ast.function_map.insert_template(
+                self.ast.function_data.insert_template(
                     function.name.clone(),
                     ModuleResource::with_visibility(
                         CXFunctionTemplate {
@@ -108,7 +108,7 @@ impl<'a> ParserData<'a> {
                 );
             }
             None => {
-                self.ast.function_map.insert_standard(
+                self.ast.function_data.insert_standard(
                     function.name.clone(),
                     ModuleResource::with_visibility(function, self.visibility),
                 );

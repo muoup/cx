@@ -36,7 +36,7 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
         identifier!(name)
             if data
                 .ast
-                .type_map
+                .type_data
                 .is_key_any(name) => true,
 
         _ => false,

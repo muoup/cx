@@ -1,9 +1,16 @@
 use crate::environment::{TCEnvironment, TCTemplateRequest};
-use crate::expr_checking::move_semantics::acknowledge_declared_type;
-use crate::type_completion::type_mapping::{contextualize_fn_prototype, contextualize_type};
+use crate::type_checking::move_semantics::acknowledge_declared_type;
+use crate::type_completion::prototypes::{contextualize_fn_prototype};
+use crate::type_completion::types::_complete_type;
+use cx_parsing_data::preparse::naive_types::{CXNaiveTemplateInput, ModuleResource};
 use cx_parsing_data::preparse::templates::CXTemplatePrototype;
+use cx_parsing_data::preparse::CXNaiveTypeMap;
+use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_typechecker_data::function_map::CXFunctionKind;
+use cx_typechecker_data::CXTypeMap;
+use cx_util::identifier::CXIdent;
+use cx_util::log_error;
 
 pub(crate) type Overwrites = Vec<(String, CXType)>;
 
@@ -42,46 +49,58 @@ pub fn mangle_template_name(name: &str, input: &CXTemplateInput) -> String {
     mangled_name
 }
 
-pub(crate) fn instantiate_type_template(
-    env: &mut TCEnvironment,
+pub(crate) fn instantiate_type_temp(
+    module_data: &ModuleData,
+    acc_fns: &mut CXTypeMap,
+    acc_types: &mut CXTypeMap,
+    base_type_map: &CXNaiveTypeMap,
+    input: &CXNaiveTemplateInput,
     name: &str,
-    input: &CXTemplateInput,
 ) -> Option<CXType> {
-    let mangled_name = mangle_template_name(name, input);
-
-    if let Some(type_) = env.get_type(&mangled_name) {
-        return Some(type_.clone());
+    let template_name = mangle_template_name(name, &input);
+    
+    if let Some(template) = acc_types.get(template_name.as_str()) {
+        return Some(template.clone());
     }
 
-    let template = env
-        .base_data
-        .type_data
-        .get_template(name)?
-        .template
+    let Some(template) = base_type_map.get_template(&name.to_owned()) else {
+        log_error!(
+            "Template not found: {name}<{}>",
+            input
+                .args
+                .iter()
+                .map(|param| format!("{param}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    };
+
+    let shell = &template.resource.shell;
+    let mut map_clone = base_type_map.clone();
+
+    for (name, naive_type) in template
         .resource
-        .clone();
-    let shell = template.shell.clone();
-    
-    let overwrites = add_templated_types(env, &template.prototype, input);
+        .prototype
+        .types
+        .iter()
+        .zip(input.params.iter())
+    {
+        map_clone
+            .insert_standard(name.clone(), ModuleResource::standard(naive_type.clone()));
+    }
 
-    let mut instantiated = contextualize_type(env, &shell)
-        .expect("Failed to contextualize templated type");
-    instantiated.map_name(|name| mangle_template_name(name, input));
-
-    env.realized_types
-        .insert(mangled_name.clone(), instantiated.clone());
-    restore_template_overwrites(env, overwrites);
-
-    acknowledge_declared_type(env, &instantiated);
-    
-    let instantiated_ident = instantiated.get_identifier()?;
+    let mut cx_type = _complete_type(module_data, acc_types, &map_clone, None, shell)?;
+    cx_type.set_name(CXIdent::from(template_name.as_str()));
+    acc_types.insert(template_name, cx_type.clone());
+       
+    let instantiated_ident = cx_type.get_identifier().unwrap();
     let destructor_ident = CXFunctionKind::Destructor { base_type: instantiated_ident.clone() };
-    
+       
     if env.base_data.fn_map.get_template(&destructor_ident.clone().into()).is_some() {
         instantiate_function_template(env, &destructor_ident, input)?;
     }
     
-    Some(instantiated)
+    Some(cx_type)
 }
 
 pub(crate) fn instantiate_function_template(
@@ -89,7 +108,7 @@ pub(crate) fn instantiate_function_template(
     name: &CXFunctionKind,
     input: &CXTemplateInput,
 ) -> Option<CXFunctionPrototype> {
-    let cache = env.base_data.fn_map.get_template(&name.clone().into())?;
+    let cache = env.base_data.fn_data.get_template(&name.clone().into())?;
     let resource = &cache.resource;
     
     let module_origin = &cache.external_module;

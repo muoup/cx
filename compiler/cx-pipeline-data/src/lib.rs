@@ -148,7 +148,7 @@ impl CompilationUnit {
         self.path.to_str().unwrap()
     }
 
-    pub fn to_path(&self) -> &Path {
+    pub fn as_path(&self) -> &Path {
         &self.path
     }
 

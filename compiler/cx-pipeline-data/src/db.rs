@@ -21,9 +21,8 @@ pub struct ModuleData {
     pub preparse_full: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
-    pub accumulated_interface: ModuleMap<(CXNaiveTypeMap, CXNaiveFnMap)>,
+    pub base_mappings: ModuleMap<TCBaseMappings>,
     
-    pub structure_data: ModuleMap<TCBaseMappings>,
     pub typechecked_ast: ModuleMap<TCAST>,
 
     pub bytecode: ModuleMap<ProgramMIR>,
@@ -46,9 +45,8 @@ impl ModuleData {
             preparse_full: ModuleMap::new(".cx-preparse-full"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
-            accumulated_interface: ModuleMap::new(".cx-accumulated-interface"),
 
-            structure_data: ModuleMap::new(".cx-structure-data"),
+            base_mappings: ModuleMap::new(".cx-structure-data"),
             typechecked_ast: ModuleMap::new(".cx-typechecked-ast"),
 
             bytecode: ModuleMap::new(".cx-bytecode"),

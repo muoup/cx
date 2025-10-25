@@ -13,7 +13,8 @@ use cx_pipeline_data::jobs::{
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::{create_base_types, gather_interface, typecheck};
+use cx_typechecker::type_checking::typecheck;
+use cx_typechecker::{create_base_types, gather_interface};
 use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
@@ -295,15 +296,17 @@ pub(crate) fn perform_job(
             gather_interface(context, &job.unit).expect("Failed to gather interface")
         }
 
-        CompilationStep::TypeCompletion => create_base_types(context, &job.unit),
-
         CompilationStep::Typechecking => {
-            let structure_data = context.module_db.structure_data.get(&job.unit);
+            let structure_data = context.module_db.base_mappings.get(&job.unit);
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
-            let path = job.unit.with_extension("cx");
-            let mut env = TCEnvironment::new(lexemes.as_ref(), &path, structure_data.as_ref());
+            let mut env = TCEnvironment::new(
+                lexemes.as_ref(),
+                job.unit.clone(),
+                structure_data.as_ref(),
+                &context.module_db,
+            );
 
             typecheck(&mut env, &self_ast).expect("Typechecking failed");
             realize_templates(context, &job.unit, &mut env).expect("Template realization failed");
@@ -313,7 +316,7 @@ pub(crate) fn perform_job(
                 .extend(structure_data.type_data.standard.clone());
             env.realized_fns.extend(
                 structure_data
-                    .fn_map
+                    .fn_data
                     .iter()
                     .map(|(_, v)| (v.name.clone(), v.clone())),
             );

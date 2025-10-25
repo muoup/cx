@@ -14,7 +14,7 @@ pub(crate) fn note_templated_types(
     template_prototype: &CXTemplatePrototype,
 ) {
     for template_name in &template_prototype.types {
-        if data.ast.type_map.is_key_std(template_name) {
+        if data.ast.type_data.is_key_std(template_name) {
             continue;
         }
 
@@ -24,7 +24,7 @@ pub(crate) fn note_templated_types(
         }
         .to_type();
 
-        data.ast.type_map.insert_standard(
+        data.ast.type_data.insert_standard(
             template_name.clone(),
             ModuleResource::with_visibility(_nil_type, data.visibility),
         );
@@ -36,7 +36,7 @@ pub(crate) fn unnote_templated_types(
     template_prototype: &CXTemplatePrototype,
 ) {
     for template_name in &template_prototype.types {
-        let (name, _type) = data.ast.type_map.remove_standard(template_name).unwrap();
+        let (name, _type) = data.ast.type_data.remove_standard(template_name).unwrap();
 
         if let CXNaiveTypeKind::Identifier {
             name,
@@ -48,7 +48,7 @@ pub(crate) fn unnote_templated_types(
             }
         }
 
-        data.ast.type_map.insert_standard(name, _type);
+        data.ast.type_data.insert_standard(name, _type);
     }
 }
 

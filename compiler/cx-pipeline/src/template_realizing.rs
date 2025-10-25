@@ -1,6 +1,5 @@
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::realize_fn_implementation;
+use cx_typechecker::{environment::TCEnvironment, type_checking::realize_fn_implementation};
 use std::collections::HashSet;
 
 pub(crate) fn realize_templates(
@@ -21,11 +20,11 @@ pub(crate) fn realize_templates(
         }
 
         let other_ast = context.module_db.naive_ast.get(&origin);
-        let other_data = context.module_db.structure_data.get(&origin);
+        let other_data = context.module_db.base_mappings.get(&origin);
         
         let template = env
             .base_data
-            .fn_map 
+            .fn_data 
             .get_template(&request.name)
             .unwrap()
             .resource

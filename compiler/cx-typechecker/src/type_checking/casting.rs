@@ -3,7 +3,7 @@ use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_util::log_error;
 
-use crate::expr_checking::structured_initialization::coerce_initializer_list;
+use crate::type_checking::structured_initialization::coerce_initializer_list;
 
 pub(crate) fn coerce_value(expr: &mut TCExpr) -> Option<()> {
     match &expr._type.kind {

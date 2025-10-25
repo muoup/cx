@@ -1,25 +1,18 @@
-use cx_parsing_data::parse::ast::{CXAST, CXGlobalStmt};
-use cx_parsing_data::parse::parser::VisibilityMode;
-use cx_parsing_data::preparse::naive_types::{
-    CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource,
-};
-use cx_parsing_data::preparse::{CXNaiveFnMap, CXNaiveTypeMap, NaiveFnIdent};
+use cx_parsing_data::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource};
+use cx_parsing_data::preparse::{CXNaiveTypeMap, NaiveFnIdent};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
-use cx_typechecker_data::CXTypeData;
-use cx_typechecker_data::ast::TCGlobalVariable;
+use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::cx_types::{
     CXFunctionPrototype, CXParameter, CXTemplateInput, CXType, CXTypeKind,
 };
-use cx_typechecker_data::function_map::{CXFnData, CXFunctionIdentifier, CXFunctionKind};
+use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_util::identifier::CXIdent;
-use cx_util::{CXResult, log_error};
-use std::collections::HashMap;
-use std::sync::Arc;
+use cx_util::log_error;
 
-use crate::type_completion::templates::mangle_template_name;
-use crate::type_completion::type_mapping::apply_implicit_fn_attr;
+use crate::type_completion::templates::{instantiate_type_temp, mangle_template_name};
+use crate::type_completion::prototypes::apply_implicit_fn_attr;
 
 // As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
 // a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
@@ -64,9 +57,9 @@ fn ident_root<'a>(naive_map: &'a CXNaiveTypeMap, ty: &'a CXNaiveType) -> &'a CXN
     }
 }
 
-fn precontextualize_template_input(
+pub(crate) fn _complete_template_input(
     module_data: &ModuleData,
-    cx_map: &mut CXTypeData,
+    cx_acc_types: &mut CXTypeMap,
     naive_type_map: &CXNaiveTypeMap,
     external_module: Option<&String>,
     input: &CXNaiveTemplateInput,
@@ -75,7 +68,7 @@ fn precontextualize_template_input(
         .params
         .iter()
         .map(|param| {
-            precontextualize_type(module_data, cx_map, naive_type_map, external_module, param)
+            _complete_type(module_data, cx_acc_types, naive_type_map, external_module, param)
                 .unwrap_or_else(|| {
                     panic!("Failed to precontextualize template input type: {param}")
                 })
@@ -85,43 +78,39 @@ fn precontextualize_template_input(
     Some(CXTemplateInput { args: _ty })
 }
 
-pub fn precontextualize_type(
+pub(crate) fn _complete_type(
     module_data: &ModuleData,
-    cx_map: &mut CXTypeData,
-    naive_type_map: &CXNaiveTypeMap,
+    cx_acc_types: &mut CXTypeMap,
+    base_naive_types: &CXNaiveTypeMap,
     external_module: Option<&String>,
     ty: &CXNaiveType,
 ) -> Option<CXType> {
-    let mut naive_type_map = naive_type_map;
-
-    // This variable is here for a top-level-scope lock in case we need to load an external module.
-    #[allow(unused)]
-    let mut interface_lock: Option<Arc<_>> = None;
+    let base_type_map = match external_module {
+        Some(module) => &module_data
+            .accumulated_interface
+            .get(&CompilationUnit::from_str(module))
+            .0,
+        None => base_naive_types,
+    };
 
     let mut recurse_ty = |ty: &CXNaiveType| {
         Some(
-            precontextualize_type(module_data, cx_map, naive_type_map, None, ty)
+            _complete_type(module_data, cx_acc_types, base_naive_types, None, ty)
                 .unwrap_or_else(|| panic!("Failed to precontextualize type: {ty}")),
         )
     };
 
-    if let Some(module) = external_module {
-        interface_lock = Some(
-            module_data
-                .accumulated_interface
-                .get(&CompilationUnit::from_str(module)),
-        );
-
-        naive_type_map = &interface_lock.as_ref().unwrap().0;
-    }
-
     match &ty.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
-            if let Some(inner) = naive_type_map.get_standard(&name.as_string()) {
-                return precontextualize_type(
+            if let Some(existing) = cx_acc_types.get(&name.as_string()) {
+                return Some(existing.clone());
+            };
+            
+            if let Some(inner) = base_type_map.get_standard(&name.as_string()) {
+                return _complete_type(
                     module_data,
-                    cx_map,
-                    naive_type_map,
+                    cx_acc_types,
+                    base_naive_types,
                     inner.external_module.as_ref(),
                     &inner.resource,
                 );
@@ -138,52 +127,15 @@ pub fn precontextualize_type(
         }
 
         CXNaiveTypeKind::TemplatedIdentifier { name, input, .. } => {
-            let contextualized_input = precontextualize_template_input(
+            let contextualized_input = _complete_template_input(
                 module_data,
-                cx_map,
-                naive_type_map,
+                cx_acc_types,
+                base_type_map,
                 external_module,
                 input,
             )?;
 
-            let template_name = mangle_template_name(name.as_str(), &contextualized_input);
-
-            if let Some(template) = cx_map.get(template_name.as_str()) {
-                return Some(template.clone());
-            }
-
-            let Some(template) = naive_type_map.get_template(&name.as_string()) else {
-                log_error!(
-                    "Template not found: {name}<{}>",
-                    input
-                        .params
-                        .iter()
-                        .map(|param| format!("{param}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            };
-
-            let shell = &template.resource.shell;
-            let mut map_clone = naive_type_map.clone();
-
-            for (name, naive_type) in template
-                .resource
-                .prototype
-                .types
-                .iter()
-                .zip(input.params.iter())
-            {
-                let reduced_type = reduce_ident_ident(naive_type, naive_type_map)?;
-
-                map_clone
-                    .insert_standard(name.clone(), ModuleResource::standard(reduced_type.clone()));
-            }
-
-            let mut cx_type = precontextualize_type(module_data, cx_map, &map_clone, None, shell)?;
-            cx_type.set_name(CXIdent::from(template_name.as_str()));
-            cx_map.insert_standard(template_name, cx_type.clone());
-            Some(cx_type)
+            instantiate_type_temp(module_data, cx_acc_types, base_type_map, &contextualized_input, name.as_str())
         }
 
         CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {
@@ -227,15 +179,12 @@ pub fn precontextualize_type(
         }
 
         CXNaiveTypeKind::FunctionPointer { prototype } => {
-            let prototype = precontextualize_prototype(
+            let prototype = _complete_prototype(
                 module_data,
-                cx_map,
-                naive_type_map,
-                &ModuleResource {
-                    visibility: VisibilityMode::Private,
-                    external_module: external_module.cloned(),
-                    resource: *prototype.clone(),
-                },
+                cx_acc_types,
+                base_type_map,
+                external_module,
+                prototype,
             )
             .unwrap();
 
@@ -295,9 +244,9 @@ pub fn precontextualize_type(
     }
 }
 
-pub(crate) fn precontextualize_fn_ident(
+pub(crate) fn complete_fn_ident(
     _: &ModuleData,
-    _: &mut CXTypeData,
+    _: &mut CXTypeMap,
     naive_type_map: &CXNaiveTypeMap,
     ident: &NaiveFnIdent,
 ) -> Option<CXFunctionIdentifier> {
@@ -344,19 +293,20 @@ pub(crate) fn precontextualize_fn_ident(
     }
 }
 
-pub fn precontextualize_prototype(
+pub(crate) fn _complete_prototype(
     module_data: &ModuleData,
-    type_map: &mut CXTypeData,
+    cx_acc_map: &mut CXTypeMap,
     naive_type_map: &CXNaiveTypeMap,
-    prototype_resource: &ModuleResource<CXNaivePrototype>,
+    external_module: Option<&String>,
+    prototype: &CXNaivePrototype,
 ) -> Option<CXFunctionPrototype> {
-    let prototype = apply_implicit_fn_attr(prototype_resource.resource.clone());
+    let prototype = apply_implicit_fn_attr(prototype.clone());
 
-    let return_type = precontextualize_type(
+    let return_type = _complete_type(
         module_data,
-        type_map,
+        cx_acc_map,
         naive_type_map,
-        prototype_resource.external_module.as_ref(),
+        external_module,
         &prototype.return_type,
     )?;
 
@@ -364,11 +314,11 @@ pub fn precontextualize_prototype(
         .params
         .iter()
         .map(|param| {
-            let ty = precontextualize_type(
+            let ty = _complete_type(
                 module_data,
-                type_map,
+                cx_acc_map,
                 naive_type_map,
-                prototype_resource.external_module.as_ref(),
+                external_module,
                 &param._type,
             )
             .unwrap();
@@ -380,7 +330,7 @@ pub fn precontextualize_prototype(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    let ident = precontextualize_fn_ident(module_data, type_map, naive_type_map, &prototype.name)?;
+    let ident = complete_fn_ident(module_data, cx_acc_map, naive_type_map, &prototype.name)?;
 
     Some(CXFunctionPrototype {
         name: ident,
@@ -390,113 +340,4 @@ pub fn precontextualize_prototype(
     })
 }
 
-pub fn contextualize_type_map(
-    module_data: &ModuleData,
-    type_map: &CXNaiveTypeMap,
-) -> CXResult<CXTypeData> {
-    let mut cx_type_map = CXTypeData::new();
 
-    for (name, template) in type_map.template_iter() {
-        cx_type_map.insert_template(name.clone(), template.clone());
-    }
-
-    for (intrinsic_name, intrinsic) in INTRINSIC_TYPES.iter() {
-        cx_type_map.insert_standard(intrinsic_name.to_string(), intrinsic.clone().into());
-    }
-
-    for (name, naive_type) in type_map.standard_iter() {
-        let Some(cx_type) = precontextualize_type(
-            module_data,
-            &mut cx_type_map,
-            type_map,
-            naive_type.external_module.as_ref(),
-            &naive_type.resource,
-        ) else {
-            log_error!("Failed to contextualize type: {name}");
-        };
-
-        cx_type_map.insert_standard(name.clone(), cx_type);
-    }
-
-    Some(cx_type_map)
-}
-
-pub fn contextualize_fn_map(
-    module_data: &ModuleData,
-    fn_map: &CXNaiveFnMap,
-    type_map: &mut CXTypeData,
-    naive_type_map: &CXNaiveTypeMap,
-) -> CXResult<CXFnData> {
-    let mut cx_fn_map = CXFnData::new();
-
-    for (_, naive_prototype) in fn_map.standard_iter() {
-        let Some(cx_prototype) =
-            precontextualize_prototype(module_data, type_map, naive_type_map, naive_prototype)
-        else {
-            log_error!(
-                "Failed to contextualize function prototype: {:#?}",
-                naive_prototype
-            );
-        };
-
-        cx_fn_map.insert_standard(cx_prototype);
-    }
-
-    for (_, template) in fn_map.template_iter() {
-        let ident = precontextualize_fn_ident(
-            module_data,
-            type_map,
-            naive_type_map,
-            &template.resource.shell.name,
-        )?;
-
-        cx_fn_map.insert_template(ident, template.clone());
-    }
-
-    Some(cx_fn_map)
-}
-
-pub fn contextualize_globals(
-    module_data: &ModuleData,
-    type_map: &mut CXTypeData,
-    naive_map: &CXNaiveTypeMap,
-    ast: &CXAST,
-) -> Option<HashMap<String, TCGlobalVariable>> {
-    let mut tc_globals = HashMap::new();
-
-    for (name, constant) in ast.enum_constants.iter() {
-        tc_globals.insert(
-            name.clone(),
-            TCGlobalVariable::UnaddressableConstant {
-                name: CXIdent::from(name.clone()),
-                val: *constant,
-            },
-        );
-    }
-
-    for global in ast.global_stmts.iter() {
-        if let CXGlobalStmt::GlobalVariable {
-            name,
-            type_,
-            initializer,
-        } = global
-        {
-            if initializer.is_some() {
-                todo!("Global variable with initializer")
-            }
-
-            let _type = precontextualize_type(module_data, type_map, naive_map, None, type_)?;
-
-            tc_globals.insert(
-                name.to_string(),
-                TCGlobalVariable::Variable {
-                    name: name.clone(),
-                    _type,
-                    initializer: None,
-                },
-            );
-        }
-    }
-
-    Some(tc_globals)
-}

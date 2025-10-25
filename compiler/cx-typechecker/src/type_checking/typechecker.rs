@@ -1,9 +1,9 @@
 use crate::environment::TCEnvironment;
-use crate::expr_checking::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
-use crate::expr_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
-use crate::expr_checking::move_semantics::acknowledge_declared_type;
+use crate::type_checking::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
+use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
+use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::log_typecheck_error;
-use crate::type_completion::type_mapping::{contextualize_template_args, contextualize_type};
+use crate::type_completion::prototypes::{contextualize_template_args};
 use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
 use cx_parsing_data::preparse::naive_types::CX_CONST;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex, TCTagMatch};
@@ -104,7 +104,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         }
 
         CXExprKind::VarDeclaration { type_, name } => {
-            let type_ = contextualize_type(env, type_)?;
+            let type_ = env.complete_type(type_)?;
 
             env.insert_symbol(name.as_string(), type_.clone());
             acknowledge_declared_type(env, &type_);
@@ -409,7 +409,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 CXUnOp::ExplicitCast(to_type) => {
                     coerce_value(&mut operand_tc);
-                    let to_type = contextualize_type(env, to_type)?;
+                    let to_type = env.complete_type(to_type)?;
                     explicit_cast(&mut operand_tc, &to_type);
 
                     operand_tc
@@ -507,7 +507,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         }
 
         CXExprKind::New { _type } => {
-            let mut _type = contextualize_type(env, _type)?;
+            let mut _type = env.complete_type(_type)?;
 
             let (_type, array_length) = match _type.kind {
                 CXTypeKind::Array {

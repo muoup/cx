@@ -15,8 +15,8 @@ pub struct CXAST {
     pub imports: Vec<String>,
     pub global_stmts: Vec<CXGlobalStmt>,
 
-    pub type_map: CXNaiveTypeMap,
-    pub function_map: CXNaiveFnMap,
+    pub type_data: CXNaiveTypeMap,
+    pub function_data: CXNaiveFnMap,
 
     pub enum_constants: Vec<(String, i64)>,
 }
