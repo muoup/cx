@@ -16,9 +16,7 @@ use cx_parsing_data::{
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
-    functions::parse_destructor_prototype,
-    templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
-    types::parse_initializer,
+    expressions::{expression_requires_semicolon, parse_expr}, functions::{parse_destructor_prototype, try_function_parse}, templates::{note_templated_types, parse_template_prototype, unnote_templated_types}, types::parse_initializer
 };
 
 mod expressions;
@@ -29,7 +27,10 @@ mod types;
 
 pub fn parse_ast(iter: TokenIter, pp_contents: &PreparseContents) -> Option<CXAST> {
     let mut data = ParserData {
-        ast: CXAST::default(),
+        ast: CXAST {
+            imports: pp_contents.imports.clone(),
+            ..Default::default()
+        },
         pp_contents,
         tokens: iter,
         visibility: VisibilityMode::Package,
@@ -56,17 +57,11 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         specifier!() => parse_access_mods(data)?,
 
         operator!(Tilda) => {
-            let destructor = parse_destructor_prototype(&mut data.tokens)?;
-            parse_fn_merge(data, destructor.prototype, destructor.template_prototype)?
+            let destructor = parse_destructor_prototype(data)?;
+            parse_fn_merge(data, destructor.prototype, destructor.template_prototype)?;
         }
 
-        _ => {
-            let expr = parse_global_expr(data)?;
-
-            if let Some(expr) = expr {
-                data.ast.global_stmts.push(expr);
-            }
-        }
+        _ => parse_global_expr(data)?,
     };
 
     Some(())
@@ -134,30 +129,45 @@ fn parse_fn_merge(
                 note_templated_types(data, &template_prototype);
                 let body = parse_body(data)?;
                 unnote_templated_types(data, &template_prototype);
-
-                Some(Some(CXGlobalStmt::TemplatedFunction {
-                    prototype: prototype,
-                    body: Box::new(body),
-                }))
+                
+                data.add_function(prototype.clone(), Some(template_prototype));
+                data.ast.global_stmts.push(
+                    CXGlobalStmt::TemplatedFunction {
+                        prototype: prototype,
+                        body: Box::new(body),
+                    }
+                );
             }
 
             None => {
                 let body = parse_body(data)?;
-
-                Some(Some(CXGlobalStmt::FunctionDefinition {
-                    prototype: prototype,
-                    body: Box::new(body),
-                }))
+                
+                data.add_function(prototype.clone(), None);
+                data.ast.global_stmts.push(
+                    CXGlobalStmt::FunctionDefinition {
+                        prototype: prototype,
+                        body: Box::new(body),
+                    }
+                );
             }
         }
     }
+    
+    Some(())
 }
 
-fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
-    let Some((Some(name), return_type)) = parse_initializer(&mut data.tokens) else {
+fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
+    let Some((name, return_type)) = parse_initializer(data) else {
         log_parse_error!(data, "Failed to parse initializer in global expression!");
     };
 
+    let Some(name) = name else {
+        // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
+        
+        assert_token_matches!(data.tokens, punctuator!(Semicolon));
+        return Some(());
+    };
+    
     if !data.tokens.has_next() {
         log_parse_error!(
             data,
@@ -165,27 +175,32 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
         );
     }
 
-    if let Some(func) = try_function_parse(&mut data.tokens, return_type.clone(), name.clone())? {
-        return parse_fn_merge(data, func);
+    if let Some(func) = try_function_parse(data, return_type.clone(), name.clone())? {
+        return parse_fn_merge(data, func.prototype, func.template_prototype);
     }
 
     match next_kind!(data.tokens) {
         Some(TokenKind::Assignment(_)) => {
             let initial_value = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(Semicolon));
-
-            Some(Some(CXGlobalStmt::GlobalVariable {
-                name,
-                type_: return_type,
-                initializer: Some(initial_value),
-            }))
+            data.ast.global_stmts.push(
+                CXGlobalStmt::GlobalVariable {
+                    name,
+                    type_: return_type,
+                    initializer: Some(initial_value),
+                }
+            );
         }
 
-        Some(punctuator!(Semicolon)) => Some(Some(CXGlobalStmt::GlobalVariable {
-            name,
-            type_: return_type,
-            initializer: None,
-        })),
+        Some(punctuator!(Semicolon)) => {
+            data.ast.global_stmts.push(
+                CXGlobalStmt::GlobalVariable {
+                    name,
+                    type_: return_type,
+                    initializer: None,
+                }
+            );
+        },
 
         _ => log_parse_error!(
             data,
@@ -193,6 +208,8 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<Option<CXGlobalStmt>> {
             data.tokens.peek()
         ),
     }
+    
+    Some(())
 }
 
 fn parse_body(data: &mut ParserData) -> Option<CXExpr> {

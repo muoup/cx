@@ -84,7 +84,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                 return None;
             }
 
-            let Some((None, type_)) = parse_initializer(&mut data.tokens) else {
+            let Some((None, type_)) = parse_initializer(data) else {
                 data.tokens.index = pre_index;
                 return None;
             };

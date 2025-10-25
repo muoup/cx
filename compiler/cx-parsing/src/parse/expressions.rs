@@ -25,16 +25,19 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
     match &tok.unwrap().kind {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
 
-        identifier!(name) if is_intrinsic_type(name) => true,
+        identifier!(name) 
+            if is_intrinsic_type(name) => true,
         identifier!(name)
             if data
                 .pp_contents
                 .type_idents
                 .iter()
-                .any(|t| t.resource.as_str() == name) =>
-        {
-            true
-        }
+                .any(|t| t.resource.as_str() == name) => true,
+        identifier!(name)
+            if data
+                .ast
+                .type_map
+                .is_key_any(name) => true,
 
         _ => false,
     }
@@ -94,13 +97,13 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     let start_index = data.tokens.index;
 
     let specifiers = parse_specifier(&mut data.tokens);
-    let base_type = parse_type_base(&mut data.tokens)?.add_specifier(specifiers);
+    let base_type = parse_type_base(data)?.add_specifier(specifiers);
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);
 
     loop {
-        let Some((name, type_)) = parse_base_mods(&mut data.tokens, base_type.clone()) else {
+        let Some((name, type_)) = parse_base_mods(data, base_type.clone()) else {
             log_parse_error!(data, "Failed to parse type declaration");
         };
 
@@ -329,7 +332,7 @@ pub(crate) fn parse_expr_val(
             );
 
             let return_type = if is_type_decl(data) {
-                let Some((None, type_)) = parse_initializer(&mut data.tokens) else {
+                let Some((None, type_)) = parse_initializer(data) else {
                     log_error!("Failed to parse type declaration for sizeof");
                 };
 
@@ -359,7 +362,7 @@ pub(crate) fn parse_expr_val(
         }
 
         TokenKind::Keyword(KeywordType::New) => {
-            let Some((None, _type)) = parse_initializer(&mut data.tokens) else {
+            let Some((None, _type)) = parse_initializer(data) else {
                 log_error!("Failed to parse type declaration for new");
             };
 
@@ -396,7 +399,7 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind>
 
     data.tokens.back();
 
-    let Some(args) = parse_template_args(&mut data.tokens) else {
+    let Some(args) = parse_template_args(data) else {
         log_parse_error!(
             data,
             "Failed to parse template arguments for function identifier: {:#?}",

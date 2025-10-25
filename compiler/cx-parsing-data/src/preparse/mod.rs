@@ -77,7 +77,7 @@ impl<Identifier, Standard, Template> CXNaiveMap<Identifier, Standard, Template>
         self.templates.iter()
     }
  
-    pub fn get(&self, ident: &Identifier) -> Option<&ModuleResource<Standard>> {
+    pub fn get_standard(&self, ident: &Identifier) -> Option<&ModuleResource<Standard>> {
         self.standard.get(ident)
     }
 

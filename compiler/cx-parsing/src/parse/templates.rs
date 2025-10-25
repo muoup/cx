@@ -98,24 +98,24 @@ pub(crate) fn convert_template_proto_to_args(
     CXNaiveTemplateInput { params }
 }
 
-pub(crate) fn parse_template_args(tokens: &mut TokenIter) -> Option<CXNaiveTemplateInput> {
-    assert_token_matches!(tokens, operator!(Less));
+pub(crate) fn parse_template_args(data: &mut ParserData) -> Option<CXNaiveTemplateInput> {
+    assert_token_matches!(data.tokens, operator!(Less));
 
     let mut input_types = Vec::new();
 
     loop {
-        let Some((None, _type)) = parse_initializer(tokens) else {
-            log_preparse_error!(tokens, "Expected type declaration in template arguments!");
+        let Some((None, _type)) = parse_initializer(data) else {
+            log_parse_error!(data, "Expected type declaration in template arguments!");
         };
 
         input_types.push(_type);
 
-        if !try_next!(tokens, operator!(Comma)) {
+        if !try_next!(data.tokens, operator!(Comma)) {
             break;
         }
     }
 
-    assert_token_matches!(tokens, operator!(Greater));
+    assert_token_matches!(data.tokens, operator!(Greater));
 
     Some(CXNaiveTemplateInput {
         params: input_types,

@@ -1,10 +1,10 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
+use cx_lexer_data::TokenIter;
+use cx_mir::generate_bytecode;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
 use cx_parsing_data::parse::parser::VisibilityMode;
-use cx_lexer_data::TokenIter;
-use cx_mir::generate_bytecode;
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
@@ -13,7 +13,7 @@ use cx_pipeline_data::jobs::{
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::{create_base_types, typecheck};
+use cx_typechecker::{create_base_types, gather_interface, typecheck};
 use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
@@ -152,7 +152,10 @@ pub(crate) fn handle_job(
             Some(new_jobs.into())
         }
         CompilationStep::ImportCombine => map_reqs_new_stage(job, CompilationStep::ASTParse),
-        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::TypeCompletion),
+        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
+        CompilationStep::InterfaceCombine => {
+            map_reqs_new_stage(job, CompilationStep::TypeCompletion)
+        }
         CompilationStep::TypeCompletion => map_reqs_new_stage(job, CompilationStep::Typechecking),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::BytecodeGen),
         CompilationStep::BytecodeGen => map_reqs_new_stage(job, CompilationStep::Codegen),
@@ -258,22 +261,10 @@ pub(crate) fn perform_job(
                         continue;
                     };
 
-                    pp_data
-                        .type_idents
-                        .push(resource.transfer(import));
-                }
-
-                for resource in other_pp_data.func_idents.iter() {
-                    if resource.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data
-                        .func_idents
-                        .push(resource.transfer(import));
+                    pp_data.type_idents.push(resource.transfer(import));
                 }
             }
-            
+
             context
                 .module_db
                 .preparse_full
@@ -300,16 +291,11 @@ pub(crate) fn perform_job(
                 .insert(job.unit.clone(), parsed_ast);
         }
 
-        CompilationStep::TypeCompletion => {
-            let self_ast = context.module_db.naive_ast.get(&job.unit);
-            let completed_data = create_base_types(context, &self_ast)
-                .expect("Failed to create base types");
-
-            context
-                .module_db
-                .structure_data
-                .insert(job.unit.clone(), completed_data);
+        CompilationStep::InterfaceCombine => {
+            gather_interface(context, &job.unit).expect("Failed to gather interface")
         }
+
+        CompilationStep::TypeCompletion => create_base_types(context, &job.unit),
 
         CompilationStep::Typechecking => {
             let structure_data = context.module_db.structure_data.get(&job.unit);
@@ -325,9 +311,12 @@ pub(crate) fn perform_job(
             // FIXME: Is this necessary?
             env.realized_types
                 .extend(structure_data.type_data.standard.clone());
-            env.realized_fns
-                .extend(structure_data.fn_map.iter()
-                    .map(|(_, v)| (v.name.clone(), v.clone())));
+            env.realized_fns.extend(
+                structure_data
+                    .fn_map
+                    .iter()
+                    .map(|(_, v)| (v.name.clone(), v.clone())),
+            );
             env.realized_globals
                 .extend(structure_data.global_variables.clone());
 

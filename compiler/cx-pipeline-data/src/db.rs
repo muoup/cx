@@ -1,5 +1,6 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
+use cx_parsing_data::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_parsing_data::PreparseContents;
 use cx_parsing_data::parse::ast::CXAST;
 use cx_lexer_data::token::Token;
@@ -20,7 +21,8 @@ pub struct ModuleData {
     pub preparse_full: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
-
+    pub accumulated_interface: ModuleMap<(CXNaiveTypeMap, CXNaiveFnMap)>,
+    
     pub structure_data: ModuleMap<TCBaseMappings>,
     pub typechecked_ast: ModuleMap<TCAST>,
 
@@ -44,6 +46,7 @@ impl ModuleData {
             preparse_full: ModuleMap::new(".cx-preparse-full"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
+            accumulated_interface: ModuleMap::new(".cx-accumulated-interface"),
 
             structure_data: ModuleMap::new(".cx-structure-data"),
             typechecked_ast: ModuleMap::new(".cx-typechecked-ast"),
@@ -128,9 +131,9 @@ impl<'a, Data> ModuleMap<Data> {
             .unwrap_or_else(|| {
                 println!(
                     "Data with suffix {} does not contain information for unit: {}",
-                    self.storage_extension, unit
+                    self.storage_extension, unit.identifier()
                 );
-                println!("Keys in map: {:?}", lock.keys().collect::<Vec<_>>());
+                println!("Keys: {:?}", lock.keys().collect::<Vec<_>>());
                 panic!("Data not found in the module map")
             })
             .clone()
