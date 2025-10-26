@@ -39,6 +39,8 @@ pub struct TCEnvironment<'a> {
     pub symbol_table: ScopedMap<CXType>,
 
     pub declared_functions: Vec<TCFunctionDef>,
+    
+    pub in_external_templated_function: bool,
 }
 
 impl TCEnvironment<'_> {
@@ -70,6 +72,8 @@ impl TCEnvironment<'_> {
             deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
             declared_functions: Vec::new(),
+            
+            in_external_templated_function: false,
         }
     }
 
@@ -98,7 +102,7 @@ impl TCEnvironment<'_> {
             return None;
         };
 
-        complete_prototype(self, base_fn.external_module.as_ref(), &base_fn.resource)
+        complete_prototype(self, self.base_data, base_fn.external_module.as_ref(), &base_fn.resource)
     }
 
     pub fn get_func_templated(
@@ -106,21 +110,23 @@ impl TCEnvironment<'_> {
         name: &NaiveFnKind,
         input: &CXTemplateInput,
     ) -> Option<CXFunctionPrototype> {
-        instantiate_function_template(self, name, input)
+        instantiate_function_template(self, self.base_data, name, input)
     }
 
     pub fn get_realized_func(&self, name: &CXFunctionIdentifier) -> Option<CXFunctionPrototype> {
         self.realized_fns.get(name).cloned()
     }
 
+    pub fn get_type(&mut self, name: &str) -> Option<CXType> {
+        let Some(_ty) = self.base_data.type_data.get_standard(&name.to_string()) else {
+            return None;
+        };
+        
+        complete_type(self, self.base_data, _ty.external_module.as_ref(), &_ty.resource)
+    }
+    
     pub fn get_realized_type(&self, name: &str) -> Option<CXType> {
         self.realized_types.get(name).cloned()
-    }
-
-    pub fn get_global_var(&self, name: &str) -> Option<&TCGlobalVariable> {
-        self.realized_globals
-            .get(name)
-            .or_else(|| self.base_data.global_variables.get(name))
     }
 
     pub fn destructor_exists(&self, _type: &CXType) -> bool {
@@ -138,14 +144,14 @@ impl TCEnvironment<'_> {
     }
 
     pub fn complete_type(&mut self, _type: &CXNaiveType) -> Option<CXType> {
-        complete_type(self, None, _type)
+        complete_type(self, self.base_data, None, _type)
     }
 
     pub fn complete_prototype(
         &mut self,
         prototype: &CXNaivePrototype,
     ) -> Option<CXFunctionPrototype> {
-        complete_prototype(self, None, prototype)
+        complete_prototype(self, self.base_data, None, prototype)
     }
 
     pub fn complete_fn_ident(

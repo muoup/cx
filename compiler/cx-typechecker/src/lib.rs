@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker_data::ast::TCBaseMappings;
@@ -19,6 +17,7 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
         .get(unit);
     let mut base_type_map = ast.type_data.clone();
     let mut base_fn_map = ast.function_data.clone();
+    let mut base_globals = ast.global_variables.clone();
 
     for import in ast.imports.iter() {
         let unit = CompilationUnit::from_str(import.as_str());
@@ -56,16 +55,24 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
 
             base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
         }
+        
+        for (global_name, global_var) in ast.global_variables.iter() {
+            if global_var.visibility != VisibilityMode::Public {
+                continue;
+            };
+            
+            base_globals.insert(global_name.clone(), global_var.transfer(import));
+        }
     }
 
     context
         .module_db
         .base_mappings
         .insert(unit.clone(), TCBaseMappings {
+            unit: unit.as_str().to_owned(),
             type_data: base_type_map,
             fn_data: base_fn_map,
-            
-            global_variables: HashMap::new(),
+            global_variables: base_globals,
         });
 
     Some(())

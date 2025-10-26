@@ -1,5 +1,6 @@
 use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
+use cx_parsing_data::parse::ast::CXGlobalVariable;
 use cx_parsing_data::parse::parser::ParserData;
 use cx_parsing_data::preparse::naive_types::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST,
@@ -127,7 +128,10 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> Option<CXNaiveType> {
             }
         }
         
-        data.ast.enum_constants.push((variant_name.as_string(), idx));
+        data.add_global_variable(
+            variant_name.as_string(),
+            CXGlobalVariable::EnumConstant(idx as i32),
+        );
         idx += 1;
 
         if !try_next!(data.tokens, operator!(Comma)) {

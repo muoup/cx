@@ -2,7 +2,7 @@ use crate::environment::TCEnvironment;
 use crate::type_checking::casting::{add_coercion, coerce_value, implicit_cast};
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::log_typecheck_error;
-use crate::type_completion::prototypes::contextualize_template_args;
+use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_parsing_data::preparse::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
@@ -117,11 +117,9 @@ pub(crate) fn typecheck_access(
                 function_name: CXIdent::from(name.as_str()),
                 _type: FunctionTypeIdent::Standard(type_name.clone()),
             };
-            let input = contextualize_template_args(env, template_input)?;
+            let input = complete_template_args(env, env.base_data, template_input)?;
 
             let Some(prototype) = env.get_func_templated(&ident, &input) else {
-                println!("Templated functions: {:?}", env.base_data.fn_data);
-                
                 log_typecheck_error!(
                     env,
                     expr,

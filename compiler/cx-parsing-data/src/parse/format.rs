@@ -1,11 +1,12 @@
-use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalStmt, CXInitIndex, CXUnOp, CXAST};
+use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXUnOp, CXAST};
+use crate::preparse::naive_types::CXLinkageMode;
 use cx_util::format::{dedent, indent};
 use cx_util::{fwrite, fwriteln};
 use std::fmt::{Display, Formatter};
 
 impl Display for CXAST {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for stmt in &self.global_stmts {
+        for stmt in &self.function_stmts {
             writeln!(f, "{stmt}\n")?;
         }
 
@@ -13,10 +14,44 @@ impl Display for CXAST {
     }
 }
 
-impl Display for CXGlobalStmt {
+impl Display for CXLinkageMode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXGlobalStmt::TypeDecl { name, type_ } => {
+            CXLinkageMode::Standard => fwrite!(f, "standard"),
+            CXLinkageMode::Static => fwrite!(f, "static"),
+            CXLinkageMode::Extern => fwrite!(f, "extern"),
+        }
+    }
+}
+
+impl Display for CXGlobalVariable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CXGlobalVariable::EnumConstant(val) => {
+                fwrite!(f, "enum constant {}", val)
+            }
+            
+            CXGlobalVariable::Standard {
+                type_,
+                is_mutable,
+                initializer,
+            } => {
+                fwrite!(f, "global variable {} {}", if *is_mutable { "mut" } else { "const" }, type_)?;
+
+                if let Some(initializer) = initializer {
+                    fwrite!(f, " = {}", initializer)?;
+                }
+
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Display for CXFunctionStmt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CXFunctionStmt::TypeDecl { name, type_ } => {
                 if let Some(name) = name {
                     fwriteln!(f, "type {} = {}", name, type_)
                 } else {
@@ -24,11 +59,7 @@ impl Display for CXGlobalStmt {
                 }
             }
 
-            CXGlobalStmt::GlobalVariable { name, type_, .. } => {
-                fwriteln!(f, "{}: {}", name, type_)
-            }
-
-            CXGlobalStmt::FunctionDefinition { prototype, body } => {
+            CXFunctionStmt::FunctionDefinition { prototype, body } => {
                 indent();
                 fwriteln!(f, "{} {{", prototype)?;
                 fwrite!(f, "{}", body)?;
@@ -38,7 +69,7 @@ impl Display for CXGlobalStmt {
                 Ok(())
             }
 
-            CXGlobalStmt::DestructorDefinition { _type, body } => {
+            CXFunctionStmt::DestructorDefinition { _type, body } => {
                 indent();
                 fwriteln!(f, "destructor for {} {{", _type)?;
                 fwrite!(f, "{}", body)?;
@@ -48,7 +79,7 @@ impl Display for CXGlobalStmt {
                 Ok(())
             }
 
-            CXGlobalStmt::TemplatedFunction { prototype, body } => {
+            CXFunctionStmt::TemplatedFunction { prototype, body } => {
                 indent();
                 fwriteln!(f, "template {prototype} {{")?;
                 fwrite!(f, "{}", body)?;

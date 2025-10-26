@@ -158,14 +158,21 @@ impl Display for TCAST {
 
 impl Display for TCGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "{} (mutable: {}, linkage: {:?})",
+            self.kind, self.is_mutable, self.linkage
+        )
+    }
+}
+
+impl Display for TCGlobalVarKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            TCGlobalVariable::UnaddressableConstant { name, val } => {
-                write!(f, "UnaddressableConstant {name} = {val}")
-            }
-            TCGlobalVariable::StringLiteral { name, value } => {
+            TCGlobalVarKind::StringLiteral { name, value } => {
                 write!(f, "StringLiteral {} = \"{}\"", name, value.escape_default())
             }
-            TCGlobalVariable::Variable {
+            TCGlobalVarKind::Variable {
                 name,
                 _type,
                 initializer,

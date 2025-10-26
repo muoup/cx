@@ -13,7 +13,7 @@ use cx_pipeline_data::jobs::{
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::type_checking::typecheck;
+use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
 use cx_typechecker::gather_interface;
 use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
@@ -306,7 +306,9 @@ pub(crate) fn perform_job(
                 structure_data.as_ref(),
                 &context.module_db,
             );
-
+            
+            complete_base_globals(&mut env);
+            complete_base_functions(&mut env);
             typecheck(&mut env, &self_ast).expect("Typechecking failed");
             realize_templates(context, &job.unit, &mut env).expect("Template realization failed");
 

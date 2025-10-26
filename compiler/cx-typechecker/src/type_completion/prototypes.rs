@@ -1,8 +1,11 @@
 use crate::environment::TCEnvironment;
+use crate::type_completion::complete_type;
+use crate::type_completion::types::_complete_type;
 use cx_parsing_data::preparse::NaiveFnKind;
 use cx_parsing_data::preparse::naive_types::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput,
 };
+use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXParameter, CXTemplateInput};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
@@ -24,21 +27,23 @@ pub(crate) fn apply_implicit_fn_attr(
     proto
 }
 
-pub fn contextualize_template_args(
+pub fn complete_template_args(
     env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     template_args: &CXNaiveTemplateInput,
 ) -> Option<CXTemplateInput> {
     let args = template_args
         .params
         .iter()
-        .map(|arg| env.complete_type(arg))
+        .map(|arg| complete_type(env, base_data, None, arg))
         .collect::<Option<Vec<_>>>()?;
 
     Some(CXTemplateInput { args })
 }
 
-pub(crate) fn contextualize_fn_ident(
+pub(crate) fn complete_fn_ident(
     env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     ident: &NaiveFnKind,
 ) -> Option<CXFunctionIdentifier> {
     match ident {
@@ -68,7 +73,7 @@ pub(crate) fn contextualize_fn_ident(
 
         NaiveFnKind::Destructor(name) => {
             let base = name.as_type();
-            let Some(_ty) = env.complete_type(&base) else {
+            let Some(_ty) = _complete_type(env, base_data, None, &base) else {
                 log_error!("Unknown type for destructor: {name}");
             };
 
@@ -90,11 +95,12 @@ pub(crate) fn contextualize_fn_ident(
     }
 }
 
-pub fn contextualize_fn_prototype(
+pub fn complete_fn_prototype(
     env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     prototype: &CXNaivePrototype,
 ) -> Option<CXFunctionPrototype> {
-    let ident = contextualize_fn_ident(env, &prototype.name)?;
+    let ident = complete_fn_ident(env, base_data, &prototype.name)?;
 
     if let Some(existing) = env.get_realized_func(&ident) {
         return Some(existing.clone());

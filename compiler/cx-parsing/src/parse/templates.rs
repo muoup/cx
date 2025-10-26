@@ -1,7 +1,7 @@
 use cx_lexer_data::{identifier, operator, TokenIter};
 use cx_parsing_data::parse::parser::ParserData;
 use cx_parsing_data::preparse::naive_types::{
-    CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, ModuleResource, PredeclarationType,
+    CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
 };
 use cx_parsing_data::preparse::templates::CXTemplatePrototype;
 use cx_parsing_data::{assert_token_matches, peek_kind, try_next};
@@ -24,10 +24,7 @@ pub(crate) fn note_templated_types(
         }
         .to_type();
 
-        data.ast.type_data.insert_standard(
-            template_name.clone(),
-            ModuleResource::with_visibility(_nil_type, data.visibility),
-        );
+        data.add_type(template_name.clone(), _nil_type.clone(), None);
     }
 }
 

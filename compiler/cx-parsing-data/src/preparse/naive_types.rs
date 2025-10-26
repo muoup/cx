@@ -12,11 +12,20 @@ pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
 pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
 pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
+pub enum CXLinkageMode {
+    #[default]
+    Standard,
+    Static,
+    Extern,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Readable, Writable)]
 pub struct ModuleResource<Resource> {
     pub visibility: VisibilityMode,
-    pub external_module: Option<String>,
+    pub linkage: CXLinkageMode,
 
+    pub external_module: Option<String>,
     pub resource: Resource,
 }
 
@@ -98,10 +107,7 @@ pub enum CXNaiveTypeKind {
 
 impl CXNaiveType {
     pub fn new(specifiers: CXTypeSpecifier, kind: CXNaiveTypeKind) -> Self {
-        Self {
-            kind,
-            specifiers,
-        }
+        Self { kind, specifiers }
     }
 
     pub fn pointer_to(self, weak: bool, specifier: CXTypeSpecifier) -> Self {
@@ -141,8 +147,13 @@ impl CXNaiveTypeKind {
 
 impl<T: Clone> ModuleResource<T> {
     pub fn transfer(&self, from_module: &str) -> ModuleResource<T> {
+        if self.linkage == CXLinkageMode::Static {
+            panic!("Static linkage resources must be declared private");
+        }
+        
         ModuleResource {
             visibility: VisibilityMode::Private,
+            linkage: CXLinkageMode::Extern,
             external_module: Some(from_module.to_string()),
             resource: self.resource.clone(),
         }
@@ -151,14 +162,20 @@ impl<T: Clone> ModuleResource<T> {
     pub fn standard(resource: T) -> ModuleResource<T> {
         ModuleResource {
             visibility: VisibilityMode::Private,
+            linkage: CXLinkageMode::Standard,
             external_module: None,
             resource,
         }
     }
 
-    pub fn with_visibility(resource: T, visibility: VisibilityMode) -> ModuleResource<T> {
+    pub fn new(
+        resource: T,
+        visibility: VisibilityMode,
+        linkage: CXLinkageMode,
+    ) -> ModuleResource<T> {
         ModuleResource {
             visibility,
+            linkage,
             external_module: None,
             resource,
         }

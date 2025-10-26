@@ -6,17 +6,23 @@ use cx_lexer_data::{
 use cx_parsing_data::{
     assert_token_matches, next_kind,
     parse::{
-        ast::{CXExpr, CXExprKind, CXGlobalStmt, CXAST},
+        ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
         parser::{ParserData, VisibilityMode},
     },
     peek_next_kind,
-    preparse::{naive_types::CXNaivePrototype, templates::CXTemplatePrototype},
+    preparse::{
+        naive_types::CXNaivePrototype,
+        templates::CXTemplatePrototype,
+    },
     try_next, PreparseContents,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
-    expressions::{expression_requires_semicolon, parse_expr}, functions::{parse_destructor_prototype, try_function_parse}, templates::{note_templated_types, parse_template_prototype, unnote_templated_types}, types::parse_initializer
+    expressions::{expression_requires_semicolon, parse_expr},
+    functions::{parse_destructor_prototype, try_function_parse},
+    templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
+    types::parse_initializer,
 };
 
 mod expressions;
@@ -40,7 +46,7 @@ pub fn parse_ast(iter: TokenIter, pp_contents: &PreparseContents) -> Option<CXAS
     while data.tokens.has_next() {
         parse_global_stmt(&mut data)?;
     }
-
+    
     Some(data.ast)
 }
 
@@ -129,30 +135,30 @@ fn parse_fn_merge(
                 note_templated_types(data, &template_prototype);
                 let body = parse_body(data)?;
                 unnote_templated_types(data, &template_prototype);
-                
+
                 data.add_function(prototype.clone(), Some(template_prototype));
-                data.ast.global_stmts.push(
-                    CXGlobalStmt::TemplatedFunction {
+                data.ast
+                    .function_stmts
+                    .push(CXFunctionStmt::TemplatedFunction {
                         prototype: prototype,
                         body: Box::new(body),
-                    }
-                );
+                    });
             }
 
             None => {
                 let body = parse_body(data)?;
-                
+
                 data.add_function(prototype.clone(), None);
-                data.ast.global_stmts.push(
-                    CXGlobalStmt::FunctionDefinition {
+                data.ast
+                    .function_stmts
+                    .push(CXFunctionStmt::FunctionDefinition {
                         prototype: prototype,
                         body: Box::new(body),
-                    }
-                );
+                    });
             }
         }
     }
-    
+
     Some(())
 }
 
@@ -163,11 +169,11 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
-        
+
         assert_token_matches!(data.tokens, punctuator!(Semicolon));
         return Some(());
     };
-    
+
     if !data.tokens.has_next() {
         log_parse_error!(
             data,
@@ -183,24 +189,26 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         Some(TokenKind::Assignment(_)) => {
             let initial_value = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(Semicolon));
-            data.ast.global_stmts.push(
-                CXGlobalStmt::GlobalVariable {
-                    name,
+            data.add_global_variable(
+                name.as_string(),
+                CXGlobalVariable::Standard {
                     type_: return_type,
+                    is_mutable: true,
                     initializer: Some(initial_value),
-                }
+                },
             );
         }
 
         Some(punctuator!(Semicolon)) => {
-            data.ast.global_stmts.push(
-                CXGlobalStmt::GlobalVariable {
-                    name,
+            data.add_global_variable(
+                name.as_string(),
+                CXGlobalVariable::Standard {
                     type_: return_type,
+                    is_mutable: true,
                     initializer: None,
-                }
+                },
             );
-        },
+        }
 
         _ => log_parse_error!(
             data,
@@ -208,7 +216,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             data.tokens.peek()
         ),
     }
-    
+
     Some(())
 }
 

@@ -1,7 +1,7 @@
 use crate::{
-    parse::ast::CXAST,
+    parse::ast::{CXGlobalVariable, CXAST},
     preparse::{
-        naive_types::{CXNaivePrototype, CXNaiveType, ModuleResource},
+        naive_types::{CXLinkageMode, CXNaivePrototype, CXNaiveType, ModuleResource},
         templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
     },
     PreparseContents,
@@ -71,19 +71,20 @@ impl<'a> ParserData<'a> {
             Some(proto) => {
                 self.ast.type_data.insert_template(
                     name,
-                    ModuleResource::with_visibility(
+                    ModuleResource::new(
                         CXTypeTemplate {
                             prototype: proto.clone(),
                             shell: type_,
                         },
                         self.visibility,
+                        CXLinkageMode::Standard,
                     ),
                 );
             }
             None => {
                 self.ast.type_data.insert_standard(
                     name,
-                    ModuleResource::with_visibility(type_, self.visibility),
+                    ModuleResource::new(type_, self.visibility, CXLinkageMode::Standard),
                 );
             }
         }
@@ -98,21 +99,29 @@ impl<'a> ParserData<'a> {
             Some(proto) => {
                 self.ast.function_data.insert_template(
                     (&function.name).into(),
-                    ModuleResource::with_visibility(
+                    ModuleResource::new(
                         CXFunctionTemplate {
                             prototype: proto.clone(),
                             shell: function,
                         },
                         self.visibility,
+                        CXLinkageMode::Standard,
                     ),
                 );
             }
             None => {
                 self.ast.function_data.insert_standard(
                     (&function.name).into(),
-                    ModuleResource::with_visibility(function, self.visibility),
+                    ModuleResource::new(function, self.visibility, CXLinkageMode::Standard),
                 );
             }
         }
+    }
+    
+    pub fn add_global_variable(&mut self, name: String, var: CXGlobalVariable) {
+        self.ast.global_variables.insert(
+            name,
+            ModuleResource::new(var, self.visibility, CXLinkageMode::Standard),
+        );
     }
 }

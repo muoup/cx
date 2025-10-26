@@ -1,7 +1,7 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_parsing_data::{
     assert_token_matches, next_kind, parse::parser::VisibilityMode, peek_kind,
-    preparse::naive_types::ModuleResource, PreparseContents,
+    preparse::naive_types::{CXLinkageMode, ModuleResource}, PreparseContents,
 };
 use cx_util::{identifier::CXIdent, log_error, CXResult};
 
@@ -23,7 +23,7 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
     while data.tokens.has_next() {
         iterate_tokens(&mut data);
     }
-
+    
     Some(contents)
 }
 
@@ -41,12 +41,13 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             let Some(identifier!(ident)) = next_kind!(data.tokens) else {
                 return Some(());
             };
-
+            
             data.contents
                 .type_idents
-                .push(ModuleResource::with_visibility(
+                .push(ModuleResource::new(
                     CXIdent::from(ident.as_str()),
                     data.visibility_mode,
+                    CXLinkageMode::Standard,
                 ));
         }
 
@@ -61,9 +62,10 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
             data.contents
                 .type_idents
-                .push(ModuleResource::with_visibility(
+                .push(ModuleResource::new(
                     CXIdent::from(ident.as_str()),
                     data.visibility_mode,
+                    CXLinkageMode::Standard,
                 ));
         }
 
@@ -82,9 +84,10 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
             data.contents
                 .type_idents
-                .push(ModuleResource::with_visibility(
+                .push(ModuleResource::new(
                     CXIdent::from(ident.as_str()),
                     data.visibility_mode,
+                    CXLinkageMode::Standard,
                 ));
         }
 

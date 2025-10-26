@@ -1,13 +1,17 @@
 use crate::environment::TCEnvironment;
-use crate::type_checking::binary_ops::{typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call};
+use crate::log_typecheck_error;
+use crate::type_checking::binary_ops::{
+    typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call,
+};
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::move_semantics::acknowledge_declared_type;
-use crate::log_typecheck_error;
-use crate::type_completion::prototypes::{contextualize_template_args};
-use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
-use cx_parsing_data::preparse::naive_types::CX_CONST;
+use crate::type_completion::prototypes::complete_template_args;
+use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
+use cx_parsing_data::preparse::naive_types::{CX_CONST, CXLinkageMode};
 use cx_parsing_data::preparse::{NaiveFnIdent, NaiveFnKind};
-use cx_typechecker_data::ast::{TCExpr, TCExprKind, TCGlobalVariable, TCInitIndex, TCTagMatch};
+use cx_typechecker_data::ast::{
+    TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
+};
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
 use cx_util::identifier::CXIdent;
 
@@ -86,9 +90,13 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
             env.realized_globals.insert(
                 anonymous_name.clone(),
-                TCGlobalVariable::StringLiteral {
-                    name: name_ident.clone(),
-                    value: val.clone(),
+                TCGlobalVariable {
+                    kind: TCGlobalVarKind::StringLiteral {
+                        name: name_ident.clone(),
+                        value: val.clone(),
+                    },
+                    is_mutable: false,
+                    linkage: CXLinkageMode::Static,
                 },
             );
 
@@ -124,16 +132,17 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     _type: symbol_type.clone().mem_ref_to(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
-            } else if let Some(function_type) = env.get_func(&NaiveFnIdent::Standard(name.clone())) {
+            } else if let Some(function_type) = env.get_func(&NaiveFnIdent::Standard(name.clone()))
+            {
                 TCExpr {
                     _type: CXTypeKind::Function {
                         prototype: Box::new(function_type.clone()),
                     }
                     .into(),
-                    kind: TCExprKind::FunctionReference
+                    kind: TCExprKind::FunctionReference,
                 }
-            } else if let Some(global) = env.get_global_var(name.as_str()) {
-                global_constant_expr(global)?
+            } else if let Some(global) = global_expr(env, name.as_str()) {
+                global
             } else {
                 log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
             }
@@ -146,9 +155,9 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             // These [for now], are only for functions, as templated type identifiers can only appear
             // in CXNaiveType contexts.
 
-            let input = contextualize_template_args(env, template_input)?;
+            let input = complete_template_args(env, env.base_data, template_input)?;
             let ident = NaiveFnKind::Standard(name.clone());
-            
+
             let Some(function) = env.get_func_templated(&ident, &input) else {
                 log_typecheck_error!(env, expr, "Function template '{}' not found", name);
             };
@@ -158,7 +167,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     prototype: Box::new(function.clone()),
                 }
                 .into(),
-                kind: TCExprKind::FunctionReference
+                kind: TCExprKind::FunctionReference,
             }
         }
 
@@ -290,7 +299,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     );
                 }
             }
-            
+
             TCExpr {
                 _type: CXType::from(CXTypeKind::Unit),
                 kind: TCExprKind::Return {
@@ -579,7 +588,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             variant_name: name,
             inner,
         } => {
-            let Some(union_type) = env.get_realized_type(type_name.as_str()) else {
+            let Some(union_type) = env.get_type(type_name.as_str()) else {
                 log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
 
@@ -779,22 +788,74 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
     })
 }
 
-fn global_constant_expr(global: &TCGlobalVariable) -> Option<TCExpr> {
-    match global {
-        TCGlobalVariable::UnaddressableConstant { val, .. } => Some(TCExpr {
+pub(crate) fn global_expr(env: &mut TCEnvironment, ident: &str) -> Option<TCExpr> {
+    if let Some(global) = env.realized_globals.get(ident) {
+        return tcglobal_expr(global);
+    }
+
+    let module_res = env.base_data.global_variables.get(ident)?;
+    let module_res = match env.in_external_templated_function {
+        true => module_res.clone().transfer(""),
+        false => module_res.clone(),
+    };
+
+    match &module_res.resource {
+        CXGlobalVariable::EnumConstant(val) => Some(TCExpr {
             _type: CXType::from(CXTypeKind::Integer {
                 signed: true,
                 bytes: 8,
             }),
-            kind: TCExprKind::IntLiteral { value: *val },
+            kind: TCExprKind::IntLiteral { value: *val as i64 },
         }),
 
-        TCGlobalVariable::Variable { name, _type, .. } => Some(TCExpr {
+        CXGlobalVariable::Standard {
+            type_,
+            initializer,
+            is_mutable,
+        } => {
+            let _type = env.complete_type(type_)?;
+            let initializer = match initializer.as_ref() {
+                Some(init_expr) => {
+                    let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
+                        log_typecheck_error!(
+                            env,
+                            init_expr,
+                            " CX currently only supports integer initializers for global variable initialization"
+                        );
+                    };
+
+                    Some(*val)
+                }
+
+                None => None,
+            };
+
+            env.realized_globals.insert(
+                ident.to_string(),
+                TCGlobalVariable {
+                    kind: TCGlobalVarKind::Variable {
+                        name: CXIdent::from(ident.to_string()),
+                        _type,
+                        initializer,
+                    },
+                    is_mutable: *is_mutable,
+                    linkage: module_res.linkage,
+                },
+            );
+
+            tcglobal_expr(env.realized_globals.get(ident).unwrap())
+        }
+    }
+}
+
+fn tcglobal_expr(global: &TCGlobalVariable) -> Option<TCExpr> {
+    match &global.kind {
+        TCGlobalVarKind::Variable { name, _type, .. } => Some(TCExpr {
             _type: _type.clone().mem_ref_to(),
             kind: TCExprKind::GlobalVariableReference { name: name.clone() },
         }),
 
-        TCGlobalVariable::StringLiteral { .. } => {
+        TCGlobalVarKind::StringLiteral { .. } => {
             unreachable!("String literals cannot be referenced via an identifier")
         }
     }

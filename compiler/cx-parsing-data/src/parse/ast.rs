@@ -1,4 +1,6 @@
-use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType};
+use std::collections::HashMap;
+
+use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, ModuleResource};
 use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
@@ -13,25 +15,18 @@ pub struct CXAST {
     pub internal_path: String,
 
     pub imports: Vec<String>,
-    pub global_stmts: Vec<CXGlobalStmt>,
-
+    pub function_stmts: Vec<CXFunctionStmt>,
+    
+    pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,
     pub type_data: CXNaiveTypeMap,
     pub function_data: CXNaiveFnMap,
-
-    pub enum_constants: Vec<(String, i64)>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub enum CXGlobalStmt {
+pub enum CXFunctionStmt {
     TypeDecl {
         name: Option<String>,
         type_: CXNaiveType,
-    },
-
-    GlobalVariable {
-        name: CXIdent,
-        type_: CXNaiveType,
-        initializer: Option<CXExpr>,
     },
     
     FunctionDefinition {
@@ -107,7 +102,8 @@ pub struct CXInitIndex {
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalVariable {
     EnumConstant(i32),
-    GlobalVariable {
+ 
+    Standard {
         type_: CXNaiveType,
         is_mutable: bool,
         initializer: Option<CXExpr>,
