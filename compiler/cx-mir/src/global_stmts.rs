@@ -23,8 +23,7 @@ pub(crate) fn generate_function(
 
     let Some(_) = generate_instruction(builder, body) else {
         panic!(
-            "Failed to generate body for function {}",
-            prototype
+            "Failed to generate body for function {prototype}"
         );
     };
 

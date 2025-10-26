@@ -92,11 +92,11 @@ pub enum CXFunctionKind {
 
 impl CXFunctionKind {
     pub fn member_mangle(base_type: &str, name: &str) -> String {
-        format!("_M{}_{}", base_type, name)
+        format!("_M{base_type}_{name}")
     }
 
     pub fn destructor_mangle(base_type: &str) -> String {
-        format!("_D{}", base_type)
+        format!("_D{base_type}")
     }
     
     pub fn destructor_mangle_ty(base_type: &CXType) -> Option<String> {
@@ -109,7 +109,7 @@ impl CXFunctionKind {
     }
     
     pub fn deconstructor_mangle(base_type: &str) -> String {
-        format!("_DC{}", base_type)
+        format!("_DC{base_type}")
     }
     
     pub fn deconstructor_mangle_ty(base_type: &CXType) -> Option<String> {

@@ -46,18 +46,18 @@ fn defined_type(
         // the identifier pointer to that type
 
         data.add_type(name.as_string(), type_, template_prototype);
-        return Some(
+        Some(
             CXNaiveTypeKind::Identifier {
                 name,
                 predeclaration,
             }
             .to_type(),
-        );
+        )
     } else {
         // If the structure definition is anonymous, it can only be parsed as
         // an in-place type.
 
-        return Some(type_);
+        Some(type_)
     }
 }
 

@@ -250,7 +250,7 @@ impl<'a> Display for TCExprFormatter<'a> {
                 target, target_type
             } => {
                 let CXTypeKind::Function { prototype } = &target_type.kind else {
-                    writeln!(f, "MemberFunctionReference <invalid type> {}", target_type)?;
+                    writeln!(f, "MemberFunctionReference <invalid type> {target_type}")?;
                     return Ok(());
                 };
                 
@@ -277,7 +277,7 @@ impl<'a> Display for TCExprFormatter<'a> {
                 }
             }
             TCExprKind::Access { target, field, struct_type } => {
-                writeln!(f, "Access .{} {}", field, struct_type)?;
+                writeln!(f, "Access .{field} {struct_type}")?;
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
             }
             TCExprKind::Assignment {

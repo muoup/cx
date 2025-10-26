@@ -56,7 +56,7 @@ pub(crate) fn _complete_type(
     external_module: Option<&String>,
     ty: &CXNaiveType,
 ) -> Option<CXType> {
-    println!("External module: {:?}", external_module);
+    println!("External module: {external_module:?}");
     let (_, base_data) = match external_module {
         Some(module) => {
             let arc = env

@@ -14,7 +14,7 @@ pub fn typecheck(env: &mut TCEnvironment, ast: &CXAST) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                let prototype = env.complete_prototype(&prototype)?;
+                let prototype = env.complete_prototype(prototype)?;
                 
                 let body = in_method_env(env, &prototype, body).unwrap_or_else(|| {
                     panic!("Failed to typecheck function body for {}", prototype.name)

@@ -140,7 +140,7 @@ fn parse_fn_merge(
                 data.ast
                     .function_stmts
                     .push(CXFunctionStmt::TemplatedFunction {
-                        prototype: prototype,
+                        prototype,
                         body: Box::new(body),
                     });
             }
@@ -152,7 +152,7 @@ fn parse_fn_merge(
                 data.ast
                     .function_stmts
                     .push(CXFunctionStmt::FunctionDefinition {
-                        prototype: prototype,
+                        prototype,
                         body: Box::new(body),
                     });
             }
