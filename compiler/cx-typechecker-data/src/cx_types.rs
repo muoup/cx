@@ -30,17 +30,24 @@ impl Hash for CXType {
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct CXParameter {
+pub struct TCParameter {
     pub name: Option<CXIdent>,
     pub _type: CXType,
 }
 
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct TCFunctionContract {
+    pub precondition: Option<TCExpr>,
+    pub postcondition: Option<TCExpr>,
+}
+
 #[derive(Debug, Clone, Default, Readable, Writable)]
-pub struct CXFunctionPrototype {
+pub struct TCFunctionPrototype {
     pub name: CXFunctionIdentifier,
     pub return_type: CXType,
-    pub params: Vec<CXParameter>,
+    pub params: Vec<TCParameter>,
     pub var_args: bool,
+    pub contract: Option<TCFunctionContract>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -123,7 +130,7 @@ pub enum CXTypeKind {
         size: usize,
     },
     Function {
-        prototype: Box<CXFunctionPrototype>,
+        prototype: Box<TCFunctionPrototype>,
     },
 }
 
@@ -348,11 +355,12 @@ impl CXType {
         CXType::new(
             0,
             CXTypeKind::Function {
-                prototype: Box::new(CXFunctionPrototype {
+                prototype: Box::new(TCFunctionPrototype {
                     name: CXFunctionIdentifier::default(),
                     return_type: CXType::unit(),
                     params: vec![],
                     var_args: false,
+                    contract: None,
                 }),
             },
         )
@@ -453,7 +461,7 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
     }
 }
 
-impl CXFunctionPrototype {
+impl TCFunctionPrototype {
     pub fn mangle_name(&self) -> String {
         self.name.mangle()
     }

@@ -1,9 +1,9 @@
 use crate::environment::{TCEnvironment, TCTemplateRequest};
-use crate::type_completion::prototypes::complete_fn_prototype;
+use crate::type_completion::complete_fn_prototype;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::TCBaseMappings;
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 
@@ -73,7 +73,7 @@ pub(crate) fn instantiate_type_template(
     let shell = &template.resource.shell;
 
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
-    let mut cx_type = _complete_type(env, base_data, None, shell)?;
+    let mut cx_type = _complete_type(env, base_data, shell)?;
     restore_template_overwrites(env, overwrites);
 
     cx_type.set_name(CXIdent::from(template_name.as_str()));
@@ -84,8 +84,7 @@ pub(crate) fn instantiate_type_template(
         input.clone(),
     ));
 
-    if env
-        .base_data
+    if base_data
         .fn_data
         .get_template(&(&destructor_ident).into())
         .is_some()
@@ -101,8 +100,8 @@ pub(crate) fn instantiate_function_template(
     base_data: &TCBaseMappings,
     name: &NaiveFnKind,
     input: &CXTemplateInput,
-) -> Option<CXFunctionPrototype> {
-    let cache = env.base_data.fn_data.get_template(&name.into())?;
+) -> Option<TCFunctionPrototype> {
+    let cache = base_data.fn_data.get_template(&name.into())?;
     let resource = &cache.resource;
 
     let module_origin = &cache.external_module;
@@ -111,7 +110,7 @@ pub(crate) fn instantiate_function_template(
 
     let overwrites = add_templated_types(env, template_prototype, input);
 
-    let mut instantiated = complete_fn_prototype(env, base_data, shell)?;
+    let mut instantiated = complete_fn_prototype(env, base_data, None, shell)?;
     instantiated.apply_template_mangling();
 
     if let Some(generated) = env.get_realized_func(&instantiated.name) {

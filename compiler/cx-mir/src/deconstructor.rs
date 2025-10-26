@@ -2,7 +2,7 @@ use crate::builder::MIRBuilder;
 use crate::cx_maps::convert_cx_prototype;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{MIRFunctionPrototype, MIRValue, VirtualInstruction};
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind};
+use cx_typechecker_data::cx_types::{TCFunctionPrototype, TCParameter, CXType, CXTypeKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
 
 const STANDARD_FREE: &str = "__stdfree";
@@ -12,17 +12,18 @@ const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
     let name = type_.get_identifier()?;
 
-    let mut prototype = CXFunctionPrototype {
+    let mut prototype = TCFunctionPrototype {
         name: CXFunctionKind::Deconstructor {
             base_type: name.clone(),
         }
         .into(),
         return_type: CXType::unit(),
-        params: vec![CXParameter {
+        params: vec![TCParameter {
             name: None,
             _type: type_.clone().pointer_to(),
         }],
         var_args: false,
+        contract: None
     };
 
     if type_.was_template_instantiated() {

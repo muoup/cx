@@ -5,7 +5,7 @@ use crate::log_typecheck_error;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
-use cx_typechecker_data::ast::{TCExpr, TCExprKind};
+use cx_typechecker_data::ast::{TCBaseMappings, TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::CXResult;
@@ -13,11 +13,12 @@ use cx_util::identifier::CXIdent;
 
 pub(crate) fn typecheck_access(
     env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> Option<TCExpr> {
-    let mut tc_lhs = typecheck_expr(env, lhs)?;
+    let mut tc_lhs = typecheck_expr(env, base_data, lhs)?;
 
     let inner = match tc_lhs._type.mem_ref_inner() {
         Some(inner) if inner.is_pointer() => {
@@ -117,9 +118,9 @@ pub(crate) fn typecheck_access(
                 function_name: CXIdent::from(name.as_str()),
                 _type: FunctionTypeIdent::Standard(type_name.clone()),
             };
-            let input = complete_template_args(env, env.base_data, template_input)?;
+            let input = complete_template_args(env, base_data, template_input)?;
 
-            let Some(prototype) = env.get_func_templated(&ident, &input) else {
+            let Some(prototype) = env.get_func_templated(base_data, &ident, &input) else {
                 log_typecheck_error!(
                     env,
                     expr,
@@ -150,7 +151,7 @@ pub(crate) fn typecheck_access(
     }
 }
 
-pub(crate) fn comma_separated(env: &mut TCEnvironment, expr: &CXExpr) -> Option<Vec<TCExpr>> {
+pub(crate) fn comma_separated(env: &mut TCEnvironment, base_data: &TCBaseMappings, expr: &CXExpr) -> Option<Vec<TCExpr>> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
@@ -164,11 +165,11 @@ pub(crate) fn comma_separated(env: &mut TCEnvironment, expr: &CXExpr) -> Option<
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        exprs.push(typecheck_expr(env, rhs)?);
+        exprs.push(typecheck_expr(env, base_data, rhs)?);
         expr_iter = lhs;
     }
 
-    exprs.push(typecheck_expr(env, expr_iter)?);
+    exprs.push(typecheck_expr(env, base_data, expr_iter)?);
     exprs.reverse();
 
     Some(exprs)
@@ -176,12 +177,13 @@ pub(crate) fn comma_separated(env: &mut TCEnvironment, expr: &CXExpr) -> Option<
 
 pub(crate) fn typecheck_method_call(
     env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> Option<TCExpr> {
-    let mut tc_lhs = typecheck_expr(env, lhs)?;
-    let mut tc_args = comma_separated(env, rhs)?;
+    let mut tc_lhs = typecheck_expr(env, base_data, lhs)?;
+    let mut tc_args = comma_separated(env, base_data, rhs)?;
 
     let (direct, prototype) = match tc_lhs.kind {
         TCExprKind::FunctionReference => {
@@ -369,11 +371,12 @@ pub(crate) fn typecheck_method_call(
 
 pub(crate) fn typecheck_is(
     env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> Option<TCExpr> {
-    let mut tc_expr = typecheck_expr(env, lhs)?;
+    let mut tc_expr = typecheck_expr(env, base_data, lhs)?;
     coerce_value(&mut tc_expr);
 
     let CXTypeKind::TaggedUnion {

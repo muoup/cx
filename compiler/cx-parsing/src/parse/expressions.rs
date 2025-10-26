@@ -258,7 +258,7 @@ pub(crate) fn parse_expr_val(
         },
         TokenKind::FloatLiteral(value) => CXExprKind::FloatLiteral {
             bytes: 4,
-            val: *value,
+            val: (*value).into(),
         },
         TokenKind::StringLiteral(value) => CXExprKind::StringLiteral { val: value.clone() },
 

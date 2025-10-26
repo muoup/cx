@@ -1,33 +1,33 @@
+use std::sync::Arc;
+
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
-use cx_parsing_data::naive_map::CXNaiveTypeMap;
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind};
 use cx_util::log_error;
 
 use crate::environment::TCEnvironment;
-use crate::type_completion::complete_prototype;
+use crate::type_completion::complete_type;
+use crate::type_completion::prototypes::_complete_fn_prototype;
 use crate::type_completion::templates::instantiate_type_template;
 
-// As opposed to contextualizing the type like normal, pre-contextualizing a type does not require
-// a fully complete type map. This can be thought of as the canon Naive -> CXType conversion since
-// there will not always be an available one-degree-away mapping for a type.
+pub(crate) fn base_data_from_module<'a>(
+    env: &mut TCEnvironment,
+    base_data: &'a TCBaseMappings,
+    external_module: Option<&String>,
+) -> (Option<Arc<TCBaseMappings>>, &'a TCBaseMappings) {
+    match external_module {
+        Some(module) => {
+            let arc = env
+                .module_data
+                .base_mappings
+                .get(&CompilationUnit::from_str(module));
 
-#[allow(dead_code)]
-fn reduce_ident_ident<'a>(
-    cx_type: &'a CXNaiveType,
-    type_map: &'a CXNaiveTypeMap,
-) -> Option<&'a CXNaiveType> {
-    match &cx_type.kind {
-        CXNaiveTypeKind::Identifier { name, .. } => {
-            if let Some(inner) = type_map.get_standard(&name.as_string()) {
-                reduce_ident_ident(&inner.resource, type_map)
-            } else {
-                Some(cx_type)
-            }
+            (Some(arc.clone()), unsafe {
+                std::mem::transmute(arc.as_ref())
+            })
         }
-
-        _ => Some(cx_type),
+        None => (None, base_data),
     }
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn _complete_template_input(
         .params
         .iter()
         .map(|param| {
-            _complete_type(env, base_data, external_module, param).unwrap_or_else(|| {
+            complete_type(env, base_data, external_module, param).unwrap_or_else(|| {
                 panic!("Failed to precontextualize template input type: {param}")
             })
         })
@@ -53,26 +53,11 @@ pub(crate) fn _complete_template_input(
 pub(crate) fn _complete_type(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
-    external_module: Option<&String>,
     ty: &CXNaiveType,
 ) -> Option<CXType> {
-    let (_, base_data) = match external_module {
-        Some(module) => {
-            let arc = env
-                .module_data
-                .base_mappings
-                .get(&CompilationUnit::from_str(module));
-
-            (Some(arc.clone()), unsafe {
-                std::mem::transmute(arc.as_ref())
-            })
-        }
-        None => (None, base_data),
-    };
-
     let mut recurse_ty = |ty: &CXNaiveType| {
         Some(
-            _complete_type(env, base_data, None, ty)
+            _complete_type(env, base_data, ty)
                 .unwrap_or_else(|| panic!("Failed to precontextualize type: {ty}")),
         )
     };
@@ -84,12 +69,14 @@ pub(crate) fn _complete_type(
             };
 
             if let Some(inner) = base_data.type_data.get_standard(&name.as_string()) {
-                return _complete_type(
+                let ty = complete_type(
                     env,
                     base_data,
                     inner.external_module.as_ref(),
                     &inner.resource,
                 );
+                
+                return ty;
             };
 
             log_error!("Type not found: {name}");
@@ -140,7 +127,7 @@ pub(crate) fn _complete_type(
         }
 
         CXNaiveTypeKind::FunctionPointer { prototype } => {
-            let prototype = complete_prototype(env, base_data, external_module, prototype).unwrap();
+            let prototype = _complete_fn_prototype(env, base_data, prototype).unwrap();
 
             Some(CXType::from(CXTypeKind::Function {
                 prototype: Box::new(prototype),

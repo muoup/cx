@@ -1,5 +1,5 @@
 use super::ast::*;
-use crate::{cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind}, function_map::{CXFunctionIdentifier, CXFunctionKind}};
+use crate::{cx_types::{TCFunctionPrototype, TCParameter, CXType, CXTypeKind}, function_map::{CXFunctionIdentifier, CXFunctionKind}};
 use std::fmt::{Display, Formatter, Result};
 
 pub(crate) fn type_mangle(ty: &CXType) -> String {
@@ -534,7 +534,7 @@ impl Display for CXTypeKind {
     }
 }
 
-impl Display for CXFunctionPrototype {
+impl Display for TCFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}(", self.mangle_name())?;
         for (i, param) in self.params.iter().enumerate() {
@@ -553,7 +553,7 @@ impl Display for CXFunctionPrototype {
     }
 }
 
-impl Display for CXParameter {
+impl Display for TCParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(name) = &self.name {
             write!(f, "{}: {}", name, self._type)

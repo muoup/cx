@@ -1,7 +1,7 @@
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::parser::VisibilityMode;
+use crate::{ast::CXExpr, parser::VisibilityMode};
 
 pub type NaiveTypeIdent = String;
 
@@ -48,12 +48,6 @@ pub struct ModuleResource<Resource> {
     pub resource: Resource,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
-pub struct CXNaiveType {
-    pub kind: CXNaiveTypeKind,
-    pub specifiers: CXTypeSpecifier,
-}
-
 #[derive(Debug, Default, Hash, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum PredeclarationType {
     #[default]
@@ -64,12 +58,20 @@ pub enum PredeclarationType {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct CXNaiveFunctionContract {
+    pub precondition: Option<CXExpr>,
+    pub postcondition: Option<CXExpr>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaivePrototype {
     pub name: NaiveFnKind,
     pub params: Vec<CXNaiveParameter>,
     pub return_type: CXNaiveType,
     pub var_args: bool,
     pub this_param: bool,
+    
+    pub contract: Option<CXNaiveFunctionContract>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -104,6 +106,12 @@ pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveTemplateInput {
     pub params: Vec<CXNaiveType>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct CXNaiveType {
+    pub kind: CXNaiveTypeKind,
+    pub specifiers: CXTypeSpecifier,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -166,7 +174,7 @@ impl CXNaiveType {
         self.specifiers |= specifier;
         self
     }
-
+    
     pub fn get_name(&self) -> Option<&CXIdent> {
         match &self.kind {
             CXNaiveTypeKind::Identifier { name, .. } => Some(name),
@@ -177,6 +185,21 @@ impl CXNaiveType {
             CXNaiveTypeKind::Union { name, .. } => name.as_ref(),
 
             _ => None,
+        }
+    }
+    
+    pub fn set_name(&mut self, to: CXIdent) {
+        match &mut self.kind {
+            CXNaiveTypeKind::Union { name, .. } |
+            CXNaiveTypeKind::Structured { name, .. } => {
+                *name = Some(to);
+            }
+            
+            CXNaiveTypeKind::TaggedUnion { name, .. } => {
+                *name = to;
+            }
+            
+            _ => {}
         }
     }
 }

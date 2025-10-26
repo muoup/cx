@@ -7,11 +7,11 @@ use cx_mir_data::{
 };
 use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::ast::{TCExpr, TCGlobalVarKind, TCGlobalVariable};
-use cx_typechecker_data::cx_types::CXFunctionPrototype;
+use cx_typechecker_data::cx_types::TCFunctionPrototype;
 
 pub(crate) fn generate_function(
     builder: &mut MIRBuilder,
-    prototype: &CXFunctionPrototype,
+    prototype: &TCFunctionPrototype,
     body: &TCExpr,
 ) -> Option<()> {
     builder.push_scope();
@@ -35,7 +35,7 @@ pub(crate) fn generate_function(
 
 fn generate_params(
     builder: &mut MIRBuilder,
-    prototype: &CXFunctionPrototype,
+    prototype: &TCFunctionPrototype,
     bc_prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     let hidden_params_count = bc_prototype.params.len() - prototype.params.len();

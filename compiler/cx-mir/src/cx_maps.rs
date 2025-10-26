@@ -6,7 +6,7 @@ use cx_mir_data::{
     BCFloatBinOp, BCFunctionMap, BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRIntBinOp,
     MIRParameter, VirtualInstruction,
 };
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXType, CXTypeKind};
 use cx_typechecker_data::function_map::CXFnMap;
 
 impl MIRBuilder {
@@ -20,7 +20,7 @@ impl MIRBuilder {
 
     pub(crate) fn convert_cx_prototype(
         &self,
-        cx_proto: &CXFunctionPrototype,
+        cx_proto: &TCFunctionPrototype,
     ) -> Option<MIRFunctionPrototype> {
         convert_cx_prototype(cx_proto)
     }
@@ -119,7 +119,7 @@ fn convert_argument_type(cx_type: &CXType) -> Option<MIRType> {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIRFunctionPrototype> {
+pub(crate) fn convert_cx_prototype(cx_proto: &TCFunctionPrototype) -> Option<MIRFunctionPrototype> {
     let mut params = cx_proto
         .params
         .iter()

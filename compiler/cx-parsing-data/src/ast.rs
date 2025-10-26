@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_util::identifier::CXIdent;
+use cx_util::{hashable_float::FloatWrapper, identifier::CXIdent};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
@@ -47,7 +47,7 @@ pub enum CXFunctionStmt {
     },
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXUnOp {
     Dereference,
     AddressOf,
@@ -61,7 +61,7 @@ pub enum CXUnOp {
     PostIncrement(i8),
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXBinOp {
     Add,
     Subtract,
@@ -94,14 +94,14 @@ pub enum CXBinOp {
     Is,
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct CXInitIndex {
     pub name: Option<String>,
     pub value: CXExpr,
     pub index: usize,
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXGlobalVariable {
     EnumConstant(i32),
 
@@ -112,7 +112,7 @@ pub enum CXGlobalVariable {
     },
 }
 
-#[derive(Debug, Readable, Writable)]
+#[derive(Debug, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct CXExpr {
     pub uuid: u64,
     pub kind: CXExprKind,
@@ -145,7 +145,7 @@ impl Default for CXExpr {
     }
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXExprKind {
     Taken,
     Unit,
@@ -161,7 +161,7 @@ pub enum CXExprKind {
         bytes: u8,
     },
     FloatLiteral {
-        val: f64,
+        val: FloatWrapper,
         bytes: u8,
     },
     StringLiteral {

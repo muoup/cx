@@ -7,11 +7,11 @@ use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cas
 use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
-use cx_parsing_data::data::{CXLinkageMode, NaiveFnIdent, NaiveFnKind, CX_CONST};
+use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{
-    TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
+    TCBaseMappings, TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
 };
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType, CXTypeKind};
+use cx_typechecker_data::cx_types::{CXType, CXTypeKind, TCFunctionPrototype};
 use cx_util::identifier::CXIdent;
 
 fn anonymous_name_gen() -> String {
@@ -24,16 +24,17 @@ fn anonymous_name_gen() -> String {
 
 pub(crate) fn in_method_env(
     env: &mut TCEnvironment,
-    prototype: &CXFunctionPrototype,
+    base_data: &TCBaseMappings,
+    prototype: &TCFunctionPrototype,
     expr: &CXExpr,
 ) -> Option<TCExpr> {
     setup_method_env(env, prototype);
-    let tc_expr = typecheck_expr(env, expr)?;
+    let tc_expr = typecheck_expr(env, base_data, expr)?;
     cleanup_method_env(env);
     Some(tc_expr)
 }
 
-pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype) {
+pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &TCFunctionPrototype) {
     env.push_scope();
 
     for param in prototype.params.iter() {
@@ -50,14 +51,18 @@ pub(crate) fn cleanup_method_env(env: &mut TCEnvironment) {
     env.pop_scope();
 }
 
-pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> {
+pub fn typecheck_expr(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+    expr: &CXExpr,
+) -> Option<TCExpr> {
     Some(match &expr.kind {
         CXExprKind::Block { exprs } => {
             env.push_scope();
 
             let tc_exprs = exprs
                 .iter()
-                .map(|e| typecheck_expr(env, e))
+                .map(|e| typecheck_expr(env, base_data, e))
                 .collect::<Option<Vec<_>>>()?;
 
             env.pop_scope();
@@ -80,7 +85,9 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
         CXExprKind::FloatLiteral { val, bytes } => TCExpr {
             _type: CXType::from(CXTypeKind::Float { bytes: *bytes }),
-            kind: TCExprKind::FloatLiteral { value: *val },
+            kind: TCExprKind::FloatLiteral {
+                value: (*val).into(),
+            },
         },
 
         CXExprKind::StringLiteral { val } => {
@@ -111,10 +118,10 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         }
 
         CXExprKind::VarDeclaration { type_, name } => {
-            let type_ = env.complete_type(type_)?;
+            let type_ = env.complete_type(base_data, type_)?;
 
             env.insert_symbol(name.as_string(), type_.clone());
-            acknowledge_declared_type(env, &type_);
+            acknowledge_declared_type(env, base_data, &type_);
 
             TCExpr {
                 _type: type_.clone().mem_ref_to(),
@@ -131,7 +138,8 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     _type: symbol_type.clone().mem_ref_to(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
-            } else if let Some(function_type) = env.get_func(&NaiveFnIdent::Standard(name.clone()))
+            } else if let Some(function_type) =
+                env.get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
             {
                 TCExpr {
                     _type: CXTypeKind::Function {
@@ -140,7 +148,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                     .into(),
                     kind: TCExprKind::FunctionReference,
                 }
-            } else if let Some(global) = global_expr(env, name.as_str()) {
+            } else if let Some(global) = global_expr(env, base_data, name.as_str()) {
                 global
             } else {
                 log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
@@ -154,10 +162,10 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             // These [for now], are only for functions, as templated type identifiers can only appear
             // in CXNaiveType contexts.
 
-            let input = complete_template_args(env, env.base_data, template_input)?;
+            let input = complete_template_args(env, base_data, template_input)?;
             let ident = NaiveFnKind::Standard(name.clone());
 
-            let Some(function) = env.get_func_templated(&ident, &input) else {
+            let Some(function) = env.get_func_templated(base_data, &ident, &input) else {
                 log_typecheck_error!(env, expr, "Function template '{}' not found", name);
             };
 
@@ -177,12 +185,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         } => {
             env.push_scope();
 
-            let mut condition_tc = typecheck_expr(env, condition)?;
+            let mut condition_tc = typecheck_expr(env, base_data, condition)?;
             coerce_condition(&mut condition_tc);
 
-            let then_tc = typecheck_expr(env, then_branch)?;
+            let then_tc = typecheck_expr(env, base_data, then_branch)?;
             let else_tc = if let Some(else_branch) = else_branch {
-                Some(typecheck_expr(env, else_branch)?)
+                Some(typecheck_expr(env, base_data, else_branch)?)
             } else {
                 None
             };
@@ -206,10 +214,10 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         } => {
             env.push_scope();
 
-            let mut condition_tc = typecheck_expr(env, condition)?;
+            let mut condition_tc = typecheck_expr(env, base_data, condition)?;
             coerce_condition(&mut condition_tc);
 
-            let body_tc = typecheck_expr(env, body)?;
+            let body_tc = typecheck_expr(env, base_data, body)?;
 
             env.pop_scope();
 
@@ -231,12 +239,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         } => {
             env.push_scope();
 
-            let init_tc = typecheck_expr(env, init)?;
-            let mut condition_tc = typecheck_expr(env, condition)?;
+            let init_tc = typecheck_expr(env, base_data, init)?;
+            let mut condition_tc = typecheck_expr(env, base_data, condition)?;
             coerce_condition(&mut condition_tc);
 
-            let increment_tc = typecheck_expr(env, increment)?;
-            let body_tc = typecheck_expr(env, body)?;
+            let increment_tc = typecheck_expr(env, base_data, increment)?;
+            let body_tc = typecheck_expr(env, base_data, body)?;
 
             env.pop_scope();
 
@@ -263,7 +271,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
         CXExprKind::Return { value } => {
             let mut value_tc = if let Some(value) = value {
-                let mut val = typecheck_expr(env, value)?;
+                let mut val = typecheck_expr(env, base_data, value)?;
                 coerce_value(&mut val);
 
                 Some(val)
@@ -310,12 +318,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         CXExprKind::Defer { expr } => TCExpr {
             _type: CXType::from(CXTypeKind::Unit),
             kind: TCExprKind::Defer {
-                operand: Box::new(typecheck_expr(env, expr)?),
+                operand: Box::new(typecheck_expr(env, base_data, expr)?),
             },
         },
 
         CXExprKind::UnOp { operator, operand } => {
-            let mut operand_tc = typecheck_expr(env, operand)?;
+            let mut operand_tc = typecheck_expr(env, base_data, operand)?;
 
             match operator {
                 CXUnOp::PreIncrement(_) | CXUnOp::PostIncrement(_) => {
@@ -419,7 +427,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                 CXUnOp::ExplicitCast(to_type) => {
                     coerce_value(&mut operand_tc);
-                    let to_type = env.complete_type(to_type)?;
+                    let to_type = env.complete_type(base_data, to_type)?;
                     explicit_cast(&mut operand_tc, &to_type);
 
                     operand_tc
@@ -432,8 +440,8 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             lhs,
             rhs,
         } => {
-            let lhs = typecheck_expr(env, lhs)?;
-            let mut rhs = typecheck_expr(env, rhs)?;
+            let lhs = typecheck_expr(env, base_data, lhs)?;
+            let mut rhs = typecheck_expr(env, base_data, rhs)?;
 
             let Some(inner) = lhs._type.mem_ref_inner() else {
                 log_typecheck_error!(
@@ -466,29 +474,29 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             op: CXBinOp::Is,
             lhs,
             rhs,
-        } => typecheck_is(env, lhs, rhs, expr)?,
+        } => typecheck_is(env, base_data, lhs, rhs, expr)?,
 
         CXExprKind::BinOp {
             op: CXBinOp::Access,
             lhs,
             rhs,
-        } => typecheck_access(env, lhs, rhs, expr)?,
+        } => typecheck_access(env, base_data, lhs, rhs, expr)?,
 
         CXExprKind::BinOp {
             op: CXBinOp::MethodCall,
             lhs,
             rhs,
-        } => typecheck_method_call(env, lhs, rhs, expr)?,
+        } => typecheck_method_call(env, base_data, lhs, rhs, expr)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
-            let lhs = typecheck_expr(env, lhs)?;
-            let rhs = typecheck_expr(env, rhs)?;
+            let lhs = typecheck_expr(env, base_data, lhs)?;
+            let rhs = typecheck_expr(env, base_data, rhs)?;
 
             typecheck_binop(env, op.clone(), lhs, rhs, expr)?
         }
 
         CXExprKind::Move { expr: move_expr } => {
-            let expr_tc = typecheck_expr(env, move_expr)?;
+            let expr_tc = typecheck_expr(env, base_data, move_expr)?;
 
             let Some(inner) = expr_tc._type.mem_ref_inner() else {
                 log_typecheck_error!(
@@ -517,7 +525,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         }
 
         CXExprKind::New { _type } => {
-            let mut _type = env.complete_type(_type)?;
+            let mut _type = env.complete_type(base_data, _type)?;
 
             let (_type, array_length) = match _type.kind {
                 CXTypeKind::Array {
@@ -564,7 +572,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             let mut tc_indices = Vec::new();
 
             for index in indices.iter() {
-                let mut tc_expr = typecheck_expr(env, &index.value)?;
+                let mut tc_expr = typecheck_expr(env, base_data, &index.value)?;
                 coerce_value(&mut tc_expr);
 
                 tc_indices.push(TCInitIndex {
@@ -587,7 +595,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             variant_name: name,
             inner,
         } => {
-            let Some(union_type) = env.get_type(type_name.as_str()) else {
+            let Some(union_type) = env.get_type(base_data, type_name.as_str()) else {
                 log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
 
@@ -610,7 +618,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                 );
             };
 
-            let mut inner = typecheck_expr(env, inner)?;
+            let mut inner = typecheck_expr(env, base_data, inner)?;
             implicit_cast(&mut inner, &variant_type);
 
             TCExpr {
@@ -633,7 +641,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
         },
 
         CXExprKind::SizeOf { expr } => {
-            let tc_expr = typecheck_expr(env, expr)?;
+            let tc_expr = typecheck_expr(env, base_data, expr)?;
 
             TCExpr {
                 _type: CXType::from(CXTypeKind::Integer {
@@ -652,12 +660,12 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             cases,
             default_case,
         } => {
-            let mut tc_condition = typecheck_expr(env, condition)?;
+            let mut tc_condition = typecheck_expr(env, base_data, condition)?;
             coerce_condition(&mut tc_condition);
 
             let tc_stmts = block
                 .iter()
-                .map(|e| typecheck_expr(env, e))
+                .map(|e| typecheck_expr(env, base_data, e))
                 .collect::<Option<Vec<_>>>()?;
 
             TCExpr {
@@ -676,7 +684,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
             arms,
             default,
         } => {
-            let mut match_value = typecheck_expr(env, condition)?;
+            let mut match_value = typecheck_expr(env, base_data, condition)?;
             coerce_value(&mut match_value);
 
             match &match_value._type.kind {
@@ -740,7 +748,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
                         };
 
                         env.insert_symbol(instance_name.as_string(), variant_type.clone());
-                        let tc_block = typecheck_expr(env, block)?;
+                        let tc_block = typecheck_expr(env, base_data, block)?;
 
                         tc_arms.push(TCTagMatch {
                             tag_value: idx as u64,
@@ -755,7 +763,7 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
 
                     let default_case = default.as_ref().map(|d| {
                         env.push_scope();
-                        let Some(tc_default) = typecheck_expr(env, d) else {
+                        let Some(tc_default) = typecheck_expr(env, base_data, d) else {
                             log_typecheck_error!(
                                 env,
                                 d,
@@ -787,12 +795,16 @@ pub fn typecheck_expr(env: &mut TCEnvironment, expr: &CXExpr) -> Option<TCExpr> 
     })
 }
 
-pub(crate) fn global_expr(env: &mut TCEnvironment, ident: &str) -> Option<TCExpr> {
+pub(crate) fn global_expr(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+    ident: &str,
+) -> Option<TCExpr> {
     if let Some(global) = env.realized_globals.get(ident) {
         return tcglobal_expr(global);
     }
 
-    let module_res = env.base_data.global_variables.get(ident)?;
+    let module_res = base_data.global_variables.get(ident)?;
     let module_res = match env.in_external_templated_function {
         true => module_res.clone().transfer(""),
         false => module_res.clone(),
@@ -812,7 +824,7 @@ pub(crate) fn global_expr(env: &mut TCEnvironment, ident: &str) -> Option<TCExpr
             initializer,
             is_mutable,
         } => {
-            let _type = env.complete_type(type_)?;
+            let _type = env.complete_type(base_data, type_)?;
             let initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {

@@ -303,14 +303,13 @@ pub(crate) fn perform_job(
             let mut env = TCEnvironment::new(
                 lexemes.as_ref(),
                 job.unit.clone(),
-                structure_data.as_ref(),
                 &context.module_db,
             );
             
-            complete_base_globals(&mut env);
-            complete_base_functions(&mut env);
-            typecheck(&mut env, &self_ast).expect("Typechecking failed");
-            realize_templates(context, &job.unit, &mut env).expect("Template realization failed");
+            complete_base_globals(&mut env, structure_data.as_ref());
+            complete_base_functions(&mut env, structure_data.as_ref());
+            typecheck(&mut env, structure_data.as_ref(), &self_ast).expect("Typechecking failed");
+            realize_templates(context, structure_data.as_ref(), &job.unit, &mut env).expect("Template realization failed");
 
             let tc_ast = TCAST {
                 source_file: self_ast.file_path.clone(),

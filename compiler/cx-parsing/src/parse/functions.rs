@@ -1,9 +1,8 @@
-use cx_lexer_data::{identifier, operator, punctuator};
+use cx_lexer_data::{identifier, keyword, operator, punctuator};
 use cx_parsing_data::{
     assert_token_matches,
     data::{
-        CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype,
-        FunctionTypeIdent, NaiveFnKind, PredeclarationType,
+        CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind, PredeclarationType
     },
     parser::ParserData,
     peek_next_kind, try_next,
@@ -11,9 +10,7 @@ use cx_parsing_data::{
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
-    parse_std_ident,
-    templates::{convert_template_proto_to_args, try_parse_template},
-    types::parse_initializer,
+    expressions::parse_expr, parse_std_ident, templates::{convert_template_proto_to_args, try_parse_template}, types::parse_initializer
 };
 
 pub struct FunctionDeclaration {
@@ -33,6 +30,8 @@ fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
         params: vec![],
         var_args: false,
         this_param: true,
+        
+        contract: None,
     }
 }
 
@@ -95,6 +94,7 @@ pub fn try_function_parse(
                 params: args.params,
                 var_args: args.var_args,
                 this_param: args.contains_this,
+                contract: args.contract,
             };
 
             data.add_function(prototype.clone(), template_prototype.clone());
@@ -150,6 +150,7 @@ pub fn try_function_parse(
                 params: params.params,
                 var_args: params.var_args,
                 this_param: params.contains_this,
+                contract: params.contract,
             };
 
             data.add_function(prototype.clone(), template_prototype.clone());
@@ -164,10 +165,53 @@ pub fn try_function_parse(
     }
 }
 
+pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<Option<CXNaiveFunctionContract>> {
+    if !try_next!(data.tokens, keyword!(Where)) {
+        return Some(None);
+    }
+    
+    let mut contract = CXNaiveFunctionContract {
+        precondition: None,
+        postcondition: None,
+    };
+    
+    while let Some(next) = peek_next_kind!(data.tokens) {
+        match next {
+            keyword!(Precondition) => {               
+                if contract.precondition.is_some() {
+                    log_parse_error!(data, "Precondition already defined in function contract.");
+                }
+                
+                data.tokens.next();
+                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                let expr = parse_expr(data)?;
+                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                
+                contract.precondition = Some(expr);
+            }
+            keyword!(Postcondition) => {
+                if contract.postcondition.is_some() {
+                    log_parse_error!(data, "Postcondition already defined in function contract.");
+                }
+                
+                data.tokens.next();
+                assert_token_matches!(data.tokens, punctuator!(Colon));
+                
+                let expr = parse_expr(data)?;
+                contract.postcondition = Some(expr);
+            }
+            _ => break,
+        }
+    }
+    
+    return Some(None);
+}
+
 pub(crate) struct ParseParamsResult {
     pub(crate) params: Vec<CXNaiveParameter>,
     pub(crate) var_args: bool,
     pub(crate) contains_this: bool,
+    pub(crate) contract: Option<CXNaiveFunctionContract>,
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult> {
@@ -182,11 +226,13 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            let contract = parse_function_contract(data)?;
 
             return Some(ParseParamsResult {
                 params,
                 var_args: false,
                 contains_this,
+                contract,
             });
         }
     };
@@ -194,10 +240,13 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            let contract = parse_function_contract(data)?;
+            
             return Some(ParseParamsResult {
                 params,
                 var_args: true,
                 contains_this,
+                contract,
             });
         }
 
@@ -214,10 +263,13 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             break;
         }
     }
+    
+    let contract = parse_function_contract(data)?;
 
     Some(ParseParamsResult {
         params,
         var_args: false,
         contains_this,
+        contract
     })
 }

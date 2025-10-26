@@ -338,18 +338,28 @@ pub(crate) fn parse_typemods(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             );
+            
             let ParseParamsResult {
                 params,
                 var_args,
                 contains_this,
+                contract
             } = parse_params(data)?;
 
+            if contract.is_some() {
+                log_preparse_error!(
+                    data.tokens,
+                    "A function pointer may not contain a contract specification"
+                );
+            }
+            
             let prototype = CXNaivePrototype {
                 name: NaiveFnKind::Standard(CXIdent::from("__internal_fnptr")),
                 return_type: acc_type,
                 params,
                 var_args,
                 this_param: contains_this,
+                contract: None,
             };
 
             Some((
