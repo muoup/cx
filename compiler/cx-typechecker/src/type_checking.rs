@@ -1,8 +1,23 @@
-use cx_parsing_data::{ast::{CXFunctionStmt, CXAST}, data::CXFunctionTemplate};
-use cx_typechecker_data::{ast::{TCBaseMappings, TCFunctionDef}, cx_types::CXTemplateInput, function_map::CXFunctionKind};
+use cx_parsing_data::{
+    ast::{CXAST, CXFunctionStmt},
+    data::NaiveFnKind,
+};
+use cx_pipeline_data::CompilationUnit;
+use cx_typechecker_data::{
+    ast::{TCBaseMappings, TCFunctionDef},
+    cx_types::CXTemplateInput,
+    function_map::CXFunctionKind,
+};
 use cx_util::CXResult;
 
-use crate::{environment::TCEnvironment, type_checking::typechecker::{global_expr, in_method_env}, type_completion::{complete_fn_prototype, templates::{add_templated_types, restore_template_overwrites}}};
+use crate::{
+    environment::TCEnvironment,
+    type_checking::typechecker::{global_expr, in_method_env},
+    type_completion::{
+        complete_fn_prototype,
+        templates::{add_templated_types, restore_template_overwrites},
+    },
+};
 
 pub(crate) mod binary_ops;
 pub(crate) mod casting;
@@ -14,8 +29,8 @@ pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAS
     for stmt in ast.function_stmts.iter() {
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                let prototype = env.complete_prototype(base_data, prototype)?;
-                
+                let prototype = env.complete_prototype(base_data, None, prototype)?;
+
                 let body = in_method_env(env, base_data, &prototype, body).unwrap_or_else(|| {
                     panic!("Failed to typecheck function body for {}", prototype.name)
                 });
@@ -56,42 +71,38 @@ pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAS
 
 pub fn realize_fn_implementation(
     env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
-    origin: &CXAST,
-    template: &CXFunctionTemplate,
+    origin: &CompilationUnit,
+    template_name: &NaiveFnKind,
     input: &CXTemplateInput,
 ) -> CXResult<()> {
-    // SAFETY: The lifetimes will technically be unsound here, but the unsoundness only matters
-    // if the reference here escapes the function, which we ensure it does not. The lifetime
-    // of structure_data will not outlive env's underlying struct, but will outlive its existence
-    // in the struct, which is sufficient for this constrained context.
-    let overwrites = add_templated_types(env, &template.prototype, input);
-    let mut prototype = env.complete_prototype(base_data, &template.shell)?;
+    let base_ast = env.module_data.naive_ast.get(origin);
+    let base_data = env.module_data.base_mappings.get(origin);
 
-    let body = origin
+    let template = &base_data
+        .fn_data
+        .get_template(&template_name.into())
+        .expect("Template not found")
+        .resource;
+    let body = base_ast
         .function_stmts
         .iter()
         .find_map(|stmt| match stmt {
-            CXFunctionStmt::TemplatedFunction {
-                prototype, body, ..
-            } if prototype.name == template.shell.name => Some(body),
+            CXFunctionStmt::TemplatedFunction { prototype, body }
+                if prototype.name == template.shell.name =>
+            {
+                Some(body)
+            }
             _ => None,
         })
-        .unwrap_or_else(|| {
-            println!("Available: {:#?}", origin.function_stmts);
+        .expect("Function template body not found");
 
-            panic!(
-                "Function template body not found for {}",
-                template.shell.name
-            );
-        })
-        .as_ref()
-        .clone();
+    let overwrites = add_templated_types(env, &template.prototype, input);
+    let mut prototype = env.complete_prototype(base_data.as_ref(), None, &template.shell)?;
 
     prototype.apply_template_mangling();
 
     env.in_external_templated_function = true;
-    let tc_body = in_method_env(env, base_data, &prototype, &body)?;
+    let tc_body = in_method_env(env, base_data.as_ref(), &prototype, &body)?;
     env.declared_functions.push(TCFunctionDef {
         prototype,
         body: Box::new(tc_body.clone()),
@@ -113,12 +124,14 @@ pub fn complete_base_globals<'a>(
     Some(())
 }
 
-pub fn complete_base_functions(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
-) -> Option<()> {
+pub fn complete_base_functions(env: &mut TCEnvironment, base_data: &TCBaseMappings) -> Option<()> {
     for (_, cx_fn) in base_data.fn_data.standard_iter() {
-        complete_fn_prototype(env, base_data, cx_fn.external_module.as_ref(), &cx_fn.resource)?;
+        complete_fn_prototype(
+            env,
+            base_data,
+            cx_fn.external_module.as_ref(),
+            &cx_fn.resource,
+        )?;
     }
 
     Some(())

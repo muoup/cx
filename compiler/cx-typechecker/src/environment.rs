@@ -146,9 +146,10 @@ impl TCEnvironment<'_> {
     pub fn complete_prototype(
         &mut self,
         base_data: &TCBaseMappings,
+        external_module: Option<&String>,
         prototype: &CXNaivePrototype,
     ) -> Option<TCFunctionPrototype> {
-        complete_fn_prototype(self, base_data, None, prototype)
+        complete_fn_prototype(self, base_data, external_module, prototype)
     }
 
     pub fn complete_fn_ident(
