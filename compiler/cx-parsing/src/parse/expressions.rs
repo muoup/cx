@@ -1,8 +1,8 @@
 use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, specifier};
-use cx_parsing_data::parse::ast::{CXExpr, CXExprKind, CXInitIndex};
-use cx_parsing_data::parse::parser::ParserData;
-use cx_parsing_data::preparse::naive_types::CXNaiveTypeKind;
+use cx_parsing_data::ast::{CXExpr, CXExprKind, CXInitIndex};
+use cx_parsing_data::data::CXNaiveTypeKind;
+use cx_parsing_data::parser::ParserData;
 use cx_parsing_data::{assert_token_matches, try_next};
 use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;

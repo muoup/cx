@@ -1,6 +1,5 @@
 use cx_lexer_data::token::Token;
-use cx_parsing_data::preparse::naive_types::{CXNaivePrototype, CXNaiveType};
-use cx_parsing_data::preparse::{NaiveFnIdent, NaiveFnKind};
+use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType, NaiveFnIdent, NaiveFnKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;

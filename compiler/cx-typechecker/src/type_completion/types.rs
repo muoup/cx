@@ -1,5 +1,5 @@
-use cx_parsing_data::preparse::naive_types::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
-use cx_parsing_data::preparse::CXNaiveTypeMap;
+use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
+use cx_parsing_data::naive_map::CXNaiveTypeMap;
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind};

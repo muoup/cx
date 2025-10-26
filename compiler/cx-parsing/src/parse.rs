@@ -4,17 +4,7 @@ use cx_lexer_data::{
     TokenIter,
 };
 use cx_parsing_data::{
-    assert_token_matches, next_kind,
-    parse::{
-        ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
-        parser::{ParserData, VisibilityMode},
-    },
-    peek_next_kind,
-    preparse::{
-        naive_types::CXNaivePrototype,
-        templates::CXTemplatePrototype,
-    },
-    try_next, PreparseContents,
+    assert_token_matches, ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST}, data::{CXNaivePrototype, CXTemplatePrototype}, next_kind, parser::{ParserData, VisibilityMode}, peek_next_kind, try_next, PreparseContents
 };
 use cx_util::{identifier::CXIdent, CXResult};
 

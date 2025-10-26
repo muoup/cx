@@ -1,16 +1,12 @@
 use cx_lexer_data::{identifier, operator, punctuator};
 use cx_parsing_data::{
     assert_token_matches,
-    parse::parser::ParserData,
-    peek_next_kind,
-    preparse::{
-        naive_types::{
-            CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, PredeclarationType,
-        },
-        templates::CXTemplatePrototype,
-        FunctionTypeIdent, NaiveFnKind,
+    data::{
+        CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype,
+        FunctionTypeIdent, NaiveFnKind, PredeclarationType,
     },
-    try_next,
+    parser::ParserData,
+    peek_next_kind, try_next,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 

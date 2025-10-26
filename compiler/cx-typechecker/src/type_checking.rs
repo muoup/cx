@@ -1,4 +1,4 @@
-use cx_parsing_data::{parse::ast::{CXFunctionStmt, CXAST}, preparse::templates::CXFunctionTemplate};
+use cx_parsing_data::{ast::{CXFunctionStmt, CXAST}, data::CXFunctionTemplate};
 use cx_typechecker_data::{ast::{TCBaseMappings, TCFunctionDef}, cx_types::CXTemplateInput, function_map::CXFunctionKind};
 use cx_util::CXResult;
 

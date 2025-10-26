@@ -1,16 +1,35 @@
-use crate::parse::parser::VisibilityMode;
-use crate::preparse::NaiveFnKind;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
-use std::hash::Hash;
 
-pub type CXTypeSpecifier = u8;
+use crate::parser::VisibilityMode;
 
-pub const CX_CONST: CXTypeSpecifier = 1 << 0;
-pub const CX_VOLATILE: CXTypeSpecifier = 1 << 1;
-pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
-pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
-pub const CX_UNION: CXTypeSpecifier = 1 << 4;
+pub type NaiveTypeIdent = String;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum FunctionTypeIdent {
+    Standard(CXIdent),
+    Templated(CXIdent, CXNaiveTemplateInput),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub enum NaiveFnKind {
+    Standard(CXIdent),
+    MemberFunction {
+        _type: FunctionTypeIdent,
+        function_name: CXIdent,
+    },
+    Destructor(FunctionTypeIdent),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub enum NaiveFnIdent {
+    Standard(CXIdent),
+    MemberFunction {
+        type_identifier: CXIdent,
+        function_name: CXIdent,
+    },
+    Destructor(CXIdent),
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
 pub enum CXLinkageMode {
@@ -58,6 +77,29 @@ pub struct CXNaiveParameter {
     pub name: Option<CXIdent>,
     pub _type: CXNaiveType,
 }
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct CXTemplatePrototype {
+    pub types: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Readable, Writable)]
+pub struct CXTemplate<Shell> {
+    pub prototype: CXTemplatePrototype,
+    pub shell: Shell,
+}
+
+pub type CXTypeTemplate = CXTemplate<CXNaiveType>;
+pub type CXFunctionTemplate = CXTemplate<CXNaivePrototype>;
+pub type CXDestructorTemplate = CXTemplate<String>;
+
+pub type CXTypeSpecifier = u8;
+
+pub const CX_CONST: CXTypeSpecifier = 1 << 0;
+pub const CX_VOLATILE: CXTypeSpecifier = 1 << 1;
+pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
+pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
+pub const CX_UNION: CXTypeSpecifier = 1 << 4;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveTemplateInput {
@@ -178,6 +220,71 @@ impl<T: Clone> ModuleResource<T> {
             linkage,
             external_module: None,
             resource,
+        }
+    }
+}
+
+impl FunctionTypeIdent {
+    pub fn as_type(&self) -> CXNaiveType {
+        match self {
+            FunctionTypeIdent::Standard(name) => CXNaiveTypeKind::Identifier {
+                name: name.clone(),
+                predeclaration: PredeclarationType::None,
+            }
+            .to_type(),
+            FunctionTypeIdent::Templated(name, input) => CXNaiveTypeKind::TemplatedIdentifier {
+                name: name.clone(),
+                input: input.clone(),
+            }
+            .to_type(),
+        }
+    }
+
+    pub fn from_type(ty: &CXNaiveType) -> Option<FunctionTypeIdent> {
+        match &ty.kind {
+            CXNaiveTypeKind::Identifier { name, .. } => {
+                Some(FunctionTypeIdent::Standard(name.clone()))
+            }
+            CXNaiveTypeKind::TemplatedIdentifier { name, input } => {
+                Some(FunctionTypeIdent::Templated(name.clone(), input.clone()))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl NaiveFnKind {
+    pub fn implicit_member(&self) -> Option<&FunctionTypeIdent> {
+        match self {
+            NaiveFnKind::MemberFunction { _type, .. } => Some(_type),
+            NaiveFnKind::Destructor(name) => Some(name),
+            NaiveFnKind::Standard(_) => None,
+        }
+    }
+}
+
+impl From<&NaiveFnKind> for NaiveFnIdent {
+    fn from(kind: &NaiveFnKind) -> Self {
+        match kind {
+            NaiveFnKind::Standard(name) => NaiveFnIdent::Standard(name.clone()),
+            NaiveFnKind::MemberFunction {
+                _type,
+                function_name,
+            } => NaiveFnIdent::MemberFunction {
+                type_identifier: match _type {
+                    FunctionTypeIdent::Standard(n) => n,
+                    FunctionTypeIdent::Templated(n, _) => n,
+                }
+                .clone(),
+                function_name: function_name.clone(),
+            },
+            NaiveFnKind::Destructor(name) => NaiveFnIdent::Destructor(
+                match name {
+                    FunctionTypeIdent::Standard(n) => n,
+                    FunctionTypeIdent::Templated(n, _) => n,
+                }
+                .clone(),
+            ),
         }
     }
 }

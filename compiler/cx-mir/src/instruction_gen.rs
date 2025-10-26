@@ -10,7 +10,7 @@ use cx_mir_data::{
     BCIntUnOp, BCPtrBinOp, BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType,
     MIRGlobalValue, MIRIntBinOp, MIRValue, VirtualInstruction,
 };
-use cx_parsing_data::parse::ast::{CXBinOp, CXUnOp};
+use cx_parsing_data::ast::{CXBinOp, CXUnOp};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 use cx_util::{bytecode_error_log, log_error};

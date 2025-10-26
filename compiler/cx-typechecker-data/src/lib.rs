@@ -6,8 +6,7 @@ pub mod function_map;
 mod format;
 
 use crate::cx_types::CXTemplateInput;
-use cx_parsing_data::preparse::naive_types::ModuleResource;
-use cx_parsing_data::preparse::templates::CXTypeTemplate;
+use cx_parsing_data::data::{CXTypeTemplate, ModuleResource};
 use cx_types::CXType;
 use speedy::{Readable, Writable};
 use std::collections::{HashMap, HashSet};

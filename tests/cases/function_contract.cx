@@ -1,0 +1,15 @@
+import std::io;
+
+int function(int input) 
+    where pre(printf("precondition checked")),
+          post(printf("postcondition checked")) {
+
+    printf("function body executed\n");
+    return input * 2;
+}
+
+int main() {
+    int result = function(5);
+    printf("result: %d\n", result);
+    return 0;
+}

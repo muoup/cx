@@ -1,4 +1,4 @@
-use cx_parsing_data::preparse::naive_types::{CXNaivePrototype, CXNaiveType};
+use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType};
 use cx_typechecker_data::{
     ast::TCBaseMappings,
     cx_types::{CXFunctionPrototype, CXParameter, CXType},

@@ -1,10 +1,5 @@
 use crate::{
-    parse::ast::{CXGlobalVariable, CXAST},
-    preparse::{
-        naive_types::{CXLinkageMode, CXNaivePrototype, CXNaiveType, ModuleResource},
-        templates::{CXFunctionTemplate, CXTemplatePrototype, CXTypeTemplate},
-    },
-    PreparseContents,
+    ast::{CXGlobalVariable, CXAST}, data::{CXFunctionTemplate, CXLinkageMode, CXNaivePrototype, CXNaiveType, CXTemplatePrototype, CXTypeTemplate, ModuleResource}, PreparseContents
 };
 use cx_lexer_data::TokenIter;
 use speedy::{Readable, Writable};
@@ -117,7 +112,7 @@ impl<'a> ParserData<'a> {
             }
         }
     }
-    
+
     pub fn add_global_variable(&mut self, name: String, var: CXGlobalVariable) {
         self.ast.global_variables.insert(
             name,

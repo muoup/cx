@@ -1,4 +1,4 @@
-use cx_parsing_data::preparse::NaiveFnIdent;
+use cx_parsing_data::data::NaiveFnIdent;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker::{environment::TCEnvironment, type_checking::realize_fn_implementation};
 use std::collections::HashSet;

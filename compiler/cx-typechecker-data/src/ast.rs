@@ -1,9 +1,9 @@
 use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::function_map::CXFnMap;
 use crate::CXTypeMap;
-use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
-use cx_parsing_data::preparse::naive_types::{CXLinkageMode, ModuleResource};
-use cx_parsing_data::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
+use cx_parsing_data::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
+use cx_parsing_data::data::{CXLinkageMode, ModuleResource};
+use cx_parsing_data::naive_map::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use std::collections::HashMap;

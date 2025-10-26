@@ -1,5 +1,5 @@
-use cx_parsing_data::parse::ast::{CXBinOp, CXUnOp};
-use cx_parsing_data::parse::parser::ParserData;
+use cx_parsing_data::ast::{CXBinOp, CXUnOp};
+use cx_parsing_data::parser::ParserData;
 use cx_parsing_data::{assert_token_matches, next_kind};
 use cx_lexer_data::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_util::log_error;

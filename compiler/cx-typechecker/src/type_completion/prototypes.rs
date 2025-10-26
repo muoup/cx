@@ -1,10 +1,7 @@
 use crate::environment::TCEnvironment;
 use crate::type_completion::complete_type;
 use crate::type_completion::types::_complete_type;
-use cx_parsing_data::preparse::NaiveFnKind;
-use cx_parsing_data::preparse::naive_types::{
-    CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput,
-};
+use cx_parsing_data::data::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
 use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXParameter, CXTemplateInput};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};

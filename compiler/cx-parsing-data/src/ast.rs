@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
-use crate::preparse::naive_types::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, ModuleResource};
-use crate::preparse::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
+
+use crate::{
+    data::{CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, ModuleResource}, naive_map::{CXNaiveFnMap, CXNaiveTypeMap}
+};
 
 #[derive(Debug, Default)]
 pub struct CXAST {
@@ -16,7 +18,7 @@ pub struct CXAST {
 
     pub imports: Vec<String>,
     pub function_stmts: Vec<CXFunctionStmt>,
-    
+
     pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,
     pub type_data: CXNaiveTypeMap,
     pub function_data: CXNaiveFnMap,
@@ -28,7 +30,7 @@ pub enum CXFunctionStmt {
         name: Option<String>,
         type_: CXNaiveType,
     },
-    
+
     FunctionDefinition {
         prototype: CXNaivePrototype,
         body: Box<CXExpr>,
@@ -102,7 +104,7 @@ pub struct CXInitIndex {
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXGlobalVariable {
     EnumConstant(i32),
- 
+
     Standard {
         type_: CXNaiveType,
         is_mutable: bool,

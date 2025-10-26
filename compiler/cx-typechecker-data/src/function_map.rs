@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_parsing_data::preparse::{naive_types::ModuleResource, templates::CXFunctionTemplate};
+use cx_parsing_data::data::{CXFunctionTemplate, ModuleResource};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 

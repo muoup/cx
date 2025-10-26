@@ -5,7 +5,7 @@ use cx_mir_data::types::MIRType;
 use cx_mir_data::{
     LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRValue, VirtualInstruction,
 };
-use cx_parsing_data::preparse::naive_types::CXLinkageMode;
+use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::ast::{TCExpr, TCGlobalVarKind, TCGlobalVariable};
 use cx_typechecker_data::cx_types::CXFunctionPrototype;
 

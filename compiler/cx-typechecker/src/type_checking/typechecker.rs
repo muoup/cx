@@ -6,9 +6,8 @@ use crate::type_checking::binary_ops::{
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::prototypes::complete_template_args;
-use cx_parsing_data::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
-use cx_parsing_data::preparse::naive_types::{CX_CONST, CXLinkageMode};
-use cx_parsing_data::preparse::{NaiveFnIdent, NaiveFnKind};
+use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
+use cx_parsing_data::data::{CXLinkageMode, NaiveFnIdent, NaiveFnKind, CX_CONST};
 use cx_typechecker_data::ast::{
     TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
 };

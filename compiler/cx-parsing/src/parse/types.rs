@@ -1,16 +1,14 @@
 use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
-use cx_parsing_data::parse::ast::CXGlobalVariable;
-use cx_parsing_data::parse::parser::ParserData;
-use cx_parsing_data::preparse::naive_types::{
-    CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST,
-    CX_RESTRICT, CX_VOLATILE,
+use cx_parsing_data::ast::CXGlobalVariable;
+use cx_parsing_data::data::{
+    CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, CXTypeSpecifier,
+    NaiveFnKind, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
-use cx_parsing_data::preparse::templates::CXTemplatePrototype;
-use cx_parsing_data::preparse::NaiveFnKind;
+use cx_parsing_data::parser::ParserData;
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_util::identifier::CXIdent;
-use cx_util::{log_error, point_log_error, CXResult};
+use cx_util::{log_error, CXResult};
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{parse_template_args, try_parse_template};
@@ -109,7 +107,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> Option<CXNaiveType> {
     }
 
     let mut idx = 0;
-    
+
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(variant_name) = parse_std_ident(&mut data.tokens) else {
             log_preparse_error!(data.tokens, "Failed to parse enum variant name");
@@ -119,15 +117,15 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> Option<CXNaiveType> {
             match next_kind!(data.tokens) {
                 Some(TokenKind::IntLiteral(val)) => {
                     idx = val;
-                },
-                
+                }
+
                 _ => log_preparse_error!(
                     data.tokens,
                     "Enum variant value must be an integer literal"
                 ),
             }
         }
-        
+
         data.add_global_variable(
             variant_name.as_string(),
             CXGlobalVariable::EnumConstant(idx as i32),
@@ -166,7 +164,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> Option<CXNaiveTyp
 
     loop {
         let Some(name) = parse_std_ident(&mut data.tokens) else {
-            point_log_error!(data.tokens, "Expected variant name in tagged union");
+            log_preparse_error!(data.tokens, "Expected variant name in tagged union");
         };
 
         assert_token_matches!(data.tokens, operator!(ScopeRes));
@@ -336,7 +334,10 @@ pub(crate) fn parse_typemods(
                 return Some((None, acc_type));
             }
             let name = parse_std_ident(&mut data.tokens);
-            assert_token_matches!(data.tokens, TokenKind::Punctuator(PunctuatorType::CloseParen));
+            assert_token_matches!(
+                data.tokens,
+                TokenKind::Punctuator(PunctuatorType::CloseParen)
+            );
             let ParseParamsResult {
                 params,
                 var_args,

@@ -2,8 +2,8 @@ use std::hash::{Hash, Hasher};
 
 use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
 use crate::format::type_mangle;
-use cx_parsing_data::parse::parser::VisibilityMode;
-use cx_parsing_data::preparse::naive_types::CXTypeSpecifier;
+use cx_parsing_data::data::CXTypeSpecifier;
+use cx_parsing_data::parser::VisibilityMode;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 

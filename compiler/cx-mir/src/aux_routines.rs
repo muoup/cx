@@ -1,7 +1,7 @@
 use crate::builder::{DeclarationLifetime, MIRBuilder};
 use crate::instruction_gen::generate_algebraic_binop;
 use crate::BytecodeResult;
-use cx_parsing_data::parse::ast::CXBinOp;
+use cx_parsing_data::ast::CXBinOp;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{MIRValue, VirtualInstruction};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};

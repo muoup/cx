@@ -1,10 +1,16 @@
-use crate::parse::ast::CXAST;
-use crate::preparse::naive_types::ModuleResource;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-pub mod parse;
-pub mod preparse;
+use crate::{ast::CXAST, data::ModuleResource};
+
+pub mod ast;
+pub mod data;
+
+pub mod naive_map;
+pub mod macros;
+pub mod parser;
+
+mod format;
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct PreparseContents {
