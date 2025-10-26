@@ -1,45 +1,78 @@
-use crate::parse::ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXUnOp, CXAST};
+use crate::parse::ast::{
+    CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST,
+};
 use crate::preparse::naive_types::CXLinkageMode;
-use cx_util::format::{dedent, indent};
-use cx_util::{fwrite, fwriteln};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Result};
+
+// Helper struct for indented formatting of CXExpr
+struct CXExprFormatter<'a> {
+    expr: &'a CXExpr,
+    depth: usize,
+}
+
+impl<'a> CXExprFormatter<'a> {
+    fn new(expr: &'a CXExpr, depth: usize) -> Self {
+        Self { expr, depth }
+    }
+
+    fn indent(&self, f: &mut Formatter<'_>) -> Result {
+        for _ in 0..self.depth {
+            write!(f, "  ")?;
+        }
+        Ok(())
+    }
+}
 
 impl Display for CXAST {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for stmt in &self.function_stmts {
-            writeln!(f, "{stmt}\n")?;
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        writeln!(f, "CXAST for file: {}", self.file_path)?;
+        if !self.global_variables.is_empty() {
+            writeln!(f, "\n-- Global Variables --")?;
+            for global in &self.global_variables {
+                writeln!(f, "{}: {}", global.0, global.1.resource)?;
+            }
         }
-
+        if !self.function_stmts.is_empty() {
+            writeln!(f, "\n-- Function Definitions --")?;
+            for func in &self.function_stmts {
+                writeln!(f, "{func}")?;
+            }
+        }
         Ok(())
     }
 }
 
 impl Display for CXLinkageMode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXLinkageMode::Standard => fwrite!(f, "standard"),
-            CXLinkageMode::Static => fwrite!(f, "static"),
-            CXLinkageMode::Extern => fwrite!(f, "extern"),
+            CXLinkageMode::Standard => write!(f, "standard"),
+            CXLinkageMode::Static => write!(f, "static"),
+            CXLinkageMode::Extern => write!(f, "extern"),
         }
     }
 }
 
 impl Display for CXGlobalVariable {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             CXGlobalVariable::EnumConstant(val) => {
-                fwrite!(f, "enum constant {}", val)
+                write!(f, "enum constant {}", val)
             }
-            
+
             CXGlobalVariable::Standard {
                 type_,
                 is_mutable,
                 initializer,
             } => {
-                fwrite!(f, "global variable {} {}", if *is_mutable { "mut" } else { "const" }, type_)?;
+                write!(
+                    f,
+                    "global variable {} {}",
+                    if *is_mutable { "mut" } else { "const" },
+                    type_
+                )?;
 
                 if let Some(initializer) = initializer {
-                    fwrite!(f, " = {}", initializer)?;
+                    write!(f, " = {}", initializer)?;
                 }
 
                 Ok(())
@@ -49,70 +82,58 @@ impl Display for CXGlobalVariable {
 }
 
 impl Display for CXFunctionStmt {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             CXFunctionStmt::TypeDecl { name, type_ } => {
                 if let Some(name) = name {
-                    fwriteln!(f, "type {} = {}", name, type_)
+                    writeln!(f, "type {} = {}", name, type_)
                 } else {
-                    fwriteln!(f, "type {}", type_)
+                    writeln!(f, "type {}", type_)
                 }
             }
 
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                indent();
-                fwriteln!(f, "{} {{", prototype)?;
-                fwrite!(f, "{}", body)?;
-                dedent();
-                fwriteln!(f, "")?;
-                fwrite!(f, "}}")?;
-                Ok(())
+                writeln!(f, "FunctionDef {} {{ ", prototype)?;
+                write!(f, "{}", CXExprFormatter::new(body, 1))?;
+                writeln!(f, "}}")
             }
 
             CXFunctionStmt::DestructorDefinition { _type, body } => {
-                indent();
-                fwriteln!(f, "destructor for {} {{", _type)?;
-                fwrite!(f, "{}", body)?;
-                dedent();
-                fwriteln!(f, "")?;
-                fwrite!(f, "}}")?;
-                Ok(())
+                writeln!(f, "DestructorDef for {} {{ ", _type)?;
+                write!(f, "{}", CXExprFormatter::new(body, 1))?;
+                writeln!(f, "}}")
             }
 
             CXFunctionStmt::TemplatedFunction { prototype, body } => {
-                indent();
-                fwriteln!(f, "template {prototype} {{")?;
-                fwrite!(f, "{}", body)?;
-                dedent();
-                fwriteln!(f, "")?;
-                fwrite!(f, "}}")?;
-                Ok(())
+                writeln!(f, "TemplatedFunction {prototype} {{ ")?;
+                write!(f, "{}", CXExprFormatter::new(body, 1))?;
+                writeln!(f, "}}")
             }
         }
     }
 }
 
 impl Display for CXExpr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.kind)
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        CXExprFormatter::new(self, 0).fmt(f)
     }
 }
 
-impl Display for CXExprKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
+impl<'a> Display for CXExprFormatter<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        self.indent(f)?;
+        match &self.expr.kind {
             CXExprKind::Block { exprs, .. } => {
-                for (i, stmt) in exprs.iter().enumerate() {
-                    fwrite!(f, "{}", stmt)?;
-
-                    if i != exprs.len() - 1 {
-                        fwriteln!(f, "")?;
-                    }
+                writeln!(f, "Block {{ ")?;
+                for stmt in exprs {
+                    CXExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
-                Ok(())
+                self.indent(f)?;
+                writeln!(f, "}}")
             }
 
-            CXExprKind::Identifier(ident) => fwrite!(f, "{}", ident),
+            CXExprKind::Identifier(ident) => writeln!(f, "Identifier {}", ident),
+
             CXExprKind::TemplatedIdentifier {
                 name: fn_name,
                 template_input,
@@ -124,120 +145,64 @@ impl Display for CXExprKind {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                fwrite!(f, "{}<{}>", fn_name, arg_string)
+                writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
             }
 
             CXExprKind::VarDeclaration { name, type_ } => {
-                fwrite!(f, "let {}: {}", name, type_)?;
-
-                Ok(())
+                writeln!(f, "VarDeclaration {}: {}", name, type_)
             }
 
-            CXExprKind::IntLiteral { val, .. } => fwrite!(f, "{}", val),
-            CXExprKind::FloatLiteral { val, .. } => fwrite!(f, "{}", val),
+            CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
+            CXExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),
             CXExprKind::StringLiteral { val, .. } => {
-                // Sanitize input (i.e. convert \n to \\n)
-                let sanitized = val
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-                    .replace('\n', "\\n")
-                    .replace('\r', "\\r")
-                    .replace('\t', "\\t");
-                fwrite!(f, "\"{}\"", sanitized)
+                writeln!(f, "StringLiteral \"{}\"", val.escape_default())
             }
 
             CXExprKind::Return { value } => {
-                fwrite!(f, "return")?;
+                writeln!(f, "Return")?;
                 if let Some(value) = value {
-                    fwrite!(f, " {}", value)?;
+                    CXExprFormatter::new(value, self.depth + 1).fmt(f)?;
                 }
                 Ok(())
             }
 
-            CXExprKind::BinOp {
-                lhs,
-                rhs,
-                op: CXBinOp::MethodCall,
-            } => {
-                fwrite!(f, "{}({})", lhs, rhs)
-            }
-
-            CXExprKind::BinOp {
-                lhs,
-                rhs,
-                op: CXBinOp::ArrayIndex,
-            } => {
-                fwrite!(f, "{}[{}]", lhs, rhs)
-            }
-
-            CXExprKind::BinOp {
-                lhs,
-                rhs,
-                op: CXBinOp::Access,
-            } => {
-                fwrite!(f, "{}.{}", lhs, rhs)
-            }
-
             CXExprKind::BinOp { lhs, rhs, op } => {
-                fwrite!(f, "{} {} {}", lhs, op, rhs)
+                writeln!(f, "BinOp {:?}", op)?;
+                CXExprFormatter::new(lhs, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(rhs, self.depth + 1).fmt(f)?;
+                Ok(())
             }
 
             CXExprKind::Move { expr } => {
-                fwrite!(f, "(move {})", expr)
+                writeln!(f, "Move")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
 
             CXExprKind::InitializerList { indices } => {
-                indent();
-                fwriteln!(f, "{{")?;
-                for (i, index) in indices.iter().enumerate() {
-                    fwrite!(f, "{}", index)?;
-                    if i != indices.len() - 1 {
-                        fwrite!(f, ", ")?;
-                    } else {
-                        dedent();
-                    }
-                    fwriteln!(f, "")?;
+                writeln!(f, "InitializerList")?;
+                for index in indices {
+                    CXInitIndexFormatter::new(index, self.depth + 1).fmt(f)?;
                 }
-                fwrite!(f, "}}")
+                Ok(())
             }
 
-            CXExprKind::UnOp { operator, operand } => match operator {
-                CXUnOp::Negative => fwrite!(f, "-({})", operand),
-                CXUnOp::LNot => fwrite!(f, "!({})", operand),
-                CXUnOp::BNot => fwrite!(f, "~({})", operand),
-                CXUnOp::Dereference => fwrite!(f, "*({})", operand),
-                CXUnOp::AddressOf => fwrite!(f, "&({})", operand),
-
-                CXUnOp::PreIncrement(1) => fwrite!(f, "++{}", operand),
-                CXUnOp::PostIncrement(1) => fwrite!(f, "{}++", operand),
-                CXUnOp::PreIncrement(-1) => fwrite!(f, "--{}", operand),
-                CXUnOp::PostIncrement(-1) => fwrite!(f, "{}--", operand),
-
-                CXUnOp::ExplicitCast(to_type) => fwrite!(f, "({to_type}) ({operand})"),
-
-                CXUnOp::PreIncrement(_) | CXUnOp::PostIncrement(_) => {
-                    panic!("Invalid increment operator")
-                }
-            },
+            CXExprKind::UnOp { operator, operand } => {
+                writeln!(f, "UnOp {:?}", operator)?;
+                CXExprFormatter::new(operand, self.depth + 1).fmt(f)
+            }
 
             CXExprKind::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                indent();
-                fwriteln!(f, "if {} {{", condition)?;
-                fwrite!(f, "{}", then_branch)?;
-                dedent();
-                fwriteln!(f, "")?;
+                writeln!(f, "If")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(then_branch, self.depth + 1).fmt(f)?;
                 if let Some(else_branch) = else_branch {
-                    indent();
-                    fwriteln!(f, "}} else {{")?;
-                    fwrite!(f, "{}", else_branch)?;
-                    dedent();
-                    fwriteln!(f, "")?;
+                    CXExprFormatter::new(else_branch, self.depth + 1).fmt(f)?;
                 }
-                fwrite!(f, "}}")
+                Ok(())
             }
 
             CXExprKind::For {
@@ -246,84 +211,107 @@ impl Display for CXExprKind {
                 increment,
                 body,
             } => {
-                indent();
-                fwriteln!(f, "for ({}; {}; {}) {{", init, condition, increment)?;
-                fwrite!(f, "{}", body)?;
-                dedent();
-                fwriteln!(f, "")?;
-                fwrite!(f, "}}")
+                writeln!(f, "For")?;
+                CXExprFormatter::new(init, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(increment, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
+                Ok(())
             }
 
             CXExprKind::While {
                 condition, body, ..
             } => {
-                indent();
-                fwriteln!(f, "while ({condition}) {{")?;
-                fwrite!(f, "{}", body)?;
-                dedent();
-                fwriteln!(f, "")?;
-                fwrite!(f, "}}")
+                writeln!(f, "While")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
+                Ok(())
             }
 
             CXExprKind::Defer { expr } => {
-                fwrite!(f, "defer {}", expr)
+                writeln!(f, "Defer")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
 
             CXExprKind::New { _type } => {
-                fwrite!(f, "new {}", _type)
+                writeln!(f, "New {}", _type)
             }
 
             CXExprKind::SizeOf { expr } => {
-                fwrite!(f, "sizeof({})", expr)
+                writeln!(f, "SizeOf")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
 
-            _ => fwrite!(f, "{:?}", self),
+            _ => writeln!(f, "{:?}", self.expr.kind),
         }
     }
 }
 
 impl Display for CXBinOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXBinOp::Add => fwrite!(f, "+"),
-            CXBinOp::Subtract => fwrite!(f, "-"),
-            CXBinOp::Multiply => fwrite!(f, "*"),
-            CXBinOp::Divide => fwrite!(f, "/"),
-            CXBinOp::Modulus => fwrite!(f, "%"),
-
-            CXBinOp::Equal => fwrite!(f, "=="),
-            CXBinOp::NotEqual => fwrite!(f, "!="),
-
-            CXBinOp::Less => fwrite!(f, "<"),
-            CXBinOp::LessEqual => fwrite!(f, "<="),
-            CXBinOp::Greater => fwrite!(f, ">"),
-            CXBinOp::GreaterEqual => fwrite!(f, ">="),
-
-            CXBinOp::Access => fwrite!(f, "."),
-
-            CXBinOp::Comma => fwrite!(f, ","),
-
+            CXBinOp::Add => write!(f, "+"),
+            CXBinOp::Subtract => write!(f, "-"),
+            CXBinOp::Multiply => write!(f, "*"),
+            CXBinOp::Divide => write!(f, "/"),
+            CXBinOp::Modulus => write!(f, "%"),
+            CXBinOp::Equal => write!(f, "=="),
+            CXBinOp::NotEqual => write!(f, "!="),
+            CXBinOp::Less => write!(f, "<"),
+            CXBinOp::LessEqual => write!(f, "<="),
+            CXBinOp::Greater => write!(f, ">"),
+            CXBinOp::GreaterEqual => write!(f, ">="),
+            CXBinOp::Access => write!(f, "."),
+            CXBinOp::MethodCall => write!(f, "()"),
+            CXBinOp::ArrayIndex => write!(f, "[]"),
+            CXBinOp::Comma => write!(f, ","),
             CXBinOp::Assign(add) => {
                 if let Some(add) = add {
-                    fwrite!(f, "{}=", add)
+                    write!(f, "{} =", add)
                 } else {
-                    fwrite!(f, "=")
+                    write!(f, "=")
                 }
             }
+            CXBinOp::Is => write!(f, "is"),
 
-            CXBinOp::Is => fwrite!(f, "is"),
-
-            _ => fwrite!(f, "{:?}", self),
+            CXBinOp::LAnd => write!(f, "&&"),
+            CXBinOp::LOr => write!(f, "||"),
+            CXBinOp::BitAnd => write!(f, "&"),
+            CXBinOp::BitOr => write!(f, "|"),
+            CXBinOp::BitXor => write!(f, "^"),
+            CXBinOp::LShift => write!(f, "<<"),
+            CXBinOp::RShift => write!(f, ">>"),
         }
     }
 }
 
-impl Display for CXInitIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(name) = &self.name {
-            write!(f, "{}: {}", name, self.value)
-        } else {
-            write!(f, "{}", self.value)
+struct CXInitIndexFormatter<'a> {
+    index: &'a CXInitIndex,
+    depth: usize,
+}
+
+impl<'a> CXInitIndexFormatter<'a> {
+    fn new(index: &'a CXInitIndex, depth: usize) -> Self {
+        Self { index, depth }
+    }
+
+    fn indent(&self, f: &mut Formatter<'_>) -> Result {
+        for _ in 0..self.depth {
+            write!(f, "  ")?;
         }
+        Ok(())
+    }
+}
+
+impl<'a> Display for CXInitIndexFormatter<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        self.indent(f)?;
+        if let Some(name) = &self.index.name {
+            writeln!(f, ".{name} = ")?;
+        } else {
+            writeln!(f, "[] = ")?;
+        }
+        CXExprFormatter::new(&self.index.value, self.depth + 1).fmt(f)?;
+        Ok(())
     }
 }
