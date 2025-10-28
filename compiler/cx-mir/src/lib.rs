@@ -5,6 +5,7 @@ use cx_typechecker_data::ast::TCAST;
 
 mod aux_routines;
 pub mod builder;
+pub(crate) mod function_contracts;
 mod cx_maps;
 mod deconstructor;
 mod global_stmts;

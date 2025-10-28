@@ -119,6 +119,7 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
             }
         }
 
+        (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => coerce(CXCastType::IntToBool),
         (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => coerce(CXCastType::IntegralCast),
         (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => coerce(CXCastType::FloatCast),
         (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => coerce(CXCastType::IntToFloat),

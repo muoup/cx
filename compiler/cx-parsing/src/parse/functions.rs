@@ -183,6 +183,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<Option<
                 }
                 
                 data.tokens.next();
+                assert_token_matches!(data.tokens, punctuator!(Colon));
                 assert_token_matches!(data.tokens, punctuator!(OpenParen));
                 let expr = parse_expr(data)?;
                 assert_token_matches!(data.tokens, punctuator!(CloseParen));
@@ -196,15 +197,21 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<Option<
                 
                 data.tokens.next();
                 assert_token_matches!(data.tokens, punctuator!(Colon));
-                
+                assert_token_matches!(data.tokens, punctuator!(OpenParen));
                 let expr = parse_expr(data)?;
+                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                
                 contract.postcondition = Some(expr);
             }
             _ => break,
         }
+        
+        if !try_next!(data.tokens, operator!(Comma)) {
+            break;
+        }
     }
     
-    return Some(None);
+    return Some(Some(contract));
 }
 
 pub(crate) struct ParseParamsResult {

@@ -2,7 +2,7 @@ use crate::builder::MIRBuilder;
 use cx_parsing_data::ast::CXCastType;
 use cx_mir_data::types::MIRTypeKind;
 use cx_mir_data::VirtualInstruction::IntToPtrDiff;
-use cx_mir_data::{MIRValue, VirtualInstruction};
+use cx_mir_data::{MIRIntBinOp, MIRValue, VirtualInstruction};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 
 pub(crate) fn implicit_cast(
@@ -88,6 +88,16 @@ pub(crate) fn implicit_cast(
                     ptr_type: bc_type,
                 },
                 to_type.clone(),
+            )
+        }
+        
+        CXCastType::IntToBool => {
+            let from_mir_type = builder.convert_fixed_cx_type(from_type)?;
+            let zero = builder.match_int_const(0, &from_mir_type);
+            
+            builder.add_instruction(
+                VirtualInstruction::IntegerBinOp { op: MIRIntBinOp::NE, left: value, right: zero },
+                MIRTypeKind::Bool.into()
             )
         }
 

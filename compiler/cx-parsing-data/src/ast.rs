@@ -283,6 +283,7 @@ pub enum CXCastType {
     IntegralCast,
     FloatCast,
     IntToFloat,
+    IntToBool,
     FloatToInt,
     BitCast,
     IntegralTrunc,

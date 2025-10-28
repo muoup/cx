@@ -1,12 +1,16 @@
 use crate::environment::TCEnvironment;
+use crate::log_typecheck_error;
+use crate::type_checking::casting::try_implicit_cast;
+use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::complete_type;
 use crate::type_completion::types::_complete_type;
-use cx_parsing_data::data::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
-use cx_typechecker_data::ast::TCBaseMappings;
-use cx_typechecker_data::cx_types::{TCFunctionPrototype, TCParameter, CXTemplateInput};
+use cx_parsing_data::ast::CXExpr;
+use cx_parsing_data::data::{CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
+use cx_typechecker_data::ast::{TCBaseMappings, TCExpr};
+use cx_typechecker_data::cx_types::{CXTemplateInput, CXTypeKind, TCFunctionContract, TCFunctionPrototype, TCParameter};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
-use cx_util::log_error;
+use cx_util::{CXResult, log_error};
 
 pub(crate) fn apply_implicit_fn_attr(
     mut proto: CXNaivePrototype,
@@ -92,6 +96,59 @@ pub(crate) fn complete_fn_ident(
     }
 }
 
+fn _complete_fn_contract_clause(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+    clause: &CXExpr,
+) -> CXResult<TCExpr> {
+    let mut checked_clause = typecheck_expr(env, base_data, clause)?;
+    let cast_result = try_implicit_cast(&mut checked_clause, &CXTypeKind::Bool.into());
+    
+    if let None = cast_result {
+        log_typecheck_error!(
+            env,
+            clause,
+            "Function contract clause must evaluate to an integer (boolean), found: {}",
+            checked_clause._type
+        );
+    }
+    
+    Some(checked_clause)
+}
+
+fn _complete_fn_contract(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+    parameters: &Vec<TCParameter>,
+    contract: &CXNaiveFunctionContract,
+) -> CXResult<TCFunctionContract> {
+    env.push_scope();
+
+    for param in parameters {
+        if let Some(name) = &param.name {
+            env.insert_symbol(name.to_string(), param._type.clone());
+        }
+    }
+
+    let precondition = contract.precondition.as_ref()
+        .map(|pre| _complete_fn_contract_clause(env, base_data, &pre).ok_or(()))
+        .transpose()
+        .ok()?;
+    let postcondition = contract.postcondition.as_ref()
+        .map(|post| _complete_fn_contract_clause(env, base_data, &post).ok_or(()))
+        .transpose()
+        .ok()?;
+    
+    let contract = TCFunctionContract {
+        precondition,
+        postcondition,
+    };
+    
+    env.pop_scope();
+
+    Some(contract)
+}
+
 pub fn _complete_fn_prototype(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
@@ -115,12 +172,17 @@ pub fn _complete_fn_prototype(
         })
         .collect::<Option<Vec<_>>>()?;
     
+    let contract = prototype.contract.as_ref()
+        .map(|contract| _complete_fn_contract(env, base_data, &parameters, contract).ok_or(()))
+        .transpose()
+        .ok()?;
+    
     let prototype = TCFunctionPrototype {
         name: ident.clone(),
         return_type: return_type,
         params: parameters,
         var_args: prototype.var_args,
-        contract: None,
+        contract,
     };
     
     if !env.realized_fns.contains_key(&ident) {

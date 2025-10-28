@@ -1,8 +1,9 @@
 import std::io;
 
-int function(int input) 
-    where pre(printf("precondition checked")),
-          post(printf("postcondition checked")) {
+int function(int input) where 
+    pre: (printf("precondition checked\n")),
+    post: (printf("postcondition checked\n")) 
+{
 
     printf("function body executed\n");
     return input * 2;

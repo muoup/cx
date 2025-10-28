@@ -278,8 +278,8 @@ impl TokenKind {
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "where" => TokenKind::Keyword(KeywordType::Where),
-            "precondition" => TokenKind::Keyword(KeywordType::Precondition),
-            "postcondition" => TokenKind::Keyword(KeywordType::Postcondition),
+            "pre" => TokenKind::Keyword(KeywordType::Precondition),
+            "post" => TokenKind::Keyword(KeywordType::Postcondition),
 
             _ => TokenKind::Identifier(str),
         }

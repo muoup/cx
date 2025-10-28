@@ -4,6 +4,7 @@ use crate::aux_routines::{
 use crate::builder::MIRBuilder;
 use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
+use crate::function_contracts::add_contract_verification;
 use crate::implicit_cast::implicit_cast;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
@@ -157,21 +158,48 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             if let TCExprKind::MemberFunctionReference { target, .. } = &function.kind {
                 args.push(generate_instruction(builder, target.as_ref())?);
             }
+           
+            builder.push_scope();
 
-            for arg in arguments.iter() {
+            for (i, arg) in arguments.iter().enumerate() {
                 let arg_id = generate_instruction(builder, arg)?;
-                args.push(arg_id);
+                args.push(arg_id.clone());   
+            
+                let param_name = prototype.params.get(i)
+                    .and_then(|p| p.name.as_ref()); 
+                
+                if let Some(name) = param_name {
+                    builder.insert_symbol(name.to_string(), arg_id);
+                }
             }
-
+            
             match direct_call {
-                true => builder.add_instruction_cxty(
-                    VirtualInstruction::DirectCall {
-                        args,
-                        method_sig: convert_cx_prototype(&prototype)?,
-                    },
-                    prototype.return_type.clone(),
-                ),
+                true => {
+                    if let Some(contract) = prototype.contract.as_ref() {
+                        if let Some(precondition) = contract.precondition.as_ref() {
+                            add_contract_verification(builder, precondition, "Precondition");
+                        }
+                    }
+                    
+                    let val = builder.add_instruction_cxty(
+                        VirtualInstruction::DirectCall {
+                            args,
+                            method_sig: convert_cx_prototype(&prototype)?,
+                        },
+                        prototype.return_type.clone(),
+                    )?;
+                    
+                    if let Some(contract) = prototype.contract.as_ref() {
+                        if let Some(postcondition) = contract.postcondition.as_ref() {
+                            add_contract_verification(builder, postcondition, "Postcondition");
+                        }
+                    }
+                    
+                    builder.pop_scope();
+                    Some(val)
+                },
                 false => {
+                    builder.pop_scope();
                     let left_id = generate_instruction(builder, function.as_ref())?;
 
                     builder.add_instruction_cxty(
