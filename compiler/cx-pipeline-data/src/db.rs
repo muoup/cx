@@ -1,7 +1,7 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
+use cx_parsing_data::ast::CXAST;
 use cx_parsing_data::PreparseContents;
-use cx_parsing_data::parse::ast::CXAST;
 use cx_lexer_data::token::Token;
 use cx_mir_data::ProgramMIR;
 use cx_typechecker_data::ast::{TCAST, TCBaseMappings};
@@ -20,8 +20,8 @@ pub struct ModuleData {
     pub preparse_full: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
-
-    pub structure_data: ModuleMap<TCBaseMappings>,
+    pub base_mappings: ModuleMap<TCBaseMappings>,
+    
     pub typechecked_ast: ModuleMap<TCAST>,
 
     pub bytecode: ModuleMap<ProgramMIR>,
@@ -45,7 +45,7 @@ impl ModuleData {
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
 
-            structure_data: ModuleMap::new(".cx-structure-data"),
+            base_mappings: ModuleMap::new(".cx-structure-data"),
             typechecked_ast: ModuleMap::new(".cx-typechecked-ast"),
 
             bytecode: ModuleMap::new(".cx-bytecode"),
@@ -128,9 +128,9 @@ impl<'a, Data> ModuleMap<Data> {
             .unwrap_or_else(|| {
                 println!(
                     "Data with suffix {} does not contain information for unit: {}",
-                    self.storage_extension, unit
+                    self.storage_extension, unit.identifier()
                 );
-                println!("Keys in map: {:?}", lock.keys().collect::<Vec<_>>());
+                println!("Keys: {:?}", lock.keys().collect::<Vec<_>>());
                 panic!("Data not found in the module map")
             })
             .clone()

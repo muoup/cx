@@ -23,6 +23,7 @@ mod regression_tests {
     test_files!(
         hello_world,
         basic_arithmetic,
+        basic_compound_expr,
         basic_for,
         basic_strong_ptr,
         basic_template,
@@ -41,7 +42,8 @@ mod regression_tests {
         templated_destructor,
         basic_global_variable,
         global_in_template,
-        sum_type
+        sum_type,
+        function_contract
     );
 }
 

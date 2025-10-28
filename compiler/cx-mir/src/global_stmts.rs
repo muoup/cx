@@ -5,12 +5,13 @@ use cx_mir_data::types::MIRType;
 use cx_mir_data::{
     LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRValue, VirtualInstruction,
 };
-use cx_typechecker_data::ast::{TCExpr, TCGlobalVariable};
-use cx_typechecker_data::cx_types::CXFunctionPrototype;
+use cx_parsing_data::data::CXLinkageMode;
+use cx_typechecker_data::ast::{TCExpr, TCGlobalVarKind, TCGlobalVariable};
+use cx_typechecker_data::cx_types::TCFunctionPrototype;
 
 pub(crate) fn generate_function(
     builder: &mut MIRBuilder,
-    prototype: &CXFunctionPrototype,
+    prototype: &TCFunctionPrototype,
     body: &TCExpr,
 ) -> Option<()> {
     builder.push_scope();
@@ -22,8 +23,7 @@ pub(crate) fn generate_function(
 
     let Some(_) = generate_instruction(builder, body) else {
         panic!(
-            "Failed to generate body for function {}",
-            prototype
+            "Failed to generate body for function {prototype}"
         );
     };
 
@@ -35,7 +35,7 @@ pub(crate) fn generate_function(
 
 fn generate_params(
     builder: &mut MIRBuilder,
-    prototype: &CXFunctionPrototype,
+    prototype: &TCFunctionPrototype,
     bc_prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     let hidden_params_count = bc_prototype.params.len() - prototype.params.len();
@@ -86,24 +86,30 @@ fn generate_params(
     Some(())
 }
 
+fn convert_cx_linkage(linkage: CXLinkageMode) -> LinkageType {
+    match linkage {
+        CXLinkageMode::Standard => LinkageType::Standard,
+        CXLinkageMode::Static => LinkageType::Static,
+        CXLinkageMode::Extern => LinkageType::External,
+    }
+}
+
 pub(crate) fn generate_global_variable(
     builder: &mut MIRBuilder,
     var: &TCGlobalVariable,
 ) -> Option<()> {
-    match var {
-        TCGlobalVariable::UnaddressableConstant { .. } => (),
-
-        TCGlobalVariable::StringLiteral { name, value } => {
+    match &var.kind {
+        TCGlobalVarKind::StringLiteral { name, value } => {
             let value = MIRGlobalValue {
                 name: name.clone(),
-                linkage: LinkageType::Static,
+                linkage: convert_cx_linkage(var.linkage),
                 _type: MIRGlobalType::StringLiteral(value.clone()),
             };
 
             builder.insert_global_symbol(value);
         }
 
-        TCGlobalVariable::Variable {
+        TCGlobalVarKind::Variable {
             name,
             _type,
             initializer,
@@ -111,7 +117,7 @@ pub(crate) fn generate_global_variable(
             let _type = builder.convert_cx_type(_type)?;
             let value = MIRGlobalValue {
                 name: name.clone(),
-                linkage: LinkageType::Standard,
+                linkage: convert_cx_linkage(var.linkage),
                 _type: MIRGlobalType::Variable {
                     initial_value: *initializer,
                     _type: _type.clone(),

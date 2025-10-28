@@ -10,10 +10,10 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_mir_data::types::{MIRTypeKind, MIRTypeSize};
+use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, MIRIntBinOp,
-    VirtualInstruction,
+    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, LinkageType,
+    MIRFunctionPrototype, MIRIntBinOp, MIRParameter, VirtualInstruction,
 };
 use std::ops::IndexMut;
 
@@ -729,6 +729,39 @@ pub(crate) fn codegen_instruction(
             };
 
             Some(CodegenValue::Value(val))
+        }
+
+        VirtualInstruction::CompilerAssertion { condition, message } => {
+            let cond = context.get_value(condition).unwrap().as_value();
+            let message_ref = context.get_value(message)?.as_value();
+
+            let assert_prototype = MIRFunctionPrototype {
+                name: "__compiler_assert".to_string(),
+                params: vec![
+                    MIRParameter {
+                        name: None,
+                        _type: MIRTypeKind::Bool.into(),
+                    },
+                    MIRParameter {
+                        name: None,
+                        _type: MIRType::default_pointer(),
+                    },
+                ],
+                return_type: MIRType::unit(),
+                var_args: false,
+                linkage: LinkageType::External,
+            };
+
+            let Some(func_id) = get_function(context, &assert_prototype) else {
+                panic!("Failed to get function id for compiler assertion");
+            };
+
+            let func_ref =
+                get_func_ref(context, func_id, &assert_prototype, &[cond, message_ref]).unwrap();
+
+            context.builder.ins().call(func_ref, &[cond, message_ref]);
+
+            Some(CodegenValue::NULL)
         }
 
         VirtualInstruction::JumpTable {

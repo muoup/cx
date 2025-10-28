@@ -5,6 +5,7 @@ use cx_typechecker_data::ast::TCAST;
 
 mod aux_routines;
 pub mod builder;
+pub(crate) mod function_contracts;
 mod cx_maps;
 mod deconstructor;
 mod global_stmts;
@@ -26,7 +27,7 @@ pub fn generate_bytecode(ast: TCAST) -> Option<ProgramMIR> {
     
     for deconstructor in builder.defined_deconstructors.clone().into_iter() {
         deconstructor::generate_deconstructor(&mut builder, &deconstructor)
-            .unwrap_or_else(|| panic!("Failed to generate deconstructor for type {}", deconstructor));
+            .unwrap_or_else(|| panic!("Failed to generate deconstructor for type {deconstructor}"));
     }
 
     builder.finish()

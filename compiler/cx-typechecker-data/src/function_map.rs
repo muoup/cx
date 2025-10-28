@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use cx_parsing_data::preparse::{naive_types::ModuleResource, templates::CXFunctionTemplate};
+use cx_parsing_data::data::{CXFunctionTemplate, ModuleResource};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::cx_types::{CXFunctionPrototype, CXType};
+use crate::cx_types::{TCFunctionPrototype, CXType};
 
-pub type CXFnMap = HashMap<CXFunctionIdentifier, CXFunctionPrototype>;
+pub type CXFnMap = HashMap<CXFunctionIdentifier, TCFunctionPrototype>;
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct CXFnData {
@@ -22,7 +22,7 @@ impl CXFnData {
         }
     }
 
-    pub fn insert_standard(&mut self, prototype: CXFunctionPrototype) {
+    pub fn insert_standard(&mut self, prototype: TCFunctionPrototype) {
         self.map.insert(prototype.name.clone(), prototype);
     }
 
@@ -34,11 +34,11 @@ impl CXFnData {
         self.templates.insert(name, template);
     }
     
-    pub fn iter(&self) -> impl Iterator<Item = (&CXFunctionIdentifier, &CXFunctionPrototype)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&CXFunctionIdentifier, &TCFunctionPrototype)> {
         self.map.iter()
     }
     
-    pub fn standard_fns(&self) -> impl Iterator<Item = &CXFunctionPrototype> {
+    pub fn standard_fns(&self) -> impl Iterator<Item = &TCFunctionPrototype> {
         self.map.values()
     }
     
@@ -46,7 +46,7 @@ impl CXFnData {
         self.map.contains_key(name)
     }
 
-    pub fn get(&self, name: &CXFunctionIdentifier) -> Option<&CXFunctionPrototype> {
+    pub fn get(&self, name: &CXFunctionIdentifier) -> Option<&TCFunctionPrototype> {
         self.map.get(name)
     }
 
@@ -92,11 +92,11 @@ pub enum CXFunctionKind {
 
 impl CXFunctionKind {
     pub fn member_mangle(base_type: &str, name: &str) -> String {
-        format!("_M{}_{}", base_type, name)
+        format!("_M{base_type}_{name}")
     }
 
     pub fn destructor_mangle(base_type: &str) -> String {
-        format!("_D{}", base_type)
+        format!("_D{base_type}")
     }
     
     pub fn destructor_mangle_ty(base_type: &CXType) -> Option<String> {
@@ -109,7 +109,7 @@ impl CXFunctionKind {
     }
     
     pub fn deconstructor_mangle(base_type: &str) -> String {
-        format!("_DC{}", base_type)
+        format!("_DC{base_type}")
     }
     
     pub fn deconstructor_mangle_ty(base_type: &CXType) -> Option<String> {
@@ -137,7 +137,7 @@ impl CXFunctionKind {
         format!("{}{}", Self::template_prefix(return_type, params), name)
     }
     
-    pub fn standard_template_mangle(name: &str, prototype: &CXFunctionPrototype) -> String {
+    pub fn standard_template_mangle(name: &str, prototype: &TCFunctionPrototype) -> String {
         Self::template_mangle(
             name,
             &prototype.return_type,
@@ -180,7 +180,7 @@ impl CXFunctionIdentifier {
         }
     }
     
-    pub fn template_mangle(&mut self, prototype: &CXFunctionPrototype) {
+    pub fn template_mangle(&mut self, prototype: &TCFunctionPrototype) {
         self.template_mangle2(&prototype.return_type, prototype.params.iter().map(|p| &p._type));
     }
     

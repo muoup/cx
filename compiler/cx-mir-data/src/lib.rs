@@ -242,6 +242,13 @@ pub enum VirtualInstruction {
     BitCast {
         value: MIRValue,
     },
+    
+    // During debug builds, we can insert assertions to validate assumptions
+    // During release builds, these can either be no-ops or compiler hints
+    CompilerAssertion {
+        condition: MIRValue,
+        message: MIRValue,
+    },
 
     NOP,
 }

@@ -288,6 +288,9 @@ impl Display for VirtualInstruction {
             VirtualInstruction::FloatCast { value } => {
                 write!(f, "float_cast {value}")
             }
+            VirtualInstruction::CompilerAssertion { condition, message } => {
+                write!(f, "compiler_assertion {condition} ({message})")
+            }
             VirtualInstruction::NOP => {
                 write!(f, "nop")
             }

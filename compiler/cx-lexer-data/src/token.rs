@@ -1,11 +1,4 @@
-#[derive(Debug, PartialEq)]
-pub struct TokenData {
-    pub line_number: u32,
-    pub start: u16,
-    pub end: u16,
-
-    pub data: TokenKind,
-}
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
@@ -14,6 +7,7 @@ pub struct Token {
     pub line: u32,
     pub start_index: usize,
     pub end_index: usize,
+    pub file_origin: Arc<str>,
 }
 
 #[macro_export]
@@ -191,6 +185,9 @@ pub enum KeywordType {
     Type,
     Class,
     Match,
+    Where,
+    Precondition,
+    Postcondition,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -279,6 +276,10 @@ impl TokenKind {
 
             "match" => TokenKind::Keyword(KeywordType::Match),
             "is" => TokenKind::Operator(OperatorType::Is),
+
+            "where" => TokenKind::Keyword(KeywordType::Where),
+            "pre" => TokenKind::Keyword(KeywordType::Precondition),
+            "post" => TokenKind::Keyword(KeywordType::Postcondition),
 
             _ => TokenKind::Identifier(str),
         }

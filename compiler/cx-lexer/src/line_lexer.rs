@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use cx_lexer_data::punctuator;
 use cx_lexer_data::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
@@ -5,29 +7,36 @@ use cx_util::char_iter::CharIter;
 pub(crate) struct LineLexer<'a> {
     last_consume: usize,
     iter: &'a mut CharIter<'a>,
+    file_origin: Arc<str>,
 
     pub tokens: Vec<Token>,
 }
 
-pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>) -> Option<Vec<Token>> {
-    let mut line_lexer = LineLexer::new(iter);
+pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>, file_origin: String) -> Option<Vec<Token>> {
+    let mut line_lexer = LineLexer::new(iter, file_origin);
     line_lexer.generate_tokens();
     Some(line_lexer.tokens)
 }
 
 impl<'a> LineLexer<'a> {
-    fn add_token(&mut self, token: Token) {
-        self.tokens.push(token);
+    fn add_token(&mut self, kind: TokenKind) {
+        self.tokens.push(Token {
+            kind,
+
+            line: self.iter.line,
+            start_index: self.last_consume,
+            end_index: self.iter.current_iter,
+            file_origin: self.file_origin.clone(),
+        })
     }
 
     pub(crate) fn generate_tokens(&mut self) {
         while self.iter.has_next() && self.iter.peek() != Some('\n') {
-            if self.last_consume == self.iter.current_iter {
-                if let Some(token) = self.pre_ident_lex() {
-                    self.tokens.push(token);
+            if self.last_consume == self.iter.current_iter
+                && let Some(token) = self.pre_ident_lex() {
+                    self.add_token(token);
                     self.last_consume = self.iter.current_iter;
                 }
-            }
 
             let previous_lex = self.iter.current_iter;
 
@@ -52,12 +61,14 @@ impl<'a> LineLexer<'a> {
         self.consume(self.iter.current_iter);
     }
 
-    fn new(iter: &'a mut CharIter<'a>) -> LineLexer<'a> {
+    fn new(iter: &'a mut CharIter<'a>, file_origin: String) -> LineLexer<'a> {
         let last_consume = iter.current_iter;
+        
         LineLexer {
             iter,
             last_consume,
             tokens: Vec::new(),
+            file_origin: Arc::from(file_origin),
         }
     }
 
@@ -67,23 +78,14 @@ impl<'a> LineLexer<'a> {
         }
 
         let str = self.iter.source[self.last_consume..up_to].to_string();
-        let str_start = self.last_consume;
+        if str.chars().any(|c| !c.is_whitespace()) {
+            self.add_token(TokenKind::from_str(str));
+        }
 
         self.last_consume = self.iter.current_iter;
-
-        if str.chars().any(|c| !c.is_whitespace()) {
-            let kind = TokenKind::from_str(str);
-
-            self.add_token(Token {
-                kind,
-                line: self.iter.line,
-                start_index: str_start,
-                end_index: up_to,
-            })
-        }
     }
 
-    fn pre_ident_lex(&mut self) -> Option<Token> {
+    fn pre_ident_lex(&mut self) -> Option<TokenKind> {
         match self.iter.peek()? {
             '0'..='9' => number_lex(self.iter),
             '"' => string_lex(self.iter),
@@ -93,7 +95,7 @@ impl<'a> LineLexer<'a> {
     }
 }
 
-fn number_lex(iter: &mut CharIter) -> Option<Token> {
+fn number_lex(iter: &mut CharIter) -> Option<TokenKind> {
     let start_index = iter.current_iter;
     let mut dot = false;
     while let Some(c) = iter.peek() {
@@ -105,24 +107,18 @@ fn number_lex(iter: &mut CharIter) -> Option<Token> {
         iter.next();
     }
     let num = &iter.source[start_index..iter.current_iter];
-    let kind = if dot {
-        TokenKind::FloatLiteral(num.parse().unwrap())
+
+    if dot {
+        Some(TokenKind::FloatLiteral(num.parse().unwrap()))
     } else {
-        TokenKind::IntLiteral(
+        Some(TokenKind::IntLiteral(
             num.parse()
                 .unwrap_or_else(|_| panic!("Invalid number: {num}\n")),
-        )
-    };
-
-    Some(Token {
-        kind,
-        line: iter.line,
-        start_index,
-        end_index: iter.current_iter,
-    })
+        ))
+    }
 }
 
-fn string_lex(iter: &mut CharIter) -> Option<Token> {
+fn string_lex(iter: &mut CharIter) -> Option<TokenKind> {
     assert_eq!(iter.next(), Some('"'));
     let start_iter = iter.current_iter;
     while let Some(c) = iter.next() {
@@ -141,21 +137,14 @@ fn string_lex(iter: &mut CharIter) -> Option<Token> {
         .replace("\\r", "\r")
         .replace("\\\"", "\"");
 
-    Some(Token {
-        kind: TokenKind::StringLiteral(string),
-
-        line: iter.line,
-        start_index: start_iter,
-        end_index: iter.current_iter - 1,
-    })
+    Some(TokenKind::StringLiteral(string))
 }
 
-fn char_lex(iter: &mut CharIter) -> Option<Token> {
+fn char_lex(iter: &mut CharIter) -> Option<TokenKind> {
     assert_eq!(iter.next(), Some('\''));
-    let start_index = iter.current_iter;
     let c = iter.next()?;
 
-    let kind = match iter.next()? {
+    Some(match iter.next()? {
         '\'' => TokenKind::IntLiteral(c as i64),
         '0' => {
             assert_eq!(c, '\\');
@@ -178,17 +167,10 @@ fn char_lex(iter: &mut CharIter) -> Option<Token> {
             TokenKind::IntLiteral('\r' as i64)
         }
         _ => panic!("Invalid character literal: '{c}'"),
-    };
-
-    Some(Token {
-        kind,
-        line: iter.line,
-        start_index,
-        end_index: iter.current_iter,
     })
 }
 
-fn operator_lex(iter: &mut CharIter) -> Option<Token> {
+fn operator_lex(iter: &mut CharIter) -> Option<TokenKind> {
     fn try_assignment(iter: &mut CharIter, operator: OperatorType) -> Option<TokenKind> {
         if Some('=') == iter.peek() {
             iter.next();
@@ -198,9 +180,7 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
         }
     }
 
-    let start_index = iter.current_iter;
-
-    let kind = match iter.next()? {
+    match iter.next()? {
         '*' => try_assignment(iter, OperatorType::Asterisk),
         '/' => match iter.peek() {
             Some('/') => {
@@ -327,23 +307,15 @@ fn operator_lex(iter: &mut CharIter) -> Option<Token> {
             iter.back();
             None
         }
-    }?;
-
-    Some(Token {
-        kind,
-        line: iter.line,
-        start_index,
-        end_index: iter.current_iter,
-    })
+    }
 }
 
-fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
+fn punctuator_lex(iter: &mut CharIter) -> Option<TokenKind> {
     if !iter.has_next() {
         return None;
     }
 
-    let start_index = iter.current_iter;
-    let kind = match iter.next().unwrap() {
+    match iter.next().unwrap() {
         '(' => Some(TokenKind::Punctuator(PunctuatorType::OpenParen)),
         ')' => Some(TokenKind::Punctuator(PunctuatorType::CloseParen)),
         '[' => Some(TokenKind::Punctuator(PunctuatorType::OpenBracket)),
@@ -359,12 +331,5 @@ fn punctuator_lex(iter: &mut CharIter) -> Option<Token> {
             iter.back();
             None
         }
-    }?;
-
-    Some(Token {
-        kind,
-        line: iter.line,
-        start_index,
-        end_index: iter.current_iter,
-    })
+    }
 }

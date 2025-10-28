@@ -162,12 +162,17 @@ impl MIRBuilder {
     pub fn get_symbol(&self, name: &str) -> Option<MIRValue> {
         self.symbol_table.get(name).cloned()
     }
+    
+    pub fn add_global_variable(&mut self, value: MIRGlobalValue) -> u32 {       
+        self.global_variables.push(value);
+        
+        (self.global_variables.len() - 1) as u32
+    }
 
     pub fn insert_global_symbol(&mut self, value: MIRGlobalValue) {
         let key = value.name.to_string();
-        self.global_variables.push(value);
-        let index = (self.global_variables.len() - 1) as u32;
-
+        let index = self.add_global_variable(value);
+        
         self.insert_symbol(key, MIRValue::Global(index));
     }
 
@@ -291,6 +296,45 @@ impl MIRBuilder {
         };
 
         predecessors.push((value, from_block));
+    }
+    
+    pub fn get_value_type(&self, value: &MIRValue) -> Option<MIRType> {
+        match value {
+            MIRValue::NULL => Some(MIRType::unit()),
+                       
+            MIRValue::LoadOf(type_, _) | 
+            MIRValue::FloatImmediate { type_, .. } |
+            MIRValue::IntImmediate { type_, .. } => Some(type_.clone()),
+            
+            MIRValue::ParameterRef(param_index) => {
+                let context = self.fun();
+                let param = context.prototype.params.get(*param_index as usize)?;
+
+                Some(param._type.clone())
+            },
+            MIRValue::Global(global_index) => {
+                let global = self.global_variables.get(*global_index as usize)?;
+
+                match &global._type {
+                    MIRGlobalType::StringLiteral(..) => Some(MIRType::default_pointer()),
+                    MIRGlobalType::Variable { _type, .. } => Some(_type.clone()),
+                }
+            },
+            
+            MIRValue::FunctionRef(_) => Some(MIRType::default_pointer()),
+            MIRValue::BlockResult { block_id, value_id } => {
+                let context = self.fun();
+
+                let block = match block_id {
+                    BlockID::Block(id) => context.blocks.get(*id as usize)?,
+                    BlockID::DeferredBlock(id) => context.deferred_blocks.get(*id as usize)?,
+                };
+
+                let instruction = block.body.get(*value_id as usize)?;
+
+                Some(instruction.value_type.clone())
+            },
+        }
     }
 
     pub fn match_int_const(&self, value: i32, _type: &MIRType) -> MIRValue {

@@ -1,16 +1,19 @@
-use crate::cx_types::{CXFunctionPrototype, CXType};
-use crate::function_map::{CXFnData, CXFnMap};
-use crate::{CXTypeData, CXTypeMap};
-use cx_parsing_data::parse::ast::{CXBinOp, CXCastType, CXUnOp};
+use crate::cx_types::{TCFunctionPrototype, CXType};
+use crate::function_map::CXFnMap;
+use crate::CXTypeMap;
+use cx_parsing_data::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
+use cx_parsing_data::data::{CXLinkageMode, ModuleResource};
+use cx_parsing_data::naive_map::{CXNaiveFnMap, CXNaiveTypeMap};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCBaseMappings {
-    pub type_data: CXTypeData,
-    pub fn_map: CXFnData,
-    pub global_variables: HashMap<String, TCGlobalVariable>,
+    pub unit: String,
+    pub type_data: CXNaiveTypeMap,
+    pub fn_data: CXNaiveFnMap,
+    pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -33,17 +36,19 @@ pub struct FunctionTemplateRequest {
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCFunctionDef {
-    pub prototype: CXFunctionPrototype,
+    pub prototype: TCFunctionPrototype,
     pub body: Box<TCExpr>,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub enum TCGlobalVariable {
-    // Currently used with enum constants
-    UnaddressableConstant {
-        name: CXIdent,
-        val: i64,
-    },
+pub struct TCGlobalVariable {
+    pub kind: TCGlobalVarKind,
+    pub is_mutable: bool,
+    pub linkage: CXLinkageMode
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub enum TCGlobalVarKind {
     StringLiteral {
         name: CXIdent,
         value: String,
@@ -52,7 +57,7 @@ pub enum TCGlobalVariable {
         name: CXIdent,
         _type: CXType,
         initializer: Option<i64>,
-    },
+    },   
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

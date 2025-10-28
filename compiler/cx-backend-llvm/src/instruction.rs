@@ -3,9 +3,10 @@ use crate::attributes::attr_noundef;
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_mir_data::types::{MIRTypeKind, MIRTypeSize};
+use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, VirtualInstruction,
+    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, BlockInstruction, LinkageType,
+    MIRFunctionPrototype, MIRParameter, VirtualInstruction,
 };
 use cx_util::log_error;
 use inkwell::attributes::AttributeLoc;
@@ -692,6 +693,48 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     .unwrap()
                     .as_any_value_enum(),
             )
+        }
+
+        VirtualInstruction::CompilerAssertion { condition, message } => {
+            let condition_value = function_state
+                .get_value(condition)?
+                .get_value()
+                .into_int_value();
+
+            let assert_prototype = MIRFunctionPrototype {
+                name: "__compiler_assert".to_string(),
+                params: vec![
+                    MIRParameter {
+                        name: None,
+                        _type: MIRTypeKind::Bool.into(),
+                    },
+                    MIRParameter {
+                        name: None,
+                        _type: MIRType::default_pointer(),
+                    },
+                ],
+                return_type: MIRType::unit(),
+                var_args: false,
+                linkage: LinkageType::External,
+            };
+            let message_ref = function_state.get_value(message)?.get_value();
+
+            let assert_function = get_function(global_state, &assert_prototype)
+                .expect("Failed to get assert function");
+
+            function_state
+                .builder
+                .build_direct_call(
+                    assert_function,
+                    &[
+                        condition_value.into(),
+                        any_to_basic_val(message_ref)?.into(),
+                    ],
+                    inst_num().as_str(),
+                )
+                .unwrap();
+
+            CodegenValue::NULL
         }
 
         VirtualInstruction::NOP => {

@@ -1,6 +1,7 @@
 use crate::builder::{DeclarationLifetime, MIRBuilder};
+use crate::instruction_gen::generate_algebraic_binop;
 use crate::BytecodeResult;
-use cx_parsing_data::parse::ast::CXBinOp;
+use cx_parsing_data::ast::CXBinOp;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::{MIRValue, VirtualInstruction};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
@@ -13,7 +14,7 @@ pub(crate) struct CXStructAccess {
 }
 
 fn align_offset(current_offset: usize, alignment: usize) -> usize {
-    if current_offset % alignment != 0 {
+    if !current_offset.is_multiple_of(alignment) {
         current_offset + (alignment - (current_offset % alignment))
     } else {
         current_offset
@@ -173,20 +174,28 @@ pub(crate) fn allocate_variable(
 pub(crate) fn assign_value(
     builder: &mut MIRBuilder,
     target: MIRValue,
-    source: MIRValue,
+    mut value: MIRValue,
     _type: &CXType,
     additional_op: Option<&CXBinOp>,
 ) -> BytecodeResult<MIRValue> {
-    if additional_op.is_some() {
-        todo!("compound assignment")
+    let inner_type = builder.convert_fixed_cx_type(_type)?;    
+    
+    if let Some(op) = additional_op {
+        let loaded_value = builder.load_value(target.clone(), inner_type.clone())?;
+        value = generate_algebraic_binop(
+            builder, 
+            _type,
+            loaded_value,
+            value, 
+            inner_type.clone(),
+            op,
+        )?;
     }
-
-    let inner_type = builder.convert_fixed_cx_type(_type)?;
 
     builder.add_instruction(
         VirtualInstruction::Store {
             memory: target,
-            value: source,
+            value,
             type_: inner_type,
         },
         MIRType::unit(),

@@ -1,5 +1,5 @@
 use super::ast::*;
-use crate::{cx_types::{CXFunctionPrototype, CXParameter, CXType, CXTypeKind}, function_map::{CXFunctionIdentifier, CXFunctionKind}};
+use crate::{cx_types::{TCFunctionPrototype, TCParameter, CXType, CXTypeKind}, function_map::{CXFunctionIdentifier, CXFunctionKind}};
 use std::fmt::{Display, Formatter, Result};
 
 pub(crate) fn type_mangle(ty: &CXType) -> String {
@@ -98,7 +98,7 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
         }
     }
 
-    return mangled;
+    mangled
 }
 
 // Helper struct for indented formatting of TCExpr
@@ -158,14 +158,21 @@ impl Display for TCAST {
 
 impl Display for TCGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "{} (mutable: {}, linkage: {:?})",
+            self.kind, self.is_mutable, self.linkage
+        )
+    }
+}
+
+impl Display for TCGlobalVarKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            TCGlobalVariable::UnaddressableConstant { name, val } => {
-                write!(f, "UnaddressableConstant {name} = {val}")
-            }
-            TCGlobalVariable::StringLiteral { name, value } => {
+            TCGlobalVarKind::StringLiteral { name, value } => {
                 write!(f, "StringLiteral {} = \"{}\"", name, value.escape_default())
             }
-            TCGlobalVariable::Variable {
+            TCGlobalVarKind::Variable {
                 name,
                 _type,
                 initializer,
@@ -243,7 +250,7 @@ impl<'a> Display for TCExprFormatter<'a> {
                 target, target_type
             } => {
                 let CXTypeKind::Function { prototype } = &target_type.kind else {
-                    writeln!(f, "MemberFunctionReference <invalid type> {}", target_type)?;
+                    writeln!(f, "MemberFunctionReference <invalid type> {target_type}")?;
                     return Ok(());
                 };
                 
@@ -270,7 +277,7 @@ impl<'a> Display for TCExprFormatter<'a> {
                 }
             }
             TCExprKind::Access { target, field, struct_type } => {
-                writeln!(f, "Access .{} {}", field, struct_type)?;
+                writeln!(f, "Access .{field} {struct_type}")?;
                 TCExprFormatter::new(target, self.depth + 1).fmt(f)?;
             }
             TCExprKind::Assignment {
@@ -527,7 +534,7 @@ impl Display for CXTypeKind {
     }
 }
 
-impl Display for CXFunctionPrototype {
+impl Display for TCFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}(", self.mangle_name())?;
         for (i, param) in self.params.iter().enumerate() {
@@ -546,7 +553,7 @@ impl Display for CXFunctionPrototype {
     }
 }
 
-impl Display for CXParameter {
+impl Display for TCParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(name) = &self.name {
             write!(f, "{}: {}", name, self._type)

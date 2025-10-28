@@ -74,28 +74,15 @@ pub enum CompilationStep {
      *  Outputs:  A naively parsed AST.
      */
     ASTParse = 1 << 2,
-
+    
     /**
-     *  Part 1 of typechecking: Ensures that all expressions in directly implemented functions and
-     *  types are type-correct, including adding implicit type coercion where necessary.
-     *
-     *  Importantly, and why two steps are needed, this creates a fully-contextual type and function map
-     *  that combines declarations from other ASTs. Meaning templates declared in other compilation units
-     *  require that those units are typechecked with this step before they can be realized. In theory, this
-     *  step could be limited to just generating the type and function map of the current compilation unit,
-     *  and then all functions and templates could be typechecked in a single pass, but realizing templates,
-     *  requires cooperation with the pipeline to be given the needed context, meaning indirect and direct
-     *  typechecking would just be unignorably two separate mechanisms included in the same step.
-     *
-     *  Requires: The naive AST, along with the type and function definitions of imports and self.
-     *
-     *  Outputs:  A type-checked AST of direct implementation, including to-be type-checked requests to
-     *  be fulfilled.
+     *  Part 1 of type completion: Combines the public interfaces of all imports into the current ast.
+     *  This means adding all type and function definitions from imports into the current
      */
-    TypeCompletion = 1 << 3,
+    InterfaceCombine = 1 << 3,
 
     /**
-     *  Part 2 of typechecking: Typechecks all indirectly implemented functions and types to a type-checked
+     *  Typechecks all indirectly implemented functions and types to a type-checked
      *  AST. This for the most part consists of realizing templated functions, however in the future other
      *  use-cases may arise related to the implementation of dependent types or other advanced type system features.
      *  As well, in the future, these steps being separated could allow for the pipeline to make better decisions
@@ -215,7 +202,7 @@ impl JobQueue {
             JobState::Completed,
         );
         self.progress_map.insert(
-            (unit.clone(), CompilationStep::TypeCompletion),
+            (unit.clone(), CompilationStep::ImportCombine),
             JobState::Completed,
         );
         self.progress_map.insert(

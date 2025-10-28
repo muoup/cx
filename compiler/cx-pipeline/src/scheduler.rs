@@ -1,11 +1,10 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
-use cx_parsing::parse::parse_ast;
-use cx_parsing::preparse::preparse;
-use cx_parsing_data::parse::ast::CXAST;
-use cx_parsing_data::parse::parser::VisibilityMode;
 use cx_lexer_data::TokenIter;
 use cx_mir::generate_bytecode;
+use cx_parsing::parse::parse_ast;
+use cx_parsing::preparse::preparse;
+use cx_parsing_data::parser::VisibilityMode;
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
@@ -14,7 +13,8 @@ use cx_pipeline_data::jobs::{
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::{create_base_types, typecheck};
+use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
+use cx_typechecker::gather_interface;
 use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
@@ -153,8 +153,10 @@ pub(crate) fn handle_job(
             Some(new_jobs.into())
         }
         CompilationStep::ImportCombine => map_reqs_new_stage(job, CompilationStep::ASTParse),
-        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::TypeCompletion),
-        CompilationStep::TypeCompletion => map_reqs_new_stage(job, CompilationStep::Typechecking),
+        CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
+        CompilationStep::InterfaceCombine => {
+            map_reqs_new_stage(job, CompilationStep::Typechecking)
+        }
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::BytecodeGen),
         CompilationStep::BytecodeGen => map_reqs_new_stage(job, CompilationStep::Codegen),
         CompilationStep::Codegen => Some([].into()),
@@ -254,47 +256,15 @@ pub(crate) fn perform_job(
                     .get(&CompilationUnit::from_str(import.as_str()));
                 let required_visiblity = VisibilityMode::Public;
 
-                for (name, _type) in other_pp_data.type_definitions.standard_iter() {
-                    if _type.visibility < required_visiblity {
+                for resource in other_pp_data.type_idents.iter() {
+                    if resource.visibility < required_visiblity {
                         continue;
                     };
 
-                    pp_data
-                        .type_definitions
-                        .insert_standard(name.clone(), _type.transfer(import));
-                }
-
-                for (name, template) in other_pp_data.type_definitions.template_iter() {
-                    if template.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data
-                        .type_definitions
-                        .insert_template(name.clone(), template.transfer(import));
-                }
-
-                for (name, prototype) in other_pp_data.function_definitions.standard_iter() {
-                    if prototype.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data
-                        .function_definitions
-                        .insert_standard(name.clone(), prototype.transfer(import));
-                }
-
-                for (name, template) in other_pp_data.function_definitions.template_iter() {
-                    if template.visibility < required_visiblity {
-                        continue;
-                    };
-
-                    pp_data
-                        .function_definitions
-                        .insert_template(name.clone(), template.transfer(import));
+                    pp_data.type_idents.push(resource.transfer(import));
                 }
             }
-            
+
             context
                 .module_db
                 .preparse_full
@@ -302,19 +272,12 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::ASTParse => {
-            let pp_data = context.module_db.preparse_full.get(&job.unit);
+            let preparse = context.module_db.preparse_full.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
-            let base_ast = CXAST {
-                type_map: pp_data.type_definitions.to_owned(),
-                function_map: pp_data.function_definitions.to_owned(),
-
-                ..Default::default()
-            };
 
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.with_extension("cx")),
-                base_ast,
+                preparse.as_ref(),
             )
             .expect("AST parsing failed");
 
@@ -328,36 +291,25 @@ pub(crate) fn perform_job(
                 .insert(job.unit.clone(), parsed_ast);
         }
 
-        CompilationStep::TypeCompletion => {
-            let self_ast = context.module_db.naive_ast.get(&job.unit);
-            let completed_data = create_base_types(context, &self_ast)
-                .expect("Failed to create base types");
-
-            context
-                .module_db
-                .structure_data
-                .insert(job.unit.clone(), completed_data);
+        CompilationStep::InterfaceCombine => {
+            gather_interface(context, &job.unit).expect("Failed to gather interface")
         }
 
         CompilationStep::Typechecking => {
-            let structure_data = context.module_db.structure_data.get(&job.unit);
+            let structure_data = context.module_db.base_mappings.get(&job.unit);
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
-            let path = job.unit.with_extension("cx");
-            let mut env = TCEnvironment::new(lexemes.as_ref(), &path, structure_data.as_ref());
-
-            typecheck(&mut env, &self_ast).expect("Typechecking failed");
-            realize_templates(context, &job.unit, &mut env).expect("Template realization failed");
-
-            // FIXME: Is this necessary?
-            env.realized_types
-                .extend(structure_data.type_data.standard.clone());
-            env.realized_fns
-                .extend(structure_data.fn_map.iter()
-                    .map(|(_, v)| (v.name.clone(), v.clone())));
-            env.realized_globals
-                .extend(structure_data.global_variables.clone());
+            let mut env = TCEnvironment::new(
+                lexemes.as_ref(),
+                job.unit.clone(),
+                &context.module_db,
+            );
+            
+            complete_base_globals(&mut env, structure_data.as_ref());
+            complete_base_functions(&mut env, structure_data.as_ref());
+            typecheck(&mut env, structure_data.as_ref(), &self_ast).expect("Typechecking failed");
+            realize_templates(&job.unit, &mut env).expect("Template realization failed");
 
             let tc_ast = TCAST {
                 source_file: self_ast.file_path.clone(),

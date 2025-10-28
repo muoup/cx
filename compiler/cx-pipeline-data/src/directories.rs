@@ -2,23 +2,11 @@ use crate::{CompilationUnit, GlobalCompilationContext, compilation_hash};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 
-pub fn stdlib_directory(inner_path: &str) -> String {
-    let current_exe = std::env::current_exe().expect("Failed to get current executable path");
-
-    // TODO: This is a bit hacky, find a better way to do this
-    if current_exe.parent().unwrap().ends_with("deps") {
-        format!(
-            "{}/../../../lib/{}",
-            current_exe.parent().unwrap().display(),
-            inner_path
-        )
-    } else {
-        format!(
-            "{}/../../lib/{}",
-            current_exe.parent().unwrap().display(),
-            inner_path
-        )
-    }
+pub fn stdlib_directory(inner_path: &str) -> String {   
+    // {project_root}/compiler/cx-pipeline-data
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    
+    format!("{manifest_dir}/../../lib/{inner_path}")
 }
 
 pub fn file_path(path: &str) -> String {

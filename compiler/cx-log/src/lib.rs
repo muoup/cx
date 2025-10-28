@@ -25,6 +25,20 @@ fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
     panic!("Index out of bounds");
 }
 
+fn error_exit() -> ! {
+    if cfg!(debug_assertions) {
+        panic!();
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn annotation_failure(message: &str) -> ! {
+    println!("{message}");
+    println!("Annotation Failure!");
+    error_exit();
+}
+
 pub fn pretty_underline_error(
     message: &str,
     file_path: &Path,
@@ -36,8 +50,20 @@ pub fn pretty_underline_error(
         panic!("No tokens provided for error reporting");
     }
 
-    let start_index = tokens.get(start_index).map(|t| t.start_index).unwrap_or(0);
-    let end_index = tokens.get(end_index - 1).map(|t| t.end_index).unwrap_or(0);
+    let Some(start_token) = tokens.get(start_index) else {
+        annotation_failure(message);
+    };
+    
+    let Some(end_token) = tokens.get(end_index - 1) else {
+        annotation_failure(message);
+    };
+    
+    if start_token.file_origin != end_token.file_origin {
+        annotation_failure(message);
+    }
+    
+    let start_index = start_token.start_index;
+    let end_index = end_token.end_index;
 
     let file_contents = std::fs::read_to_string(file_path)
         .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()));
@@ -71,16 +97,12 @@ pub fn pretty_underline_error(
             .unwrap_or(0);
         remaining_error_chars -= underline.len();
 
-        if remaining_error_chars <= 0 {
+        if remaining_error_chars == 0 {
             break;
         }
     }
-
-    if cfg!(debug_assertions) {
-        panic!("Error encountered: {message}");
-    } else {
-        std::process::exit(1);
-    }
+    
+    error_exit();
 }
 
 pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
@@ -104,11 +126,5 @@ pub fn pretty_point_error(message: &str, file_path: &Path, token: &Token) {
         let lpad = line_as_spacing(&line[..error_padding]);
         println!("{line}");
         println!("{lpad}^");
-    }
-
-    if cfg!(debug_assertions) {
-        panic!("Error encountered: {message}");
-    } else {
-        std::process::exit(1);
     }
 }
