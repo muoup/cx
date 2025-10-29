@@ -1,5 +1,5 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_parsing_data::{assert_token_matches, data::{CXLinkageMode, ModuleResource}, next_kind, parser::VisibilityMode, peek_kind, PreparseContents};
+use cx_parsing_data::{assert_token_matches, data::{CXLinkageMode, ModuleResource}, next_kind, ast::VisibilityMode, peek_kind, PreparseContents};
 use cx_util::{identifier::CXIdent, log_error, CXResult};
 
 pub(crate) struct PreparseData<'a> {

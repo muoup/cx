@@ -1,5 +1,5 @@
 use cx_parsing_data::ast::{CXBinOp, CXUnOp};
-use cx_parsing_data::parser::ParserData;
+use crate::parse::ParserData;
 use cx_parsing_data::{assert_token_matches, next_kind};
 use cx_lexer_data::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_util::log_error;
@@ -185,7 +185,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> Option<CXBinOp> {
         }
 
         _ => {
-            data.back();
+            data.tokens.back();
             return None;
         }
     })

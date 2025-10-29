@@ -4,13 +4,18 @@ use cx_lexer_data::{
     TokenIter,
 };
 use cx_parsing_data::{
-    assert_token_matches, ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST}, data::{CXNaivePrototype, CXTemplatePrototype}, next_kind, parser::{ParserData, VisibilityMode}, peek_next_kind, try_next, PreparseContents
+    assert_token_matches,
+    ast::VisibilityMode,
+    ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
+    data::{CXNaivePrototype, CXTemplatePrototype},
+    next_kind, peek_next_kind, try_next, PreparseContents,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
     functions::{parse_destructor_prototype, try_function_parse},
+    parser::ParserData,
     templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
     types::parse_initializer,
 };
@@ -18,26 +23,18 @@ use crate::parse::{
 mod expressions;
 mod functions;
 mod operators;
+mod parser;
 mod templates;
 mod types;
 
 pub fn parse_ast(iter: TokenIter, pp_contents: &PreparseContents) -> Option<CXAST> {
-    let mut data = ParserData {
-        ast: CXAST {
-            imports: pp_contents.imports.clone(),
-            ..Default::default()
-        },
-        pp_contents,
-        tokens: iter,
-        visibility: VisibilityMode::Package,
-        expr_commas: vec![true],
-    };
+    let mut data = ParserData::new(iter, pp_contents);
 
     while data.tokens.has_next() {
         parse_global_stmt(&mut data)?;
     }
-    
-    Some(data.ast)
+
+    Some(data.take_ast())
 }
 
 fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
@@ -127,24 +124,20 @@ fn parse_fn_merge(
                 unnote_templated_types(data, &template_prototype);
 
                 data.add_function(prototype.clone(), Some(template_prototype));
-                data.ast
-                    .function_stmts
-                    .push(CXFunctionStmt::TemplatedFunction {
-                        prototype,
-                        body: Box::new(body),
-                    });
+                data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
+                    prototype,
+                    body: Box::new(body),
+                });
             }
 
             None => {
                 let body = parse_body(data)?;
 
                 data.add_function(prototype.clone(), None);
-                data.ast
-                    .function_stmts
-                    .push(CXFunctionStmt::FunctionDefinition {
-                        prototype,
-                        body: Box::new(body),
-                    });
+                data.add_function_stmt(CXFunctionStmt::FunctionDefinition {
+                    prototype,
+                    body: Box::new(body),
+                });
             }
         }
     }

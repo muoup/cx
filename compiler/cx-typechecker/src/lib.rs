@@ -1,4 +1,4 @@
-use cx_parsing_data::parser::VisibilityMode;
+use cx_parsing_data::ast::VisibilityMode;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker_data::ast::TCBaseMappings;
 use cx_util::CXResult;
