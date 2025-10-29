@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "cx-lexer"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-lexer-data",
  "cx-pipeline-data",
@@ -277,11 +277,11 @@ dependencies = [
 
 [[package]]
 name = "cx-lexer-data"
-version = "0.1.0"
+version = "0.0.0"
 
 [[package]]
 name = "cx-log"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-lexer-data",
  "cx-util",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "cx-pipeline"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-backend-cranelift",
  "cx-backend-llvm",
@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "cx-pipeline-data"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-lexer-data",
  "cx-mir-data",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "cx-typechecker"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-lexer-data",
  "cx-log",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "cx-typechecker-data"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-parsing-data",
  "cx-util",
@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "integration-tests"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "ctor",
  "cx-pipeline",
