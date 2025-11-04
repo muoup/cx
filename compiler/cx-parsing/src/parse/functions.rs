@@ -202,12 +202,24 @@ pub(crate) fn parse_function_contract(
                 }
 
                 data.tokens.next();
+                
+                let return_val_name = if try_next!(data.tokens, punctuator!(OpenParen)) {
+                    assert_token_matches!(data.tokens, identifier!(ret));
+                    let name = CXIdent::from(ret.as_str());
+                    
+                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                    Some(name)
+                } else {
+                    None
+                };
+                
+                
                 assert_token_matches!(data.tokens, punctuator!(Colon));
                 assert_token_matches!(data.tokens, punctuator!(OpenParen));
                 let expr = parse_expr(data)?;
                 assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
-                contract.postcondition = Some(expr);
+                contract.postcondition = Some((return_val_name, expr));
             }
             _ => break,
         }

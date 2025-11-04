@@ -38,7 +38,7 @@ pub struct TCParameter {
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCFunctionContract {
     pub precondition: Option<TCExpr>,
-    pub postcondition: Option<TCExpr>,
+    pub postcondition: Option<(Option<CXIdent>, TCExpr)>,
 }
 
 #[derive(Debug, Clone, Default, Readable, Writable)]

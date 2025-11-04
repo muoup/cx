@@ -1,0 +1,17 @@
+import std::io;
+
+int contract(int a, int b) 
+where
+    pre: (a > 0 && b > 0),
+    post(result): (result > a && result > b)
+{
+    return a + b;
+}
+
+int main() {
+    int x = 5;
+    int y = 10;
+    int z = contract(x, y);
+    printf("Result: %d\n", z);
+    return z;
+}

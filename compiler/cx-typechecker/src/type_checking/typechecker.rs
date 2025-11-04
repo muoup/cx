@@ -39,7 +39,7 @@ pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &TCFunctionPr
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
-            env.insert_symbol(name.as_string(), param._type.clone());
+            env.insert_symbol(name.as_string(), param._type.clone().mem_ref_to());
         }
     }
 
@@ -120,7 +120,7 @@ pub fn typecheck_expr(
         CXExprKind::VarDeclaration { type_, name } => {
             let type_ = env.complete_type(base_data, type_)?;
 
-            env.insert_symbol(name.as_string(), type_.clone());
+            env.insert_symbol(name.as_string(), type_.clone().mem_ref_to());
             acknowledge_declared_type(env, base_data, &type_);
 
             TCExpr {
@@ -135,7 +135,7 @@ pub fn typecheck_expr(
         CXExprKind::Identifier(name) => {
             if let Some(symbol_type) = env.symbol_type(name.as_str()) {
                 TCExpr {
-                    _type: symbol_type.clone().mem_ref_to(),
+                    _type: symbol_type.clone(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
             } else if let Some(function_type) =
@@ -747,7 +747,7 @@ pub fn typecheck_expr(
                             );
                         };
 
-                        env.insert_symbol(instance_name.as_string(), variant_type.clone());
+                        env.insert_symbol(instance_name.as_string(), variant_type.clone().mem_ref_to());
                         let tc_block = typecheck_expr(env, base_data, block)?;
 
                         tc_arms.push(TCTagMatch {
