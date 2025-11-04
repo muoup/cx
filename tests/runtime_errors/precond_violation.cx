@@ -1,0 +1,8 @@
+void function(int a)
+where
+    pre: (a > 0) {}
+    
+int main() {
+    function(-1);
+    return 0;
+}

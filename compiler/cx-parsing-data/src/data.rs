@@ -1,7 +1,7 @@
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::{ast::CXExpr, parser::VisibilityMode};
+use crate::ast::{CXExpr, VisibilityMode};
 
 pub type NaiveTypeIdent = String;
 
@@ -60,7 +60,7 @@ pub enum PredeclarationType {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveFunctionContract {
     pub precondition: Option<CXExpr>,
-    pub postcondition: Option<CXExpr>,
+    pub postcondition: Option<(Option<CXIdent>, CXExpr)>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]

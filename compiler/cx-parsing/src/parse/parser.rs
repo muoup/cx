@@ -1,16 +1,13 @@
-use crate::{
-    ast::{CXGlobalVariable, CXAST}, data::{CXFunctionTemplate, CXLinkageMode, CXNaivePrototype, CXNaiveType, CXTemplatePrototype, CXTypeTemplate, ModuleResource}, PreparseContents
+use cx_parsing_data::{
+    ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
+    data::{
+        CXFunctionTemplate, CXLinkageMode, CXNaivePrototype, CXNaiveType, CXTemplatePrototype,
+        CXTypeTemplate, ModuleResource,
+    },
+    PreparseContents,
 };
 use cx_lexer_data::TokenIter;
-use speedy::{Readable, Writable};
-
-#[derive(Debug, Default, Hash, Clone, PartialOrd, PartialEq, Eq, Copy, Readable, Writable)]
-pub enum VisibilityMode {
-    #[default]
-    Private,
-    Package,
-    Public,
-}
+use cx_parsing_data::ast::VisibilityMode;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -23,18 +20,22 @@ pub struct ParserData<'a> {
 }
 
 impl<'a> ParserData<'a> {
+    pub fn new(tokens: TokenIter<'a>, pp_contents: &'a PreparseContents) -> Self {
+        Self {
+            tokens,
+            visibility: VisibilityMode::Package,
+            expr_commas: vec![true],
+            pp_contents,
+            ast: CXAST {
+                imports: pp_contents.imports.clone(),
+                ..Default::default()
+            },
+        }
+    }
+
     pub fn back(&mut self) -> &mut Self {
         self.tokens.back();
         self
-    }
-
-    pub fn skip(&mut self) -> &mut Self {
-        self.tokens.next();
-        self
-    }
-
-    pub fn reset(&mut self) {
-        self.tokens.index = 0;
     }
 
     pub fn change_comma_mode(&mut self, expr_comma: bool) {
@@ -118,5 +119,13 @@ impl<'a> ParserData<'a> {
             name,
             ModuleResource::new(var, self.visibility, CXLinkageMode::Standard),
         );
+    }
+
+    pub fn add_function_stmt(&mut self, stmt: CXFunctionStmt) {
+        self.ast.function_stmts.push(stmt)
+    }
+
+    pub fn take_ast(self) -> CXAST {
+        self.ast
     }
 }

@@ -47,6 +47,14 @@ pub enum CXFunctionStmt {
     },
 }
 
+#[derive(Debug, Default, Hash, Clone, PartialOrd, PartialEq, Eq, Copy, Readable, Writable)]
+pub enum VisibilityMode {
+    #[default]
+    Private,
+    Package,
+    Public,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXUnOp {
     Dereference,

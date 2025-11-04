@@ -7,7 +7,7 @@ use crate::type_completion::types::_complete_type;
 use cx_parsing_data::ast::CXExpr;
 use cx_parsing_data::data::{CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr};
-use cx_typechecker_data::cx_types::{CXTemplateInput, CXTypeKind, TCFunctionContract, TCFunctionPrototype, TCParameter};
+use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, TCFunctionPrototype, TCParameter};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
@@ -119,6 +119,7 @@ fn _complete_fn_contract_clause(
 fn _complete_fn_contract(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
+    return_type: &CXType,
     parameters: &Vec<TCParameter>,
     contract: &CXNaiveFunctionContract,
 ) -> CXResult<TCFunctionContract> {
@@ -135,7 +136,14 @@ fn _complete_fn_contract(
         .transpose()
         .ok()?;
     let postcondition = contract.postcondition.as_ref()
-        .map(|post| _complete_fn_contract_clause(env, base_data, &post).ok_or(()))
+        .map(|(ret_name, post)| {
+            if let Some(name) = ret_name {
+                env.insert_symbol(name.to_string(), return_type.clone());
+            }
+            
+            _complete_fn_contract_clause(env, base_data, &post).ok_or(())
+                .map(|expr| (ret_name.clone(), expr))
+        })
         .transpose()
         .ok()?;
     
@@ -173,7 +181,7 @@ pub fn _complete_fn_prototype(
         .collect::<Option<Vec<_>>>()?;
     
     let contract = prototype.contract.as_ref()
-        .map(|contract| _complete_fn_contract(env, base_data, &parameters, contract).ok_or(()))
+        .map(|contract| _complete_fn_contract(env, base_data, &return_type, &parameters, contract).ok_or(()))
         .transpose()
         .ok()?;
     

@@ -4,7 +4,7 @@ use cx_lexer_data::TokenIter;
 use cx_mir::generate_bytecode;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
-use cx_parsing_data::parser::VisibilityMode;
+use cx_parsing_data::ast::VisibilityMode;
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};

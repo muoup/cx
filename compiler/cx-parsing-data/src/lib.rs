@@ -8,7 +8,6 @@ pub mod data;
 
 pub mod naive_map;
 pub mod macros;
-pub mod parser;
 
 mod format;
 

@@ -2,7 +2,7 @@ use cx_lexer_data::{identifier, operator, TokenIter};
 use cx_parsing_data::data::{
     CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, PredeclarationType,
 };
-use cx_parsing_data::parser::ParserData;
+use crate::parse::ParserData;
 use cx_parsing_data::{assert_token_matches, peek_kind, try_next};
 use cx_util::identifier::CXIdent;
 

@@ -1,8 +1,8 @@
+use crate::parse::ParserData;
 use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_parsing_data::ast::{CXExpr, CXExprKind, CXInitIndex};
 use cx_parsing_data::data::CXNaiveTypeKind;
-use cx_parsing_data::parser::ParserData;
 use cx_parsing_data::{assert_token_matches, try_next};
 use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
@@ -12,8 +12,8 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator,
 };
 use crate::parse::templates::parse_template_args;
-use crate::parse::{parse_body, parse_intrinsic, parse_std_ident};
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
+use crate::parse::{parse_body, parse_intrinsic, parse_std_ident};
 
 pub fn is_type_decl(data: &mut ParserData) -> bool {
     let tok = data.tokens.peek();
@@ -25,19 +25,17 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
     match &tok.unwrap().kind {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
 
-        identifier!(name) 
-            if is_intrinsic_type(name) => true,
+        identifier!(name) if is_intrinsic_type(&name) => true,
         identifier!(name)
             if data
                 .pp_contents
                 .type_idents
                 .iter()
-                .any(|t| t.resource.as_str() == name) => true,
-        identifier!(name)
-            if data
-                .ast
-                .type_data
-                .is_key_any(name) => true,
+                .any(|t| t.resource.as_str() == name) =>
+        {
+            true
+        }
+        identifier!(name) if data.ast.type_data.is_key_any(name) => true,
 
         _ => false,
     }

@@ -5,7 +5,7 @@ use cx_parsing_data::data::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, CXTypeSpecifier,
     NaiveFnKind, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
-use cx_parsing_data::parser::ParserData;
+use crate::parse::ParserData;
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_util::identifier::CXIdent;
 use cx_util::{log_error, CXResult};
