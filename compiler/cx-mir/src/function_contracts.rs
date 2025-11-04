@@ -12,6 +12,7 @@ fn next_contract_violation_id() -> usize {
 
 pub fn add_contract_verification(
     builder: &mut MIRBuilder,
+    function_name: &str,
     clause: &TCExpr,
     clause_name: &str,
 ) -> Option<()> {
@@ -21,7 +22,7 @@ pub fn add_contract_verification(
     let index = builder.add_global_variable(
         MIRGlobalValue {
             name: msg_name.clone(),
-            _type: MIRGlobalType::StringLiteral(format!("Function contract violation: {}", clause_name)),
+            _type: MIRGlobalType::StringLiteral(format!("'{}' violation of function '{}'", clause_name, function_name)),
             linkage: cx_mir_data::LinkageType::Static,
         }
     ); 

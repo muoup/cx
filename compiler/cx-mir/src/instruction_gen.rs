@@ -177,7 +177,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 true => {
                     if let Some(contract) = prototype.contract.as_ref() {
                         if let Some(precondition) = contract.precondition.as_ref() {
-                            add_contract_verification(builder, precondition, "Precondition");
+                            add_contract_verification(builder, &prototype.name.to_string(), precondition, "Precondition");
                         }
                     }
                     
@@ -198,7 +198,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                                 );
                             }
                             
-                            add_contract_verification(builder, postcondition, "Postcondition");
+                            add_contract_verification(builder, &prototype.name.to_string(), postcondition, "Postcondition");
                         }
                     }
                     
