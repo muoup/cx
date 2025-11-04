@@ -15,19 +15,23 @@ string new_string() {
     return s;
 }
 
-void string_append(string* s, const char* str) {
+void string::append(this, const char* str) {
     u64 str_length = strlen(str);
 
     if (s.length + str_length + 1 > s.capacity) {
-        s.capacity = s.capacity * 2;
-        s.data = realloc(s.data, s.capacity);
+        this._realloc();
     }
 
-    memcpy(s.data + s.length, str, str_length);
-    s.length = str_length + s.length;
+    memcpy(this.data + this.length, str, str_length);
+    this.length = str_length + this.length;
 }
 
 private:
+
+void string::_realloc(this) {   
+    this.capacity = this.capacity * 2;
+    this.data = realloc(s.data, s.capacity);
+}
 
 #include <stdio.h>
 #include <stdlib.h>
