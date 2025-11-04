@@ -451,7 +451,7 @@ pub(crate) fn typecheck_is(
         );
     };
 
-    env.insert_symbol(inner_var_name.as_string(), variant_type.clone());
+    env.insert_symbol(inner_var_name.as_string(), variant_type.clone().mem_ref_to());
 
     let union_type = tc_expr._type.clone();
     let var_name = inner_var_name.clone();

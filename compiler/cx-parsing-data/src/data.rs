@@ -60,7 +60,7 @@ pub enum PredeclarationType {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXNaiveFunctionContract {
     pub precondition: Option<CXExpr>,
-    pub postcondition: Option<CXExpr>,
+    pub postcondition: Option<(Option<CXIdent>, CXExpr)>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]

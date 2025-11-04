@@ -43,7 +43,8 @@ mod regression_tests {
         basic_global_variable,
         global_in_template,
         sum_type,
-        function_contract
+        function_contract,
+        basic_succeeding_contract
     );
 }
 

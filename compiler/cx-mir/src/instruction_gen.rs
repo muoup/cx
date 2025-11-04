@@ -190,7 +190,14 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     )?;
                     
                     if let Some(contract) = prototype.contract.as_ref() {
-                        if let Some(postcondition) = contract.postcondition.as_ref() {
+                        if let Some((ret_name, postcondition)) = contract.postcondition.as_ref() {
+                            if let Some(ret_name) = &ret_name {
+                                builder.insert_symbol(
+                                    ret_name.to_string(),
+                                    val.clone(),
+                                );
+                            }
+                            
                             add_contract_verification(builder, postcondition, "Postcondition");
                         }
                     }
