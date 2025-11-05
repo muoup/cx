@@ -44,7 +44,8 @@ mod regression_tests {
         global_in_template,
         sum_type,
         function_contract,
-        basic_succeeding_contract
+        basic_succeeding_contract,
+        array_passing
     );
 }
 

@@ -3,6 +3,7 @@ use cx_typechecker_data::{
     ast::TCBaseMappings,
     cx_types::{TCFunctionPrototype, CXType},
 };
+use cx_util::CXResult;
 
 use crate::{
     environment::TCEnvironment, type_completion::{prototypes::_complete_fn_prototype, types::{_complete_type, base_data_from_module}}
@@ -17,7 +18,7 @@ pub fn complete_fn_prototype(
     base_data: &TCBaseMappings,
     external_module: Option<&String>,
     prototype: &CXNaivePrototype,
-) -> Option<TCFunctionPrototype> {
+) -> CXResult<TCFunctionPrototype> {
     let (_, base_data) = base_data_from_module(env, base_data, external_module);
     
     _complete_fn_prototype(env, base_data, prototype)
@@ -28,7 +29,7 @@ pub fn complete_type(
     base_data: &TCBaseMappings,
     external_module: Option<&String>,
     _type: &CXNaiveType,
-) -> Option<CXType> {
+) -> CXResult<CXType> {
     let (_, base_data) = base_data_from_module(env, base_data, external_module);
     
     _complete_type(env, base_data, _type)

@@ -1,10 +1,10 @@
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
-use cx_util::log_error;
+use cx_util::{CXResult, log_error};
 
 use crate::type_checking::casting::implicit_cast;
 
-pub fn coerce_initializer_list(initializer: &mut TCExpr, to_type: &CXType) -> Option<()> {
+pub fn coerce_initializer_list(initializer: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
     let to_type = match &to_type.kind {
         CXTypeKind::MemoryReference(inner) => inner.as_ref(),
         _ => to_type,
@@ -32,7 +32,7 @@ fn organize_array_initializer(
     initializer: &mut TCExpr,
     inner_type: &CXType,
     size: Option<usize>,
-) -> Option<()> {
+) -> CXResult<()> {
     let TCExprKind::InitializerList { indices } = &mut initializer.kind else {
         unreachable!(
             "PANIC: organize_array_initializer expected initialzer, found: {initializer:?}"
@@ -67,10 +67,10 @@ fn organize_array_initializer(
     .into();
 
     initializer._type = init_list_type;
-    Some(())
+    Ok(())
 }
 
-fn organize_structured_initializer(initializer: &mut TCExpr, to_type: &CXType) -> Option<()> {
+fn organize_structured_initializer(initializer: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
     let TCExprKind::InitializerList { indices } = &mut initializer.kind else {
         unreachable!(
             "PANIC: organize_structured_initializer expected initialzer, found: {initializer:?}"
@@ -102,5 +102,5 @@ fn organize_structured_initializer(initializer: &mut TCExpr, to_type: &CXType) -
     }
 
     initializer._type = to_type.clone();
-    Some(())
+    Ok(())
 }

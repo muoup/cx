@@ -1,15 +1,29 @@
 use cx_parsing_data::ast::CXCastType;
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
-use cx_util::log_error;
+use cx_util::{CXError, CXResult, log_error};
 
 use crate::type_checking::structured_initialization::coerce_initializer_list;
 
-pub(crate) fn coerce_value(expr: &mut TCExpr) -> Option<()> {
+pub(crate) fn coerce_value(expr: &mut TCExpr) -> CXResult<()> {
+    if let CXTypeKind::MemoryReference(inner) = &expr._type.kind {
+        let inner = *inner.clone();
+        implicit_cast(expr, &inner)?;
+    }
+    
     match &expr._type.kind {
-        CXTypeKind::MemoryReference(inner) => {
-            let inner = *inner.clone();
-            implicit_cast(expr, &inner)
+        CXTypeKind::Array { inner_type, .. } => {
+            let pointer_to = inner_type.clone().pointer_to();
+
+            *expr = TCExpr {
+                _type: pointer_to,
+                kind: TCExprKind::Coercion {
+                    operand: Box::new(std::mem::take(expr)),
+                    cast_type: CXCastType::Reinterpret,
+                },
+            };
+
+            Ok(())
         }
 
         CXTypeKind::Function { .. } => {
@@ -23,15 +37,15 @@ pub(crate) fn coerce_value(expr: &mut TCExpr) -> Option<()> {
                 },
             };
 
-            Some(())
+            Ok(())
         }
 
-        _ => Some(()),
+        _ => Ok(()),
     }
 }
 
-pub(crate) fn coerce_condition(expr: &mut TCExpr) -> Option<()> {
-    coerce_value(expr);
+pub(crate) fn coerce_condition(expr: &mut TCExpr) -> CXResult<()> {
+    coerce_value(expr)?;
 
     if !expr._type.is_integer() {
         try_implicit_cast(
@@ -44,11 +58,11 @@ pub(crate) fn coerce_condition(expr: &mut TCExpr) -> Option<()> {
         )?;
     }
 
-    Some(())
+    Ok(())
 }
 
-pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
-    let Some(_) = try_implicit_cast(expr, to_type) else {
+pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
+    let Some(_) = try_implicit_cast(expr, to_type)? else {
         log_error!(
             " Cannot implicitly cast value of type {} to type {}",
             expr._type,
@@ -56,11 +70,11 @@ pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
         );
     };
 
-    Some(())
+    Ok(())
 }
 
-pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
-    let Some(_) = try_explicit_cast(expr, to_type) else {
+pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
+    let Some(_) = try_explicit_cast(expr, to_type)? else {
         log_error!(
             " Cannot explicitly cast value of type {} to type {}",
             expr._type,
@@ -68,18 +82,20 @@ pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
         );
     };
 
-    Some(())
+    Ok(())
 }
 
-pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
-    if try_implicit_cast(expr, to_type).is_some() {
-        return Some(());
+pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<Option<()>> {
+    if try_implicit_cast(expr, to_type).is_ok() {
+        return Ok(Some(()));
     }
 
-    let cast_type = valid_explicit_cast(&expr._type, to_type)?;
+    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type) else {
+        return Ok(None);
+    };
 
     add_coercion(expr, to_type.clone(), cast_type);
-    Some(())
+    Ok(Some(()))
 }
 
 pub fn add_coercion(expr: &mut TCExpr, to_type: CXType, cast_type: CXCastType) {
@@ -92,13 +108,14 @@ pub fn add_coercion(expr: &mut TCExpr, to_type: CXType, cast_type: CXCastType) {
     }
 }
 
-pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
+pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<Option<()>> {
     if matches!(expr.kind, TCExprKind::InitializerList { .. }) {
-        return coerce_initializer_list(expr, to_type);
+        coerce_initializer_list(expr, to_type)?;
+        return Ok(Some(()));
     }
 
     if same_type(&expr._type, to_type) {
-        return Some(());
+        return Ok(Some(()));
     }
 
     let from_type = expr._type.clone();
@@ -151,9 +168,11 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
         }
 
         (CXTypeKind::MemoryReference(inner), _)
-            if inner.is_structured() && same_type(inner, to_type) =>
+            if inner.is_structured() =>
         {
-            coerce(CXCastType::Reinterpret)
+            expr._type = *inner.clone();
+            
+            implicit_cast(expr, to_type)?;
         }
 
         (CXTypeKind::MemoryReference(inner), _) => {
@@ -164,13 +183,16 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
                 },
             };
 
-            let Some(_) = try_implicit_cast(&mut loaded, to_type) else {
+            let Ok(_) = try_implicit_cast(&mut loaded, to_type) else {
                 let TCExprKind::ImplicitLoad { operand } = loaded.kind else {
                     unreachable!();
                 };
 
                 *expr = *operand;
-                return None;
+                return CXError::create_result(format!(
+                    "No implicit cast from {} to {}",
+                    from_type, to_type
+                ));
             };
 
             *expr = loaded;
@@ -193,7 +215,7 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
             CXTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(_type, inner) => coerce(CXCastType::BitCast),
+        ) if same_type(_type, inner) => coerce(CXCastType::NOOP),
 
         (
             CXTypeKind::Function { .. },
@@ -202,10 +224,10 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
             },
         ) if same_type(inner.as_ref(), &from_type) => coerce(CXCastType::FunctionToPointerDecay),
 
-        _ => return None,
+        _ => return CXError::create_result(format!("No implicit cast from {} to {}", from_type, to_type)),
     }
 
-    Some(())
+    Ok(Some(()))
 }
 
 pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<CXCastType> {

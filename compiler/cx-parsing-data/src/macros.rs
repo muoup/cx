@@ -20,7 +20,7 @@ macro_rules! assert_token_matches {
 
             $data.back();
 
-            log_preparse_error!(
+            return log_preparse_error!(
                 $data,
                 "Expected token to match pattern: {:#?}\n Found: {}",
                 stringify!($pattern),
@@ -61,14 +61,26 @@ macro_rules! peek_kind {
 
 #[macro_export]
 macro_rules! next_kind {
-    ($data:expr) => {
-        $data.next().cloned().map(|k| k.kind);
-    };
+    ($data:expr) => {{
+        match $data.next().map(|k| &k.kind) {
+            Some(tok) => Ok(tok),
+            None => {
+                $data.back();
+                log_preparse_error!($data, "Unexpected end of tokens")
+            }
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! peek_next_kind {
     ($data:expr) => {
-        $data.peek().map(|k| &k.kind)
+        match $data.peek().map(|k| &k.kind) {
+            Some(tok) => Ok(tok),
+            None => {
+                $data.back();
+                log_preparse_error!($data, "Unexpected end of tokens")
+            }
+        }
     };
 }

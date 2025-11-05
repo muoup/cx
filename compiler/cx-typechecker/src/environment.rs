@@ -7,6 +7,7 @@ use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
 use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXTemplateInput, CXType};
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
+use cx_util::{CXError, CXResult};
 use cx_util::scoped_map::ScopedMap;
 use std::collections::{HashMap, HashSet};
 
@@ -92,9 +93,12 @@ impl TCEnvironment<'_> {
         self.symbol_table.get(name)
     }
 
-    pub fn get_func(&mut self, base_data: &TCBaseMappings, name: &NaiveFnIdent) -> Option<TCFunctionPrototype> {
+    pub fn get_func(&mut self, base_data: &TCBaseMappings, name: &NaiveFnIdent) -> CXResult<TCFunctionPrototype> {
         let Some(base_fn) = base_data.fn_data.get_standard(name) else {
-            return None;
+            return CXError::create_result(format!(
+                "Function not found: {:?}",
+                name
+            ));
         };
 
         complete_fn_prototype(self, base_data, base_fn.external_module.as_ref(), &base_fn.resource)
@@ -105,7 +109,7 @@ impl TCEnvironment<'_> {
         base_data: &TCBaseMappings,
         name: &NaiveFnKind,
         input: &CXTemplateInput,
-    ) -> Option<TCFunctionPrototype> {
+    ) -> CXResult<TCFunctionPrototype> {
         instantiate_function_template(self, base_data, name, input)
     }
 
@@ -113,9 +117,12 @@ impl TCEnvironment<'_> {
         self.realized_fns.get(name).cloned()
     }
 
-    pub fn get_type(&mut self, base_data: &TCBaseMappings, name: &str) -> Option<CXType> {
+    pub fn get_type(&mut self, base_data: &TCBaseMappings, name: &str) -> CXResult<CXType> {
         let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
-            return None;
+            return CXError::create_result(format!(
+                "Type not found: {}",
+                name
+            ));
         };
         
         complete_type(self, base_data, _ty.external_module.as_ref(), &_ty.resource)
@@ -139,7 +146,7 @@ impl TCEnvironment<'_> {
         self.current_function.as_ref().unwrap()
     }
 
-    pub fn complete_type(&mut self, base_data: &TCBaseMappings, _type: &CXNaiveType) -> Option<CXType> {
+    pub fn complete_type(&mut self, base_data: &TCBaseMappings, _type: &CXNaiveType) -> CXResult<CXType> {
         complete_type(self, base_data, None, _type)
     }
 
@@ -148,7 +155,7 @@ impl TCEnvironment<'_> {
         base_data: &TCBaseMappings,
         external_module: Option<&String>,
         prototype: &CXNaivePrototype,
-    ) -> Option<TCFunctionPrototype> {
+    ) -> CXResult<TCFunctionPrototype> {
         complete_fn_prototype(self, base_data, external_module, prototype)
     }
 

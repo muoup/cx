@@ -568,8 +568,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     *field_index as u32,
                     inst_num().as_str(),
                 )
-                .map_err(|e| panic!("{}", e))
-                .unwrap();
+                .expect("Failed to build struct GEP");
 
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }

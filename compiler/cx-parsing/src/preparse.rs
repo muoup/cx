@@ -1,6 +1,13 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_parsing_data::{assert_token_matches, data::{CXLinkageMode, ModuleResource}, next_kind, ast::VisibilityMode, peek_kind, PreparseContents};
+use cx_parsing_data::{
+    assert_token_matches,
+    ast::VisibilityMode,
+    data::{CXLinkageMode, ModuleResource},
+    next_kind, try_next, PreparseContents,
+};
 use cx_util::{identifier::CXIdent, log_error, CXResult};
+
+use crate::parse::parse_std_ident;
 
 pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
@@ -8,7 +15,7 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) visibility_mode: VisibilityMode,
 }
 
-pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
+pub fn preparse(tokens: TokenIter) -> CXResult<PreparseContents> {
     let mut contents = PreparseContents::default();
 
     let mut data = PreparseData {
@@ -18,10 +25,10 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
     };
 
     while data.tokens.has_next() {
-        iterate_tokens(&mut data);
+        iterate_tokens(&mut data)?;
     }
 
-    Some(contents)
+    Ok(contents)
 }
 
 fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
@@ -29,30 +36,18 @@ fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
         consume_token(data)?;
     }
 
-    Some(())
+    Ok(())
 }
 
 fn consume_token(data: &mut PreparseData) -> CXResult<()> {
-    match next_kind!(data.tokens)? {
-        keyword!(Struct) | keyword!(Enum) => {
-            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
-                return Some(());
-            };
+    let Some(next_token) = data.tokens.next() else {
+        return Ok(());
+    };
 
-            data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::from(ident.as_str()),
-                data.visibility_mode,
-                CXLinkageMode::Standard,
-            ));
-        }
-
-        keyword!(Union) => {
-            if peek_kind!(data.tokens, keyword!(Class)) {
-                data.tokens.next();
-            };
-
-            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
-                return Some(());
+    match &next_token.kind {
+        keyword!(Struct) | keyword!(Union) | keyword!(Enum) => {
+            let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
+                return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
@@ -63,16 +58,12 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
         }
 
         keyword!(Typedef) => {
-            while !peek_kind!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
+            while !try_next!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
                 data.tokens.next();
             }
 
-            if !peek_kind!(data.tokens, punctuator!(Semicolon)) {
-                return None;
-            }
-
-            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
-                return Some(());
+            let Some(ident) = parse_std_ident(&mut data.tokens).ok() else {
+                return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
@@ -101,7 +92,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
         _ => (),
     }
 
-    Some(())
+    Ok(())
 }
 
 fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
@@ -111,7 +102,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
 
     loop {
         let Some(tok) = tokens.next() else {
-            log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
+            return log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
         };
 
         match &tok.kind {
@@ -123,5 +114,5 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
         }
     }
 
-    Some(import_path)
+    Ok(import_path)
 }

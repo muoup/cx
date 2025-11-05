@@ -5,7 +5,7 @@ use cx_parsing_data::data::{CXNaiveTemplateInput, CXTemplatePrototype, FunctionT
 use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
-use cx_util::log_error;
+use cx_util::{CXResult, log_error};
 
 pub(crate) type Overwrites = Vec<(String, CXType)>;
 
@@ -49,13 +49,13 @@ pub(crate) fn instantiate_type_template(
     base_data: &TCBaseMappings,
     input: &CXNaiveTemplateInput,
     name: &str,
-) -> Option<CXType> {
-    let completed_input = _complete_template_input(env, base_data, None, input).unwrap();
+) -> CXResult<CXType> {
+    let completed_input = _complete_template_input(env, base_data, None, input)?;
 
     let template_name = mangle_template_name(name, &completed_input);
 
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
-        return Some(template.clone());
+        return Ok(template.clone());
     }
 
     let Some(template) = base_data.type_data.get_template(&name.to_owned()) else {
@@ -92,7 +92,7 @@ pub(crate) fn instantiate_type_template(
         instantiate_function_template(env, base_data, &destructor_ident, &completed_input)?;
     }
 
-    Some(cx_type)
+    Ok(cx_type)
 }
 
 pub(crate) fn instantiate_function_template(
@@ -100,8 +100,20 @@ pub(crate) fn instantiate_function_template(
     base_data: &TCBaseMappings,
     name: &NaiveFnKind,
     input: &CXTemplateInput,
-) -> Option<TCFunctionPrototype> {
-    let cache = base_data.fn_data.get_template(&name.into())?;
+) -> CXResult<TCFunctionPrototype> {
+    let cache = base_data.fn_data.get_template(&name.into())
+        .ok_or_else(|| {
+            log_error!(
+                "Function template not found: {}<{}>",
+                name,
+                input
+                    .args
+                    .iter()
+                    .map(|param| format!("{param}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
     let resource = &cache.resource;
 
     let module_origin = &cache.external_module;
@@ -114,7 +126,7 @@ pub(crate) fn instantiate_function_template(
     instantiated.apply_template_mangling();
 
     if let Some(generated) = env.get_realized_func(&instantiated.name) {
-        return Some(generated);
+        return Ok(generated);
     }
 
     env.realized_fns
@@ -127,5 +139,5 @@ pub(crate) fn instantiate_function_template(
 
     restore_template_overwrites(env, overwrites);
 
-    Some(instantiated)
+    Ok(instantiated)
 }

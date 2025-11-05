@@ -4,7 +4,7 @@ use cx_parsing_data::data::{
 };
 use crate::parse::ParserData;
 use cx_parsing_data::{assert_token_matches, peek_kind, try_next};
-use cx_util::identifier::CXIdent;
+use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::parse::types::parse_initializer;
 
@@ -48,15 +48,15 @@ pub(crate) fn unnote_templated_types(
     }
 }
 
-pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
+pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> CXResult<Option<CXTemplatePrototype>> {
     if peek_kind!(tokens, operator!(Less)) {
-        parse_template_prototype(tokens)
+        parse_template_prototype(tokens).map(Some)
     } else {
-        None
+        Ok(None)
     }
 }
 
-pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> Option<CXTemplatePrototype> {
+pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTemplatePrototype> {
     assert_token_matches!(tokens, operator!(Less));
 
     let mut type_decls = Vec::new();
@@ -73,7 +73,7 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> Option<CXTempl
 
     assert_token_matches!(tokens, operator!(Greater));
 
-    Some(CXTemplatePrototype { types: type_decls })
+    Ok(CXTemplatePrototype { types: type_decls })
 }
 
 pub(crate) fn convert_template_proto_to_args(
@@ -94,14 +94,14 @@ pub(crate) fn convert_template_proto_to_args(
     CXNaiveTemplateInput { params }
 }
 
-pub(crate) fn parse_template_args(data: &mut ParserData) -> Option<CXNaiveTemplateInput> {
+pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXNaiveTemplateInput> {
     assert_token_matches!(data.tokens, operator!(Less));
 
     let mut input_types = Vec::new();
 
     loop {
-        let Some((None, _type)) = parse_initializer(data) else {
-            log_parse_error!(data, "Expected type declaration in template arguments!");
+        let (None, _type) = parse_initializer(data)? else {
+            return log_parse_error!(data, "Expected type declaration in template arguments!");
         };
 
         input_types.push(_type);
@@ -113,7 +113,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> Option<CXNaiveTempla
 
     assert_token_matches!(data.tokens, operator!(Greater));
 
-    Some(CXNaiveTemplateInput {
+    Ok(CXNaiveTemplateInput {
         params: input_types,
     })
 }

@@ -30,10 +30,7 @@ pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAS
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
                 let prototype = env.complete_prototype(base_data, None, prototype)?;
-
-                let body = in_method_env(env, base_data, &prototype, body).unwrap_or_else(|| {
-                    panic!("Failed to typecheck function body for {}", prototype.name)
-                });
+                let body = in_method_env(env, base_data, &prototype, body)?;
 
                 env.declared_functions.push(TCFunctionDef {
                     prototype: prototype.clone(),
@@ -66,7 +63,7 @@ pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAS
         }
     }
 
-    Some(())
+    Ok(())
 }
 
 pub fn realize_fn_implementation(
@@ -110,21 +107,21 @@ pub fn realize_fn_implementation(
     env.in_external_templated_function = false;
 
     restore_template_overwrites(env, overwrites);
-    Some(())
+    Ok(())
 }
 
 pub fn complete_base_globals<'a>(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
-) -> Option<()> {
+) -> CXResult<()> {
     for name in base_data.global_variables.keys() {
         global_expr(env, base_data, name.as_str())?;
     }
 
-    Some(())
+    Ok(())
 }
 
-pub fn complete_base_functions(env: &mut TCEnvironment, base_data: &TCBaseMappings) -> Option<()> {
+pub fn complete_base_functions(env: &mut TCEnvironment, base_data: &TCBaseMappings) -> CXResult<()> {
     for (_, cx_fn) in base_data.fn_data.standard_iter() {
         complete_fn_prototype(
             env,
@@ -134,5 +131,5 @@ pub fn complete_base_functions(env: &mut TCEnvironment, base_data: &TCBaseMappin
         )?;
     }
 
-    Some(())
+    Ok(())
 }

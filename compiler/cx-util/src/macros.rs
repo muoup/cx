@@ -2,14 +2,11 @@
 macro_rules! log_error {
     ($($arg:tt)*) => {
         {
-            eprintln!($($arg)*);
+            use cx_util::CXError;
+            let msg = format!($($arg)*);
+            eprintln!("Error: {}", msg);
 
-            // If in debug mode, panic on error
-            if cfg!(debug_assertions) {
-                panic!()
-            }
-
-            return None;
+            panic!()
         }
     }
 }

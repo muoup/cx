@@ -1,0 +1,19 @@
+import std::io;
+
+void print_all(int arr[], int size) {
+    for (int i = 0; i < size; i++) {
+        printf("%d\n", arr[i]);
+    }
+}
+
+int main() {
+    int numbers[5];
+    numbers[0] = 10;
+    numbers[1] = 20;
+    numbers[2] = 30;
+    numbers[3] = 40;
+    numbers[4] = 50;
+    
+    print_all(numbers, 5);
+    return 0;
+}

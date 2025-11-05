@@ -233,6 +233,7 @@ impl CXType {
             CXTypeKind::Structured { .. }
                 | CXTypeKind::Union { .. }
                 | CXTypeKind::TaggedUnion { .. }
+                | CXTypeKind::Array { .. }
         )
     }
 
