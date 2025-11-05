@@ -96,6 +96,11 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 
 pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
     assert_token_matches!(data.tokens, keyword!(Enum));
+       
+    if peek_kind!(data.tokens, keyword!(Union)) {
+        data.tokens.back();
+        return parse_tagged_union_def(data);
+    }
 
     let name = parse_std_ident(&mut data.tokens).ok();
 
@@ -149,8 +154,8 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 }
 
 pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
+    assert_token_matches!(data.tokens, keyword!(Enum));
     assert_token_matches!(data.tokens, keyword!(Union));
-    assert_token_matches!(data.tokens, keyword!(Class));
 
     let name = parse_std_ident(&mut data.tokens)?;
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -207,11 +212,6 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXNaiveT
 
 pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
     assert_token_matches!(data.tokens, keyword!(Union));
-
-    if peek_kind!(data.tokens, keyword!(Class)) {
-        data.tokens.back();
-        return parse_tagged_union_def(data);
-    }
 
     let name = parse_std_ident(&mut data.tokens).ok();
     let template_prototype = try_parse_template(&mut data.tokens)?;

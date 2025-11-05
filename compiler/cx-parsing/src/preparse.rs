@@ -1,6 +1,9 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_parsing_data::{
-    PreparseContents, assert_token_matches, ast::VisibilityMode, data::{CXLinkageMode, ModuleResource}, next_kind, peek_kind, try_next
+    assert_token_matches,
+    ast::VisibilityMode,
+    data::{CXLinkageMode, ModuleResource},
+    next_kind, try_next, PreparseContents,
 };
 use cx_util::{identifier::CXIdent, log_error, CXResult};
 
@@ -42,23 +45,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     };
 
     match &next_token.kind {
-        keyword!(Struct) | keyword!(Enum) => {
-            let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
-                return Ok(());
-            };
-
-            data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::from(ident.as_str()),
-                data.visibility_mode,
-                CXLinkageMode::Standard,
-            ));
-        }
-
-        keyword!(Union) => {
-            if peek_kind!(data.tokens, keyword!(Class)) {
-                data.tokens.next();
-            };
-
+        keyword!(Struct) | keyword!(Union) | keyword!(Enum) => {
             let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
                 return Ok(());
             };
