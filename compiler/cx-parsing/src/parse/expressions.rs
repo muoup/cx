@@ -9,7 +9,7 @@ use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
 use crate::parse::operators::{
-    binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator,
+    binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
@@ -83,6 +83,14 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     if !expr_stack.is_empty() {
         log_error!(
             "Expression stack is not empty after parsing expression: {:#?} {:#?}",
+            expr_stack,
+            op_stack
+        );
+    }
+    
+    if !op_stack.is_empty() {
+        log_error!(
+            "Operator stack is not empty after parsing expression: {:#?} {:#?}",
             expr_stack,
             op_stack
         );
@@ -240,7 +248,7 @@ pub(crate) fn parse_expr_val(
         return Ok(());
     }
 
-    while let Some(op) = parse_pre_unop(data)? {
+    while let Some(op) = parse_prefix_unop(data)? {
         op_stack.push(PrecOperator::UnOp(op));
     }
 
@@ -371,7 +379,7 @@ pub(crate) fn parse_expr_val(
 
     expr_stack.push(acc);
 
-    while let Some(op) = parse_post_unop(data) {
+    while let Some(op) = parse_postfix_unop(data) {
         let prec = unop_prec(op.clone());
 
         compress_stack(expr_stack, op_stack, prec)?;
@@ -591,7 +599,9 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
         }
 
         _ => {
+            let keyword_type = keyword_type.clone();
             data.tokens.back();
+            
             return log_parse_error!(
                 data,
                 "Unexpected keyword in expression: {:#?}",

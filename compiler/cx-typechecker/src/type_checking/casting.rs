@@ -189,10 +189,10 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<Option
                 };
 
                 *expr = *operand;
-                return Err(CXError::new(format!(
+                return CXError::create_result(format!(
                     "No implicit cast from {} to {}",
                     from_type, to_type
-                )));
+                ));
             };
 
             *expr = loaded;
@@ -224,7 +224,7 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<Option
             },
         ) if same_type(inner.as_ref(), &from_type) => coerce(CXCastType::FunctionToPointerDecay),
 
-        _ => return Err(CXError::new(format!("No implicit cast from {} to {}", from_type, to_type))),
+        _ => return CXError::create_result(format!("No implicit cast from {} to {}", from_type, to_type)),
     }
 
     Ok(Some(()))

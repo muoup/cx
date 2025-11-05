@@ -8,8 +8,8 @@ use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_typechecker_data::function_map::CXFunctionKind;
-use cx_util::{CXError, CXResult};
 use cx_util::identifier::CXIdent;
+use cx_util::{CXError, CXResult};
 
 pub(crate) fn typecheck_access(
     env: &mut TCEnvironment,
@@ -634,7 +634,7 @@ pub(crate) fn binop_type(
     expr: &CXExpr,
 ) -> CXResult<CXType> {
     try_binop_type(env, op, lhs, expr).ok_or_else(|| {
-        CXError::new(format!(
+        CXError::create_boxed(format!(
             " Invalid binary operation {op} for type {}",
             lhs._type
         ))

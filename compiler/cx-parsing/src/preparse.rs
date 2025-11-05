@@ -1,11 +1,10 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_parsing_data::{
-    assert_token_matches,
-    ast::VisibilityMode,
-    data::{CXLinkageMode, ModuleResource},
-    next_kind, peek_kind, PreparseContents,
+    PreparseContents, assert_token_matches, ast::VisibilityMode, data::{CXLinkageMode, ModuleResource}, next_kind, peek_kind, try_next
 };
-use cx_util::{identifier::CXIdent, log_error, CXError, CXResult};
+use cx_util::{identifier::CXIdent, log_error, CXResult};
+
+use crate::parse::parse_std_ident;
 
 pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
@@ -72,15 +71,11 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
         }
 
         keyword!(Typedef) => {
-            while !peek_kind!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
+            while !try_next!(data.tokens, punctuator!(Semicolon)) && data.tokens.has_next() {
                 data.tokens.next();
             }
 
-            if !peek_kind!(data.tokens, punctuator!(Semicolon)) {
-                return Err(CXError::new("Expected semicolon"));
-            }
-
-            let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
+            let Some(ident) = parse_std_ident(&mut data.tokens).ok() else {
                 return Ok(());
             };
 

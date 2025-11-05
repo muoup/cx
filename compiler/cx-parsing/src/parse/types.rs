@@ -111,7 +111,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
         if try_next!(data.tokens, TokenKind::Assignment(None)) {
             match next_kind!(data.tokens)? {
                 TokenKind::IntLiteral(val) => {
-                    idx = val;
+                    idx = *val;
                 }
 
                 _ => {

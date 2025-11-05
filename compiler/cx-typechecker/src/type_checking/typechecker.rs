@@ -808,10 +808,11 @@ pub(crate) fn global_expr(
         return tcglobal_expr(global);
     }
 
-    let module_res = base_data
+    let Some(module_res) = base_data
         .global_variables
-        .get(ident)
-        .ok_or_else(|| CXError::new(format!("Global variable '{}' not found", ident)))?;
+        .get(ident) else {
+            return CXError::create_result(format!("Global variable '{}' not found", ident));
+        };
 
     let module_res = match env.in_external_templated_function {
         true => module_res.clone().transfer(""),

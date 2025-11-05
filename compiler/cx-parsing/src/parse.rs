@@ -10,7 +10,7 @@ use cx_parsing_data::{
     data::{CXNaivePrototype, CXTemplatePrototype},
     next_kind, peek_next_kind, try_next, PreparseContents,
 };
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
@@ -240,7 +240,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return Err(CXError::new("Expected intrinsic identifier"));
+        return log_preparse_error!(tokens, "Expected intrinsic identifier"); 
     }
 
     Ok(CXIdent::from(ss))
@@ -248,7 +248,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
 
 pub fn parse_std_ident(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     let TokenKind::Identifier(ident) = peek_next_kind!(tokens)? else {
-        return Err(CXError::new("Expected standard identifier"));
+        return log_preparse_error!(tokens, "Expected standard identifier");
     };
 
     let ident = ident.clone();

@@ -61,16 +61,26 @@ macro_rules! peek_kind {
 
 #[macro_export]
 macro_rules! next_kind {
-    ($data:expr) => {
-        $data.next().cloned().map(|k| k.kind)
-            .ok_or_else(|| cx_util::CXError::new("Unexpected end of tokens"))
-    };
+    ($data:expr) => {{
+        match $data.next().map(|k| &k.kind) {
+            Some(tok) => Ok(tok),
+            None => {
+                $data.back();
+                log_preparse_error!($data, "Unexpected end of tokens")
+            }
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! peek_next_kind {
     ($data:expr) => {
-        $data.peek().map(|k| &k.kind)
-            .ok_or_else(|| cx_util::CXError::new("Unexpected end of tokens"))
+        match $data.peek().map(|k| &k.kind) {
+            Some(tok) => Ok(tok),
+            None => {
+                $data.back();
+                log_preparse_error!($data, "Unexpected end of tokens")
+            }
+        }
     };
 }

@@ -1,8 +1,8 @@
-use cx_parsing_data::ast::{CXBinOp, CXUnOp};
 use crate::parse::ParserData;
-use cx_parsing_data::{assert_token_matches, next_kind};
 use cx_lexer_data::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_util::{CXError, CXResult};
+use cx_parsing_data::ast::{CXBinOp, CXUnOp};
+use cx_parsing_data::{assert_token_matches, next_kind};
+use cx_util::CXResult;
 
 use crate::parse::expressions::is_type_decl;
 use crate::parse::types::parse_initializer;
@@ -59,7 +59,7 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     }
 }
 
-pub(crate) fn parse_pre_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
+pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
     Ok(match &next_kind!(data.tokens)? {
         TokenKind::Operator(op) => match op {
             OperatorType::Ampersand => Some(CXUnOp::AddressOf),
@@ -104,7 +104,7 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> 
     })
 }
 
-pub(crate) fn parse_post_unop(data: &mut ParserData) -> Option<CXUnOp> {
+pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> Option<CXUnOp> {
     Some(match &data.tokens.next()?.kind {
         TokenKind::Operator(op) => match op {
             OperatorType::Increment => CXUnOp::PostIncrement(1),
@@ -150,35 +150,28 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
 
         OperatorType::Is => CXBinOp::Is,
 
-        _ => return log_parse_error!(data, 
-            "Invalid binary operator: {:?}",
-            op
-        ),
+        _ => return log_parse_error!(data, "Invalid binary operator: {:?}", op),
     })
 }
 
 pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
-    Ok(match next_kind!(data.tokens) {
+    Ok(match next_kind!(data.tokens).cloned() {
         Ok(TokenKind::Operator(OperatorType::Comma)) => {
             if data.get_comma_mode() {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return Err(CXError::new("Comma operator not allowed in this context"));
+                return log_parse_error!(data, "Comma operator not allowed in this context");
             }
         }
         Ok(TokenKind::Operator(op)) => op_to_binop(data, op)?,
         Ok(TokenKind::Punctuator(punc)) => {
-            let punc = punc;
             data.tokens.back();
             match punc {
                 PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
                 PunctuatorType::OpenParen => CXBinOp::MethodCall,
 
-                _ => return log_parse_error!(data,
-                    "Invalid binary operator: {:?}",
-                    punc
-                ),
+                _ => return log_parse_error!(data, "Invalid binary operator: {:?}", punc),
             }
         }
         Ok(TokenKind::Assignment(op)) => {
@@ -192,7 +185,7 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
 
         _ => {
             data.tokens.back();
-            return Err(CXError::new("Expected binary operator"));
+            return log_parse_error!(data, "Expected binary operator");
         }
     })
 }

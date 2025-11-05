@@ -9,17 +9,32 @@ pub mod scoped_map;
 pub mod hashable_float;
 
 pub trait CXErrorTrait {
-    fn pretty_print(&self, output_stream: &mut dyn std::io::Write);
+    fn pretty_print(&self);
 }
 
 pub struct CXError {
     pub message: String,
 }
-pub type CXResult<T> = Result<T, CXError>;
+
+impl CXErrorTrait for CXError {
+    fn pretty_print(&self) {
+        println!("CXError: {}", self.message);
+    }
+}
+
+pub type CXResult<T> = Result<T, Box<dyn CXErrorTrait>>;
 
 impl CXError {
     pub fn new<T: Into<String>>(msg: T) -> Self {
         CXError { message: msg.into() }
+    }
+    
+    pub fn create_result<T, U: Into<String>>(msg: U) -> CXResult<T> {
+        Err(Box::new(CXError::new(msg)))
+    }
+    
+    pub fn create_boxed<U: Into<String>>(msg: U) -> Box<dyn CXErrorTrait> {
+        Box::new(CXError::new(msg))
     }
 }
 

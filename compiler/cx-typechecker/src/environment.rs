@@ -95,10 +95,10 @@ impl TCEnvironment<'_> {
 
     pub fn get_func(&mut self, base_data: &TCBaseMappings, name: &NaiveFnIdent) -> CXResult<TCFunctionPrototype> {
         let Some(base_fn) = base_data.fn_data.get_standard(name) else {
-            return Err(CXError::new(format!(
+            return CXError::create_result(format!(
                 "Function not found: {:?}",
                 name
-            )));
+            ));
         };
 
         complete_fn_prototype(self, base_data, base_fn.external_module.as_ref(), &base_fn.resource)
@@ -119,10 +119,10 @@ impl TCEnvironment<'_> {
 
     pub fn get_type(&mut self, base_data: &TCBaseMappings, name: &str) -> CXResult<CXType> {
         let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
-            return Err(CXError::new(format!(
+            return CXError::create_result(format!(
                 "Type not found: {}",
                 name
-            )));
+            ));
         };
         
         complete_type(self, base_data, _ty.external_module.as_ref(), &_ty.resource)

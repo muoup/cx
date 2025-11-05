@@ -1,15 +1,31 @@
+use std::path::PathBuf;
+
+use cx_lexer_data::token::Token;
+use cx_util::CXErrorTrait;
+
+pub struct ParseErrorLog {
+    pub message: String,
+    pub file: PathBuf,
+    pub token: Token
+}
+
+impl CXErrorTrait for ParseErrorLog {
+    fn pretty_print(&self) {
+        cx_log::pretty_point_error(&self.message, &self.file, &self.token);
+    }
+}
+
 #[macro_export]
 macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            if false {
-                cx_log::pretty_point_error(&message, &$data.tokens.file, &$data.tokens.slice[$data.tokens.index]);
-                panic!("Parsing error: {}", message);
-            }
-            
-            Err(cx_util::CXError::new(message))
+            Err(Box::new(crate::log::ParseErrorLog {
+                message,
+                file: $data.tokens.file.clone(),
+                token: $data.tokens.slice[$data.tokens.index].clone(),
+            }) as Box<dyn cx_util::CXErrorTrait>)
         }
     };
 }
@@ -20,12 +36,11 @@ macro_rules! log_preparse_error {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            if false {
-                cx_log::pretty_point_error(&message, &$toks.file, $toks.peek().unwrap());
-                panic!("Preprocessing error: {}", message);
-            }
-            
-            Err(cx_util::CXError::new(message))
-        }
+            Err(Box::new(crate::log::ParseErrorLog {
+                message,
+                file: $toks.file.clone(),
+                token: $toks.peek().unwrap().clone(),
+            }) as Box<dyn cx_util::CXErrorTrait>)
+        } 
     };
 }
