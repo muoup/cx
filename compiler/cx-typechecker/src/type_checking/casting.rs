@@ -151,9 +151,15 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
         }
 
         (CXTypeKind::MemoryReference(inner), _)
-            if inner.is_structured() && same_type(inner, to_type) =>
+            if inner.is_structured() =>
         {
-            coerce(CXCastType::Reinterpret)
+            expr._type = *inner.clone();
+            
+            let Some(_) = try_implicit_cast(expr, to_type) else {
+                return None;
+            };
+         
+            return Some(());
         }
 
         (CXTypeKind::MemoryReference(inner), _) => {
@@ -193,7 +199,7 @@ pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> Option<()> {
             CXTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(_type, inner) => coerce(CXCastType::BitCast),
+        ) if same_type(_type, inner) => coerce(CXCastType::NOOP),
 
         (
             CXTypeKind::Function { .. },

@@ -23,7 +23,7 @@ pub(crate) fn get_cranelift_type(val_type: &MIRType) -> ir::Type {
         MIRTypeKind::Float { bytes: 8 } => ir::types::F64,
         MIRTypeKind::Float { bytes: 16 } => ir::types::F128,
 
-        MIRTypeKind::Union { .. } | MIRTypeKind::Struct { .. } | MIRTypeKind::Pointer { .. } => {
+        MIRTypeKind::Union { .. } | MIRTypeKind::Struct { .. } | MIRTypeKind::Pointer { .. } | MIRTypeKind::Array { .. } => {
             ir::Type::int(64).unwrap()
         }
 

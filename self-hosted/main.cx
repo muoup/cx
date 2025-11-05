@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
     char buffer[256];
 
     while (fgets(buffer, 255, file) != NULL) {
-        string_append(&name, buffer);
+        name.append(buffer);
     }
 
     fclose(file);

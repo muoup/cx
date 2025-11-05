@@ -18,7 +18,7 @@ string new_string() {
 void string::append(this, const char* str) {
     u64 str_length = strlen(str);
 
-    if (s.length + str_length + 1 > s.capacity) {
+    if (this.length + str_length + 1 > this.capacity) {
         this._realloc();
     }
 
@@ -30,7 +30,7 @@ private:
 
 void string::_realloc(this) {   
     this.capacity = this.capacity * 2;
-    this.data = realloc(s.data, s.capacity);
+    this.data = realloc(this.data, this.capacity);
 }
 
 #include <stdio.h>
