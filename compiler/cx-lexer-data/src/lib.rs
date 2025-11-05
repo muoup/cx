@@ -1,3 +1,5 @@
+use cx_util::CXResult;
+
 use crate::token::{PunctuatorType, Token, TokenKind};
 use std::path::PathBuf;
 
@@ -57,7 +59,7 @@ impl<'a> TokenIter<'a> {
         }
     }
 
-    pub fn goto_statement_end(&mut self) -> Option<()> {
+    pub fn goto_statement_end(&mut self) -> CXResult<()> {
         let mut bracket_stack = 0;
 
         while let Some(token) = self.next() {
@@ -80,6 +82,6 @@ impl<'a> TokenIter<'a> {
             }
         }
 
-        Some(())
+        Ok(())
     }
 }

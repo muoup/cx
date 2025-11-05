@@ -42,10 +42,7 @@ fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
 pub fn parse_destructor_prototype(data: &mut ParserData) -> CXResult<FunctionDeclaration> {
     assert_token_matches!(data.tokens, operator!(Tilda));
 
-    let Some(name) = parse_std_ident(&mut data.tokens) else {
-        log_preparse_error!(data.tokens, "Expected type name.");
-    };
-
+    let name = parse_std_ident(&mut data.tokens)?;
     let template_prototype = try_parse_template(&mut data.tokens);
 
     assert_token_matches!(data.tokens, punctuator!(OpenParen));
@@ -68,7 +65,7 @@ pub fn parse_destructor_prototype(data: &mut ParserData) -> CXResult<FunctionDec
 
     let prototype = destructor_prototype(_type.to_type());
 
-    Some(FunctionDeclaration {
+    Ok(FunctionDeclaration {
         prototype,
         template_prototype,
     })
@@ -81,17 +78,14 @@ pub fn try_function_parse(
 ) -> CXResult<Option<FunctionDeclaration>> {
     let template_prototype = try_parse_template(&mut data.tokens);
 
-    match peek_next_kind!(data.tokens).unwrap() {
+    match peek_next_kind!(data.tokens)? {
         // e.g:
         // int main()
         //         ^
         // void template_func<int>()
         //                        ^
         punctuator!(OpenParen) => {
-            let Some(args) = parse_params(data) else {
-                log_parse_error!(data, "Failed to parse parameters in function declaration!");
-            };
-
+            let args = parse_params(data)?;
             let prototype = CXNaivePrototype {
                 return_type,
                 name: NaiveFnKind::Standard(name.clone()),
@@ -102,7 +96,7 @@ pub fn try_function_parse(
             };
 
             data.add_function(prototype.clone(), template_prototype.clone());
-            Some(Some(FunctionDeclaration {
+            Ok(Some(FunctionDeclaration {
                 prototype,
                 template_prototype,
             }))
@@ -141,7 +135,7 @@ pub fn try_function_parse(
                 function_name: CXIdent::from(name.as_str()),
             };
 
-            let Some(params) = parse_params(data) else {
+            let Ok(params) = parse_params(data) else {
                 log_parse_error!(
                     data,
                     "Failed to parse parameters in member function declaration!"
@@ -159,13 +153,13 @@ pub fn try_function_parse(
 
             data.add_function(prototype.clone(), template_prototype.clone());
 
-            Some(Some(FunctionDeclaration {
+            Ok(Some(FunctionDeclaration {
                 prototype,
                 template_prototype,
             }))
         }
 
-        _ => Some(None),
+        _ => Ok(None),
     }
 }
 
@@ -173,7 +167,7 @@ pub(crate) fn parse_function_contract(
     data: &mut ParserData,
 ) -> CXResult<Option<CXNaiveFunctionContract>> {
     if !try_next!(data.tokens, keyword!(Where)) {
-        return Some(None);
+        return Ok(None);
     }
 
     let mut contract = CXNaiveFunctionContract {
@@ -181,7 +175,7 @@ pub(crate) fn parse_function_contract(
         postcondition: None,
     };
 
-    while let Some(next) = peek_next_kind!(data.tokens) {
+    while let Some(next) = peek_next_kind!(data.tokens).ok() {
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
@@ -229,7 +223,7 @@ pub(crate) fn parse_function_contract(
         }
     }
 
-    return Some(Some(contract));
+    return Ok(Some(contract));
 }
 
 pub(crate) struct ParseParamsResult {
@@ -245,7 +239,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     let mut params = Vec::new();
     let mut contains_this = false;
 
-    if matches!(peek_next_kind!(data.tokens), Some(identifier!(this)) if this.as_str() == "this") {
+    if matches!(peek_next_kind!(data.tokens), Ok(identifier!(this)) if this.as_str() == "this") {
         data.tokens.next();
         contains_this = true;
 
@@ -253,7 +247,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
             let contract = parse_function_contract(data)?;
 
-            return Some(ParseParamsResult {
+            return Ok(ParseParamsResult {
                 params,
                 var_args: false,
                 contains_this,
@@ -267,7 +261,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
             let contract = parse_function_contract(data)?;
 
-            return Some(ParseParamsResult {
+            return Ok(ParseParamsResult {
                 params,
                 var_args: true,
                 contains_this,
@@ -275,7 +269,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
-        if let Some((name, _type)) = parse_initializer(data) {
+        if let Ok((name, _type)) = parse_initializer(data) {
             let name = name;
 
             params.push(CXNaiveParameter { name, _type });
@@ -291,7 +285,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
 
     let contract = parse_function_contract(data)?;
 
-    Some(ParseParamsResult {
+    Ok(ParseParamsResult {
         params,
         var_args: false,
         contains_this,

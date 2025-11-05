@@ -13,6 +13,7 @@ use cx_typechecker_data::ast::{
 };
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind, TCFunctionPrototype};
 use cx_util::identifier::CXIdent;
+use cx_util::{CXError, CXResult};
 
 fn anonymous_name_gen() -> String {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -27,11 +28,12 @@ pub(crate) fn in_method_env(
     base_data: &TCBaseMappings,
     prototype: &TCFunctionPrototype,
     expr: &CXExpr,
-) -> Option<TCExpr> {
+) -> CXResult<TCExpr> {
     setup_method_env(env, prototype);
     let tc_expr = typecheck_expr(env, base_data, expr)?;
     cleanup_method_env(env);
-    Some(tc_expr)
+
+    Ok(tc_expr)
 }
 
 pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &TCFunctionPrototype) {
@@ -55,15 +57,15 @@ pub fn typecheck_expr(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
     expr: &CXExpr,
-) -> Option<TCExpr> {
-    Some(match &expr.kind {
+) -> CXResult<TCExpr> {
+    Ok(match &expr.kind {
         CXExprKind::Block { exprs } => {
             env.push_scope();
 
             let tc_exprs = exprs
                 .iter()
                 .map(|e| typecheck_expr(env, base_data, e))
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<CXResult<Vec<_>>>()?;
 
             env.pop_scope();
 
@@ -138,8 +140,9 @@ pub fn typecheck_expr(
                     _type: symbol_type.clone(),
                     kind: TCExprKind::VariableReference { name: name.clone() },
                 }
-            } else if let Some(function_type) =
-                env.get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
+            } else if let Some(function_type) = env
+                .get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
+                .ok()
             {
                 TCExpr {
                     _type: CXTypeKind::Function {
@@ -148,7 +151,7 @@ pub fn typecheck_expr(
                     .into(),
                     kind: TCExprKind::FunctionReference,
                 }
-            } else if let Some(global) = global_expr(env, base_data, name.as_str()) {
+            } else if let Some(global) = global_expr(env, base_data, name.as_str()).ok() {
                 global
             } else {
                 log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
@@ -164,10 +167,8 @@ pub fn typecheck_expr(
 
             let input = complete_template_args(env, base_data, template_input)?;
             let ident = NaiveFnKind::Standard(name.clone());
-
-            let Some(function) = env.get_func_templated(base_data, &ident, &input) else {
-                log_typecheck_error!(env, expr, "Function template '{}' not found", name);
-            };
+            
+            let function = env.get_func_templated(base_data, &ident, &input)?;
 
             TCExpr {
                 _type: CXTypeKind::Function {
@@ -186,7 +187,7 @@ pub fn typecheck_expr(
             env.push_scope();
 
             let mut condition_tc = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut condition_tc);
+            coerce_condition(&mut condition_tc)?;
 
             let then_tc = typecheck_expr(env, base_data, then_branch)?;
             let else_tc = if let Some(else_branch) = else_branch {
@@ -215,7 +216,7 @@ pub fn typecheck_expr(
             env.push_scope();
 
             let mut condition_tc = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut condition_tc);
+            coerce_condition(&mut condition_tc)?;
 
             let body_tc = typecheck_expr(env, base_data, body)?;
 
@@ -241,7 +242,7 @@ pub fn typecheck_expr(
 
             let init_tc = typecheck_expr(env, base_data, init)?;
             let mut condition_tc = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut condition_tc);
+            coerce_condition(&mut condition_tc)?;
 
             let increment_tc = typecheck_expr(env, base_data, increment)?;
             let body_tc = typecheck_expr(env, base_data, body)?;
@@ -272,7 +273,7 @@ pub fn typecheck_expr(
         CXExprKind::Return { value } => {
             let mut value_tc = if let Some(value) = value {
                 let mut val = typecheck_expr(env, base_data, value)?;
-                coerce_value(&mut val);
+                coerce_value(&mut val)?;
 
                 Some(val)
             } else {
@@ -283,7 +284,7 @@ pub fn typecheck_expr(
 
             match (&mut value_tc, return_type) {
                 (Some(value_tc), return_type) if !return_type.is_unit() => {
-                    implicit_cast(value_tc, return_type);
+                    implicit_cast(value_tc, return_type)?;
                 }
 
                 (None, _) if return_type.is_unit() => {}
@@ -357,7 +358,7 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::LNot | CXUnOp::BNot | CXUnOp::Negative => {
-                    coerce_value(&mut operand_tc);
+                    coerce_value(&mut operand_tc)?;
 
                     if !operand_tc._type.is_integer() {
                         implicit_cast(
@@ -366,7 +367,7 @@ pub fn typecheck_expr(
                                 signed: true,
                                 bytes: 8,
                             }),
-                        );
+                        )?;
                     }
 
                     let return_type = match operator {
@@ -403,7 +404,7 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::Dereference => {
-                    coerce_value(&mut operand_tc);
+                    coerce_value(&mut operand_tc)?;
 
                     let Some(inner) = operand_tc._type.ptr_inner().cloned() else {
                         log_typecheck_error!(
@@ -414,7 +415,7 @@ pub fn typecheck_expr(
                         );
                     };
 
-                    coerce_value(&mut operand_tc);
+                    coerce_value(&mut operand_tc)?;
 
                     TCExpr {
                         _type: inner.mem_ref_to(),
@@ -426,9 +427,9 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::ExplicitCast(to_type) => {
-                    coerce_value(&mut operand_tc);
+                    coerce_value(&mut operand_tc)?;
                     let to_type = env.complete_type(base_data, to_type)?;
-                    explicit_cast(&mut operand_tc, &to_type);
+                    explicit_cast(&mut operand_tc, &to_type)?;
 
                     operand_tc
                 }
@@ -458,7 +459,7 @@ pub fn typecheck_expr(
                 log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            implicit_cast(&mut rhs, inner);
+            implicit_cast(&mut rhs, inner)?;
 
             TCExpr {
                 _type: lhs._type.clone(),
@@ -547,7 +548,7 @@ pub fn typecheck_expr(
                     size,
                 } => {
                     let mut size = *size;
-                    coerce_value(&mut size);
+                    coerce_value(&mut size)?;
 
                     _type = inner_type.clone().pointer_to();
                     (*inner_type, Some(Box::new(size)))
@@ -573,7 +574,7 @@ pub fn typecheck_expr(
 
             for index in indices.iter() {
                 let mut tc_expr = typecheck_expr(env, base_data, &index.value)?;
-                coerce_value(&mut tc_expr);
+                coerce_value(&mut tc_expr)?;
 
                 tc_indices.push(TCInitIndex {
                     name: index.name.clone(),
@@ -595,10 +596,7 @@ pub fn typecheck_expr(
             variant_name: name,
             inner,
         } => {
-            let Some(union_type) = env.get_type(base_data, type_name.as_str()) else {
-                log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
-            };
-
+            let union_type = env.get_type(base_data, type_name.as_str())?;
             let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
                 log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
@@ -619,7 +617,7 @@ pub fn typecheck_expr(
             };
 
             let mut inner = typecheck_expr(env, base_data, inner)?;
-            implicit_cast(&mut inner, &variant_type);
+            implicit_cast(&mut inner, &variant_type)?;
 
             TCExpr {
                 _type: union_type.clone().mem_ref_to(),
@@ -661,12 +659,12 @@ pub fn typecheck_expr(
             default_case,
         } => {
             let mut tc_condition = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut tc_condition);
+            coerce_condition(&mut tc_condition)?;
 
             let tc_stmts = block
                 .iter()
                 .map(|e| typecheck_expr(env, base_data, e))
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<CXResult<Vec<_>>>()?;
 
             TCExpr {
                 _type: CXType::from(CXTypeKind::Unit),
@@ -685,7 +683,7 @@ pub fn typecheck_expr(
             default,
         } => {
             let mut match_value = typecheck_expr(env, base_data, condition)?;
-            coerce_value(&mut match_value);
+            coerce_value(&mut match_value)?;
 
             match &match_value._type.kind {
                 CXTypeKind::TaggedUnion {
@@ -747,7 +745,10 @@ pub fn typecheck_expr(
                             );
                         };
 
-                        env.insert_symbol(instance_name.as_string(), variant_type.clone().mem_ref_to());
+                        env.insert_symbol(
+                            instance_name.as_string(),
+                            variant_type.clone().mem_ref_to(),
+                        );
                         let tc_block = typecheck_expr(env, base_data, block)?;
 
                         tc_arms.push(TCTagMatch {
@@ -761,19 +762,22 @@ pub fn typecheck_expr(
                         env.pop_scope();
                     }
 
-                    let default_case = default.as_ref().map(|d| {
-                        env.push_scope();
-                        let Some(tc_default) = typecheck_expr(env, base_data, d) else {
-                            log_typecheck_error!(
-                                env,
-                                d,
-                                " Failed to typecheck default case in 'match' expression"
-                            );
-                        };
-                        env.pop_scope();
+                    let default_case = default
+                        .as_ref()
+                        .map(|d| {
+                            env.push_scope();
+                            let Ok(tc_default) = typecheck_expr(env, base_data, d) else {
+                                log_typecheck_error!(
+                                    env,
+                                    d,
+                                    " Failed to typecheck default case in 'match' expression"
+                                );
+                            };
+                            env.pop_scope();
 
-                        Some(Box::new(tc_default))
-                    })?;
+                            Ok(Box::new(tc_default))
+                        })
+                        .transpose()?;
 
                     TCExpr {
                         _type: CXType::from(CXTypeKind::Unit),
@@ -799,19 +803,23 @@ pub(crate) fn global_expr(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
     ident: &str,
-) -> Option<TCExpr> {
+) -> CXResult<TCExpr> {
     if let Some(global) = env.realized_globals.get(ident) {
         return tcglobal_expr(global);
     }
 
-    let module_res = base_data.global_variables.get(ident)?;
+    let module_res = base_data
+        .global_variables
+        .get(ident)
+        .ok_or_else(|| CXError::new(format!("Global variable '{}' not found", ident)))?;
+
     let module_res = match env.in_external_templated_function {
         true => module_res.clone().transfer(""),
         false => module_res.clone(),
     };
 
     match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Some(TCExpr {
+        CXGlobalVariable::EnumConstant(val) => Ok(TCExpr {
             _type: CXType::from(CXTypeKind::Integer {
                 signed: true,
                 bytes: 8,
@@ -859,9 +867,9 @@ pub(crate) fn global_expr(
     }
 }
 
-fn tcglobal_expr(global: &TCGlobalVariable) -> Option<TCExpr> {
+fn tcglobal_expr(global: &TCGlobalVariable) -> CXResult<TCExpr> {
     match &global.kind {
-        TCGlobalVarKind::Variable { name, _type, .. } => Some(TCExpr {
+        TCGlobalVarKind::Variable { name, _type, .. } => Ok(TCExpr {
             _type: _type.clone().mem_ref_to(),
             kind: TCExprKind::GlobalVariableReference { name: name.clone() },
         }),

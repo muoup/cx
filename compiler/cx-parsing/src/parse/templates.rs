@@ -4,7 +4,7 @@ use cx_parsing_data::data::{
 };
 use crate::parse::ParserData;
 use cx_parsing_data::{assert_token_matches, peek_kind, try_next};
-use cx_util::identifier::CXIdent;
+use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::parse::types::parse_initializer;
 
@@ -94,13 +94,13 @@ pub(crate) fn convert_template_proto_to_args(
     CXNaiveTemplateInput { params }
 }
 
-pub(crate) fn parse_template_args(data: &mut ParserData) -> Option<CXNaiveTemplateInput> {
+pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXNaiveTemplateInput> {
     assert_token_matches!(data.tokens, operator!(Less));
 
     let mut input_types = Vec::new();
 
     loop {
-        let Some((None, _type)) = parse_initializer(data) else {
+        let (None, _type) = parse_initializer(data)? else {
             log_parse_error!(data, "Expected type declaration in template arguments!");
         };
 
@@ -113,7 +113,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> Option<CXNaiveTempla
 
     assert_token_matches!(data.tokens, operator!(Greater));
 
-    Some(CXNaiveTemplateInput {
+    Ok(CXNaiveTemplateInput {
         params: input_types,
     })
 }

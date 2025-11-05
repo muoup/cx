@@ -221,7 +221,7 @@ pub(crate) fn perform_job(
             let tokens = cx_lexer::lex(file_contents.as_str())?;
 
             let mut output = preparse(TokenIter::new(&tokens, file_path))
-                .unwrap_or_else(|| panic!("Preparse failed: {}", job.unit));
+                .expect("Preparsing failed");
             output.module = job.unit.to_string();
 
             if !job.unit.as_str().contains("std") {
@@ -306,8 +306,10 @@ pub(crate) fn perform_job(
                 &context.module_db,
             );
             
-            complete_base_globals(&mut env, structure_data.as_ref());
-            complete_base_functions(&mut env, structure_data.as_ref());
+            complete_base_globals(&mut env, structure_data.as_ref())
+                .expect("Completing base globals failed");
+            complete_base_functions(&mut env, structure_data.as_ref())
+                .expect("Completing base functions failed");
             typecheck(&mut env, structure_data.as_ref(), &self_ast).expect("Typechecking failed");
             realize_templates(&job.unit, &mut env).expect("Template realization failed");
 

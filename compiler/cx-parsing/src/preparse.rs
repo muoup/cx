@@ -1,6 +1,11 @@
 use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_parsing_data::{assert_token_matches, data::{CXLinkageMode, ModuleResource}, next_kind, ast::VisibilityMode, peek_kind, PreparseContents};
-use cx_util::{identifier::CXIdent, log_error, CXResult};
+use cx_parsing_data::{
+    assert_token_matches,
+    ast::VisibilityMode,
+    data::{CXLinkageMode, ModuleResource},
+    next_kind, peek_kind, PreparseContents,
+};
+use cx_util::{identifier::CXIdent, log_error, CXError, CXResult};
 
 pub(crate) struct PreparseData<'a> {
     pub(crate) contents: &'a mut PreparseContents,
@@ -8,7 +13,7 @@ pub(crate) struct PreparseData<'a> {
     pub(crate) visibility_mode: VisibilityMode,
 }
 
-pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
+pub fn preparse(tokens: TokenIter) -> CXResult<PreparseContents> {
     let mut contents = PreparseContents::default();
 
     let mut data = PreparseData {
@@ -18,10 +23,10 @@ pub fn preparse(tokens: TokenIter) -> Option<PreparseContents> {
     };
 
     while data.tokens.has_next() {
-        iterate_tokens(&mut data);
+        iterate_tokens(&mut data)?;
     }
 
-    Some(contents)
+    Ok(contents)
 }
 
 fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
@@ -29,14 +34,18 @@ fn iterate_tokens(data: &mut PreparseData) -> CXResult<()> {
         consume_token(data)?;
     }
 
-    Some(())
+    Ok(())
 }
 
 fn consume_token(data: &mut PreparseData) -> CXResult<()> {
-    match next_kind!(data.tokens)? {
+    let Some(next_token) = data.tokens.next() else {
+        return Ok(());
+    };
+
+    match &next_token.kind {
         keyword!(Struct) | keyword!(Enum) => {
-            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
-                return Some(());
+            let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
+                return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
@@ -51,8 +60,8 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.tokens.next();
             };
 
-            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
-                return Some(());
+            let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
+                return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
@@ -68,11 +77,11 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             }
 
             if !peek_kind!(data.tokens, punctuator!(Semicolon)) {
-                return None;
+                return Err(CXError::new("Expected semicolon"));
             }
 
-            let Some(identifier!(ident)) = next_kind!(data.tokens) else {
-                return Some(());
+            let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
+                return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
@@ -101,7 +110,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
         _ => (),
     }
 
-    Some(())
+    Ok(())
 }
 
 fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
@@ -123,5 +132,5 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
         }
     }
 
-    Some(import_path)
+    Ok(import_path)
 }

@@ -278,6 +278,9 @@ dependencies = [
 [[package]]
 name = "cx-lexer-data"
 version = "0.0.0"
+dependencies = [
+ "cx-util",
+]
 
 [[package]]
 name = "cx-log"

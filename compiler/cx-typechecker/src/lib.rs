@@ -75,5 +75,5 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
             global_variables: base_globals,
         });
 
-    Some(())
+    Ok(())
 }

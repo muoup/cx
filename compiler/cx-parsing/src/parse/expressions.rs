@@ -3,10 +3,10 @@ use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, TokenKind}
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_parsing_data::ast::{CXExpr, CXExprKind, CXInitIndex};
 use cx_parsing_data::data::CXNaiveTypeKind;
-use cx_parsing_data::{assert_token_matches, try_next};
+use cx_parsing_data::{assert_token_matches, next_kind, try_next};
 use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
-use cx_util::log_error;
+use cx_util::{CXError, CXResult, log_error};
 
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator,
@@ -53,23 +53,23 @@ pub(crate) fn expression_requires_semicolon(expr: &CXExpr) -> bool {
     )
 }
 
-pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
+pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     if try_next!(data.tokens, TokenKind::Keyword(_)) {
         data.tokens.back();
 
-        if let Some(expr) = parse_keyword_expr(data) {
-            return Some(expr);
+        if let Some(expr) = parse_keyword_expr(data).ok() {
+            return Ok(expr);
         }
     }
 
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
-    let Some(_) = parse_expr_val(data, &mut expr_stack, &mut op_stack) else {
-        return Some(CXExprKind::Unit.into_expr(0, 0));
+    let Ok(_) = parse_expr_val(data, &mut expr_stack, &mut op_stack) else {
+        return Ok(CXExprKind::Unit.into_expr(0, 0));
     };
 
-    while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack) {}
+    while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
     compress_stack(&mut expr_stack, &mut op_stack, 100)?;
 
@@ -88,10 +88,10 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> Option<CXExpr> {
         );
     }
 
-    Some(expr)
+    Ok(expr)
 }
 
-pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
+pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
     let start_index = data.tokens.index;
 
     let specifiers = parse_specifier(&mut data.tokens);
@@ -101,7 +101,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let Some((name, type_)) = parse_base_mods(data, base_type.clone()) else {
+        let Ok((name, type_)) = parse_base_mods(data, base_type.clone()) else {
             log_parse_error!(data, "Failed to parse type declaration");
         };
 
@@ -112,10 +112,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
             );
         } else {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
-
-            let Some(name) = parse_std_ident(&mut data.tokens) else {
-                log_parse_error!(data, "Identifier expected")
-            };
+            let name = parse_std_ident(&mut data.tokens)?;
 
             let CXNaiveTypeKind::Identifier {
                 name: type_name, ..
@@ -146,9 +143,9 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> Option<CXExpr> {
     data.pop_comma_mode();
 
     if decls.len() == 1 {
-        Some(decls.pop().unwrap())
+        Ok(decls.pop().unwrap())
     } else {
-        Some(CXExprKind::Block { exprs: decls }.into_expr(start_index, data.tokens.index))
+        Ok(CXExprKind::Block { exprs: decls }.into_expr(start_index, data.tokens.index))
     }
 }
 
@@ -156,29 +153,27 @@ pub(crate) fn parse_expr_op_concat(
     data: &mut ParserData,
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
-) -> Option<()> {
-    let op = parse_binop(data)?;
+) -> CXResult<Option<()>> {
+    let Some(op) = parse_binop(data).ok() else {
+        return Ok(None);
+    };
 
     let op_prec = binop_prec(op.clone());
     compress_stack(expr_stack, op_stack, op_prec)?;
 
     op_stack.push(PrecOperator::BinOp(op));
 
-    let Some(_) = parse_expr_val(data, expr_stack, op_stack) else {
-        log_error!(
-            "Failed to parse expression value after operator: {:#?}",
-            data.tokens.peek()
-        );
-    };
+    parse_expr_val(data, expr_stack, op_stack)?;
 
-    Some(())
+    Ok(Some(()))
 }
 
 fn compress_one_expr(
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
-) -> Option<CXExpr> {
-    let op = op_stack.pop().unwrap();
+) -> CXResult<CXExpr> {
+    let op = op_stack.pop()
+        .ok_or_else(|| log_error!("Operator stack is empty when trying to compress expression"))?;
 
     match op {
         PrecOperator::UnOp(un_op) => {
@@ -192,7 +187,7 @@ fn compress_one_expr(
                 operand: Box::new(rhs),
             };
 
-            Some(acc.into_expr(start_index, end_index))
+            Ok(acc.into_expr(start_index, end_index))
         }
         PrecOperator::BinOp(bin_op) => {
             let rhs = expr_stack.pop().unwrap();
@@ -207,7 +202,7 @@ fn compress_one_expr(
                 op: bin_op,
             };
 
-            Some(acc.into_expr(start_index, end_index))
+            Ok(acc.into_expr(start_index, end_index))
         }
     }
 }
@@ -216,9 +211,9 @@ pub(crate) fn compress_stack(
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
     rprec: u8,
-) -> Option<()> {
+) -> CXResult<()> {
     if op_stack.is_empty() {
-        return Some(());
+        return Ok(());
     }
 
     while let Some(op2) = op_stack.last() {
@@ -230,26 +225,26 @@ pub(crate) fn compress_stack(
         expr_stack.push(expr);
     }
 
-    Some(())
+    Ok(())
 }
 
 pub(crate) fn parse_expr_val(
     data: &mut ParserData,
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
-) -> Option<()> {
+) -> CXResult<()> {
     let start_index = data.tokens.index;
 
     if is_type_decl(data) {
         expr_stack.push(parse_declaration(data)?);
-        return Some(());
+        return Ok(());
     }
 
     while let Some(op) = parse_pre_unop(data) {
         op_stack.push(PrecOperator::UnOp(op));
     }
 
-    let acc = match &data.tokens.next()?.kind {
+    let acc = match &next_kind!(data.tokens)? {
         TokenKind::IntLiteral(value) => CXExprKind::IntLiteral {
             bytes: 4,
             val: *value,
@@ -282,7 +277,7 @@ pub(crate) fn parse_expr_val(
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             ) {
                 expr_stack.push(CXExprKind::Unit.into_expr(0, 0));
-                return Some(());
+                return Ok(());
             }
 
             data.change_comma_mode(true);
@@ -311,7 +306,7 @@ pub(crate) fn parse_expr_val(
                 TokenKind::Punctuator(PunctuatorType::CloseBracket)
             ) {
                 expr_stack.push(CXExprKind::Unit.into_expr(start_index, data.tokens.index));
-                return Some(());
+                return Ok(());
             }
 
             let index = parse_expr(data)?;
@@ -330,8 +325,8 @@ pub(crate) fn parse_expr_val(
             );
 
             let return_type = if is_type_decl(data) {
-                let Some((None, type_)) = parse_initializer(data) else {
-                    log_error!("Failed to parse type declaration for sizeof");
+                let (None, type_) = parse_initializer(data)? else {
+                    log_parse_error!(data, "Failed to parse type declaration for sizeof");
                 };
 
                 CXExprKind::SizeOf {
@@ -360,8 +355,8 @@ pub(crate) fn parse_expr_val(
         }
 
         TokenKind::Keyword(KeywordType::New) => {
-            let Some((None, _type)) = parse_initializer(data) else {
-                log_error!("Failed to parse type declaration for new");
+            let (None, _type) = parse_initializer(data)? else {
+                log_parse_error!(data, "Failed to parse type declaration for new");
             };
 
             CXExprKind::New { _type }
@@ -369,7 +364,7 @@ pub(crate) fn parse_expr_val(
 
         _ => {
             data.back();
-            return None;
+            return Err(CXError::new("Failed to parse expression value"));
         }
     }
     .into_expr(start_index, data.tokens.index);
@@ -379,42 +374,35 @@ pub(crate) fn parse_expr_val(
     while let Some(op) = parse_post_unop(data) {
         let prec = unop_prec(op.clone());
 
-        compress_stack(expr_stack, op_stack, prec);
+        compress_stack(expr_stack, op_stack, prec)?;
         op_stack.push(PrecOperator::UnOp(op));
     }
 
-    Some(())
+    Ok(())
 }
 
-pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> Option<CXExprKind> {
+pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExprKind> {
     let ident = parse_std_ident(&mut data.tokens)?;
-    let next = data.tokens.next()?;
 
-    if !matches!(next.kind, operator!(Less)) || !is_type_decl(data) {
+    if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
         data.tokens.back();
-        return Some(CXExprKind::Identifier(ident));
+        return Ok(CXExprKind::Identifier(ident));
     }
 
     data.tokens.back();
 
-    let Some(args) = parse_template_args(data) else {
-        log_parse_error!(
-            data,
-            "Failed to parse template arguments for function identifier: {:#?}",
-            ident
-        );
-    };
+    let args = parse_template_args(data)?;
 
-    Some(CXExprKind::TemplatedIdentifier {
+    Ok(CXExprKind::TemplatedIdentifier {
         name: ident,
         template_input: args,
     })
 }
 
-pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
+pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     let start_index = data.tokens.index;
 
-    let TokenKind::Keyword(keyword_type) = data.tokens.next()?.kind else {
+    let TokenKind::Keyword(keyword_type) = next_kind!(data.tokens)? else {
         unreachable!(
             "PANIC: parse_keyword_expr called with non-keyword token: {:#?}",
             data.tokens.peek()
@@ -426,12 +414,12 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             let val = parse_expr(data)?;
 
             if matches!(val.kind, CXExprKind::Unit) {
-                return Some(
+                return Ok(
                     CXExprKind::Return { value: None }.into_expr(start_index, data.tokens.index),
                 );
             }
 
-            Some(CXExprKind::Return {
+            Ok(CXExprKind::Return {
                 value: Some(Box::new(val)),
             })
         }
@@ -447,12 +435,12 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             );
             let then_body = parse_body(data)?;
             let else_body = if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Else)) {
-                parse_body(data)
+                Some(parse_body(data)?)
             } else {
                 None
             };
 
-            Some(CXExprKind::If {
+            Ok(CXExprKind::If {
                 condition: Box::new(expr),
                 then_branch: Box::new(then_body),
                 else_branch: else_body.map(Box::new),
@@ -500,7 +488,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
                 block.push(expr);
             }
 
-            Some(CXExprKind::Switch {
+            Ok(CXExprKind::Switch {
                 condition: Box::new(expr),
                 block,
                 cases,
@@ -538,7 +526,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
 
             data.pop_comma_mode();
 
-            Some(CXExprKind::Match {
+            Ok(CXExprKind::Match {
                 condition: Box::new(expr),
                 arms,
                 default: default_arm,
@@ -553,7 +541,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
             assert_token_matches!(data.tokens, punctuator!(Semicolon));
 
-            Some(CXExprKind::While {
+            Ok(CXExprKind::While {
                 condition: Box::new(expr),
                 body: Box::new(body),
                 pre_eval: false,
@@ -565,14 +553,14 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
             let body = parse_body(data)?;
 
-            Some(CXExprKind::While {
+            Ok(CXExprKind::While {
                 condition: Box::new(expr),
                 body: Box::new(body),
                 pre_eval: true,
             })
         }
-        KeywordType::Break => Some(CXExprKind::Break),
-        KeywordType::Continue => Some(CXExprKind::Continue),
+        KeywordType::Break => Ok(CXExprKind::Break),
+        KeywordType::Continue => Ok(CXExprKind::Continue),
         KeywordType::For => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
 
@@ -587,7 +575,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
 
             let body = parse_body(data)?;
 
-            Some(CXExprKind::For {
+            Ok(CXExprKind::For {
                 init: Box::new(init),
                 condition: Box::new(condition),
                 increment: Box::new(increment),
@@ -597,20 +585,20 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> Option<CXExpr> {
 
         KeywordType::Defer => {
             let body = parse_body(data)?;
-            Some(CXExprKind::Defer {
+            Ok(CXExprKind::Defer {
                 expr: Box::new(body),
             })
         }
 
         _ => {
             data.tokens.back();
-            return None;
+            return Err(CXError::new("Failed to parse keyword expression"));
         }
     }
     .map(|e| e.into_expr(start_index, data.tokens.index))
 }
 
-pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<CXExpr> {
+pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult<CXExpr> {
     let init_index = data.tokens.index;
     assert_token_matches!(
         data.tokens,
@@ -649,5 +637,5 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> Option<C
         }
     }
 
-    Some(CXExprKind::InitializerList { indices: inits }.into_expr(init_index, data.tokens.index))
+    Ok(CXExprKind::InitializerList { indices: inits }.into_expr(init_index, data.tokens.index))
 }

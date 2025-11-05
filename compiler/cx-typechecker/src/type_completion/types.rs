@@ -4,7 +4,7 @@ use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind};
-use cx_util::log_error;
+use cx_util::{CXResult, log_error};
 
 use crate::environment::TCEnvironment;
 use crate::type_completion::complete_type;
@@ -36,36 +36,31 @@ pub(crate) fn _complete_template_input(
     base_data: &TCBaseMappings,
     external_module: Option<&String>,
     input: &CXNaiveTemplateInput,
-) -> Option<CXTemplateInput> {
+) -> CXResult<CXTemplateInput> {
     let _ty = input
         .params
         .iter()
         .map(|param| {
-            complete_type(env, base_data, external_module, param).unwrap_or_else(|| {
-                panic!("Failed to precontextualize template input type: {param}")
-            })
+            complete_type(env, base_data, external_module, param)
         })
-        .collect::<Vec<_>>();
+        .collect::<CXResult<Vec<_>>>()?;
 
-    Some(CXTemplateInput { args: _ty })
+    Ok(CXTemplateInput { args: _ty })
 }
 
 pub(crate) fn _complete_type(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
     ty: &CXNaiveType,
-) -> Option<CXType> {
+) -> CXResult<CXType> {
     let mut recurse_ty = |ty: &CXNaiveType| {
-        Some(
-            _complete_type(env, base_data, ty)
-                .unwrap_or_else(|| panic!("Failed to precontextualize type: {ty}")),
-        )
+        _complete_type(env, base_data, ty)
     };
 
     match &ty.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
             if let Some(existing) = env.realized_types.get(&name.as_string()) {
-                return Some(existing.clone());
+                return Ok(existing.clone());
             };
 
             if let Some(inner) = base_data.type_data.get_standard(&name.as_string()) {
@@ -89,7 +84,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {
             let inner_type = recurse_ty(inner)?;
 
-            Some(CXType::from(CXTypeKind::Array {
+            Ok(CXType::from(CXTypeKind::Array {
                 inner_type: Box::new(inner_type),
                 size: *size,
             }))
@@ -98,7 +93,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::ImplicitSizedArray(inner) => {
             let inner_type = recurse_ty(inner)?;
 
-            Some(CXType::from(CXTypeKind::PointerTo {
+            Ok(CXType::from(CXTypeKind::PointerTo {
                 inner_type: Box::new(inner_type),
                 sizeless_array: true,
                 weak: false,
@@ -109,7 +104,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::StrongPointer { inner, is_array } => {
             let inner_type = recurse_ty(inner)?;
 
-            Some(CXType::from(CXTypeKind::StrongPointer {
+            Ok(CXType::from(CXTypeKind::StrongPointer {
                 inner_type: Box::new(inner_type),
                 is_array: *is_array,
             }))
@@ -118,7 +113,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::PointerTo { inner_type, weak } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
-            Some(CXType::from(CXTypeKind::PointerTo {
+            Ok(CXType::from(CXTypeKind::PointerTo {
                 inner_type: Box::new(inner_type),
                 weak: *weak,
                 sizeless_array: false,
@@ -127,9 +122,9 @@ pub(crate) fn _complete_type(
         }
 
         CXNaiveTypeKind::FunctionPointer { prototype } => {
-            let prototype = _complete_fn_prototype(env, base_data, prototype).unwrap();
+            let prototype = _complete_fn_prototype(env, base_data, prototype)?;
 
-            Some(CXType::from(CXTypeKind::Function {
+            Ok(CXType::from(CXTypeKind::Function {
                 prototype: Box::new(prototype),
             }))
         }
@@ -139,11 +134,11 @@ pub(crate) fn _complete_type(
                 .iter()
                 .map(|(name, field_type)| {
                     let field_type = recurse_ty(field_type)?;
-                    Some((name.clone(), field_type))
+                    Ok((name.clone(), field_type))
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<CXResult<Vec<_>>>()?;
 
-            Some(CXType::from(CXTypeKind::Structured {
+            Ok(CXType::from(CXTypeKind::Structured {
                 name: name.clone(),
                 base_identifier: name.clone(),
                 fields,
@@ -158,11 +153,11 @@ pub(crate) fn _complete_type(
                 .iter()
                 .map(|(name, field_type)| {
                     let field_type = recurse_ty(field_type)?;
-                    Some((name.clone(), field_type))
+                    Ok((name.clone(), field_type))
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<CXResult<Vec<_>>>()?;
 
-            Some(CXType::from(CXTypeKind::Union {
+            Ok(CXType::from(CXTypeKind::Union {
                 name: name.clone(),
                 variants: fields,
             }))
@@ -173,11 +168,11 @@ pub(crate) fn _complete_type(
                 .iter()
                 .map(|(name, variant_type)| {
                     let variant_type = recurse_ty(variant_type)?;
-                    Some((name.clone(), variant_type))
+                    Ok((name.clone(), variant_type))
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<CXResult<Vec<_>>>()?;
 
-            Some(CXType::from(CXTypeKind::TaggedUnion {
+            Ok(CXType::from(CXTypeKind::TaggedUnion {
                 name: name.clone(),
                 variants,
             }))

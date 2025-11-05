@@ -62,7 +62,8 @@ macro_rules! peek_kind {
 #[macro_export]
 macro_rules! next_kind {
     ($data:expr) => {
-        $data.next().cloned().map(|k| k.kind);
+        $data.next().cloned().map(|k| k.kind)
+            .ok_or_else(|| cx_util::CXError::new("Unexpected end of tokens"))
     };
 }
 
@@ -70,5 +71,6 @@ macro_rules! next_kind {
 macro_rules! peek_next_kind {
     ($data:expr) => {
         $data.peek().map(|k| &k.kind)
+            .ok_or_else(|| cx_util::CXError::new("Unexpected end of tokens"))
     };
 }
