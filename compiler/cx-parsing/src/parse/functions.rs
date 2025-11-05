@@ -43,12 +43,12 @@ pub fn parse_destructor_prototype(data: &mut ParserData) -> CXResult<FunctionDec
     assert_token_matches!(data.tokens, operator!(Tilda));
 
     let name = parse_std_ident(&mut data.tokens)?;
-    let template_prototype = try_parse_template(&mut data.tokens);
+    let template_prototype = try_parse_template(&mut data.tokens)?;
 
     assert_token_matches!(data.tokens, punctuator!(OpenParen));
     assert_token_matches!(data.tokens, identifier!(this));
     if this.as_str() != "this" {
-        log_preparse_error!(data.tokens, "Destructor can only have 'this' as parameter.");
+        return log_preparse_error!(data.tokens, "Destructor can only have 'this' as parameter.");
     }
     assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
@@ -76,7 +76,7 @@ pub fn try_function_parse(
     return_type: CXNaiveType,
     name: CXIdent,
 ) -> CXResult<Option<FunctionDeclaration>> {
-    let template_prototype = try_parse_template(&mut data.tokens);
+    let template_prototype = try_parse_template(&mut data.tokens)?;
 
     match peek_next_kind!(data.tokens)? {
         // e.g:
@@ -128,7 +128,7 @@ pub fn try_function_parse(
 
             assert_token_matches!(data.tokens, identifier!(name));
             let name = name.clone();
-            let template_prototype = try_parse_template(&mut data.tokens);
+            let template_prototype = try_parse_template(&mut data.tokens)?;
 
             let name = NaiveFnKind::MemberFunction {
                 _type: FunctionTypeIdent::from_type(&_type).unwrap(),
@@ -136,7 +136,7 @@ pub fn try_function_parse(
             };
 
             let Ok(params) = parse_params(data) else {
-                log_parse_error!(
+                return log_parse_error!(
                     data,
                     "Failed to parse parameters in member function declaration!"
                 );
@@ -179,7 +179,7 @@ pub(crate) fn parse_function_contract(
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    log_parse_error!(data, "Precondition already defined in function contract.");
+                    return log_parse_error!(data, "Precondition already defined in function contract.");
                 }
 
                 data.tokens.next();
@@ -192,7 +192,7 @@ pub(crate) fn parse_function_contract(
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    log_parse_error!(data, "Postcondition already defined in function contract.");
+                    return log_parse_error!(data, "Postcondition already defined in function contract.");
                 }
 
                 data.tokens.next();
@@ -206,7 +206,6 @@ pub(crate) fn parse_function_contract(
                 } else {
                     None
                 };
-                
                 
                 assert_token_matches!(data.tokens, punctuator!(Colon));
                 assert_token_matches!(data.tokens, punctuator!(OpenParen));
@@ -274,7 +273,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
 
             params.push(CXNaiveParameter { name, _type });
         } else {
-            log_parse_error!(data, "Failed to parse parameter in function call");
+            return log_parse_error!(data, "Failed to parse parameter in function call");
         }
 
         if !try_next!(data.tokens, operator!(Comma)) {

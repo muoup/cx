@@ -8,6 +8,10 @@ pub mod rwlockser;
 pub mod scoped_map;
 pub mod hashable_float;
 
+pub trait CXErrorTrait {
+    fn pretty_print(&self, output_stream: &mut dyn std::io::Write);
+}
+
 pub struct CXError {
     pub message: String,
 }

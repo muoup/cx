@@ -59,19 +59,19 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     }
 }
 
-pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
-    Some(match &data.tokens.next()?.kind {
+pub(crate) fn parse_pre_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp>> {
+    Ok(match &next_kind!(data.tokens)? {
         TokenKind::Operator(op) => match op {
-            OperatorType::Ampersand => CXUnOp::AddressOf,
-            OperatorType::Asterisk => CXUnOp::Dereference,
-            OperatorType::Increment => CXUnOp::PreIncrement(1),
-            OperatorType::Decrement => CXUnOp::PreIncrement(-1),
-            OperatorType::Minus => CXUnOp::Negative,
-            OperatorType::Exclamation => CXUnOp::LNot,
+            OperatorType::Ampersand => Some(CXUnOp::AddressOf),
+            OperatorType::Asterisk => Some(CXUnOp::Dereference),
+            OperatorType::Increment => Some(CXUnOp::PreIncrement(1)),
+            OperatorType::Decrement => Some(CXUnOp::PreIncrement(-1)),
+            OperatorType::Minus => Some(CXUnOp::Negative),
+            OperatorType::Exclamation => Some(CXUnOp::LNot),
 
             _ => {
                 data.tokens.back();
-                return None;
+                None
             }
         },
 
@@ -81,12 +81,12 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
 
             if !is_type_decl(data) {
                 data.tokens.index = pre_index;
-                return None;
+                return Ok(None);
             }
 
             let Some((None, type_)) = parse_initializer(data).ok() else {
                 data.tokens.index = pre_index;
-                return None;
+                return Ok(None);
             };
 
             assert_token_matches!(
@@ -94,12 +94,12 @@ pub(crate) fn parse_pre_unop(data: &mut ParserData) -> Option<CXUnOp> {
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             );
 
-            return Some(CXUnOp::ExplicitCast(type_));
+            Some(CXUnOp::ExplicitCast(type_))
         }
 
         _ => {
             data.tokens.back();
-            return None;
+            None
         }
     })
 }
@@ -123,7 +123,7 @@ pub(crate) fn parse_post_unop(data: &mut ParserData) -> Option<CXUnOp> {
     })
 }
 
-fn op_to_binop(op: OperatorType) -> CXResult<CXBinOp> {
+fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
     Ok(match op {
         OperatorType::Plus => CXBinOp::Add,
         OperatorType::Minus => CXBinOp::Subtract,
@@ -150,10 +150,10 @@ fn op_to_binop(op: OperatorType) -> CXResult<CXBinOp> {
 
         OperatorType::Is => CXBinOp::Is,
 
-        _ => return Err(CXError::new(format!(
+        _ => return log_parse_error!(data, 
             "Invalid binary operator: {:?}",
             op
-        ))),
+        ),
     })
 }
 
@@ -161,13 +161,13 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
     Ok(match next_kind!(data.tokens) {
         Ok(TokenKind::Operator(OperatorType::Comma)) => {
             if data.get_comma_mode() {
-                op_to_binop(OperatorType::Comma)?
+                op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
                 return Err(CXError::new("Comma operator not allowed in this context"));
             }
         }
-        Ok(TokenKind::Operator(op)) => op_to_binop(op)?,
+        Ok(TokenKind::Operator(op)) => op_to_binop(data, op)?,
         Ok(TokenKind::Punctuator(punc)) => {
             let punc = punc;
             data.tokens.back();
@@ -175,15 +175,15 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 PunctuatorType::OpenBracket => CXBinOp::ArrayIndex,
                 PunctuatorType::OpenParen => CXBinOp::MethodCall,
 
-                _ => return Err(CXError::new(&format!(
+                _ => return log_parse_error!(data,
                     "Invalid binary operator: {:?}",
                     punc
-                ))),
+                ),
             }
         }
         Ok(TokenKind::Assignment(op)) => {
             let op = match op {
-                Some(op) => Some(Box::new(op_to_binop(op)?)),
+                Some(op) => Some(Box::new(op_to_binop(data, op)?)),
                 None => None,
             };
 

@@ -69,7 +69,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         SpecifierType::Public => data.visibility = VisibilityMode::Public,
         SpecifierType::Private => data.visibility = VisibilityMode::Private,
 
-        _ => log_parse_error!(data, "Unexpected specifier in global scope"),
+        _ => return log_parse_error!(data, "Unexpected specifier in global scope"),
     };
 
     try_next!(data.tokens, punctuator!(Colon));
@@ -82,7 +82,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     let start_index = data.tokens.index;
 
     let template_prototype = if matches!(peek_next_kind!(data.tokens)?, operator!(Less)) {
-        parse_template_prototype(&mut data.tokens)
+        Some(parse_template_prototype(&mut data.tokens)?)
     } else {
         None
     };
@@ -90,7 +90,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     let (name, type_) = parse_initializer(data)?;
 
     let Some(name) = name else {
-        log_preparse_error!(
+        return log_preparse_error!(
             data.tokens.with_index(start_index),
             "Typedef must have a name!"
         );
@@ -109,7 +109,7 @@ fn parse_fn_merge(
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
-            log_parse_error!(data, "Templated functions must be defined in place.");
+            return log_parse_error!(data, "Templated functions must be defined in place.");
         }
 
         data.add_function(prototype, None);
@@ -153,7 +153,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     };
 
     if !data.tokens.has_next() {
-        log_parse_error!(
+        return log_parse_error!(
             data,
             "Reached end of token stream when parsing global expression!"
         );
@@ -188,7 +188,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             );
         }
 
-        _ => log_parse_error!(
+        _ => return log_parse_error!(
             data,
             "Unexpected token in global expression: {:#?}",
             data.tokens.peek()
@@ -205,7 +205,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
 
         while !try_next!(data.tokens, punctuator!(CloseBrace)) {
             let Ok(stmt) = parse_expr(data) else {
-                log_parse_error!(
+                return log_parse_error!(
                     data,
                     "Failed to parse statement in body: {:#?}",
                     data.tokens.peek()

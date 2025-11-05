@@ -4,13 +4,12 @@ macro_rules! log_parse_error {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            cx_log::pretty_point_error(&message, &$data.tokens.file, &$data.tokens.slice[$data.tokens.index]);
-
-            if cfg!(debug_assertions) {
+            if false {
+                cx_log::pretty_point_error(&message, &$data.tokens.file, &$data.tokens.slice[$data.tokens.index]);
                 panic!("Parsing error: {}", message);
-            } else {
-                std::process::exit(1);
             }
+            
+            Err(cx_util::CXError::new(message))
         }
     };
 }
@@ -21,13 +20,12 @@ macro_rules! log_preparse_error {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            cx_log::pretty_point_error(&message, &$toks.file, $toks.peek().unwrap());
-
-            if cfg!(debug_assertions) {
+            if false {
+                cx_log::pretty_point_error(&message, &$toks.file, $toks.peek().unwrap());
                 panic!("Preprocessing error: {}", message);
-            } else {
-                std::process::exit(1);
             }
+            
+            Err(cx_util::CXError::new(message))
         }
     };
 }

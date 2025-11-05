@@ -20,7 +20,7 @@ macro_rules! assert_token_matches {
 
             $data.back();
 
-            log_preparse_error!(
+            return log_preparse_error!(
                 $data,
                 "Expected token to match pattern: {:#?}\n Found: {}",
                 stringify!($pattern),

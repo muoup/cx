@@ -1,3 +1,4 @@
+use crate::parse::ParserData;
 use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_parsing_data::ast::CXGlobalVariable;
@@ -5,10 +6,9 @@ use cx_parsing_data::data::{
     CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, CXTypeSpecifier,
     NaiveFnKind, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
-use crate::parse::ParserData;
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_util::identifier::CXIdent;
-use cx_util::{CXError, CXResult, log_error};
+use cx_util::{log_error, CXResult};
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{parse_template_args, try_parse_template};
@@ -20,16 +20,14 @@ fn predeclaration_type(
     predeclaration: PredeclarationType,
 ) -> CXResult<CXNaiveType> {
     let Some(name) = name else {
-        log_parse_error!(data, "Invalid token.");
+        return log_parse_error!(data, "Invalid token.");
     };
 
-    Ok(
-        CXNaiveTypeKind::Identifier {
-            name,
-            predeclaration,
-        }
-        .to_type(),
-    )
+    Ok(CXNaiveTypeKind::Identifier {
+        name,
+        predeclaration,
+    }
+    .to_type())
 }
 
 fn defined_type(
@@ -44,14 +42,12 @@ fn defined_type(
         // the identifier pointer to that type
 
         data.add_type(name.as_string(), type_, template_prototype);
-        
-        Ok(
-            CXNaiveTypeKind::Identifier {
-                name,
-                predeclaration,
-            }
-            .to_type(),
-        )
+
+        Ok(CXNaiveTypeKind::Identifier {
+            name,
+            predeclaration,
+        }
+        .to_type())
     } else {
         // If the structure definition is anonymous, it can only be parsed as
         // an in-place type.
@@ -64,7 +60,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
     assert_token_matches!(data.tokens, keyword!(Struct));
 
     let name = parse_std_ident(&mut data.tokens).ok();
-    let template_prototype = try_parse_template(&mut data.tokens);
+    let template_prototype = try_parse_template(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Struct);
@@ -74,11 +70,11 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Ok((name, _type)) = parse_initializer(data) else {
-            log_preparse_error!(data.tokens, "Failed to parse struct member type");
+            return log_preparse_error!(data.tokens, "Failed to parse struct member type");
         };
 
         let Some(name) = name else {
-            log_preparse_error!(
+            return log_preparse_error!(
                 data.tokens,
                 "UNSUPPORTED: Nameless struct member of type {}",
                 _type
@@ -118,10 +114,12 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
                     idx = val;
                 }
 
-                _ => log_preparse_error!(
-                    data.tokens,
-                    "Enum variant value must be an integer literal"
-                ),
+                _ => {
+                    return log_preparse_error!(
+                        data.tokens,
+                        "Enum variant value must be an integer literal"
+                    )
+                }
             }
         }
 
@@ -155,7 +153,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXNaiveT
     assert_token_matches!(data.tokens, keyword!(Class));
 
     let name = parse_std_ident(&mut data.tokens)?;
-    let template_prototype = try_parse_template(&mut data.tokens);
+    let template_prototype = try_parse_template(&mut data.tokens)?;
 
     assert_token_matches!(data.tokens, punctuator!(OpenBrace));
 
@@ -163,7 +161,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXNaiveT
 
     loop {
         let Ok(name) = parse_std_ident(&mut data.tokens) else {
-            log_preparse_error!(data.tokens, "Expected variant name in tagged union");
+            return log_preparse_error!(data.tokens, "Expected variant name in tagged union");
         };
 
         assert_token_matches!(data.tokens, operator!(ScopeRes));
@@ -173,13 +171,18 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXNaiveT
             Ok((None, _type)) => variants.push((name.to_string(), _type)),
 
             Ok((Some(_), _)) => {
-                log_preparse_error!(
+                return log_preparse_error!(
                     data.tokens,
                     "Tagged union variant may not have a named type"
                 )
             }
-            
-            _ => log_preparse_error!(data.tokens, "Failed to parse tagged union variant type"),
+
+            _ => {
+                return log_preparse_error!(
+                    data.tokens,
+                    "Failed to parse tagged union variant type"
+                )
+            }
         }
 
         if !try_next!(data.tokens, operator!(Comma)) {
@@ -197,7 +200,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXNaiveT
             variants: variants.clone(),
         }
         .to_type(),
-        template_prototype.clone(),
+        template_prototype,
         PredeclarationType::Union,
     )
 }
@@ -211,7 +214,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
     }
 
     let name = parse_std_ident(&mut data.tokens).ok();
-    let template_prototype = try_parse_template(&mut data.tokens);
+    let template_prototype = try_parse_template(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Union);
@@ -223,7 +226,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
         let (name, _type) = parse_initializer(data)?;
 
         let Some(name) = name else {
-            log_preparse_error!(
+            return log_preparse_error!(
                 data.tokens,
                 "UNSUPPORTED: Nameless union member of type {}",
                 _type
@@ -338,21 +341,21 @@ pub(crate) fn parse_typemods(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             );
-            
+
             let ParseParamsResult {
                 params,
                 var_args,
                 contains_this,
-                contract
+                contract,
             } = parse_params(data)?;
 
             if contract.is_some() {
-                log_preparse_error!(
+                return log_preparse_error!(
                     data.tokens,
                     "A function pointer may not contain a contract specification"
                 );
             }
-            
+
             let prototype = CXNaivePrototype {
                 name: NaiveFnKind::Standard(CXIdent::from("__internal_fnptr")),
                 return_type: acc_type,
@@ -396,7 +399,7 @@ pub(crate) fn parse_suffix_typemod(
                 }
                 TokenKind::IntLiteral(size) => {
                     let size = *size as usize;
-                    
+
                     tokens.next();
                     CXNaiveTypeKind::ExplicitSizedArray(Box::new(acc_type), size).to_type()
                 }
@@ -416,9 +419,9 @@ pub(crate) fn parse_suffix_typemod(
 
 pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXNaiveType> {
     let Some(next_token) = data.tokens.peek() else {
-        log_parse_error!(data, "Expected type base, found end of tokens.");
+        return log_parse_error!(data, "Expected type base, found end of tokens.");
     };
-    
+
     let _type = match &next_token.kind {
         identifier!() => {
             let ident = parse_std_ident(&mut data.tokens)?;
@@ -426,39 +429,36 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXNaiveType> {
             if peek_kind!(data.tokens, operator!(Less)) {
                 let params = parse_template_args(data)?;
 
-                Ok(
-                    CXNaiveTypeKind::TemplatedIdentifier {
-                        name: ident,
-                        input: params,
-                    }
-                    .to_type(),
-                )
+                Ok(CXNaiveTypeKind::TemplatedIdentifier {
+                    name: ident,
+                    input: params,
+                }
+                .to_type())
             } else {
-                Ok(
-                    CXNaiveTypeKind::Identifier {
-                        name: ident,
-                        predeclaration: PredeclarationType::None,
-                    }
-                    .to_type(),
-                )
+                Ok(CXNaiveTypeKind::Identifier {
+                    name: ident,
+                    predeclaration: PredeclarationType::None,
+                }
+                .to_type())
             }
         }
 
-        intrinsic!() => Ok(
-            CXNaiveTypeKind::Identifier {
-                name: parse_intrinsic(&mut data.tokens)?,
-                predeclaration: PredeclarationType::None,
-            }
-            .to_type(),
-        ),
+        intrinsic!() => Ok(CXNaiveTypeKind::Identifier {
+            name: parse_intrinsic(&mut data.tokens)?,
+            predeclaration: PredeclarationType::None,
+        }
+        .to_type()),
 
         keyword!(Struct) => parse_struct_def(data),
         keyword!(Enum) => parse_enum_def(data),
         keyword!(Union) => parse_union_def(data),
 
-        _ => return Err(CXError::new(
-            "Expected type base (identifier, struct, enum, union, or intrinsic)",
-        )),
+        _ => {
+            return log_parse_error!(
+                data,
+                "Expected type base (identifier, struct, enum, union, or intrinsic)"
+            )
+        }
     };
 
     let specifiers = parse_specifier(&mut data.tokens);

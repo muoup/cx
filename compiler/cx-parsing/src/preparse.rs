@@ -120,7 +120,7 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
 
     loop {
         let Some(tok) = tokens.next() else {
-            log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
+            return log_preparse_error!(tokens, "Reached end of token stream when parsing import!");
         };
 
         match &tok.kind {

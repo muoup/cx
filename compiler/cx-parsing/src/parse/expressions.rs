@@ -6,7 +6,7 @@ use cx_parsing_data::data::CXNaiveTypeKind;
 use cx_parsing_data::{assert_token_matches, next_kind, try_next};
 use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
-use cx_util::{CXError, CXResult, log_error};
+use cx_util::{CXResult, log_error};
 
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_post_unop, parse_pre_unop, unop_prec, PrecOperator,
@@ -102,7 +102,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
 
     loop {
         let Ok((name, type_)) = parse_base_mods(data, base_type.clone()) else {
-            log_parse_error!(data, "Failed to parse type declaration");
+            return log_parse_error!(data, "Failed to parse type declaration");
         };
 
         if let Some(name) = name {
@@ -240,7 +240,7 @@ pub(crate) fn parse_expr_val(
         return Ok(());
     }
 
-    while let Some(op) = parse_pre_unop(data) {
+    while let Some(op) = parse_pre_unop(data)? {
         op_stack.push(PrecOperator::UnOp(op));
     }
 
@@ -326,7 +326,7 @@ pub(crate) fn parse_expr_val(
 
             let return_type = if is_type_decl(data) {
                 let (None, type_) = parse_initializer(data)? else {
-                    log_parse_error!(data, "Failed to parse type declaration for sizeof");
+                    return log_parse_error!(data, "Failed to parse type declaration for sizeof");
                 };
 
                 CXExprKind::SizeOf {
@@ -356,7 +356,7 @@ pub(crate) fn parse_expr_val(
 
         TokenKind::Keyword(KeywordType::New) => {
             let (None, _type) = parse_initializer(data)? else {
-                log_parse_error!(data, "Failed to parse type declaration for new");
+                return log_parse_error!(data, "Failed to parse type declaration for new");
             };
 
             CXExprKind::New { _type }
@@ -364,7 +364,7 @@ pub(crate) fn parse_expr_val(
 
         _ => {
             data.back();
-            return Err(CXError::new("Failed to parse expression value"));
+            return log_parse_error!(data, "Failed to parse expression value");
         }
     }
     .into_expr(start_index, data.tokens.index);
@@ -592,7 +592,11 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
 
         _ => {
             data.tokens.back();
-            return Err(CXError::new("Failed to parse keyword expression"));
+            return log_parse_error!(
+                data,
+                "Unexpected keyword in expression: {:#?}",
+                keyword_type
+            );
         }
     }
     .map(|e| e.into_expr(start_index, data.tokens.index))
