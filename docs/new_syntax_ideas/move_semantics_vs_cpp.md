@@ -4,6 +4,8 @@
 
 struct Data { .. };
 
+~Data() { .. } // destructor
+
 void pass_by_value(Data d) { .. }
 void pass_by_rvalue_ref(Data&& d) { .. }
 
@@ -21,14 +23,20 @@ C semantic equivalent:
 
 struct Data { .. };
 
+void __data_destructor(struct Data* self) { .. }
+
 void pass_by_value(struct Data* d) {
     // Data is not stored in callee's stack space, it operates on a *copied* version
     // of the object passed by the caller, copied by the caller.
+    
+    __data_destructor(d);
 }
 
 void pass_by_rvalue_ref(struct Data* d) {
     // Data is not stored in callee's stack space here either, and because the parameter
     // is treated as an rvalue reference, we can simply use the pointer to the original object.
+
+    // Since this function does not 'own' a copy of the object however, no destructor is invoked here.
 }
 
 void caller() {
@@ -37,6 +45,8 @@ void caller() {
     struct Data data_copy = __data_copy_constructor(data);
     pass_by_value(&data_copy);
     pass_by_rvalue_ref(&data);
+    
+    __data_destructor(&data);
 }
 
 ```
@@ -58,12 +68,16 @@ struct Data {
     ..
 };
 
+~Data(this) { .. } // destructor
 Data Data::clone() const { .. } // deep copy
 
 void pass_by_value(Data d) { .. }
 
 void caller() {
     Data data;
+    
+    // since 'Data' is not trivially-copyable, this would be a compile-time error
+    pass_by_value(data);
     
     // deep copy, leave data unmodified
     pass_by_value(data.clone());
@@ -103,6 +117,8 @@ void caller() {
     
     // pass_by_value(move data);
     pass_by_value(&data);
+    
+    // Since 'data' has been moved from, and is thus dead, we do not invoke its destructor here.
 }
 ```
 
@@ -190,7 +206,7 @@ The previous example only considered moving local objects. What about dealing wi
 
 struct Data { .. };
 
-void processing(vector<Data>* data_array) {
+void processing(vector<Data>& data_array) {
     for (Data& d_ref : data_array) {
         if (some_condition(d_ref)) {
             // Q: Can we move d_ref here?
@@ -218,21 +234,42 @@ For example, consider the following CX code:
 
 struct Data {
     bool _moved;
-    ..
+    ..  
 };
 
-move::Data {
-    move(this) {
-        this->moved = true;
-    };
+Data::move(this) {    
+    this->_moved = true;
+}
+
+~Data(this) {
+    if (this->_moved) {
+        return; // skip destruction
+    }
     
-    bool is_moved() const {
-        return this->_moved;
-    };
+    // normal destructor logic here
 }
 
 ```
 
 This syntax is purely illustrative, but the idea is to allow for opt-in moved-from tracking on certain types.
 You could even imagine a moved-from implementation on an Option<T> type, or a special Move<T> wrapper type to
-allow for a simpler streamlined approach to moving references.
+allow for a simpler streamlined approach to non-destructive move semantics.
+
+## What Can Be Moved Destructively?
+
+As seen before, we need some way in certain circumstances to track moved-from state. The problem we face however
+is that without embedding an intrinsic moved-from flag into every object, or with some kind of hidden runtime
+tracking, we cannot generally support moving arbitrary objects destructively.
+
+For now, the easiest solution here is to take from Rust's design. While CX does not have a notion of borrow
+checking, we can still use Rust's approach to determining what it means to 'own' an object. Just as you can
+not move out of a reference, mutable or not, CX can disallow moving out of non-local objects. This means that
+the only candidates for moves are:
+
+ - Local variables
+ - Function parameters passed by value
+ - Temporaries created within expressions
+ - Objects with opt-in non-destructive/C++-style move semantics
+ 
+In theory, and likely in the future, we can allow for destructive moving from fields of trivially destructable
+structs as well, but for now this is a sufficient starting point.
