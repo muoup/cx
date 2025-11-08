@@ -6,6 +6,10 @@ struct string {
     u64 capacity;
 };
 
+~string(this) {
+    free(this.data);
+}
+
 string new_string() {
     string s;
     s.data = malloc(16);
