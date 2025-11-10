@@ -133,7 +133,7 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_incomplete.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
 
             let mut new_jobs = pp_data
                 .imports
@@ -147,12 +147,11 @@ pub(crate) fn handle_job(
                 })
                 .collect::<Vec<_>>();
 
-            job.step = CompilationStep::ImportCombine;
+            job.step = CompilationStep::ASTParse;
             new_jobs.push(job);
 
             Some(new_jobs.into())
         }
-        CompilationStep::ImportCombine => map_reqs_new_stage(job, CompilationStep::ASTParse),
         CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
         CompilationStep::InterfaceCombine => {
             map_reqs_new_stage(job, CompilationStep::Typechecking)
@@ -163,8 +162,8 @@ pub(crate) fn handle_job(
     }
 }
 
-fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationUnit) -> Option<()> {
-    fn retrieve_map_data<'a, T>(
+fn load_precompiled_data(_context: &GlobalCompilationContext, _unit: &CompilationUnit) -> Option<()> {
+    fn _retrieve_map_data<'a, T>(
         context: &GlobalCompilationContext,
         map: &ModuleMap<T>,
         unit: &CompilationUnit,
@@ -184,8 +183,8 @@ fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationU
         }
     }
 
-    retrieve_map_data(context, &context.module_db.preparse_incomplete, unit)?;
-    retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
+    // retrieve_map_data(context, &context.module_db.preparse_incomplete, unit)?;
+    // retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
 
     Some(())
 }
@@ -239,7 +238,7 @@ pub(crate) fn perform_job(
                 .insert(job.unit.clone(), tokens);
             context
                 .module_db
-                .preparse_incomplete
+                .preparse_base
                 .insert(job.unit.clone(), output);
 
             return if identical_hash && object_exists {
@@ -249,13 +248,14 @@ pub(crate) fn perform_job(
             };
         }
 
-        CompilationStep::ImportCombine => {
-            let mut pp_data = context.module_db.preparse_incomplete.get_cloned(&job.unit);
+        CompilationStep::ASTParse => {
+            let mut pp_data = context.module_db.preparse_base.get_cloned(&job.unit);
+            let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
             for import in pp_data.imports.iter() {
                 let other_pp_data = context
                     .module_db
-                    .preparse_incomplete
+                    .preparse_base
                     .get(&CompilationUnit::from_str(import.as_str()));
                 let required_visiblity = VisibilityMode::Public;
 
@@ -267,20 +267,10 @@ pub(crate) fn perform_job(
                     pp_data.type_idents.push(resource.transfer(import));
                 }
             }
-
-            context
-                .module_db
-                .preparse_full
-                .insert(job.unit.clone(), pp_data);
-        }
-
-        CompilationStep::ASTParse => {
-            let preparse = context.module_db.preparse_full.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
+            
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.with_extension("cx")),
-                preparse.as_ref(),
+                &pp_data,
             ).unwrap_or_else(|e| {
                 e.pretty_print();
                 panic!("AST parsing failed for unit: {}", job.unit);

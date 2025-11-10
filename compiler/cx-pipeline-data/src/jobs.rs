@@ -61,7 +61,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A slightly modified preparse data that contains the public interfaces of imports
      */
-    ImportCombine = 1 << 1,
+    // ImportCombine = 1 << 1,
 
     /**
      *  Parse the AST from the source code. This is the main parsing step that converts the source
@@ -73,7 +73,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A naively parsed AST.
      */
-    ASTParse = 1 << 2,
+    ASTParse = 1 << 1,
     
     /**
      *  Prior to typechecking, the compiler must combine all publically accessible types and functions
@@ -89,7 +89,7 @@ pub enum CompilationStep {
      *  Outputs:  A base data structure, containing the publically accessible types and functions of imports
      *  along with their module origins, along with the same data from the current compilation unit.
      */
-    InterfaceCombine = 1 << 3,
+    InterfaceCombine = 1 << 2,
 
     /**
      *  Typechecks all indirectly implemented functions and types to a type-checked
@@ -103,7 +103,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  A fully type-checked AST.
      */
-    Typechecking = 1 << 4,
+    Typechecking = 1 << 3,
 
     /**
      *  Generates a custom bytecode / Flat IR representation from the type-checked AST. This, unlike
@@ -116,7 +116,7 @@ pub enum CompilationStep {
      *            implementations of templated functions, types, and potentially in the future small
      *            always-inlined functions.
      */
-    BytecodeGen = 1 << 5,
+    BytecodeGen = 1 << 4,
 
     /**
      *  Compiles the full compilation units from the flat IR bytecode representation. In effect, this
@@ -128,7 +128,7 @@ pub enum CompilationStep {
      *
      *  Outputs:  One object file per compilation unit, containing the compiled code for the unit.
      */
-    Codegen = 1 << 6, // For now, linking is a single step that is done after all compilation above is done. This
+    Codegen = 1 << 5, // For now, linking is a single step that is done after all compilation above is done. This
                       // could be abstracted into a CompilationStep, but seeing as it is not a job that occurs
                       // per-compilation unit, it handled as its own mechanism.
 }
@@ -202,27 +202,8 @@ impl JobQueue {
             .insert((job.unit.clone(), job.step), JobState::Completed);
     }
 
-    pub fn complete_all_unit_jobs(&mut self, unit: &CompilationUnit) {
-        self.progress_map.insert(
-            (unit.clone(), CompilationStep::PreParse),
-            JobState::Completed,
-        );
-        self.progress_map.insert(
-            (unit.clone(), CompilationStep::ASTParse),
-            JobState::Completed,
-        );
-        self.progress_map.insert(
-            (unit.clone(), CompilationStep::ImportCombine),
-            JobState::Completed,
-        );
-        self.progress_map.insert(
-            (unit.clone(), CompilationStep::BytecodeGen),
-            JobState::Completed,
-        );
-        self.progress_map.insert(
-            (unit.clone(), CompilationStep::Codegen),
-            JobState::Completed,
-        );
+    pub fn complete_all_unit_jobs(&mut self, _unita: &CompilationUnit) {
+        todo!()
     }
 
     pub fn job_complete(&self, job: &CompilationJob) -> bool {
