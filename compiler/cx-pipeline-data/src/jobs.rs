@@ -34,34 +34,17 @@ pub type CompilationStepRepr = u16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum CompilationStep {
-    // Note: for the sake of simplicity and the relatively minimal computational complexity,
-    // preprocessing and lexing are done for now whenever the source code is needed.
     /**
-     *  Parses all type and function definitions from the source compilation unit. This will produce
-     *  a (most of the time) incomplete type and function map, which can contain unresolved references
-     *  to types and functions that are defined in imported modules. This must be done separate from
-     *  the main parsing step as the C grammar necessitates that type symbols are known before parsing
-     *  expressions inside a function body (e.g. a * b is an ambiguous multiplication or pointer
-     *  variable declaration unless the compiler knows if "a" is a type)
+     *  Parses all type aliases in a compilation unit, i.e. typedef identifiers, along with any identifiers
+     *  declared with a struct/enum/union keyword. This step is necessary to resolve ambiguities during parsing.
      *
-     *  Requires: Lexed and preprocessed source code. This is done when-needed for now as it is not
-     *            too computationally expensive.
+     *  Also handles lexing and preprocessing of the source code, which is required before parsing can occur.
      *  
+     *  Requires: The raw source code of the compilation unit.
+     * 
+     *  Outputs:  A list of lexemes / tokens from lexing and preprocessing, along with a type symbol set.
      */
     PreParse = 1 << 0,
-
-    /**
-     *  A relatively minor step, in order for expressions to be parsed correctly, the parser must
-     *  know all declared type names, and function names as well in the case of templates. This
-     *  means that AST parsing, since "import" does not create a unified compilation unit, must
-     *  be preceded by a step that combines the public interfaces of all imports into the current
-     *  compilation unit's preparse data.
-     *
-     *  Requires: The preparse data of the current compilation unit and its imports.
-     *
-     *  Outputs:  A slightly modified preparse data that contains the public interfaces of imports
-     */
-    // ImportCombine = 1 << 1,
 
     /**
      *  Parse the AST from the source code. This is the main parsing step that converts the source
