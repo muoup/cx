@@ -16,8 +16,7 @@ pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
 
     pub lex_tokens: ModuleMap<Vec<Token>>,
-    pub preparse_incomplete: ModuleMap<PreparseContents>,
-    pub preparse_full: ModuleMap<PreparseContents>,
+    pub preparse_base: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
     pub base_mappings: ModuleMap<TCBaseMappings>,
@@ -40,8 +39,7 @@ impl ModuleData {
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
 
-            preparse_incomplete: ModuleMap::new(".cx-preparse"),
-            preparse_full: ModuleMap::new(".cx-preparse-full"),
+            preparse_base: ModuleMap::new(".cx-preparse"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
 
@@ -53,8 +51,7 @@ impl ModuleData {
     }
 
     pub fn store_data(&self, context: &GlobalCompilationContext) {
-        self.preparse_incomplete.store_all_data(context);
-        self.preparse_full.store_all_data(context);
+        self.preparse_base.store_all_data(context);
     }
 
     pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {
