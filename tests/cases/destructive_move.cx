@@ -1,0 +1,23 @@
+import std::io;
+
+struct Data {
+    int data;
+};
+
+~Data(this) {
+    printf("Destructor called for Data with data = %d\n", this.data);
+}
+
+void procedure(Data data) {
+    printf("In procedure, data = %d\n", data.data);
+}
+
+int main() {
+    Data data = (Data) {
+        .data = 25
+    };
+    
+    printf("Data created\n");
+    procedure(move data);
+    printf("Exited procedure\n");
+}
