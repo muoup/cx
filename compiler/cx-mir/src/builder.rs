@@ -4,7 +4,7 @@ use crate::aux_routines::get_cx_struct_field_by_index;
 use crate::cx_maps::convert_cx_func_map;
 use crate::deconstructor::{deconstruct_variable, deconstructor_prototype};
 use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
-use crate::{BytecodeResult, ProgramMIR};
+use crate::{BytecodeResult, MIRUnit};
 use cx_mir_data::types::{MIRType, MIRTypeKind};
 use cx_mir_data::*;
 use cx_typechecker_data::ast::{TCExpr, TCAST};
@@ -13,6 +13,7 @@ use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_util::format::dump_all;
 use cx_util::log_error;
 use cx_util::scoped_map::ScopedMap;
+use cx_util::unsafe_float::FloatWrapper;
 
 #[derive(Debug)]
 pub struct MIRBuilder {
@@ -38,8 +39,8 @@ pub struct BytecodeFunctionContext {
     merge_stack: Vec<BlockID>,
     continue_stack: Vec<BlockID>,
 
-    blocks: Vec<FunctionBlock>,
-    deferred_blocks: Vec<FunctionBlock>,
+    blocks: Vec<MIRBlock>,
+    deferred_blocks: Vec<MIRBlock>,
 }
 
 #[derive(Debug, Clone)]
@@ -187,7 +188,7 @@ impl MIRBuilder {
 
     pub fn add_instruction(
         &mut self,
-        instruction: VirtualInstruction,
+        instruction: MIRInstructionKind,
         value_type: MIRType,
     ) -> Option<MIRValue> {
         if self.current_block_closed() {
@@ -202,8 +203,8 @@ impl MIRBuilder {
             BlockID::DeferredBlock(id) => &mut context.deferred_blocks.get_mut(id as usize)?.body,
         };
 
-        body.push(BlockInstruction {
-            instruction,
+        body.push(MIRInstruction {
+            kind: instruction,
             value_type,
         });
 
@@ -218,12 +219,12 @@ impl MIRBuilder {
             return false;
         };
 
-        last_inst.instruction.is_block_terminating()
+        last_inst.kind.is_block_terminating()
     }
 
     pub fn add_instruction_cxty(
         &mut self,
-        instruction: VirtualInstruction,
+        instruction: MIRInstructionKind,
         value_type: CXType,
     ) -> Option<MIRValue> {
         let value_type = self.convert_cx_type(&value_type)?;
@@ -243,19 +244,8 @@ impl MIRBuilder {
         if self.function_defers() {
             self.add_defer_jump(self.fun().current_block, value_id)
         } else {
-            let return_block = self.create_named_block("return");
-
             self.add_instruction(
-                VirtualInstruction::Jump {
-                    target: return_block,
-                },
-                MIRType::unit(),
-            );
-
-            self.set_current_block(return_block);
-
-            self.add_instruction(
-                VirtualInstruction::Return { value: value_id },
+                MIRInstructionKind::Return { value: value_id },
                 MIRType::unit(),
             )
         }
@@ -266,7 +256,7 @@ impl MIRBuilder {
         block_id: BlockID,
         value_id: Option<MIRValue>,
     ) -> Option<MIRValue> {
-        let inst = self.add_instruction(VirtualInstruction::GotoDefer, MIRType::unit())?;
+        let inst = self.add_instruction(MIRInstructionKind::GotoDefer, MIRType::unit())?;
 
         if let Some(value_id) = value_id {
             self.add_defer_merge(block_id, value_id);
@@ -284,9 +274,9 @@ impl MIRBuilder {
             .body
             .first_mut()
             .unwrap()
-            .instruction;
+            .kind;
 
-        let VirtualInstruction::Phi { predecessors } = first_defer_inst else {
+        let MIRInstructionKind::Phi { predecessors } = first_defer_inst else {
             let fdi = format!("{first_defer_inst}");
 
             self.dump_current_fn();
@@ -372,7 +362,7 @@ impl MIRBuilder {
 
     pub fn float_const(&self, value: f64, bytes: u8) -> MIRValue {
         MIRValue::FloatImmediate {
-            val: value.to_bits() as i64,
+            val: FloatWrapper::from(value),
             type_: MIRTypeKind::Float { bytes }.into(),
         }
     }
@@ -393,7 +383,7 @@ impl MIRBuilder {
 
         let context = self.fun_mut();
 
-        context.deferred_blocks.push(FunctionBlock {
+        context.deferred_blocks.push(MIRBlock {
             debug_name: "deferred".to_owned(),
             body: Vec::new(),
         });
@@ -402,7 +392,7 @@ impl MIRBuilder {
 
         if !context.prototype.return_type.is_void() {
             self.add_instruction(
-                VirtualInstruction::Phi {
+                MIRInstructionKind::Phi {
                     predecessors: Vec::new(),
                 },
                 return_type,
@@ -491,7 +481,7 @@ impl MIRBuilder {
             BlockID::DeferredBlock(_) => &mut context.deferred_blocks,
         };
 
-        add_to.push(FunctionBlock {
+        add_to.push(MIRBlock {
             debug_name: name.to_string(),
             body: Vec::new(),
         });
@@ -521,13 +511,13 @@ impl MIRBuilder {
         }
     }
 
-    pub fn last_instruction(&self) -> Option<&BlockInstruction> {
+    pub fn last_instruction(&self) -> Option<&MIRInstruction> {
         let context = self.fun();
 
         context.blocks.last()?.body.last()
     }
 
-    pub fn current_block_last_inst(&self) -> Option<&BlockInstruction> {
+    pub fn current_block_last_inst(&self) -> Option<&MIRInstruction> {
         let context = self.fun();
 
         let current_block = match context.current_block {
@@ -544,8 +534,8 @@ impl MIRBuilder {
             .map(|ctx| ctx.prototype.name.as_str())
     }
 
-    pub fn finish(self) -> Option<ProgramMIR> {
-        Some(ProgramMIR {
+    pub fn finish(self) -> Option<MIRUnit> {
+        Some(MIRUnit {
             fn_map: self.fn_map,
             fn_defs: self.functions,
 
@@ -566,7 +556,7 @@ impl MIRBuilder {
         let ret_type = prototype.return_type.clone();
 
         self.add_instruction(
-            VirtualInstruction::DirectCall {
+            MIRInstructionKind::DirectCall {
                 args,
                 method_sig: prototype,
             },
@@ -587,7 +577,7 @@ impl MIRBuilder {
         let access = get_cx_struct_field_by_index(self, _type, index)?;
 
         self.add_instruction(
-            VirtualInstruction::StructAccess {
+            MIRInstructionKind::StructAccess {
                 field_offset: access.offset,
                 field_index: access.index,
 
@@ -613,7 +603,7 @@ impl MIRBuilder {
         let tag_field = self.get_tag_addr(val, _type)?;
 
         self.add_instruction(
-            VirtualInstruction::Store {
+            MIRInstructionKind::Store {
                 memory: tag_field,
                 value: tag_val,
 

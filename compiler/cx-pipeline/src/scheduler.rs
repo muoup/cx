@@ -1,7 +1,8 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
+use cx_bytecode::lower_mir;
 use cx_lexer_data::TokenIter;
-use cx_mir::generate_bytecode;
+use cx_mir::generate_mir;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
 use cx_parsing_data::ast::VisibilityMode;
@@ -349,16 +350,21 @@ pub(crate) fn perform_job(
         CompilationStep::BytecodeGen => {
             let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
 
-            let bytecode = generate_bytecode(tc_ast).expect("Bytecode generation failed");
+            let mir = generate_mir(tc_ast).expect("Bytecode generation failed");
+            let _ = lower_mir(&mir)
+                .unwrap_or_else(|e| {
+                    e.pretty_print();
+                    panic!("Lowering MIR to bytecode failed for unit: {}", job.unit);
+                });
 
             if !job.unit.is_std_lib() {
-                dump_data(&bytecode);
+                dump_data(&mir);
             }
 
             context
                 .module_db
                 .bytecode
-                .insert(job.unit.clone(), bytecode);
+                .insert(job.unit.clone(), mir);
         }
 
         CompilationStep::Codegen => {

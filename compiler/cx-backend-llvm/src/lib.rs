@@ -1,8 +1,8 @@
 use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_mir_data::{
-    BCFunctionMap, BlockID, ElementID, FunctionBlock, MIRFunction, MIRFunctionPrototype, MIRValue,
-    ProgramMIR,
+    BCFunctionMap, BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, MIRValue,
+    MIRUnit,
 };
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
@@ -82,7 +82,7 @@ impl<'a> FunctionState<'a, '_> {
                 let float_type = bc_llvm_type(self.context, type_)?;
                 let float_val = float_type
                     .into_float_type()
-                    .const_float(f64::from_bits(*val as u64))
+                    .const_float(val.into())
                     .as_any_value_enum();
 
                 Some(CodegenValue::Value(float_val))
@@ -145,7 +145,7 @@ impl<'a> CodegenValue<'a> {
 }
 
 pub fn bytecode_aot_codegen(
-    bytecode: &ProgramMIR,
+    bytecode: &MIRUnit,
     output_path: &str,
     optimization_level: OptimizationLevel,
 ) -> Option<Vec<u8>> {
@@ -308,7 +308,7 @@ fn codegen_block<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &mut FunctionState<'a, 'b>,
     block_id: BlockID,
-    block: &FunctionBlock,
+    block: &MIRBlock,
 ) {
     let block_val = function_state
         .get_block(block_id)
@@ -333,7 +333,7 @@ fn codegen_block<'a, 'b>(
             value,
         );
 
-        if inst.instruction.is_block_terminating() {
+        if inst.kind.is_block_terminating() {
             break;
         }
     }

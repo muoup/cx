@@ -1,0 +1,10 @@
+[package]
+name = "cx-bytecode"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cx-bytecode-data = { path = "../cx-bytecode-data" }
+cx-mir-data = { path = "../cx-mir-data" }
+
+cx-util = { path = "../cx-util" }

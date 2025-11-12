@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_util::{hashable_float::FloatWrapper, identifier::CXIdent};
+use cx_util::{unsafe_float::FloatWrapper, identifier::CXIdent};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 

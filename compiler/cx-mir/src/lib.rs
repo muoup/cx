@@ -1,6 +1,6 @@
 use crate::builder::MIRBuilder;
 use crate::global_stmts::{generate_function, generate_global_variable};
-use cx_mir_data::ProgramMIR;
+use cx_mir_data::MIRUnit;
 use cx_typechecker_data::ast::TCAST;
 
 mod aux_routines;
@@ -14,7 +14,7 @@ pub mod instruction_gen;
 
 pub type BytecodeResult<T> = Option<T>;
 
-pub fn generate_bytecode(ast: TCAST) -> Option<ProgramMIR> {
+pub fn generate_mir(ast: TCAST) -> Option<MIRUnit> {
     let mut builder = MIRBuilder::new(&ast);
 
     for global_var in ast.global_variables.iter() {

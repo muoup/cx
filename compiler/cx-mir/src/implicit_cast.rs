@@ -1,8 +1,8 @@
 use crate::builder::MIRBuilder;
 use cx_parsing_data::ast::CXCastType;
 use cx_mir_data::types::MIRTypeKind;
-use cx_mir_data::VirtualInstruction::IntToPtrDiff;
-use cx_mir_data::{MIRIntBinOp, MIRValue, VirtualInstruction};
+use cx_mir_data::MIRInstructionKind::IntToPtrDiff;
+use cx_mir_data::{MIRIntBinOp, MIRValue, MIRInstructionKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 
 pub(crate) fn implicit_cast(
@@ -16,7 +16,7 @@ pub(crate) fn implicit_cast(
         CXCastType::NOOP => Some(value),
 
         CXCastType::BitCast => {
-            builder.add_instruction_cxty(VirtualInstruction::BitCast { value }, to_type.clone())
+            builder.add_instruction_cxty(MIRInstructionKind::BitCast { value }, to_type.clone())
         }
 
         CXCastType::PtrToInt => {
@@ -24,7 +24,7 @@ pub(crate) fn implicit_cast(
                 panic!("INTERNAL PANIC: Invalid pointer type")
             };
 
-            builder.add_instruction_cxty(VirtualInstruction::PtrToInt { value }, to_type.clone())
+            builder.add_instruction_cxty(MIRInstructionKind::PtrToInt { value }, to_type.clone())
         }
 
         CXCastType::IntToPtr => {
@@ -35,12 +35,12 @@ pub(crate) fn implicit_cast(
             let val = if *bytes < 8 {
                 if *signed {
                     builder.add_instruction(
-                        VirtualInstruction::SExtend { value },
+                        MIRInstructionKind::SExtend { value },
                         MIRTypeKind::Signed { bytes: 8 }.into(),
                     )?
                 } else {
                     builder.add_instruction(
-                        VirtualInstruction::ZExtend { value },
+                        MIRInstructionKind::ZExtend { value },
                         MIRTypeKind::Unsigned { bytes: 8 }.into(),
                     )?
                 }
@@ -49,7 +49,7 @@ pub(crate) fn implicit_cast(
             };
 
             builder
-                .add_instruction_cxty(VirtualInstruction::BitCast { value: val }, to_type.clone())
+                .add_instruction_cxty(MIRInstructionKind::BitCast { value: val }, to_type.clone())
         }
 
         CXCastType::IntToPtrDiff => {
@@ -67,12 +67,12 @@ pub(crate) fn implicit_cast(
             let val = if *bytes < 8 {
                 if *signed {
                     builder.add_instruction(
-                        VirtualInstruction::SExtend { value },
+                        MIRInstructionKind::SExtend { value },
                         MIRTypeKind::Signed { bytes: 8 }.into(),
                     )?
                 } else {
                     builder.add_instruction(
-                        VirtualInstruction::ZExtend { value },
+                        MIRInstructionKind::ZExtend { value },
                         MIRTypeKind::Unsigned { bytes: 8 }.into(),
                     )?
                 }
@@ -96,24 +96,24 @@ pub(crate) fn implicit_cast(
             let zero = builder.match_int_const(0, &from_mir_type);
             
             builder.add_instruction(
-                VirtualInstruction::IntegerBinOp { op: MIRIntBinOp::NE, left: value, right: zero },
+                MIRInstructionKind::IntegerBinOp { op: MIRIntBinOp::NE, left: value, right: zero },
                 MIRTypeKind::Bool.into()
             )
         }
 
         CXCastType::IntegralTrunc => {
-            builder.add_instruction_cxty(VirtualInstruction::Trunc { value }, to_type.clone())
+            builder.add_instruction_cxty(MIRInstructionKind::Trunc { value }, to_type.clone())
         }
 
         CXCastType::IntegralCast => match &from_type.kind {
             CXTypeKind::Integer { signed: true, .. } => {
-                builder.add_instruction_cxty(VirtualInstruction::SExtend { value }, to_type.clone())
+                builder.add_instruction_cxty(MIRInstructionKind::SExtend { value }, to_type.clone())
             }
             CXTypeKind::Integer { signed: false, .. } => {
-                builder.add_instruction_cxty(VirtualInstruction::ZExtend { value }, to_type.clone())
+                builder.add_instruction_cxty(MIRInstructionKind::ZExtend { value }, to_type.clone())
             }
             CXTypeKind::Bool => builder
-                .add_instruction_cxty(VirtualInstruction::BoolExtend { value }, to_type.clone()),
+                .add_instruction_cxty(MIRInstructionKind::BoolExtend { value }, to_type.clone()),
 
             _ => panic!("INTERNAL PANIC: Invalid integral cast type: {to_type:?}"),
         },
@@ -124,7 +124,7 @@ pub(crate) fn implicit_cast(
             };
 
             builder.add_instruction_cxty(
-                VirtualInstruction::GetFunctionAddr {
+                MIRInstructionKind::GetFunctionAddr {
                     func: func.as_string(),
                 },
                 to_type.clone(),
@@ -132,11 +132,11 @@ pub(crate) fn implicit_cast(
         }
 
         CXCastType::FloatCast => {
-            builder.add_instruction_cxty(VirtualInstruction::FloatCast { value }, to_type.clone())
+            builder.add_instruction_cxty(MIRInstructionKind::FloatCast { value }, to_type.clone())
         }
 
         CXCastType::IntToFloat => builder.add_instruction_cxty(
-            VirtualInstruction::IntToFloat {
+            MIRInstructionKind::IntToFloat {
                 from: builder.convert_fixed_cx_type(from_type)?,
                 value,
             },
@@ -144,7 +144,7 @@ pub(crate) fn implicit_cast(
         ),
 
         CXCastType::FloatToInt => builder.add_instruction_cxty(
-            VirtualInstruction::FloatToInt {
+            MIRInstructionKind::FloatToInt {
                 from: builder.convert_fixed_cx_type(from_type)?,
                 value,
             },

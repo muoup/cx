@@ -12,19 +12,19 @@ use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotK
 use cranelift_module::Module;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BlockInstruction, LinkageType,
-    MIRFunctionPrototype, MIRIntBinOp, MIRParameter, VirtualInstruction,
+    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, MIRInstruction, LinkageType,
+    MIRFunctionPrototype, MIRIntBinOp, MIRParameter, MIRInstructionKind,
 };
 use std::ops::IndexMut;
 
 pub(crate) fn codegen_instruction(
     context: &mut FunctionState,
-    instruction: &BlockInstruction,
+    instruction: &MIRInstruction,
 ) -> Option<CodegenValue> {
-    match &instruction.instruction {
-        VirtualInstruction::Temp { value } => context.get_value(value),
+    match &instruction.kind {
+        MIRInstructionKind::Temp { value } => context.get_value(value),
 
-        VirtualInstruction::Allocate { _type, alignment } => {
+        MIRInstructionKind::Allocate { _type, alignment } => {
             let slot = match _type.size() {
                 MIRTypeSize::Fixed(size) => {
                     context.builder.create_sized_stack_slot(StackSlotData::new(
@@ -45,7 +45,7 @@ pub(crate) fn codegen_instruction(
             )))
         }
 
-        VirtualInstruction::DirectCall {
+        MIRInstructionKind::DirectCall {
             args, method_sig, ..
         } => {
             let Some(id) = get_function(context, method_sig) else {
@@ -71,7 +71,7 @@ pub(crate) fn codegen_instruction(
             get_method_return(context, inst)
         }
 
-        VirtualInstruction::IndirectCall {
+        MIRInstructionKind::IndirectCall {
             func_ptr,
             args,
             method_sig,
@@ -110,7 +110,7 @@ pub(crate) fn codegen_instruction(
             get_method_return(context, inst)
         }
 
-        VirtualInstruction::Return { value } => {
+        MIRInstructionKind::Return { value } => {
             match value {
                 Some(value) => {
                     let return_value = context.get_value(value).unwrap();
@@ -124,7 +124,7 @@ pub(crate) fn codegen_instruction(
             None
         }
 
-        VirtualInstruction::GetFunctionAddr { func } => {
+        MIRInstructionKind::GetFunctionAddr { func } => {
             let Some(id) = context.function_ids.get(func.as_str()).cloned() else {
                 panic!("INTERNAL ERROR: Function not found in codegen for GetFunctionAddr: {func}");
             };
@@ -139,7 +139,7 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        VirtualInstruction::PtrToInt { value } => {
+        MIRInstructionKind::PtrToInt { value } => {
             let bytes = match instruction.value_type.kind {
                 MIRTypeKind::Signed { bytes, .. } => bytes,
                 MIRTypeKind::Unsigned { bytes, .. } => bytes,
@@ -161,7 +161,7 @@ pub(crate) fn codegen_instruction(
             Some(val)
         }
 
-        VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
+        MIRInstructionKind::IntToPtrDiff { value, ptr_type } => {
             let size = ptr_type.fixed_size();
             let val = context.get_value(value).unwrap();
 
@@ -173,9 +173,9 @@ pub(crate) fn codegen_instruction(
             CodegenValue::Value(ptr_diff).into()
         }
 
-        VirtualInstruction::IntToPtr { value } => context.get_value(value),
+        MIRInstructionKind::IntToPtr { value } => context.get_value(value),
 
-        VirtualInstruction::PointerBinOp {
+        MIRInstructionKind::PointerBinOp {
             op, left, right, ..
         } => {
             let left = context.get_value(left).unwrap().as_value();
@@ -225,7 +225,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        VirtualInstruction::IntegerBinOp { op, left, right } => {
+        MIRInstructionKind::IntegerBinOp { op, left, right } => {
             let left = context.get_value(left).unwrap().as_value();
             let right = context.get_value(right).unwrap().as_value();
 
@@ -337,7 +337,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        VirtualInstruction::IntegerUnOp { op, value } => {
+        MIRInstructionKind::IntegerUnOp { op, value } => {
             let val = context.get_value(value).unwrap();
 
             let inst = match op {
@@ -354,7 +354,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        VirtualInstruction::FloatUnOp { value, op } => {
+        MIRInstructionKind::FloatUnOp { value, op } => {
             let val = context.get_value(value).unwrap();
             let _type = &instruction.value_type;
 
@@ -365,7 +365,7 @@ pub(crate) fn codegen_instruction(
             }
         }
 
-        VirtualInstruction::FloatBinOp { left, right, op } => {
+        MIRInstructionKind::FloatBinOp { left, right, op } => {
             let left = context.get_value(left).unwrap().as_value();
             let right = context.get_value(right).unwrap().as_value();
 
@@ -377,7 +377,7 @@ pub(crate) fn codegen_instruction(
             }))
         }
 
-        VirtualInstruction::Branch {
+        MIRInstructionKind::Branch {
             condition,
             true_block,
             false_block,
@@ -394,7 +394,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        VirtualInstruction::GotoDefer => {
+        MIRInstructionKind::GotoDefer => {
             let defer_block = context
                 .block_map
                 .get(context.defer_offset)
@@ -405,7 +405,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        VirtualInstruction::Jump { target } => {
+        MIRInstructionKind::Jump { target } => {
             let target = context.get_block(*target);
 
             context.builder.ins().jump(target, &[]);
@@ -413,7 +413,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        VirtualInstruction::StructAccess {
+        MIRInstructionKind::StructAccess {
             struct_,
             field_offset,
             ..
@@ -429,7 +429,7 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        VirtualInstruction::Store {
+        MIRInstructionKind::Store {
             memory,
             value,
             type_,
@@ -460,7 +460,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        VirtualInstruction::ZeroMemory { memory, _type } => {
+        MIRInstructionKind::ZeroMemory { memory, _type } => {
             let target = context.get_value(memory).unwrap().as_value();
 
             let size_literal = match _type.size() {
@@ -489,7 +489,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        VirtualInstruction::Phi { predecessors } => {
+        MIRInstructionKind::Phi { predecessors } => {
             let current_block = context.builder.current_block()?;
             let current_block_len = context
                 .builder
@@ -572,7 +572,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(val))
         }
 
-        VirtualInstruction::BoolExtend { value } => {
+        MIRInstructionKind::BoolExtend { value } => {
             let val = context.get_value(value).unwrap();
 
             match instruction.value_type.kind {
@@ -592,7 +592,7 @@ pub(crate) fn codegen_instruction(
             }
         }
 
-        VirtualInstruction::ZExtend { value } => {
+        MIRInstructionKind::ZExtend { value } => {
             let val = context.get_value(value).unwrap().as_value();
             let _type = &instruction.value_type;
             let cranelift_type = get_cranelift_type(_type);
@@ -608,7 +608,7 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        VirtualInstruction::SExtend { value } => {
+        MIRInstructionKind::SExtend { value } => {
             let val = context.get_value(value).unwrap().as_value();
 
             let _type = &instruction.value_type;
@@ -625,7 +625,7 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        VirtualInstruction::Trunc { value } => {
+        MIRInstructionKind::Trunc { value } => {
             let val = context.get_value(value).unwrap();
             let _type = &instruction.value_type;
 
@@ -645,9 +645,9 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        VirtualInstruction::NOP => Some(CodegenValue::NULL),
+        MIRInstructionKind::NOP => Some(CodegenValue::NULL),
 
-        VirtualInstruction::BitCast { value } => {
+        MIRInstructionKind::BitCast { value } => {
             let Some(val) = context.get_value(value) else {
                 panic!("Value not found for BitCast: {value:?}");
             };
@@ -655,7 +655,7 @@ pub(crate) fn codegen_instruction(
             Some(val)
         }
 
-        VirtualInstruction::FloatCast { value } => {
+        MIRInstructionKind::FloatCast { value } => {
             let val = context.get_value(value).unwrap();
             let to_type = &instruction.value_type;
             let cranelift_type = get_cranelift_type(to_type);
@@ -677,7 +677,7 @@ pub(crate) fn codegen_instruction(
             }
         }
 
-        VirtualInstruction::IntToFloat { from, value } => {
+        MIRInstructionKind::IntToFloat { from, value } => {
             let val = context.get_value(value).unwrap().as_value();
             let _type = &instruction.value_type;
 
@@ -694,7 +694,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        VirtualInstruction::FloatToInt { from, value } => {
+        MIRInstructionKind::FloatToInt { from, value } => {
             let val = context.get_value(value).unwrap().as_value();
             let _type = &instruction.value_type;
 
@@ -731,7 +731,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(val))
         }
 
-        VirtualInstruction::CompilerAssertion { condition, message } => {
+        MIRInstructionKind::CompilerAssertion { condition, message } => {
             let cond = context.get_value(condition).unwrap().as_value();
             let message_ref = context.get_value(message)?.as_value();
 
@@ -764,7 +764,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        VirtualInstruction::JumpTable {
+        MIRInstructionKind::JumpTable {
             value,
             targets,
             default,

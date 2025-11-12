@@ -9,7 +9,7 @@ use crate::implicit_cast::implicit_cast;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
     BCIntUnOp, BCPtrBinOp, BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType,
-    MIRGlobalValue, MIRIntBinOp, MIRValue, VirtualInstruction,
+    MIRGlobalValue, MIRIntBinOp, MIRValue, MIRInstructionKind,
 };
 use cx_parsing_data::ast::{CXBinOp, CXUnOp};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
@@ -106,7 +106,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let inner_as_bc = convert_fixed_type_kind(&lhs_inner.kind)?;
 
             builder.add_instruction(
-                VirtualInstruction::PointerBinOp {
+                MIRInstructionKind::PointerBinOp {
                     left: left_id,
                     right: right_id,
                     ptr_type: MIRType::from(inner_as_bc),
@@ -141,7 +141,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 let buffer_type = builder.convert_cx_type(&prototype.return_type)?;
 
                 let buffer = builder.add_instruction(
-                    VirtualInstruction::Allocate {
+                    MIRInstructionKind::Allocate {
                         _type: buffer_type.clone(),
                         alignment: buffer_type.alignment(),
                     },
@@ -182,7 +182,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     }
                     
                     let val = builder.add_instruction_cxty(
-                        VirtualInstruction::DirectCall {
+                        MIRInstructionKind::DirectCall {
                             args,
                             method_sig: convert_cx_prototype(&prototype)?,
                         },
@@ -210,7 +210,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     let left_id = generate_instruction(builder, function.as_ref())?;
 
                     builder.add_instruction_cxty(
-                        VirtualInstruction::IndirectCall {
+                        MIRInstructionKind::IndirectCall {
                             func_ptr: left_id,
                             args,
                             method_sig: convert_cx_prototype(&prototype)?,
@@ -231,7 +231,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let union_bc_type = builder.convert_cx_type(union_type)?;
 
             let alloc = builder.add_instruction(
-                VirtualInstruction::Allocate {
+                MIRInstructionKind::Allocate {
                     alignment: union_bc_type.alignment(),
                     _type: union_bc_type.clone(),
                 },
@@ -329,7 +329,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let type_as_bc = builder.convert_cx_type(_type)?;
 
             builder.add_instruction(
-                VirtualInstruction::Allocate {
+                MIRInstructionKind::Allocate {
                     alignment: type_as_bc.alignment(),
                     _type: type_as_bc.clone(),
                 },
@@ -345,7 +345,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let copy = generate_instruction(builder, inner_expr.as_ref())?;
 
             let buffer = builder.add_instruction(
-                VirtualInstruction::Allocate {
+                MIRInstructionKind::Allocate {
                     alignment: _type.alignment(),
                     _type: _type.clone(),
                 },
@@ -353,7 +353,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             )?;
 
             builder.add_instruction(
-                VirtualInstruction::Store {
+                MIRInstructionKind::Store {
                     memory: buffer.clone(),
                     value: copy,
                     type_: _type,
@@ -377,7 +377,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 let bc_ty = builder.convert_cx_type(&value._type)?;
                 
                 builder.add_instruction(
-                    VirtualInstruction::Store {
+                    MIRInstructionKind::Store {
                         memory: MIRValue::ParameterRef(0),
                         value: value_id.clone(),
                         type_: bc_ty,
@@ -412,7 +412,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     let operand = generate_instruction(builder, operand.as_ref())?;
 
                     builder.add_instruction(
-                        VirtualInstruction::IntegerUnOp {
+                        MIRInstructionKind::IntegerUnOp {
                             value: operand,
                             op: BCIntUnOp::NEG
                         },
@@ -423,7 +423,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     let operand = generate_instruction(builder, operand.as_ref())?;
 
                     builder.add_instruction(
-                        VirtualInstruction::IntegerUnOp {
+                        MIRInstructionKind::IntegerUnOp {
                             value: operand,
                             op: BCIntUnOp::LNOT
                         },
@@ -456,7 +456,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     )?;
 
                     builder.add_instruction(
-                        VirtualInstruction::Store {
+                        MIRInstructionKind::Store {
                             memory: loaded_val,
                             value: incremented.clone(),
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
@@ -495,7 +495,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     )?;
 
                     builder.add_instruction(
-                        VirtualInstruction::Store {
+                        MIRInstructionKind::Store {
                             memory: value,
                             value: incremented,
                             type_: builder.convert_fixed_cx_type(inner.as_ref())?
@@ -526,7 +526,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let merge_block = builder.create_block();
 
             builder.add_instruction(
-                VirtualInstruction::Branch {
+                MIRInstructionKind::Branch {
                     condition,
                     true_block: then_block,
                     false_block: else_block,
@@ -538,7 +538,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.generate_scoped(then_branch.as_ref());
 
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: merge_block,
                 },
                 MIRType::unit(),
@@ -551,7 +551,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             }
 
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: merge_block,
                 },
                 MIRType::unit(),
@@ -578,7 +578,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             };
 
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: first_block,
                 },
                 MIRType::unit(),
@@ -588,7 +588,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let condition_value = builder.generate_scoped(condition.as_ref())?;
 
             builder.add_instruction(
-                VirtualInstruction::Branch {
+                MIRInstructionKind::Branch {
                     condition: condition_value,
                     true_block: body_block,
                     false_block: merge_block,
@@ -600,7 +600,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.generate_scoped(body.as_ref());
 
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: condition_block,
                 },
                 MIRType::unit(),
@@ -635,7 +635,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             sorted_cases.sort_by(|a, b| a.1.cmp(&b.1));
 
             builder.add_instruction(
-                VirtualInstruction::JumpTable {
+                MIRInstructionKind::JumpTable {
                     value: condition_value.unwrap_or(MIRValue::NULL),
                     targets: sorted_cases
                         .iter()
@@ -655,7 +655,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 while next_index == Some(i) {
                     let case_block = case_block_iter.next().unwrap();
                     builder.add_instruction(
-                        VirtualInstruction::Jump {
+                        MIRInstructionKind::Jump {
                             target: *case_block,
                         },
                         MIRType::unit(),
@@ -667,7 +667,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 if *default_case == Some(i) {
                     let block = default_block.unwrap();
                     builder.add_instruction(
-                        VirtualInstruction::Jump { target: block },
+                        MIRInstructionKind::Jump { target: block },
                         MIRType::unit(),
                     );
                     builder.set_current_block(block);
@@ -677,7 +677,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             }
 
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: merge_block,
                 },
                 MIRType::unit(),
@@ -728,7 +728,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.set_current_block(match_block);
             builder.add_instruction(
-                VirtualInstruction::JumpTable {
+                MIRInstructionKind::JumpTable {
                     value: tag_value,
                     targets: blocks.iter().map(|(tag, block)| (*tag, *block)).collect(),
                     default: default_block.unwrap_or(merge_block),
@@ -739,7 +739,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             for (_, block) in blocks.iter() {
                 builder.set_current_block(*block);
                 builder.add_instruction(
-                    VirtualInstruction::Jump {
+                    MIRInstructionKind::Jump {
                         target: merge_block,
                     },
                     MIRType::unit(),
@@ -749,7 +749,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             if let Some(default_block) = default_block {
                 builder.set_current_block(default_block);
                 builder.add_instruction(
-                    VirtualInstruction::Jump {
+                    MIRInstructionKind::Jump {
                         target: merge_block,
                     },
                     MIRType::unit(),
@@ -777,7 +777,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             );
 
             let is_match = builder.add_instruction(
-                VirtualInstruction::IntegerBinOp {
+                MIRInstructionKind::IntegerBinOp {
                     left: tag_value,
                     right: tag_const,
                     op: MIRIntBinOp::EQ,
@@ -803,7 +803,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             generate_instruction(builder, init.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: condition_block,
                 },
                 MIRType::unit(),
@@ -812,7 +812,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.set_current_block(condition_block);
             let condition_value = generate_instruction(builder, condition.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Branch {
+                MIRInstructionKind::Branch {
                     condition: condition_value,
                     true_block: body_block,
                     false_block: merge_block,
@@ -823,7 +823,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.set_current_block(body_block);
             generate_instruction(builder, body.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: increment_block,
                 },
                 MIRType::unit(),
@@ -832,7 +832,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             builder.set_current_block(increment_block);
             generate_instruction(builder, increment.as_ref())?;
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: condition_block,
                 },
                 MIRType::unit(),
@@ -848,7 +848,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 log_error!(" Invalid break in outermost scope");
             };
 
-            builder.add_instruction(VirtualInstruction::Jump { target: merge }, MIRType::unit());
+            builder.add_instruction(MIRInstructionKind::Jump { target: merge }, MIRType::unit());
 
             Some(MIRValue::NULL)
         }
@@ -858,7 +858,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 log_error!(" Invalid continue in outermost scope");
             };
 
-            builder.add_instruction(VirtualInstruction::Jump { target: cond }, MIRType::unit());
+            builder.add_instruction(MIRInstructionKind::Jump { target: cond }, MIRType::unit());
 
             Some(MIRValue::NULL)
         }
@@ -877,14 +877,14 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let loaded_value = builder.load_value(memory.clone(), MIRType::default_pointer())?;
 
             let value = builder.add_instruction(
-                VirtualInstruction::Temp {
+                MIRInstructionKind::Temp {
                     value: loaded_value,
                 },
                 MIRType::default_pointer(),
             )?;
 
             builder.add_instruction(
-                VirtualInstruction::ZeroMemory {
+                MIRInstructionKind::ZeroMemory {
                     memory,
                     _type: MIRType::default_pointer(),
                 },
@@ -914,7 +914,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     let len = generate_instruction(builder, len.as_ref())?;
 
                     builder.add_instruction(
-                        VirtualInstruction::DirectCall {
+                        MIRInstructionKind::DirectCall {
                             args: vec![size_imm, len],
                             method_sig: builder.fn_map.get(STANDARD_ARRAY_ALLOC).unwrap().clone(),
                         },
@@ -928,7 +928,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                         .expect("INTERNAL PANIC: Standard alloc function not found");
 
                     builder.add_instruction(
-                        VirtualInstruction::DirectCall {
+                        MIRInstructionKind::DirectCall {
                             args: vec![size_imm],
                             method_sig: builder.fn_map.get(STANDARD_ALLOC).unwrap().clone(),
                         },
@@ -946,7 +946,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             let expr_type = builder.convert_cx_type(&expr._type)?;
 
             let alloc = builder.add_instruction(
-                VirtualInstruction::Allocate {
+                MIRInstructionKind::Allocate {
                     alignment: expr_type.alignment(),
                     _type: expr_type.clone(),
                 },
@@ -954,7 +954,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             )?;
 
             builder.add_instruction(
-                VirtualInstruction::ZeroMemory {
+                MIRInstructionKind::ZeroMemory {
                     memory: alloc.clone(),
                     _type: expr_type.clone(),
                 },
@@ -973,7 +973,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 });
 
                 let struct_access = builder.add_instruction(
-                    VirtualInstruction::StructAccess {
+                    MIRInstructionKind::StructAccess {
                         struct_: alloc.clone(),
                         struct_type: expr_type.clone(),
                         field_offset: access.offset,
@@ -983,7 +983,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 )?;
 
                 builder.add_instruction(
-                    VirtualInstruction::Store {
+                    MIRInstructionKind::Store {
                         memory: struct_access,
                         value,
                         type_: access._type.clone(),
@@ -1018,7 +1018,7 @@ pub(crate) fn generate_binop(
 
             let left_id = generate_instruction(builder, lhs)?;
             let left_cmp = builder.add_instruction(
-                VirtualInstruction::IntegerBinOp {
+                MIRInstructionKind::IntegerBinOp {
                     left: left_id,
                     right: false_imm.clone(),
                     op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap(),
@@ -1036,7 +1036,7 @@ pub(crate) fn generate_binop(
             };
 
             builder.add_instruction(
-                VirtualInstruction::Branch {
+                MIRInstructionKind::Branch {
                     condition: left_cmp.clone(),
                     true_block,
                     false_block,
@@ -1048,7 +1048,7 @@ pub(crate) fn generate_binop(
 
             let right_id = generate_instruction(builder, rhs)?;
             let right_cmp = builder.add_instruction(
-                VirtualInstruction::IntegerBinOp {
+                MIRInstructionKind::IntegerBinOp {
                     left: right_id,
                     right: false_imm,
                     op: builder.cx_i_binop(&CXBinOp::NotEqual).unwrap(),
@@ -1057,7 +1057,7 @@ pub(crate) fn generate_binop(
             )?;
 
             builder.add_instruction(
-                VirtualInstruction::Jump {
+                MIRInstructionKind::Jump {
                     target: merge_block,
                 },
                 MIRType::unit(),
@@ -1066,7 +1066,7 @@ pub(crate) fn generate_binop(
             builder.set_current_block(merge_block);
 
             builder.add_instruction(
-                VirtualInstruction::Phi {
+                MIRInstructionKind::Phi {
                     predecessors: vec![
                         (left_cmp, previous_block),
                         (right_cmp, no_short_circuit_block),
@@ -1095,7 +1095,7 @@ pub(crate) fn generate_algebraic_binop(
 ) -> Option<MIRValue> {
     match &cx_lhs_type.kind {
         CXTypeKind::Integer { signed: true, .. } => builder.add_instruction(
-            VirtualInstruction::IntegerBinOp {
+            MIRInstructionKind::IntegerBinOp {
                 left: left_id,
                 right: right_id,
                 op: builder.cx_i_binop(op)?,
@@ -1104,7 +1104,7 @@ pub(crate) fn generate_algebraic_binop(
         ),
 
         CXTypeKind::Integer { signed: false, .. } => builder.add_instruction(
-            VirtualInstruction::IntegerBinOp {
+            MIRInstructionKind::IntegerBinOp {
                 left: left_id,
                 right: right_id,
                 op: builder.cx_u_binop(op)?,
@@ -1113,7 +1113,7 @@ pub(crate) fn generate_algebraic_binop(
         ),
 
         CXTypeKind::Bool => builder.add_instruction(
-            VirtualInstruction::IntegerBinOp {
+            MIRInstructionKind::IntegerBinOp {
                 left: left_id,
                 right: right_id,
                 op: builder.cx_i_binop(op)?,
@@ -1134,7 +1134,7 @@ pub(crate) fn generate_algebraic_binop(
             };
 
             builder.add_instruction(
-                VirtualInstruction::PointerBinOp {
+                MIRInstructionKind::PointerBinOp {
                     left: left_id,
                     right: right_id,
                     ptr_type: builder.convert_fixed_cx_type(left_inner)?,
@@ -1145,7 +1145,7 @@ pub(crate) fn generate_algebraic_binop(
         }
 
         CXTypeKind::Float { .. } => builder.add_instruction(
-            VirtualInstruction::FloatBinOp {
+            MIRInstructionKind::FloatBinOp {
                 left: left_id,
                 right: right_id,
                 op: builder.cx_float_binop(op)?,
@@ -1164,12 +1164,12 @@ pub(crate) fn implicit_return(
     let last_instruction = builder.current_block_last_inst();
     
     if let Some(last_instruction) = last_instruction {
-        match last_instruction.instruction {
-            VirtualInstruction::Return { .. } => {
+        match last_instruction.kind {
+            MIRInstructionKind::Return { .. } => {
                 // If the last instruction is already a return, do nothing
                 return Some(());
             }
-            VirtualInstruction::GotoDefer => {
+            MIRInstructionKind::GotoDefer => {
                 // If the last instruction is a goto defer, we can also ignore it
                 return Some(());
             }
@@ -1215,7 +1215,7 @@ pub(crate) fn implicit_defer_return(
 
         builder.enter_deferred_logic();
         builder.add_instruction(
-            VirtualInstruction::Return {
+            MIRInstructionKind::Return {
                 value: return_value,
             },
             MIRType::unit(),

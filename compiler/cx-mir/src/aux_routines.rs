@@ -3,7 +3,7 @@ use crate::instruction_gen::generate_algebraic_binop;
 use crate::BytecodeResult;
 use cx_parsing_data::ast::CXBinOp;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{MIRValue, VirtualInstruction};
+use cx_mir_data::{MIRValue, MIRInstructionKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 use cx_util::bytecode_error_log;
 
@@ -36,7 +36,7 @@ pub(crate) fn try_access_field(
             });
 
             builder.add_instruction(
-                VirtualInstruction::StructAccess {
+                MIRInstructionKind::StructAccess {
                     struct_: left_id,
                     struct_type: ltype.clone(),
                     field_offset: struct_access.offset,
@@ -145,7 +145,7 @@ pub(crate) fn allocate_variable(
 ) -> Option<MIRValue> {
     let bc_type = builder.convert_cx_type(var_type)?;
     let memory = builder.add_instruction(
-        VirtualInstruction::Allocate {
+        MIRInstructionKind::Allocate {
             _type: bc_type.clone(),
             alignment: bc_type.alignment(),
         },
@@ -160,7 +160,7 @@ pub(crate) fn allocate_variable(
 
     if variable_requires_nulling(builder, var_type) {
         builder.add_instruction(
-            VirtualInstruction::ZeroMemory {
+            MIRInstructionKind::ZeroMemory {
                 memory: memory.clone(),
                 _type: bc_type.clone(),
             },
@@ -193,7 +193,7 @@ pub(crate) fn assign_value(
     }
 
     builder.add_instruction(
-        VirtualInstruction::Store {
+        MIRInstructionKind::Store {
             memory: target,
             value,
             type_: inner_type,

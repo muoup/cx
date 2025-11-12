@@ -3,7 +3,7 @@ use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_mir_data::types::MIRType;
 use cx_mir_data::{
-    LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRValue, VirtualInstruction,
+    LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRValue, MIRInstructionKind,
 };
 use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::ast::{TCExpr, TCGlobalVarKind, TCGlobalVariable};
@@ -44,7 +44,7 @@ fn generate_params(
     for i in 0..hidden_params_count {
         let param = &bc_prototype.params[i];
         let memory = builder.add_instruction(
-            VirtualInstruction::Allocate {
+            MIRInstructionKind::Allocate {
                 _type: param._type.clone(),
                 alignment: param._type.alignment(),
             },
@@ -52,7 +52,7 @@ fn generate_params(
         )?;
 
         builder.add_instruction(
-            VirtualInstruction::Store {
+            MIRInstructionKind::Store {
                 value: MIRValue::ParameterRef(i as u32),
                 memory: memory.clone(),
                 type_: param._type.clone(),
@@ -73,7 +73,7 @@ fn generate_params(
             let param_type = builder.convert_cx_type(&param._type)?;
 
             builder.add_instruction(
-                VirtualInstruction::Store {
+                MIRInstructionKind::Store {
                     value: MIRValue::ParameterRef(i as u32),
                     memory,
                     type_: param_type,

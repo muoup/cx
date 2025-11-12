@@ -6,7 +6,7 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_mir_data::{BlockID, ElementID, FunctionBlock, MIRFunction, MIRFunctionPrototype, MIRValue};
+use cx_mir_data::{BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, MIRValue};
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
@@ -33,7 +33,7 @@ pub(crate) fn codegen_fn_prototype(
 
 pub(crate) fn codegen_block(
     context: &mut FunctionState,
-    fn_block: &FunctionBlock,
+    fn_block: &MIRBlock,
     block_id: BlockID,
 ) {
     let block = context.get_block(block_id);
@@ -50,7 +50,7 @@ pub(crate) fn codegen_block(
             );
         };
 
-        if instr.instruction.is_block_terminating() {
+        if instr.kind.is_block_terminating() {
             break;
         }
     }

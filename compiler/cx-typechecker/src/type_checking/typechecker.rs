@@ -88,7 +88,7 @@ pub fn typecheck_expr(
         CXExprKind::FloatLiteral { val, bytes } => TCExpr {
             _type: CXType::from(CXTypeKind::Float { bytes: *bytes }),
             kind: TCExprKind::FloatLiteral {
-                value: (*val).into(),
+                value: val.into(),
             },
         },
 

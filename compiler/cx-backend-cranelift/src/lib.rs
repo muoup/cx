@@ -7,7 +7,7 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_mir_data::types::MIRTypeKind;
-use cx_mir_data::{BlockID, MIRValue, ProgramMIR};
+use cx_mir_data::{BlockID, MIRValue, MIRUnit};
 use cx_util::log_error;
 use std::collections::HashMap;
 
@@ -87,15 +87,15 @@ impl FunctionState<'_> {
             }
 
             MIRValue::FloatImmediate { val, type_ } => {
-                let value = f64::from_bits(*val as u64);
-
                 match &type_.kind {
                     MIRTypeKind::Float { bytes: 4 } => {
-                        let value = self.builder.ins().f32const(value as f32);
+                        let as_f32 : f32 = val.into();
+                        let value = self.builder.ins().f32const(as_f32);
                         Some(CodegenValue::Value(value))
                     }
                     MIRTypeKind::Float { bytes: 8 } => {
-                        let value = self.builder.ins().f64const(value);
+                        let as_f64: f64 = val.into();
+                        let value = self.builder.ins().f64const(as_f64);
                         Some(CodegenValue::Value(value))
                     }
                     _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_),
@@ -142,7 +142,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
+pub fn bytecode_aot_codegen(bc: &MIRUnit, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 

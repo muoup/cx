@@ -1,7 +1,7 @@
 use crate::builder::MIRBuilder;
 use crate::cx_maps::convert_cx_prototype;
 use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{MIRFunctionPrototype, MIRValue, VirtualInstruction};
+use cx_mir_data::{MIRFunctionPrototype, MIRValue, MIRInstructionKind};
 use cx_typechecker_data::cx_types::{TCFunctionPrototype, TCParameter, CXType, CXTypeKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
 
@@ -56,7 +56,7 @@ pub fn deconstruct_variable(
                 (Some(prototype), true) => {
                     // Array of objects with deconstructor
                     let ptr_to = builder.add_instruction(
-                        VirtualInstruction::GetFunctionAddr {
+                        MIRInstructionKind::GetFunctionAddr {
                             func: prototype.name,
                         },
                         MIRType::default_pointer(),

@@ -1,12 +1,12 @@
 use crate::types::{MIRType, MIRTypeKind};
 use crate::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BlockID, BlockInstruction, FunctionBlock,
-    MIRFunction, MIRFunctionPrototype, MIRGlobalType, MIRIntBinOp, MIRValue, ProgramMIR,
-    VirtualInstruction,
+    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BlockID, MIRBlock, MIRFunction,
+    MIRFunctionPrototype, MIRGlobalType, MIRInstruction, MIRInstructionKind, MIRIntBinOp, MIRUnit,
+    MIRValue,
 };
 use std::fmt::{Display, Formatter};
 
-impl Display for ProgramMIR {
+impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Bytecode Program:")?;
 
@@ -48,7 +48,7 @@ impl Display for MIRFunction {
     }
 }
 
-impl Display for FunctionBlock {
+impl Display for MIRBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (i, instruction) in self.body.iter().enumerate() {
             write!(f, "\t")?;
@@ -79,9 +79,9 @@ impl Display for MIRFunctionPrototype {
     }
 }
 
-impl Display for BlockInstruction {
+impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.instruction)?;
+        write!(f, "{}", self.kind)?;
 
         if !self.value_type.is_void() {
             write!(f, "\n\t\t ({})", self.value_type)?;
@@ -117,10 +117,7 @@ impl Display for MIRValue {
             MIRValue::NULL => write!(f, "null"),
             MIRValue::ParameterRef(index) => write!(f, "p{index}"),
             MIRValue::IntImmediate { val, .. } => write!(f, "{val}"),
-            MIRValue::FloatImmediate { val, .. } => {
-                let float = f64::from_bits(*val as u64);
-                write!(f, "{float}")
-            }
+            MIRValue::FloatImmediate { val, .. } => write!(f, "{val}"),
             MIRValue::LoadOf(_, value) => write!(f, "*{value}"),
             MIRValue::FunctionRef(name) => write!(f, "{name}"),
             MIRValue::Global(id) => write!(f, "g{id}"),
@@ -138,50 +135,50 @@ impl Display for BlockID {
     }
 }
 
-impl Display for VirtualInstruction {
+impl Display for MIRInstructionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            VirtualInstruction::Temp { value } => {
+            MIRInstructionKind::Temp { value } => {
                 write!(f, "{value}")
             }
-            VirtualInstruction::Allocate { _type, .. } => {
+            MIRInstructionKind::Allocate { _type, .. } => {
                 write!(f, "stackallocate {_type}")
             }
-            VirtualInstruction::Store { value, memory, .. } => {
+            MIRInstructionKind::Store { value, memory, .. } => {
                 write!(f, "*{memory} := {value}")
             }
-            VirtualInstruction::ZeroMemory { memory, _type } => {
+            MIRInstructionKind::ZeroMemory { memory, _type } => {
                 write!(f, "*{memory} := 0")
             }
-            VirtualInstruction::StructAccess {
+            MIRInstructionKind::StructAccess {
                 struct_,
                 field_index,
                 ..
             } => {
                 write!(f, "{struct_}.[{field_index}]")
             }
-            VirtualInstruction::BoolExtend { value } => {
+            MIRInstructionKind::BoolExtend { value } => {
                 write!(f, "bool_extend {value}")
             }
-            VirtualInstruction::ZExtend { value } => {
+            MIRInstructionKind::ZExtend { value } => {
                 write!(f, "zextend {value}")
             }
-            VirtualInstruction::SExtend { value } => {
+            MIRInstructionKind::SExtend { value } => {
                 write!(f, "sextend {value}")
             }
-            VirtualInstruction::Trunc { value } => {
+            MIRInstructionKind::Trunc { value } => {
                 write!(f, "trunc {value}")
             }
-            VirtualInstruction::PtrToInt { value } => {
+            MIRInstructionKind::PtrToInt { value } => {
                 write!(f, "ptr_to_int {value}")
             }
-            VirtualInstruction::IntToPtrDiff { value, ptr_type } => {
+            MIRInstructionKind::IntToPtrDiff { value, ptr_type } => {
                 write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             }
-            VirtualInstruction::IntToPtr { value } => {
+            MIRInstructionKind::IntToPtr { value } => {
                 write!(f, "int_to_ptr {value}")
             }
-            VirtualInstruction::Return { value } => {
+            MIRInstructionKind::Return { value } => {
                 write!(f, "return")?;
 
                 if let Some(value) = value {
@@ -190,14 +187,14 @@ impl Display for VirtualInstruction {
 
                 Ok(())
             }
-            VirtualInstruction::Branch {
+            MIRInstructionKind::Branch {
                 condition,
                 true_block,
                 false_block,
             } => {
                 write!(f, "if {condition} goto {true_block} else {false_block}")
             }
-            VirtualInstruction::Phi { predecessors: from } => {
+            MIRInstructionKind::Phi { predecessors: from } => {
                 write!(f, "phi")?;
                 if !from.is_empty() {
                     write!(f, " from [")?;
@@ -211,13 +208,13 @@ impl Display for VirtualInstruction {
                 }
                 Ok(())
             }
-            VirtualInstruction::Jump { target } => {
+            MIRInstructionKind::Jump { target } => {
                 write!(f, "jump {target}")
             }
-            VirtualInstruction::GotoDefer => {
+            MIRInstructionKind::GotoDefer => {
                 write!(f, "goto defer")
             }
-            VirtualInstruction::JumpTable {
+            MIRInstructionKind::JumpTable {
                 value,
                 targets,
                 default,
@@ -231,7 +228,7 @@ impl Display for VirtualInstruction {
                 }
                 write!(f, "] else {default}")
             }
-            VirtualInstruction::DirectCall {
+            MIRInstructionKind::DirectCall {
                 method_sig, args, ..
             } => {
                 write!(f, "@{}(", method_sig.name)?;
@@ -243,7 +240,7 @@ impl Display for VirtualInstruction {
                 }
                 write!(f, ")")
             }
-            VirtualInstruction::IndirectCall { func_ptr, args, .. } => {
+            MIRInstructionKind::IndirectCall { func_ptr, args, .. } => {
                 write!(f, "@(*{func_ptr})(")?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
@@ -253,7 +250,7 @@ impl Display for VirtualInstruction {
                 }
                 write!(f, ")")
             }
-            VirtualInstruction::PointerBinOp {
+            MIRInstructionKind::PointerBinOp {
                 left,
                 ptr_type,
                 right,
@@ -261,37 +258,37 @@ impl Display for VirtualInstruction {
             } => {
                 write!(f, "{left} {op} {right} [{ptr_type}*]")
             }
-            VirtualInstruction::IntegerBinOp { left, right, op } => {
+            MIRInstructionKind::IntegerBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [i]")
             }
-            VirtualInstruction::IntegerUnOp { op, value } => {
+            MIRInstructionKind::IntegerUnOp { op, value } => {
                 write!(f, "{op:?} {value} [i]")
             }
-            VirtualInstruction::FloatBinOp { left, right, op } => {
+            MIRInstructionKind::FloatBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [f]")
             }
-            VirtualInstruction::FloatUnOp { op, value } => {
+            MIRInstructionKind::FloatUnOp { op, value } => {
                 write!(f, "{op:?} {value} [f]")
             }
-            VirtualInstruction::GetFunctionAddr { func: func_name } => {
+            MIRInstructionKind::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             }
-            VirtualInstruction::BitCast { value } => {
+            MIRInstructionKind::BitCast { value } => {
                 write!(f, "bit_cast {value}")
             }
-            VirtualInstruction::IntToFloat { from, value } => {
+            MIRInstructionKind::IntToFloat { from, value } => {
                 write!(f, "int_to_float ({from}) {value}")
             }
-            VirtualInstruction::FloatToInt { from, value } => {
+            MIRInstructionKind::FloatToInt { from, value } => {
                 write!(f, "float_to_int ({from}) {value}")
             }
-            VirtualInstruction::FloatCast { value } => {
+            MIRInstructionKind::FloatCast { value } => {
                 write!(f, "float_cast {value}")
             }
-            VirtualInstruction::CompilerAssertion { condition, message } => {
+            MIRInstructionKind::CompilerAssertion { condition, message } => {
                 write!(f, "compiler_assertion {condition} ({message})")
             }
-            VirtualInstruction::NOP => {
+            MIRInstructionKind::NOP => {
                 write!(f, "nop")
             }
         }

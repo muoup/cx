@@ -1,5 +1,5 @@
 use crate::types::MIRType;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
 mod format;
@@ -8,7 +8,7 @@ pub mod types;
 pub type BCFunctionMap = HashMap<String, MIRFunctionPrototype>;
 
 #[derive(Debug, Clone)]
-pub struct ProgramMIR {
+pub struct MIRUnit {
     pub fn_map: BCFunctionMap,
     pub fn_defs: Vec<MIRFunction>,
 
@@ -46,7 +46,7 @@ pub enum MIRValue {
     NULL,
     ParameterRef(u32),
     IntImmediate { type_: MIRType, val: i64 },
-    FloatImmediate { type_: MIRType, val: i64 },
+    FloatImmediate { type_: MIRType, val: FloatWrapper },
     Global(ElementID),
     FunctionRef(CXIdent),
     LoadOf(MIRType, Box<MIRValue>),
@@ -78,24 +78,24 @@ pub struct MIRFunctionPrototype {
 pub struct MIRFunction {
     pub prototype: MIRFunctionPrototype,
 
-    pub blocks: Vec<FunctionBlock>,
-    pub defer_blocks: Vec<FunctionBlock>,
+    pub blocks: Vec<MIRBlock>,
+    pub defer_blocks: Vec<MIRBlock>,
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionBlock {
+pub struct MIRBlock {
     pub debug_name: String,
-    pub body: Vec<BlockInstruction>,
+    pub body: Vec<MIRInstruction>,
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockInstruction {
-    pub instruction: VirtualInstruction,
+pub struct MIRInstruction {
+    pub kind: MIRInstructionKind,
     pub value_type: MIRType,
 }
 
 #[derive(Debug, Clone)]
-pub enum VirtualInstruction {
+pub enum MIRInstructionKind {
     Allocate {
         _type: MIRType,
         alignment: u8,
@@ -253,12 +253,12 @@ pub enum VirtualInstruction {
     NOP,
 }
 
-impl VirtualInstruction {
+impl MIRInstructionKind {
     pub fn is_block_terminating(&self) -> bool {
-        matches!(self, VirtualInstruction::JumpTable { .. }
-            | VirtualInstruction::Branch { .. }
-            | VirtualInstruction::Jump { .. }
-            | VirtualInstruction::Return { .. })
+        matches!(self, MIRInstructionKind::JumpTable { .. }
+            | MIRInstructionKind::Branch { .. }
+            | MIRInstructionKind::Jump { .. }
+            | MIRInstructionKind::Return { .. })
     }
 }
 

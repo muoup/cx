@@ -1,12 +1,12 @@
 use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
-use cx_parsing_data::ast::CXBinOp;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
     BCFloatBinOp, BCFunctionMap, BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRIntBinOp,
-    MIRParameter, VirtualInstruction,
+    MIRParameter, MIRInstructionKind,
 };
-use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXType, CXTypeKind};
+use cx_parsing_data::ast::CXBinOp;
+use cx_typechecker_data::cx_types::{CXType, CXTypeKind, TCFunctionPrototype};
 use cx_typechecker_data::function_map::CXFnMap;
 
 impl MIRBuilder {
@@ -139,10 +139,10 @@ pub(crate) fn convert_cx_prototype(cx_proto: &TCFunctionPrototype) -> Option<MIR
                 _type: MIRType::default_pointer(),
             },
         );
-        
+
         return_type = MIRType::default_pointer();
     }
-    
+
     let prototype = MIRFunctionPrototype {
         name: cx_proto.mangle_name(),
         return_type: return_type.clone(),
@@ -155,7 +155,14 @@ pub(crate) fn convert_cx_prototype(cx_proto: &TCFunctionPrototype) -> Option<MIR
 }
 
 pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
-    cx_proto.values().map(|cx_proto| (cx_proto.mangle_name(), convert_cx_prototype(cx_proto).unwrap()))
+    cx_proto
+        .values()
+        .map(|cx_proto| {
+            (
+                cx_proto.mangle_name(),
+                convert_cx_prototype(cx_proto).unwrap(),
+            )
+        })
         .collect::<BCFunctionMap>()
 }
 
@@ -174,7 +181,7 @@ pub(crate) fn convert_type_kind(
             };
 
             let total_size = builder.add_instruction(
-                VirtualInstruction::IntegerBinOp {
+                MIRInstructionKind::IntegerBinOp {
                     left: size_id,
                     right: type_size,
                     op: MIRIntBinOp::MUL,

@@ -1,4 +1,4 @@
-use cx_mir_data::{MIRGlobalType, MIRGlobalValue, MIRValue, VirtualInstruction, types::MIRType};
+use cx_mir_data::{MIRGlobalType, MIRGlobalValue, MIRValue, MIRInstructionKind, types::MIRType};
 use cx_typechecker_data::ast::TCExpr;
 use cx_util::identifier::CXIdent;
 
@@ -28,7 +28,7 @@ pub fn add_contract_verification(
     ); 
     
     builder.add_instruction(
-        VirtualInstruction::CompilerAssertion {
+        MIRInstructionKind::CompilerAssertion {
             condition: mir_expr,
             message: MIRValue::Global(index),
         },
