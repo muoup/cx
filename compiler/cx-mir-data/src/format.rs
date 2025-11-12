@@ -1,6 +1,6 @@
 use crate::types::{MIRType, MIRTypeKind};
 use crate::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BlockID, MIRBlock, MIRFunction,
+    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, BlockID, MIRBlock, MIRFunction,
     MIRFunctionPrototype, MIRGlobalType, MIRInstruction, MIRInstructionKind, MIRIntBinOp, MIRUnit,
     MIRValue,
 };
@@ -295,22 +295,22 @@ impl Display for MIRInstructionKind {
     }
 }
 
-impl Display for BCPtrBinOp {
+impl Display for MIRPtrBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                BCPtrBinOp::ADD => "+",
-                BCPtrBinOp::SUB => "-",
+                MIRPtrBinOp::ADD => "+",
+                MIRPtrBinOp::SUB => "-",
 
-                BCPtrBinOp::EQ => "==",
-                BCPtrBinOp::NE => "!=",
+                MIRPtrBinOp::EQ => "==",
+                MIRPtrBinOp::NE => "!=",
 
-                BCPtrBinOp::LT => "<",
-                BCPtrBinOp::GT => ">",
-                BCPtrBinOp::LE => "<=",
-                BCPtrBinOp::GE => ">=",
+                MIRPtrBinOp::LT => "<",
+                MIRPtrBinOp::GT => ">",
+                MIRPtrBinOp::LE => "<=",
+                MIRPtrBinOp::GE => ">=",
             },
         )
     }
@@ -359,42 +359,42 @@ impl Display for MIRIntBinOp {
     }
 }
 
-impl Display for BCIntUnOp {
+impl Display for MIRIntUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                BCIntUnOp::BNOT => "~",
-                BCIntUnOp::LNOT => "!",
-                BCIntUnOp::NEG => "-",
+                MIRIntUnOp::BNOT => "~",
+                MIRIntUnOp::LNOT => "!",
+                MIRIntUnOp::NEG => "-",
             },
         )
     }
 }
 
-impl Display for BCFloatBinOp {
+impl Display for MIRFloatBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                BCFloatBinOp::ADD => "+",
-                BCFloatBinOp::SUB => "-",
-                BCFloatBinOp::FMUL => "*",
-                BCFloatBinOp::FDIV => "/",
+                MIRFloatBinOp::ADD => "+",
+                MIRFloatBinOp::SUB => "-",
+                MIRFloatBinOp::FMUL => "*",
+                MIRFloatBinOp::FDIV => "/",
             },
         )
     }
 }
 
-impl Display for BCFloatUnOp {
+impl Display for MIRFloatUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                BCFloatUnOp::NEG => "-",
+                MIRFloatUnOp::NEG => "-",
             },
         )
     }

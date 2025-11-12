@@ -1,7 +1,7 @@
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_mir_data::types::MIRType;
-use cx_mir_data::{BCPtrBinOp, MIRIntBinOp};
+use cx_mir_data::{MIRPtrBinOp, MIRIntBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 
 pub(crate) fn generate_ptr_binop<'a, 'b>(
@@ -10,12 +10,12 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
     ptr_type: &MIRType,
     left_value: AnyValueEnum<'a>,
     right_value: AnyValueEnum<'a>,
-    op: BCPtrBinOp,
+    op: MIRPtrBinOp,
 ) -> Option<CodegenValue<'a>> {
     let ptr_type = bc_llvm_type(global_state.context, ptr_type)?;
 
     Some(CodegenValue::Value(match op {
-        BCPtrBinOp::ADD => unsafe {
+        MIRPtrBinOp::ADD => unsafe {
             let basic_type = any_to_basic_type(ptr_type).unwrap_or_else(|| {
                 panic!("Expected a basic type for pointer addition, found: {ptr_type:?}")
             });
@@ -31,7 +31,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .ok()?
                 .as_any_value_enum()
         },
-        BCPtrBinOp::SUB => unsafe {
+        MIRPtrBinOp::SUB => unsafe {
             let basic_type = any_to_basic_type(ptr_type).unwrap_or_else(|| {
                 panic!("Expected a basic type for pointer subtraction, found: {ptr_type:?}")
             });
@@ -56,7 +56,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .ok()?
                 .as_any_value_enum()
         },
-        BCPtrBinOp::EQ => function_state
+        MIRPtrBinOp::EQ => function_state
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::EQ,
@@ -67,7 +67,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
             .ok()
             .unwrap()
             .as_any_value_enum(),
-        BCPtrBinOp::NE => function_state
+        MIRPtrBinOp::NE => function_state
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::NE,
@@ -77,7 +77,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCPtrBinOp::LT => function_state
+        MIRPtrBinOp::LT => function_state
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::ULT,
@@ -87,7 +87,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCPtrBinOp::LE => function_state
+        MIRPtrBinOp::LE => function_state
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::ULE,
@@ -97,7 +97,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCPtrBinOp::GT => function_state
+        MIRPtrBinOp::GT => function_state
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::UGT,
@@ -107,7 +107,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCPtrBinOp::GE => function_state
+        MIRPtrBinOp::GE => function_state
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::UGE,

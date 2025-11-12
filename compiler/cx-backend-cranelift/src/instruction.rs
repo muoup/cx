@@ -12,7 +12,7 @@ use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotK
 use cranelift_module::Module;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, MIRInstruction, LinkageType,
+    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, MIRInstruction, LinkageType,
     MIRFunctionPrototype, MIRIntBinOp, MIRParameter, MIRInstructionKind,
 };
 use std::ops::IndexMut;
@@ -184,38 +184,38 @@ pub(crate) fn codegen_instruction(
 
             let inst =
                 match op {
-                    BCPtrBinOp::ADD => context.builder.ins().iadd(left, right),
-                    BCPtrBinOp::SUB => context.builder.ins().isub(left, right),
+                    MIRPtrBinOp::ADD => context.builder.ins().iadd(left, right),
+                    MIRPtrBinOp::SUB => context.builder.ins().isub(left, right),
 
-                    BCPtrBinOp::EQ => {
+                    MIRPtrBinOp::EQ => {
                         context
                             .builder
                             .ins()
                             .icmp(ir::condcodes::IntCC::Equal, left, right)
                     }
-                    BCPtrBinOp::NE => {
+                    MIRPtrBinOp::NE => {
                         context
                             .builder
                             .ins()
                             .icmp(ir::condcodes::IntCC::NotEqual, left, right)
                     }
 
-                    BCPtrBinOp::LT => context.builder.ins().icmp(
+                    MIRPtrBinOp::LT => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedLessThan,
                         left,
                         right,
                     ),
-                    BCPtrBinOp::GT => context.builder.ins().icmp(
+                    MIRPtrBinOp::GT => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedGreaterThan,
                         left,
                         right,
                     ),
-                    BCPtrBinOp::LE => context.builder.ins().icmp(
+                    MIRPtrBinOp::LE => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedLessThanOrEqual,
                         left,
                         right,
                     ),
-                    BCPtrBinOp::GE => context.builder.ins().icmp(
+                    MIRPtrBinOp::GE => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedGreaterThanOrEqual,
                         left,
                         right,
@@ -341,9 +341,9 @@ pub(crate) fn codegen_instruction(
             let val = context.get_value(value).unwrap();
 
             let inst = match op {
-                BCIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
-                BCIntUnOp::BNOT => context.builder.ins().bnot(val.as_value()),
-                BCIntUnOp::LNOT => {
+                MIRIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
+                MIRIntUnOp::BNOT => context.builder.ins().bnot(val.as_value()),
+                MIRIntUnOp::LNOT => {
                     context
                         .builder
                         .ins()
@@ -359,7 +359,7 @@ pub(crate) fn codegen_instruction(
             let _type = &instruction.value_type;
 
             match op {
-                BCFloatUnOp::NEG => Some(CodegenValue::Value(
+                MIRFloatUnOp::NEG => Some(CodegenValue::Value(
                     context.builder.ins().fneg(val.as_value()),
                 )),
             }
@@ -370,10 +370,10 @@ pub(crate) fn codegen_instruction(
             let right = context.get_value(right).unwrap().as_value();
 
             Some(CodegenValue::Value(match op {
-                BCFloatBinOp::ADD => context.builder.ins().fadd(left, right),
-                BCFloatBinOp::SUB => context.builder.ins().fsub(left, right),
-                BCFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
-                BCFloatBinOp::FDIV => context.builder.ins().fdiv(left, right),
+                MIRFloatBinOp::ADD => context.builder.ins().fadd(left, right),
+                MIRFloatBinOp::SUB => context.builder.ins().fsub(left, right),
+                MIRFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
+                MIRFloatBinOp::FDIV => context.builder.ins().fdiv(left, right),
             }))
         }
 

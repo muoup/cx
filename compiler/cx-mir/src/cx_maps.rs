@@ -2,7 +2,7 @@ use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCFloatBinOp, BCFunctionMap, BCPtrBinOp, LinkageType, MIRFunctionPrototype, MIRIntBinOp,
+    MIRFloatBinOp, BCFunctionMap, MIRPtrBinOp, LinkageType, MIRFunctionPrototype, MIRIntBinOp,
     MIRParameter, MIRInstructionKind,
 };
 use cx_parsing_data::ast::CXBinOp;
@@ -25,18 +25,18 @@ impl MIRBuilder {
         convert_cx_prototype(cx_proto)
     }
 
-    pub(crate) fn cx_ptr_binop(&self, op: &CXBinOp) -> Option<BCPtrBinOp> {
+    pub(crate) fn cx_ptr_binop(&self, op: &CXBinOp) -> Option<MIRPtrBinOp> {
         Some(match op {
-            CXBinOp::Add => BCPtrBinOp::ADD,
-            CXBinOp::Subtract => BCPtrBinOp::SUB,
+            CXBinOp::Add => MIRPtrBinOp::ADD,
+            CXBinOp::Subtract => MIRPtrBinOp::SUB,
 
-            CXBinOp::Less => BCPtrBinOp::LT,
-            CXBinOp::Greater => BCPtrBinOp::GT,
-            CXBinOp::LessEqual => BCPtrBinOp::LE,
-            CXBinOp::GreaterEqual => BCPtrBinOp::GE,
+            CXBinOp::Less => MIRPtrBinOp::LT,
+            CXBinOp::Greater => MIRPtrBinOp::GT,
+            CXBinOp::LessEqual => MIRPtrBinOp::LE,
+            CXBinOp::GreaterEqual => MIRPtrBinOp::GE,
 
-            CXBinOp::Equal => BCPtrBinOp::EQ,
-            CXBinOp::NotEqual => BCPtrBinOp::NE,
+            CXBinOp::Equal => MIRPtrBinOp::EQ,
+            CXBinOp::NotEqual => MIRPtrBinOp::NE,
 
             _ => return None,
         })
@@ -85,12 +85,12 @@ impl MIRBuilder {
         })
     }
 
-    pub(crate) fn cx_float_binop(&self, op: &CXBinOp) -> Option<BCFloatBinOp> {
+    pub(crate) fn cx_float_binop(&self, op: &CXBinOp) -> Option<MIRFloatBinOp> {
         Some(match op {
-            CXBinOp::Add => BCFloatBinOp::ADD,
-            CXBinOp::Subtract => BCFloatBinOp::SUB,
-            CXBinOp::Multiply => BCFloatBinOp::FMUL,
-            CXBinOp::Divide => BCFloatBinOp::FDIV,
+            CXBinOp::Add => MIRFloatBinOp::ADD,
+            CXBinOp::Subtract => MIRFloatBinOp::SUB,
+            CXBinOp::Multiply => MIRFloatBinOp::FMUL,
+            CXBinOp::Divide => MIRFloatBinOp::FDIV,
 
             _ => todo!("Unsupported binary operation: {:?}", op),
         })

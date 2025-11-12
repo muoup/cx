@@ -5,7 +5,7 @@ use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_l
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BlockID, MIRInstruction, LinkageType,
+    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BlockID, MIRInstruction, LinkageType,
     MIRFunctionPrototype, MIRParameter, MIRInstructionKind,
 };
 use cx_util::log_error;
@@ -325,22 +325,22 @@ pub(crate) fn generate_instruction<'a, 'b>(
             };
 
             CodegenValue::Value(match op {
-                BCIntUnOp::NEG if signed => function_state
+                MIRIntUnOp::NEG if signed => function_state
                     .builder
                     .build_int_nsw_neg(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                BCIntUnOp::NEG => function_state
+                MIRIntUnOp::NEG => function_state
                     .builder
                     .build_int_neg(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                BCIntUnOp::BNOT => function_state
+                MIRIntUnOp::BNOT => function_state
                     .builder
                     .build_not(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                BCIntUnOp::LNOT => function_state
+                MIRIntUnOp::LNOT => function_state
                     .builder
                     .build_int_compare(
                         inkwell::IntPredicate::EQ,
@@ -379,7 +379,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_float_value();
 
             CodegenValue::Value(match op {
-                BCFloatUnOp::NEG => function_state
+                MIRFloatUnOp::NEG => function_state
                     .builder
                     .build_float_neg(value, inst_num().as_str())
                     .unwrap()
@@ -399,25 +399,25 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_float_value();
 
             CodegenValue::Value(match op {
-                BCFloatBinOp::ADD => function_state
+                MIRFloatBinOp::ADD => function_state
                     .builder
                     .build_float_add(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::SUB => function_state
+                MIRFloatBinOp::SUB => function_state
                     .builder
                     .build_float_sub(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::FMUL => function_state
+                MIRFloatBinOp::FMUL => function_state
                     .builder
                     .build_float_mul(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::FDIV => function_state
+                MIRFloatBinOp::FDIV => function_state
                     .builder
                     .build_float_div(left_value, right_value, inst_num().as_str())
                     .unwrap()
