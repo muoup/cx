@@ -8,8 +8,8 @@ use crate::function_contracts::add_contract_verification;
 use crate::implicit_cast::implicit_cast;
 use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
 use cx_mir_data::{
-    BCIntUnOp, BCPtrBinOp, BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType,
-    MIRGlobalValue, MIRIntBinOp, MIRValue, MIRInstructionKind,
+    BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRInstructionKind,
+    MIRIntBinOp, MIRIntUnOp, MIRPtrBinOp, MIRValue,
 };
 use cx_parsing_data::ast::{CXBinOp, CXUnOp};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
@@ -110,7 +110,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     left: left_id,
                     right: right_id,
                     ptr_type: MIRType::from(inner_as_bc),
-                    op: BCPtrBinOp::ADD,
+                    op: MIRPtrBinOp::ADD,
                 },
                 MIRType::default_pointer(),
             )
@@ -158,29 +158,33 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             if let TCExprKind::MemberFunctionReference { target, .. } = &function.kind {
                 args.push(generate_instruction(builder, target.as_ref())?);
             }
-           
+
             builder.push_scope();
 
             for (i, arg) in arguments.iter().enumerate() {
                 let arg_id = generate_instruction(builder, arg)?;
-                args.push(arg_id.clone());   
-            
-                let param_name = prototype.params.get(i)
-                    .and_then(|p| p.name.as_ref()); 
-                
+                args.push(arg_id.clone());
+
+                let param_name = prototype.params.get(i).and_then(|p| p.name.as_ref());
+
                 if let Some(name) = param_name {
                     builder.insert_symbol(name.to_string(), arg_id);
                 }
             }
-            
+
             match direct_call {
                 true => {
                     if let Some(contract) = prototype.contract.as_ref() {
                         if let Some(precondition) = contract.precondition.as_ref() {
-                            add_contract_verification(builder, &prototype.name.to_string(), precondition, "Precondition");
+                            add_contract_verification(
+                                builder,
+                                &prototype.name.to_string(),
+                                precondition,
+                                "Precondition",
+                            );
                         }
                     }
-                    
+
                     let val = builder.add_instruction_cxty(
                         MIRInstructionKind::DirectCall {
                             args,
@@ -188,23 +192,25 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                         },
                         prototype.return_type.clone(),
                     )?;
-                    
+
                     if let Some(contract) = prototype.contract.as_ref() {
                         if let Some((ret_name, postcondition)) = contract.postcondition.as_ref() {
                             if let Some(ret_name) = &ret_name {
-                                builder.insert_symbol(
-                                    ret_name.to_string(),
-                                    val.clone(),
-                                );
+                                builder.insert_symbol(ret_name.to_string(), val.clone());
                             }
-                            
-                            add_contract_verification(builder, &prototype.name.to_string(), postcondition, "Postcondition");
+
+                            add_contract_verification(
+                                builder,
+                                &prototype.name.to_string(),
+                                postcondition,
+                                "Postcondition",
+                            );
                         }
                     }
-                    
+
                     builder.pop_scope();
                     Some(val)
-                },
+                }
                 false => {
                     builder.pop_scope();
                     let left_id = generate_instruction(builder, function.as_ref())?;
@@ -372,19 +378,19 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             let value = value.as_ref().unwrap().as_ref();
             let value_id = generate_instruction(builder, value)?;
-            
+
             if value._type.is_structured() {
                 let bc_ty = builder.convert_cx_type(&value._type)?;
-                
+
                 builder.add_instruction(
                     MIRInstructionKind::Store {
                         memory: MIRValue::ParameterRef(0),
                         value: value_id.clone(),
                         type_: bc_ty,
                     },
-                    MIRType::unit()
+                    MIRType::unit(),
                 );
-                
+
                 builder.add_return(Some(MIRValue::ParameterRef(0)));
             } else {
                 builder.add_return(Some(value_id));
@@ -414,7 +420,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     builder.add_instruction(
                         MIRInstructionKind::IntegerUnOp {
                             value: operand,
-                            op: BCIntUnOp::NEG
+                            op: MIRIntUnOp::NEG
                         },
                         operand_type
                     )
@@ -425,7 +431,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                     builder.add_instruction(
                         MIRInstructionKind::IntegerUnOp {
                             value: operand,
-                            op: BCIntUnOp::LNOT
+                            op: MIRIntUnOp::LNOT
                         },
                         MIRType::from(MIRTypeKind::Bool)
                     )
@@ -520,42 +526,52 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
         } => {
             builder.push_scope();
             let condition = generate_instruction(builder, condition.as_ref())?;
+            let current_block = builder.current_block();
 
             let then_block = builder.create_block();
-            let else_block = builder.create_block();
-            let merge_block = builder.create_block();
+            builder.set_current_block(then_block);
+            builder.generate_scoped(then_branch);
 
+            let else_block = if let Some(else_branch) = else_branch {
+                let else_block = builder.create_block();
+                builder.set_current_block(else_block);
+
+                builder.generate_scoped(else_branch.as_ref());
+                Some(else_block)
+            } else {
+                None
+            };
+
+            let merge_block = builder.create_block();
+            
+            builder.set_current_block(current_block);
             builder.add_instruction(
                 MIRInstructionKind::Branch {
                     condition,
                     true_block: then_block,
-                    false_block: else_block,
+                    false_block: else_block
+                        .unwrap_or(merge_block),
                 },
                 MIRType::unit(),
             );
 
             builder.set_current_block(then_block);
-            builder.generate_scoped(then_branch.as_ref());
-
             builder.add_instruction(
                 MIRInstructionKind::Jump {
                     target: merge_block,
                 },
                 MIRType::unit(),
             );
-
-            builder.set_current_block(else_block);
-
-            if let Some(else_branch) = else_branch {
-                builder.generate_scoped(else_branch.as_ref());
+            
+            if let Some(else_block) = else_block {
+                builder.set_current_block(else_block);
+                builder.add_instruction(
+                    MIRInstructionKind::Jump {
+                        target: merge_block,
+                    },
+                    MIRType::unit(),
+                );
             }
-
-            builder.add_instruction(
-                MIRInstructionKind::Jump {
-                    target: merge_block,
-                },
-                MIRType::unit(),
-            );
 
             builder.pop_scope();
             builder.set_current_block(merge_block);
@@ -1162,7 +1178,7 @@ pub(crate) fn implicit_return(
     prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     let last_instruction = builder.current_block_last_inst();
-    
+
     if let Some(last_instruction) = last_instruction {
         match last_instruction.kind {
             MIRInstructionKind::Return { .. } => {

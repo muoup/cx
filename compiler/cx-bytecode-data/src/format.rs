@@ -129,6 +129,15 @@ impl Display for BCInstruction {
             } => {
                 write!(f, "{destination} = {op} {value}")
             }
+            BCInstruction::PointerBinOp {
+                destination,
+                ptr_type,
+                left,
+                right,
+                op,
+            } => {
+                write!(f, "{destination} = ({ptr_type}) {left} {op} {right}")
+            }
             BCInstruction::CallDirect {
                 destination,
                 function,

@@ -1,3 +1,4 @@
+use cx_mir_data::{MIRFloatBinOp, MIRFloatUnOp, MIRIntBinOp, MIRIntUnOp, MIRPtrBinOp};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::bc_type::{BCFunctionPrototype, BCType, FloatType, IntegerType};
@@ -36,26 +37,34 @@ pub enum BCInstruction {
         destination: BCAddress,
         left: BCValue,
         right: BCValue,
-        op: BCIntegerBinOp,
+        op: MIRIntBinOp,
     },
 
     FloatBinOp {
         destination: BCAddress,
         left: BCValue,
         right: BCValue,
-        op: BCFloatBinOp,
+        op: MIRFloatBinOp,
+    },
+    
+    PointerBinOp {
+        destination: BCAddress,
+        ptr_type: BCType,
+        left: BCValue,
+        right: BCValue,
+        op: MIRPtrBinOp,
     },
 
     IntUnOp {
         destination: BCAddress,
         value: BCValue,
-        op: BCIntegerUnOp,
+        op: MIRIntUnOp,
     },
 
     FloatUnOp {
         destination: BCAddress,
         value: BCValue,
-        op: BCFloatUnOp,
+        op: MIRFloatUnOp,
     },
 
     CallDirect {

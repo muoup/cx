@@ -156,7 +156,7 @@ pub enum MIRInstructionKind {
     },
 
     PointerBinOp {
-        op: BCPtrBinOp,
+        op: MIRPtrBinOp,
         ptr_type: MIRType,
         left: MIRValue,
         right: MIRValue,
@@ -169,18 +169,18 @@ pub enum MIRInstructionKind {
     },
 
     IntegerUnOp {
-        op: BCIntUnOp,
+        op: MIRIntUnOp,
         value: MIRValue,
     },
 
     FloatBinOp {
-        op: BCFloatBinOp,
+        op: MIRFloatBinOp,
         left: MIRValue,
         right: MIRValue,
     },
 
     FloatUnOp {
-        op: BCFloatUnOp,
+        op: MIRFloatUnOp,
         value: MIRValue,
     },
 
@@ -262,8 +262,8 @@ impl MIRInstructionKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum BCPtrBinOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRPtrBinOp {
     ADD,
     SUB,
 
@@ -275,7 +275,7 @@ pub enum BCPtrBinOp {
     GE,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRIntBinOp {
     ADD,
     SUB,
@@ -307,22 +307,22 @@ pub enum MIRIntBinOp {
     UGE,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum BCIntUnOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRIntUnOp {
     BNOT,
     LNOT,
     NEG,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum BCFloatBinOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRFloatBinOp {
     ADD,
     SUB,
     FMUL,
     FDIV,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum BCFloatUnOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRFloatUnOp {
     NEG,
 }
