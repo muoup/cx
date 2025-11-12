@@ -265,65 +265,6 @@ pub(crate) fn lower_mir_instruction(
                 _type: bc_type,
             });
         }
-        
-        MIRInstructionKind::IntegerBinOp { op, left, right } => {
-            let bc_left = lower_mir_value(builder, left)?;
-            let bc_right = lower_mir_value(builder, right)?;
-            
-            builder.add_instruction(BCInstruction::IntBinOp {
-                destination: block_result()?,
-                left: bc_left,
-                right: bc_right,
-                op: *op,
-            });
-        },
-        
-        MIRInstructionKind::FloatBinOp { op, left, right } => {
-            let bc_left = lower_mir_value(builder, left)?;
-            let bc_right = lower_mir_value(builder, right)?;
-            
-            builder.add_instruction(BCInstruction::FloatBinOp {
-                destination: block_result()?,
-                left: bc_left,
-                right: bc_right,
-                op: *op,
-            });
-        }
-        
-        MIRInstructionKind::IntegerUnOp { op, value } => {
-            let bc_value = lower_mir_value(builder, value)?;
-            
-            builder.add_instruction(BCInstruction::IntUnOp {
-                destination: block_result()?,
-                value: bc_value,
-                op: *op,
-            });
-        }
-        
-        MIRInstructionKind::FloatUnOp { op, value } => {
-            let bc_value = lower_mir_value(builder, value)?;
-            
-            builder.add_instruction(BCInstruction::FloatUnOp {
-                destination: block_result()?,
-                value: bc_value,
-                op: *op,
-            });
-        }
-        
-        MIRInstructionKind::PointerBinOp { op, ptr_type, left, right } => {
-            let bc_left = lower_mir_value(builder, left)?;
-            let bc_right = lower_mir_value(builder, right)?;
-            let bc_ptr_type = lower_mir_type(ptr_type)?;
-            
-            builder.add_instruction(BCInstruction::PointerBinOp {
-                destination: block_result()?,
-                left: bc_left,
-                right: bc_right,
-                op: *op,
-                ptr_type: bc_ptr_type,
-            });
-        }
-
         MIRInstructionKind::IntegerBinOp { op, left, right } => {
             let bc_left = lower_mir_value(builder, left)?;
             let bc_right = lower_mir_value(builder, right)?;
