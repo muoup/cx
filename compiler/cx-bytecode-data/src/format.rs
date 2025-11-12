@@ -157,13 +157,14 @@ impl Display for BCInstruction {
             }
             BCInstruction::CallIndirect {
                 destination,
+                prototype,
                 function_pointer,
                 arguments,
             } => {
                 if let Some(destination) = destination {
                     write!(f, "{destination} = ")?;
                 }
-                write!(f, "call *{function_pointer}(")?;
+                write!(f, "call ({prototype}) *{function_pointer}(")?;
                 for (i, arg) in arguments.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -203,6 +204,40 @@ impl Display for BCInstruction {
                 value,
                 _type,
             } => write!(f, "memset {destination}, {value}, {_type}"),
+
+            BCInstruction::Phi {
+                destination,
+                predecessors: sources,
+            } => {
+                write!(f, "{destination} = phi {{ ")?;
+                for (i, (block, value)) in sources.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{block}: {value}")?;
+                }
+                write!(f, " }}")
+            }
+
+            BCInstruction::JumpTable {
+                index,
+                targets,
+                default_target,
+            } => {
+                write!(f, "jumptable {index} [ ")?;
+                for (i, target) in targets.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{target}")?;
+                }
+                write!(f, " ] default {default_target}")
+            }
+
+            BCInstruction::Alias {
+                destination,
+                source,
+            } => write!(f, "{destination} = {source}"),
         }
     }
 }

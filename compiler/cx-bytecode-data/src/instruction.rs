@@ -75,6 +75,7 @@ pub enum BCInstruction {
 
     CallIndirect {
         destination: Option<BCAddress>,
+        prototype: BCFunctionPrototype,
         function_pointer: BCValue,
         arguments: Vec<BCValue>,
     },
@@ -108,6 +109,22 @@ pub enum BCInstruction {
         value: u8,
         _type: BCType
     },
+    
+    Phi {
+        destination: BCAddress,
+        predecessors: Vec<(CXIdent, BCValue)>,
+    },
+    
+    JumpTable {
+        index: BCValue,
+        targets: Vec<CXIdent>,
+        default_target: CXIdent,
+    },
+    
+    Alias {
+        destination: BCAddress,
+        source: BCAddress,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -189,6 +206,12 @@ pub enum BCValueCoercion {
     ZExtend { to: IntegerType },
     Truncate { to: IntegerType },
     FloatCoercion { to: FloatType },
+    IntToFloat { from: IntegerType, to: FloatType },
+    FloatToInt { from: FloatType, to: IntegerType },
+    IntToPtrDiff { ptr_type: BCType },
+    IntToPtr,
+    PtrToInt,
+    FunctionToPtr,
 }
 
 impl BCValue {

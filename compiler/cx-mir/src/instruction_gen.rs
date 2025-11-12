@@ -530,7 +530,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             let then_block = builder.create_block();
             builder.set_current_block(then_block);
-            builder.generate_scoped(expr);
+            builder.generate_scoped(then_branch);
 
             let else_block = if let Some(else_branch) = else_branch {
                 let else_block = builder.create_block();

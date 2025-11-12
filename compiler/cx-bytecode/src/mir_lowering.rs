@@ -26,11 +26,26 @@ pub(crate) fn lower_mir_function<'a>(
 
     builder.new_function(mir_function, prototype, param_names);
 
+    for block_idx in 0..mir_function.blocks.len() {
+        builder.add_block(CXIdent::from(format!("block_{}", block_idx)));
+    }
+
+    for block_idx in 0..mir_function.defer_blocks.len() {
+        builder.add_block(CXIdent::from(format!("defer_block_{}", block_idx)));
+    }
+
     for (block_idx, mir_block) in mir_function.blocks.iter().enumerate() {
         let block_id = BlockID::Block(block_idx as u32);
+        builder.set_block_pointer(block_idx);
 
-        let idx = builder.add_block(CXIdent::from(format!("block_{}", block_idx)));
-        builder.set_block_pointer(idx);
+        for (value_id, mir_instruction) in mir_block.body.iter().enumerate() {
+            lower_mir_instruction(builder, block_id, value_id as u32, mir_instruction)?;
+        }
+    }
+
+    for (block_idx, mir_block) in mir_function.defer_blocks.iter().enumerate() {
+        let block_id = BlockID::DeferredBlock(block_idx as u32);
+        builder.set_block_pointer(block_idx + mir_function.blocks.len());
 
         for (value_id, mir_instruction) in mir_block.body.iter().enumerate() {
             lower_mir_instruction(builder, block_id, value_id as u32, mir_instruction)?;
@@ -60,7 +75,6 @@ pub(crate) fn lower_mir_instruction(
                 alignment: *alignment,
             });
         }
-
         MIRInstructionKind::Store {
             memory,
             value,
@@ -78,7 +92,6 @@ pub(crate) fn lower_mir_instruction(
                 store_type: bc_type,
             });
         }
-
         MIRInstructionKind::Branch {
             condition,
             true_block,
@@ -94,7 +107,6 @@ pub(crate) fn lower_mir_instruction(
                 false_target: false_block,
             });
         }
-
         MIRInstructionKind::Jump { target } => {
             let target_block = lower_mir_block(builder, *target);
 
@@ -102,7 +114,6 @@ pub(crate) fn lower_mir_instruction(
                 target: target_block,
             });
         }
-
         MIRInstructionKind::Return { value } => {
             let bc_value = value
                 .as_ref()
@@ -111,7 +122,6 @@ pub(crate) fn lower_mir_instruction(
 
             builder.add_instruction(BCInstruction::Return { value: bc_value });
         }
-
         MIRInstructionKind::DirectCall { args, method_sig } => {
             let bc_args = args
                 .iter()
@@ -127,6 +137,30 @@ pub(crate) fn lower_mir_instruction(
                     Some(block_result()?)
                 },
                 function: bc_method_sig,
+                arguments: bc_args,
+            });
+        }
+
+        MIRInstructionKind::IndirectCall {
+            func_ptr,
+            args,
+            method_sig,
+        } => {
+            let func_prototype = lower_mir_prototype(method_sig)?;
+            let func_ptr = lower_mir_value(builder, func_ptr)?;
+            let bc_args = args
+                .iter()
+                .map(|arg| lower_mir_value(builder, arg))
+                .collect::<CXResult<Vec<BCValue>>>()?;
+
+            builder.add_instruction(BCInstruction::CallIndirect {
+                destination: if method_sig.return_type.is_void() {
+                    None
+                } else {
+                    Some(block_result()?)
+                },
+                prototype: func_prototype,
+                function_pointer: func_ptr,
                 arguments: bc_args,
             });
         }
@@ -155,6 +189,19 @@ pub(crate) fn lower_mir_instruction(
             });
         }
 
+        MIRInstructionKind::BoolExtend { value } => {
+            let to_type = lower_mir_type(&mir_instruction.value_type)?
+                .get_integer_type()
+                .unwrap();
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::BoolCoercion { to: to_type },
+            });
+        }
+
         MIRInstructionKind::SExtend { value } => {
             let to_type = lower_mir_type(&mir_instruction.value_type)?
                 .get_integer_type()
@@ -178,6 +225,19 @@ pub(crate) fn lower_mir_instruction(
                 destination: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::ZExtend { to: to_type },
+            });
+        }
+
+        MIRInstructionKind::FloatCast { value } => {
+            let to_type = lower_mir_type(&mir_instruction.value_type)?
+                .get_float_type()
+                .unwrap();
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::FloatCoercion { to: to_type },
             });
         }
 
@@ -264,7 +324,210 @@ pub(crate) fn lower_mir_instruction(
             });
         }
 
-        _ => todo!("MIR Instruction: {mir_instruction}"),
+        MIRInstructionKind::IntegerBinOp { op, left, right } => {
+            let bc_left = lower_mir_value(builder, left)?;
+            let bc_right = lower_mir_value(builder, right)?;
+
+            builder.add_instruction(BCInstruction::IntBinOp {
+                destination: block_result()?,
+                left: bc_left,
+                right: bc_right,
+                op: *op,
+            });
+        }
+
+        MIRInstructionKind::FloatBinOp { op, left, right } => {
+            let bc_left = lower_mir_value(builder, left)?;
+            let bc_right = lower_mir_value(builder, right)?;
+
+            builder.add_instruction(BCInstruction::FloatBinOp {
+                destination: block_result()?,
+                left: bc_left,
+                right: bc_right,
+                op: *op,
+            });
+        }
+
+        MIRInstructionKind::IntegerUnOp { op, value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::IntUnOp {
+                destination: block_result()?,
+                value: bc_value,
+                op: *op,
+            });
+        }
+
+        MIRInstructionKind::FloatUnOp { op, value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::FloatUnOp {
+                destination: block_result()?,
+                value: bc_value,
+                op: *op,
+            });
+        }
+
+        MIRInstructionKind::PointerBinOp {
+            op,
+            ptr_type,
+            left,
+            right,
+        } => {
+            let bc_left = lower_mir_value(builder, left)?;
+            let bc_right = lower_mir_value(builder, right)?;
+            let bc_ptr_type = lower_mir_type(ptr_type)?;
+
+            builder.add_instruction(BCInstruction::PointerBinOp {
+                destination: block_result()?,
+                left: bc_left,
+                right: bc_right,
+                op: *op,
+                ptr_type: bc_ptr_type,
+            });
+        }
+
+        MIRInstructionKind::GotoDefer => {
+            let defer_index = builder.defer_offset();
+            let defer_start = builder.get_block(defer_index);
+
+            builder.add_instruction(BCInstruction::Jump {
+                target: defer_start,
+            });
+        }
+
+        MIRInstructionKind::Phi { predecessors } => {
+            let bc_predecessors = predecessors
+                .iter()
+                .map(|(value, pred_block)| {
+                    let bc_value = lower_mir_value(builder, value)?;
+                    let bc_block = lower_mir_block(builder, *pred_block);
+                    Ok((bc_block, bc_value))
+                })
+                .collect::<CXResult<Vec<_>>>()?;
+
+            builder.add_instruction(BCInstruction::Phi {
+                destination: block_result()?,
+                predecessors: bc_predecessors,
+            });
+        }
+
+        MIRInstructionKind::JumpTable {
+            value,
+            targets,
+            default,
+        } => {
+            let bc_value = lower_mir_value(builder, value)?;
+            let bc_targets = targets
+                .iter()
+                .map(|target| lower_mir_block(builder, target.1))
+                .collect::<Vec<_>>();
+            let bc_default = lower_mir_block(builder, *default);
+
+            builder.add_instruction(BCInstruction::JumpTable {
+                index: bc_value,
+                targets: bc_targets,
+                default_target: bc_default,
+            });
+        }
+
+        MIRInstructionKind::Temp { value } => {
+            let source = lower_mir_value(builder, value)?.get_address().clone();
+
+            builder.add_instruction(BCInstruction::Alias {
+                destination: block_result()?,
+                source,
+            });
+        }
+
+        MIRInstructionKind::IntToPtrDiff { value, ptr_type } => {
+            let bc_value = lower_mir_value(builder, value)?;
+            let bc_ptr_type = lower_mir_type(ptr_type)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::IntToPtrDiff {
+                    ptr_type: bc_ptr_type,
+                },
+            });
+        }
+
+        MIRInstructionKind::IntToPtr { value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::IntToPtr,
+            });
+        }
+
+        MIRInstructionKind::GetFunctionAddr { func } => {
+            let bc_func = BCValue::FunctionRef(CXIdent::from(func.clone()));
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_func,
+                coercion: BCValueCoercion::FunctionToPtr,
+            });
+        }
+
+        MIRInstructionKind::IntToFloat { from, value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::IntToFloat {
+                    from: lower_mir_type(from)?.get_integer_type().unwrap(),
+                    to: lower_mir_type(&mir_instruction.value_type)?
+                        .get_float_type()
+                        .unwrap(),
+                },
+            });
+        }
+
+        MIRInstructionKind::FloatToInt { from, value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::FloatToInt {
+                    from: lower_mir_type(from)?.get_float_type().unwrap(),
+                    to: lower_mir_type(&mir_instruction.value_type)?
+                        .get_integer_type()
+                        .unwrap(),
+                },
+            });
+        }
+
+        MIRInstructionKind::PtrToInt { value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::PtrToInt,
+            });
+        }
+
+        MIRInstructionKind::BitCast { value } => {
+            let bc_value = lower_mir_value(builder, value)?;
+
+            builder.add_instruction(BCInstruction::ValueCoercion {
+                destination: block_result()?,
+                value: bc_value,
+                coercion: BCValueCoercion::PtrToInt,
+            });
+        }
+
+        MIRInstructionKind::CompilerAssertion { .. } => {
+            todo!("Compiler Assertion")
+        }
+
+        MIRInstructionKind::NOP => {}
     }
 
     Ok(())

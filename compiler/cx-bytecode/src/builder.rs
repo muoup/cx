@@ -116,6 +116,14 @@ impl<'a> BytecodeBuilder<'a> {
             unreachable!("No function is being built");
         }
     }
+    
+    pub fn get_block(&self, idx: usize) -> CXIdent {
+        if let Some(current_function) = &self.current_function {
+            current_function.blocks[idx].name.clone()
+        } else {
+            unreachable!("No function is being built");
+        }
+    }
 
     pub fn add_block(&mut self, name: CXIdent) -> usize {
         if let Some(current_function) = &mut self.current_function {
