@@ -17,6 +17,7 @@ mod inst_calling;
 mod instruction;
 mod routines;
 mod value_type;
+mod bc_codegen;
 
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {

@@ -12,7 +12,7 @@ use crate::bc_type::{BCFunctionPrototype, BCType, FloatType, IntegerType};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BCInstruction {
     Allocate {
-        value: BCAddress,
+        result: BCAddress,
         type_: BCType,
         alignment: u8,
     },
@@ -24,7 +24,7 @@ pub enum BCInstruction {
     },
 
     Load {
-        destination: BCAddress,
+        result: BCAddress,
         source: BCValue,
         load_type: BCType,
     },
@@ -34,21 +34,21 @@ pub enum BCInstruction {
     },
 
     IntBinOp {
-        destination: BCAddress,
+        result: BCAddress,
         left: BCValue,
         right: BCValue,
         op: MIRIntBinOp,
     },
 
     FloatBinOp {
-        destination: BCAddress,
+        result: BCAddress,
         left: BCValue,
         right: BCValue,
         op: MIRFloatBinOp,
     },
     
     PointerBinOp {
-        destination: BCAddress,
+        result: BCAddress,
         ptr_type: BCType,
         left: BCValue,
         right: BCValue,
@@ -56,25 +56,25 @@ pub enum BCInstruction {
     },
 
     IntUnOp {
-        destination: BCAddress,
+        result: BCAddress,
         value: BCValue,
         op: MIRIntUnOp,
     },
 
     FloatUnOp {
-        destination: BCAddress,
+        result: BCAddress,
         value: BCValue,
         op: MIRFloatUnOp,
     },
 
     CallDirect {
-        destination: Option<BCAddress>,
+        result: Option<BCAddress>,
         function: BCFunctionPrototype,
         arguments: Vec<BCValue>,
     },
 
     CallIndirect {
-        destination: Option<BCAddress>,
+        result: Option<BCAddress>,
         prototype: BCFunctionPrototype,
         function_pointer: BCValue,
         arguments: Vec<BCValue>,
@@ -91,27 +91,32 @@ pub enum BCInstruction {
     },
     
     GetElementPtr {
-        destination: BCAddress,
+        result: BCAddress,
         base: BCValue,
         index: BCValue,
         offset: BCValue,
         structure_type: BCType
     },
     
+    GetFunctionPtr {
+        result: BCAddress,
+        function: CXIdent,
+    },
+    
     ValueCoercion {
-        destination: BCAddress,
+        result: BCAddress,
         value: BCValue,
         coercion: BCValueCoercion,
     },
     
     Memset {
-        destination: BCAddress,
+        result: BCAddress,
         value: u8,
         _type: BCType
     },
     
     Phi {
-        destination: BCAddress,
+        result: BCAddress,
         predecessors: Vec<(CXIdent, BCValue)>,
     },
     
@@ -122,7 +127,7 @@ pub enum BCInstruction {
     },
     
     Alias {
-        destination: BCAddress,
+        result: BCAddress,
         source: BCAddress,
     }
 }
@@ -135,7 +140,6 @@ pub enum BCAddress {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BCValue {
-    NULL,
     Integer {
         value: i64,
         type_: IntegerType,
@@ -145,7 +149,6 @@ pub enum BCValue {
         type_: FloatType,
     },
     Address(BCAddress),
-    FunctionRef(CXIdent),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

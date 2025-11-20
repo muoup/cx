@@ -70,7 +70,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_type = lower_mir_type(_type)?;
 
             builder.add_instruction(BCInstruction::Allocate {
-                value: block_result()?,
+                result: block_result()?,
                 type_: bc_type,
                 alignment: *alignment,
             });
@@ -131,7 +131,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_method_sig = lower_mir_prototype(method_sig)?;
 
             builder.add_instruction(BCInstruction::CallDirect {
-                destination: if method_sig.return_type.is_void() {
+                result: if method_sig.return_type.is_void() {
                     None
                 } else {
                     Some(block_result()?)
@@ -154,7 +154,7 @@ pub(crate) fn lower_mir_instruction(
                 .collect::<CXResult<Vec<BCValue>>>()?;
 
             builder.add_instruction(BCInstruction::CallIndirect {
-                destination: if method_sig.return_type.is_void() {
+                result: if method_sig.return_type.is_void() {
                     None
                 } else {
                     Some(block_result()?)
@@ -175,7 +175,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_struct_type = lower_mir_type(struct_type)?;
 
             builder.add_instruction(BCInstruction::GetElementPtr {
-                destination: block_result()?,
+                result: block_result()?,
                 base: bc_struct,
                 index: BCValue::Integer {
                     value: *field_index as i64,
@@ -196,7 +196,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::BoolCoercion { to: to_type },
             });
@@ -209,7 +209,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::SExtend { to: to_type },
             });
@@ -222,7 +222,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::ZExtend { to: to_type },
             });
@@ -235,7 +235,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::FloatCoercion { to: to_type },
             });
@@ -248,7 +248,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::Truncate { to: to_type },
             });
@@ -260,7 +260,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_type = lower_mir_type(_type)?;
 
             builder.add_instruction(BCInstruction::Memset {
-                destination: bc_pointer.clone(),
+                result: bc_pointer.clone(),
                 value: 0,
                 _type: bc_type,
             });
@@ -270,7 +270,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_right = lower_mir_value(builder, right)?;
 
             builder.add_instruction(BCInstruction::IntBinOp {
-                destination: block_result()?,
+                result: block_result()?,
                 left: bc_left,
                 right: bc_right,
                 op: *op,
@@ -282,7 +282,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_right = lower_mir_value(builder, right)?;
 
             builder.add_instruction(BCInstruction::FloatBinOp {
-                destination: block_result()?,
+                result: block_result()?,
                 left: bc_left,
                 right: bc_right,
                 op: *op,
@@ -293,7 +293,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::IntUnOp {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 op: *op,
             });
@@ -303,7 +303,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::FloatUnOp {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 op: *op,
             });
@@ -320,7 +320,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_ptr_type = lower_mir_type(ptr_type)?;
 
             builder.add_instruction(BCInstruction::PointerBinOp {
-                destination: block_result()?,
+                result: block_result()?,
                 left: bc_left,
                 right: bc_right,
                 op: *op,
@@ -348,7 +348,7 @@ pub(crate) fn lower_mir_instruction(
                 .collect::<CXResult<Vec<_>>>()?;
 
             builder.add_instruction(BCInstruction::Phi {
-                destination: block_result()?,
+                result: block_result()?,
                 predecessors: bc_predecessors,
             });
         }
@@ -376,7 +376,7 @@ pub(crate) fn lower_mir_instruction(
             let source = lower_mir_value(builder, value)?.get_address().clone();
 
             builder.add_instruction(BCInstruction::Alias {
-                destination: block_result()?,
+                result: block_result()?,
                 source,
             });
         }
@@ -386,7 +386,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_ptr_type = lower_mir_type(ptr_type)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::IntToPtrDiff {
                     ptr_type: bc_ptr_type,
@@ -398,19 +398,16 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::IntToPtr,
             });
         }
 
         MIRInstructionKind::GetFunctionAddr { func } => {
-            let bc_func = BCValue::FunctionRef(CXIdent::from(func.clone()));
-
-            builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
-                value: bc_func,
-                coercion: BCValueCoercion::FunctionToPtr,
+            builder.add_instruction(BCInstruction::GetFunctionPtr {
+                result: block_result()?,
+                function: CXIdent::from(func.clone()),
             });
         }
 
@@ -418,7 +415,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::IntToFloat {
                     from: lower_mir_type(from)?.get_integer_type().unwrap(),
@@ -433,7 +430,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::FloatToInt {
                     from: lower_mir_type(from)?.get_float_type().unwrap(),
@@ -448,7 +445,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::PtrToInt,
             });
@@ -458,7 +455,7 @@ pub(crate) fn lower_mir_instruction(
             let bc_value = lower_mir_value(builder, value)?;
 
             builder.add_instruction(BCInstruction::ValueCoercion {
-                destination: block_result()?,
+                result: block_result()?,
                 value: bc_value,
                 coercion: BCValueCoercion::PtrToInt,
             });
@@ -591,15 +588,15 @@ fn lower_mir_value(builder: &mut BytecodeBuilder, value: &MIRValue) -> CXResult<
             let load_type = lower_mir_type(mirtype)?;
 
             builder.add_instruction(BCInstruction::Load {
-                destination: destination.clone(),
+                result: destination.clone(),
                 source,
                 load_type,
             });
 
             Ok(BCValue::Address(destination))
         }
-
-        MIRValue::NULL => Ok(BCValue::NULL),
+        
+        MIRValue::NULL => unreachable!()
     }
 }
 

@@ -5,6 +5,7 @@ use crate::{bc_type::BCFunctionPrototype, instruction::BCInstruction};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BCUnit {
     pub function_prototypes: Vec<BCFunctionPrototype>,
+    pub functions: Vec<BCFunction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

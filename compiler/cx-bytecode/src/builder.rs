@@ -29,6 +29,7 @@ impl<'a> BytecodeBuilder<'a> {
         Self {
             program: BCUnit {
                 function_prototypes: Vec::new(),
+                functions: Vec::new(),
             },
             current_function: None,
         }

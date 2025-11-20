@@ -70,7 +70,7 @@ impl Display for BCInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             BCInstruction::Allocate {
-                value,
+                result: value,
                 type_,
                 alignment,
             } => {
@@ -84,7 +84,7 @@ impl Display for BCInstruction {
                 write!(f, "store {store_type} {destination}, {value}")
             }
             BCInstruction::Load {
-                destination,
+                result: destination,
                 source,
                 load_type,
             } => {
@@ -100,7 +100,7 @@ impl Display for BCInstruction {
                 Ok(())
             }
             BCInstruction::IntBinOp {
-                destination,
+                result: destination,
                 left,
                 right,
                 op,
@@ -108,7 +108,7 @@ impl Display for BCInstruction {
                 write!(f, "{destination} = {left} {op} {right}")
             }
             BCInstruction::FloatBinOp {
-                destination,
+                result: destination,
                 left,
                 right,
                 op,
@@ -116,21 +116,21 @@ impl Display for BCInstruction {
                 write!(f, "{destination} = {left} {op} {right}")
             }
             BCInstruction::IntUnOp {
-                destination,
+                result: destination,
                 value,
                 op,
             } => {
                 write!(f, "{destination} = {op} {value}")
             }
             BCInstruction::FloatUnOp {
-                destination,
+                result: destination,
                 value,
                 op,
             } => {
                 write!(f, "{destination} = {op} {value}")
             }
             BCInstruction::PointerBinOp {
-                destination,
+                result: destination,
                 ptr_type,
                 left,
                 right,
@@ -139,7 +139,7 @@ impl Display for BCInstruction {
                 write!(f, "{destination} = ({ptr_type}) {left} {op} {right}")
             }
             BCInstruction::CallDirect {
-                destination,
+                result: destination,
                 function,
                 arguments,
             } => {
@@ -156,7 +156,7 @@ impl Display for BCInstruction {
                 write!(f, ")")
             }
             BCInstruction::CallIndirect {
-                destination,
+                result: destination,
                 prototype,
                 function_pointer,
                 arguments,
@@ -183,7 +183,7 @@ impl Display for BCInstruction {
             BCInstruction::Jump { target } => write!(f, "jump {target}"),
 
             BCInstruction::GetElementPtr {
-                destination,
+                result: destination,
                 base,
                 index,
                 offset,
@@ -193,20 +193,24 @@ impl Display for BCInstruction {
                 "{destination} = getelementptr {structure_type} {base}, {index}, {offset}"
             ),
 
+            BCInstruction::GetFunctionPtr { result, function } => {
+                write!(f, "{result} = getfuncptr @{}", function)
+            }
+
             BCInstruction::ValueCoercion {
-                destination,
+                result: destination,
                 value,
                 coercion,
             } => write!(f, "{destination} = coerce {value} ({coercion:?})"),
 
             BCInstruction::Memset {
-                destination,
+                result: destination,
                 value,
                 _type,
             } => write!(f, "memset {destination}, {value}, {_type}"),
 
             BCInstruction::Phi {
-                destination,
+                result: destination,
                 predecessors: sources,
             } => {
                 write!(f, "{destination} = phi {{ ")?;
@@ -235,7 +239,7 @@ impl Display for BCInstruction {
             }
 
             BCInstruction::Alias {
-                destination,
+                result: destination,
                 source,
             } => write!(f, "{destination} = {source}"),
         }
@@ -257,8 +261,6 @@ impl Display for BCValue {
             BCValue::Integer { value, .. } => write!(f, "{value}"),
             BCValue::Float { value, .. } => write!(f, "{value}"),
             BCValue::Address(address) => write!(f, "{address}"),
-            BCValue::FunctionRef(ident) => write!(f, "@fn {ident}"),
-            BCValue::NULL => write!(f, "NULL"),
         }
     }
 }
