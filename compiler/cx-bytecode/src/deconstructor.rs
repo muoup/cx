@@ -1,8 +1,8 @@
 use crate::builder::MIRBuilder;
 use crate::cx_maps::convert_cx_prototype;
-use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{MIRFunctionPrototype, MIRValue, MIRInstructionKind};
-use cx_typechecker_data::cx_types::{TCFunctionPrototype, TCParameter, CXType, CXTypeKind};
+use cx_bytecode_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::{MIRFunctionPrototype, BCValue, MIRInstructionKind};
+use cx_typechecker_data::cx_types::{CXFunctionPrototype, TCParameter, CXType, CXTypeKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
 
 const STANDARD_FREE: &str = "__stdfree";
@@ -12,7 +12,7 @@ const STANDARD_FREE_ARRAY_NOOP: &str = "__stdfreearray_destructor_noop";
 pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionPrototype> {
     let name = type_.get_identifier()?;
 
-    let mut prototype = TCFunctionPrototype {
+    let mut prototype = CXFunctionPrototype {
         name: CXFunctionKind::Deconstructor {
             base_type: name.clone(),
         }
@@ -35,7 +35,7 @@ pub(crate) fn deconstructor_prototype(type_: &CXType) -> Option<MIRFunctionProto
 
 pub fn deconstruct_variable(
     builder: &mut MIRBuilder,
-    var: &MIRValue,
+    var: &BCValue,
     _type: &CXType,
 ) -> Option<()> {
     match &_type.kind {
@@ -62,7 +62,7 @@ pub fn deconstruct_variable(
                         MIRType::default_pointer(),
                     )?;
                     let type_size = builder.convert_cx_type(inner_type.as_ref())?.fixed_size();
-                    let size_imm = MIRValue::IntImmediate {
+                    let size_imm = BCValue::IntImmediate {
                         val: type_size as i64,
                         type_: MIRTypeKind::Unsigned { bytes: 8 }.into(),
                     };
@@ -110,14 +110,14 @@ pub(crate) fn generate_deconstructor<'a>(
     for (index, (_, field_type)) in fields.iter().enumerate() {
         let mir_type = builder.convert_cx_type(_type)?;
         
-        let access = builder.struct_access(MIRValue::ParameterRef(0), &mir_type, index)
+        let access = builder.struct_access(BCValue::ParameterRef(0), &mir_type, index)
             .unwrap();
         
         deconstruct_variable(builder, &access, field_type);
     }
     
     if let Some(destructor) = builder.get_destructor(_type) {
-        builder.call(&destructor, vec![MIRValue::ParameterRef(0)]);
+        builder.call(&destructor, vec![BCValue::ParameterRef(0)]);
     }
     
     builder.finish_function();

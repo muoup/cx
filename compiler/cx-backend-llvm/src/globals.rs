@@ -1,6 +1,6 @@
 use crate::GlobalState;
 use crate::typing::{any_to_basic_type, bc_llvm_type};
-use cx_mir_data::{LinkageType, MIRGlobalType, MIRGlobalValue};
+use cx_bytecode_data::{LinkageType, BCGlobalType, BCGlobalValue};
 use inkwell::module::Linkage;
 use std::sync::atomic::AtomicUsize;
 
@@ -13,10 +13,10 @@ fn string_literal_name() -> String {
 
 pub(crate) fn generate_global_variable(
     state: &mut GlobalState,
-    variable: &MIRGlobalValue,
+    variable: &BCGlobalValue,
 ) -> Option<()> {
     match &variable._type {
-        MIRGlobalType::StringLiteral(str) => {
+        BCGlobalType::StringLiteral(str) => {
             let val = state.context.const_string(str.as_bytes(), true);
 
             let global =
@@ -32,7 +32,7 @@ pub(crate) fn generate_global_variable(
             state.globals.push(global);
         }
 
-        MIRGlobalType::Variable {
+        BCGlobalType::Variable {
             _type,
             initial_value,
         } => {

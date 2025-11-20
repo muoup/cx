@@ -6,7 +6,7 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_mir_data::{BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, MIRValue};
+use cx_bytecode_data::{BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue};
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
@@ -42,7 +42,7 @@ pub(crate) fn codegen_block(
     for (value_id, instr) in fn_block.body.iter().enumerate() {
         if let Some(val) = codegen_instruction(context, instr) {
             context.variable_table.insert(
-                MIRValue::BlockResult {
+                BCValue::BlockResult {
                     block_id,
                     value_id: value_id as u32,
                 },

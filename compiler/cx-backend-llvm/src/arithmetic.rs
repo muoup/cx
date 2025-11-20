@@ -1,7 +1,7 @@
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_mir_data::types::MIRType;
-use cx_mir_data::{MIRPtrBinOp, MIRIntBinOp};
+use cx_bytecode_data::types::MIRType;
+use cx_bytecode_data::{MIRPtrBinOp, MIRIntBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 
 pub(crate) fn generate_ptr_binop<'a, 'b>(

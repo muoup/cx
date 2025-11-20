@@ -1,4 +1,4 @@
-use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::types::{MIRType, MIRTypeKind};
 use inkwell::attributes::Attribute;
 use inkwell::context::Context;
 

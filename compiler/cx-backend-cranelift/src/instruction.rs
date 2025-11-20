@@ -10,8 +10,8 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
-use cx_mir_data::{
+use cx_bytecode_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_bytecode_data::{
     MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, MIRInstruction, LinkageType,
     MIRFunctionPrototype, MIRIntBinOp, MIRParameter, MIRInstructionKind,
 };

@@ -1,4 +1,4 @@
-use crate::MIRValue;
+use crate::BCValue;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MIRType {
@@ -56,7 +56,7 @@ pub enum MIRTypeKind {
     },
 
     VariableSized {
-        size: Box<MIRValue>,
+        size: Box<BCValue>,
         alignment: u8,
     },
 
@@ -66,7 +66,7 @@ pub enum MIRTypeKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MIRTypeSize {
     Fixed(usize),
-    Variable(MIRValue),
+    Variable(BCValue),
 }
 
 impl MIRTypeSize {

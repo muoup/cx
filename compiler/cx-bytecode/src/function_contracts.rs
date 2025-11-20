@@ -1,4 +1,4 @@
-use cx_mir_data::{MIRGlobalType, MIRGlobalValue, MIRValue, MIRInstructionKind, types::MIRType};
+use cx_bytecode_data::{BCGlobalType, BCGlobalValue, BCValue, MIRInstructionKind, types::MIRType};
 use cx_typechecker_data::ast::TCExpr;
 use cx_util::identifier::CXIdent;
 
@@ -20,17 +20,17 @@ pub fn add_contract_verification(
     let msg_name = CXIdent::from(format!("__contract_violation_msg_{}", next_contract_violation_id()).as_str());
     
     let index = builder.add_global_variable(
-        MIRGlobalValue {
+        BCGlobalValue {
             name: msg_name.clone(),
-            _type: MIRGlobalType::StringLiteral(format!("'{}' violation of function '{}'", clause_name, function_name)),
-            linkage: cx_mir_data::LinkageType::Static,
+            _type: BCGlobalType::StringLiteral(format!("'{}' violation of function '{}'", clause_name, function_name)),
+            linkage: cx_bytecode_data::LinkageType::Static,
         }
     ); 
     
     builder.add_instruction(
         MIRInstructionKind::CompilerAssertion {
             condition: mir_expr,
-            message: MIRValue::Global(index),
+            message: BCValue::Global(index),
         },
         MIRType::unit()
     )?;

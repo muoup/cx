@@ -3,7 +3,7 @@ use crate::type_completion::complete_fn_prototype;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::TCBaseMappings;
-use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
@@ -100,7 +100,7 @@ pub(crate) fn instantiate_function_template(
     base_data: &TCBaseMappings,
     name: &NaiveFnKind,
     input: &CXTemplateInput,
-) -> CXResult<TCFunctionPrototype> {
+) -> CXResult<CXFunctionPrototype> {
     let cache = base_data.fn_data.get_template(&name.into())
         .ok_or_else(|| {
             log_error!(

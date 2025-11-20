@@ -1,14 +1,11 @@
 [package]
 name = "cx-mir"
-version = "0.0.0"
-edition = "2021"
-autotests = false
+version = "0.1.0"
+edition = "2024"
 
 [dependencies]
-cx-parsing = { path = "../cx-parsing" }
+cx-util = { path = "../cx-util" }
 
 cx-parsing-data = { path = "../cx-parsing-data" }
-cx-typechecker-data = { path = "../cx-typechecker-data" }
 cx-mir-data = { path = "../cx-mir-data" }
-
-cx-util = { path = "../cx-util" }
+cx-typechecker-data = { path = "../cx-typechecker-data" }

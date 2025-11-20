@@ -1,12 +1,12 @@
 use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
-use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
-use cx_mir_data::{
+use cx_bytecode_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_bytecode_data::{
     MIRFloatBinOp, BCFunctionMap, MIRPtrBinOp, LinkageType, MIRFunctionPrototype, MIRIntBinOp,
     MIRParameter, MIRInstructionKind,
 };
 use cx_parsing_data::ast::CXBinOp;
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind, TCFunctionPrototype};
+use cx_typechecker_data::cx_types::{CXType, CXTypeKind, CXFunctionPrototype};
 use cx_typechecker_data::function_map::CXFnMap;
 
 impl MIRBuilder {
@@ -20,7 +20,7 @@ impl MIRBuilder {
 
     pub(crate) fn convert_cx_prototype(
         &self,
-        cx_proto: &TCFunctionPrototype,
+        cx_proto: &CXFunctionPrototype,
     ) -> Option<MIRFunctionPrototype> {
         convert_cx_prototype(cx_proto)
     }
@@ -119,7 +119,7 @@ fn convert_argument_type(cx_type: &CXType) -> Option<MIRType> {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &TCFunctionPrototype) -> Option<MIRFunctionPrototype> {
+pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIRFunctionPrototype> {
     let mut params = cx_proto
         .params
         .iter()

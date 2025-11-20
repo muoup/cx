@@ -5,7 +5,7 @@ use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
-use cx_typechecker_data::cx_types::{TCFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
 use cx_util::{CXError, CXResult};
 use cx_util::scoped_map::ScopedMap;
@@ -33,7 +33,7 @@ pub struct TCEnvironment<'a> {
     pub requests: Vec<TCTemplateRequest>,
     pub deconstructors: HashSet<CXType>,
 
-    pub current_function: Option<TCFunctionPrototype>,
+    pub current_function: Option<CXFunctionPrototype>,
     pub symbol_table: ScopedMap<CXType>,
 
     pub declared_functions: Vec<TCFunctionDef>,
@@ -93,7 +93,7 @@ impl TCEnvironment<'_> {
         self.symbol_table.get(name)
     }
 
-    pub fn get_func(&mut self, base_data: &TCBaseMappings, name: &NaiveFnIdent) -> CXResult<TCFunctionPrototype> {
+    pub fn get_func(&mut self, base_data: &TCBaseMappings, name: &NaiveFnIdent) -> CXResult<CXFunctionPrototype> {
         let Some(base_fn) = base_data.fn_data.get_standard(name) else {
             return CXError::create_result(format!(
                 "Function not found: {:?}",
@@ -109,11 +109,11 @@ impl TCEnvironment<'_> {
         base_data: &TCBaseMappings,
         name: &NaiveFnKind,
         input: &CXTemplateInput,
-    ) -> CXResult<TCFunctionPrototype> {
+    ) -> CXResult<CXFunctionPrototype> {
         instantiate_function_template(self, base_data, name, input)
     }
 
-    pub fn get_realized_func(&self, name: &CXFunctionIdentifier) -> Option<TCFunctionPrototype> {
+    pub fn get_realized_func(&self, name: &CXFunctionIdentifier) -> Option<CXFunctionPrototype> {
         self.realized_fns.get(name).cloned()
     }
 
@@ -142,7 +142,7 @@ impl TCEnvironment<'_> {
             .is_key_any(&NaiveFnIdent::Destructor(type_name.clone()))
     }
 
-    pub fn current_function(&self) -> &TCFunctionPrototype {
+    pub fn current_function(&self) -> &CXFunctionPrototype {
         self.current_function.as_ref().unwrap()
     }
 
@@ -155,14 +155,14 @@ impl TCEnvironment<'_> {
         base_data: &TCBaseMappings,
         external_module: Option<&String>,
         prototype: &CXNaivePrototype,
-    ) -> CXResult<TCFunctionPrototype> {
+    ) -> CXResult<CXFunctionPrototype> {
         complete_fn_prototype(self, base_data, external_module, prototype)
     }
 
     pub fn complete_fn_ident(
         &mut self,
         ident: &CXFunctionIdentifier,
-    ) -> Option<TCFunctionPrototype> {
+    ) -> Option<CXFunctionPrototype> {
         if let Some(prototype) = self.get_realized_func(ident) {
             return Some(prototype);
         }

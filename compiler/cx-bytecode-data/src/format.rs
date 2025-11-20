@@ -1,39 +1,46 @@
-use crate::bc_type::{BCFunctionPrototype, BCType, FloatType, IntegerType};
-use crate::compilation_unit::{BCBlock, BCFunction, BCUnit};
-use crate::instruction::{
-    BCAddress, BCFloatBinOp, BCFloatUnOp, BCInstruction, BCIntegerBinOp, BCIntegerUnOp, BCValue,
+use crate::types::{MIRType, MIRTypeKind};
+use crate::{
+    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, BlockID, MIRBlock, MIRFunction,
+    MIRFunctionPrototype, BCGlobalType, MIRInstruction, MIRInstructionKind, MIRIntBinOp, MIRUnit,
+    BCValue,
 };
 use std::fmt::{Display, Formatter};
 
-impl Display for BCUnit {
+impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Bytecode Unit:")?;
+        writeln!(f, "Bytecode Program:")?;
 
-        for func in self.function_prototypes.iter() {
-            writeln!(f, "extern {};", func)?;
+        for global in self.global_vars.iter() {
+            writeln!(f, "{} :: {}", global.name, global._type)?;
+        }
+
+        for func in self.fn_defs.iter() {
+            writeln!(f, "{func}")?;
         }
 
         Ok(())
     }
 }
 
-impl Display for BCFunction {
+impl Display for MIRFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fn (")?;
-        for (i, (p_name, p_type)) in self
-            .params
-            .iter()
-            .zip(self.prototype.parameter_types.iter())
-            .enumerate()
-        {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{p_name}: {p_type}")?;
-        }
-        writeln!(f, ") -> {}:", self.prototype.return_type)?;
+        writeln!(f, "{}:", self.prototype)?;
 
-        for block in &self.blocks {
+        for (i, block) in self.blocks.iter().enumerate() {
+            write!(f, "block{i}")?;
+            if !block.debug_name.is_empty() {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
+            writeln!(f, "{block}")?;
+        }
+
+        for (i, block) in self.defer_blocks.iter().enumerate() {
+            write!(f, "defer_block{i}")?;
+            if !block.debug_name.is_empty() {
+                write!(f, "  // {}", block.debug_name)?;
+            }
+            writeln!(f, ":")?;
             writeln!(f, "{block}")?;
         }
 
@@ -41,56 +48,137 @@ impl Display for BCFunction {
     }
 }
 
-impl Display for BCBlock {
+impl Display for MIRBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}:", self.name)?;
-        for instruction in &self.instructions {
-            writeln!(f, "\t{instruction}")?;
+        for (i, instruction) in self.body.iter().enumerate() {
+            write!(f, "\t")?;
+
+            if !instruction.value_type.is_void() {
+                write!(f, "_{i} = ")?;
+            }
+
+            writeln!(f, "{instruction}")?;
         }
+
         Ok(())
     }
 }
 
-impl Display for BCFunctionPrototype {
+impl Display for MIRFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fn(")?;
+        write!(f, "fn {}(", self.name)?;
 
-        for (i, arg) in self.parameter_types.iter().enumerate() {
+        for (i, arg) in self.params.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", arg)?;
+            write!(f, "{}", arg._type)?;
         }
 
         write!(f, ") -> {}", self.return_type)
     }
 }
 
-impl Display for BCInstruction {
+impl Display for MIRInstruction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)?;
+
+        if !self.value_type.is_void() {
+            write!(f, "\n\t\t ({})", self.value_type)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Display for BCGlobalType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            BCInstruction::Allocate {
-                result: value,
-                type_,
-                alignment,
-            } => {
-                write!(f, "{value} = allocate {type_} align {alignment}")
+            BCGlobalType::StringLiteral(s) => {
+                write!(f, "string_literal \"{}\"", s.replace('\n', "\\n"))
             }
-            BCInstruction::Store {
-                value,
-                destination,
-                store_type,
+            BCGlobalType::Variable {
+                _type,
+                initial_value,
             } => {
-                write!(f, "store {store_type} {destination}, {value}")
+                if let Some(initial_value) = initial_value {
+                    write!(f, "variable {_type} = {initial_value}")
+                } else {
+                    write!(f, "variable {_type}")
+                }
             }
-            BCInstruction::Load {
-                result: destination,
-                source,
-                load_type,
+        }
+    }
+}
+
+impl Display for BCValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BCValue::NULL => write!(f, "null"),
+            BCValue::ParameterRef(index) => write!(f, "p{index}"),
+            BCValue::IntImmediate { val, .. } => write!(f, "{val}"),
+            BCValue::FloatImmediate { val, .. } => write!(f, "{val}"),
+            BCValue::LoadOf(_, value) => write!(f, "*{value}"),
+            BCValue::FunctionRef(name) => write!(f, "{name}"),
+            BCValue::Global(id) => write!(f, "g{id}"),
+            BCValue::BlockResult { block_id, value_id } => write!(f, "{block_id}:v{value_id}"),
+        }
+    }
+}
+
+impl Display for BlockID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BlockID::Block(id) => write!(f, "b{id}"),
+            BlockID::DeferredBlock(id) => write!(f, "d{id}"),
+        }
+    }
+}
+
+impl Display for MIRInstructionKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MIRInstructionKind::Temp { value } => {
+                write!(f, "{value}")
+            }
+            MIRInstructionKind::Allocate { _type, .. } => {
+                write!(f, "stackallocate {_type}")
+            }
+            MIRInstructionKind::Store { value, memory, .. } => {
+                write!(f, "*{memory} := {value}")
+            }
+            MIRInstructionKind::ZeroMemory { memory, _type } => {
+                write!(f, "*{memory} := 0")
+            }
+            MIRInstructionKind::StructAccess {
+                struct_,
+                field_index,
+                ..
             } => {
-                write!(f, "{destination} = load {load_type} {source}")
+                write!(f, "{struct_}.[{field_index}]")
             }
-            BCInstruction::Return { value } => {
+            MIRInstructionKind::BoolExtend { value } => {
+                write!(f, "bool_extend {value}")
+            }
+            MIRInstructionKind::ZExtend { value } => {
+                write!(f, "zextend {value}")
+            }
+            MIRInstructionKind::SExtend { value } => {
+                write!(f, "sextend {value}")
+            }
+            MIRInstructionKind::Trunc { value } => {
+                write!(f, "trunc {value}")
+            }
+            MIRInstructionKind::PtrToInt { value } => {
+                write!(f, "ptr_to_int {value}")
+            }
+            MIRInstructionKind::IntToPtrDiff { value, ptr_type } => {
+                write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
+            }
+            MIRInstructionKind::IntToPtr { value } => {
+                write!(f, "int_to_ptr {value}")
+            }
+            MIRInstructionKind::Return { value } => {
                 write!(f, "return")?;
 
                 if let Some(value) = value {
@@ -99,311 +187,277 @@ impl Display for BCInstruction {
 
                 Ok(())
             }
-            BCInstruction::IntBinOp {
-                result: destination,
-                left,
-                right,
-                op,
-            } => {
-                write!(f, "{destination} = {left} {op} {right}")
-            }
-            BCInstruction::FloatBinOp {
-                result: destination,
-                left,
-                right,
-                op,
-            } => {
-                write!(f, "{destination} = {left} {op} {right}")
-            }
-            BCInstruction::IntUnOp {
-                result: destination,
-                value,
-                op,
-            } => {
-                write!(f, "{destination} = {op} {value}")
-            }
-            BCInstruction::FloatUnOp {
-                result: destination,
-                value,
-                op,
-            } => {
-                write!(f, "{destination} = {op} {value}")
-            }
-            BCInstruction::PointerBinOp {
-                result: destination,
-                ptr_type,
-                left,
-                right,
-                op,
-            } => {
-                write!(f, "{destination} = ({ptr_type}) {left} {op} {right}")
-            }
-            BCInstruction::CallDirect {
-                result: destination,
-                function,
-                arguments,
-            } => {
-                if let Some(destination) = destination {
-                    write!(f, "{destination} = ")?;
-                }
-                write!(f, "call ({}) @{}(", function, function.name)?;
-                for (i, arg) in arguments.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                write!(f, ")")
-            }
-            BCInstruction::CallIndirect {
-                result: destination,
-                prototype,
-                function_pointer,
-                arguments,
-            } => {
-                if let Some(destination) = destination {
-                    write!(f, "{destination} = ")?;
-                }
-                write!(f, "call ({prototype}) *{function_pointer}(")?;
-                for (i, arg) in arguments.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                write!(f, ")")
-            }
-            BCInstruction::Branch {
+            MIRInstructionKind::Branch {
                 condition,
-                true_target,
-                false_target,
+                true_block,
+                false_block,
             } => {
-                write!(f, "branch {condition} ? {true_target} : {false_target}")
+                write!(f, "if {condition} goto {true_block} else {false_block}")
             }
-            BCInstruction::Jump { target } => write!(f, "jump {target}"),
-
-            BCInstruction::GetElementPtr {
-                result: destination,
-                base,
-                index,
-                offset,
-                structure_type,
-            } => write!(
-                f,
-                "{destination} = getelementptr {structure_type} {base}, {index}, {offset}"
-            ),
-
-            BCInstruction::GetFunctionPtr { result, function } => {
-                write!(f, "{result} = getfuncptr @{}", function)
-            }
-
-            BCInstruction::ValueCoercion {
-                result: destination,
-                value,
-                coercion,
-            } => write!(f, "{destination} = coerce {value} ({coercion:?})"),
-
-            BCInstruction::Memset {
-                result: destination,
-                value,
-                _type,
-            } => write!(f, "memset {destination}, {value}, {_type}"),
-
-            BCInstruction::Phi {
-                result: destination,
-                predecessors: sources,
-            } => {
-                write!(f, "{destination} = phi {{ ")?;
-                for (i, (block, value)) in sources.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
+            MIRInstructionKind::Phi { predecessors: from } => {
+                write!(f, "phi")?;
+                if !from.is_empty() {
+                    write!(f, " from [")?;
+                    for (i, (value, block_id)) in from.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{value} @ b{block_id}")?;
                     }
-                    write!(f, "{block}: {value}")?;
-                }
-                write!(f, " }}")
-            }
-
-            BCInstruction::JumpTable {
-                index,
-                targets,
-                default_target,
-            } => {
-                write!(f, "jumptable {index} [ ")?;
-                for (i, target) in targets.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{target}")?;
-                }
-                write!(f, " ] default {default_target}")
-            }
-
-            BCInstruction::Alias {
-                result: destination,
-                source,
-            } => write!(f, "{destination} = {source}"),
-        }
-    }
-}
-
-impl Display for BCAddress {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BCAddress::Local(ident) => write!(f, "%{}", ident),
-            BCAddress::Global(ident) => write!(f, "@{}", ident),
-        }
-    }
-}
-
-impl Display for BCValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BCValue::Integer { value, .. } => write!(f, "{value}"),
-            BCValue::Float { value, .. } => write!(f, "{value}"),
-            BCValue::Address(address) => write!(f, "{address}"),
-        }
-    }
-}
-
-impl Display for BCIntegerBinOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                BCIntegerBinOp::ADD => "+",
-                BCIntegerBinOp::SUB => "-",
-                BCIntegerBinOp::MUL => "*",
-                BCIntegerBinOp::DIV => "/",
-                BCIntegerBinOp::IMUL => "i*",
-                BCIntegerBinOp::IDIV => "i/",
-                BCIntegerBinOp::EQ => "==",
-                BCIntegerBinOp::NE => "!=",
-                BCIntegerBinOp::LT => "<",
-                BCIntegerBinOp::GT => ">",
-                BCIntegerBinOp::LE => "<=",
-                BCIntegerBinOp::GE => ">=",
-                BCIntegerBinOp::ULT => "(u)<",
-                BCIntegerBinOp::UGT => "(u)>",
-                BCIntegerBinOp::ULE => "(u)<=",
-                BCIntegerBinOp::UGE => "(u)>=",
-                BCIntegerBinOp::BAND => "&",
-                BCIntegerBinOp::BOR => "|",
-                BCIntegerBinOp::BXOR => "^",
-            }
-        )
-    }
-}
-
-impl Display for BCFloatBinOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                BCFloatBinOp::ADD => "+.",
-                BCFloatBinOp::SUB => "-.",
-                BCFloatBinOp::MUL => "*.",
-                BCFloatBinOp::DIV => "/.",
-                BCFloatBinOp::EQ => "==.",
-                BCFloatBinOp::NE => "!=.",
-                BCFloatBinOp::LT => "<.",
-                BCFloatBinOp::GT => ">.",
-                BCFloatBinOp::LE => "<=.",
-                BCFloatBinOp::GE => ">=.",
-            }
-        )
-    }
-}
-
-impl Display for BCIntegerUnOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                BCIntegerUnOp::NEG => "-",
-                BCIntegerUnOp::BNOT => "~",
-            }
-        )
-    }
-}
-
-impl Display for BCFloatUnOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                BCFloatUnOp::NEG => "-",
-            }
-        )
-    }
-}
-
-impl Display for BCType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BCType::Pointer {
-                dereferenceable,
-                nonnull: nullable,
-            } => {
-                write!(f, "ptr")?;
-                if *nullable {
-                    write!(f, " nonnull")?;
-                }
-                if *dereferenceable > 0 {
-                    write!(f, " (deref: {dereferenceable})")?;
+                    write!(f, "]")?;
                 }
                 Ok(())
             }
-            BCType::Structured { name, fields } => {
-                write!(f, "struct {name} {{ ")?;
-                for (i, (field_name, field_type)) in fields.iter().enumerate() {
+            MIRInstructionKind::Jump { target } => {
+                write!(f, "jump {target}")
+            }
+            MIRInstructionKind::GotoDefer => {
+                write!(f, "goto defer")
+            }
+            MIRInstructionKind::JumpTable {
+                value,
+                targets,
+                default,
+            } => {
+                write!(f, "jump_table {value} -> [")?;
+                for (i, (key, block_id)) in targets.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{field_name}: {field_type}")?;
+                    write!(f, "{key} -> {block_id}")?;
                 }
-                write!(f, " }}")
+                write!(f, "] else {default}")
             }
-            BCType::Array { element, size } => {
-                write!(f, "[{element}; {size}]")
+            MIRInstructionKind::DirectCall {
+                method_sig, args, ..
+            } => {
+                write!(f, "@{}(", method_sig.name)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                write!(f, ")")
             }
-            BCType::Integer(it) => write!(f, "{it}"),
-            BCType::Float(ft) => write!(f, "{ft}"),
-            BCType::Opaque { size } => write!(f, "opaque<{size}>"),
-            BCType::Unit => write!(f, "()"),
-            BCType::Bool => write!(f, "bool"),
+            MIRInstructionKind::IndirectCall { func_ptr, args, .. } => {
+                write!(f, "@(*{func_ptr})(")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                write!(f, ")")
+            }
+            MIRInstructionKind::PointerBinOp {
+                left,
+                ptr_type,
+                right,
+                op,
+            } => {
+                write!(f, "{left} {op} {right} [{ptr_type}*]")
+            }
+            MIRInstructionKind::IntegerBinOp { left, right, op } => {
+                write!(f, "{left} {op} {right} [i]")
+            }
+            MIRInstructionKind::IntegerUnOp { op, value } => {
+                write!(f, "{op:?} {value} [i]")
+            }
+            MIRInstructionKind::FloatBinOp { left, right, op } => {
+                write!(f, "{left} {op} {right} [f]")
+            }
+            MIRInstructionKind::FloatUnOp { op, value } => {
+                write!(f, "{op:?} {value} [f]")
+            }
+            MIRInstructionKind::GetFunctionAddr { func: func_name } => {
+                write!(f, "get_function_addr {func_name}")
+            }
+            MIRInstructionKind::BitCast { value } => {
+                write!(f, "bit_cast {value}")
+            }
+            MIRInstructionKind::IntToFloat { from, value } => {
+                write!(f, "int_to_float ({from}) {value}")
+            }
+            MIRInstructionKind::FloatToInt { from, value } => {
+                write!(f, "float_to_int ({from}) {value}")
+            }
+            MIRInstructionKind::FloatCast { value } => {
+                write!(f, "float_cast {value}")
+            }
+            MIRInstructionKind::CompilerAssertion { condition, message } => {
+                write!(f, "compiler_assertion {condition} ({message})")
+            }
+            MIRInstructionKind::NOP => {
+                write!(f, "nop")
+            }
         }
     }
 }
 
-impl Display for IntegerType {
+impl Display for MIRPtrBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                IntegerType::I8 => "i8",
-                IntegerType::I16 => "i16",
-                IntegerType::I32 => "i32",
-                IntegerType::I64 => "i64",
-                IntegerType::I128 => "i128",
-            }
+                MIRPtrBinOp::ADD => "+",
+                MIRPtrBinOp::SUB => "-",
+
+                MIRPtrBinOp::EQ => "==",
+                MIRPtrBinOp::NE => "!=",
+
+                MIRPtrBinOp::LT => "<",
+                MIRPtrBinOp::GT => ">",
+                MIRPtrBinOp::LE => "<=",
+                MIRPtrBinOp::GE => ">=",
+            },
         )
     }
 }
 
-impl Display for FloatType {
+impl Display for MIRIntBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                FloatType::F32 => "f32",
-                FloatType::F64 => "f64",
-            }
+                MIRIntBinOp::ADD => "+",
+                MIRIntBinOp::SUB => "-",
+                MIRIntBinOp::MUL => "*",
+                MIRIntBinOp::IDIV => "i/",
+                MIRIntBinOp::IREM => "i%",
+
+                MIRIntBinOp::UDIV => "u/",
+                MIRIntBinOp::UREM => "u%",
+
+                MIRIntBinOp::SHL => "<<",
+                MIRIntBinOp::ASHR => "a>>",
+                MIRIntBinOp::LSHR => "l>>",
+
+                MIRIntBinOp::BAND => "&",
+                MIRIntBinOp::BOR => "|",
+                MIRIntBinOp::BXOR => "^",
+
+                MIRIntBinOp::LAND => "&&",
+                MIRIntBinOp::LOR => "||",
+
+                MIRIntBinOp::EQ => "==",
+                MIRIntBinOp::NE => "!=",
+
+                MIRIntBinOp::ILT => "<",
+                MIRIntBinOp::IGT => ">",
+                MIRIntBinOp::ILE => "<=",
+                MIRIntBinOp::IGE => ">=",
+
+                MIRIntBinOp::ULT => "(u) <",
+                MIRIntBinOp::UGT => "(u) >",
+                MIRIntBinOp::ULE => "(u) <=",
+                MIRIntBinOp::UGE => "(u) >=",
+            },
         )
+    }
+}
+
+impl Display for MIRIntUnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                MIRIntUnOp::BNOT => "~",
+                MIRIntUnOp::LNOT => "!",
+                MIRIntUnOp::NEG => "-",
+            },
+        )
+    }
+}
+
+impl Display for MIRFloatBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                MIRFloatBinOp::ADD => "+",
+                MIRFloatBinOp::SUB => "-",
+                MIRFloatBinOp::FMUL => "*",
+                MIRFloatBinOp::FDIV => "/",
+            },
+        )
+    }
+}
+
+impl Display for MIRFloatUnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                MIRFloatUnOp::NEG => "-",
+            },
+        )
+    }
+}
+
+impl Display for MIRType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for MIRTypeKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            MIRTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
+            MIRTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
+            MIRTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
+            MIRTypeKind::Bool => write!(f, "bool"),
+            MIRTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
+
+            MIRTypeKind::Pointer {
+                nullable,
+                dereferenceable,
+            } => {
+                if !*nullable {
+                    write!(f, "!")?;
+                }
+
+                write!(f, "*")?;
+
+                if *dereferenceable > 0 {
+                    write!(f, " (deref: {dereferenceable})")
+                } else {
+                    Ok(())
+                }
+            }
+
+            MIRTypeKind::Array { element, size } => {
+                write!(f, "[{element}; {size}]")
+            }
+            MIRTypeKind::Struct { fields, .. } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, _type)| format!("{name}: {_type}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "struct {{ {fields} }}")
+            }
+            MIRTypeKind::Union { fields, .. } => {
+                let fields = fields
+                    .iter()
+                    .map(|(name, _type)| format!("{name}: {_type}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "union {{ {fields} }}")
+            }
+
+            MIRTypeKind::Unit => write!(f, "()"),
+            MIRTypeKind::VariableSized { size, alignment } => {
+                write!(f, "variable_sized (size: {size}, alignment: {alignment})")
+            }
+        }
     }
 }

@@ -1,17 +1,17 @@
 use crate::builder::MIRBuilder;
 use cx_parsing_data::ast::CXCastType;
-use cx_mir_data::types::MIRTypeKind;
-use cx_mir_data::MIRInstructionKind::IntToPtrDiff;
-use cx_mir_data::{MIRIntBinOp, MIRValue, MIRInstructionKind};
+use cx_bytecode_data::types::MIRTypeKind;
+use cx_bytecode_data::MIRInstructionKind::IntToPtrDiff;
+use cx_bytecode_data::{MIRIntBinOp, BCValue, MIRInstructionKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 
 pub(crate) fn implicit_cast(
     builder: &mut MIRBuilder,
-    value: MIRValue,
+    value: BCValue,
     from_type: &CXType,
     to_type: &CXType,
     cast_type: &CXCastType,
-) -> Option<MIRValue> {
+) -> Option<BCValue> {
     match cast_type {
         CXCastType::NOOP => Some(value),
 
@@ -119,7 +119,7 @@ pub(crate) fn implicit_cast(
         },
 
         CXCastType::FunctionToPointerDecay => {
-            let MIRValue::FunctionRef(func) = &value else {
+            let BCValue::FunctionRef(func) = &value else {
                 panic!("INTERNAL PANIC: Invalid function to pointer decay value")
             };
 

@@ -3,7 +3,7 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_parsing_data::ast::CXAST;
 use cx_parsing_data::PreparseContents;
 use cx_lexer_data::token::Token;
-use cx_mir_data::MIRUnit;
+use cx_bytecode_data::MIRUnit;
 use cx_typechecker_data::ast::{TCAST, TCBaseMappings};
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};

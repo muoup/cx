@@ -6,8 +6,8 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_mir_data::types::MIRTypeKind;
-use cx_mir_data::{BlockID, MIRValue, MIRUnit};
+use cx_bytecode_data::types::MIRTypeKind;
+use cx_bytecode_data::{BlockID, BCValue, MIRUnit};
 use cx_util::log_error;
 use std::collections::HashMap;
 
@@ -17,7 +17,6 @@ mod inst_calling;
 mod instruction;
 mod routines;
 mod value_type;
-mod bc_codegen;
 
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
@@ -35,7 +34,7 @@ impl CodegenValue {
     }
 }
 
-pub(crate) type VariableTable = HashMap<MIRValue, CodegenValue>;
+pub(crate) type VariableTable = HashMap<BCValue, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -75,19 +74,19 @@ impl FunctionState<'_> {
             .unwrap_or_else(|| panic!("Block with ID {id} not found in block map"))
     }
 
-    pub(crate) fn get_value(&mut self, mir_value: &MIRValue) -> Option<CodegenValue> {
+    pub(crate) fn get_value(&mut self, mir_value: &BCValue) -> Option<CodegenValue> {
         match mir_value {
-            MIRValue::NULL => Some(CodegenValue::NULL),
+            BCValue::NULL => Some(CodegenValue::NULL),
 
-            MIRValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
+            BCValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
 
-            MIRValue::IntImmediate { val, type_ } => {
+            BCValue::IntImmediate { val, type_ } => {
                 let int_type = get_cranelift_type(type_);
                 let value = self.builder.ins().iconst(int_type, *val);
                 Some(CodegenValue::Value(value))
             }
 
-            MIRValue::FloatImmediate { val, type_ } => {
+            BCValue::FloatImmediate { val, type_ } => {
                 match &type_.kind {
                     MIRTypeKind::Float { bytes: 4 } => {
                         let as_f32 : f32 = val.into();
@@ -103,7 +102,7 @@ impl FunctionState<'_> {
                 }
             }
 
-            MIRValue::LoadOf(_type, val) => {
+            BCValue::LoadOf(_type, val) => {
                 let Some(addr) = self.get_value(val) else {
                     log_error!("Failed to get address for LoadOf: {:?}", val);
                 };
@@ -119,7 +118,7 @@ impl FunctionState<'_> {
                 Some(CodegenValue::Value(loaded))
             }
 
-            MIRValue::Global(id) => {
+            BCValue::Global(id) => {
                 let global_ref = self
                     .object_module
                     .declare_data_in_func(DataId::from_u32(*id), self.builder.func);

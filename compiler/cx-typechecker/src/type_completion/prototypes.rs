@@ -7,7 +7,7 @@ use crate::type_completion::types::_complete_type;
 use cx_parsing_data::ast::CXExpr;
 use cx_parsing_data::data::{CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr};
-use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, TCFunctionPrototype, TCParameter};
+use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, CXFunctionPrototype, TCParameter};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
@@ -159,7 +159,7 @@ pub fn _complete_fn_prototype(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
     prototype: &CXNaivePrototype,
-) -> CXResult<TCFunctionPrototype> {
+) -> CXResult<CXFunctionPrototype> {
     let prototype = apply_implicit_fn_attr(prototype.clone());
     let ident = complete_fn_ident(env, base_data, &prototype.name)?;
     
@@ -182,7 +182,7 @@ pub fn _complete_fn_prototype(
         .map(|contract| _complete_fn_contract(env, base_data, &return_type, &parameters, contract))
         .transpose()?;
     
-    let prototype = TCFunctionPrototype {
+    let prototype = CXFunctionPrototype {
         name: ident.clone(),
         return_type: return_type,
         params: parameters,

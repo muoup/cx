@@ -1,6 +1,6 @@
 use super::ast::*;
 use crate::{
-    cx_types::{CXType, CXTypeKind, TCFunctionPrototype, TCParameter},
+    cx_types::{CXType, CXTypeKind, CXFunctionPrototype, TCParameter},
     function_map::{CXFunctionIdentifier, CXFunctionKind},
 };
 use std::fmt::{Display, Formatter, Result};
@@ -581,7 +581,7 @@ impl Display for CXTypeKind {
     }
 }
 
-impl Display for TCFunctionPrototype {
+impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}(", self.mangle_name())?;
         for (i, param) in self.params.iter().enumerate() {

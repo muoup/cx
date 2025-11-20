@@ -1,4 +1,4 @@
-use cx_mir_data::MIRUnit;
+use cx_bytecode_data::MIRUnit;
 use cx_pipeline_data::OptimizationLevel;
 
 #[cfg(feature = "backend-llvm")]

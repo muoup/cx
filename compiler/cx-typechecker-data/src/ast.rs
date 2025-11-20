@@ -1,4 +1,4 @@
-use crate::cx_types::{TCFunctionPrototype, CXType};
+use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::function_map::CXFnMap;
 use crate::CXTypeMap;
 use cx_parsing_data::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
@@ -36,7 +36,7 @@ pub struct FunctionTemplateRequest {
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TCFunctionDef {
-    pub prototype: TCFunctionPrototype,
+    pub prototype: CXFunctionPrototype,
     pub body: Box<TCExpr>,
 }
 

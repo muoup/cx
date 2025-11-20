@@ -11,7 +11,7 @@ use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{
     TCBaseMappings, TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
 };
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind, TCFunctionPrototype};
+use cx_typechecker_data::cx_types::{CXType, CXTypeKind, CXFunctionPrototype};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -26,7 +26,7 @@ fn anonymous_name_gen() -> String {
 pub(crate) fn in_method_env(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
-    prototype: &TCFunctionPrototype,
+    prototype: &CXFunctionPrototype,
     expr: &CXExpr,
 ) -> CXResult<TCExpr> {
     setup_method_env(env, prototype);
@@ -36,7 +36,7 @@ pub(crate) fn in_method_env(
     Ok(tc_expr)
 }
 
-pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &TCFunctionPrototype) {
+pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &CXFunctionPrototype) {
     env.push_scope();
 
     for param in prototype.params.iter() {

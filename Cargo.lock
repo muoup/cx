@@ -252,7 +252,6 @@ dependencies = [
  "cranelift-native",
  "cranelift-object",
  "cx-bytecode-data",
- "cx-mir-data",
  "cx-parsing-data",
  "cx-util",
 ]
@@ -261,7 +260,7 @@ dependencies = [
 name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
- "cx-mir-data",
+ "cx-bytecode-data",
  "cx-pipeline-data",
  "cx-util",
  "inkwell",
@@ -269,18 +268,19 @@ dependencies = [
 
 [[package]]
 name = "cx-bytecode"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "cx-bytecode-data",
- "cx-mir-data",
+ "cx-parsing",
+ "cx-parsing-data",
+ "cx-typechecker-data",
  "cx-util",
 ]
 
 [[package]]
 name = "cx-bytecode-data"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
- "cx-mir-data",
  "cx-util",
 ]
 
@@ -310,10 +310,9 @@ dependencies = [
 
 [[package]]
 name = "cx-mir"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cx-mir-data",
- "cx-parsing",
  "cx-parsing-data",
  "cx-typechecker-data",
  "cx-util",
@@ -321,8 +320,9 @@ dependencies = [
 
 [[package]]
 name = "cx-mir-data"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
+ "cx-typechecker-data",
  "cx-util",
 ]
 
@@ -358,8 +358,6 @@ dependencies = [
  "cx-bytecode-data",
  "cx-lexer",
  "cx-lexer-data",
- "cx-mir",
- "cx-mir-data",
  "cx-parsing",
  "cx-parsing-data",
  "cx-pipeline-data",
@@ -374,8 +372,8 @@ dependencies = [
 name = "cx-pipeline-data"
 version = "0.0.0"
 dependencies = [
+ "cx-bytecode-data",
  "cx-lexer-data",
- "cx-mir-data",
  "cx-parsing-data",
  "cx-typechecker-data",
  "speedy",

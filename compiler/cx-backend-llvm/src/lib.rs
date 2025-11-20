@@ -1,7 +1,7 @@
 use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
-use cx_mir_data::{
-    BCFunctionMap, BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, MIRValue,
+use cx_bytecode_data::{
+    BCFunctionMap, BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue,
     MIRUnit,
 };
 use inkwell::attributes::AttributeLoc;
@@ -47,13 +47,13 @@ pub(crate) struct FunctionState<'a, 'b> {
     in_defer: bool,
 
     builder: Builder<'a>,
-    value_map: HashMap<MIRValue, CodegenValue<'a>>,
+    value_map: HashMap<BCValue, CodegenValue<'a>>,
 }
 
 impl<'a> FunctionState<'a, '_> {
-    pub(crate) fn get_value(&self, id: &MIRValue) -> Option<CodegenValue<'a>> {
+    pub(crate) fn get_value(&self, id: &BCValue) -> Option<CodegenValue<'a>> {
         match id {
-            MIRValue::ParameterRef(index) => {
+            BCValue::ParameterRef(index) => {
                 let param_val = self
                     .function_value
                     .get_nth_param(*index)
@@ -68,7 +68,7 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(param_val))
             }
 
-            MIRValue::IntImmediate { val, type_ } => {
+            BCValue::IntImmediate { val, type_ } => {
                 let int_type = bc_llvm_type(self.context, type_)?;
                 let int_val = int_type
                     .into_int_type()
@@ -78,7 +78,7 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(int_val))
             }
 
-            MIRValue::FloatImmediate { val, type_ } => {
+            BCValue::FloatImmediate { val, type_ } => {
                 let float_type = bc_llvm_type(self.context, type_)?;
                 let float_val = float_type
                     .into_float_type()
@@ -88,7 +88,7 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(float_val))
             }
 
-            MIRValue::LoadOf(_type, val) => {
+            BCValue::LoadOf(_type, val) => {
                 let ptr_val = self.get_value(val)?.get_value();
                 let ptr_type = bc_llvm_type(self.context, _type)?;
                 let basic_type = any_to_basic_type(ptr_type)?;
@@ -102,13 +102,13 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(load_inst))
             }
 
-            MIRValue::FunctionRef(_) => {
+            BCValue::FunctionRef(_) => {
                 panic!("Function references should be handled at a higher level")
             }
 
-            MIRValue::BlockResult { .. } | MIRValue::Global(..) => self.value_map.get(id).cloned(),
+            BCValue::BlockResult { .. } | BCValue::Global(..) => self.value_map.get(id).cloned(),
 
-            MIRValue::NULL => Some(CodegenValue::NULL),
+            BCValue::NULL => Some(CodegenValue::NULL),
         }
     }
 
@@ -262,7 +262,7 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
 
     for (i, global) in global_state.globals.iter().enumerate() {
         function_state.value_map.insert(
-            MIRValue::Global(i as ElementID),
+            BCValue::Global(i as ElementID),
             CodegenValue::Value(global.as_any_value_enum()),
         );
     }
@@ -326,7 +326,7 @@ fn codegen_block<'a, 'b>(
         };
 
         function_state.value_map.insert(
-            MIRValue::BlockResult {
+            BCValue::BlockResult {
                 block_id,
                 value_id: value_id as ElementID,
             },

@@ -3,8 +3,8 @@ use crate::attributes::attr_noundef;
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
-use cx_mir_data::{
+use cx_bytecode_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_bytecode_data::{
     MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BlockID, MIRInstruction, LinkageType,
     MIRFunctionPrototype, MIRParameter, MIRInstructionKind,
 };

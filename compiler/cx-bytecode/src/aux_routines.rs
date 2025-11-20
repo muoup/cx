@@ -2,8 +2,8 @@ use crate::builder::{DeclarationLifetime, MIRBuilder};
 use crate::instruction_gen::generate_algebraic_binop;
 use crate::BytecodeResult;
 use cx_parsing_data::ast::CXBinOp;
-use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{MIRValue, MIRInstructionKind};
+use cx_bytecode_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::{BCValue, MIRInstructionKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 use cx_util::bytecode_error_log;
 
@@ -24,9 +24,9 @@ fn align_offset(current_offset: usize, alignment: usize) -> usize {
 pub(crate) fn try_access_field(
     builder: &mut MIRBuilder,
     ltype: &MIRType,
-    left_id: MIRValue,
+    left_id: BCValue,
     field_name: &str,
-) -> Option<MIRValue> {
+) -> Option<BCValue> {
     match ltype.kind {
         MIRTypeKind::Struct { .. } => {
             let struct_access = get_struct_field(
@@ -142,7 +142,7 @@ pub(crate) fn allocate_variable(
     name: &str,
     builder: &mut MIRBuilder,
     var_type: &CXType,
-) -> Option<MIRValue> {
+) -> Option<BCValue> {
     let bc_type = builder.convert_cx_type(var_type)?;
     let memory = builder.add_instruction(
         MIRInstructionKind::Allocate {
@@ -173,11 +173,11 @@ pub(crate) fn allocate_variable(
 
 pub(crate) fn assign_value(
     builder: &mut MIRBuilder,
-    target: MIRValue,
-    mut value: MIRValue,
+    target: BCValue,
+    mut value: BCValue,
     _type: &CXType,
     additional_op: Option<&CXBinOp>,
-) -> BytecodeResult<MIRValue> {
+) -> BytecodeResult<BCValue> {
     let inner_type = builder.convert_fixed_cx_type(_type)?;    
     
     if let Some(op) = additional_op {

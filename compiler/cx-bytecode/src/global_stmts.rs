@@ -1,17 +1,17 @@
 use crate::aux_routines::allocate_variable;
 use crate::builder::MIRBuilder;
 use crate::instruction_gen::generate_instruction;
-use cx_mir_data::types::MIRType;
-use cx_mir_data::{
-    LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRValue, MIRInstructionKind,
+use cx_bytecode_data::types::MIRType;
+use cx_bytecode_data::{
+    LinkageType, MIRFunctionPrototype, BCGlobalType, BCGlobalValue, BCValue, MIRInstructionKind,
 };
 use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::ast::{TCExpr, TCGlobalVarKind, TCGlobalVariable};
-use cx_typechecker_data::cx_types::TCFunctionPrototype;
+use cx_typechecker_data::cx_types::CXFunctionPrototype;
 
 pub(crate) fn generate_function(
     builder: &mut MIRBuilder,
-    prototype: &TCFunctionPrototype,
+    prototype: &CXFunctionPrototype,
     body: &TCExpr,
 ) -> Option<()> {
     builder.push_scope();
@@ -35,7 +35,7 @@ pub(crate) fn generate_function(
 
 fn generate_params(
     builder: &mut MIRBuilder,
-    prototype: &TCFunctionPrototype,
+    prototype: &CXFunctionPrototype,
     bc_prototype: &MIRFunctionPrototype,
 ) -> Option<()> {
     let hidden_params_count = bc_prototype.params.len() - prototype.params.len();
@@ -53,7 +53,7 @@ fn generate_params(
 
         builder.add_instruction(
             MIRInstructionKind::Store {
-                value: MIRValue::ParameterRef(i as u32),
+                value: BCValue::ParameterRef(i as u32),
                 memory: memory.clone(),
                 type_: param._type.clone(),
             },
@@ -74,7 +74,7 @@ fn generate_params(
 
             builder.add_instruction(
                 MIRInstructionKind::Store {
-                    value: MIRValue::ParameterRef(i as u32),
+                    value: BCValue::ParameterRef(i as u32),
                     memory,
                     type_: param_type,
                 },
@@ -100,10 +100,10 @@ pub(crate) fn generate_global_variable(
 ) -> Option<()> {
     match &var.kind {
         TCGlobalVarKind::StringLiteral { name, value } => {
-            let value = MIRGlobalValue {
+            let value = BCGlobalValue {
                 name: name.clone(),
                 linkage: convert_cx_linkage(var.linkage),
-                _type: MIRGlobalType::StringLiteral(value.clone()),
+                _type: BCGlobalType::StringLiteral(value.clone()),
             };
 
             builder.insert_global_symbol(value);
@@ -115,10 +115,10 @@ pub(crate) fn generate_global_variable(
             initializer,
         } => {
             let _type = builder.convert_cx_type(_type)?;
-            let value = MIRGlobalValue {
+            let value = BCGlobalValue {
                 name: name.clone(),
                 linkage: convert_cx_linkage(var.linkage),
-                _type: MIRGlobalType::Variable {
+                _type: BCGlobalType::Variable {
                     initial_value: *initializer,
                     _type: _type.clone(),
                 },

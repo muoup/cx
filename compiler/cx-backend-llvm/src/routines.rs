@@ -1,6 +1,6 @@
 use crate::GlobalState;
 use crate::typing::bc_llvm_prototype;
-use cx_mir_data::MIRFunctionPrototype;
+use cx_bytecode_data::MIRFunctionPrototype;
 use cx_util::log_error;
 use inkwell::values::FunctionValue;
 

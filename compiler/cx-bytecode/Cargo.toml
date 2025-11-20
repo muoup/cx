@@ -1,10 +1,14 @@
 [package]
 name = "cx-bytecode"
-version = "0.1.0"
-edition = "2024"
+version = "0.0.0"
+edition = "2021"
+autotests = false
 
 [dependencies]
+cx-parsing = { path = "../cx-parsing" }
+
+cx-parsing-data = { path = "../cx-parsing-data" }
+cx-typechecker-data = { path = "../cx-typechecker-data" }
 cx-bytecode-data = { path = "../cx-bytecode-data" }
-cx-mir-data = { path = "../cx-mir-data" }
 
 cx-util = { path = "../cx-util" }

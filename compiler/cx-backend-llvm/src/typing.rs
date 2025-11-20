@@ -1,6 +1,6 @@
 use crate::GlobalState;
-use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{LinkageType, MIRFunctionPrototype};
+use cx_bytecode_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::{LinkageType, MIRFunctionPrototype};
 use inkwell::AddressSpace;
 use inkwell::context::Context;
 use inkwell::module::Linkage;

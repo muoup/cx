@@ -6,17 +6,17 @@ use crate::cx_maps::{convert_cx_prototype, convert_fixed_type_kind};
 use crate::deconstructor::deconstruct_variable;
 use crate::function_contracts::add_contract_verification;
 use crate::implicit_cast::implicit_cast;
-use cx_mir_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
-use cx_mir_data::{
-    BlockID, LinkageType, MIRFunctionPrototype, MIRGlobalType, MIRGlobalValue, MIRInstructionKind,
-    MIRIntBinOp, MIRIntUnOp, MIRPtrBinOp, MIRValue,
+use cx_bytecode_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_bytecode_data::{
+    BlockID, LinkageType, MIRFunctionPrototype, BCGlobalType, BCGlobalValue, MIRInstructionKind,
+    MIRIntBinOp, MIRIntUnOp, MIRPtrBinOp, BCValue,
 };
 use cx_parsing_data::ast::{CXBinOp, CXUnOp};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
 use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
 use cx_util::{bytecode_error_log, log_error};
 
-pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<MIRValue> {
+pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<BCValue> {
     match &expr.kind {
         TCExprKind::VariableDeclaration { name, type_ } => {
             allocate_variable(name.as_str(), builder, type_)
@@ -264,7 +264,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                 generate_instruction(builder, expr)?;
             }
 
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::Coercion { operand, cast_type } => {
@@ -312,10 +312,10 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             if !builder.global_symbol_exists(name.as_str()) {
                 let type_ = builder.convert_cx_type(&expr._type)?;
 
-                builder.insert_global_symbol(MIRGlobalValue {
+                builder.insert_global_symbol(BCGlobalValue {
                     name: name.clone(),
                     linkage: LinkageType::External,
-                    _type: MIRGlobalType::Variable {
+                    _type: BCGlobalType::Variable {
                         _type: type_,
                         initial_value: None,
                     },
@@ -373,7 +373,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
         TCExprKind::Return { value } => {
             if value.is_none() {
                 builder.add_return(None);
-                return Some(MIRValue::NULL);
+                return Some(BCValue::NULL);
             }
 
             let value = value.as_ref().unwrap().as_ref();
@@ -384,19 +384,19 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
                 builder.add_instruction(
                     MIRInstructionKind::Store {
-                        memory: MIRValue::ParameterRef(0),
+                        memory: BCValue::ParameterRef(0),
                         value: value_id.clone(),
                         type_: bc_ty,
                     },
                     MIRType::unit(),
                 );
 
-                builder.add_return(Some(MIRValue::ParameterRef(0)));
+                builder.add_return(Some(BCValue::ParameterRef(0)));
             } else {
                 builder.add_return(Some(value_id));
             }
 
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::Defer { operand } => {
@@ -408,7 +408,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.set_current_block(previous_block);
 
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::UnOp { operator, operand } => {
@@ -489,7 +489,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };
 
-                    let one = MIRValue::IntImmediate {
+                    let one = BCValue::IntImmediate {
                         val: *off as i64,
                         type_: MIRTypeKind::Signed { bytes }.into()
                     };
@@ -575,7 +575,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.pop_scope();
             builder.set_current_block(merge_block);
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::While {
@@ -624,7 +624,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.end_scope();
             builder.end_cond();
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::CSwitch {
@@ -652,7 +652,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.add_instruction(
                 MIRInstructionKind::JumpTable {
-                    value: condition_value.unwrap_or(MIRValue::NULL),
+                    value: condition_value.unwrap_or(BCValue::NULL),
                     targets: sorted_cases
                         .iter()
                         .enumerate()
@@ -700,7 +700,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             );
 
             builder.end_scope();
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::Match {
@@ -773,7 +773,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
             }
 
             builder.set_current_block(merge_block);
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::ConstructorMatchIs {
@@ -856,7 +856,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.end_scope();
             builder.end_cond();
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::Break => {
@@ -866,7 +866,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.add_instruction(MIRInstructionKind::Jump { target: merge }, MIRType::unit());
 
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::Continue => {
@@ -876,7 +876,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<M
 
             builder.add_instruction(MIRInstructionKind::Jump { target: cond }, MIRType::unit());
 
-            Some(MIRValue::NULL)
+            Some(BCValue::NULL)
         }
 
         TCExprKind::SizeOf { _type } => {
@@ -1024,7 +1024,7 @@ pub(crate) fn generate_binop(
     rhs: &TCExpr,
     return_type: MIRType,
     op: &CXBinOp,
-) -> Option<MIRValue> {
+) -> Option<BCValue> {
     match op {
         CXBinOp::LAnd | CXBinOp::LOr => {
             // Short circuit evaluation for logical operators
@@ -1104,11 +1104,11 @@ pub(crate) fn generate_binop(
 pub(crate) fn generate_algebraic_binop(
     builder: &mut MIRBuilder,
     cx_lhs_type: &CXType,
-    left_id: MIRValue,
-    right_id: MIRValue,
+    left_id: BCValue,
+    right_id: BCValue,
     return_type: MIRType,
     op: &CXBinOp,
-) -> Option<MIRValue> {
+) -> Option<BCValue> {
     match &cx_lhs_type.kind {
         CXTypeKind::Integer { signed: true, .. } => builder.add_instruction(
             MIRInstructionKind::IntegerBinOp {
@@ -1195,7 +1195,7 @@ pub(crate) fn implicit_return(
     }
 
     if prototype.name == "main" {
-        builder.add_return(Some(MIRValue::IntImmediate {
+        builder.add_return(Some(BCValue::IntImmediate {
             val: 0,
             type_: MIRTypeKind::Signed { bytes: 4 }.into(),
         }));
@@ -1223,7 +1223,7 @@ pub(crate) fn implicit_defer_return(
             None
         } else {
             // Phi node for the return value
-            Some(MIRValue::BlockResult {
+            Some(BCValue::BlockResult {
                 block_id: BlockID::DeferredBlock(0),
                 value_id: 0,
             })

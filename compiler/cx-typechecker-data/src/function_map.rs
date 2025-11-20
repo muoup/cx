@@ -4,9 +4,9 @@ use cx_parsing_data::data::{CXFunctionTemplate, ModuleResource};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::cx_types::{TCFunctionPrototype, CXType};
+use crate::cx_types::{CXFunctionPrototype, CXType};
 
-pub type CXFnMap = HashMap<CXFunctionIdentifier, TCFunctionPrototype>;
+pub type CXFnMap = HashMap<CXFunctionIdentifier, CXFunctionPrototype>;
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct CXFnData {
@@ -22,7 +22,7 @@ impl CXFnData {
         }
     }
 
-    pub fn insert_standard(&mut self, prototype: TCFunctionPrototype) {
+    pub fn insert_standard(&mut self, prototype: CXFunctionPrototype) {
         self.map.insert(prototype.name.clone(), prototype);
     }
 
@@ -34,11 +34,11 @@ impl CXFnData {
         self.templates.insert(name, template);
     }
     
-    pub fn iter(&self) -> impl Iterator<Item = (&CXFunctionIdentifier, &TCFunctionPrototype)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&CXFunctionIdentifier, &CXFunctionPrototype)> {
         self.map.iter()
     }
     
-    pub fn standard_fns(&self) -> impl Iterator<Item = &TCFunctionPrototype> {
+    pub fn standard_fns(&self) -> impl Iterator<Item = &CXFunctionPrototype> {
         self.map.values()
     }
     
@@ -46,7 +46,7 @@ impl CXFnData {
         self.map.contains_key(name)
     }
 
-    pub fn get(&self, name: &CXFunctionIdentifier) -> Option<&TCFunctionPrototype> {
+    pub fn get(&self, name: &CXFunctionIdentifier) -> Option<&CXFunctionPrototype> {
         self.map.get(name)
     }
 
@@ -137,7 +137,7 @@ impl CXFunctionKind {
         format!("{}{}", Self::template_prefix(return_type, params), name)
     }
     
-    pub fn standard_template_mangle(name: &str, prototype: &TCFunctionPrototype) -> String {
+    pub fn standard_template_mangle(name: &str, prototype: &CXFunctionPrototype) -> String {
         Self::template_mangle(
             name,
             &prototype.return_type,
@@ -180,7 +180,7 @@ impl CXFunctionIdentifier {
         }
     }
     
-    pub fn template_mangle(&mut self, prototype: &TCFunctionPrototype) {
+    pub fn template_mangle(&mut self, prototype: &CXFunctionPrototype) {
         self.template_mangle2(&prototype.return_type, prototype.params.iter().map(|p| &p._type));
     }
     
