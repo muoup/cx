@@ -39,10 +39,6 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
             mangled.push('_');
             mangled.push_str(&type_mangle(inner_type));
         }
-        CXTypeKind::VariableLengthArray { _type, .. } => {
-            mangled.push_str("V_a");
-            mangled.push_str(&type_mangle(_type));
-        }
         CXTypeKind::Function { prototype } => {
             mangled.push('F');
             mangled.push_str(&type_mangle(&prototype.return_type));
@@ -583,7 +579,6 @@ impl Display for CXTypeKind {
             CXTypeKind::PointerTo { inner_type, .. } => write!(f, "*{inner_type}"),
             CXTypeKind::MemoryReference(inner) => write!(f, "&{inner}"),
             CXTypeKind::Array { size, inner_type } => write!(f, "[{inner_type}; {size}]"),
-            CXTypeKind::VariableLengthArray { _type, .. } => write!(f, "[{_type}..]"),
             CXTypeKind::Opaque { name, .. } => write!(f, "opaque {name}"),
             CXTypeKind::Function { prototype } => write!(f, "fn {prototype}"),
         }

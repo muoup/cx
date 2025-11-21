@@ -11,7 +11,7 @@ use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{
     TCBaseMappings, TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
 };
-use cx_typechecker_data::mir::expression::{MIRInstruction, MIRValue};
+use cx_typechecker_data::mir::expression::{MIRBinOp, MIRInstruction, MIRUnOp, MIRValue};
 use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -112,7 +112,7 @@ pub fn typecheck_expr(
             } else if let Some(global) = global_expr(env, base_data, name.as_str()).ok() {
                 global
             } else {
-                log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
+                return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
             }
         }
 
@@ -268,7 +268,7 @@ pub fn typecheck_expr(
                 .map(|inner| inner.break_to.as_ref())
                 .flatten()
             else {
-                log_typecheck_error!(
+                return log_typecheck_error!(
                     env,
                     expr,
                     " 'break' used outside of a loop or switch context"
@@ -287,7 +287,7 @@ pub fn typecheck_expr(
                 .map(|inner| inner.continue_to.as_ref())
                 .flatten()
             else {
-                log_typecheck_error!(env, expr, " 'continue' used outside of a loop context");
+                return log_typecheck_error!(env, expr, " 'continue' used outside of a loop context");
             };
 
             env.builder.add_jump(continue_to.clone());
@@ -346,22 +346,116 @@ pub fn typecheck_expr(
         }
 
         CXExprKind::UnOp { operator, operand } => {
-            let mut operand_tc = typecheck_expr(env, base_data, operand)?;
-            let operand_type = operand_tc.get_type();
+            let operand_val = typecheck_expr(env, base_data, operand)?;
+            let operand_type = operand_val.get_type();
 
             match operator {
-                CXUnOp::PreIncrement(_) | CXUnOp::PostIncrement(_) => {
+                CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
                     let Some(inner) = operand_type.mem_ref_inner() else {
-                        log_typecheck_error!(
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Cannot apply pre-increment to a non-reference {}",
                             operand_type
                         );
                     };
-
+                    
+                    let load = env.builder.new_register();
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(
+                        MIRInstruction::MemoryRead {
+                            result: load.clone(),
+                            source: operand_val,
+                            _type: inner.clone(),
+                        }
+                    );
+                    
                     match &inner.kind {
-                        CXTypeKind::Integer { .. } | CXTypeKind::PointerTo { .. } => (),
+                        CXTypeKind::Integer { _type, signed, .. } => {
+                            env.builder.add_instruction(
+                                MIRInstruction::BinOp {
+                                    result: result.clone(),
+                                    op: MIRBinOp::ADD,
+                                    lhs: MIRValue::Register { 
+                                        register: load.clone(),
+                                        _type: inner.clone(),
+                                    },
+                                    rhs: MIRValue::IntLiteral {
+                                        value: *increment_amount as i64,
+                                        _type: _type.clone(),
+                                        signed: signed.clone(),
+                                    },
+                                }
+                            );
+                            
+                            env.builder.add_instruction(
+                                MIRInstruction::MemoryWrite {
+                                    target: operand_val,
+                                    value: MIRValue::Register {
+                                        register: result.clone(),
+                                        _type: inner.clone(),
+                                    },
+                                }
+                            );
+                            
+                            match operator {
+                                CXUnOp::PreIncrement(_) => MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+                                
+                                CXUnOp::PostIncrement(_) => MIRValue::Register {
+                                    register: load,
+                                    _type: inner.clone(),
+                                },
+                                
+                                _ => unreachable!(),
+                            }
+                        },
+                        
+                        CXTypeKind::PointerTo { inner_type, .. } => {
+                            let element_stride = inner_type.type_size();
+                            
+                            env.builder.add_instruction(
+                                MIRInstruction::BinOp {
+                                    result: result.clone(),
+                                    op: MIRBinOp::ADD,
+                                    lhs: MIRValue::Register { 
+                                        register: load.clone(),
+                                        _type: inner.clone(),
+                                    },
+                                    rhs: MIRValue::IntLiteral {
+                                        value: (*increment_amount as i64) * (element_stride as i64),
+                                        _type: CXIntegerType::from_bytes(8).unwrap(),
+                                        signed: true,
+                                    },
+                                }
+                            );
+                            
+                            env.builder.add_instruction(
+                                MIRInstruction::MemoryWrite {
+                                    target: operand_val,
+                                    value: MIRValue::Register {
+                                        register: result.clone(),
+                                        _type: inner.clone(),
+                                    },
+                                }
+                            );
+                            
+                            match operator {
+                                CXUnOp::PreIncrement(_) => MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+                                
+                                CXUnOp::PostIncrement(_) => MIRValue::Register {
+                                    register: load,
+                                    _type: inner.clone(),
+                                },
+                                
+                                _ => unreachable!(),
+                            }
+                        },
 
                         _ => log_typecheck_error!(
                             env,
@@ -370,85 +464,171 @@ pub fn typecheck_expr(
                             inner
                         ),
                     }
-                    
-                    
                 }
-
-                CXUnOp::LNot | CXUnOp::BNot | CXUnOp::Negative => {
-                    coerce_value(&mut operand_tc)?;
-
-                    if !operand_tc._type.is_integer() {
-                        implicit_cast(
-                            &mut operand_tc,
-                            &CXType::from(CXTypeKind::Integer {
-                                signed: true,
-                                bytes: 8,
-                            }),
-                        )?;
+                
+                CXUnOp::LNot => {
+                    if !operand_type.is_integer() {
+                        log_typecheck_error!(
+                            env,
+                            operand,
+                            " Logical NOT operator requires an integer type, found {}",
+                            operand_type
+                        );
                     }
-
-                    let return_type = match operator {
-                        CXUnOp::LNot => CXType::from(CXTypeKind::Bool),
-
-                        _ => operand_tc._type.clone(),
+                    
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(
+                        MIRInstruction::UnOp {
+                            result: result.clone(),
+                            op: MIRUnOp::LNOT,
+                            operand: operand_val,
+                        }
+                    );
+                    
+                    MIRValue::Register {
+                        register: result,
+                        _type: CXTypeKind::Bool.into()
+                    }
+                }
+                
+                CXUnOp::BNot => {
+                    let loaded_op_val = coerce_value(env, operand_val)?;
+                    let loaded_op_type = loaded_op_val.get_type();
+                    
+                    if !loaded_op_type.is_integer() {
+                        return log_typecheck_error!(
+                            env,
+                            operand,
+                            " Bitwise NOT operator requires an integer type, found {}",
+                            loaded_op_type
+                        );
+                    }
+                    
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(
+                        MIRInstruction::UnOp {
+                            result: result.clone(),
+                            op: MIRUnOp::BNOT,
+                            operand: loaded_op_val,
+                        }
+                    );
+                    
+                    MIRValue::Register {
+                        register: result,
+                        _type: loaded_op_type,
+                    }
+                }
+                
+                CXUnOp::Negative => {
+                    let mut loaded_op_val = coerce_value(env, operand_val)?;
+                    let loaded_op_type = loaded_op_val.get_type();
+                    
+                    let operator = match &loaded_op_type.kind {
+                        CXTypeKind::Integer { .. } => MIRUnOp::NEG,
+                        CXTypeKind::Float { .. } => MIRUnOp::FNEG,
+                        
+                        _ => return log_typecheck_error!(
+                            env,
+                            operand,
+                            " Negation operator requires an integer or float type, found {}",
+                            loaded_op_type
+                        ),
                     };
-
-                    TCExpr {
-                        _type: return_type,
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
-                        },
+                    
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(
+                        MIRInstruction::UnOp {
+                            result: result.clone(),
+                            op: operator,
+                            operand: loaded_op_val,
+                        }
+                    );
+                    
+                    MIRValue::Register {
+                        register: result,
+                        _type: loaded_op_type,
                     }
                 }
 
                 CXUnOp::AddressOf => {
-                    let Some(inner) = operand_tc._type.mem_ref_inner() else {
-                        log_typecheck_error!(
+                    let Some(inner) = operand_type.mem_ref_inner() else {
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Cannot take address of a non-reference type"
                         );
                     };
-
-                    TCExpr {
-                        _type: inner.clone().pointer_to(),
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
-                        },
+                    
+                    let register = env.builder.new_register();
+                    env.builder.add_instruction(
+                        MIRInstruction::Alias {
+                            result: register.clone(),
+                            value: operand_val,
+                        }
+                    );
+                    
+                    MIRValue::Register {
+                        register,
+                        _type: inner.pointer_to(),
                     }
                 }
 
                 CXUnOp::Dereference => {
-                    coerce_value(&mut operand_tc)?;
+                    // If the operand is a memory reference of a pointer type, we need to load the value first
+                    let loaded_operand = coerce_value(env, operand_val)?;
+                    let loaded_operand_type = loaded_operand.get_type();
 
-                    let Some(inner) = operand_tc._type.ptr_inner().cloned() else {
-                        log_typecheck_error!(
+                    let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Cannot dereference a non-pointer type {}",
-                            operand_tc._type
+                            loaded_operand_type
                         );
                     };
-
-                    coerce_value(&mut operand_tc)?;
-
-                    TCExpr {
-                        _type: inner.mem_ref_to(),
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
+                    
+                    // coerce_value(&mut operand_val)?;
+                    
+                    let result = env.builder.new_register();
+                    
+                    // There are a few things we don't want to actually load, like function pointers
+                    // i.e. calling (*func)() is semantically equivalent to just calling func()
+                    match &loaded_operand_type.kind {
+                        CXTypeKind::Function { .. } => {
+                            // Here, we simply create an alias rather than loading the value
+                            env.builder.add_instruction(
+                                MIRInstruction::Alias {
+                                    result: result.clone(),
+                                    value: loaded_operand,
+                                }
+                            );
                         },
+                        
+                        _ => {
+                            env.builder.add_instruction(
+                                MIRInstruction::MemoryRead {
+                                    result: result.clone(),
+                                    source: loaded_operand,
+                                    _type: inner.clone(),
+                                }
+                            );
+                        },
+                    }
+
+                    MIRValue::Register {
+                        register: result,
+                        _type: inner,
                     }
                 }
 
                 CXUnOp::ExplicitCast(to_type) => {
-                    coerce_value(&mut operand_tc)?;
                     let to_type = env.complete_type(base_data, to_type)?;
-                    explicit_cast(&mut operand_tc, &to_type)?;
-
-                    operand_tc
+                    let tc_expr = typecheck_expr(env, base_data, operand)?;
+                    
+                    let loaded_value = coerce_value(env, tc_expr)?;
+                    let loaded_type = loaded_value.get_type();
+                    
+                    explicit_cast(env, expr, loaded_value, &to_type)?
                 }
             }
         }

@@ -1,9 +1,9 @@
 use std::hash::{Hash, Hasher};
 
-use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
 use crate::format::type_mangle;
-use cx_parsing_data::data::CXTypeSpecifier;
+use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
 use cx_parsing_data::ast::VisibilityMode;
+use cx_parsing_data::data::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -11,7 +11,7 @@ use speedy::{Readable, Writable};
 pub struct CXType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
-    
+
     pub kind: CXTypeKind,
 }
 
@@ -68,7 +68,7 @@ impl Default for CXType {
         CXType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
-            
+
             kind: CXTypeKind::Unit,
         }
     }
@@ -81,16 +81,16 @@ pub enum CXTypeKind {
         signed: bool,
     },
     Float {
-        _type: CXFloatType
+        _type: CXFloatType,
     },
     Bool,
     Structured {
         name: Option<CXIdent>,
         base_identifier: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
-        
+
         move_semantics: bool,
-        copyable: bool
+        copyable: bool,
     },
     Union {
         name: Option<CXIdent>,
@@ -105,7 +105,6 @@ pub enum CXTypeKind {
     StrongPointer {
         inner_type: Box<CXType>,
         is_array: bool,
-        
         // move_semantics always true
     },
 
@@ -120,10 +119,6 @@ pub enum CXTypeKind {
     Array {
         size: usize,
         inner_type: Box<CXType>,
-    },
-    VariableLengthArray {
-        size: Box<TCExpr>,
-        _type: Box<CXType>,
     },
     Opaque {
         name: String,
@@ -140,13 +135,13 @@ pub enum CXIntegerType {
     I16,
     I32,
     I64,
-    I128
+    I128,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum CXFloatType {
     F32,
-    F64
+    F64,
 }
 
 impl CXIntegerType {
@@ -159,7 +154,7 @@ impl CXIntegerType {
             CXIntegerType::I128 => 16,
         }
     }
-    
+
     pub const fn from_bytes(bytes: u8) -> Option<Self> {
         match bytes {
             1 => Some(CXIntegerType::I8),
@@ -179,7 +174,7 @@ impl CXFloatType {
             CXFloatType::F64 => 8,
         }
     }
-    
+
     pub const fn from_bytes(bytes: u8) -> Option<Self> {
         match bytes {
             4 => Some(CXFloatType::F32),
@@ -194,7 +189,7 @@ impl CXType {
         CXType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
-            
+
             kind: CXTypeKind::Unit,
         }
     }
@@ -203,7 +198,7 @@ impl CXType {
         CXType {
             visibility: VisibilityMode::Private,
             specifiers,
-            
+
             kind: underlying_type,
         }
     }
@@ -248,7 +243,7 @@ impl CXType {
         CXType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
-            
+
             kind: CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
 
@@ -276,10 +271,7 @@ impl CXType {
     }
 
     pub fn is_array(&self) -> bool {
-        matches!(
-            self.kind,
-            CXTypeKind::Array { .. } | CXTypeKind::VariableLengthArray { .. }
-        )
+        matches!(self.kind, CXTypeKind::Array { .. })
     }
 
     pub fn is_structured(&self) -> bool {
@@ -315,21 +307,23 @@ impl CXType {
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, CXTypeKind::MemoryReference(_))
     }
-    
+
     pub fn was_template_instantiated(&self) -> bool {
         match &self.kind {
-            CXTypeKind::Structured { base_identifier, .. } => {
+            CXTypeKind::Structured {
+                base_identifier, ..
+            } => {
                 let Some(base_name) = base_identifier else {
                     return false;
                 };
-                
+
                 let Some(name) = self.get_name() else {
                     return false;
                 };
-                
+
                 base_name.as_str() != name
-            },
-            
+            }
+
             _ => false,
         }
     }
@@ -345,7 +339,7 @@ impl CXType {
             _ => None,
         }
     }
-    
+
     pub fn get_fn_ident(&self) -> Option<&CXFunctionIdentifier> {
         match &self.kind {
             CXTypeKind::Function { prototype } => Some(&prototype.name),
@@ -358,20 +352,22 @@ impl CXType {
             CXTypeKind::Structured {
                 base_identifier, ..
             } => base_identifier.as_ref(),
-            
+
             _ => None,
         }
     }
 
     pub fn set_name(&mut self, name: CXIdent) {
         match &mut self.kind {
-            CXTypeKind::Structured { name: n, base_identifier, .. } => {
+            CXTypeKind::Structured {
+                name: n,
+                base_identifier,
+                ..
+            } => {
                 *base_identifier = n.clone();
                 *n = Some(name)
-            },
-            CXTypeKind::Union { name: n, .. } => {
-                *n = Some(name)
-            },
+            }
+            CXTypeKind::Union { name: n, .. } => *n = Some(name),
             _ => {}
         }
     }
@@ -382,23 +378,55 @@ impl CXType {
             self.set_name(CXIdent::from(new_name));
         }
     }
-    
+
     pub fn has_move_semantics(&self) -> bool {
         match &self.kind {
             CXTypeKind::Structured { move_semantics, .. } => *move_semantics,
             CXTypeKind::StrongPointer { .. } => true,
-            CXTypeKind::TaggedUnion { variants, .. } => variants.iter().any(|(_, t)| t.has_move_semantics()),
-            
+            CXTypeKind::TaggedUnion { variants, .. } => {
+                variants.iter().any(|(_, t)| t.has_move_semantics())
+            }
+
             _ => false,
         }
     }
-    
+
     pub fn copyable(&self) -> bool {
         match &self.kind {
             CXTypeKind::Structured { copyable, .. } => *copyable,
             CXTypeKind::TaggedUnion { variants, .. } => variants.iter().all(|(_, t)| t.copyable()),
-            
+
             _ => true,
+        }
+    }
+
+    pub fn type_size(&self) -> usize {
+        match &self.kind {
+            CXTypeKind::Integer { _type, .. } => _type.bytes(),
+            CXTypeKind::Float { _type } => _type.bytes(),
+            CXTypeKind::Bool => 1,
+            CXTypeKind::Unit => 0,
+            CXTypeKind::Opaque { size, .. } => *size,
+            CXTypeKind::MemoryReference(_)
+            | CXTypeKind::PointerTo { .. }
+            | CXTypeKind::StrongPointer { .. } => std::mem::size_of::<usize>(),
+
+            CXTypeKind::Structured { fields, .. } => {
+                fields.iter().map(|(_, t)| t.type_size()).sum()
+            }
+            CXTypeKind::Union { variants, .. } => variants
+                .iter()
+                .map(|(_, t)| t.type_size())
+                .max()
+                .unwrap_or(0),
+
+            CXTypeKind::Array { size, inner_type } => size * inner_type.type_size(),
+
+            CXTypeKind::TaggedUnion { variants, .. } => {
+                variants.iter().map(|(_, t)| t.type_size()).max().unwrap_or(0) + 1
+            }
+            
+            CXTypeKind::Function { .. } => unreachable!()
         }
     }
 
@@ -521,21 +549,22 @@ impl CXFunctionPrototype {
     pub fn mangle_name(&self) -> String {
         self.name.mangle()
     }
-    
+
     pub fn apply_template_mangling(&mut self) {
-        self.name.template_mangle2(&self.return_type, self.params.iter().map(|p| &p._type));
-        
+        self.name
+            .template_mangle2(&self.return_type, self.params.iter().map(|p| &p._type));
+
         // match &self.name.kind {
-        //     CXFunctionKind::Standard { name } => {               
+        //     CXFunctionKind::Standard { name } => {
         //         let new_name = CXIdent::from(CXFunctionKind::standard_template_mangle(name.as_str(), &self));
-            
+
         //         let CXFunctionKind::Standard { name } = &mut self.name.kind else {
         //             unreachable!();
         //         };
-                
+
         //         *name = new_name;
         //     },
-            
+
         //     _ => {}
         // }
     }
