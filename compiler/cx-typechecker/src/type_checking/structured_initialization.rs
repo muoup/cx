@@ -1,5 +1,4 @@
-use cx_typechecker_data::ast::{TCExpr, TCExprKind};
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
+use cx_typechecker_data::{ast::{TCExpr, TCExprKind}, mir::types::{CXType, CXTypeKind}};
 use cx_util::{CXResult, log_error};
 
 use crate::type_checking::casting::implicit_cast;

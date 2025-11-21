@@ -1,7 +1,7 @@
 use super::ast::*;
 use crate::{
-    cx_types::{CXType, CXTypeKind, CXFunctionPrototype, TCParameter},
     function_map::{CXFunctionIdentifier, CXFunctionKind},
+    mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter},
 };
 use std::fmt::{Display, Formatter, Result};
 
@@ -84,14 +84,14 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
                 mangled.push_str(&type_mangle(&variant.1));
             }
         }
-        CXTypeKind::Integer { bytes, signed } => {
+        CXTypeKind::Integer { _type, signed } => {
             mangled.push('I');
-            mangled.push_str(&bytes.to_string());
+            mangled.push_str(&_type.bytes().to_string());
             mangled.push(if *signed { 's' } else { 'u' });
         }
-        CXTypeKind::Float { bytes } => {
+        CXTypeKind::Float { _type } => {
             mangled.push('F');
-            mangled.push_str(&bytes.to_string());
+            mangled.push_str(&_type.bytes().to_string());
         }
         CXTypeKind::Bool => {
             mangled.push('B');
@@ -270,13 +270,13 @@ impl<'a> Display for TCExprFormatter<'a> {
                     }
                     if let Some((ret_name, postcondition)) = &contract.postcondition {
                         self.indent(f)?;
-                        
+
                         if let Some(name) = ret_name {
                             writeln!(f, "  Post (ret: {}):", name)?;
                         } else {
                             writeln!(f, "  Post:")?;
                         }
-                        
+
                         write!(
                             f,
                             "    {}",
@@ -547,10 +547,19 @@ impl Display for CXType {
 impl Display for CXTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXTypeKind::Integer { bytes, signed } => {
-                write!(f, "{}{}", if *signed { "i" } else { "u" }, bytes * 8)
+            CXTypeKind::Integer { _type, signed } => {
+                let size = match _type {
+                    CXIntegerType::I8 => "1",
+                    CXIntegerType::I16 => "2",
+                    CXIntegerType::I32 => "4",
+                    CXIntegerType::I64 => "8",
+                    _ => "unknown",
+                };
+
+                write!(f, "{}{}", if *signed { "i" } else { "u" }, size)
             }
-            CXTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
+            CXTypeKind::Float { _type: CXFloatType::F32 } => write!(f, "f32"),
+            CXTypeKind::Float { _type: CXFloatType::F64 } => write!(f, "f64"),
             CXTypeKind::Bool => write!(f, "bool"),
             CXTypeKind::Structured { name, .. } => {
                 write!(

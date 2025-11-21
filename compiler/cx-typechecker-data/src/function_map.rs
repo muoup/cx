@@ -4,7 +4,7 @@ use cx_parsing_data::data::{CXFunctionTemplate, ModuleResource};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::cx_types::{CXFunctionPrototype, CXType};
+use crate::mir::types::{CXFunctionPrototype, CXType};
 
 pub type CXFnMap = HashMap<CXFunctionIdentifier, CXFunctionPrototype>;
 

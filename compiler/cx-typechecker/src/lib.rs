@@ -5,10 +5,11 @@ use cx_util::CXResult;
 
 mod log;
 
+pub(crate) mod builder;
+pub(crate) mod environment;
+
 pub mod type_checking;
 pub mod type_completion;
-
-pub mod environment;
 
 pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
     let ast = context

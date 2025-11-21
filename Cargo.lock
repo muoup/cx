@@ -309,24 +309,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-mir"
-version = "0.1.0"
-dependencies = [
- "cx-mir-data",
- "cx-parsing-data",
- "cx-typechecker-data",
- "cx-util",
-]
-
-[[package]]
-name = "cx-mir-data"
-version = "0.1.0"
-dependencies = [
- "cx-typechecker-data",
- "cx-util",
-]
-
-[[package]]
 name = "cx-parsing"
 version = "0.0.0"
 dependencies = [

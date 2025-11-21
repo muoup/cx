@@ -1,18 +1,18 @@
 use cx_parsing_data::{
-    ast::{CXAST, CXFunctionStmt},
+    ast::{CXAST, CXExpr, CXFunctionStmt},
     data::NaiveFnKind,
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::{
-    ast::{TCBaseMappings, TCFunctionDef},
-    cx_types::CXTemplateInput,
+    ast::TCBaseMappings,
     function_map::CXFunctionKind,
+    mir::types::{CXFunctionPrototype, CXTemplateInput},
 };
 use cx_util::CXResult;
 
 use crate::{
     environment::TCEnvironment,
-    type_checking::typechecker::{global_expr, in_method_env},
+    type_checking::typechecker::{global_expr, typecheck_expr},
     type_completion::{
         complete_fn_prototype,
         templates::{add_templated_types, restore_template_overwrites},
@@ -25,17 +25,28 @@ pub(crate) mod move_semantics;
 pub(crate) mod structured_initialization;
 pub(crate) mod typechecker;
 
+fn generate_function(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+    prototype: CXFunctionPrototype,
+    body: &CXExpr,
+) -> CXResult<()> {
+    env.push_scope(None, None);
+    env.builder.start_function(prototype);
+
+    typecheck_expr(env, base_data, body)?;
+
+    env.builder.finish_function();
+    env.pop_scope();
+    Ok(())
+}
+
 pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAST) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
                 let prototype = env.complete_prototype(base_data, None, prototype)?;
-                let body = in_method_env(env, base_data, &prototype, body)?;
-
-                env.declared_functions.push(TCFunctionDef {
-                    prototype: prototype.clone(),
-                    body: Box::new(body),
-                })
+                generate_function(env, base_data, prototype.clone(), body)?;
             }
 
             CXFunctionStmt::DestructorDefinition { _type, body } => {
@@ -52,11 +63,7 @@ pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAS
                     unreachable!("Destructor prototype should not be missing: {}", _type);
                 };
 
-                let body = in_method_env(env, base_data, &prototype, body)?;
-                env.declared_functions.push(TCFunctionDef {
-                    prototype,
-                    body: Box::new(body),
-                })
+                generate_function(env, base_data, prototype.clone(), body)?;
             }
 
             _ => {}
@@ -99,11 +106,7 @@ pub fn realize_fn_implementation(
     prototype.apply_template_mangling();
 
     env.in_external_templated_function = true;
-    let tc_body = in_method_env(env, base_data.as_ref(), &prototype, &body)?;
-    env.declared_functions.push(TCFunctionDef {
-        prototype,
-        body: Box::new(tc_body.clone()),
-    });
+    generate_function(env, base_data.as_ref(), prototype.clone(), body)?;
     env.in_external_templated_function = false;
 
     restore_template_overwrites(env, overwrites);
@@ -121,7 +124,10 @@ pub fn complete_base_globals<'a>(
     Ok(())
 }
 
-pub fn complete_base_functions(env: &mut TCEnvironment, base_data: &TCBaseMappings) -> CXResult<()> {
+pub fn complete_base_functions(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+) -> CXResult<()> {
     for (_, cx_fn) in base_data.fn_data.standard_iter() {
         complete_fn_prototype(
             env,

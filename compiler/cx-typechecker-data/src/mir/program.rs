@@ -1,7 +1,7 @@
-use cx_typechecker_data::cx_types::CXFunctionPrototype;
 use cx_util::identifier::CXIdent;
 
-use crate::expression::MIRInstruction;
+use crate::mir::{expression::MIRInstruction, types::CXFunctionPrototype};
+
 
 pub struct MIRUnit {
     pub prototypes: Vec<CXFunctionPrototype>,

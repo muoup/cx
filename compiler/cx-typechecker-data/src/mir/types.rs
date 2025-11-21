@@ -77,11 +77,11 @@ impl Default for CXType {
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum CXTypeKind {
     Integer {
-        bytes: u8,
+        _type: CXIntegerType,
         signed: bool,
     },
     Float {
-        bytes: u8,
+        _type: CXFloatType
     },
     Bool,
     Structured {
@@ -132,6 +132,61 @@ pub enum CXTypeKind {
     Function {
         prototype: Box<CXFunctionPrototype>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
+pub enum CXIntegerType {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
+pub enum CXFloatType {
+    F32,
+    F64
+}
+
+impl CXIntegerType {
+    pub const fn bytes(&self) -> usize {
+        match self {
+            CXIntegerType::I8 => 1,
+            CXIntegerType::I16 => 2,
+            CXIntegerType::I32 => 4,
+            CXIntegerType::I64 => 8,
+            CXIntegerType::I128 => 16,
+        }
+    }
+    
+    pub const fn from_bytes(bytes: u8) -> Option<Self> {
+        match bytes {
+            1 => Some(CXIntegerType::I8),
+            2 => Some(CXIntegerType::I16),
+            4 => Some(CXIntegerType::I32),
+            8 => Some(CXIntegerType::I64),
+            16 => Some(CXIntegerType::I128),
+            _ => None,
+        }
+    }
+}
+
+impl CXFloatType {
+    pub const fn bytes(&self) -> usize {
+        match self {
+            CXFloatType::F32 => 4,
+            CXFloatType::F64 => 8,
+        }
+    }
+    
+    pub const fn from_bytes(bytes: u8) -> Option<Self> {
+        match bytes {
+            4 => Some(CXFloatType::F32),
+            8 => Some(CXFloatType::F64),
+            _ => None,
+        }
+    }
 }
 
 impl CXType {
@@ -443,17 +498,17 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
 
         (
             CXTypeKind::Integer {
-                bytes: t1_bytes,
+                _type: t1_type,
                 signed: t1_signed,
             },
             CXTypeKind::Integer {
-                bytes: t2_bytes,
+                _type: t2_type,
                 signed: t2_signed,
             },
-        ) => *t1_bytes == *t2_bytes && *t1_signed == *t2_signed,
+        ) => *t1_type == *t2_type && *t1_signed == *t2_signed,
 
-        (CXTypeKind::Float { bytes: t1_bytes }, CXTypeKind::Float { bytes: t2_bytes }) => {
-            *t1_bytes == *t2_bytes
+        (CXTypeKind::Float { _type: t1_type }, CXTypeKind::Float { _type: t2_type }) => {
+            *t1_type == *t2_type
         }
 
         (CXTypeKind::Bool, CXTypeKind::Bool) | (CXTypeKind::Unit, CXTypeKind::Unit) => true,

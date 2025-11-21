@@ -6,8 +6,8 @@ use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr, TCExprKind};
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
 use cx_typechecker_data::function_map::CXFunctionKind;
+use cx_typechecker_data::mir::types::{CXType, CXTypeKind, same_type};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 

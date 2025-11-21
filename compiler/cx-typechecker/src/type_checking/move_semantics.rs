@@ -1,5 +1,5 @@
 use crate::environment::TCEnvironment;
-use cx_typechecker_data::{ast::TCBaseMappings, cx_types::{CXType, CXTypeKind}};
+use cx_typechecker_data::{ast::TCBaseMappings, mir::types::{CXType, CXTypeKind}};
 
 pub(crate) fn acknowledge_declared_type(
     env: &mut TCEnvironment,

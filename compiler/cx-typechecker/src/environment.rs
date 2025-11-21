@@ -2,15 +2,19 @@ use cx_lexer_data::token::Token;
 use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType, NaiveFnIdent, NaiveFnKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
-use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::CXTypeMap;
-use cx_typechecker_data::ast::{TCBaseMappings, TCFunctionDef, TCGlobalVariable};
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::ast::{TCBaseMappings, TCGlobalVariable};
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
-use cx_util::{CXError, CXResult};
+use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
+use cx_typechecker_data::mir::expression::MIRRegister;
+use cx_typechecker_data::mir::program::MIRBasicBlock;
+use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
+use cx_util::{CXError, CXResult};
 use std::collections::{HashMap, HashSet};
 
+use crate::builder::MIRBuilder;
 use crate::type_completion::templates::instantiate_function_template;
 use crate::type_completion::{complete_fn_prototype, complete_type};
 
@@ -18,6 +22,11 @@ pub struct TCTemplateRequest {
     pub module_origin: Option<String>,
     pub name: NaiveFnKind,
     pub input: CXTemplateInput,
+}
+
+pub struct Scope {
+    pub break_to: Option<CXIdent>,
+    pub continue_to: Option<CXIdent>,
 }
 
 pub struct TCEnvironment<'a> {
@@ -30,14 +39,15 @@ pub struct TCEnvironment<'a> {
     pub realized_fns: CXFnMap,
     pub realized_globals: HashMap<String, TCGlobalVariable>,
 
+    pub(crate) builder: MIRBuilder,
+
     pub requests: Vec<TCTemplateRequest>,
     pub deconstructors: HashSet<CXType>,
 
     pub current_function: Option<CXFunctionPrototype>,
-    pub symbol_table: ScopedMap<CXType>,
+    pub symbol_table: ScopedMap<(MIRRegister, CXType)>,
+    pub scope_stack: Vec<Scope>,
 
-    pub declared_functions: Vec<TCFunctionDef>,
-    
     pub in_external_templated_function: bool,
 }
 
@@ -51,12 +61,13 @@ impl TCEnvironment<'_> {
             .iter()
             .map(|(name, ty)| (name.to_string(), ty.clone().into()))
             .collect::<HashMap<_, _>>();
-        
+
         TCEnvironment {
             tokens,
             compilation_unit,
 
             module_data,
+            builder: MIRBuilder::new(),
 
             realized_types: intrinsic_types,
             realized_fns: HashMap::new(),
@@ -64,25 +75,30 @@ impl TCEnvironment<'_> {
 
             current_function: None,
 
+            scope_stack: Vec::new(),
             requests: Vec::new(),
             deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
-            declared_functions: Vec::new(),
-            
+
             in_external_templated_function: false,
         }
     }
 
-    pub fn push_scope(&mut self) {
+    pub fn push_scope(&mut self, continue_to: Option<CXIdent>, break_to: Option<CXIdent>) {
         self.symbol_table.push_scope();
+        self.scope_stack.push(Scope {
+            break_to,
+            continue_to,
+        });
     }
-
+    
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
+        self.scope_stack.pop();
     }
 
-    pub fn insert_symbol(&mut self, name: String, ty: CXType) {
-        self.symbol_table.insert(name, ty);
+    pub fn insert_symbol(&mut self, name: String, value: MIRRegister, ty: CXType) {
+        self.symbol_table.insert(name, (value, ty));
     }
 
     pub fn add_type(&mut self, name: String, ty: CXType) {
@@ -90,18 +106,32 @@ impl TCEnvironment<'_> {
     }
 
     pub fn symbol_type(&self, name: &str) -> Option<&CXType> {
+        self.symbol_table.get(name).and_then(|(_, ty)| Some(ty))
+    }
+
+    pub fn symbol_register(&self, name: &str) -> Option<&MIRRegister> {
+        self.symbol_table.get(name).and_then(|(reg, _)| Some(reg))
+    }
+    
+    pub fn symbol_data(&self, name: &str) -> Option<&(MIRRegister, CXType)> {
         self.symbol_table.get(name)
     }
 
-    pub fn get_func(&mut self, base_data: &TCBaseMappings, name: &NaiveFnIdent) -> CXResult<CXFunctionPrototype> {
+    pub fn get_func(
+        &mut self,
+        base_data: &TCBaseMappings,
+        name: &NaiveFnIdent,
+    ) -> CXResult<CXFunctionPrototype> {
         let Some(base_fn) = base_data.fn_data.get_standard(name) else {
-            return CXError::create_result(format!(
-                "Function not found: {:?}",
-                name
-            ));
+            return CXError::create_result(format!("Function not found: {:?}", name));
         };
 
-        complete_fn_prototype(self, base_data, base_fn.external_module.as_ref(), &base_fn.resource)
+        complete_fn_prototype(
+            self,
+            base_data,
+            base_fn.external_module.as_ref(),
+            &base_fn.resource,
+        )
     }
 
     pub fn get_func_templated(
@@ -119,15 +149,12 @@ impl TCEnvironment<'_> {
 
     pub fn get_type(&mut self, base_data: &TCBaseMappings, name: &str) -> CXResult<CXType> {
         let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
-            return CXError::create_result(format!(
-                "Type not found: {}",
-                name
-            ));
+            return CXError::create_result(format!("Type not found: {}", name));
         };
-        
+
         complete_type(self, base_data, _ty.external_module.as_ref(), &_ty.resource)
     }
-    
+
     pub fn get_realized_type(&self, name: &str) -> Option<CXType> {
         self.realized_types.get(name).cloned()
     }
@@ -143,10 +170,14 @@ impl TCEnvironment<'_> {
     }
 
     pub fn current_function(&self) -> &CXFunctionPrototype {
-        self.current_function.as_ref().unwrap()
+        self.builder.current_prototype()
     }
 
-    pub fn complete_type(&mut self, base_data: &TCBaseMappings, _type: &CXNaiveType) -> CXResult<CXType> {
+    pub fn complete_type(
+        &mut self,
+        base_data: &TCBaseMappings,
+        _type: &CXNaiveType,
+    ) -> CXResult<CXType> {
         complete_type(self, base_data, None, _type)
     }
 
@@ -170,8 +201,30 @@ impl TCEnvironment<'_> {
         None
     }
 
-    pub fn extend(&mut self, other: TCEnvironment) {
-        self.requests.extend(other.requests);
-        self.deconstructors.extend(other.deconstructors);
+    pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
+        where F: FnOnce(&mut Self) -> CXResult<T> {
+            
+        if self.builder.in_defer() {
+            return CXError::create_result("Cannot nest defer blocks");
+        }
+      
+        let Some(func_ctx) = &mut self.builder.function_context else {
+            unreachable!()
+        };
+        
+        if func_ctx.defer_blocks.is_empty() {
+            func_ctx.defer_blocks.push(MIRBasicBlock {
+                id: CXIdent::from("defer_entry"),
+                expressions: Vec::new(),
+            });
+        }
+        
+        let previous_pointer = func_ctx.current_block.clone();
+        
+        self.builder.set_block(CXIdent::from("defer_entry"));
+        let result = f(self);
+        self.builder.set_pointer(previous_pointer);
+     
+        result
     }
 }

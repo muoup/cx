@@ -1,14 +1,33 @@
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXType};
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
+
+use crate::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
 
 pub type MIRRegister = CXIdent;
 
 #[derive(Clone, Debug)]
 pub enum MIRValue {
-    IntLiteral { value: i64, _type: CXType },
-    FloatLiteral { value: f64, _type: CXType },
-    FunctionReference { prototype: CXFunctionPrototype },
-    Register(MIRRegister),
+    IntLiteral {
+        value: i64,
+        signed: bool,
+        _type: CXIntegerType,
+    },
+    FloatLiteral {
+        value: FloatWrapper,
+        _type: CXFloatType,
+    },
+    FunctionReference {
+        prototype: CXFunctionPrototype,
+    },
+    GlobalValue {
+        name: CXIdent,
+        _type: CXType,
+    },
+    Register {
+        register: MIRRegister,
+        _type: CXType,
+    },
+
+    NULL,
 }
 
 #[derive(Clone, Debug)]
@@ -62,8 +81,8 @@ pub enum MIRInstruction {
     Loop {
         condition_precheck: bool,
         condition: MIRValue,
-        loop_id: CXIdent,
         body: CXIdent,
+        merge: CXIdent,
     },
 
     LoopContinue {
@@ -102,9 +121,8 @@ pub enum MIRInstruction {
         operand: MIRValue,
         cast_type: MIRCoercion,
     },
-    
+
     // ---- Verification Nodes ----
-    
     Assert {
         value: MIRValue,
         message: String,
@@ -121,18 +139,39 @@ pub enum MIRInstruction {
 
 #[derive(Clone, Debug)]
 pub enum MIRBinOp {
-    ADD, SUB, MUL, DIV,
-    IMUL, IDIV,
-       
-    FADD, FSUB, FMUL, FDIV,
- 
-    AND, OR, XOR, SHL, SHR,
-    
-    EQ, NEQ, 
-    
-    LT, LE, GT, GE,
-    ILT, ILE, IGT, IGE,
-    FLT, FLE, FGT, FGE,   
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    IMUL,
+    IDIV,
+
+    FADD,
+    FSUB,
+    FMUL,
+    FDIV,
+
+    AND,
+    OR,
+    XOR,
+    SHL,
+    SHR,
+
+    EQ,
+    NEQ,
+
+    LT,
+    LE,
+    GT,
+    GE,
+    ILT,
+    ILE,
+    IGT,
+    IGE,
+    FLT,
+    FLE,
+    FGT,
+    FGE,
 }
 
 #[derive(Clone, Debug)]
@@ -141,7 +180,7 @@ pub enum MIRUnOp {
     INEG,
     FNEG,
     BNOT,
-    LNOT
+    LNOT,
 }
 
 #[derive(Clone, Debug)]
@@ -150,5 +189,27 @@ pub enum MIRCoercion {
     FloatingPoint,
     IntToFloat,
     FloatToInt,
-    ReinterpretBits
+    ReinterpretBits,
+    ArrayToPointer,
+}
+
+impl MIRValue {
+    pub fn get_type(&self) -> CXType {
+        match self {
+            MIRValue::IntLiteral { _type, signed, .. } => CXType::from(CXTypeKind::Integer {
+                _type: _type.clone(),
+                signed: *signed,
+            }),
+            MIRValue::FloatLiteral { _type, .. } => CXType::from(CXTypeKind::Float {
+                _type: _type.clone(),
+            }),
+            MIRValue::FunctionReference { prototype } => CXType::from(CXTypeKind::Function {
+                prototype: Box::new(prototype.clone()),
+            })
+            .pointer_to(),
+            MIRValue::GlobalValue { _type, .. } |
+            MIRValue::Register { _type, .. } => _type.clone(),
+            MIRValue::NULL => CXType::unit(),
+        }
+    }
 }

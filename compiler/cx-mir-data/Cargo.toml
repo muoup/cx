@@ -1,8 +1,0 @@
-[package]
-name = "cx-mir-data"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-cx-util = { path = "../cx-util" }
-cx-typechecker-data = { path = "../cx-typechecker-data" }

@@ -1,15 +1,16 @@
 pub mod ast;
-pub mod cx_types;
 pub mod intrinsic_types;
 pub mod function_map;
 
+pub mod mir;
+
 mod format;
 
-use crate::cx_types::CXTemplateInput;
 use cx_parsing_data::data::{CXTypeTemplate, ModuleResource};
-use cx_types::CXType;
 use speedy::{Readable, Writable};
 use std::collections::{HashMap, HashSet};
+
+use crate::mir::types::{CXTemplateInput, CXType};
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct TemplateCache<Template> {

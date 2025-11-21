@@ -1,14 +1,14 @@
 use crate::environment::TCEnvironment;
 use crate::log_typecheck_error;
-use crate::type_checking::casting::try_implicit_cast;
+use crate::type_checking::casting::implicit_cast;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::complete_type;
 use crate::type_completion::types::_complete_type;
 use cx_parsing_data::ast::CXExpr;
 use cx_parsing_data::data::{CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr};
-use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, CXFunctionPrototype, TCParameter};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
+use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, TCParameter};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
@@ -102,7 +102,7 @@ fn _complete_fn_contract_clause(
     clause: &CXExpr,
 ) -> CXResult<TCExpr> {
     let mut checked_clause = typecheck_expr(env, base_data, clause)?;
-    let cast_result = try_implicit_cast(&mut checked_clause, &CXTypeKind::Bool.into());
+    let cast_result = implicit_cast(&mut checked_clause, &CXTypeKind::Bool.into())?;
     
     if cast_result.is_err() {
         log_typecheck_error!(

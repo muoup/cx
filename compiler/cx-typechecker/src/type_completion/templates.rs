@@ -3,7 +3,7 @@ use crate::type_completion::complete_fn_prototype;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::TCBaseMappings;
-use cx_typechecker_data::cx_types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 

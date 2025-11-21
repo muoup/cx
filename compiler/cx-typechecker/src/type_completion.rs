@@ -1,7 +1,6 @@
 use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType};
 use cx_typechecker_data::{
-    ast::TCBaseMappings,
-    cx_types::{CXFunctionPrototype, CXType},
+    ast::TCBaseMappings, mir::types::{CXFunctionPrototype, CXType},
 };
 use cx_util::CXResult;
 

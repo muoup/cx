@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::ast::TCBaseMappings;
-use cx_typechecker_data::cx_types::{CXTemplateInput, CXType, CXTypeKind};
+use cx_typechecker_data::mir::types::{CXTemplateInput, CXType, CXTypeKind};
 use cx_util::{CXResult, log_error};
 
 use crate::environment::TCEnvironment;

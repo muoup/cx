@@ -1,6 +1,6 @@
-use crate::cx_types::{CXFunctionPrototype, CXType};
 use crate::function_map::CXFnMap;
 use crate::CXTypeMap;
+use crate::mir::types::{CXFunctionPrototype, CXType};
 use cx_parsing_data::ast::{CXBinOp, CXCastType, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CXLinkageMode, ModuleResource};
 use cx_parsing_data::naive_map::{CXNaiveFnMap, CXNaiveTypeMap};
