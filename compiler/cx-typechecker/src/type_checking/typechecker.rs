@@ -287,7 +287,11 @@ pub fn typecheck_expr(
                 .map(|inner| inner.continue_to.as_ref())
                 .flatten()
             else {
-                return log_typecheck_error!(env, expr, " 'continue' used outside of a loop context");
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " 'continue' used outside of a loop context"
+                );
             };
 
             env.builder.add_jump(continue_to.clone());
@@ -350,7 +354,8 @@ pub fn typecheck_expr(
             let operand_type = operand_val.get_type();
 
             match operator {
-                CXUnOp::PreIncrement(increment_amount) | CXUnOp::PostIncrement(increment_amount) => {
+                CXUnOp::PreIncrement(increment_amount)
+                | CXUnOp::PostIncrement(increment_amount) => {
                     let Some(inner) = operand_type.mem_ref_inner() else {
                         return log_typecheck_error!(
                             env,
@@ -359,103 +364,93 @@ pub fn typecheck_expr(
                             operand_type
                         );
                     };
-                    
+
                     let load = env.builder.new_register();
                     let result = env.builder.new_register();
-                    env.builder.add_instruction(
-                        MIRInstruction::MemoryRead {
-                            result: load.clone(),
-                            source: operand_val,
-                            _type: inner.clone(),
-                        }
-                    );
-                    
+                    env.builder.add_instruction(MIRInstruction::MemoryRead {
+                        result: load.clone(),
+                        source: operand_val,
+                        _type: inner.clone(),
+                    });
+
                     match &inner.kind {
                         CXTypeKind::Integer { _type, signed, .. } => {
-                            env.builder.add_instruction(
-                                MIRInstruction::BinOp {
-                                    result: result.clone(),
-                                    op: MIRBinOp::ADD,
-                                    lhs: MIRValue::Register { 
-                                        register: load.clone(),
-                                        _type: inner.clone(),
-                                    },
-                                    rhs: MIRValue::IntLiteral {
-                                        value: *increment_amount as i64,
-                                        _type: _type.clone(),
-                                        signed: signed.clone(),
-                                    },
-                                }
-                            );
-                            
-                            env.builder.add_instruction(
-                                MIRInstruction::MemoryWrite {
-                                    target: operand_val,
-                                    value: MIRValue::Register {
-                                        register: result.clone(),
-                                        _type: inner.clone(),
-                                    },
-                                }
-                            );
-                            
+                            env.builder.add_instruction(MIRInstruction::BinOp {
+                                result: result.clone(),
+                                op: MIRBinOp::ADD,
+                                lhs: MIRValue::Register {
+                                    register: load.clone(),
+                                    _type: inner.clone(),
+                                },
+                                rhs: MIRValue::IntLiteral {
+                                    value: *increment_amount as i64,
+                                    _type: _type.clone(),
+                                    signed: signed.clone(),
+                                },
+                            });
+
+                            env.builder.add_instruction(MIRInstruction::MemoryWrite {
+                                target: operand_val,
+                                value: MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+                            });
+
                             match operator {
                                 CXUnOp::PreIncrement(_) => MIRValue::Register {
                                     register: result.clone(),
                                     _type: inner.clone(),
                                 },
-                                
+
                                 CXUnOp::PostIncrement(_) => MIRValue::Register {
                                     register: load,
                                     _type: inner.clone(),
                                 },
-                                
+
                                 _ => unreachable!(),
                             }
-                        },
-                        
+                        }
+
                         CXTypeKind::PointerTo { inner_type, .. } => {
                             let element_stride = inner_type.type_size();
-                            
-                            env.builder.add_instruction(
-                                MIRInstruction::BinOp {
-                                    result: result.clone(),
-                                    op: MIRBinOp::ADD,
-                                    lhs: MIRValue::Register { 
-                                        register: load.clone(),
-                                        _type: inner.clone(),
-                                    },
-                                    rhs: MIRValue::IntLiteral {
-                                        value: (*increment_amount as i64) * (element_stride as i64),
-                                        _type: CXIntegerType::from_bytes(8).unwrap(),
-                                        signed: true,
-                                    },
-                                }
-                            );
-                            
-                            env.builder.add_instruction(
-                                MIRInstruction::MemoryWrite {
-                                    target: operand_val,
-                                    value: MIRValue::Register {
-                                        register: result.clone(),
-                                        _type: inner.clone(),
-                                    },
-                                }
-                            );
-                            
+
+                            env.builder.add_instruction(MIRInstruction::BinOp {
+                                result: result.clone(),
+                                op: MIRBinOp::ADD,
+                                lhs: MIRValue::Register {
+                                    register: load.clone(),
+                                    _type: inner.clone(),
+                                },
+                                rhs: MIRValue::IntLiteral {
+                                    value: (*increment_amount as i64) * (element_stride as i64),
+                                    _type: CXIntegerType::from_bytes(8).unwrap(),
+                                    signed: true,
+                                },
+                            });
+
+                            env.builder.add_instruction(MIRInstruction::MemoryWrite {
+                                target: operand_val,
+                                value: MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+                            });
+
                             match operator {
                                 CXUnOp::PreIncrement(_) => MIRValue::Register {
                                     register: result.clone(),
                                     _type: inner.clone(),
                                 },
-                                
+
                                 CXUnOp::PostIncrement(_) => MIRValue::Register {
                                     register: load,
                                     _type: inner.clone(),
                                 },
-                                
+
                                 _ => unreachable!(),
                             }
-                        },
+                        }
 
                         _ => log_typecheck_error!(
                             env,
@@ -465,7 +460,7 @@ pub fn typecheck_expr(
                         ),
                     }
                 }
-                
+
                 CXUnOp::LNot => {
                     if !operand_type.is_integer() {
                         log_typecheck_error!(
@@ -475,26 +470,24 @@ pub fn typecheck_expr(
                             operand_type
                         );
                     }
-                    
+
                     let result = env.builder.new_register();
-                    env.builder.add_instruction(
-                        MIRInstruction::UnOp {
-                            result: result.clone(),
-                            op: MIRUnOp::LNOT,
-                            operand: operand_val,
-                        }
-                    );
-                    
+                    env.builder.add_instruction(MIRInstruction::UnOp {
+                        result: result.clone(),
+                        op: MIRUnOp::LNOT,
+                        operand: operand_val,
+                    });
+
                     MIRValue::Register {
                         register: result,
-                        _type: CXTypeKind::Bool.into()
+                        _type: CXTypeKind::Bool.into(),
                     }
                 }
-                
+
                 CXUnOp::BNot => {
                     let loaded_op_val = coerce_value(env, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
-                    
+
                     if !loaded_op_type.is_integer() {
                         return log_typecheck_error!(
                             env,
@@ -503,47 +496,45 @@ pub fn typecheck_expr(
                             loaded_op_type
                         );
                     }
-                    
+
                     let result = env.builder.new_register();
-                    env.builder.add_instruction(
-                        MIRInstruction::UnOp {
-                            result: result.clone(),
-                            op: MIRUnOp::BNOT,
-                            operand: loaded_op_val,
-                        }
-                    );
-                    
+                    env.builder.add_instruction(MIRInstruction::UnOp {
+                        result: result.clone(),
+                        op: MIRUnOp::BNOT,
+                        operand: loaded_op_val,
+                    });
+
                     MIRValue::Register {
                         register: result,
                         _type: loaded_op_type,
                     }
                 }
-                
+
                 CXUnOp::Negative => {
                     let mut loaded_op_val = coerce_value(env, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
-                    
+
                     let operator = match &loaded_op_type.kind {
                         CXTypeKind::Integer { .. } => MIRUnOp::NEG,
                         CXTypeKind::Float { .. } => MIRUnOp::FNEG,
-                        
-                        _ => return log_typecheck_error!(
-                            env,
-                            operand,
-                            " Negation operator requires an integer or float type, found {}",
-                            loaded_op_type
-                        ),
-                    };
-                    
-                    let result = env.builder.new_register();
-                    env.builder.add_instruction(
-                        MIRInstruction::UnOp {
-                            result: result.clone(),
-                            op: operator,
-                            operand: loaded_op_val,
+
+                        _ => {
+                            return log_typecheck_error!(
+                                env,
+                                operand,
+                                " Negation operator requires an integer or float type, found {}",
+                                loaded_op_type
+                            );
                         }
-                    );
-                    
+                    };
+
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::UnOp {
+                        result: result.clone(),
+                        op: operator,
+                        operand: loaded_op_val,
+                    });
+
                     MIRValue::Register {
                         register: result,
                         _type: loaded_op_type,
@@ -558,15 +549,13 @@ pub fn typecheck_expr(
                             " Cannot take address of a non-reference type"
                         );
                     };
-                    
+
                     let register = env.builder.new_register();
-                    env.builder.add_instruction(
-                        MIRInstruction::Alias {
-                            result: register.clone(),
-                            value: operand_val,
-                        }
-                    );
-                    
+                    env.builder.add_instruction(MIRInstruction::Alias {
+                        result: register.clone(),
+                        value: operand_val,
+                    });
+
                     MIRValue::Register {
                         register,
                         _type: inner.pointer_to(),
@@ -586,33 +575,29 @@ pub fn typecheck_expr(
                             loaded_operand_type
                         );
                     };
-                    
+
                     // coerce_value(&mut operand_val)?;
-                    
+
                     let result = env.builder.new_register();
-                    
+
                     // There are a few things we don't want to actually load, like function pointers
                     // i.e. calling (*func)() is semantically equivalent to just calling func()
                     match &loaded_operand_type.kind {
                         CXTypeKind::Function { .. } => {
                             // Here, we simply create an alias rather than loading the value
-                            env.builder.add_instruction(
-                                MIRInstruction::Alias {
-                                    result: result.clone(),
-                                    value: loaded_operand,
-                                }
-                            );
-                        },
-                        
+                            env.builder.add_instruction(MIRInstruction::Alias {
+                                result: result.clone(),
+                                value: loaded_operand,
+                            });
+                        }
+
                         _ => {
-                            env.builder.add_instruction(
-                                MIRInstruction::MemoryRead {
-                                    result: result.clone(),
-                                    source: loaded_operand,
-                                    _type: inner.clone(),
-                                }
-                            );
-                        },
+                            env.builder.add_instruction(MIRInstruction::MemoryRead {
+                                result: result.clone(),
+                                source: loaded_operand,
+                                _type: inner.clone(),
+                            });
+                        }
                     }
 
                     MIRValue::Register {
@@ -624,10 +609,10 @@ pub fn typecheck_expr(
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, to_type)?;
                     let tc_expr = typecheck_expr(env, base_data, operand)?;
-                    
+
                     let loaded_value = coerce_value(env, tc_expr)?;
                     let loaded_type = loaded_value.get_type();
-                    
+
                     explicit_cast(env, expr, loaded_value, &to_type)?
                 }
             }
@@ -638,34 +623,39 @@ pub fn typecheck_expr(
             lhs,
             rhs,
         } => {
-            let lhs = typecheck_expr(env, base_data, lhs)?;
-            let mut rhs = typecheck_expr(env, base_data, rhs)?;
+            let lhs_val = typecheck_expr(env, base_data, lhs)?;
+            let lhs_type = lhs_val.get_type();
 
-            let Some(inner) = lhs._type.mem_ref_inner() else {
-                log_typecheck_error!(
+            let rhs_val = typecheck_expr(env, base_data, rhs).and_then(|v| coerce_value(env, v))?;
+            let rhs_type = rhs_val.get_type();
+
+            let Some(inner) = lhs_type.mem_ref_inner() else {
+                return log_typecheck_error!(
                     env,
                     expr,
                     " Cannot assign to non-reference type {}",
-                    lhs._type
+                    lhs_type
                 );
             };
 
+            // TODO: This is probably better to do at the VarDeclaration-level, where its type
+            // returned in this function is non-const, but the variable-table reference type
+            // is, but for now this will do until we refactor that part.
             if inner.get_specifier(CX_CONST)
-                && !matches!(lhs.kind, TCExprKind::VariableDeclaration { .. })
+                && !matches!(lhs.kind, CXExprKind::VarDeclaration { .. })
             {
                 log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            implicit_cast(&mut rhs, inner)?;
+            let rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
+            let rhs_type = rhs_val.get_type();
 
-            TCExpr {
-                _type: lhs._type.clone(),
-                kind: TCExprKind::Assignment {
-                    target: Box::new(lhs),
-                    value: Box::new(rhs),
-                    additional_op: op.as_ref().map(|op| *op.clone()),
-                },
-            }
+            env.builder.add_instruction(MIRInstruction::MemoryWrite {
+                target: lhs_val,
+                value: rhs_val.clone(),
+            });
+
+            rhs_val
         }
 
         CXExprKind::BinOp {
@@ -686,18 +676,13 @@ pub fn typecheck_expr(
             rhs,
         } => typecheck_method_call(env, base_data, lhs, rhs, expr)?,
 
-        CXExprKind::BinOp { op, lhs, rhs } => {
-            let lhs = typecheck_expr(env, base_data, lhs)?;
-            let rhs = typecheck_expr(env, base_data, rhs)?;
-
-            typecheck_binop(env, op.clone(), lhs, rhs, expr)?
-        }
+        CXExprKind::BinOp { op, lhs, rhs } => typecheck_binop(env, op.clone(), lhs, rhs, expr)?,
 
         CXExprKind::Move { expr: move_expr } => {
             let expr_tc = typecheck_expr(env, base_data, move_expr)?;
 
             let Some(inner) = expr_tc._type.mem_ref_inner() else {
-                log_typecheck_error!(
+                return log_typecheck_error!(
                     env,
                     move_expr,
                     " Move expression requires a reference type, found {}",

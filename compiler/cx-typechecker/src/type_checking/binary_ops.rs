@@ -1,13 +1,14 @@
 use crate::environment::TCEnvironment;
 use crate::log_typecheck_error;
-use crate::type_checking::casting::{add_coercion, coerce_value, implicit_cast};
+use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr, TCExprKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
-use cx_typechecker_data::mir::types::{CXType, CXTypeKind, same_type};
+use cx_typechecker_data::mir::expression::{MIRInstruction, MIRValue};
+use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXTypeKind, same_type};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -17,32 +18,39 @@ pub(crate) fn typecheck_access(
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
-) -> CXResult<TCExpr> {
-    let mut tc_lhs = typecheck_expr(env, base_data, lhs)?;
+) -> CXResult<MIRValue> {
+    let mut lhs_val = typecheck_expr(env, base_data, lhs)?;
+    let lhs_type = lhs_val.get_type();
 
-    let inner = match tc_lhs._type.mem_ref_inner() {
+    let lhs_inner = match lhs_type.mem_ref_inner() {
         Some(inner) if inner.is_pointer() => {
-            coerce_value(&mut tc_lhs)?;
-            &tc_lhs._type
+            lhs_val = coerce_value(env, lhs_val)?;
+            lhs_val.get_type()
         }
-        Some(inner) => inner,
-        _ => &tc_lhs._type,
+        Some(inner) => inner.clone(),
+
+        _ => lhs_type.clone(),
     };
 
-    let inner = inner.ptr_inner().unwrap_or(inner);
+    let lhs_inner = lhs_inner
+        .ptr_inner()
+        .map(CXType::clone)
+        .unwrap_or(lhs_inner);
 
-    let fields = match &inner.kind {
+    let fields = match &lhs_inner.kind {
         CXTypeKind::Structured { fields, .. }
         | CXTypeKind::Union {
             variants: fields, ..
         } => fields,
 
-        _ => log_typecheck_error!(
-            env,
-            expr,
-            "Member access on {}, expected struct or union type",
-            inner
-        ),
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr,
+                "Member access on {}, expected struct or union type",
+                lhs_inner
+            );
+        }
     };
 
     match &rhs.kind {
@@ -56,22 +64,40 @@ pub(crate) fn typecheck_access(
                 let field_name = CXIdent::from(field_name.as_str());
                 let field_type = field_type.clone().mem_ref_to();
 
-                return Ok(TCExpr {
-                    _type: field_type,
-                    kind: TCExprKind::Access {
-                        struct_type: inner.clone(),
-                        target: Box::new(tc_lhs),
-                        field: field_name,
-                    },
+                let result = env.builder.new_register();
+
+                match &lhs_inner.kind {
+                    CXTypeKind::Structured { .. } => {
+                        env.builder.add_instruction(MIRInstruction::StructGet {
+                            result: result.clone(),
+                            source: lhs_val,
+                            field_index: i,
+                            struct_type: lhs_inner.clone(),
+                        })
+                    }
+
+                    CXTypeKind::Union { .. } => {
+                        env.builder.add_instruction(MIRInstruction::Alias {
+                            result: result.clone(),
+                            value: lhs_val,
+                        })
+                    }
+
+                    _ => unreachable!(),
+                }
+
+                return Ok(MIRValue::Register {
+                    register: result,
+                    _type: field_type.mem_ref_to(),
                 });
             }
 
-            let Some(type_name) = inner.get_name() else {
-                log_typecheck_error!(
+            let Some(type_name) = lhs_inner.get_name() else {
+                return log_typecheck_error!(
                     env,
                     lhs,
                     " Member function call on {} without a type name",
-                    inner
+                    lhs_inner
                 );
             };
 
@@ -81,23 +107,17 @@ pub(crate) fn typecheck_access(
             };
 
             let Some(prototype) = env.get_realized_func(&fn_ident.into()) else {
-                log_typecheck_error!(
+                return log_typecheck_error!(
                     env,
                     lhs,
                     " Member access on {} with invalid member name {name}",
-                    tc_lhs._type
+                    lhs_inner
                 );
             };
 
-            Ok(TCExpr {
-                _type: CXTypeKind::Function {
-                    prototype: Box::new(prototype),
-                }
-                .into(),
-                kind: TCExprKind::MemberFunctionReference {
-                    target_type: inner.clone(),
-                    target: Box::new(tc_lhs),
-                },
+            Ok(MIRValue::FunctionReference {
+                prototype,
+                implicit_variables: vec![lhs_val],
             })
         }
 
@@ -105,12 +125,12 @@ pub(crate) fn typecheck_access(
             name,
             template_input,
         } => {
-            let Some(type_name) = inner.get_identifier() else {
-                log_typecheck_error!(
+            let Some(type_name) = lhs_inner.get_identifier() else {
+                return log_typecheck_error!(
                     env,
                     lhs,
                     " Member function call on {} without a base name",
-                    inner
+                    lhs_inner
                 );
             };
 
@@ -121,15 +141,9 @@ pub(crate) fn typecheck_access(
             let input = complete_template_args(env, base_data, template_input)?;
             let prototype = env.get_func_templated(base_data, &ident, &input)?;
 
-            Ok(TCExpr {
-                _type: CXTypeKind::Function {
-                    prototype: Box::new(prototype),
-                }
-                .into(),
-                kind: TCExprKind::MemberFunctionReference {
-                    target_type: inner.clone(),
-                    target: Box::new(tc_lhs),
-                },
+            Ok(MIRValue::FunctionReference {
+                prototype,
+                implicit_variables: vec![lhs_val],
             })
         }
 
@@ -142,11 +156,11 @@ pub(crate) fn typecheck_access(
     }
 }
 
-pub(crate) fn comma_separated(
+pub(crate) fn comma_separated<'a>(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
-    expr: &CXExpr,
-) -> CXResult<Vec<TCExpr>> {
+    expr: &'a CXExpr,
+) -> CXResult<Vec<(&'a CXExpr, MIRValue)>> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
@@ -160,11 +174,11 @@ pub(crate) fn comma_separated(
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        exprs.push(typecheck_expr(env, base_data, rhs)?);
+        exprs.push((rhs, typecheck_expr(env, base_data, rhs)?));
         expr_iter = lhs;
     }
 
-    exprs.push(typecheck_expr(env, base_data, expr_iter)?);
+    exprs.push((expr_iter, typecheck_expr(env, base_data, expr_iter)?));
     exprs.reverse();
 
     Ok(exprs)
@@ -176,110 +190,28 @@ pub(crate) fn typecheck_method_call(
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
-) -> CXResult<TCExpr> {
-    let mut tc_lhs = typecheck_expr(env, base_data, lhs)?;
-    let mut tc_args = comma_separated(env, base_data, rhs)?;
+) -> CXResult<MIRValue> {
+    let lhs_val = typecheck_expr(env, base_data, lhs)?;
 
-    let (direct, prototype) = match tc_lhs.kind {
-        TCExprKind::FunctionReference => {
-            let CXTypeKind::Function { prototype } = &tc_lhs._type.kind else {
-                unreachable!(
-                    "PANIC: Expected function type for function call, found {}",
-                    tc_lhs._type
-                );
-            };
+    let loaded_lhs = coerce_value(env, lhs_val.clone())?;
+    let loaded_lhs_type = loaded_lhs.get_type();
 
-            let Some(prototype) = env.get_realized_func(&prototype.name) else {
-                log_typecheck_error!(
-                    env,
-                    expr,
-                    " Function '{}' not found in the current environment",
-                    prototype
-                );
-            };
+    let loaded_lhs_type = match loaded_lhs_type.kind {
+        CXTypeKind::PointerTo { inner_type, .. } => *inner_type,
 
-            (true, prototype)
-        }
-
-        TCExprKind::MemberFunctionReference {
-            target,
-            target_type,
-        } => {
-            let CXTypeKind::Function { prototype } = &tc_lhs._type.kind else {
-                unreachable!(
-                    "PANIC: Expected function type for function call, found {}",
-                    tc_lhs._type
-                );
-            };
-
-            let Some(target_name) = target_type.get_name() else {
-                unreachable!(
-                    "PANIC: Expected named type for method call target, found {}",
-                    target._type
-                );
-            };
-
-            let Some(prototype) = env.get_realized_func(&prototype.name) else {
-                log_typecheck_error!(
-                    env,
-                    expr,
-                    " Method '{}' not found for type {}",
-                    prototype,
-                    target_name
-                );
-            };
-            tc_args.insert(0, *target);
-
-            tc_lhs = TCExpr {
-                _type: CXTypeKind::Function {
-                    prototype: Box::new(prototype.clone()),
-                }
-                .into(),
-                kind: TCExprKind::FunctionReference,
-            };
-
-            (true, prototype)
-        }
-
-        _ => {
-            let try_mem_ref = {
-                if let Some(inner) = tc_lhs._type.mem_ref_inner() {
-                    if let CXTypeKind::Function { prototype } = &inner.kind {
-                        Some(prototype.as_ref().clone())
-                    } else {
-                        coerce_value(&mut tc_lhs)?;
-                        None
-                    }
-                } else {
-                    None
-                }
-            };
-
-            if let Some(prototype) = try_mem_ref {
-                (false, prototype)
-            } else {
-                let Some(inner) = tc_lhs._type.ptr_inner() else {
-                    log_typecheck_error!(
-                        env,
-                        expr,
-                        " Attempted to call non-function type {}",
-                        tc_lhs._type
-                    );
-                };
-
-                let CXTypeKind::Function { prototype } = &inner.kind else {
-                    log_typecheck_error!(
-                        env,
-                        expr,
-                        " Attempted to call non-function type {}",
-                        tc_lhs._type
-                    );
-                };
-
-                (false, *prototype.clone())
-            }
-        }
+        _ => loaded_lhs_type,
     };
+
+    let CXTypeKind::Function { prototype } = &loaded_lhs_type.kind else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Attempted to call non-function type {}",
+            loaded_lhs_type
+        );
+    };
+
+    let tc_args = comma_separated(env, base_data, rhs)?;
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
         log_typecheck_error!(
@@ -307,89 +239,118 @@ pub(crate) fn typecheck_method_call(
 
     // Standard argument coercion
     for (arg, param) in tc_args.iter_mut().zip(prototype.params.iter()) {
-        implicit_cast(arg, &param._type)?;
+        arg.1 = implicit_cast(env, arg.0, std::mem::take(&mut arg.1), &param._type)?;
     }
 
     // Varargs argument coercion
     for arg in tc_args.iter_mut().skip(canon_params) {
         // All varargs arguments must be lvalues, coerce_value is necessary here
-        coerce_value(arg)?;
+        arg.1 = coerce_value(env, std::mem::take(&mut arg.1))?;
+        let arg_type = arg.1.get_type();
 
-        match &arg._type.kind {
+        match &arg_type.kind {
             CXTypeKind::PointerTo { .. } => {
                 // Pointer types are already compatible with varargs, no need to cast
             }
 
             CXTypeKind::Integer { signed, .. } => {
-                implicit_cast(
-                    arg,
+                arg.1 = implicit_cast(
+                    env,
+                    &arg.0,
+                    std::mem::take(&mut arg.1),
                     &CXTypeKind::Integer {
-                        bytes: 8,
+                        _type: CXIntegerType::I64,
                         signed: *signed,
                     }
                     .into(),
                 )?;
             }
 
-            CXTypeKind::Float { bytes: 4 } => {
-                implicit_cast(arg, &CXTypeKind::Float { bytes: 8 }.into())?;
+            CXTypeKind::Float {
+                _type: CXFloatType::F32,
+            } => {
+                arg.1 = implicit_cast(
+                    env,
+                    &arg.0,
+                    std::mem::take(&mut arg.1),
+                    &CXTypeKind::Float {
+                        _type: CXFloatType::F32,
+                    }
+                    .into(),
+                )?;
             }
 
-            CXTypeKind::Float { bytes: 8 } => {
+            CXTypeKind::Float {
+                _type: CXFloatType::F64,
+            } => {
                 // Already the correct type for varargs
             }
 
             CXTypeKind::Bool => {
-                implicit_cast(
-                    arg,
+                arg.1 = implicit_cast(
+                    env,
+                    &arg.0,
+                    std::mem::take(&mut arg.1),
                     &CXTypeKind::Integer {
-                        bytes: 8,
+                        _type: CXIntegerType::I64,
                         signed: false,
                     }
                     .into(),
                 )?;
             }
 
-            _ => log_typecheck_error!(
+            _ => return log_typecheck_error!(
                 env,
                 expr,
                 " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
-                arg._type
+                arg_type
             ),
         }
     }
 
-    Ok(TCExpr {
-        _type: prototype.return_type.clone(),
-        kind: TCExprKind::FunctionCall {
-            function: Box::new(tc_lhs),
-            arguments: tc_args,
-            direct_call: direct,
-        },
-    })
+    let result = if prototype.return_type.is_unit() {
+        None
+    } else {
+        Some(env.builder.new_register())
+    };
+
+    env.builder.add_instruction(MIRInstruction::CallFunction {
+        result: result,
+        function: loaded_lhs,
+        arguments: tc_args.into_iter().map(|(_, val)| val).collect(),
+    });
+    
+    match result {
+        Some(reg) => Ok(MIRValue::Register {
+            register: reg,
+            _type: prototype.return_type
+        }),
+        None => Ok(MIRValue::NULL),
+    }
 }
 
-pub(crate) fn typecheck_is(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
-    lhs: &CXExpr,
-    rhs: &CXExpr,
-    expr: &CXExpr,
-) -> CXResult<TCExpr> {
-    let mut tc_expr = typecheck_expr(env, base_data, lhs)?;
-    coerce_value(&mut tc_expr)?;
+pub(crate) fn typecheck_is<'a>(
+    env: &'a mut TCEnvironment<'a>,
+    base_data: &'a TCBaseMappings,
+    lhs: &'a CXExpr,
+    rhs: &'a CXExpr,
+    expr: &'a CXExpr,
+) -> CXResult<MIRValue> {
+    let tc_lhs = typecheck_expr(env, base_data, lhs)?;
+    let loaded_lhs_val = coerce_value(env, tc_lhs)?;
+    let loaded_lhs_type = loaded_lhs_val.get_type();
 
     let CXTypeKind::TaggedUnion {
         name: expected_union_name,
         variants,
         ..
-    } = &tc_expr._type.kind
+    } = &loaded_lhs_type.kind
     else {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator requires a tagged union on the left-hand side, found {}",
-            tc_expr._type
+            loaded_lhs_type
         );
     };
 
@@ -399,7 +360,7 @@ pub(crate) fn typecheck_is(
         inner,
     } = &rhs.kind
     else {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator requires a type constructor on the right-hand side, found {:?}",
@@ -408,7 +369,7 @@ pub(crate) fn typecheck_is(
     };
 
     if expected_union_name != union_name {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
@@ -418,7 +379,7 @@ pub(crate) fn typecheck_is(
     }
 
     let CXExprKind::Identifier(inner_var_name) = &inner.kind else {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             inner,
             " 'is' operator requires a variant name identifier in the type constructor, found {:?}",
@@ -426,12 +387,12 @@ pub(crate) fn typecheck_is(
         );
     };
 
-    if tc_expr._type.get_name() != Some(union_name.as_str()) {
-        log_typecheck_error!(
+    if loaded_lhs_type.get_name() != Some(union_name.as_str()) {
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
-            tc_expr._type,
+            loaded_lhs_type,
             union_name.as_string()
         );
     }
@@ -442,7 +403,7 @@ pub(crate) fn typecheck_is(
         .find(|(_, (name, _))| name == variant_name.as_str())
         .map(|(i, (_, _ty))| (i, _ty))
     else {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator variant name '{}' not found in tagged union {}",
@@ -451,24 +412,29 @@ pub(crate) fn typecheck_is(
         );
     };
 
+    let comparison = env.builder.new_register();
+    env.builder.add_instruction(MIRInstruction::TaggedUnionIs {
+        result: comparison.clone(),
+        source: loaded_lhs_val.clone(),
+        tag_id: tag_value,
+    });
+
+    let result = env.builder.new_register();
+    env.builder.add_instruction(MIRInstruction::TaggedUnionGet {
+        result: result.clone(),
+        source: loaded_lhs_val,
+        variant_type: variant_type.clone(),
+    });
+
     env.insert_symbol(
         inner_var_name.as_string(),
+        result,
         variant_type.clone().mem_ref_to(),
     );
 
-    let union_type = tc_expr._type.clone();
-    let var_name = inner_var_name.clone();
-    let variant_type = variant_type.clone();
-
-    Ok(TCExpr {
+    Ok(MIRValue::Register {
+        register: comparison,
         _type: CXTypeKind::Bool.into(),
-        kind: TCExprKind::ConstructorMatchIs {
-            expr: Box::new(tc_expr),
-            union_type,
-            var_name,
-            variant_type,
-            variant_tag: tag_value as u64,
-        },
     })
 }
 

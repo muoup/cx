@@ -4,7 +4,7 @@ use crate::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType,
 
 pub type MIRRegister = CXIdent;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum MIRValue {
     IntLiteral {
         value: i64,
@@ -17,6 +17,7 @@ pub enum MIRValue {
     },
     FunctionReference {
         prototype: CXFunctionPrototype,
+        implicit_variables: Vec<MIRValue>
     },
     GlobalValue {
         name: CXIdent,
@@ -27,6 +28,7 @@ pub enum MIRValue {
         _type: CXType,
     },
 
+    #[default]
     NULL,
 }
 
@@ -64,6 +66,18 @@ pub enum MIRInstruction {
         field_index: usize,
         struct_type: CXType,
     },
+    
+    TaggedUnionGet {
+        result: MIRRegister,
+        source: MIRValue,
+        variant_type: CXType,
+    },
+    
+    TaggedUnionIs {
+        result: MIRRegister,
+        source: MIRValue,
+        tag_id: usize
+    },
 
     ArrayGet {
         result: MIRRegister,
@@ -75,7 +89,7 @@ pub enum MIRInstruction {
     CallFunction {
         result: Option<MIRRegister>,
         function: MIRValue,
-        arguments: Vec<MIRRegister>,
+        arguments: Vec<MIRValue>,
     },
 
     Loop {
@@ -203,7 +217,7 @@ impl MIRValue {
             MIRValue::FloatLiteral { _type, .. } => CXType::from(CXTypeKind::Float {
                 _type: _type.clone(),
             }),
-            MIRValue::FunctionReference { prototype } => CXType::from(CXTypeKind::Function {
+            MIRValue::FunctionReference { prototype, .. } => CXType::from(CXTypeKind::Function {
                 prototype: Box::new(prototype.clone()),
             })
             .pointer_to(),
