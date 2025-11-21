@@ -92,6 +92,22 @@ impl MIRBuilder {
 
         CXIdent::from(format!("block_{}", func_ctx.standard_blocks.len()))
     }
+    
+    pub fn get_defer_end(&self) -> usize {
+        let Some(func_ctx) = &self.function_context else {
+            unreachable!()
+        };
+
+        func_ctx.defer_last_pointer
+    }
+    
+    pub fn set_defer_end(&mut self, id: usize) {
+        let Some(func_ctx) = &mut self.function_context else {
+            unreachable!()
+        };
+
+        func_ctx.defer_last_pointer = id;
+    }
 
     pub fn add_and_set_block(&mut self, block_id: CXIdent) {
         let block_index = self.add_block(block_id.clone());

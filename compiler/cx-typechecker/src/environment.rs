@@ -14,7 +14,7 @@ use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::{HashMap, HashSet};
 
-use crate::builder::MIRBuilder;
+use crate::builder::{BlockPointer, MIRBuilder};
 use crate::type_completion::templates::instantiate_function_template;
 use crate::type_completion::{complete_fn_prototype, complete_type};
 
@@ -207,7 +207,7 @@ impl TCEnvironment<'_> {
         if self.builder.in_defer() {
             return CXError::create_result("Cannot nest defer blocks");
         }
-      
+             
         let Some(func_ctx) = &mut self.builder.function_context else {
             unreachable!()
         };
@@ -218,11 +218,21 @@ impl TCEnvironment<'_> {
                 expressions: Vec::new(),
             });
         }
-        
         let previous_pointer = func_ctx.current_block.clone();
         
+        self.builder.set_pointer(BlockPointer::Defer(self.builder.get_defer_end()));
         self.builder.set_block(CXIdent::from("defer_entry"));
+        
         let result = f(self);
+        
+        let Some(func_ctx) = &mut self.builder.function_context else {
+            unreachable!()
+        };
+        let BlockPointer::Defer(i) = func_ctx.current_block.clone() else {
+            unreachable!()
+        };
+        
+        self.builder.set_defer_end(i);
         self.builder.set_pointer(previous_pointer);
      
         result
