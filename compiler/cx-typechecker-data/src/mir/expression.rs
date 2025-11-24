@@ -157,9 +157,11 @@ pub enum MIRBinOp {
     SUB,
     MUL,
     DIV,
+    MOD,
     IMUL,
     IDIV,
-
+    IMOD,
+    
     FADD,
     FSUB,
     FMUL,
@@ -199,12 +201,16 @@ pub enum MIRUnOp {
 
 #[derive(Clone, Debug)]
 pub enum MIRCoercion {
-    Integral,
-    FloatingPoint,
+    Integral {
+        sextend: bool,
+        to_type: CXIntegerType,
+    },
+    FPIntegral {
+        to_type: CXFloatType,
+    },
     IntToFloat,
     FloatToInt,
     ReinterpretBits,
-    ArrayToPointer,
 }
 
 impl MIRValue {

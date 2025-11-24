@@ -42,13 +42,17 @@ fn annotation_failure(message: &str) -> ! {
 pub fn pretty_underline_error(
     message: &str,
     file_path: &Path,
-    tokens: &[Token],
     start_index: usize,
     end_index: usize,
 ) {
-    if tokens.is_empty() {
+    let tokens = cx_lexer::lex(
+        &std::fs::read_to_string(file_path)
+            .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()))
+    );
+    
+    let Some(tokens) = tokens else { 
         panic!("No tokens provided for error reporting");
-    }
+    };
 
     let Some(start_token) = tokens.get(start_index) else {
         annotation_failure(message);

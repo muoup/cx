@@ -1,17 +1,21 @@
-use cx_parsing_data::ast::CXExpr;
+use std::path::PathBuf;
 use cx_util::CXErrorTrait;
 
-use crate::environment::TCEnvironment;
-
-pub struct TypeError<'a> {
-    pub env: &'a TCEnvironment<'a>,
-    pub expr: &'a CXExpr,
+pub struct TypeError {
+    pub compilation_unit: PathBuf,
+    pub token_start: usize,
+    pub token_end: usize,
     pub message: String,
 }
 
-impl CXErrorTrait for TypeError<'_> {
+impl CXErrorTrait for TypeError {
     fn pretty_print(&self) {
-        cx_log::pretty_underline_error(&self.message, self.env.compilation_unit.as_path(), self.env.tokens, self.expr.start_index, self.expr.end_index);
+        cx_log::pretty_underline_error(
+            &self.message,
+            self.compilation_unit.as_path(),
+            self.token_start,
+            self.token_end,
+        );
     }
 }
 
@@ -22,9 +26,10 @@ macro_rules! log_typecheck_error {
             let message = format!("TYPE ERROR: {}", format!($($arg)*));
 
             Err(Box::new(crate::log::TypeError {
-                expr: $expr,
                 message: message,
-                env: $env,
+                token_start: $expr.start_index,
+                token_end: $expr.end_index,
+                compilation_unit: $env.compilation_unit.as_path().to_owned(),
             }) as Box<dyn cx_util::CXErrorTrait>)
         }
     };

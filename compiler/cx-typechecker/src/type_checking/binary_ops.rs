@@ -3,14 +3,14 @@ use crate::log_typecheck_error;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
-use cx_parsing_data::ast::{CXBinOp, CXCastType, CXExpr, CXExprKind};
+use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
-use cx_typechecker_data::ast::{TCBaseMappings, TCExpr, TCExprKind};
+use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::function_map::CXFunctionKind;
-use cx_typechecker_data::mir::expression::{MIRInstruction, MIRValue};
-use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXTypeKind, same_type};
+use cx_typechecker_data::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRValue};
+use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXTypeKind};
+use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::{CXError, CXResult};
 
 pub(crate) fn typecheck_access(
     env: &mut TCEnvironment,
@@ -24,7 +24,7 @@ pub(crate) fn typecheck_access(
 
     let lhs_inner = match lhs_type.mem_ref_inner() {
         Some(inner) if inner.is_pointer() => {
-            lhs_val = coerce_value(env, lhs_val)?;
+            lhs_val = coerce_value(env, lhs, lhs_val)?;
             lhs_val.get_type()
         }
         Some(inner) => inner.clone(),
@@ -59,9 +59,7 @@ pub(crate) fn typecheck_access(
                 .iter()
                 .position(|(field_name, _)| field_name.as_str() == name.as_str())
             {
-                let (field_name, field_type) = &fields[i];
-
-                let field_name = CXIdent::from(field_name.as_str());
+                let (_, field_type) = &fields[i];
                 let field_type = field_type.clone().mem_ref_to();
 
                 let result = env.builder.new_register();
@@ -193,7 +191,7 @@ pub(crate) fn typecheck_method_call(
 ) -> CXResult<MIRValue> {
     let lhs_val = typecheck_expr(env, base_data, lhs)?;
 
-    let loaded_lhs = coerce_value(env, lhs_val.clone())?;
+    let loaded_lhs = coerce_value(env, lhs, lhs_val.clone())?;
     let loaded_lhs_type = loaded_lhs.get_type();
 
     let loaded_lhs_type = match loaded_lhs_type.kind {
@@ -238,15 +236,15 @@ pub(crate) fn typecheck_method_call(
     let canon_params = prototype.params.len();
 
     // Standard argument coercion
-    for (arg, param) in tc_args.iter_mut().zip(prototype.params.iter()) {
-        arg.1 = implicit_cast(env, arg.0, std::mem::take(&mut arg.1), &param._type)?;
+    for ((expr, val), param) in tc_args.iter_mut().zip(prototype.params.iter()) {
+        *val = implicit_cast(env, *expr, std::mem::take(val), &param._type)?;
     }
 
     // Varargs argument coercion
-    for arg in tc_args.iter_mut().skip(canon_params) {
+    for (expr, val) in tc_args.iter_mut().skip(canon_params) {
         // All varargs arguments must be lvalues, coerce_value is necessary here
-        arg.1 = coerce_value(env, std::mem::take(&mut arg.1))?;
-        let arg_type = arg.1.get_type();
+        *val = coerce_value(env, *expr, std::mem::take(&mut val))?;
+        let arg_type = val.get_type();
 
         match &arg_type.kind {
             CXTypeKind::PointerTo { .. } => {
@@ -254,10 +252,10 @@ pub(crate) fn typecheck_method_call(
             }
 
             CXTypeKind::Integer { signed, .. } => {
-                arg.1 = implicit_cast(
+                *val = implicit_cast(
                     env,
-                    &arg.0,
-                    std::mem::take(&mut arg.1),
+                    *expr,
+                    std::mem::take(val),
                     &CXTypeKind::Integer {
                         _type: CXIntegerType::I64,
                         signed: *signed,
@@ -269,10 +267,10 @@ pub(crate) fn typecheck_method_call(
             CXTypeKind::Float {
                 _type: CXFloatType::F32,
             } => {
-                arg.1 = implicit_cast(
+                *val = implicit_cast(
                     env,
-                    &arg.0,
-                    std::mem::take(&mut arg.1),
+                    *expr,
+                    std::mem::take(val),
                     &CXTypeKind::Float {
                         _type: CXFloatType::F32,
                     }
@@ -287,10 +285,10 @@ pub(crate) fn typecheck_method_call(
             }
 
             CXTypeKind::Bool => {
-                arg.1 = implicit_cast(
+                *val = implicit_cast(
                     env,
-                    &arg.0,
-                    std::mem::take(&mut arg.1),
+                    *expr,
+                    std::mem::take(val),
                     &CXTypeKind::Integer {
                         _type: CXIntegerType::I64,
                         signed: false,
@@ -299,12 +297,14 @@ pub(crate) fn typecheck_method_call(
                 )?;
             }
 
-            _ => return log_typecheck_error!(
-                env,
-                expr,
-                " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
-                arg_type
-            ),
+            _ => {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
+                    arg_type
+                );
+            }
         }
     }
 
@@ -319,11 +319,11 @@ pub(crate) fn typecheck_method_call(
         function: loaded_lhs,
         arguments: tc_args.into_iter().map(|(_, val)| val).collect(),
     });
-    
+
     match result {
         Some(reg) => Ok(MIRValue::Register {
             register: reg,
-            _type: prototype.return_type
+            _type: prototype.return_type,
         }),
         None => Ok(MIRValue::NULL),
     }
@@ -337,7 +337,7 @@ pub(crate) fn typecheck_is<'a>(
     expr: &'a CXExpr,
 ) -> CXResult<MIRValue> {
     let tc_lhs = typecheck_expr(env, base_data, lhs)?;
-    let loaded_lhs_val = coerce_value(env, tc_lhs)?;
+    let loaded_lhs_val = coerce_value(env, lhs, tc_lhs)?;
     let loaded_lhs_type = loaded_lhs_val.get_type();
 
     let CXTypeKind::TaggedUnion {
@@ -439,28 +439,27 @@ pub(crate) fn typecheck_is<'a>(
 }
 
 pub(crate) fn typecheck_binop(
-    env: &TCEnvironment,
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
     op: CXBinOp,
-    mut lhs: TCExpr,
-    mut rhs: TCExpr,
+    lhs: &CXExpr,
+    rhs: &CXExpr,
     expr: &CXExpr,
-) -> CXResult<TCExpr> {
-    coerce_value(&mut lhs)?;
-    coerce_value(&mut rhs)?;
+) -> CXResult<MIRValue> {
+    let lhs = typecheck_expr(env, base_data, lhs).and_then(|e| coerce_value(env, lhs, e))?;
+    let lhs_type = lhs.get_type();
 
-    let final_type = match (&lhs._type.kind, &rhs._type.kind) {
-        (_, _) if same_type(&lhs._type, &rhs._type) => binop_type(env, &op, &lhs, expr)?,
+    let rhs = typecheck_expr(env, base_data, rhs).and_then(|e| coerce_value(env, rhs, e))?;
+    let rhs_type = rhs.get_type();
 
+    match (&lhs_type.kind, &rhs_type.kind) {
         (
             CXTypeKind::PointerTo {
                 inner_type: l_inner,
                 ..
             },
             CXTypeKind::Integer { .. },
-        ) => {
-            ptr_int_binop_coercion(op.clone(), l_inner.as_ref(), &mut rhs);
-            binop_type(env, &op, &lhs, expr)?
-        }
+        ) => typecheck_ptr_int_binop(env, op.clone(), l_inner.as_ref(), lhs, rhs),
 
         (
             CXTypeKind::Integer { .. },
@@ -468,88 +467,268 @@ pub(crate) fn typecheck_binop(
                 inner_type: r_inner,
                 ..
             },
-        ) => {
-            if matches!(op, CXBinOp::Subtract) {
-                log_typecheck_error!(
-                    env,
-                    expr,
-                    " Invalid operation [integer] - [pointer] for types {} and {}",
-                    lhs._type,
-                    rhs._type
-                );
-            }
+        ) => typecheck_int_ptr_binop(env, op.clone(), r_inner.as_ref(), lhs, rhs),
 
-            ptr_int_binop_coercion(op.clone(), r_inner.as_ref(), &mut lhs);
-            binop_type(env, &op, &rhs, expr)?
-        }
-
-        (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. }) => {
-            if b1 > b2 {
-                add_coercion(&mut rhs, lhs._type.clone(), CXCastType::IntegralCast);
-            } else if b1 < b2 {
-                add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
-            }
-
-            binop_type(env, &op, &lhs, expr)?
+        (CXTypeKind::Integer { .. }, CXTypeKind::Integer { .. }) => {
+            typecheck_int_int_binop(env, op, lhs, rhs, expr)
         }
 
         (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => {
-            add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
-            binop_type(env, &op, &rhs, expr)?
+            let coerced_bool = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::Coercion {
+                result: coerced_bool.clone(),
+                operand: lhs.clone(),
+                cast_type: MIRCoercion::Integral {
+                    sextend: false,
+                    to_type: CXIntegerType::I64,
+                },
+            });
+
+            let lhs = MIRValue::Register {
+                register: coerced_bool,
+                _type: rhs_type.clone(),
+            };
+
+            typecheck_int_int_binop(env, op, lhs, rhs, expr)
         }
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => {
-            add_coercion(&mut lhs, rhs._type.clone(), CXCastType::IntegralCast);
-            binop_type(env, &op, &rhs, expr)?
+            let coerced_bool = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::Coercion {
+                result: coerced_bool.clone(),
+                operand: rhs.clone(),
+                cast_type: MIRCoercion::Integral {
+                    sextend: false,
+                    to_type: CXIntegerType::I64,
+                },
+            });
+
+            let rhs = MIRValue::Register {
+                register: coerced_bool,
+                _type: lhs_type.clone(),
+            };
+
+            typecheck_int_int_binop(env, op, lhs, rhs, expr)
         }
 
         (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
-            ptr_ptr_binop_coercion(env, op.clone(), &lhs._type, &mut rhs, expr)?
+            typecheck_ptr_ptr_binop(env, op, lhs, rhs, expr)
         }
 
         (CXTypeKind::StrongPointer { .. }, _) | (_, CXTypeKind::StrongPointer { .. }) => {
-            log_typecheck_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 "R-value strong pointers must be assigned to an l-value before being used \
                 in binary operations, found '{op}' with types {} and {}",
-                lhs._type,
-                rhs._type
+                lhs_type,
+                rhs_type
             );
         }
 
-        _ => log_typecheck_error!(
-            env,
-            expr,
-            " Invalid binary operation {op} for types {} and {}",
-            lhs._type,
-            rhs._type
-        ),
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr,
+                " Invalid binary operation {op} for types {} and {}",
+                lhs_type,
+                rhs_type
+            );
+        }
+    }
+}
+
+pub(crate) fn typecheck_int_int_binop(
+    env: &mut TCEnvironment,
+    op: CXBinOp,
+    mut lhs: MIRValue,
+    mut rhs: MIRValue,
+    expr: &CXExpr,
+) -> CXResult<MIRValue> {
+    let mut lhs_type = lhs.get_type();
+    let mut rhs_type = rhs.get_type();
+
+    let CXTypeKind::Integer {
+        _type: lhs_itype,
+        signed: lhs_signed,
+    } = &lhs_type.kind
+    else {
+        unreachable!("Expected integer type for lhs in int-int binop");
     };
 
-    Ok(TCExpr {
-        _type: final_type.clone(),
-        kind: TCExprKind::BinOp {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        },
+    let CXTypeKind::Integer {
+        _type: rhs_itype,
+        signed: rhs_signed,
+    } = &rhs_type.kind
+    else {
+        unreachable!("Expected integer type for rhs in int-int binop");
+    };
+
+    // The else here handles both the case where the types are of equal bytes
+    // (i.e. default to lhs type for signedness), and if lhs is bigger, which
+    // also defaults to lhs type. It's possible this is not ~exactly~ adherent
+    // to the language specs, and is worth revisiting later.
+    let result_type = if rhs_itype.bytes() > lhs_itype.bytes() {
+        rhs_type.clone()
+    } else {
+        lhs_type.clone()
+    };
+
+    let CXTypeKind::Integer {
+        signed: result_signed,
+        ..
+    } = &result_type.kind
+    else {
+        unreachable!("Expected integer type for result in int-int binop");
+    };
+
+    if lhs_itype.bytes() > rhs_itype.bytes() {
+        let coerced_rhs = env.builder.new_register();
+
+        env.builder.add_instruction(MIRInstruction::Coercion {
+            result: coerced_rhs.clone(),
+            operand: rhs.clone(),
+            cast_type: MIRCoercion::Integral {
+                sextend: *rhs_signed,
+                to_type: *lhs_itype,
+            },
+        });
+
+        rhs_type = lhs_type.clone();
+        rhs = MIRValue::Register {
+            register: coerced_rhs,
+            _type: lhs_type.clone(),
+        };
+    } else if rhs_itype.bytes() < lhs_itype.bytes() {
+        let coerced_lhs = env.builder.new_register();
+
+        env.builder.add_instruction(MIRInstruction::Coercion {
+            result: coerced_lhs.clone(),
+            operand: lhs.clone(),
+            cast_type: MIRCoercion::Integral {
+                sextend: *lhs_signed,
+                to_type: *rhs_itype,
+            },
+        });
+
+        lhs_type = rhs_type.clone();
+        lhs = MIRValue::Register {
+            register: coerced_lhs,
+            _type: rhs_type.clone(),
+        };
+    }
+
+    let (operator, result_type) = match op {
+        CXBinOp::Add => (MIRBinOp::ADD, lhs_type.clone()),
+        CXBinOp::Subtract => (MIRBinOp::SUB, lhs_type.clone()),
+        CXBinOp::Multiply if !result_signed => (MIRBinOp::MUL, lhs_type.clone()),
+        CXBinOp::Multiply if *result_signed => (MIRBinOp::IMUL, lhs_type.clone()),
+        CXBinOp::Divide if !result_signed => (MIRBinOp::DIV, lhs_type.clone()),
+        CXBinOp::Divide if *result_signed => (MIRBinOp::IDIV, lhs_type.clone()),
+        CXBinOp::Modulus if !result_signed => (MIRBinOp::MOD, lhs_type.clone()),
+        CXBinOp::Modulus if *result_signed => (MIRBinOp::IMOD, lhs_type.clone()),
+
+        CXBinOp::Less => (MIRBinOp::LT, CXTypeKind::Bool.into()),
+        CXBinOp::Greater => (MIRBinOp::GT, CXTypeKind::Bool.into()),
+        CXBinOp::LessEqual => (MIRBinOp::LE, CXTypeKind::Bool.into()),
+        CXBinOp::GreaterEqual => (MIRBinOp::GE, CXTypeKind::Bool.into()),
+        CXBinOp::Equal => (MIRBinOp::EQ, CXTypeKind::Bool.into()),
+        CXBinOp::NotEqual => (MIRBinOp::NEQ, CXTypeKind::Bool.into()),
+
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr,
+                " Invalid integer binary operation {op} for types {} and {}",
+                lhs_type,
+                rhs_type
+            );
+        }
+    };
+
+    let result = env.builder.new_register();
+    env.builder.add_instruction(MIRInstruction::BinOp {
+        op: operator,
+        result: result.clone(),
+        lhs,
+        rhs,
+    });
+
+    Ok(MIRValue::Register {
+        register: result,
+        _type: result_type,
     })
 }
 
-pub(crate) fn ptr_int_binop_coercion(
+pub(crate) fn typecheck_int_ptr_binop(
+    env: &mut TCEnvironment,
     op: CXBinOp,
     pointer_inner: &CXType,
-    non_pointer: &mut TCExpr,
-) {
+    non_pointer: MIRValue,
+    pointer: MIRValue,
+) -> CXResult<MIRValue> {
+    if op == CXBinOp::Subtract {
+        return log_typecheck_error!(
+            env,
+            &CXExpr::default(),
+            " Invalid operation [integer] - [pointer] for types {} and {}",
+            non_pointer.get_type(),
+            pointer.get_type()
+        );
+    }
+
+    typecheck_ptr_int_binop(env, op, pointer_inner, pointer, non_pointer)
+}
+
+pub(crate) fn typecheck_ptr_int_binop(
+    env: &mut TCEnvironment,
+    op: CXBinOp,
+    pointer_inner: &CXType,
+    pointer: MIRValue,
+    integer: MIRValue,
+) -> CXResult<MIRValue> {
     match op {
         // Requires one pointer and one integer
         CXBinOp::Add | CXBinOp::Subtract | CXBinOp::ArrayIndex => {
-            add_coercion(
-                non_pointer,
-                pointer_inner.clone().pointer_to(),
-                CXCastType::IntToPtrDiff,
-            );
+            let inner_size = pointer_inner.type_size();
+            let scaled_integer = env.builder.new_register();
+            let rhs_type = integer.get_type();
+
+            let CXTypeKind::Integer { _type, .. } = &rhs_type.kind else {
+                unreachable!("Expected integer type for pointer-integer binary operation");
+            };
+
+            env.builder.add_instruction(MIRInstruction::BinOp {
+                op: MIRBinOp::MUL,
+                result: scaled_integer.clone(),
+                lhs: integer.clone(),
+                rhs: MIRValue::IntLiteral {
+                    value: inner_size as i64,
+                    _type: _type.clone(),
+                    signed: false,
+                },
+            });
+
+            let coerced_pointer = env.builder.new_register();
+
+            env.builder.add_instruction(MIRInstruction::BinOp {
+                op: match op {
+                    CXBinOp::Add | CXBinOp::ArrayIndex => MIRBinOp::ADD,
+                    CXBinOp::Subtract => MIRBinOp::SUB,
+                    _ => unreachable!(),
+                },
+                result: coerced_pointer.clone(),
+                lhs: pointer,
+                rhs: MIRValue::Register {
+                    register: scaled_integer,
+                    _type: rhs_type,
+                },
+            });
+
+            Ok(MIRValue::Register {
+                register: coerced_pointer,
+                _type: pointer_inner.clone().pointer_to(),
+            })
         }
 
         // Requires two pointers
@@ -559,80 +738,104 @@ pub(crate) fn ptr_int_binop_coercion(
         | CXBinOp::Greater
         | CXBinOp::Equal
         | CXBinOp::NotEqual => {
-            add_coercion(
-                non_pointer,
-                pointer_inner.clone().pointer_to(),
-                CXCastType::IntToPtr,
-            );
+            let coerced_val = env.builder.new_register();
+            let CXTypeKind::Integer { signed, _type } = integer.get_type().kind else {
+                unreachable!("Expected integer type for pointer-integer binary operation");
+            };
+
+            env.builder.add_instruction(MIRInstruction::Coercion {
+                result: coerced_val.clone(),
+                operand: integer.clone(),
+                cast_type: MIRCoercion::Integral {
+                    sextend: signed,
+                    to_type: CXIntegerType::I64,
+                },
+            });
+
+            env.builder.add_instruction(MIRInstruction::Coercion {
+                result: coerced_val.clone(),
+                operand: integer.clone(),
+                cast_type: MIRCoercion::ReinterpretBits,
+            });
+
+            Ok(MIRValue::Register {
+                register: coerced_val,
+                _type: CXTypeKind::Bool.into(),
+            })
         }
 
         _ => panic!("Invalid binary operation {op} for pointer type"),
-    };
+    }
 }
 
-pub(crate) fn ptr_ptr_binop_coercion(
-    env: &TCEnvironment,
+pub(crate) fn typecheck_ptr_ptr_binop(
+    env: &mut TCEnvironment,
     op: CXBinOp,
-    pointer_inner: &CXType,
-    non_pointer: &mut TCExpr,
+    lhs: MIRValue,
+    rhs: MIRValue,
     expr: &CXExpr,
-) -> CXResult<CXType> {
-    match op {
-        // Requires two pointers
-        CXBinOp::LessEqual
-        | CXBinOp::GreaterEqual
-        | CXBinOp::Less
-        | CXBinOp::Greater
-        | CXBinOp::Equal
-        | CXBinOp::NotEqual => {
-            add_coercion(non_pointer, pointer_inner.clone(), CXCastType::BitCast);
-            Ok(CXTypeKind::Bool.into())
-        }
+) -> CXResult<MIRValue> {
+    let operator = match op {
+        CXBinOp::LessEqual => MIRBinOp::LE,
+        CXBinOp::GreaterEqual => MIRBinOp::GE,
+        CXBinOp::Less => MIRBinOp::LT,
+        CXBinOp::Greater => MIRBinOp::GT,
+        CXBinOp::Equal => MIRBinOp::EQ,
+        CXBinOp::NotEqual => MIRBinOp::NEQ,
 
-        _ => log_typecheck_error!(env, expr, "Invalid binary operation {op} for pointer type"),
-    }
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr,
+                " Invalid binary operation {op} for pointer types",
+            );
+        }
+    };
+
+    let result = env.builder.new_register();
+    env.builder.add_instruction(MIRInstruction::BinOp {
+        op: operator,
+        result: result.clone(),
+        lhs,
+        rhs,
+    });
+
+    Ok(MIRValue::Register {
+        register: result,
+        _type: CXTypeKind::Bool.into(),
+    })
 }
 
 pub(crate) fn binop_type(
     env: &TCEnvironment,
     op: &CXBinOp,
-    lhs: &TCExpr,
+    lhs: &MIRValue,
     expr: &CXExpr,
 ) -> CXResult<CXType> {
-    try_binop_type(env, op, lhs, expr).ok_or_else(|| {
-        CXError::create_boxed(format!(
-            " Invalid binary operation {op} for type {}",
-            lhs._type
-        ))
-    })
-}
-
-pub(crate) fn try_binop_type(
-    env: &TCEnvironment,
-    op: &CXBinOp,
-    lhs: &TCExpr,
-    expr: &CXExpr,
-) -> Option<CXType> {
     match op {
         CXBinOp::Add
         | CXBinOp::Subtract
         | CXBinOp::Multiply
         | CXBinOp::Divide
-        | CXBinOp::Modulus => Some(lhs._type.clone()),
+        | CXBinOp::Modulus => Ok(lhs.get_type()),
 
         CXBinOp::ArrayIndex => {
+            let lhs_type = &lhs.get_type();
+
             let CXTypeKind::PointerTo {
                 inner_type: pointer_inner,
                 ..
-            } = &lhs._type.kind
+            } = &lhs_type.kind
             else {
-                panic!(
+                return log_typecheck_error!(
+                    env,
+                    expr,
                     "Array index operation requires a pointer type, found {}",
-                    lhs._type
+                    lhs_type
                 );
             };
 
-            Some(CXType::from(CXTypeKind::MemoryReference(
+            Ok(CXType::from(CXTypeKind::MemoryReference(
                 pointer_inner.clone(),
             )))
         }
@@ -644,7 +847,7 @@ pub(crate) fn try_binop_type(
         | CXBinOp::LessEqual
         | CXBinOp::GreaterEqual
         | CXBinOp::Equal
-        | CXBinOp::NotEqual => Some(CXTypeKind::Bool.into()),
+        | CXBinOp::NotEqual => Ok(CXTypeKind::Bool.into()),
 
         _ => log_typecheck_error!(
             env,

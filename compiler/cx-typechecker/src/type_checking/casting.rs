@@ -9,12 +9,12 @@ use cx_typechecker_data::{
 use cx_util::{CXError, CXResult, log_error};
 
 use crate::{
-    environment::TCEnvironment, log_typecheck_error, type_checking::structured_initialization::coerce_initializer_list
+    environment::TCEnvironment, log_typecheck_error
 };
 
-pub(crate) fn coerce_value(env: &mut TCEnvironment, mut value: MIRValue) -> CXResult<MIRValue> {
+pub(crate) fn coerce_value(env: &mut TCEnvironment, expr: &CXExpr, mut value: MIRValue) -> CXResult<MIRValue> {
     if let Some(inner) = value.get_type().mem_ref_inner() {
-        value = implicit_cast(value, inner)?;
+        value = implicit_cast(env, expr, value, inner)?;
     }
 
     match &value.get_type().kind {

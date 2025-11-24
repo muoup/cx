@@ -5,16 +5,19 @@ use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::complete_type;
 use crate::type_completion::types::_complete_type;
 use cx_parsing_data::ast::CXExpr;
-use cx_parsing_data::data::{CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind};
+use cx_parsing_data::data::{
+    CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind,
+};
 use cx_typechecker_data::ast::{TCBaseMappings, TCExpr};
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
-use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, TCParameter};
+use cx_typechecker_data::mir::expression::MIRValue;
+use cx_typechecker_data::mir::types::{
+    CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, TCFunctionContract, TCParameter,
+};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
-pub(crate) fn apply_implicit_fn_attr(
-    mut proto: CXNaivePrototype,
-) -> CXNaivePrototype {
+pub(crate) fn apply_implicit_fn_attr(mut proto: CXNaivePrototype) -> CXNaivePrototype {
     if let Some(implicit_member) = proto.name.implicit_member() {
         proto.params.insert(
             0,
@@ -63,13 +66,11 @@ pub(crate) fn complete_fn_ident(
                 );
             };
 
-            Ok(
-                CXFunctionKind::Member {
-                    base_type: cx_type.clone(),
-                    name: function_name.clone(),
-                }
-                .into(),
-            )
+            Ok(CXFunctionKind::Member {
+                base_type: cx_type.clone(),
+                name: function_name.clone(),
+            }
+            .into())
         }
 
         NaiveFnKind::Destructor(name) => {
@@ -82,17 +83,13 @@ pub(crate) fn complete_fn_ident(
                 log_error!("Destructor base type should be identifiable: {name}");
             };
 
-            Ok(
-                CXFunctionKind::Destructor {
-                    base_type: cx_type.clone(),
-                }
-                .into(),
-            )
+            Ok(CXFunctionKind::Destructor {
+                base_type: cx_type.clone(),
+            }
+            .into())
         }
 
-        NaiveFnKind::Standard(name) => {
-            Ok(CXFunctionKind::Standard { name: name.clone() }.into())
-        }
+        NaiveFnKind::Standard(name) => Ok(CXFunctionKind::Standard { name: name.clone() }.into()),
     }
 }
 
@@ -100,20 +97,20 @@ fn _complete_fn_contract_clause(
     env: &mut TCEnvironment,
     base_data: &TCBaseMappings,
     clause: &CXExpr,
-) -> CXResult<TCExpr> {
-    let mut checked_clause = typecheck_expr(env, base_data, clause)?;
-    let cast_result = implicit_cast(&mut checked_clause, &CXTypeKind::Bool.into())?;
-    
-    if cast_result.is_err() {
-        log_typecheck_error!(
+) -> CXResult<MIRValue> {
+    let checked_clause = typecheck_expr(env, base_data, clause)?;
+    let clause_type = checked_clause.get_type();
+
+    let Ok(casted) = implicit_cast(env, clause, checked_clause, &CXTypeKind::Bool.into()) else {
+        return log_typecheck_error!(
             env,
             clause,
-            "Function contract clause must evaluate to an integer (boolean), found: {}",
-            checked_clause._type
-        );
-    }
+            "Function contract clause must be coercible to 'bool', found incompatible type: {}",
+            clause_type
+        )
+    };
     
-    Ok(checked_clause)
+    Ok(casted)
 }
 
 fn _complete_fn_contract(
@@ -123,7 +120,7 @@ fn _complete_fn_contract(
     parameters: &Vec<TCParameter>,
     contract: &CXNaiveFunctionContract,
 ) -> CXResult<TCFunctionContract> {
-    env.push_scope();
+    env.push_scope(None, None);
 
     for param in parameters {
         if let Some(name) = &param.name {
@@ -131,25 +128,28 @@ fn _complete_fn_contract(
         }
     }
 
-    let precondition = contract.precondition.as_ref()
+    let precondition = contract
+        .precondition
+        .as_ref()
         .map(|pre| _complete_fn_contract_clause(env, base_data, &pre))
         .transpose()?;
-    let postcondition = contract.postcondition.as_ref()
+    let postcondition = contract
+        .postcondition
+        .as_ref()
         .map(|(ret_name, post)| {
             if let Some(name) = ret_name {
                 env.insert_symbol(name.to_string(), return_type.clone());
             }
-            
-            _complete_fn_contract_clause(env, base_data, &post)
-                .map(|expr| (ret_name.clone(), expr))
+
+            _complete_fn_contract_clause(env, base_data, &post).map(|expr| (ret_name.clone(), expr))
         })
         .transpose()?;
-    
+
     let contract = TCFunctionContract {
         precondition,
         postcondition,
     };
-    
+
     env.pop_scope();
 
     Ok(contract)
@@ -162,7 +162,7 @@ pub fn _complete_fn_prototype(
 ) -> CXResult<CXFunctionPrototype> {
     let prototype = apply_implicit_fn_attr(prototype.clone());
     let ident = complete_fn_ident(env, base_data, &prototype.name)?;
-    
+
     let return_type = env.complete_type(base_data, &prototype.return_type)?;
 
     let parameters = prototype
@@ -177,11 +177,13 @@ pub fn _complete_fn_prototype(
             })
         })
         .collect::<CXResult<Vec<_>>>()?;
-    
-    let contract = prototype.contract.as_ref()
+
+    let contract = prototype
+        .contract
+        .as_ref()
         .map(|contract| _complete_fn_contract(env, base_data, &return_type, &parameters, contract))
         .transpose()?;
-    
+
     let prototype = CXFunctionPrototype {
         name: ident.clone(),
         return_type: return_type,
@@ -189,10 +191,10 @@ pub fn _complete_fn_prototype(
         var_args: prototype.var_args,
         contract,
     };
-    
+
     if !env.realized_fns.contains_key(&ident) {
         env.realized_fns.insert(ident, prototype.clone());
     }
-    
+
     Ok(prototype)
 }
