@@ -13,7 +13,7 @@ use cx_bytecode_data::{
 };
 use cx_parsing_data::ast::{CXBinOp, CXUnOp};
 use cx_typechecker_data::ast::{TCExpr, TCExprKind};
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
+use cx_typechecker_data::mir::types::{CXType, CXTypeKind};
 use cx_util::{bytecode_error_log, log_error};
 
 pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<BCValue> {
@@ -95,8 +95,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<B
                 CXTypeKind::PointerTo {
                     inner_type: inner, ..
                 } => inner,
-                CXTypeKind::VariableLengthArray { _type, .. }
-                | CXTypeKind::Array {
+                CXTypeKind::Array {
                     inner_type: _type, ..
                 } => _type,
 
@@ -484,7 +483,7 @@ pub fn generate_instruction(builder: &mut MIRBuilder, expr: &TCExpr) -> Option<B
                     let loaded_val = builder.load_value(value.clone(), bc_type)?;
 
                     let bytes = match &inner.kind {
-                        CXTypeKind::Integer { bytes, .. } => *bytes,
+                        CXTypeKind::Integer { _type, .. } => _type.bytes() as u8,
                         CXTypeKind::PointerTo { .. } => 8,
                         _ => panic!("Invalid type for post increment: {inner:?}")
                     };

@@ -304,6 +304,7 @@ dependencies = [
 name = "cx-log"
 version = "0.0.0"
 dependencies = [
+ "cx-lexer",
  "cx-lexer-data",
  "cx-util",
 ]

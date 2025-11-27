@@ -91,6 +91,13 @@ pub enum MIRInstruction {
         function: MIRValue,
         arguments: Vec<MIRValue>,
     },
+    
+    ConstructSumType {
+        result: MIRRegister,
+        variant_index: usize,
+        value: MIRValue,
+        sum_type: CXType
+    },
 
     Loop {
         condition_precheck: bool,
@@ -111,6 +118,12 @@ pub enum MIRInstruction {
 
     Jump {
         target: CXIdent,
+    },
+    
+    JumpTable {
+        condition: MIRValue,
+        targets: Vec<(u64, CXIdent)>,
+        default: CXIdent,
     },
 
     Return {
@@ -208,7 +221,11 @@ pub enum MIRCoercion {
     FPIntegral {
         to_type: CXFloatType,
     },
+    PtrToInt,
+    IntToPtr,
     IntToFloat,
+    IntToBool,
+    BoolToInt,
     FloatToInt,
     ReinterpretBits,
 }

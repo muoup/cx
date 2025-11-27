@@ -93,6 +93,14 @@ impl MIRBuilder {
         CXIdent::from(format!("block_{}", func_ctx.standard_blocks.len()))
     }
     
+    pub fn new_named_block_id(&mut self, name: &str) -> CXIdent {
+        let Some(func_ctx) = &mut self.function_context else {
+            unreachable!()
+        };
+        
+        CXIdent::from(format!("block_{}_{}", func_ctx.standard_blocks.len(), name))
+    }
+    
     pub fn get_defer_end(&self) -> usize {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
@@ -138,6 +146,14 @@ impl MIRBuilder {
                 BlockPointer::Defer(func_ctx.defer_blocks.len() - 1)
             }
         }
+    }
+    
+    pub fn current_pointer(&self) -> BlockPointer {
+        let Some(func_ctx) = &self.function_context else {
+            unreachable!()
+        };
+
+        func_ctx.current_block.clone()
     }
     
     pub fn set_pointer(&mut self, pointer: BlockPointer) {

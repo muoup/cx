@@ -9,10 +9,10 @@ use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
 use cx_typechecker_data::ast::{
-    TCBaseMappings, TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
+    TCBaseMappings, TCGlobalVarKind, TCGlobalVariable,
 };
 use cx_typechecker_data::mir::expression::{MIRBinOp, MIRInstruction, MIRUnOp, MIRValue};
-use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
+use cx_typechecker_data::mir::types::{CXIntegerType, CXTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -108,6 +108,7 @@ pub fn typecheck_expr(
             {
                 MIRValue::FunctionReference {
                     prototype: function_type.clone(),
+                    implicit_variables: vec![],
                 }
             } else if let Some(global) = global_expr(env, base_data, name.as_str()).ok() {
                 global
@@ -130,6 +131,7 @@ pub fn typecheck_expr(
 
             MIRValue::FunctionReference {
                 prototype: function.clone(),
+                implicit_variables: vec![],
             }
         }
 
@@ -150,7 +152,7 @@ pub fn typecheck_expr(
             };
 
             let condition_value = typecheck_expr(env, base_data, condition)
-                .and_then(|c| coerce_condition(expr, c))?;
+                .and_then(|c| coerce_condition(env, expr, c))?;
 
             env.builder.add_instruction(MIRInstruction::Branch {
                 condition: condition_value,
@@ -193,7 +195,7 @@ pub fn typecheck_expr(
 
             env.builder.add_and_set_block(condition_block.clone());
             let condition_tc = typecheck_expr(env, base_data, condition)
-                .and_then(|c| coerce_condition(expr, c))?;
+                .and_then(|c| coerce_condition(env, expr, c))?;
             env.builder.add_instruction(MIRInstruction::Loop {
                 condition: condition_tc,
                 condition_precheck: *pre_eval,
@@ -232,7 +234,7 @@ pub fn typecheck_expr(
 
             env.builder.add_and_set_block(condition_block);
             let condition = typecheck_expr(env, base_data, condition)
-                .and_then(|c| coerce_condition(expr, c))?;
+                .and_then(|c| coerce_condition(env, expr, c))?;
             env.builder.add_instruction(MIRInstruction::Loop {
                 condition,
                 condition_precheck: true,
@@ -300,8 +302,8 @@ pub fn typecheck_expr(
 
         CXExprKind::Return { value } => {
             let mut value_tc = if let Some(value) = value {
-                let mut val =
-                    typecheck_expr(env, base_data, value).and_then(|v| coerce_value(env, v))?;
+                let mut val = typecheck_expr(env, base_data, value)
+                    .and_then(|v| coerce_value(env, expr, v))?;
 
                 Some(val)
             } else {
@@ -485,7 +487,7 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::BNot => {
-                    let loaded_op_val = coerce_value(env, operand_val)?;
+                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     if !loaded_op_type.is_integer() {
@@ -511,7 +513,7 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::Negative => {
-                    let mut loaded_op_val = coerce_value(env, operand_val)?;
+                    let mut loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     let operator = match &loaded_op_type.kind {
@@ -564,7 +566,7 @@ pub fn typecheck_expr(
 
                 CXUnOp::Dereference => {
                     // If the operand is a memory reference of a pointer type, we need to load the value first
-                    let loaded_operand = coerce_value(env, operand_val)?;
+                    let loaded_operand = coerce_value(env, expr, operand_val)?;
                     let loaded_operand_type = loaded_operand.get_type();
 
                     let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
@@ -610,7 +612,7 @@ pub fn typecheck_expr(
                     let to_type = env.complete_type(base_data, to_type)?;
                     let tc_expr = typecheck_expr(env, base_data, operand)?;
 
-                    let loaded_value = coerce_value(env, tc_expr)?;
+                    let loaded_value = coerce_value(env, expr, tc_expr)?;
                     let loaded_type = loaded_value.get_type();
 
                     explicit_cast(env, expr, loaded_value, &to_type)?
@@ -626,7 +628,8 @@ pub fn typecheck_expr(
             let lhs_val = typecheck_expr(env, base_data, lhs)?;
             let lhs_type = lhs_val.get_type();
 
-            let rhs_val = typecheck_expr(env, base_data, rhs).and_then(|v| coerce_value(env, v))?;
+            let rhs_val =
+                typecheck_expr(env, base_data, rhs).and_then(|v| coerce_value(env, rhs, v))?;
             let rhs_type = rhs_val.get_type();
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
@@ -676,101 +679,20 @@ pub fn typecheck_expr(
             rhs,
         } => typecheck_method_call(env, base_data, lhs, rhs, expr)?,
 
-        CXExprKind::BinOp { op, lhs, rhs } => typecheck_binop(env, op.clone(), lhs, rhs, expr)?,
+        CXExprKind::BinOp { op, lhs, rhs } => {
+            typecheck_binop(env, base_data, op.clone(), lhs, rhs, expr)?
+        }
 
         CXExprKind::Move { expr: move_expr } => {
-            let expr_tc = typecheck_expr(env, base_data, move_expr)?;
-
-            let Some(inner) = expr_tc._type.mem_ref_inner() else {
-                return log_typecheck_error!(
-                    env,
-                    move_expr,
-                    " Move expression requires a reference type, found {}",
-                    expr_tc._type
-                );
-            };
-
-            if !inner.has_move_semantics() {
-                log_typecheck_error!(
-                    env,
-                    move_expr,
-                    "Value of type {} has no move semantics",
-                    inner
-                );
-            }
-
-            TCExpr {
-                _type: inner.clone(),
-                kind: TCExprKind::Move {
-                    operand: Box::new(expr_tc),
-                },
-            }
+            todo!("Intrinsic strong pointers are no longer supported, move semantics for structs are not yet implemented");
         }
 
         CXExprKind::New { _type } => {
-            let mut _type = env.complete_type(base_data, _type)?;
-
-            let (_type, array_length) = match _type.kind {
-                CXTypeKind::Array {
-                    inner_type, size, ..
-                } => {
-                    let length = TCExpr {
-                        _type: CXType::from(CXTypeKind::Integer {
-                            signed: true,
-                            bytes: 8,
-                        }),
-                        kind: TCExprKind::IntLiteral { value: size as i64 },
-                    };
-
-                    (*inner_type, Some(Box::new(length)))
-                }
-
-                CXTypeKind::VariableLengthArray {
-                    _type: inner_type,
-                    size,
-                } => {
-                    let mut size = *size;
-                    coerce_value(&mut size)?;
-
-                    _type = inner_type.clone().pointer_to();
-                    (*inner_type, Some(Box::new(size)))
-                }
-
-                _ => (_type, None),
-            };
-
-            TCExpr {
-                _type: CXType::from(CXTypeKind::StrongPointer {
-                    inner_type: Box::new(_type.clone()),
-                    is_array: array_length.is_some(),
-                }),
-                kind: TCExprKind::New {
-                    _type: _type.clone(),
-                    array_length,
-                },
-            }
+            todo!("Intrinsic strong pointers are no longer supported, new semantics for 'new' tbd.");
         }
 
         CXExprKind::InitializerList { indices } => {
-            let mut tc_indices = Vec::new();
-
-            for index in indices.iter() {
-                let mut tc_expr = typecheck_expr(env, base_data, &index.value)?;
-                coerce_value(&mut tc_expr)?;
-
-                tc_indices.push(TCInitIndex {
-                    name: index.name.clone(),
-                    index: index.index,
-                    value: tc_expr,
-                });
-            }
-
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Unit), // Placeholder, will be set during assignment
-                kind: TCExprKind::InitializerList {
-                    indices: tc_indices,
-                },
-            }
+            todo!("Initializer lists to be implemented");
         }
 
         CXExprKind::TypeConstructor {
@@ -780,7 +702,7 @@ pub fn typecheck_expr(
         } => {
             let union_type = env.get_type(base_data, type_name.as_str())?;
             let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
-                log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
+                return log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
 
             let Some((i, variant_type)) = variants
@@ -789,7 +711,7 @@ pub fn typecheck_expr(
                 .find(|(_, (variant_name, _))| variant_name == name.as_str())
                 .map(|(i, (_, variant_type))| (i, variant_type.clone()))
             else {
-                log_typecheck_error!(
+                return log_typecheck_error!(
                     env,
                     expr,
                     " Variant '{}' not found in tagged union type {}",
@@ -798,39 +720,35 @@ pub fn typecheck_expr(
                 );
             };
 
-            let mut inner = typecheck_expr(env, base_data, inner)?;
-            implicit_cast(&mut inner, &variant_type)?;
-
-            TCExpr {
-                _type: union_type.clone().mem_ref_to(),
-                kind: TCExprKind::TypeConstructor {
-                    name: name.clone(),
-
-                    union_type,
-                    variant_type,
+            let mut inner = typecheck_expr(env, base_data, inner)
+                .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
+            
+            let result = env.builder.new_register();
+            env.builder.add_instruction(
+                MIRInstruction::ConstructSumType {
+                    result: result.clone(),
+                    value: inner,
                     variant_index: i,
-
-                    input: Box::new(inner),
-                },
+                    sum_type: union_type.clone(),
+                }
+            );
+            
+            MIRValue::Register {
+                register: result,
+                _type: variant_type,
             }
         }
 
-        CXExprKind::Unit => TCExpr {
-            _type: CXType::from(CXTypeKind::Unit),
-            kind: TCExprKind::Unit,
-        },
+        CXExprKind::Unit => MIRValue::NULL,
 
         CXExprKind::SizeOf { expr } => {
             let tc_expr = typecheck_expr(env, base_data, expr)?;
+            let tc_type = tc_expr.get_type();
 
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Integer {
-                    signed: true,
-                    bytes: 8,
-                }),
-                kind: TCExprKind::SizeOf {
-                    _type: tc_expr._type,
-                },
+            MIRValue::IntLiteral {
+                value: tc_type.type_size() as i64,
+                _type: CXIntegerType::I64,
+                signed: false,
             }
         }
 
@@ -840,23 +758,67 @@ pub fn typecheck_expr(
             cases,
             default_case,
         } => {
-            let mut tc_condition = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut tc_condition)?;
+            env.push_scope(None, None);
+            
+            let condition_value = typecheck_expr(env, base_data, condition)?;
+            
+            env.pop_scope();
 
-            let tc_stmts = block
+            let (default_block, merge_block) = if default_case.is_some() {
+                (
+                    env.builder.new_named_block_id("default_block"),
+                    env.builder.new_named_block_id("merge_block"),
+                )
+            } else {
+                let merge_block = env.builder.new_named_block_id("merge_block");
+                (merge_block.clone(), merge_block)
+            };
+            
+            env.push_scope(None, Some(merge_block.clone()));
+
+            let case_blocks = cases
                 .iter()
-                .map(|e| typecheck_expr(env, base_data, e))
-                .collect::<CXResult<Vec<_>>>()?;
+                .map(|_| env.builder.new_named_block_id("case_block"))
+                .collect::<Vec<_>>();
 
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Unit),
-                kind: TCExprKind::CSwitch {
-                    condition: Box::new(tc_condition),
-                    block: tc_stmts,
-                    cases: cases.clone(),
-                    default_case: *default_case,
-                },
+            let mut sorted_cases = cases.clone();
+            sorted_cases.sort_by(|a, b| a.1.cmp(&b.1));
+
+            env.builder.add_instruction(
+                MIRInstruction::JumpTable {
+                    condition: condition_value,
+                    targets: sorted_cases
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (case, _))| (*case, case_blocks[i]))
+                        .collect(),
+                    default: default_block,
+                }
+            );
+
+            let mut case_iter = sorted_cases.iter().map(|(_, i)| *i);
+            let mut case_block_iter = case_blocks.iter();
+            let mut next_index = case_iter.next();
+
+            for (i, expr) in block.iter().enumerate() {
+                while next_index == Some(i) {
+                    let case_block = case_block_iter.next().unwrap();
+                    next_index = case_iter.next();
+                    env.builder.add_and_set_block(*case_block);
+                }
+
+                if *default_case == Some(i) {
+                    env.builder.add_jump(default_block);
+                    env.builder.add_and_set_block(default_block);
+                }
+
+                typecheck_expr(env, base_data, expr)?;
             }
+
+            env.builder.add_jump(merge_block);
+            env.pop_scope();
+            
+            MIRValue::NULL
         }
 
         CXExprKind::Match {
@@ -864,115 +826,7 @@ pub fn typecheck_expr(
             arms,
             default,
         } => {
-            let mut match_value = typecheck_expr(env, base_data, condition)?;
-            coerce_value(&mut match_value)?;
-
-            match &match_value._type.kind {
-                CXTypeKind::TaggedUnion {
-                    name: expected_union_name,
-                    variants,
-                    ..
-                } => {
-                    let mut tc_arms = Vec::new();
-
-                    for (value, block) in arms.iter() {
-                        env.push_scope();
-
-                        let CXExprKind::TypeConstructor {
-                            union_name,
-                            variant_name,
-                            inner,
-                        } = &value.kind
-                        else {
-                            log_typecheck_error!(
-                                env,
-                                value,
-                                " Expected Type Constructor in 'match' arm, found: {}",
-                                value
-                            );
-                        };
-
-                        let CXExprKind::Identifier(instance_name) = &inner.as_ref().kind else {
-                            log_typecheck_error!(
-                                env,
-                                inner.as_ref(),
-                                " Expected identifier in 'match' arm, found: {}",
-                                inner
-                            );
-                        };
-                        let instance_name = instance_name.clone();
-
-                        if union_name.as_str() != expected_union_name.as_str() {
-                            log_typecheck_error!(
-                                env,
-                                value,
-                                " Mismatched type in 'match' arm, expected '{}', found '{}'",
-                                match_value._type,
-                                union_name
-                            );
-                        }
-
-                        let Some((idx, variant_type)) = variants
-                            .iter()
-                            .enumerate()
-                            .find(|(_i, (name, _))| name == variant_name.as_str())
-                            .map(|(i, (_, variant_type))| (i, variant_type.clone()))
-                        else {
-                            log_typecheck_error!(
-                                env,
-                                value,
-                                " Variant '{}' not found in tagged union type {}",
-                                variant_name,
-                                union_name
-                            );
-                        };
-
-                        env.insert_symbol(
-                            instance_name.as_string(),
-                            variant_type.clone().mem_ref_to(),
-                        );
-                        let tc_block = typecheck_expr(env, base_data, block)?;
-
-                        tc_arms.push(TCTagMatch {
-                            tag_value: idx as u64,
-                            body: Box::new(tc_block),
-
-                            instance_name,
-                            variant_type,
-                        });
-
-                        env.pop_scope();
-                    }
-
-                    let default_case = default
-                        .as_ref()
-                        .map(|d| {
-                            env.push_scope();
-                            let Ok(tc_default) = typecheck_expr(env, base_data, d) else {
-                                log_typecheck_error!(
-                                    env,
-                                    d,
-                                    " Failed to typecheck default case in 'match' expression"
-                                );
-                            };
-                            env.pop_scope();
-
-                            Ok(Box::new(tc_default))
-                        })
-                        .transpose()?;
-
-                    TCExpr {
-                        _type: CXType::from(CXTypeKind::Unit),
-                        kind: TCExprKind::Match {
-                            condition: Box::new(match_value),
-                            cases: tc_arms,
-                            default_case,
-                        },
-                    }
-                }
-
-                _ => todo!("Integer-based matching"),
-            }
+            todo!()
         }
 
         CXExprKind::Taken => {
@@ -1000,14 +854,14 @@ pub(crate) fn global_expr(
     };
 
     match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Ok(TCExpr {
-            _type: CXType::from(CXTypeKind::Integer {
+        CXGlobalVariable::EnumConstant(val) => Ok(
+            MIRValue::IntLiteral {
+                value: *val as i64,
+                _type: CXIntegerType::from_bytes(8).unwrap(),
                 signed: true,
-                bytes: 8,
-            }),
-            kind: TCExprKind::IntLiteral { value: *val as i64 },
-        }),
-
+            }
+        ),
+        
         CXGlobalVariable::Standard {
             type_,
             initializer,
@@ -1017,7 +871,7 @@ pub(crate) fn global_expr(
             let initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
-                        log_typecheck_error!(
+                        return log_typecheck_error!(
                             env,
                             init_expr,
                             " CX currently only supports integer initializers for global variable initialization"
@@ -1048,12 +902,11 @@ pub(crate) fn global_expr(
     }
 }
 
-fn tcglobal_expr(global: &TCGlobalVariable) -> CXResult<TCExpr> {
+fn tcglobal_expr(global: &TCGlobalVariable) -> CXResult<MIRValue> {
     match &global.kind {
-        TCGlobalVarKind::Variable { name, _type, .. } => Ok(TCExpr {
-            _type: _type.clone().mem_ref_to(),
-            kind: TCExprKind::GlobalVariableReference { name: name.clone() },
-        }),
+        TCGlobalVarKind::Variable { name, _type, .. } => Ok(
+            MIRValue::GlobalValue { name: name.clone(), _type: _type.clone() }
+        ),        
 
         TCGlobalVarKind::StringLiteral { .. } => {
             unreachable!("String literals cannot be referenced via an identifier")
