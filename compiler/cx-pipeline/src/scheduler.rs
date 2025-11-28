@@ -318,7 +318,10 @@ pub(crate) fn perform_job(
                 panic!("Template realization failed for unit: {}", job.unit);
             });
             
-            let mir = env.finish_mir_unit();
+            let mir = env.finish_mir_unit().unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("MIR generation failed for unit: {}", job.unit);
+            });
 
             if !job.unit.is_std_lib() {
                 dump_data(&mir);
