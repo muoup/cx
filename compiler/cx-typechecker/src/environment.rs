@@ -7,7 +7,7 @@ use cx_typechecker_data::ast::{TCBaseMappings, TCGlobalVariable};
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::mir::expression::MIRValue;
-use cx_typechecker_data::mir::program::MIRBasicBlock;
+use cx_typechecker_data::mir::program::{MIRBasicBlock, MIRUnit};
 use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -91,7 +91,7 @@ impl TCEnvironment<'_> {
             continue_to,
         });
     }
-    
+
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
         self.scope_stack.pop();
@@ -194,16 +194,17 @@ impl TCEnvironment<'_> {
     }
 
     pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
-        where F: FnOnce(&mut Self) -> CXResult<T> {
-            
+    where
+        F: FnOnce(&mut Self) -> CXResult<T>,
+    {
         if self.builder.in_defer() {
             return CXError::create_result("Cannot nest defer blocks");
         }
-             
+
         let Some(func_ctx) = &mut self.builder.function_context else {
             unreachable!()
         };
-        
+
         if func_ctx.defer_blocks.is_empty() {
             func_ctx.defer_blocks.push(MIRBasicBlock {
                 id: CXIdent::from("defer_entry"),
@@ -211,22 +212,30 @@ impl TCEnvironment<'_> {
             });
         }
         let previous_pointer = func_ctx.current_block.clone();
-        
-        self.builder.set_pointer(BlockPointer::Defer(self.builder.get_defer_end()));
+
+        self.builder
+            .set_pointer(BlockPointer::Defer(self.builder.get_defer_end()));
         self.builder.set_block(CXIdent::from("defer_entry"));
-        
+
         let result = f(self);
-        
+
         let Some(func_ctx) = &mut self.builder.function_context else {
             unreachable!()
         };
         let BlockPointer::Defer(i) = func_ctx.current_block.clone() else {
             unreachable!()
         };
-        
+
         self.builder.set_defer_end(i);
         self.builder.set_pointer(previous_pointer);
-     
+
         result
+    }
+
+    pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {
+        Ok(MIRUnit {
+            functions: self.builder.generated_functions,
+            prototypes: self.realized_fns.into_values().collect(),
+        })
     }
 }

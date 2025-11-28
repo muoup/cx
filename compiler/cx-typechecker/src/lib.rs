@@ -6,8 +6,8 @@ use cx_util::CXResult;
 mod log;
 
 pub(crate) mod builder;
-pub(crate) mod environment;
 
+pub mod environment;
 pub mod type_checking;
 pub mod type_completion;
 

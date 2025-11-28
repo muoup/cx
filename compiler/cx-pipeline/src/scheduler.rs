@@ -1,6 +1,5 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
-use cx_bytecode::generate_mir;
 use cx_lexer_data::TokenIter;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
@@ -318,37 +317,30 @@ pub(crate) fn perform_job(
                 e.pretty_print();
                 panic!("Template realization failed for unit: {}", job.unit);
             });
-
-            let tc_ast = TCAST {
-                source_file: self_ast.file_path.clone(),
-
-                type_map: env.realized_types,
-                fn_map: env.realized_fns,
-                global_variables: env.realized_globals.into_values().collect(),
-
-                function_defs: env.declared_functions,
-            };
-
-            if !job.unit.is_std_lib() {
-                dump_data(&tc_ast);
-            }
-
-            context
-                .module_db
-                .typechecked_ast
-                .insert(job.unit.clone(), tc_ast);
-        }
-
-        CompilationStep::BytecodeGen => {
-            let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
-
-            let mir = generate_mir(tc_ast).expect("Bytecode generation failed");
+            
+            let mir = env.finish_mir_unit();
 
             if !job.unit.is_std_lib() {
                 dump_data(&mir);
             }
 
-            context.module_db.bytecode.insert(job.unit.clone(), mir);
+            // context
+            //     .module_db
+            //     .typechecked_ast
+            //     .insert(job.unit.clone(), tc_ast);
+        }
+
+        CompilationStep::BytecodeGen => {
+            todo!()
+            // let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
+
+            // let mir = generate_mir(tc_ast).expect("Bytecode generation failed");
+
+            // if !job.unit.is_std_lib() {
+            //     dump_data(&mir);
+            // }
+
+            // context.module_db.bytecode.insert(job.unit.clone(), mir);
         }
 
         CompilationStep::Codegen => {

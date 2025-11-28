@@ -29,7 +29,7 @@ pub fn typecheck_expr(
 ) -> CXResult<MIRValue> {
     Ok(match &expr.kind {
         CXExprKind::Block { exprs } => {
-            let tc_exprs = exprs
+            exprs
                 .iter()
                 .map(|e| typecheck_expr(env, base_data, e))
                 .collect::<CXResult<Vec<_>>>()?;
@@ -205,8 +205,8 @@ pub fn typecheck_expr(
             });
 
             env.builder.add_and_set_block(body_block);
-            env.push_scope(Some(merge_block.clone()), Some(condition_block));
-            let body_tc = typecheck_expr(env, base_data, body)?;
+            env.push_scope(Some(merge_block.clone()), Some(condition_block.clone()));
+            typecheck_expr(env, base_data, body)?;
             env.pop_scope();
             env.builder.add_instruction(MIRInstruction::Jump {
                 target: condition_block.clone(),
@@ -230,10 +230,10 @@ pub fn typecheck_expr(
             let merge_block = env.builder.new_block_id();
 
             env.push_scope(None, None);
-            let init_tc = typecheck_expr(env, base_data, init)?;
+            typecheck_expr(env, base_data, init)?;
             env.builder.add_jump(condition_block.clone());
 
-            env.builder.add_and_set_block(condition_block);
+            env.builder.add_and_set_block(condition_block.clone());
             let condition = typecheck_expr(env, base_data, condition)
                 .and_then(|c| coerce_condition(env, expr, c))?;
             env.builder.add_instruction(MIRInstruction::Loop {
@@ -251,7 +251,9 @@ pub fn typecheck_expr(
 
             env.builder.add_and_set_block(increment_block);
             env.push_scope(None, None);
-            let increment_tc = typecheck_expr(env, base_data, increment)?;
+
+            typecheck_expr(env, base_data, increment)?;
+
             env.pop_scope();
             env.builder.add_jump(condition_block.clone());
 
@@ -303,7 +305,7 @@ pub fn typecheck_expr(
 
         CXExprKind::Return { value } => {
             let mut value_tc = if let Some(value) = value {
-                let mut val = typecheck_expr(env, base_data, value)
+                let val = typecheck_expr(env, base_data, value)
                     .and_then(|v| coerce_value(env, expr, v))?;
 
                 Some(val)
@@ -311,11 +313,12 @@ pub fn typecheck_expr(
                 None
             };
 
-            let return_type = &env.current_function().return_type;
+            let return_type = &env.current_function().return_type.clone();
 
-            match (value_tc, return_type) {
+            match (&mut value_tc, return_type) {
                 (Some(some_value), return_type) if !return_type.is_unit() => {
-                    value_tc = Some(implicit_cast(env, expr, some_value, return_type)?);
+                    *some_value =
+                        implicit_cast(env, expr, std::mem::take(some_value), return_type)?;
                 }
 
                 (None, _) if return_type.is_unit() => {}
@@ -339,9 +342,8 @@ pub fn typecheck_expr(
                 }
             }
 
-            env.builder.add_instruction(MIRInstruction::Return {
-                value: value_tc.clone(),
-            });
+            env.builder
+                .add_instruction(MIRInstruction::Return { value: value_tc });
 
             MIRValue::NULL
         }
@@ -372,7 +374,7 @@ pub fn typecheck_expr(
                     let result = env.builder.new_register();
                     env.builder.add_instruction(MIRInstruction::MemoryRead {
                         result: load.clone(),
-                        source: operand_val,
+                        source: operand_val.clone(),
                         _type: inner.clone(),
                     });
 
@@ -455,12 +457,14 @@ pub fn typecheck_expr(
                             }
                         }
 
-                        _ => return log_typecheck_error!(
-                            env,
-                            operand,
-                            " Pre-increment operator requires an integer or pointer type, found {}",
-                            inner
-                        ),
+                        _ => {
+                            return log_typecheck_error!(
+                                env,
+                                operand,
+                                " Pre-increment operator requires an integer or pointer type, found {}",
+                                inner
+                            );
+                        }
                     }
                 }
 
@@ -514,7 +518,7 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::Negative => {
-                    let mut loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     let operator = match &loaded_op_type.kind {
@@ -561,7 +565,7 @@ pub fn typecheck_expr(
 
                     MIRValue::Register {
                         register,
-                        _type: inner.pointer_to(),
+                        _type: inner.clone().pointer_to(),
                     }
                 }
 
@@ -614,7 +618,6 @@ pub fn typecheck_expr(
                     let tc_expr = typecheck_expr(env, base_data, operand)?;
 
                     let loaded_value = coerce_value(env, expr, tc_expr)?;
-                    let loaded_type = loaded_value.get_type();
 
                     explicit_cast(env, expr, loaded_value, &to_type)?
                 }
@@ -626,12 +629,19 @@ pub fn typecheck_expr(
             lhs,
             rhs,
         } => {
+            if let Some(_) = op {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Compound assignment operators (e.g. +=, -=) are not yet supported"
+                );
+            }
+
             let lhs_val = typecheck_expr(env, base_data, lhs)?;
             let lhs_type = lhs_val.get_type();
 
             let rhs_val =
                 typecheck_expr(env, base_data, rhs).and_then(|v| coerce_value(env, rhs, v))?;
-            let rhs_type = rhs_val.get_type();
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
                 return log_typecheck_error!(
@@ -652,7 +662,6 @@ pub fn typecheck_expr(
             }
 
             let rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
-            let rhs_type = rhs_val.get_type();
 
             env.builder.add_instruction(MIRInstruction::MemoryWrite {
                 target: lhs_val,
@@ -684,7 +693,7 @@ pub fn typecheck_expr(
             typecheck_binop(env, base_data, op.clone(), lhs, rhs, expr)?
         }
 
-        CXExprKind::Move { expr: move_expr } => {
+        CXExprKind::Move { .. } => {
             todo!(
                 "Intrinsic strong pointers are no longer supported, move semantics for structs are not yet implemented"
             );
@@ -696,7 +705,7 @@ pub fn typecheck_expr(
             );
         }
 
-        CXExprKind::InitializerList { indices } => {
+        CXExprKind::InitializerList { .. } => {
             todo!("Initializer lists to be implemented");
         }
 
@@ -725,7 +734,7 @@ pub fn typecheck_expr(
                 );
             };
 
-            let mut inner = typecheck_expr(env, base_data, inner)
+            let inner = typecheck_expr(env, base_data, inner)
                 .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
 
             let result = env.builder.new_register();
@@ -823,11 +832,7 @@ pub fn typecheck_expr(
             MIRValue::NULL
         }
 
-        CXExprKind::Match {
-            condition,
-            arms,
-            default,
-        } => {
+        CXExprKind::Match { .. } => {
             todo!()
         }
 

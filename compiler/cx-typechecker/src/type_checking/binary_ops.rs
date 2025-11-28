@@ -209,10 +209,10 @@ pub(crate) fn typecheck_method_call(
         );
     };
 
-    let tc_args = comma_separated(env, base_data, rhs)?;
+    let mut tc_args = comma_separated(env, base_data, rhs)?;
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " Method {} expects {} arguments, found {}",
@@ -223,7 +223,7 @@ pub(crate) fn typecheck_method_call(
     }
 
     if tc_args.len() < prototype.params.len() {
-        log_typecheck_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " Method {} expects at least {} arguments, found {}",
@@ -243,7 +243,7 @@ pub(crate) fn typecheck_method_call(
     // Varargs argument coercion
     for (expr, val) in tc_args.iter_mut().skip(canon_params) {
         // All varargs arguments must be lvalues, coerce_value is necessary here
-        *val = coerce_value(env, *expr, std::mem::take(&mut val))?;
+        *val = coerce_value(env, *expr, std::mem::take(val))?;
         let arg_type = val.get_type();
 
         match &arg_type.kind {
@@ -315,7 +315,7 @@ pub(crate) fn typecheck_method_call(
     };
 
     env.builder.add_instruction(MIRInstruction::CallFunction {
-        result: result,
+        result: result.clone(),
         function: loaded_lhs,
         arguments: tc_args.into_iter().map(|(_, val)| val).collect(),
     });
@@ -323,18 +323,18 @@ pub(crate) fn typecheck_method_call(
     match result {
         Some(reg) => Ok(MIRValue::Register {
             register: reg,
-            _type: prototype.return_type,
+            _type: prototype.return_type.clone(),
         }),
         None => Ok(MIRValue::NULL),
     }
 }
 
-pub(crate) fn typecheck_is<'a>(
-    env: &'a mut TCEnvironment<'a>,
-    base_data: &'a TCBaseMappings,
-    lhs: &'a CXExpr,
-    rhs: &'a CXExpr,
-    expr: &'a CXExpr,
+pub(crate) fn typecheck_is(
+    env: &mut TCEnvironment,
+    base_data: &TCBaseMappings,
+    lhs: &CXExpr,
+    rhs: &CXExpr,
+    expr: &CXExpr,
 ) -> CXResult<MIRValue> {
     let tc_lhs = typecheck_expr(env, base_data, lhs)?;
     let loaded_lhs_val = coerce_value(env, lhs, tc_lhs)?;

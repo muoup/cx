@@ -148,14 +148,6 @@ impl MIRBuilder {
         }
     }
     
-    pub fn current_pointer(&self) -> BlockPointer {
-        let Some(func_ctx) = &self.function_context else {
-            unreachable!()
-        };
-
-        func_ctx.current_block.clone()
-    }
-    
     pub fn set_pointer(&mut self, pointer: BlockPointer) {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
