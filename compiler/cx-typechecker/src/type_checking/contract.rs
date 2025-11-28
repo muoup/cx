@@ -43,17 +43,13 @@ pub fn contracted_function_call(
     base_data: &TCBaseMappings,
     prototype: &CXFunctionPrototype,
     function: MIRValue,
-    parameters: impl Iterator<Item = CXExpr>,
+    parameters: &[MIRValue],
 ) -> CXResult<MIRValue> {
-    let params = parameters
-        .map(|param| typecheck_expr(env, base_data, &param))
-        .collect::<CXResult<Vec<_>>>()?;
-
     if let Some(precondition) = &prototype.contract.precondition {
-        verify_clause(env, prototype, base_data, &params, precondition)?;
+        verify_clause(env, prototype, base_data, &parameters, precondition)?;
     }
     
-    let result = if prototype.return_type.is_unit() {
+    let result = if !prototype.return_type.is_unit() {
         Some(env.builder.new_register())
     } else {
         None
@@ -62,7 +58,7 @@ pub fn contracted_function_call(
     env.builder.add_instruction(MIRInstruction::CallFunction {
         result: result.clone(),
         function,
-        arguments: params.clone(),
+        arguments: parameters.iter().cloned().collect(),
     });
     
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
@@ -84,7 +80,7 @@ pub fn contracted_function_call(
             );
         }
         
-        verify_clause(env, prototype, base_data, &params, postcondition)?;
+        verify_clause(env, prototype, base_data, parameters, postcondition)?;
     }
 
     Ok(match result {

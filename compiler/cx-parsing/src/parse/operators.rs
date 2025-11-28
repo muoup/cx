@@ -49,11 +49,11 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 2,
         CXUnOp::BNot => 2,
+        CXUnOp::Dereference => 2,
 
         CXUnOp::LNot => 3,
         CXUnOp::Negative => 3,
         CXUnOp::AddressOf => 3,
-        CXUnOp::Dereference => 3,
         CXUnOp::PreIncrement(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
     }

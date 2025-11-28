@@ -14,7 +14,6 @@ use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContex
 use cx_typechecker::environment::TCEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
-use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
 use fs2::FileExt;

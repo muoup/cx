@@ -95,7 +95,6 @@ pub fn _complete_fn_prototype(
 ) -> CXResult<CXFunctionPrototype> {
     let prototype = apply_implicit_fn_attr(prototype.clone());
     let ident = complete_fn_ident(env, base_data, &prototype.name)?;
-
     let return_type = env.complete_type(base_data, &prototype.return_type)?;
 
     let parameters = prototype
@@ -122,6 +121,6 @@ pub fn _complete_fn_prototype(
     if !env.realized_fns.contains_key(&ident) {
         env.realized_fns.insert(ident, prototype.clone());
     }
-
+    
     Ok(prototype)
 }

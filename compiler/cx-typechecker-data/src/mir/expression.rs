@@ -47,6 +47,12 @@ pub enum MIRInstruction {
         result: MIRRegister,
         _type: CXType,
     },
+    
+    CreateRegionCopy {
+        result: MIRRegister,
+        source: MIRRegister,
+        _type: CXType,
+    },
 
     LoadGlobal {
         result: MIRRegister,

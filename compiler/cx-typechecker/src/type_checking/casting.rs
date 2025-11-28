@@ -1,10 +1,8 @@
 use cx_parsing_data::ast::CXExpr;
-use cx_typechecker_data::
-    mir::{
-        expression::{MIRCoercion, MIRInstruction, MIRValue},
-        types::{CXIntegerType, CXType, CXTypeKind, same_type},
-    }
-;
+use cx_typechecker_data::mir::{
+    expression::{MIRCoercion, MIRInstruction, MIRValue},
+    types::{CXIntegerType, CXType, CXTypeKind, same_type},
+};
 use cx_util::CXResult;
 
 use crate::{environment::TCEnvironment, log_typecheck_error};
@@ -194,7 +192,7 @@ pub fn implicit_cast(
         }
 
         (CXTypeKind::MemoryReference(inner), _)
-            if same_type(inner.as_ref(), to_type) && to_type.has_move_semantics() =>
+            if same_type(inner.as_ref(), to_type) =>
         {
             if !inner.copyable() {
                 return log_typecheck_error!(
@@ -206,11 +204,27 @@ pub fn implicit_cast(
                 );
             }
 
-            todo!("Copy semantics")
-        }
+            let result = env.builder.new_register();
+            let MIRValue::Register { register, .. } = &value else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "Expected register value for memory reference copy, got {}",
+                    value
+                );
+            };
 
-        (CXTypeKind::MemoryReference(inner), _) if inner.is_structured() => {
-            implicit_cast(env, expr, value, to_type)
+            env.builder
+                .add_instruction(MIRInstruction::CreateRegionCopy {
+                    result: result.clone(),
+                    source: register.clone(),
+                    _type: *inner.clone(),
+                });
+
+            Ok(MIRValue::Register {
+                register: result,
+                _type: to_type.clone(),
+            })
         }
 
         (CXTypeKind::MemoryReference(inner), _) => {

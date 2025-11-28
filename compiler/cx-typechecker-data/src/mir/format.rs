@@ -1,7 +1,9 @@
-use std::fmt::{Display, Formatter};
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRUnOp, MIRValue};
 use crate::mir::program::{MIRBasicBlock, MIRFunction, MIRUnit};
-use crate::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter};
+use crate::mir::types::{
+    CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
+};
+use std::fmt::{Display, Formatter};
 
 impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -74,15 +76,55 @@ impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             MIRInstruction::Alias { result, value } => write!(f, "%{result} = alias {value}"),
-            MIRInstruction::CreateStackRegion { result, _type } => write!(f, "%{result} = stack_alloc {_type}"),
-            MIRInstruction::LoadGlobal { result, name } => write!(f, "%{result} = load_global {name}"),
-            MIRInstruction::MemoryRead { result, source, _type } => write!(f, "%{result} = mem_read {source} as {_type}"),
-            MIRInstruction::MemoryWrite { target, value } => write!(f, "mem_write {target}, {value}"),
-            MIRInstruction::StructGet { result, source, field_index, struct_type } => write!(f, "%{result} = struct_get {source}, index {field_index} of {struct_type}"),
-            MIRInstruction::TaggedUnionGet { result, source, variant_type } => write!(f, "%{result} = tagged_union_get {source} as {variant_type}"),
-            MIRInstruction::TaggedUnionIs { result, source, tag_id } => write!(f, "%{result} = tagged_union_is {source}, tag {tag_id}"),
-            MIRInstruction::ArrayGet { result, source, index, .. } => write!(f, "%{result} = array_get {source}[{index}]"),
-            MIRInstruction::CallFunction { result, function, arguments } => {
+            MIRInstruction::CreateStackRegion { result, _type } => {
+                write!(f, "%{result} = stack_alloc {_type}")
+            }
+            MIRInstruction::CreateRegionCopy {
+                result,
+                source: target,
+                _type,
+            } => write!(f, "%{result} = region_copy {target} as {_type}"),
+            MIRInstruction::LoadGlobal { result, name } => {
+                write!(f, "%{result} = load_global {name}")
+            }
+            MIRInstruction::MemoryRead {
+                result,
+                source,
+                _type,
+            } => write!(f, "%{result} = mem_read {source} as {_type}"),
+            MIRInstruction::MemoryWrite { target, value } => {
+                write!(f, "mem_write {target}, {value}")
+            }
+            MIRInstruction::StructGet {
+                result,
+                source,
+                field_index,
+                struct_type,
+            } => write!(
+                f,
+                "%{result} = struct_get {source}, index {field_index} of {struct_type}"
+            ),
+            MIRInstruction::TaggedUnionGet {
+                result,
+                source,
+                variant_type,
+            } => write!(f, "%{result} = tagged_union_get {source} as {variant_type}"),
+            MIRInstruction::TaggedUnionIs {
+                result,
+                source,
+                tag_id,
+            } => write!(f, "%{result} = tagged_union_is {source}, tag {tag_id}"),
+            MIRInstruction::ArrayGet {
+                result,
+                source,
+                index,
+                ..
+            } => write!(f, "%{result} = array_get {source}[{index}]"),
+            MIRInstruction::CallFunction {
+                result,
+                function,
+                arguments,
+            } => {
                 if let Some(result) = result {
                     write!(f, "%{result} = ")?;
                 }
@@ -95,12 +137,36 @@ impl Display for MIRInstruction {
                 }
                 write!(f, ")")
             }
-            MIRInstruction::ConstructSumType { result, variant_index, value, sum_type } => write!(f, "%{result} = construct_sum {sum_type}::variant({variant_index}) with {value}"),
-            MIRInstruction::Loop { condition_precheck, condition, body, merge } => write!(f, "loop (precheck: {condition_precheck}) cond({condition}) body({body}) merge({merge})"),
+            MIRInstruction::ConstructSumType {
+                result,
+                variant_index,
+                value,
+                sum_type,
+            } => write!(
+                f,
+                "%{result} = construct_sum {sum_type}::variant({variant_index}) with {value}"
+            ),
+            MIRInstruction::Loop {
+                condition_precheck,
+                condition,
+                body,
+                merge,
+            } => write!(
+                f,
+                "loop (precheck: {condition_precheck}) cond({condition}) body({body}) merge({merge})"
+            ),
             MIRInstruction::LoopContinue { loop_id } => write!(f, "loop_continue {loop_id}"),
-            MIRInstruction::Branch { condition, true_block, false_block } => write!(f, "branch {condition} ? {true_block} : {false_block}"),
+            MIRInstruction::Branch {
+                condition,
+                true_block,
+                false_block,
+            } => write!(f, "branch {condition} ? {true_block} : {false_block}"),
             MIRInstruction::Jump { target } => write!(f, "jump {target}"),
-            MIRInstruction::JumpTable { condition, targets, default } => {
+            MIRInstruction::JumpTable {
+                condition,
+                targets,
+                default,
+            } => {
                 write!(f, "jump_table {condition} -> [")?;
                 for (i, (val, target)) in targets.iter().enumerate() {
                     if i > 0 {
@@ -117,9 +183,22 @@ impl Display for MIRInstruction {
                 }
                 Ok(())
             }
-            MIRInstruction::BinOp { result, lhs, rhs, op } => write!(f, "%{result} = binop({op}) {lhs}, {rhs}"),
-            MIRInstruction::UnOp { result, operand, op } => write!(f, "%{result} = unop({op}) {operand}"),
-            MIRInstruction::Coercion { result, operand, cast_type } => write!(f, "%{result} = coercion({cast_type}) {operand}"),
+            MIRInstruction::BinOp {
+                result,
+                lhs,
+                rhs,
+                op,
+            } => write!(f, "%{result} = binop({op}) {lhs}, {rhs}"),
+            MIRInstruction::UnOp {
+                result,
+                operand,
+                op,
+            } => write!(f, "%{result} = unop({op}) {operand}"),
+            MIRInstruction::Coercion {
+                result,
+                operand,
+                cast_type,
+            } => write!(f, "%{result} = coercion({cast_type}) {operand}"),
             MIRInstruction::Assert { value, message } => write!(f, "assert {value} \"{message}\""),
             MIRInstruction::Assume { value } => write!(f, "assume {value}"),
             MIRInstruction::Havoc { target } => write!(f, "havoc %{target}"),
@@ -130,9 +209,20 @@ impl Display for MIRInstruction {
 impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRValue::IntLiteral { value, signed, _type } => write!(f, "{value}{}{}", if *signed {"i"} else {"u"}, _type.bytes() * 8),
+            MIRValue::IntLiteral {
+                value,
+                signed,
+                _type,
+            } => write!(
+                f,
+                "{value}{}{}",
+                if *signed { "i" } else { "u" },
+                _type.bytes() * 8
+            ),
             MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
-            MIRValue::FunctionReference { prototype, .. } => write!(f, "fn_ref({})", prototype.name),
+            MIRValue::FunctionReference { prototype, .. } => {
+                write!(f, "fn_ref({})", prototype.name)
+            }
             MIRValue::GlobalValue { name, _type } => write!(f, "global({name}: {_type})"),
             MIRValue::Parameter { index, _type } => write!(f, "param({index}: {_type})"),
             MIRValue::Register { register, _type } => write!(f, "%{register}: {_type}"),
@@ -143,58 +233,71 @@ impl Display for MIRValue {
 
 impl Display for MIRBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            MIRBinOp::ADD => "add",
-            MIRBinOp::SUB => "sub",
-            MIRBinOp::MUL => "mul",
-            MIRBinOp::DIV => "div",
-            MIRBinOp::MOD => "mod",
-            MIRBinOp::IMUL => "imul",
-            MIRBinOp::IDIV => "idiv",
-            MIRBinOp::IMOD => "imod",
-            MIRBinOp::FADD => "fadd",
-            MIRBinOp::FSUB => "fsub",
-            MIRBinOp::FMUL => "fmul",
-            MIRBinOp::FDIV => "fdiv",
-            MIRBinOp::AND => "and",
-            MIRBinOp::OR => "or",
-            MIRBinOp::XOR => "xor",
-            MIRBinOp::SHL => "shl",
-            MIRBinOp::SHR => "shr",
-            MIRBinOp::EQ => "eq",
-            MIRBinOp::NEQ => "neq",
-            MIRBinOp::LT => "lt",
-            MIRBinOp::LE => "le",
-            MIRBinOp::GT => "gt",
-            MIRBinOp::GE => "ge",
-            MIRBinOp::ILT => "ilt",
-            MIRBinOp::ILE => "ile",
-            MIRBinOp::IGT => "igt",
-            MIRBinOp::IGE => "ige",
-            MIRBinOp::FLT => "flt",
-            MIRBinOp::FLE => "fle",
-            MIRBinOp::FGT => "fgt",
-            MIRBinOp::FGE => "fge",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                MIRBinOp::ADD => "add",
+                MIRBinOp::SUB => "sub",
+                MIRBinOp::MUL => "mul",
+                MIRBinOp::DIV => "div",
+                MIRBinOp::MOD => "mod",
+                MIRBinOp::IMUL => "imul",
+                MIRBinOp::IDIV => "idiv",
+                MIRBinOp::IMOD => "imod",
+                MIRBinOp::FADD => "fadd",
+                MIRBinOp::FSUB => "fsub",
+                MIRBinOp::FMUL => "fmul",
+                MIRBinOp::FDIV => "fdiv",
+                MIRBinOp::AND => "and",
+                MIRBinOp::OR => "or",
+                MIRBinOp::XOR => "xor",
+                MIRBinOp::SHL => "shl",
+                MIRBinOp::SHR => "shr",
+                MIRBinOp::EQ => "eq",
+                MIRBinOp::NEQ => "neq",
+                MIRBinOp::LT => "lt",
+                MIRBinOp::LE => "le",
+                MIRBinOp::GT => "gt",
+                MIRBinOp::GE => "ge",
+                MIRBinOp::ILT => "ilt",
+                MIRBinOp::ILE => "ile",
+                MIRBinOp::IGT => "igt",
+                MIRBinOp::IGE => "ige",
+                MIRBinOp::FLT => "flt",
+                MIRBinOp::FLE => "fle",
+                MIRBinOp::FGT => "fgt",
+                MIRBinOp::FGE => "fge",
+            }
+        )
     }
 }
 
 impl Display for MIRUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            MIRUnOp::NEG => "neg",
-            MIRUnOp::INEG => "ineg",
-            MIRUnOp::FNEG => "fneg",
-            MIRUnOp::BNOT => "bnot",
-            MIRUnOp::LNOT => "lnot",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                MIRUnOp::NEG => "neg",
+                MIRUnOp::INEG => "ineg",
+                MIRUnOp::FNEG => "fneg",
+                MIRUnOp::BNOT => "bnot",
+                MIRUnOp::LNOT => "lnot",
+            }
+        )
     }
 }
 
 impl Display for MIRCoercion {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRCoercion::Integral { sextend, to_type } => write!(f, "integral({}, to: {})", if *sextend {"sext"} else {"zext"}, to_type),
+            MIRCoercion::Integral { sextend, to_type } => write!(
+                f,
+                "integral({}, to: {})",
+                if *sextend { "sext" } else { "zext" },
+                to_type
+            ),
             MIRCoercion::FPIntegral { to_type } => write!(f, "fp_integral(to: {})", to_type),
             MIRCoercion::PtrToInt => write!(f, "ptr_to_int"),
             MIRCoercion::IntToPtr => write!(f, "int_to_ptr"),
@@ -207,7 +310,6 @@ impl Display for MIRCoercion {
     }
 }
 
-
 impl Display for CXType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Here you might want to add specifiers if they are relevant for display
@@ -218,11 +320,22 @@ impl Display for CXType {
 impl Display for CXTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXTypeKind::Integer { _type, signed } => write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type.bytes() * 8),
+            CXTypeKind::Integer { _type, signed } => write!(
+                f,
+                "{}{}",
+                if *signed { 'i' } else { 'u' },
+                _type.bytes() * 8
+            ),
             CXTypeKind::Float { _type } => write!(f, "{}", _type),
             CXTypeKind::Bool => write!(f, "bool"),
             CXTypeKind::Structured { name, fields, .. } => {
-                write!(f, "struct {}", name.as_ref().map(|n| n.to_string()).unwrap_or_else(|| "".to_string()))?;
+                write!(
+                    f,
+                    "struct {}",
+                    name.as_ref()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "".to_string())
+                )?;
                 write!(f, " {{ ")?;
                 for (i, (name, _type)) in fields.iter().enumerate() {
                     if i > 0 {
@@ -233,7 +346,13 @@ impl Display for CXTypeKind {
                 write!(f, " }}")
             }
             CXTypeKind::Union { name, variants } => {
-                write!(f, "union {}", name.as_ref().map(|n| n.to_string()).unwrap_or_else(|| "".to_string()))?;
+                write!(
+                    f,
+                    "union {}",
+                    name.as_ref()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "".to_string())
+                )?;
                 write!(f, " {{ ")?;
                 for (i, (name, _type)) in variants.iter().enumerate() {
                     if i > 0 {

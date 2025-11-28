@@ -89,7 +89,7 @@ pub fn typecheck_expr(
                 name.as_string(),
                 MIRValue::Register {
                     register: result.clone(),
-                    _type: type_.clone(),
+                    _type: type_.clone().mem_ref_to(),
                 },
             );
             acknowledge_declared_type(env, base_data, &type_);
@@ -349,7 +349,7 @@ pub fn typecheck_expr(
         }
 
         CXExprKind::Defer { expr } => {
-            env.in_defer(|e| typecheck_expr(e, base_data, expr));
+            env.in_defer(|e| typecheck_expr(e, base_data, expr))?;
 
             MIRValue::NULL
         }
@@ -571,7 +571,8 @@ pub fn typecheck_expr(
 
                 CXUnOp::Dereference => {
                     // If the operand is a memory reference of a pointer type, we need to load the value first
-                    let loaded_operand = coerce_value(env, expr, operand_val)?;
+                    let loaded_operand = typecheck_expr(env, base_data, operand)
+                        .and_then(|v| coerce_value(env, expr, v))?;
                     let loaded_operand_type = loaded_operand.get_type();
 
                     let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
@@ -583,33 +584,17 @@ pub fn typecheck_expr(
                         );
                     };
 
-                    // coerce_value(&mut operand_val)?;
-
                     let result = env.builder.new_register();
-
-                    // There are a few things we don't want to actually load, like function pointers
-                    // i.e. calling (*func)() is semantically equivalent to just calling func()
-                    match &loaded_operand_type.kind {
-                        CXTypeKind::Function { .. } => {
-                            // Here, we simply create an alias rather than loading the value
-                            env.builder.add_instruction(MIRInstruction::Alias {
-                                result: result.clone(),
-                                value: loaded_operand,
-                            });
-                        }
-
-                        _ => {
-                            env.builder.add_instruction(MIRInstruction::MemoryRead {
-                                result: result.clone(),
-                                source: loaded_operand,
-                                _type: inner.clone(),
-                            });
-                        }
-                    }
+                    env.builder.add_instruction(
+                        MIRInstruction::Alias {
+                            result: result.clone(),
+                            value: loaded_operand,
+                        },
+                    );
 
                     MIRValue::Register {
                         register: result,
-                        _type: inner,
+                        _type: inner.mem_ref_to(),
                     }
                 }
 
@@ -640,8 +625,7 @@ pub fn typecheck_expr(
             let lhs_val = typecheck_expr(env, base_data, lhs)?;
             let lhs_type = lhs_val.get_type();
 
-            let rhs_val =
-                typecheck_expr(env, base_data, rhs).and_then(|v| coerce_value(env, rhs, v))?;
+            let rhs_val = typecheck_expr(env, base_data, rhs)?;
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
                 return log_typecheck_error!(

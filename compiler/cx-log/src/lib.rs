@@ -58,7 +58,7 @@ pub fn pretty_underline_error(
         annotation_failure(message);
     };
     
-    let Some(end_token) = tokens.get(end_index - 1) else {
+    let Some(end_token) = tokens.get(end_index.saturating_sub(1)) else {
         annotation_failure(message);
     };
     
@@ -74,8 +74,9 @@ pub fn pretty_underline_error(
 
     let (error_line, mut error_padding) = get_error_loc(&file_contents, start_index);
 
-    let error_line_start = start_index - error_padding;
-    let mut remaining_error_chars = end_index - start_index;
+    // This is unsafe and something is wrong, but not getting anything printed is very frustrating.
+    let error_line_start = unsafe { start_index.unchecked_sub(error_padding) };
+    let mut remaining_error_chars = unsafe { end_index.unchecked_sub(start_index) };
 
     let link = format!(
         "{}:{}:{}",
