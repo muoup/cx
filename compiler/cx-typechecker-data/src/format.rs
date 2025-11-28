@@ -1,7 +1,9 @@
 use super::ast::*;
 use crate::{
     function_map::{CXFunctionIdentifier, CXFunctionKind},
-    mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter},
+    mir::types::{
+        CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
+    },
 };
 use std::fmt::{Display, Formatter, Result};
 
@@ -242,46 +244,29 @@ impl<'a> Display for TCExprFormatter<'a> {
                 writeln!(f, "VariableReference {} {}", name, self.expr._type)?;
             }
             TCExprKind::FunctionReference => {
-                let CXTypeKind::Function {
-                    prototype: func_ref,
-                } = &self.expr._type.kind
-                else {
+                let CXTypeKind::Function { prototype } = &self.expr._type.kind else {
                     writeln!(f, "FunctionReference <invalid type> {}", self.expr._type)?;
                     return Ok(());
                 };
 
-                writeln!(f, "FunctionReference({})", func_ref.name)?;
-                if let Some(contract) = &func_ref.contract {
-                    if let Some(precondition) = &contract.precondition {
-                        self.indent(f)?;
-                        writeln!(f, "  Pre:")?;
-                        write!(
-                            f,
-                            "    {}",
-                            TCExprFormatter {
-                                expr: precondition,
-                                depth: self.depth + 2
-                            }
-                        )?;
-                    }
-                    if let Some((ret_name, postcondition)) = &contract.postcondition {
-                        self.indent(f)?;
+                writeln!(f, "FunctionReference({})", prototype.name)?;
 
-                        if let Some(name) = ret_name {
-                            writeln!(f, "  Post (ret: {}):", name)?;
-                        } else {
-                            writeln!(f, "  Post:")?;
-                        }
+                if let Some(precondition) = &prototype.contract.precondition {
+                    self.indent(f)?;
+                    writeln!(f, "  Pre:")?;
+                    write!(f, "    {}", precondition,)?;
+                }
 
-                        write!(
-                            f,
-                            "    {}",
-                            TCExprFormatter {
-                                expr: postcondition,
-                                depth: self.depth + 2
-                            }
-                        )?;
+                if let Some((ret_name, postcondition)) = &prototype.contract.postcondition {
+                    self.indent(f)?;
+
+                    if let Some(name) = ret_name {
+                        writeln!(f, "  Post (ret: {}):", name)?;
+                    } else {
+                        writeln!(f, "  Post:")?;
                     }
+
+                    write!(f, "    {}", postcondition,)?;
                 }
             }
             TCExprKind::MemberFunctionReference {
@@ -554,8 +539,12 @@ impl Display for CXTypeKind {
 
                 write!(f, "{}{}", if *signed { "i" } else { "u" }, size)
             }
-            CXTypeKind::Float { _type: CXFloatType::F32 } => write!(f, "f32"),
-            CXTypeKind::Float { _type: CXFloatType::F64 } => write!(f, "f64"),
+            CXTypeKind::Float {
+                _type: CXFloatType::F32,
+            } => write!(f, "f32"),
+            CXTypeKind::Float {
+                _type: CXFloatType::F64,
+            } => write!(f, "f64"),
             CXTypeKind::Bool => write!(f, "bool"),
             CXTypeKind::Structured { name, .. } => {
                 write!(

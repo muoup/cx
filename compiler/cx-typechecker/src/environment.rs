@@ -6,7 +6,7 @@ use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::ast::{TCBaseMappings, TCGlobalVariable};
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
-use cx_typechecker_data::mir::expression::MIRRegister;
+use cx_typechecker_data::mir::expression::MIRValue;
 use cx_typechecker_data::mir::program::MIRBasicBlock;
 use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
@@ -45,7 +45,7 @@ pub struct TCEnvironment<'a> {
     pub deconstructors: HashSet<CXType>,
 
     pub current_function: Option<CXFunctionPrototype>,
-    pub symbol_table: ScopedMap<(MIRRegister, CXType)>,
+    pub symbol_table: ScopedMap<MIRValue>,
     pub scope_stack: Vec<Scope>,
 
     pub in_external_templated_function: bool,
@@ -97,23 +97,15 @@ impl TCEnvironment<'_> {
         self.scope_stack.pop();
     }
 
-    pub fn insert_symbol(&mut self, name: String, value: MIRRegister, ty: CXType) {
-        self.symbol_table.insert(name, (value, ty));
+    pub fn insert_symbol(&mut self, name: String, value: MIRValue) {
+        self.symbol_table.insert(name, value);
     }
 
     pub fn add_type(&mut self, name: String, ty: CXType) {
         self.realized_types.insert(name, ty);
     }
 
-    pub fn symbol_type(&self, name: &str) -> Option<&CXType> {
-        self.symbol_table.get(name).and_then(|(_, ty)| Some(ty))
-    }
-
-    pub fn symbol_register(&self, name: &str) -> Option<&MIRRegister> {
-        self.symbol_table.get(name).and_then(|(reg, _)| Some(reg))
-    }
-    
-    pub fn symbol_data(&self, name: &str) -> Option<&(MIRRegister, CXType)> {
+    pub fn symbol_value(&self, name: &str) -> Option<&MIRValue> {
         self.symbol_table.get(name)
     }
 

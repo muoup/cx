@@ -2,7 +2,7 @@ use cx_lexer_data::{identifier, keyword, operator, punctuator};
 use cx_parsing_data::{
     assert_token_matches,
     data::{
-        CXNaiveFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind,
+        CXFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind,
         CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind, PredeclarationType,
     },
     peek_next_kind, try_next,
@@ -35,7 +35,7 @@ fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
         var_args: false,
         this_param: true,
 
-        contract: None,
+        contract: CXFunctionContract::default()
     }
 }
 
@@ -165,12 +165,12 @@ pub fn try_function_parse(
 
 pub(crate) fn parse_function_contract(
     data: &mut ParserData,
-) -> CXResult<Option<CXNaiveFunctionContract>> {
+) -> CXResult<CXFunctionContract> {
     if !try_next!(data.tokens, keyword!(Where)) {
-        return Ok(None);
+        return Ok(CXFunctionContract::default());
     }
 
-    let mut contract = CXNaiveFunctionContract {
+    let mut contract = CXFunctionContract {
         precondition: None,
         postcondition: None,
     };
@@ -222,14 +222,14 @@ pub(crate) fn parse_function_contract(
         }
     }
 
-    return Ok(Some(contract));
+    return Ok(contract);
 }
 
 pub(crate) struct ParseParamsResult {
     pub(crate) params: Vec<CXNaiveParameter>,
     pub(crate) var_args: bool,
     pub(crate) contains_this: bool,
-    pub(crate) contract: Option<CXNaiveFunctionContract>,
+    pub(crate) contract: CXFunctionContract,
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult> {

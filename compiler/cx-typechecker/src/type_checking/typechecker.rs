@@ -8,9 +8,7 @@ use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
-use cx_typechecker_data::ast::{
-    TCBaseMappings, TCGlobalVarKind, TCGlobalVariable,
-};
+use cx_typechecker_data::ast::{TCBaseMappings, TCGlobalVarKind, TCGlobalVariable};
 use cx_typechecker_data::mir::expression::{MIRBinOp, MIRInstruction, MIRUnOp, MIRValue};
 use cx_typechecker_data::mir::types::{CXIntegerType, CXTypeKind};
 use cx_util::identifier::CXIdent;
@@ -87,7 +85,13 @@ pub fn typecheck_expr(
                     _type: type_.clone(),
                 });
 
-            env.insert_symbol(name.as_string(), result.clone(), type_.clone());
+            env.insert_symbol(
+                name.as_string(),
+                MIRValue::Register {
+                    register: result.clone(),
+                    _type: type_.clone(),
+                },
+            );
             acknowledge_declared_type(env, base_data, &type_);
 
             MIRValue::Register {
@@ -97,11 +101,8 @@ pub fn typecheck_expr(
         }
 
         CXExprKind::Identifier(name) => {
-            if let Some((symbol_val, symbol_type)) = env.symbol_data(name.as_str()) {
-                MIRValue::Register {
-                    register: symbol_val.clone(),
-                    _type: symbol_type.clone().mem_ref_to(),
-                }
+            if let Some(symbol_val) = env.symbol_value(name.as_str()) {
+                symbol_val.clone()
             } else if let Some(function_type) = env
                 .get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
                 .ok()
@@ -320,7 +321,7 @@ pub fn typecheck_expr(
                 (None, _) if return_type.is_unit() => {}
 
                 (Some(_), _) => {
-                    log_typecheck_error!(
+                    return log_typecheck_error!(
                         env,
                         expr,
                         " Cannot return from function {} with a void return type",
@@ -329,7 +330,7 @@ pub fn typecheck_expr(
                 }
 
                 (None, _) => {
-                    log_typecheck_error!(
+                    return log_typecheck_error!(
                         env,
                         expr,
                         " Function {} expects a return value, but none was provided",
@@ -454,7 +455,7 @@ pub fn typecheck_expr(
                             }
                         }
 
-                        _ => log_typecheck_error!(
+                        _ => return log_typecheck_error!(
                             env,
                             operand,
                             " Pre-increment operator requires an integer or pointer type, found {}",
@@ -465,7 +466,7 @@ pub fn typecheck_expr(
 
                 CXUnOp::LNot => {
                     if !operand_type.is_integer() {
-                        log_typecheck_error!(
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Logical NOT operator requires an integer type, found {}",
@@ -647,7 +648,7 @@ pub fn typecheck_expr(
             if inner.get_specifier(CX_CONST)
                 && !matches!(lhs.kind, CXExprKind::VarDeclaration { .. })
             {
-                log_typecheck_error!(env, expr, " Cannot assign to a const type");
+                return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
             let rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
@@ -684,11 +685,15 @@ pub fn typecheck_expr(
         }
 
         CXExprKind::Move { expr: move_expr } => {
-            todo!("Intrinsic strong pointers are no longer supported, move semantics for structs are not yet implemented");
+            todo!(
+                "Intrinsic strong pointers are no longer supported, move semantics for structs are not yet implemented"
+            );
         }
 
         CXExprKind::New { _type } => {
-            todo!("Intrinsic strong pointers are no longer supported, new semantics for 'new' tbd.");
+            todo!(
+                "Intrinsic strong pointers are no longer supported, new semantics for 'new' tbd."
+            );
         }
 
         CXExprKind::InitializerList { indices } => {
@@ -722,17 +727,16 @@ pub fn typecheck_expr(
 
             let mut inner = typecheck_expr(env, base_data, inner)
                 .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
-            
+
             let result = env.builder.new_register();
-            env.builder.add_instruction(
-                MIRInstruction::ConstructSumType {
+            env.builder
+                .add_instruction(MIRInstruction::ConstructSumType {
                     result: result.clone(),
                     value: inner,
                     variant_index: i,
                     sum_type: union_type.clone(),
-                }
-            );
-            
+                });
+
             MIRValue::Register {
                 register: result,
                 _type: variant_type,
@@ -759,9 +763,9 @@ pub fn typecheck_expr(
             default_case,
         } => {
             env.push_scope(None, None);
-            
+
             let condition_value = typecheck_expr(env, base_data, condition)?;
-            
+
             env.pop_scope();
 
             let (default_block, merge_block) = if default_case.is_some() {
@@ -773,7 +777,7 @@ pub fn typecheck_expr(
                 let merge_block = env.builder.new_named_block_id("merge_block");
                 (merge_block.clone(), merge_block)
             };
-            
+
             env.push_scope(None, Some(merge_block.clone()));
 
             let case_blocks = cases
@@ -784,17 +788,15 @@ pub fn typecheck_expr(
             let mut sorted_cases = cases.clone();
             sorted_cases.sort_by(|a, b| a.1.cmp(&b.1));
 
-            env.builder.add_instruction(
-                MIRInstruction::JumpTable {
-                    condition: condition_value,
-                    targets: sorted_cases
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (case, _))| (*case, case_blocks[i]))
-                        .collect(),
-                    default: default_block,
-                }
-            );
+            env.builder.add_instruction(MIRInstruction::JumpTable {
+                condition: condition_value,
+                targets: sorted_cases
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (case, _))| (*case, case_blocks[i].clone()))
+                    .collect(),
+                default: default_block.clone(),
+            });
 
             let mut case_iter = sorted_cases.iter().map(|(_, i)| *i);
             let mut case_block_iter = case_blocks.iter();
@@ -804,12 +806,12 @@ pub fn typecheck_expr(
                 while next_index == Some(i) {
                     let case_block = case_block_iter.next().unwrap();
                     next_index = case_iter.next();
-                    env.builder.add_and_set_block(*case_block);
+                    env.builder.add_and_set_block(case_block.clone());
                 }
 
                 if *default_case == Some(i) {
-                    env.builder.add_jump(default_block);
-                    env.builder.add_and_set_block(default_block);
+                    env.builder.add_jump(default_block.clone());
+                    env.builder.add_and_set_block(default_block.clone());
                 }
 
                 typecheck_expr(env, base_data, expr)?;
@@ -817,7 +819,7 @@ pub fn typecheck_expr(
 
             env.builder.add_jump(merge_block);
             env.pop_scope();
-            
+
             MIRValue::NULL
         }
 
@@ -854,14 +856,12 @@ pub(crate) fn global_expr(
     };
 
     match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Ok(
-            MIRValue::IntLiteral {
-                value: *val as i64,
-                _type: CXIntegerType::from_bytes(8).unwrap(),
-                signed: true,
-            }
-        ),
-        
+        CXGlobalVariable::EnumConstant(val) => Ok(MIRValue::IntLiteral {
+            value: *val as i64,
+            _type: CXIntegerType::from_bytes(8).unwrap(),
+            signed: true,
+        }),
+
         CXGlobalVariable::Standard {
             type_,
             initializer,
@@ -904,9 +904,10 @@ pub(crate) fn global_expr(
 
 fn tcglobal_expr(global: &TCGlobalVariable) -> CXResult<MIRValue> {
     match &global.kind {
-        TCGlobalVarKind::Variable { name, _type, .. } => Ok(
-            MIRValue::GlobalValue { name: name.clone(), _type: _type.clone() }
-        ),        
+        TCGlobalVarKind::Variable { name, _type, .. } => Ok(MIRValue::GlobalValue {
+            name: name.clone(),
+            _type: _type.clone(),
+        }),
 
         TCGlobalVarKind::StringLiteral { .. } => {
             unreachable!("String literals cannot be referenced via an identifier")

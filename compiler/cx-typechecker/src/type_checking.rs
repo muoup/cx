@@ -6,7 +6,7 @@ use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::{
     ast::TCBaseMappings,
     function_map::CXFunctionKind,
-    mir::types::{CXFunctionPrototype, CXTemplateInput},
+    mir::{expression::MIRValue, types::{CXFunctionPrototype, CXTemplateInput, TCParameter}},
 };
 use cx_util::CXResult;
 
@@ -19,6 +19,7 @@ use crate::{
     },
 };
 
+pub(crate) mod contract;
 pub(crate) mod binary_ops;
 pub(crate) mod casting;
 pub(crate) mod move_semantics;
@@ -32,8 +33,21 @@ fn generate_function(
     body: &CXExpr,
 ) -> CXResult<()> {
     env.push_scope(None, None);
-    env.builder.start_function(prototype);
 
+    for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
+        let Some(name) = name else { continue; };
+
+        env.insert_symbol(
+            name.as_string(),
+            MIRValue::Parameter {
+                index: i,
+                _type: _type.clone(),
+            }
+        );
+    }
+       
+    env.builder.start_function(prototype);
+    
     typecheck_expr(env, base_data, body)?;
 
     env.builder.finish_function();

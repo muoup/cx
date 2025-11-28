@@ -23,6 +23,10 @@ pub enum MIRValue {
         name: CXIdent,
         _type: CXType,
     },
+    Parameter {
+        index: usize,
+        _type: CXType,
+    },
     Register {
         register: MIRRegister,
         _type: CXType,
@@ -244,6 +248,7 @@ impl MIRValue {
                 prototype: Box::new(prototype.clone()),
             })
             .pointer_to(),
+            MIRValue::Parameter { _type, .. } |
             MIRValue::GlobalValue { _type, .. } |
             MIRValue::Register { _type, .. } => _type.clone(),
             MIRValue::NULL => CXType::unit(),

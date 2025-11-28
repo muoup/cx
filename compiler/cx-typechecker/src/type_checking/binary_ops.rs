@@ -428,8 +428,10 @@ pub(crate) fn typecheck_is<'a>(
 
     env.insert_symbol(
         inner_var_name.as_string(),
-        result,
-        variant_type.clone().mem_ref_to(),
+        MIRValue::Register {
+            register: result,
+            _type: variant_type.clone(),
+        },
     );
 
     Ok(MIRValue::Register {

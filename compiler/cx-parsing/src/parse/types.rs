@@ -96,7 +96,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 
 pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
     assert_token_matches!(data.tokens, keyword!(Enum));
-       
+
     if peek_kind!(data.tokens, keyword!(Union)) {
         data.tokens.back();
         return parse_tagged_union_def(data);
@@ -349,20 +349,13 @@ pub(crate) fn parse_typemods(
                 contract,
             } = parse_params(data)?;
 
-            if contract.is_some() {
-                return log_preparse_error!(
-                    data.tokens,
-                    "A function pointer may not contain a contract specification"
-                );
-            }
-
             let prototype = CXNaivePrototype {
                 name: NaiveFnKind::Standard(CXIdent::from("__internal_fnptr")),
                 return_type: acc_type,
                 params,
                 var_args,
                 this_param: contains_this,
-                contract: None,
+                contract,
             };
 
             Ok((

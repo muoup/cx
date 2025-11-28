@@ -1,9 +1,9 @@
 use std::hash::{Hash, Hasher};
 
 use crate::format::type_mangle;
-use crate::{ast::TCExpr, function_map::CXFunctionIdentifier};
+use crate::function_map::CXFunctionIdentifier;
 use cx_parsing_data::ast::VisibilityMode;
-use cx_parsing_data::data::CXTypeSpecifier;
+use cx_parsing_data::data::{CXFunctionContract, CXTypeSpecifier};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -35,19 +35,13 @@ pub struct TCParameter {
     pub _type: CXType,
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
-pub struct TCFunctionContract {
-    pub precondition: Option<TCExpr>,
-    pub postcondition: Option<(Option<CXIdent>, TCExpr)>,
-}
-
 #[derive(Debug, Clone, Default, Readable, Writable)]
 pub struct CXFunctionPrototype {
     pub name: CXFunctionIdentifier,
     pub return_type: CXType,
     pub params: Vec<TCParameter>,
     pub var_args: bool,
-    pub contract: Option<TCFunctionContract>,
+    pub contract: CXFunctionContract,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -444,7 +438,7 @@ impl CXType {
                     return_type: CXType::unit(),
                     params: vec![],
                     var_args: false,
-                    contract: None,
+                    contract: CXFunctionContract::default(),
                 }),
             },
         )
