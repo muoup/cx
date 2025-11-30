@@ -1,8 +1,7 @@
-use crate::types::{BCFloatType, BCIntegerType, BCTypeKind, BCType};
+use crate::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use crate::{
-    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, BlockID, MIRBlock, MIRFunction,
-    MIRFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, MIRIntBinOp, MIRUnit,
-    BCValue,
+    BCGlobalType, BCInstruction, BCInstructionKind, BCValue, MIRBlock, MIRFloatBinOp, MIRFloatUnOp,
+    MIRFunction, MIRFunctionPrototype, MIRIntBinOp, MIRIntUnOp, MIRPtrBinOp, MIRUnit,
 };
 use std::fmt::{Display, Formatter};
 
@@ -26,21 +25,7 @@ impl Display for MIRFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.prototype)?;
 
-        for (i, block) in self.blocks.iter().enumerate() {
-            write!(f, "block{i}")?;
-            if !block.debug_name.is_empty() {
-                write!(f, "  // {}", block.debug_name)?;
-            }
-            writeln!(f, ":")?;
-            writeln!(f, "{block}")?;
-        }
-
-        for (i, block) in self.defer_blocks.iter().enumerate() {
-            write!(f, "defer_block{i}")?;
-            if !block.debug_name.is_empty() {
-                write!(f, "  // {}", block.debug_name)?;
-            }
-            writeln!(f, ":")?;
+        for block in self.blocks.iter() {
             writeln!(f, "{block}")?;
         }
 
@@ -50,6 +35,8 @@ impl Display for MIRFunction {
 
 impl Display for MIRBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, ".{}:", self.id)?;
+
         for (i, instruction) in self.body.iter().enumerate() {
             write!(f, "\t")?;
 
@@ -121,16 +108,7 @@ impl Display for BCValue {
             BCValue::LoadOf(_, value) => write!(f, "*{value}"),
             BCValue::FunctionRef(name) => write!(f, "{name}"),
             BCValue::Global(id) => write!(f, "g{id}"),
-            BCValue::BlockResult { block_id, value_id } => write!(f, "{block_id}:v{value_id}"),
-        }
-    }
-}
-
-impl Display for BlockID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BlockID::Block(id) => write!(f, "b{id}"),
-            BlockID::DeferredBlock(id) => write!(f, "d{id}"),
+            BCValue::Register { register, _type } => write!(f, "{_type} {register}"),
         }
     }
 }
@@ -432,7 +410,7 @@ impl Display for BCTypeKind {
         match &self {
             BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
             BCTypeKind::Bool => write!(f, "bool"),
-                       
+
             BCTypeKind::Integer(_type) => write!(f, "{}", _type),
             BCTypeKind::Float(_type) => write!(f, "{}", _type),
 

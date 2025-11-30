@@ -1,125 +1,52 @@
 use crate::builder::MIRBuilder;
-use crate::instruction_gen::generate_instruction;
-use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCTypeKind, BCType, MIRTypeSize};
-use cx_bytecode_data::{
-    BCFunctionMap, LinkageType, MIRFloatBinOp, MIRFunctionPrototype, MIRIntBinOp, MIRParameter,
-    MIRPtrBinOp,
-};
-use cx_parsing_data::ast::CXBinOp;
+use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
+use cx_bytecode_data::{BCFunctionMap, LinkageType, MIRFunctionPrototype, MIRParameter};
 use cx_typechecker_data::function_map::CXFnMap;
-use cx_typechecker_data::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
+use cx_typechecker_data::mir::types::{
+    CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind,
+};
 
 impl MIRBuilder {
-    pub(crate) fn convert_cx_type(&self, cx_type: &CXType) -> Option<BCType> {
+    pub(crate) fn convert_cx_type(&self, cx_type: &CXType) -> BCType {
         convert_type(cx_type)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn convert_cx_prototype(
         &self,
         cx_proto: &CXFunctionPrototype,
-    ) -> Option<MIRFunctionPrototype> {
+    ) -> MIRFunctionPrototype {
         convert_cx_prototype(cx_proto)
     }
+}
 
-    pub(crate) fn cx_ptr_binop(&self, op: &CXBinOp) -> Option<MIRPtrBinOp> {
-        Some(match op {
-            CXBinOp::Add => MIRPtrBinOp::ADD,
-            CXBinOp::Subtract => MIRPtrBinOp::SUB,
-
-            CXBinOp::Less => MIRPtrBinOp::LT,
-            CXBinOp::Greater => MIRPtrBinOp::GT,
-            CXBinOp::LessEqual => MIRPtrBinOp::LE,
-            CXBinOp::GreaterEqual => MIRPtrBinOp::GE,
-
-            CXBinOp::Equal => MIRPtrBinOp::EQ,
-            CXBinOp::NotEqual => MIRPtrBinOp::NE,
-
-            _ => return None,
-        })
-    }
-
-    pub(crate) fn cx_u_binop(&self, op: &CXBinOp) -> Option<MIRIntBinOp> {
-        Some(match op {
-            CXBinOp::Divide => MIRIntBinOp::UDIV,
-            CXBinOp::Modulus => MIRIntBinOp::UREM,
-
-            CXBinOp::Less => MIRIntBinOp::ULT,
-            CXBinOp::Greater => MIRIntBinOp::UGT,
-            CXBinOp::LessEqual => MIRIntBinOp::ULE,
-            CXBinOp::GreaterEqual => MIRIntBinOp::UGE,
-
-            _ => self.cx_i_binop(op)?,
-        })
-    }
-
-    pub(crate) fn cx_i_binop(&self, op: &CXBinOp) -> Option<MIRIntBinOp> {
-        Some(match op {
-            CXBinOp::Add => MIRIntBinOp::ADD,
-            CXBinOp::Subtract => MIRIntBinOp::SUB,
-            CXBinOp::Multiply => MIRIntBinOp::MUL,
-            CXBinOp::Divide => MIRIntBinOp::IDIV,
-            CXBinOp::Modulus => MIRIntBinOp::IREM,
-
-            CXBinOp::BitAnd => MIRIntBinOp::BAND,
-            CXBinOp::BitOr => MIRIntBinOp::BOR,
-            CXBinOp::BitXor => MIRIntBinOp::BXOR,
-
-            CXBinOp::LShift => MIRIntBinOp::SHL,
-            CXBinOp::RShift => MIRIntBinOp::ASHR,
-
-            CXBinOp::LAnd => MIRIntBinOp::LAND,
-            CXBinOp::LOr => MIRIntBinOp::LOR,
-
-            CXBinOp::Less => MIRIntBinOp::ILT,
-            CXBinOp::Greater => MIRIntBinOp::IGT,
-            CXBinOp::LessEqual => MIRIntBinOp::ILE,
-            CXBinOp::GreaterEqual => MIRIntBinOp::IGE,
-            CXBinOp::Equal => MIRIntBinOp::EQ,
-            CXBinOp::NotEqual => MIRIntBinOp::NE,
-
-            _ => return None,
-        })
-    }
-
-    pub(crate) fn cx_float_binop(&self, op: &CXBinOp) -> Option<MIRFloatBinOp> {
-        Some(match op {
-            CXBinOp::Add => MIRFloatBinOp::ADD,
-            CXBinOp::Subtract => MIRFloatBinOp::SUB,
-            CXBinOp::Multiply => MIRFloatBinOp::FMUL,
-            CXBinOp::Divide => MIRFloatBinOp::FDIV,
-
-            _ => todo!("Unsupported binary operation: {:?}", op),
-        })
+fn convert_type(cx_type: &CXType) -> BCType {
+    BCType {
+        kind: convert_type_kind(&cx_type.kind),
     }
 }
 
-fn convert_type(cx_type: &CXType) -> Option<BCType> {
-    Some(BCType {
-        kind: convert_type_kind(&cx_type.kind)?,
-    })
-}
-
-fn convert_argument_type(cx_type: &CXType) -> Option<BCType> {
-    let bc_type = convert_type(cx_type)?;
+fn convert_argument_type(cx_type: &CXType) -> BCType {
+    let bc_type = convert_type(cx_type);
 
     match &bc_type.kind {
-        BCTypeKind::Struct { .. } | BCTypeKind::Union { .. } => Some(BCType::default_pointer()),
+        BCTypeKind::Struct { .. } | BCTypeKind::Union { .. } => BCType::default_pointer(),
 
-        _ => Some(bc_type),
+        _ => bc_type,
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIRFunctionPrototype> {
+pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> MIRFunctionPrototype {
     let mut params = cx_proto
         .params
         .iter()
         .map(|param| MIRParameter {
             name: param.name.as_ref().map(|name| name.as_string()),
-            _type: convert_argument_type(&param._type).unwrap(),
+            _type: convert_argument_type(&param._type),
         })
         .collect::<Vec<_>>();
 
-    let mut return_type = convert_type(&cx_proto.return_type).unwrap();
+    let mut return_type = convert_type(&cx_proto.return_type);
 
     if cx_proto.return_type.is_structured() {
         params.insert(
@@ -141,18 +68,13 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> Option<MIR
         linkage: LinkageType::Standard,
     };
 
-    Some(prototype)
+    prototype
 }
 
 pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
     cx_proto
         .values()
-        .map(|cx_proto| {
-            (
-                cx_proto.mangle_name(),
-                convert_cx_prototype(cx_proto).unwrap(),
-            )
-        })
+        .map(|cx_proto| (cx_proto.mangle_name(), convert_cx_prototype(cx_proto)))
         .collect::<BCFunctionMap>()
 }
 
@@ -173,8 +95,8 @@ fn convert_float_type(ftype: &CXFloatType) -> BCFloatType {
     }
 }
 
-pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind> {
-    Some(match cx_type_kind {
+pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
+    match cx_type_kind {
         CXTypeKind::Opaque { size, .. } => BCTypeKind::Opaque { bytes: *size },
 
         CXTypeKind::Bool => BCTypeKind::Bool,
@@ -199,7 +121,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind>
             inner_type: inner,
             ..
         } => {
-            let inner_as_bc = convert_type(inner)?;
+            let inner_as_bc = convert_type(inner);
 
             BCTypeKind::Pointer {
                 nullable: false,
@@ -223,12 +145,15 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind>
                         name: String::new(),
                         fields: variants
                             .iter()
-                            .map(|(name, _type)| Some((name.clone(), convert_type(_type)?)))
-                            .collect::<Option<Vec<_>>>()?,
+                            .map(|(name, _type)| (name.clone(), convert_type(_type)))
+                            .collect::<Vec<_>>(),
                     }
                     .into(),
                 ),
-                ("tag".to_string(), BCTypeKind::Integer(BCIntegerType::I32).into()),
+                (
+                    "tag".to_string(),
+                    BCTypeKind::Integer(BCIntegerType::I32).into(),
+                ),
             ],
         },
 
@@ -236,7 +161,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind>
             inner_type: _type,
             size,
         } => BCTypeKind::Array {
-            element: Box::new(convert_type(_type)?),
+            element: Box::new(convert_type(_type)),
             size: *size,
         },
 
@@ -252,8 +177,8 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind>
             },
             fields: fields
                 .iter()
-                .map(|(_name, _type)| Some((_name.clone(), convert_type(_type)?)))
-                .collect::<Option<Vec<_>>>()?,
+                .map(|(_name, _type)| (_name.clone(), convert_type(_type)))
+                .collect::<Vec<_>>(),
         },
         CXTypeKind::Union {
             variants: fields,
@@ -265,10 +190,10 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> Option<BCTypeKind>
             },
             fields: fields
                 .iter()
-                .map(|(_name, _type)| Some((_name.clone(), convert_type(_type)?)))
-                .collect::<Option<Vec<_>>>()?,
+                .map(|(_name, _type)| (_name.clone(), convert_type(_type)))
+                .collect::<Vec<_>>(),
         },
 
         CXTypeKind::Unit => BCTypeKind::Unit,
-    })
+    }
 }

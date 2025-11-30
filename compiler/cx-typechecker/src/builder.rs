@@ -1,5 +1,5 @@
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRRegister},
+    expression::{MIRInstruction, BCRegister},
     program::{MIRBasicBlock, MIRFunction},
     types::CXFunctionPrototype,
 };
@@ -54,14 +54,14 @@ impl MIRBuilder {
         self.function_context = Some(function_context);
     }
 
-    pub fn new_register(&mut self) -> MIRRegister {
+    pub fn new_register(&mut self) -> BCRegister {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
         };
 
         let id = format!("{}", func_ctx.temp_counter);
         func_ctx.temp_counter += 1;
-        MIRRegister::from(id)
+        BCRegister::from(id)
     }
 
     pub fn current_block(&mut self) -> &mut MIRBasicBlock {

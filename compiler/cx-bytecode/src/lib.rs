@@ -1,4 +1,3 @@
-use crate::builder::MIRBuilder;
 use cx_bytecode_data::MIRUnit;
 use cx_typechecker_data::ast::TCAST;
 
@@ -8,8 +7,8 @@ pub(crate) mod mir_lowering;
 
 pub type BytecodeResult<T> = Option<T>;
 
-pub fn generate_mir(ast: TCAST) -> Option<MIRUnit> {
-    let mut builder = MIRBuilder::new(&ast);
+pub fn generate_mir(_ast: TCAST) -> Option<MIRUnit> {
+    // let mut builder = MIRBuilder::new(&ast);
 
     todo!();
     
@@ -21,5 +20,5 @@ pub fn generate_mir(ast: TCAST) -> Option<MIRUnit> {
     //     generate_function(&mut builder, &fn_def.prototype, &fn_def.body)?;
     // }
 
-    builder.finish()
+    // builder.finish()
 }

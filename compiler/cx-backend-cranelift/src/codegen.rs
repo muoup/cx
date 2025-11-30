@@ -6,7 +6,7 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_bytecode_data::{BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue};
+use cx_bytecode_data::{BCBlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue};
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
@@ -34,7 +34,7 @@ pub(crate) fn codegen_fn_prototype(
 pub(crate) fn codegen_block(
     context: &mut FunctionState,
     fn_block: &MIRBlock,
-    block_id: BlockID,
+    block_id: BCBlockID,
 ) {
     let block = context.get_block(block_id);
     context.builder.switch_to_block(block);
@@ -89,7 +89,7 @@ pub(crate) fn codegen_function(
         context.block_map.push(context.builder.create_block());
     }
 
-    let first_block = context.get_block(BlockID::Block(0));
+    let first_block = context.get_block(BCBlockID::Block(0));
 
     for arg in bc_func.prototype.params.iter() {
         let cranelift_type = get_cranelift_type(&arg._type);
@@ -104,7 +104,7 @@ pub(crate) fn codegen_function(
         codegen_block(
             &mut context,
             fn_block,
-            BlockID::Block(block_id as ElementID),
+            BCBlockID::Block(block_id as ElementID),
         );
     }
 
@@ -112,7 +112,7 @@ pub(crate) fn codegen_function(
         codegen_block(
             &mut context,
             fn_block,
-            BlockID::DeferredBlock(block_id as ElementID),
+            BCBlockID::DeferredBlock(block_id as ElementID),
         );
     }
 

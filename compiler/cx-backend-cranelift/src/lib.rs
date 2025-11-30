@@ -7,7 +7,7 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_bytecode_data::types::BCTypeKind;
-use cx_bytecode_data::{BlockID, BCValue, MIRUnit};
+use cx_bytecode_data::{BCBlockID, BCValue, MIRUnit};
 use cx_util::log_error;
 use std::collections::HashMap;
 
@@ -62,10 +62,10 @@ pub(crate) struct GlobalState<'a> {
 }
 
 impl FunctionState<'_> {
-    pub(crate) fn get_block(&mut self, block_id: BlockID) -> Block {
+    pub(crate) fn get_block(&mut self, block_id: BCBlockID) -> Block {
         let id = match block_id {
-            BlockID::Block(id) => id as usize,
-            BlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
+            BCBlockID::Block(id) => id as usize,
+            BCBlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
         };
 
         self.block_map

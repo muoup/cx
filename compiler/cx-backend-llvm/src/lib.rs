@@ -1,7 +1,7 @@
 use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_bytecode_data::{
-    BCFunctionMap, BlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue,
+    BCFunctionMap, BCBlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue,
     MIRUnit,
 };
 use inkwell::attributes::AttributeLoc;
@@ -112,14 +112,14 @@ impl<'a> FunctionState<'a, '_> {
         }
     }
 
-    pub(crate) fn get_block(&self, block_id: BlockID) -> Option<BasicBlock<'_>> {
+    pub(crate) fn get_block(&self, block_id: BCBlockID) -> Option<BasicBlock<'_>> {
         match block_id {
-            BlockID::Block(id) => self
+            BCBlockID::Block(id) => self
                 .function_value
                 .get_basic_blocks()
                 .get(id as usize)
                 .cloned(),
-            BlockID::DeferredBlock(id) => self
+            BCBlockID::DeferredBlock(id) => self
                 .function_value
                 .get_basic_blocks()
                 .get(id as usize + self.defer_block_offset)
@@ -285,7 +285,7 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
         codegen_block(
             global_state,
             &mut function_state,
-            BlockID::Block(block_id as ElementID),
+            BCBlockID::Block(block_id as ElementID),
             block,
         );
     }
@@ -296,7 +296,7 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
         codegen_block(
             global_state,
             &mut function_state,
-            BlockID::DeferredBlock(block_id as ElementID),
+            BCBlockID::DeferredBlock(block_id as ElementID),
             block,
         );
     }
@@ -307,7 +307,7 @@ fn fn_aot_codegen(bytecode: &MIRFunction, global_state: &GlobalState) -> Option<
 fn codegen_block<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &mut FunctionState<'a, 'b>,
-    block_id: BlockID,
+    block_id: BCBlockID,
     block: &MIRBlock,
 ) {
     let block_val = function_state

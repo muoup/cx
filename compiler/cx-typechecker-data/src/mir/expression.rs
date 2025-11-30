@@ -2,7 +2,7 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
 
-pub type MIRRegister = CXIdent;
+pub type BCRegister = CXIdent;
 
 #[derive(Clone, Debug, Default)]
 pub enum MIRValue {
@@ -28,7 +28,7 @@ pub enum MIRValue {
         _type: CXType,
     },
     Register {
-        register: MIRRegister,
+        register: BCRegister,
         _type: CXType,
     },
 
@@ -39,28 +39,28 @@ pub enum MIRValue {
 #[derive(Clone, Debug)]
 pub enum MIRInstruction {
     Alias {
-        result: MIRRegister,
+        result: BCRegister,
         value: MIRValue,
     },
 
     CreateStackRegion {
-        result: MIRRegister,
+        result: BCRegister,
         _type: CXType,
     },
     
     CreateRegionCopy {
-        result: MIRRegister,
-        source: MIRRegister,
+        result: BCRegister,
+        source: BCRegister,
         _type: CXType,
     },
 
     LoadGlobal {
-        result: MIRRegister,
+        result: BCRegister,
         name: CXIdent,
     },
 
     MemoryRead {
-        result: MIRRegister,
+        result: BCRegister,
         source: MIRValue,
         _type: CXType,
     },
@@ -71,39 +71,39 @@ pub enum MIRInstruction {
     },
 
     StructGet {
-        result: MIRRegister,
+        result: BCRegister,
         source: MIRValue,
         field_index: usize,
         struct_type: CXType,
     },
     
     TaggedUnionGet {
-        result: MIRRegister,
+        result: BCRegister,
         source: MIRValue,
         variant_type: CXType,
     },
     
     TaggedUnionIs {
-        result: MIRRegister,
+        result: BCRegister,
         source: MIRValue,
         tag_id: usize
     },
 
     ArrayGet {
-        result: MIRRegister,
+        result: BCRegister,
         source: MIRValue,
         index: MIRValue,
         element_type: CXType,
     },
 
     CallFunction {
-        result: Option<MIRRegister>,
+        result: Option<BCRegister>,
         function: MIRValue,
         arguments: Vec<MIRValue>,
     },
     
     ConstructSumType {
-        result: MIRRegister,
+        result: BCRegister,
         variant_index: usize,
         value: MIRValue,
         sum_type: CXType
@@ -141,20 +141,20 @@ pub enum MIRInstruction {
     },
 
     BinOp {
-        result: MIRRegister,
+        result: BCRegister,
         lhs: MIRValue,
         rhs: MIRValue,
         op: MIRBinOp,
     },
 
     UnOp {
-        result: MIRRegister,
+        result: BCRegister,
         operand: MIRValue,
         op: MIRUnOp,
     },
 
     Coercion {
-        result: MIRRegister,
+        result: BCRegister,
         operand: MIRValue,
         cast_type: MIRCoercion,
     },
@@ -170,7 +170,7 @@ pub enum MIRInstruction {
     },
 
     Havoc {
-        target: MIRRegister,
+        target: BCRegister,
     },
 }
 

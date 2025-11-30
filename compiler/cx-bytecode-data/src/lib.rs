@@ -44,20 +44,20 @@ pub enum BCGlobalType {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum BCValue {
     NULL,
+    Register {
+        register: BCRegister,
+        _type: BCType,
+    },
     ParameterRef(u32),
     IntImmediate { type_: BCIntegerType, val: i64 },
     FloatImmediate { type_: BCFloatType, val: FloatWrapper },
     Global(ElementID),
     FunctionRef(CXIdent),
     LoadOf(BCType, Box<BCValue>),
-    BlockResult { block_id: BlockID, value_id: u32 },
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub enum BlockID {
-    Block(ElementID),
-    DeferredBlock(ElementID),
-}
+pub type BCRegister = CXIdent;
+pub type BCBlockID = CXIdent;
 
 #[derive(Debug, Clone)]
 pub struct MIRParameter {
@@ -77,14 +77,12 @@ pub struct MIRFunctionPrototype {
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
     pub prototype: MIRFunctionPrototype,
-
     pub blocks: Vec<MIRBlock>,
-    pub defer_blocks: Vec<MIRBlock>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MIRBlock {
-    pub debug_name: String,
+    pub id: BCBlockID,
     pub body: Vec<BCInstruction>,
 }
 
@@ -92,6 +90,7 @@ pub struct MIRBlock {
 pub struct BCInstruction {
     pub kind: BCInstructionKind,
     pub value_type: BCType,
+    pub result: Option<BCRegister>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,7 +138,7 @@ pub enum BCInstructionKind {
     },
 
     Phi {
-        predecessors: Vec<(BCValue, BlockID)>,
+        predecessors: Vec<(BCValue, BCBlockID)>,
     },
 
     Trunc {
@@ -219,20 +218,20 @@ pub enum BCInstructionKind {
 
     Branch {
         condition: BCValue,
-        true_block: BlockID,
-        false_block: BlockID,
+        true_block: BCBlockID,
+        false_block: BCBlockID,
     },
 
     GotoDefer,
 
     Jump {
-        target: BlockID,
+        target: BCBlockID,
     },
 
     JumpTable {
         value: BCValue,
-        targets: Vec<(u64, BlockID)>,
-        default: BlockID,
+        targets: Vec<(u64, BCBlockID)>,
+        default: BCBlockID,
     },
 
     Return {

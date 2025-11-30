@@ -5,7 +5,7 @@ use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_l
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_bytecode_data::types::{BCType, BCTypeKind, MIRTypeSize};
 use cx_bytecode_data::{
-    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BlockID, BCInstruction, LinkageType,
+    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BCBlockID, BCInstruction, LinkageType,
     MIRFunctionPrototype, MIRParameter, BCInstructionKind,
 };
 use cx_util::log_error;
@@ -178,7 +178,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
         }
 
         BCInstructionKind::GotoDefer => {
-            let defer_block = function_state.get_block(BlockID::DeferredBlock(0)).unwrap();
+            let defer_block = function_state.get_block(BCBlockID::DeferredBlock(0)).unwrap();
 
             function_state
                 .builder
