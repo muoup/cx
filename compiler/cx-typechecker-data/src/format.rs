@@ -2,7 +2,7 @@ use super::ast::*;
 use crate::{
     function_map::{CXFunctionIdentifier, CXFunctionKind},
     mir::types::{
-        CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
+        CXType, CXTypeKind,
     },
 };
 use std::fmt::{Display, Formatter, Result};

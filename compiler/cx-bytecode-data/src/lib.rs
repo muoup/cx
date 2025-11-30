@@ -1,4 +1,4 @@
-use crate::types::MIRType;
+use crate::types::{BCFloatType, BCIntegerType, BCType};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
@@ -36,7 +36,7 @@ pub struct BCGlobalValue {
 pub enum BCGlobalType {
     StringLiteral(String),
     Variable {
-        _type: MIRType,
+        _type: BCType,
         initial_value: Option<i64>,
     },
 }
@@ -45,11 +45,11 @@ pub enum BCGlobalType {
 pub enum BCValue {
     NULL,
     ParameterRef(u32),
-    IntImmediate { type_: MIRType, val: i64 },
-    FloatImmediate { type_: MIRType, val: FloatWrapper },
+    IntImmediate { type_: BCIntegerType, val: i64 },
+    FloatImmediate { type_: BCFloatType, val: FloatWrapper },
     Global(ElementID),
     FunctionRef(CXIdent),
-    LoadOf(MIRType, Box<BCValue>),
+    LoadOf(BCType, Box<BCValue>),
     BlockResult { block_id: BlockID, value_id: u32 },
 }
 
@@ -62,13 +62,13 @@ pub enum BlockID {
 #[derive(Debug, Clone)]
 pub struct MIRParameter {
     pub name: Option<String>,
-    pub _type: MIRType,
+    pub _type: BCType,
 }
 
 #[derive(Debug, Clone)]
 pub struct MIRFunctionPrototype {
     pub name: String,
-    pub return_type: MIRType,
+    pub return_type: BCType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
     pub linkage: LinkageType,
@@ -85,25 +85,25 @@ pub struct MIRFunction {
 #[derive(Debug, Clone)]
 pub struct MIRBlock {
     pub debug_name: String,
-    pub body: Vec<MIRInstruction>,
+    pub body: Vec<BCInstruction>,
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRInstruction {
-    pub kind: MIRInstructionKind,
-    pub value_type: MIRType,
+pub struct BCInstruction {
+    pub kind: BCInstructionKind,
+    pub value_type: BCType,
 }
 
 #[derive(Debug, Clone)]
-pub enum MIRInstructionKind {
+pub enum BCInstructionKind {
     Allocate {
-        _type: MIRType,
+        _type: BCType,
         alignment: u8,
     },
 
     StructAccess {
         struct_: BCValue,
-        struct_type: MIRType,
+        struct_type: BCType,
         field_index: usize,
         field_offset: usize,
     },
@@ -115,12 +115,12 @@ pub enum MIRInstructionKind {
     Store {
         memory: BCValue,
         value: BCValue,
-        type_: MIRType,
+        type_: BCType,
     },
 
     ZeroMemory {
         memory: BCValue,
-        _type: MIRType,
+        _type: BCType,
     },
 
     // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
@@ -148,7 +148,7 @@ pub enum MIRInstructionKind {
 
     IntToPtrDiff {
         value: BCValue,
-        ptr_type: MIRType,
+        ptr_type: BCType,
     },
 
     IntToPtr {
@@ -157,7 +157,7 @@ pub enum MIRInstructionKind {
 
     PointerBinOp {
         op: MIRPtrBinOp,
-        ptr_type: MIRType,
+        ptr_type: BCType,
         left: BCValue,
         right: BCValue,
     },
@@ -200,12 +200,12 @@ pub enum MIRInstructionKind {
     },
 
     IntToFloat {
-        from: MIRType,
+        from: BCType,
         value: BCValue,
     },
 
     FloatToInt {
-        from: MIRType,
+        from: BCType,
         value: BCValue,
     },
 
@@ -253,12 +253,12 @@ pub enum MIRInstructionKind {
     NOP,
 }
 
-impl MIRInstructionKind {
+impl BCInstructionKind {
     pub fn is_block_terminating(&self) -> bool {
-        matches!(self, MIRInstructionKind::JumpTable { .. }
-            | MIRInstructionKind::Branch { .. }
-            | MIRInstructionKind::Jump { .. }
-            | MIRInstructionKind::Return { .. })
+        matches!(self, BCInstructionKind::JumpTable { .. }
+            | BCInstructionKind::Branch { .. }
+            | BCInstructionKind::Jump { .. }
+            | BCInstructionKind::Return { .. })
     }
 }
 

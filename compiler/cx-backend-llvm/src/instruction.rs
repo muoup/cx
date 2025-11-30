@@ -3,10 +3,10 @@ use crate::attributes::attr_noundef;
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_bytecode_data::types::{MIRType, MIRTypeKind, MIRTypeSize};
+use cx_bytecode_data::types::{BCType, BCTypeKind, MIRTypeSize};
 use cx_bytecode_data::{
-    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BlockID, MIRInstruction, LinkageType,
-    MIRFunctionPrototype, MIRParameter, MIRInstructionKind,
+    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BlockID, BCInstruction, LinkageType,
+    MIRFunctionPrototype, MIRParameter, BCInstructionKind,
 };
 use cx_util::log_error;
 use inkwell::attributes::AttributeLoc;
@@ -31,12 +31,12 @@ pub(crate) fn inst_num() -> String {
 pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    block_instruction: &MIRInstruction,
+    block_instruction: &BCInstruction,
 ) -> Option<CodegenValue<'a>> {
     Some(match &block_instruction.kind {
-        MIRInstructionKind::Temp { value } => function_state.get_value(value)?,
+        BCInstructionKind::Temp { value } => function_state.get_value(value)?,
 
-        MIRInstructionKind::Allocate { _type, alignment } => {
+        BCInstructionKind::Allocate { _type, alignment } => {
             let inst = match _type.size() {
                 MIRTypeSize::Fixed(_) => function_state
                     .builder
@@ -74,7 +74,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(inst)
         }
 
-        MIRInstructionKind::DirectCall { args, method_sig } => {
+        BCInstructionKind::DirectCall { args, method_sig } => {
             let Some(function_val) = get_function(global_state, method_sig) else {
                 log_error!("Function not found in module: {}", method_sig.name);
             };
@@ -108,7 +108,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             }
         }
 
-        MIRInstructionKind::IndirectCall {
+        BCInstructionKind::IndirectCall {
             func_ptr,
             args,
             method_sig,
@@ -142,7 +142,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             }
         }
 
-        MIRInstructionKind::BitCast { value } => {
+        BCInstructionKind::BitCast { value } => {
             let val = function_state.get_value(value)?.get_value();
             let basic_val = any_to_basic_val(val)?;
 
@@ -158,9 +158,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::IntToPtrDiff { value, .. } => function_state.get_value(value)?.clone(),
+        BCInstructionKind::IntToPtrDiff { value, .. } => function_state.get_value(value)?.clone(),
 
-        MIRInstructionKind::IntToPtr { value } => {
+        BCInstructionKind::IntToPtr { value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -177,7 +177,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::GotoDefer => {
+        BCInstructionKind::GotoDefer => {
             let defer_block = function_state.get_block(BlockID::DeferredBlock(0)).unwrap();
 
             function_state
@@ -188,7 +188,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::Jump { target } => {
+        BCInstructionKind::Jump { target } => {
             function_state
                 .builder
                 .build_unconditional_branch(function_state.get_block(*target).unwrap())
@@ -197,7 +197,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::Return { value } => {
+        BCInstructionKind::Return { value } => {
             let Some(value) = value else {
                 function_state.builder.build_return(None).unwrap();
 
@@ -216,7 +216,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::Store {
+        BCInstructionKind::Store {
             value,
             type_,
             memory,
@@ -254,7 +254,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::ZeroMemory { memory, _type } => {
+        BCInstructionKind::ZeroMemory { memory, _type } => {
             let any_value = function_state
                 .get_value(memory)?
                 .get_value()
@@ -290,7 +290,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::PointerBinOp {
+        BCInstructionKind::PointerBinOp {
             left,
             ptr_type,
             right,
@@ -310,16 +310,16 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )?
         }
 
-        MIRInstructionKind::IntegerUnOp { value, op } => {
+        BCInstructionKind::IntegerUnOp { value, op } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
                 .into_int_value();
 
             let signed = match block_instruction.value_type.kind {
-                MIRTypeKind::Signed { .. } => true,
+                BCTypeKind::Signed { .. } => true,
 
-                MIRTypeKind::Bool | MIRTypeKind::Unsigned { .. } => false,
+                BCTypeKind::Bool | BCTypeKind::Integer { .. } => false,
 
                 _ => unreachable!("Invalid type for IntegerUnOp"), // Unsupported type for IntegerUnOp
             };
@@ -353,7 +353,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        MIRInstructionKind::IntegerBinOp { left, right, op } => {
+        BCInstructionKind::IntegerBinOp { left, right, op } => {
             let left = function_state.get_value(left)?.get_value().into_int_value();
 
             let right = function_state
@@ -362,9 +362,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_int_value();
 
             let signed = match block_instruction.value_type.kind {
-                MIRTypeKind::Signed { .. } => true,
-                MIRTypeKind::Unsigned { .. } => false,
-                MIRTypeKind::Bool => false,
+                BCTypeKind::Signed { .. } => true,
+                BCTypeKind::Integer { .. } => false,
+                BCTypeKind::Bool => false,
 
                 _ => log_error!("Unsupported type for IntegerBinOp"),
             };
@@ -372,7 +372,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             generate_int_binop(global_state, function_state, left, right, *op, signed)?
         }
 
-        MIRInstructionKind::FloatUnOp { value, op } => {
+        BCInstructionKind::FloatUnOp { value, op } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -387,7 +387,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        MIRInstructionKind::FloatBinOp { left, right, op } => {
+        BCInstructionKind::FloatBinOp { left, right, op } => {
             let left_value = function_state
                 .get_value(left)?
                 .get_value()
@@ -425,7 +425,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        MIRInstructionKind::Phi { predecessors: from } => {
+        BCInstructionKind::Phi { predecessors: from } => {
             let val_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
             let as_basic_type =
                 any_to_basic_type(val_type).expect("Failed to convert value type to basic type");
@@ -448,7 +448,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(phi_node.as_any_value_enum())
         }
 
-        MIRInstructionKind::Branch {
+        BCInstructionKind::Branch {
             condition,
             true_block,
             false_block,
@@ -481,7 +481,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::JumpTable {
+        BCInstructionKind::JumpTable {
             value,
             targets,
             default,
@@ -513,7 +513,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::BoolExtend { value } | MIRInstructionKind::ZExtend { value } => {
+        BCInstructionKind::BoolExtend { value } | BCInstructionKind::ZExtend { value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -530,7 +530,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::SExtend { value } => {
+        BCInstructionKind::SExtend { value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -547,7 +547,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::StructAccess {
+        BCInstructionKind::StructAccess {
             struct_,
             struct_type,
             field_index,
@@ -573,7 +573,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }
 
-        MIRInstructionKind::Trunc { value } => {
+        BCInstructionKind::Trunc { value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -591,7 +591,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::GetFunctionAddr { func } => {
+        BCInstructionKind::GetFunctionAddr { func } => {
             let function_val = global_state
                 .module
                 .get_function(func)
@@ -606,7 +606,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(any_value_enum)
         }
 
-        MIRInstructionKind::IntToFloat { from, value } => {
+        BCInstructionKind::IntToFloat { from, value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -616,13 +616,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_float_type();
 
             CodegenValue::Value(match from.kind {
-                MIRTypeKind::Signed { .. } => function_state
+                BCTypeKind::Signed { .. } => function_state
                     .builder
                     .build_signed_int_to_float(value, to_type, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                MIRTypeKind::Unsigned { .. } => function_state
+                BCTypeKind::Integer { .. } => function_state
                     .builder
                     .build_unsigned_int_to_float(value, to_type, inst_num().as_str())
                     .unwrap()
@@ -632,7 +632,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        MIRInstructionKind::FloatToInt { value, .. } => {
+        BCInstructionKind::FloatToInt { value, .. } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -642,13 +642,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 bc_llvm_type(global_state.context, &block_instruction.value_type)?.into_int_type();
 
             CodegenValue::Value(match block_instruction.value_type.kind {
-                MIRTypeKind::Signed { .. } => function_state
+                BCTypeKind::Signed { .. } => function_state
                     .builder
                     .build_float_to_signed_int(value, to_type, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                MIRTypeKind::Unsigned { .. } => function_state
+                BCTypeKind::Integer { .. } => function_state
                     .builder
                     .build_float_to_unsigned_int(value, to_type, inst_num().as_str())
                     .unwrap()
@@ -658,7 +658,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        MIRInstructionKind::PtrToInt { value } => {
+        BCInstructionKind::PtrToInt { value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -676,7 +676,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::FloatCast { value } => {
+        BCInstructionKind::FloatCast { value } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
@@ -694,7 +694,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        MIRInstructionKind::CompilerAssertion { condition, message } => {
+        BCInstructionKind::CompilerAssertion { condition, message } => {
             let condition_value = function_state
                 .get_value(condition)?
                 .get_value()
@@ -705,14 +705,14 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 params: vec![
                     MIRParameter {
                         name: None,
-                        _type: MIRTypeKind::Bool.into(),
+                        _type: BCTypeKind::Bool.into(),
                     },
                     MIRParameter {
                         name: None,
-                        _type: MIRType::default_pointer(),
+                        _type: BCType::default_pointer(),
                     },
                 ],
-                return_type: MIRType::unit(),
+                return_type: BCType::unit(),
                 var_args: false,
                 linkage: LinkageType::External,
             };
@@ -736,7 +736,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        MIRInstructionKind::NOP => {
+        BCInstructionKind::NOP => {
             // NOP instruction does nothing, just return NULL
             CodegenValue::NULL
         }

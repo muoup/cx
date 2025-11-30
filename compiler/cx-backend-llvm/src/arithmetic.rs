@@ -1,13 +1,13 @@
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_bytecode_data::types::MIRType;
+use cx_bytecode_data::types::BCType;
 use cx_bytecode_data::{MIRPtrBinOp, MIRIntBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 
 pub(crate) fn generate_ptr_binop<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    ptr_type: &MIRType,
+    ptr_type: &BCType,
     left_value: AnyValueEnum<'a>,
     right_value: AnyValueEnum<'a>,
     op: MIRPtrBinOp,

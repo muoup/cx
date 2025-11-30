@@ -14,7 +14,7 @@ fs2 = { version = "0.4.3" }
 cx-lexer = { path = "../cx-lexer" }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
-# cx-bytecode = { path = "../cx-bytecode" }
+cx-bytecode = { path = "../cx-bytecode" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 

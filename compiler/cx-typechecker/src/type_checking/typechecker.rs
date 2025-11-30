@@ -4,6 +4,7 @@ use crate::type_checking::binary_ops::{
     typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
+use crate::type_checking::contract::contracted_function_return;
 use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
@@ -341,9 +342,8 @@ pub fn typecheck_expr(
                     );
                 }
             }
-
-            env.builder
-                .add_instruction(MIRInstruction::Return { value: value_tc });
+            
+            contracted_function_return(env, value_tc.clone())?;
 
             MIRValue::NULL
         }
@@ -469,12 +469,15 @@ pub fn typecheck_expr(
                 }
 
                 CXUnOp::LNot => {
-                    if !operand_type.is_integer() {
+                    let loaded_operand = coerce_value(env, expr, operand_val)?;
+                    let loaded_operand_type = loaded_operand.get_type();
+                    
+                    if !loaded_operand_type.is_integer() {
                         return log_typecheck_error!(
                             env,
                             operand,
                             " Logical NOT operator requires an integer type, found {}",
-                            operand_type
+                            loaded_operand_type
                         );
                     }
 
@@ -482,7 +485,7 @@ pub fn typecheck_expr(
                     env.builder.add_instruction(MIRInstruction::UnOp {
                         result: result.clone(),
                         op: MIRUnOp::LNOT,
-                        operand: operand_val,
+                        operand: loaded_operand,
                     });
 
                     MIRValue::Register {

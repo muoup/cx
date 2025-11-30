@@ -267,6 +267,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-bytecode"
+version = "0.0.0"
+dependencies = [
+ "cx-bytecode-data",
+ "cx-parsing",
+ "cx-parsing-data",
+ "cx-typechecker-data",
+ "cx-util",
+]
+
+[[package]]
 name = "cx-bytecode-data"
 version = "0.0.0"
 dependencies = [
@@ -326,6 +337,7 @@ version = "0.0.0"
 dependencies = [
  "cx-backend-cranelift",
  "cx-backend-llvm",
+ "cx-bytecode",
  "cx-bytecode-data",
  "cx-lexer",
  "cx-lexer-data",

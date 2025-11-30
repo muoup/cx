@@ -6,7 +6,7 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_bytecode_data::types::MIRTypeKind;
+use cx_bytecode_data::types::BCTypeKind;
 use cx_bytecode_data::{BlockID, BCValue, MIRUnit};
 use cx_util::log_error;
 use std::collections::HashMap;
@@ -88,12 +88,12 @@ impl FunctionState<'_> {
 
             BCValue::FloatImmediate { val, type_ } => {
                 match &type_.kind {
-                    MIRTypeKind::Float { bytes: 4 } => {
+                    BCTypeKind::Float { bytes: 4 } => {
                         let as_f32 : f32 = val.into();
                         let value = self.builder.ins().f32const(as_f32);
                         Some(CodegenValue::Value(value))
                     }
-                    MIRTypeKind::Float { bytes: 8 } => {
+                    BCTypeKind::Float { bytes: 8 } => {
                         let as_f64: f64 = val.into();
                         let value = self.builder.ins().f64const(as_f64);
                         Some(CodegenValue::Value(value))

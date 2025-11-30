@@ -1,7 +1,7 @@
-use crate::types::{MIRType, MIRTypeKind};
+use crate::types::{BCFloatType, BCIntegerType, BCTypeKind, BCType};
 use crate::{
     MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, BlockID, MIRBlock, MIRFunction,
-    MIRFunctionPrototype, BCGlobalType, MIRInstruction, MIRInstructionKind, MIRIntBinOp, MIRUnit,
+    MIRFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, MIRIntBinOp, MIRUnit,
     BCValue,
 };
 use std::fmt::{Display, Formatter};
@@ -79,7 +79,7 @@ impl Display for MIRFunctionPrototype {
     }
 }
 
-impl Display for MIRInstruction {
+impl Display for BCInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)?;
 
@@ -135,50 +135,50 @@ impl Display for BlockID {
     }
 }
 
-impl Display for MIRInstructionKind {
+impl Display for BCInstructionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRInstructionKind::Temp { value } => {
+            BCInstructionKind::Temp { value } => {
                 write!(f, "{value}")
             }
-            MIRInstructionKind::Allocate { _type, .. } => {
+            BCInstructionKind::Allocate { _type, .. } => {
                 write!(f, "stackallocate {_type}")
             }
-            MIRInstructionKind::Store { value, memory, .. } => {
+            BCInstructionKind::Store { value, memory, .. } => {
                 write!(f, "*{memory} := {value}")
             }
-            MIRInstructionKind::ZeroMemory { memory, _type } => {
+            BCInstructionKind::ZeroMemory { memory, _type } => {
                 write!(f, "*{memory} := 0")
             }
-            MIRInstructionKind::StructAccess {
+            BCInstructionKind::StructAccess {
                 struct_,
                 field_index,
                 ..
             } => {
                 write!(f, "{struct_}.[{field_index}]")
             }
-            MIRInstructionKind::BoolExtend { value } => {
+            BCInstructionKind::BoolExtend { value } => {
                 write!(f, "bool_extend {value}")
             }
-            MIRInstructionKind::ZExtend { value } => {
+            BCInstructionKind::ZExtend { value } => {
                 write!(f, "zextend {value}")
             }
-            MIRInstructionKind::SExtend { value } => {
+            BCInstructionKind::SExtend { value } => {
                 write!(f, "sextend {value}")
             }
-            MIRInstructionKind::Trunc { value } => {
+            BCInstructionKind::Trunc { value } => {
                 write!(f, "trunc {value}")
             }
-            MIRInstructionKind::PtrToInt { value } => {
+            BCInstructionKind::PtrToInt { value } => {
                 write!(f, "ptr_to_int {value}")
             }
-            MIRInstructionKind::IntToPtrDiff { value, ptr_type } => {
+            BCInstructionKind::IntToPtrDiff { value, ptr_type } => {
                 write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
             }
-            MIRInstructionKind::IntToPtr { value } => {
+            BCInstructionKind::IntToPtr { value } => {
                 write!(f, "int_to_ptr {value}")
             }
-            MIRInstructionKind::Return { value } => {
+            BCInstructionKind::Return { value } => {
                 write!(f, "return")?;
 
                 if let Some(value) = value {
@@ -187,14 +187,14 @@ impl Display for MIRInstructionKind {
 
                 Ok(())
             }
-            MIRInstructionKind::Branch {
+            BCInstructionKind::Branch {
                 condition,
                 true_block,
                 false_block,
             } => {
                 write!(f, "if {condition} goto {true_block} else {false_block}")
             }
-            MIRInstructionKind::Phi { predecessors: from } => {
+            BCInstructionKind::Phi { predecessors: from } => {
                 write!(f, "phi")?;
                 if !from.is_empty() {
                     write!(f, " from [")?;
@@ -208,13 +208,13 @@ impl Display for MIRInstructionKind {
                 }
                 Ok(())
             }
-            MIRInstructionKind::Jump { target } => {
+            BCInstructionKind::Jump { target } => {
                 write!(f, "jump {target}")
             }
-            MIRInstructionKind::GotoDefer => {
+            BCInstructionKind::GotoDefer => {
                 write!(f, "goto defer")
             }
-            MIRInstructionKind::JumpTable {
+            BCInstructionKind::JumpTable {
                 value,
                 targets,
                 default,
@@ -228,7 +228,7 @@ impl Display for MIRInstructionKind {
                 }
                 write!(f, "] else {default}")
             }
-            MIRInstructionKind::DirectCall {
+            BCInstructionKind::DirectCall {
                 method_sig, args, ..
             } => {
                 write!(f, "@{}(", method_sig.name)?;
@@ -240,7 +240,7 @@ impl Display for MIRInstructionKind {
                 }
                 write!(f, ")")
             }
-            MIRInstructionKind::IndirectCall { func_ptr, args, .. } => {
+            BCInstructionKind::IndirectCall { func_ptr, args, .. } => {
                 write!(f, "@(*{func_ptr})(")?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
@@ -250,7 +250,7 @@ impl Display for MIRInstructionKind {
                 }
                 write!(f, ")")
             }
-            MIRInstructionKind::PointerBinOp {
+            BCInstructionKind::PointerBinOp {
                 left,
                 ptr_type,
                 right,
@@ -258,37 +258,37 @@ impl Display for MIRInstructionKind {
             } => {
                 write!(f, "{left} {op} {right} [{ptr_type}*]")
             }
-            MIRInstructionKind::IntegerBinOp { left, right, op } => {
+            BCInstructionKind::IntegerBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [i]")
             }
-            MIRInstructionKind::IntegerUnOp { op, value } => {
+            BCInstructionKind::IntegerUnOp { op, value } => {
                 write!(f, "{op:?} {value} [i]")
             }
-            MIRInstructionKind::FloatBinOp { left, right, op } => {
+            BCInstructionKind::FloatBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [f]")
             }
-            MIRInstructionKind::FloatUnOp { op, value } => {
+            BCInstructionKind::FloatUnOp { op, value } => {
                 write!(f, "{op:?} {value} [f]")
             }
-            MIRInstructionKind::GetFunctionAddr { func: func_name } => {
+            BCInstructionKind::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             }
-            MIRInstructionKind::BitCast { value } => {
+            BCInstructionKind::BitCast { value } => {
                 write!(f, "bit_cast {value}")
             }
-            MIRInstructionKind::IntToFloat { from, value } => {
+            BCInstructionKind::IntToFloat { from, value } => {
                 write!(f, "int_to_float ({from}) {value}")
             }
-            MIRInstructionKind::FloatToInt { from, value } => {
+            BCInstructionKind::FloatToInt { from, value } => {
                 write!(f, "float_to_int ({from}) {value}")
             }
-            MIRInstructionKind::FloatCast { value } => {
+            BCInstructionKind::FloatCast { value } => {
                 write!(f, "float_cast {value}")
             }
-            MIRInstructionKind::CompilerAssertion { condition, message } => {
+            BCInstructionKind::CompilerAssertion { condition, message } => {
                 write!(f, "compiler_assertion {condition} ({message})")
             }
-            MIRInstructionKind::NOP => {
+            BCInstructionKind::NOP => {
                 write!(f, "nop")
             }
         }
@@ -400,22 +400,43 @@ impl Display for MIRFloatUnOp {
     }
 }
 
-impl Display for MIRType {
+impl Display for BCType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl Display for MIRTypeKind {
+impl Display for BCIntegerType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            MIRTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
-            MIRTypeKind::Signed { bytes } => write!(f, "i{}", bytes * 8),
-            MIRTypeKind::Unsigned { bytes } => write!(f, "u{}", bytes * 8),
-            MIRTypeKind::Bool => write!(f, "bool"),
-            MIRTypeKind::Float { bytes } => write!(f, "f{}", bytes * 8),
+            BCIntegerType::I8 => write!(f, "i8"),
+            BCIntegerType::I16 => write!(f, "i16"),
+            BCIntegerType::I32 => write!(f, "i32"),
+            BCIntegerType::I64 => write!(f, "i64"),
+            BCIntegerType::I128 => write!(f, "i128"),
+        }
+    }
+}
 
-            MIRTypeKind::Pointer {
+impl Display for BCFloatType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            BCFloatType::F32 => write!(f, "f32"),
+            BCFloatType::F64 => write!(f, "f64"),
+        }
+    }
+}
+
+impl Display for BCTypeKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
+            BCTypeKind::Bool => write!(f, "bool"),
+                       
+            BCTypeKind::Integer(_type) => write!(f, "{}", _type),
+            BCTypeKind::Float(_type) => write!(f, "{}", _type),
+
+            BCTypeKind::Pointer {
                 nullable,
                 dereferenceable,
             } => {
@@ -432,10 +453,10 @@ impl Display for MIRTypeKind {
                 }
             }
 
-            MIRTypeKind::Array { element, size } => {
+            BCTypeKind::Array { element, size } => {
                 write!(f, "[{element}; {size}]")
             }
-            MIRTypeKind::Struct { fields, .. } => {
+            BCTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
                     .map(|(name, _type)| format!("{name}: {_type}"))
@@ -444,7 +465,7 @@ impl Display for MIRTypeKind {
 
                 write!(f, "struct {{ {fields} }}")
             }
-            MIRTypeKind::Union { fields, .. } => {
+            BCTypeKind::Union { fields, .. } => {
                 let fields = fields
                     .iter()
                     .map(|(name, _type)| format!("{name}: {_type}"))
@@ -454,8 +475,8 @@ impl Display for MIRTypeKind {
                 write!(f, "union {{ {fields} }}")
             }
 
-            MIRTypeKind::Unit => write!(f, "()"),
-            MIRTypeKind::VariableSized { size, alignment } => {
+            BCTypeKind::Unit => write!(f, "()"),
+            BCTypeKind::VariableSized { size, alignment } => {
                 write!(f, "variable_sized (size: {size}, alignment: {alignment})")
             }
         }

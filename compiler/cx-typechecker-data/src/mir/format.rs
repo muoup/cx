@@ -77,7 +77,7 @@ impl Display for MIRInstruction {
         match self {
             MIRInstruction::Alias { result, value } => write!(f, "%{result} = alias {value}"),
             MIRInstruction::CreateStackRegion { result, _type } => {
-                write!(f, "%{result} = stack_alloc {_type}")
+                write!(f, "%{result} = create_region {_type}")
             }
             MIRInstruction::CreateRegionCopy {
                 result,
@@ -215,7 +215,7 @@ impl Display for MIRValue {
                 _type,
             } => write!(
                 f,
-                "{value}{}{}",
+                "{}{} {value}",
                 if *signed { "i" } else { "u" },
                 _type.bytes() * 8
             ),
@@ -223,9 +223,9 @@ impl Display for MIRValue {
             MIRValue::FunctionReference { prototype, .. } => {
                 write!(f, "fn_ref({})", prototype.name)
             }
-            MIRValue::GlobalValue { name, _type } => write!(f, "global({name}: {_type})"),
-            MIRValue::Parameter { index, _type } => write!(f, "param({index}: {_type})"),
-            MIRValue::Register { register, _type } => write!(f, "%{register}: {_type}"),
+            MIRValue::GlobalValue { name, _type } => write!(f, "{_type} global {name}"),
+            MIRValue::Parameter { index, _type } => write!(f, "{_type} param {index}"),
+            MIRValue::Register { register, _type } => write!(f, "{_type} %{register}"),
             MIRValue::NULL => write!(f, "null"),
         }
     }
@@ -373,9 +373,9 @@ impl Display for CXTypeKind {
                 write!(f, " }}")
             }
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "strong_ptr<{}>", inner_type),
-            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "ptr<{}>", inner_type),
-            CXTypeKind::MemoryReference(inner) => write!(f, "mem_ref<{}>", inner),
+            CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "*strong {}", inner_type),
+            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "*{}", inner_type),
+            CXTypeKind::MemoryReference(inner) => write!(f, "&{}", inner),
             CXTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             CXTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
             CXTypeKind::Function { prototype } => write!(f, "{prototype}"),

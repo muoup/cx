@@ -6,7 +6,7 @@ use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::{
     ast::TCBaseMappings,
     function_map::CXFunctionKind,
-    mir::{expression::MIRValue, types::{CXFunctionPrototype, CXTemplateInput, TCParameter}},
+    mir::{expression::{MIRInstruction, MIRValue}, types::{CXFunctionPrototype, CXTemplateInput, TCParameter}},
 };
 use cx_util::CXResult;
 
@@ -33,21 +33,41 @@ fn generate_function(
     body: &CXExpr,
 ) -> CXResult<()> {
     env.push_scope(None, None);
-
+    env.builder.start_function(prototype.clone());
+    
     for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
         let Some(name) = name else { continue; };
-
-        env.insert_symbol(
-            name.as_string(),
-            MIRValue::Parameter {
-                index: i,
+        
+        let region = env.builder.new_register();
+        env.builder.add_instruction(
+            MIRInstruction::CreateStackRegion {
+                result: region.clone(),
                 _type: _type.clone(),
             }
         );
+        
+        env.builder.add_instruction(
+            MIRInstruction::MemoryWrite {
+                target: MIRValue::Register { 
+                    register: region.clone(),
+                    _type: _type.clone(),
+                },
+                value: MIRValue::Parameter {
+                    index: i,
+                    _type: _type.clone(),
+                },
+            }
+        );
+
+        env.insert_symbol(
+            name.as_string(),
+            MIRValue::Register {
+                register: region,
+                _type: _type.clone().mem_ref_to(),
+            },
+        );
     }
        
-    env.builder.start_function(prototype);
-    
     typecheck_expr(env, base_data, body)?;
 
     env.builder.finish_function();

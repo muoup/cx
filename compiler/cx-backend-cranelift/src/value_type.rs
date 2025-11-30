@@ -1,29 +1,29 @@
 use cranelift::codegen::ir;
-use cx_bytecode_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::types::{BCType, BCTypeKind};
 
-pub(crate) fn get_cranelift_abi_type(val_type: &MIRType) -> ir::AbiParam {
+pub(crate) fn get_cranelift_abi_type(val_type: &BCType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type))
 }
 
-pub(crate) fn get_cranelift_type(val_type: &MIRType) -> ir::Type {
+pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
     match &val_type.kind {
-        MIRTypeKind::Signed { bytes } | MIRTypeKind::Unsigned { bytes } if *bytes == 0 => {
+        BCTypeKind::Signed { bytes } | BCTypeKind::Integer { bytes } if *bytes == 0 => {
             ir::Type::int(8).expect("PANIC: Invalid integer size: 0 bytes")
         }
 
-        MIRTypeKind::Bool => ir::types::I8,
+        BCTypeKind::Bool => ir::types::I8,
 
-        MIRTypeKind::Signed { bytes } | MIRTypeKind::Unsigned { bytes } => {
+        BCTypeKind::Signed { bytes } | BCTypeKind::Integer { bytes } => {
             ir::Type::int(*bytes as u16 * 8)
                 .unwrap_or_else(|| panic!("PANIC: Invalid integer size: {} bytes", *bytes))
         }
 
-        MIRTypeKind::Float { bytes: 2 } => ir::types::F16,
-        MIRTypeKind::Float { bytes: 4 } => ir::types::F32,
-        MIRTypeKind::Float { bytes: 8 } => ir::types::F64,
-        MIRTypeKind::Float { bytes: 16 } => ir::types::F128,
+        BCTypeKind::Float { bytes: 2 } => ir::types::F16,
+        BCTypeKind::Float { bytes: 4 } => ir::types::F32,
+        BCTypeKind::Float { bytes: 8 } => ir::types::F64,
+        BCTypeKind::Float { bytes: 16 } => ir::types::F128,
 
-        MIRTypeKind::Union { .. } | MIRTypeKind::Struct { .. } | MIRTypeKind::Pointer { .. } | MIRTypeKind::Array { .. } => {
+        BCTypeKind::Union { .. } | BCTypeKind::Struct { .. } | BCTypeKind::Pointer { .. } | BCTypeKind::Array { .. } => {
             ir::Type::int(64).unwrap()
         }
 

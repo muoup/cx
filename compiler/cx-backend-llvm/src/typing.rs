@@ -1,5 +1,5 @@
 use crate::GlobalState;
-use cx_bytecode_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::types::{BCType, BCTypeKind};
 use cx_bytecode_data::{LinkageType, MIRFunctionPrototype};
 use inkwell::AddressSpace;
 use inkwell::context::Context;
@@ -45,10 +45,10 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> Option<BasicValueEnum
     }
 }
 
-pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<AnyTypeEnum<'a>> {
+pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
     Some(match &_type.kind {
-        MIRTypeKind::Unit => context.void_type().as_any_type_enum(),
-        MIRTypeKind::Signed { bytes, .. } | MIRTypeKind::Unsigned { bytes, .. } => match *bytes {
+        BCTypeKind::Unit => context.void_type().as_any_type_enum(),
+        BCTypeKind::Signed { bytes, .. } | BCTypeKind::Integer { bytes, .. } => match *bytes {
             1 => context.i8_type().as_any_type_enum(),
             2 => context.i16_type().as_any_type_enum(),
             4 => context.i32_type().as_any_type_enum(),
@@ -56,19 +56,19 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<
 
             _ => panic!("Invalid integer size"),
         },
-        MIRTypeKind::Bool => context.bool_type().as_any_type_enum(),
-        MIRTypeKind::Float { bytes: 4 } => context.f32_type().as_any_type_enum(),
-        MIRTypeKind::Float { bytes: 8 } => context.f64_type().as_any_type_enum(),
+        BCTypeKind::Bool => context.bool_type().as_any_type_enum(),
+        BCTypeKind::Float { bytes: 4 } => context.f32_type().as_any_type_enum(),
+        BCTypeKind::Float { bytes: 8 } => context.f64_type().as_any_type_enum(),
 
-        MIRTypeKind::Array { element, size } => {
+        BCTypeKind::Array { element, size } => {
             let inner_llvm_type = bc_llvm_type(context, element)?;
             let basic_type = any_to_basic_type(inner_llvm_type)?;
 
             basic_type.array_type(*size as u32).as_any_type_enum()
         }
-        MIRTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+        BCTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
 
-        MIRTypeKind::Struct { name, fields } => {
+        BCTypeKind::Struct { name, fields } => {
             if let Some(_type) = context.get_struct_type(name.as_str()) {
                 return Some(_type.as_any_type_enum());
             }
@@ -96,7 +96,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<
                 .map(|s| s.as_any_type_enum());
         }
 
-        MIRTypeKind::Union { .. } => {
+        BCTypeKind::Union { .. } => {
             let _type_size = _type.fixed_size();
             let array_type = context.i8_type().array_type(_type_size as u32);
 

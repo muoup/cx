@@ -1,20 +1,20 @@
 use crate::BCValue;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct MIRType {
-    pub kind: MIRTypeKind,
+pub struct BCType {
+    pub kind: BCTypeKind,
 }
 
-impl MIRType {
+impl BCType {
     pub fn unit() -> Self {
-        MIRType {
-            kind: MIRTypeKind::Unit,
+        BCType {
+            kind: BCTypeKind::Unit,
         }
     }
 
     pub fn default_pointer() -> Self {
-        MIRType {
-            kind: MIRTypeKind::Pointer {
+        BCType {
+            kind: BCTypeKind::Pointer {
                 nullable: false,
                 dereferenceable: 0,
             },
@@ -23,36 +23,46 @@ impl MIRType {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum MIRTypeKind {
+pub enum BCIntegerType {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum BCFloatType {
+    F32,
+    F64,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum BCTypeKind {
     Opaque {
         bytes: usize,
     },
-    Signed {
-        bytes: u8,
-    },
-    Unsigned {
-        bytes: u8,
-    },
     Bool,
-    Float {
-        bytes: u8,
-    },
+    
+    Integer(BCIntegerType),
+    Float(BCFloatType),
+    
     Pointer {
         nullable: bool,
         dereferenceable: u32,
     },
 
     Array {
-        element: Box<MIRType>,
+        element: Box<BCType>,
         size: usize,
     },
     Struct {
         name: String,
-        fields: Vec<(String, MIRType)>,
+        fields: Vec<(String, BCType)>,
     },
     Union {
         name: String,
-        fields: Vec<(String, MIRType)>,
+        fields: Vec<(String, BCType)>,
     },
 
     VariableSized {
@@ -78,29 +88,28 @@ impl MIRTypeSize {
     }
 }
 
-impl From<MIRTypeKind> for MIRType {
-    fn from(kind: MIRTypeKind) -> Self {
-        MIRType { kind }
+impl From<BCTypeKind> for BCType {
+    fn from(kind: BCTypeKind) -> Self {
+        BCType { kind }
     }
 }
 
-impl MIRType {
+impl BCType {
     pub fn size(&self) -> MIRTypeSize {
         match &self.kind {
-            MIRTypeKind::VariableSized { size, .. } => MIRTypeSize::Variable(*size.clone()),
+            BCTypeKind::VariableSized { size, .. } => MIRTypeSize::Variable(*size.clone()),
             _ => MIRTypeSize::Fixed(self.fixed_size()),
         }
     }
 
     pub fn fixed_size(&self) -> usize {
         match &self.kind {
-            MIRTypeKind::Opaque { bytes } => *bytes,
-            MIRTypeKind::Signed { bytes } => *bytes as usize,
-            MIRTypeKind::Unsigned { bytes } => *bytes as usize,
-            MIRTypeKind::Float { bytes } => *bytes as usize,
-            MIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            MIRTypeKind::Array { element, size } => element.fixed_size() * size,
-            MIRTypeKind::Struct { fields, .. } => {
+            BCTypeKind::Opaque { bytes } => *bytes,
+            BCTypeKind::Integer(_type) => _type.bytes() as usize,
+            BCTypeKind::Float(_type) => _type.bytes() as usize,
+            BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            BCTypeKind::Array { element, size } => element.fixed_size() * size,
+            BCTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
 
                 for (_, field_type) in fields {
@@ -118,14 +127,14 @@ impl MIRType {
 
                 current_size
             }
-            MIRTypeKind::Union { fields, .. } => fields
+            BCTypeKind::Union { fields, .. } => fields
                 .iter()
                 .map(|(_, field)| field.fixed_size())
                 .max()
                 .unwrap(),
 
-            MIRTypeKind::Bool => 1,
-            MIRTypeKind::Unit => 0,
+            BCTypeKind::Bool => 1,
+            BCTypeKind::Unit => 0,
 
             _ => panic!("Invalid type for fixed size: {:?}", self.kind),
         }
@@ -133,35 +142,55 @@ impl MIRType {
 
     pub fn alignment(&self) -> u8 {
         match &self.kind {
-            MIRTypeKind::Opaque { bytes } => *bytes as u8,
-            MIRTypeKind::Signed { bytes } => *bytes,
-            MIRTypeKind::Unsigned { bytes } => *bytes,
-            MIRTypeKind::Bool => 1,
-            MIRTypeKind::Float { bytes } => *bytes,
-            MIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            MIRTypeKind::Array { element, .. } => element.alignment(),
-            MIRTypeKind::Struct { fields, .. } => fields
+            BCTypeKind::Opaque { bytes } => *bytes as u8,
+            BCTypeKind::Bool => 1,
+            BCTypeKind::Integer(_type) => _type.bytes(),
+            BCTypeKind::Float(_type) => _type.bytes(),
+            BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            BCTypeKind::Array { element, .. } => element.alignment(),
+            BCTypeKind::Struct { fields, .. } => fields
                 .iter()
                 .map(|(_, field)| field.alignment())
                 .max()
                 .unwrap_or(1),
-            MIRTypeKind::Union { fields, .. } => fields
+            BCTypeKind::Union { fields, .. } => fields
                 .iter()
                 .map(|(_, field)| field.alignment())
                 .max()
                 .unwrap_or(1),
-            MIRTypeKind::Unit => 1,
-            MIRTypeKind::VariableSized { alignment, .. } => *alignment,
+            BCTypeKind::Unit => 1,
+            BCTypeKind::VariableSized { alignment, .. } => *alignment,
         }
     }
 
     #[inline]
     pub fn is_void(&self) -> bool {
-        matches!(self.kind, MIRTypeKind::Unit)
+        matches!(self.kind, BCTypeKind::Unit)
     }
 
     #[inline]
     pub fn is_structure(&self) -> bool {
-        matches!(self.kind, MIRTypeKind::Struct { .. })
+        matches!(self.kind, BCTypeKind::Struct { .. })
+    }
+}
+
+impl BCIntegerType {
+    pub fn bytes(&self) -> u8 {
+        match self {
+            BCIntegerType::I8 => 1,
+            BCIntegerType::I16 => 2,
+            BCIntegerType::I32 => 4,
+            BCIntegerType::I64 => 8,
+            BCIntegerType::I128 => 16,
+        }
+    }
+}
+
+impl BCFloatType {
+    pub fn bytes(&self) -> u8 {
+        match self {
+            BCFloatType::F32 => 4,
+            BCFloatType::F64 => 8,
+        }
     }
 }

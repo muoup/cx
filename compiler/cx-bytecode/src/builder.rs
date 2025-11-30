@@ -1,18 +1,15 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::aux_routines::get_cx_struct_field_by_index;
-use crate::cx_maps::convert_cx_func_map;
-use crate::deconstructor::{deconstruct_variable, deconstructor_prototype};
-use crate::instruction_gen::{generate_instruction, implicit_defer_return, implicit_return};
+use crate::mir_lowering::cx_maps::convert_cx_func_map;
 use crate::{BytecodeResult, MIRUnit};
-use cx_bytecode_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCTypeKind, BCType};
 use cx_bytecode_data::*;
-use cx_typechecker_data::ast::{TCExpr, TCAST};
-use cx_typechecker_data::cx_types::CXType;
+use cx_typechecker_data::ast::TCAST;
 use cx_typechecker_data::function_map::CXFunctionKind;
+use cx_typechecker_data::mir::expression::MIRRegister;
+use cx_typechecker_data::mir::types::{CXIntegerType, CXType};
 use cx_util::format::dump_all;
-use cx_util::log_error;
-use cx_util::scoped_map::ScopedMap;
+use cx_util::{CXResult, log_error};
 use cx_util::unsafe_float::FloatWrapper;
 
 #[derive(Debug)]
@@ -23,7 +20,7 @@ pub struct MIRBuilder {
 
     pub fn_map: BCFunctionMap,
 
-    symbol_table: ScopedMap<BCValue>,
+    symbol_table: HashMap<MIRRegister, BCValue>,
     declaration_scope: Vec<Vec<DeclarationLifetime>>,
     pub(crate) defined_deconstructors: HashSet<CXType>,
 
@@ -58,7 +55,7 @@ impl MIRBuilder {
             fn_map: convert_cx_func_map(&ast.fn_map),
             in_deferred_block: false,
 
-            symbol_table: ScopedMap::new(),
+            symbol_table: HashMap::new(),
             declaration_scope: Vec::new(),
             defined_deconstructors: HashSet::new(),
 
@@ -91,13 +88,6 @@ impl MIRBuilder {
     }
 
     pub fn finish_function(&mut self) {
-        let prototype = self.fun().prototype.clone();
-
-        implicit_return(self, &prototype)
-            .expect("INTERNAL PANIC: Failed to add implicit return to function");
-        implicit_defer_return(self, &prototype)
-            .expect("INTERNAL PANIC: Failed to add implicit defer return to function");
-
         let context = self.function_context.take().unwrap();
 
         self.functions.push(MIRFunction {
@@ -124,43 +114,12 @@ impl MIRBuilder {
             .as_ref()
             .expect("Attempted to access function context with no current function selected")
     }
-
-    pub fn push_scope(&mut self) {
-        self.symbol_table.push_scope();
-        self.declaration_scope.push(Vec::new());
+    
+    pub fn insert_symbol(&mut self, mir_value: MIRRegister, bc_value: BCValue) {
+        self.symbol_table.insert(mir_value, bc_value);
     }
 
-    pub fn pop_scope(&mut self) -> Option<()> {
-        self.symbol_table.pop_scope();
-        let decls = self.declaration_scope.pop()?;
-
-        for DeclarationLifetime { value_id, _type } in decls.into_iter().rev() {
-            deconstruct_variable(self, &value_id, &_type)?;
-        }
-        
-        Some(())
-    }
-
-    pub fn generate_scoped(&mut self, expr: &TCExpr) -> BytecodeResult<BCValue> {
-        self.push_scope();
-        let val = generate_instruction(self, expr)?;
-        self.pop_scope()?;
-
-        Some(val)
-    }
-
-    pub fn insert_declaration(&mut self, declaration: DeclarationLifetime) {
-        self.declaration_scope
-            .last_mut()
-            .expect("INTERNAL PANIC: Attempted to insert declaration with no current scope")
-            .push(declaration);
-    }
-
-    pub fn insert_symbol(&mut self, name: String, value_id: BCValue) {
-        self.symbol_table.insert(name, value_id);
-    }
-
-    pub fn get_symbol(&self, name: &str) -> Option<BCValue> {
+    pub fn get_symbol(&self, name: &MIRRegister) -> Option<BCValue> {
         self.symbol_table.get(name).cloned()
     }
     
@@ -170,29 +129,27 @@ impl MIRBuilder {
         (self.global_variables.len() - 1) as u32
     }
 
-    pub fn insert_global_symbol(&mut self, value: BCGlobalValue) {
-        let key = value.name.to_string();
-        let index = self.add_global_variable(value);
-        
-        self.insert_symbol(key, BCValue::Global(index));
-    }
-
-    pub fn global_symbol_exists(&self, name: &str) -> bool {
-        self.symbol_table.get(name).is_some()
-    }
-
     pub fn function_defers(&self) -> bool {
         let ctx = self.function_context.as_ref().unwrap();
         !ctx.deferred_blocks.is_empty()
     }
+    
+    fn current_block_closed(&self) -> bool {
+        let Some(last_inst) = self.current_block_last_inst() else {
+            return false;
+        };
 
+        last_inst.kind.is_block_terminating()
+    }
+    
     pub fn add_instruction(
         &mut self,
-        instruction: MIRInstructionKind,
-        value_type: MIRType,
-    ) -> Option<BCValue> {
+        instruction: BCInstructionKind,
+        value_type: BCType,
+        result: Option<MIRRegister>
+    ) -> CXResult<BCValue> {
         if self.current_block_closed() {
-            return Some(BCValue::NULL);
+            return Ok(BCValue::NULL);
         }
 
         let context = self.fun_mut();
@@ -203,33 +160,21 @@ impl MIRBuilder {
             BlockID::DeferredBlock(id) => &mut context.deferred_blocks.get_mut(id as usize)?.body,
         };
 
-        body.push(MIRInstruction {
+        body.push(BCInstruction {
             kind: instruction,
             value_type,
         });
 
-        Some(BCValue::BlockResult {
+        let val = BCValue::BlockResult {
             block_id: context.current_block,
             value_id: (body.len() - 1) as ElementID,
-        })
-    }
-
-    fn current_block_closed(&self) -> bool {
-        let Some(last_inst) = self.current_block_last_inst() else {
-            return false;
         };
-
-        last_inst.kind.is_block_terminating()
-    }
-
-    pub fn add_instruction_cxty(
-        &mut self,
-        instruction: MIRInstructionKind,
-        value_type: CXType,
-    ) -> Option<BCValue> {
-        let value_type = self.convert_cx_type(&value_type)?;
-
-        self.add_instruction(instruction, value_type)
+        
+        if let Some(result) = result.clone() {
+            self.insert_symbol(result, val.clone());
+        }
+        
+        Ok(val)
     }
 
     pub fn fn_ref(&mut self, name: &str) -> BytecodeResult<String> {
@@ -239,62 +184,14 @@ impl MIRBuilder {
             None
         }
     }
-
-    pub(crate) fn add_return(&mut self, value_id: Option<BCValue>) -> Option<BCValue> {
-        if self.function_defers() {
-            self.add_defer_jump(self.fun().current_block, value_id)
-        } else {
-            self.add_instruction(
-                MIRInstructionKind::Return { value: value_id },
-                MIRType::unit(),
-            )
-        }
-    }
-
-    pub(crate) fn add_defer_jump(
-        &mut self,
-        block_id: BlockID,
-        value_id: Option<BCValue>,
-    ) -> Option<BCValue> {
-        let inst = self.add_instruction(MIRInstructionKind::GotoDefer, MIRType::unit())?;
-
-        if let Some(value_id) = value_id {
-            self.add_defer_merge(block_id, value_id);
-        };
-
-        Some(inst)
-    }
-
-    pub fn add_defer_merge(&mut self, from_block: BlockID, value: BCValue) {
-        let first_defer_inst = &mut self
-            .fun_mut()
-            .deferred_blocks
-            .first_mut()
-            .unwrap()
-            .body
-            .first_mut()
-            .unwrap()
-            .kind;
-
-        let MIRInstructionKind::Phi { predecessors } = first_defer_inst else {
-            let fdi = format!("{first_defer_inst}");
-
-            self.dump_current_fn();
-
-            panic!("INTERNAL PANIC: Attempted to add defer merge to non-Phi instruction for function {} block {}, first instruction: {}",
-                self.fun().prototype.name, self.fun().current_block, fdi);
-        };
-
-        predecessors.push((value, from_block));
-    }
     
-    pub fn get_value_type(&self, value: &BCValue) -> Option<MIRType> {
+    pub fn get_value_type(&self, value: &BCValue) -> Option<BCType> {
         match value {
-            BCValue::NULL => Some(MIRType::unit()),
+            BCValue::NULL => Some(BCType::unit()),
                        
-            BCValue::LoadOf(type_, _) | 
-            BCValue::FloatImmediate { type_, .. } |
-            BCValue::IntImmediate { type_, .. } => Some(type_.clone()),
+            BCValue::LoadOf(type_, _) => Some(type_.clone()),
+            BCValue::FloatImmediate { type_, .. } => Some(BCTypeKind::Float(type_.clone()).into()),
+            BCValue::IntImmediate { type_, .. } => Some(BCTypeKind::Integer(type_.clone()).into()),
             
             BCValue::ParameterRef(param_index) => {
                 let context = self.fun();
@@ -306,12 +203,12 @@ impl MIRBuilder {
                 let global = self.global_variables.get(*global_index as usize)?;
 
                 match &global._type {
-                    BCGlobalType::StringLiteral(..) => Some(MIRType::default_pointer()),
+                    BCGlobalType::StringLiteral(..) => Some(BCType::default_pointer()),
                     BCGlobalType::Variable { _type, .. } => Some(_type.clone()),
                 }
             },
             
-            BCValue::FunctionRef(_) => Some(MIRType::default_pointer()),
+            BCValue::FunctionRef(_) => Some(BCType::default_pointer()),
             BCValue::BlockResult { block_id, value_id } => {
                 let context = self.fun();
 
@@ -327,14 +224,13 @@ impl MIRBuilder {
         }
     }
 
-    pub fn match_int_const(&self, value: i32, _type: &MIRType) -> BCValue {
+    pub fn match_int_const(&self, value: i32, _type: &BCType) -> BCValue {
         match _type.kind {
-            MIRTypeKind::Bool => BCValue::IntImmediate {
+            BCTypeKind::Bool => BCValue::IntImmediate {
                 val: value as i64,
-                type_: MIRType::from(MIRTypeKind::Bool),
+                type_: BCType::from(BCTypeKind::Bool),
             },
-            MIRTypeKind::Signed { bytes } => self.int_const(value, bytes, true),
-            MIRTypeKind::Unsigned { bytes } => self.int_const(value, bytes, false),
+            BCTypeKind::Integer(_type) => self.int_const(value, _type),
 
             _ => {
                 panic!("PANIC: Attempted to match integer constant with non-integer type: {_type}")
@@ -342,28 +238,25 @@ impl MIRBuilder {
         }
     }
 
-    pub fn int_const(&self, value: i32, bytes: u8, signed: bool) -> BCValue {
+    pub fn int_const(&self, value: i32, _type: BCIntegerType) -> BCValue {
         BCValue::IntImmediate {
             val: value as i64,
-            type_: match signed {
-                true => MIRType::from(MIRTypeKind::Signed { bytes }),
-                false => MIRType::from(MIRTypeKind::Unsigned { bytes }),
-            },
+            type_: _type.clone()
         }
     }
 
-    pub fn match_float_const(&self, value: f64, _type: &MIRType) -> BCValue {
-        match _type.kind {
-            MIRTypeKind::Float { bytes } => self.float_const(value, bytes),
+    pub fn match_float_const(&self, value: f64, _type: &BCType) -> BCValue {
+        match &_type.kind {
+            BCTypeKind::Float(_type) => self.float_const(value, _type.clone()),
 
             _ => panic!("PANIC: Attempted to match float constant with non-float type: {_type}"),
         }
     }
 
-    pub fn float_const(&self, value: f64, bytes: u8) -> BCValue {
+    pub fn float_const(&self, value: f64, _type: BCFloatType) -> BCValue {
         BCValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            type_: MIRTypeKind::Float { bytes }.into(),
+            type_: _type.clone()
         }
     }
 
@@ -392,7 +285,7 @@ impl MIRBuilder {
 
         if !context.prototype.return_type.is_void() {
             self.add_instruction(
-                MIRInstructionKind::Phi {
+                BCInstructionKind::Phi {
                     predecessors: Vec::new(),
                 },
                 return_type,
@@ -511,13 +404,13 @@ impl MIRBuilder {
         }
     }
 
-    pub fn last_instruction(&self) -> Option<&MIRInstruction> {
+    pub fn last_instruction(&self) -> Option<&BCInstruction> {
         let context = self.fun();
 
         context.blocks.last()?.body.last()
     }
 
-    pub fn current_block_last_inst(&self) -> Option<&MIRInstruction> {
+    pub fn current_block_last_inst(&self) -> Option<&BCInstruction> {
         let context = self.fun();
 
         let current_block = match context.current_block {
@@ -556,7 +449,7 @@ impl MIRBuilder {
         let ret_type = prototype.return_type.clone();
 
         self.add_instruction(
-            MIRInstructionKind::DirectCall {
+            BCInstructionKind::DirectCall {
                 args,
                 method_sig: prototype,
             },
@@ -567,17 +460,17 @@ impl MIRBuilder {
     pub fn struct_access(
         &mut self,
         val: BCValue,
-        _type: &MIRType,
+        _type: &BCType,
         index: usize,
     ) -> Option<BCValue> {
-        let MIRTypeKind::Struct { .. } = &_type.kind else {
+        let BCTypeKind::Struct { .. } = &_type.kind else {
             return None;
         };
 
         let access = get_cx_struct_field_by_index(self, _type, index)?;
 
         self.add_instruction(
-            MIRInstructionKind::StructAccess {
+            BCInstructionKind::StructAccess {
                 field_offset: access.offset,
                 field_index: access.index,
 
@@ -588,32 +481,32 @@ impl MIRBuilder {
         )
     }
 
-    pub fn get_tag_addr(&mut self, val: &BCValue, _type: &MIRType) -> Option<BCValue> {
+    pub fn get_tag_addr(&mut self, val: &BCValue, _type: &BCType) -> Option<BCValue> {
         self.struct_access(val.clone(), _type, 1)
     }
 
-    pub fn get_tag(&mut self, val: &BCValue, _type: &MIRType) -> Option<BCValue> {
+    pub fn get_tag(&mut self, val: &BCValue, _type: &BCType) -> Option<BCValue> {
         let tag_field = self.get_tag_addr(val, _type)?;
 
-        self.load_value(tag_field, MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }))
+        self.load_value(tag_field, BCType::from(BCTypeKind::Integer { bytes: 4 }))
     }
 
-    pub fn set_tag(&mut self, val: &BCValue, _type: &MIRType, tag: u32) -> Option<BCValue> {
+    pub fn set_tag(&mut self, val: &BCValue, _type: &BCType, tag: u32) -> Option<BCValue> {
         let tag_val = self.int_const(tag as i32, 4, true);
         let tag_field = self.get_tag_addr(val, _type)?;
 
         self.add_instruction(
-            MIRInstructionKind::Store {
+            BCInstructionKind::Store {
                 memory: tag_field,
                 value: tag_val,
 
-                type_: MIRType::from(MIRTypeKind::Unsigned { bytes: 4 }),
+                type_: BCType::from(BCTypeKind::Integer { bytes: 4 }),
             },
-            MIRType::unit(),
+            BCType::unit(),
         )
     }
 
-    pub fn load_value(&mut self, ptr: BCValue, _type: MIRType) -> Option<BCValue> {
+    pub fn load_value(&mut self, ptr: BCValue, _type: BCType) -> Option<BCValue> {
         if _type.is_structure() {
             return Some(ptr);
         }
