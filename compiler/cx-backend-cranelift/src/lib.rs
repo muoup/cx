@@ -7,7 +7,7 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_bytecode_data::types::BCTypeKind;
-use cx_bytecode_data::{BCBlockID, BCValue, MIRUnit};
+use cx_bytecode_data::{BCBlockID, BCValue, BCUnit};
 use cx_util::log_error;
 use std::collections::HashMap;
 
@@ -80,14 +80,14 @@ impl FunctionState<'_> {
 
             BCValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
 
-            BCValue::IntImmediate { val, type_ } => {
-                let int_type = get_cranelift_type(type_);
+            BCValue::IntImmediate { val, _type: _type } => {
+                let int_type = get_cranelift_type(_type);
                 let value = self.builder.ins().iconst(int_type, *val);
                 Some(CodegenValue::Value(value))
             }
 
-            BCValue::FloatImmediate { val, type_ } => {
-                match &type_.kind {
+            BCValue::FloatImmediate { val, _type: _type } => {
+                match &_type.kind {
                     BCTypeKind::Float { bytes: 4 } => {
                         let as_f32 : f32 = val.into();
                         let value = self.builder.ins().f32const(as_f32);
@@ -98,7 +98,7 @@ impl FunctionState<'_> {
                         let value = self.builder.ins().f64const(as_f64);
                         Some(CodegenValue::Value(value))
                     }
-                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_),
+                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", _type),
                 }
             }
 
@@ -142,7 +142,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(bc: &MIRUnit, output: &str) -> Option<Vec<u8>> {
+pub fn bytecode_aot_codegen(bc: &BCUnit, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 

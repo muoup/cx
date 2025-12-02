@@ -18,8 +18,8 @@ pub(crate) fn prepare_function_sig(
             .push(get_cranelift_abi_type(&prototype.return_type));
     }
 
-    for MIRParameter { _type: type_, .. } in prototype.params.iter() {
-        sig.params.push(get_cranelift_abi_type(type_));
+    for MIRParameter { _type: _type, .. } in prototype.params.iter() {
+        sig.params.push(get_cranelift_abi_type(_type));
     }
 
     Some(sig)

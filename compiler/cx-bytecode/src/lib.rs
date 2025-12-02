@@ -1,5 +1,8 @@
-use cx_bytecode_data::MIRUnit;
-use cx_typechecker_data::ast::TCAST;
+use cx_bytecode_data::BCUnit;
+use cx_typechecker_data::mir::program::MIRUnit;
+use cx_util::CXResult;
+
+use crate::{builder::BCBuilder, mir_lowering::lower_mir};
 
 pub mod builder;
 
@@ -7,18 +10,10 @@ pub(crate) mod mir_lowering;
 
 pub type BytecodeResult<T> = Option<T>;
 
-pub fn generate_mir(_ast: TCAST) -> Option<MIRUnit> {
-    // let mut builder = MIRBuilder::new(&ast);
-
-    todo!();
+pub fn generate_bytecode(mir: &MIRUnit) -> CXResult<BCUnit> {
+    let mut builder = BCBuilder::new(&mir);
     
-    // for global_var in ast.global_variables.iter() {
-    //     generate_global_variable(&mut builder, global_var);
-    // }
-
-    // for fn_def in ast.function_defs.iter() {
-    //     generate_function(&mut builder, &fn_def.prototype, &fn_def.body)?;
-    // }
-
-    // builder.finish()
+    lower_mir(&mut builder, mir)?;
+    
+    Ok(builder.finish())
 }

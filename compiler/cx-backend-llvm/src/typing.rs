@@ -73,12 +73,12 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
                 return Some(_type.as_any_type_enum());
             }
 
-            let _types = fields
+            let type_s = fields
                 .iter()
                 .map(|(_, field_type)| {
-                    let type_ = bc_llvm_type(context, field_type)?;
+                    let _type = bc_llvm_type(context, field_type)?;
 
-                    any_to_basic_type(type_)
+                    any_to_basic_type(_type)
                 })
                 .collect::<Option<Vec<_>>>()?;
 
@@ -89,7 +89,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
             };
 
             let struct_def = context.opaque_struct_type(struct_name.as_str());
-            struct_def.set_body(_types.as_slice(), false);
+            struct_def.set_body(type_s.as_slice(), false);
 
             return context
                 .get_struct_type(struct_name.as_str())
@@ -97,7 +97,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
         }
 
         BCTypeKind::Union { .. } => {
-            let _type_size = _type.fixed_size();
+            let _type_size = _type.size();
             let array_type = context.i8_type().array_type(_type_size as u32);
 
             array_type.as_any_type_enum()

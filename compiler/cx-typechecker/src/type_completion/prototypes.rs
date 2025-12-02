@@ -1,11 +1,11 @@
-use crate::environment::TCEnvironment;
+use crate::environment::TypeEnvironment;
 use crate::type_completion::complete_type;
 use crate::type_completion::types::_complete_type;
 use cx_parsing_data::data::{
     CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind,
 };
-use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
+use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{
     CXFunctionPrototype, CXTemplateInput, TCParameter,
 };
@@ -17,7 +17,7 @@ pub(crate) fn apply_implicit_fn_attr(mut proto: CXNaivePrototype) -> CXNaiveProt
         proto.params.insert(
             0,
             CXNaiveParameter {
-                name: Some(CXIdent::from("this")),
+                name: Some(CXIdent::new("this")),
                 _type: implicit_member.as_type().pointer_to(false, 0),
             },
         );
@@ -27,8 +27,8 @@ pub(crate) fn apply_implicit_fn_attr(mut proto: CXNaivePrototype) -> CXNaiveProt
 }
 
 pub fn complete_template_args(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     template_args: &CXNaiveTemplateInput,
 ) -> CXResult<CXTemplateInput> {
     let args = template_args
@@ -41,8 +41,8 @@ pub fn complete_template_args(
 }
 
 pub(crate) fn complete_fn_ident(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     ident: &NaiveFnKind,
 ) -> CXResult<CXFunctionIdentifier> {
     match ident {
@@ -89,8 +89,8 @@ pub(crate) fn complete_fn_ident(
 }
 
 pub fn _complete_fn_prototype(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     prototype: &CXNaivePrototype,
 ) -> CXResult<CXFunctionPrototype> {
     let prototype = apply_implicit_fn_attr(prototype.clone());

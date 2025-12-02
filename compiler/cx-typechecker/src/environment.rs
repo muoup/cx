@@ -3,11 +3,10 @@ use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType, NaiveFnIdent, NaiveFn
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::CXTypeMap;
-use cx_typechecker_data::ast::{TCBaseMappings, TCGlobalVariable};
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::mir::expression::MIRValue;
-use cx_typechecker_data::mir::program::{MIRBasicBlock, MIRUnit};
+use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRBasicBlock, MIRUnit, MIRGlobalVariable};
 use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -18,7 +17,7 @@ use crate::builder::{BlockPointer, MIRBuilder};
 use crate::type_completion::templates::instantiate_function_template;
 use crate::type_completion::{complete_fn_prototype, complete_type};
 
-pub struct TCTemplateRequest {
+pub struct MIRTemplateRequest {
     pub module_origin: Option<String>,
     pub name: NaiveFnKind,
     pub input: CXTemplateInput,
@@ -29,7 +28,7 @@ pub struct Scope {
     pub continue_to: Option<CXIdent>,
 }
 
-pub struct TCEnvironment<'a> {
+pub struct TypeEnvironment<'a> {
     pub tokens: &'a [Token],
     pub compilation_unit: CompilationUnit,
 
@@ -37,11 +36,11 @@ pub struct TCEnvironment<'a> {
 
     pub realized_types: CXTypeMap,
     pub realized_fns: CXFnMap,
-    pub realized_globals: HashMap<String, TCGlobalVariable>,
+    pub realized_globals: HashMap<String, MIRGlobalVariable>,
 
     pub(crate) builder: MIRBuilder,
 
-    pub requests: Vec<TCTemplateRequest>,
+    pub requests: Vec<MIRTemplateRequest>,
     pub deconstructors: HashSet<CXType>,
 
     pub current_function: Option<CXFunctionPrototype>,
@@ -51,18 +50,18 @@ pub struct TCEnvironment<'a> {
     pub in_external_templated_function: bool,
 }
 
-impl TCEnvironment<'_> {
+impl TypeEnvironment<'_> {
     pub fn new<'a>(
         tokens: &'a [Token],
         compilation_unit: CompilationUnit,
         module_data: &'a ModuleData,
-    ) -> TCEnvironment<'a> {
+    ) -> TypeEnvironment<'a> {
         let intrinsic_types = INTRINSIC_TYPES
             .iter()
             .map(|(name, ty)| (name.to_string(), ty.clone().into()))
             .collect::<HashMap<_, _>>();
 
-        TCEnvironment {
+        TypeEnvironment {
             tokens,
             compilation_unit,
 
@@ -111,7 +110,7 @@ impl TCEnvironment<'_> {
 
     pub fn get_func(
         &mut self,
-        base_data: &TCBaseMappings,
+        base_data: &MIRBaseMappings,
         name: &NaiveFnIdent,
     ) -> CXResult<CXFunctionPrototype> {
         let Some(base_fn) = base_data.fn_data.get_standard(name) else {
@@ -128,7 +127,7 @@ impl TCEnvironment<'_> {
 
     pub fn get_func_templated(
         &mut self,
-        base_data: &TCBaseMappings,
+        base_data: &MIRBaseMappings,
         name: &NaiveFnKind,
         input: &CXTemplateInput,
     ) -> CXResult<CXFunctionPrototype> {
@@ -139,7 +138,7 @@ impl TCEnvironment<'_> {
         self.realized_fns.get(name).cloned()
     }
 
-    pub fn get_type(&mut self, base_data: &TCBaseMappings, name: &str) -> CXResult<CXType> {
+    pub fn get_type(&mut self, base_data: &MIRBaseMappings, name: &str) -> CXResult<CXType> {
         let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
             return CXError::create_result(format!("Type not found: {}", name));
         };
@@ -151,7 +150,7 @@ impl TCEnvironment<'_> {
         self.realized_types.get(name).cloned()
     }
 
-    pub fn destructor_exists(&self, base_data: &TCBaseMappings, _type: &CXType) -> bool {
+    pub fn destructor_exists(&self, base_data: &MIRBaseMappings, _type: &CXType) -> bool {
         let Some(type_name) = _type.get_identifier() else {
             return false;
         };
@@ -167,7 +166,7 @@ impl TCEnvironment<'_> {
 
     pub fn complete_type(
         &mut self,
-        base_data: &TCBaseMappings,
+        base_data: &MIRBaseMappings,
         _type: &CXNaiveType,
     ) -> CXResult<CXType> {
         complete_type(self, base_data, None, _type)
@@ -175,7 +174,7 @@ impl TCEnvironment<'_> {
 
     pub fn complete_prototype(
         &mut self,
-        base_data: &TCBaseMappings,
+        base_data: &MIRBaseMappings,
         external_module: Option<&String>,
         prototype: &CXNaivePrototype,
     ) -> CXResult<CXFunctionPrototype> {
@@ -207,15 +206,15 @@ impl TCEnvironment<'_> {
 
         if func_ctx.defer_blocks.is_empty() {
             func_ctx.defer_blocks.push(MIRBasicBlock {
-                id: CXIdent::from("defer_entry"),
-                expressions: Vec::new(),
+                id: CXIdent::new("defer_entry"),
+                instructions: Vec::new(),
             });
         }
         let previous_pointer = func_ctx.current_block.clone();
 
         self.builder
             .set_pointer(BlockPointer::Defer(self.builder.get_defer_end()));
-        self.builder.set_block(CXIdent::from("defer_entry"));
+        self.builder.set_block(CXIdent::new("defer_entry"));
 
         let result = f(self);
 

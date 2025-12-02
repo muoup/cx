@@ -27,7 +27,7 @@ fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
         name: NaiveFnKind::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
 
         return_type: CXNaiveTypeKind::Identifier {
-            name: CXIdent::from("void"),
+            name: CXIdent::new("void"),
             predeclaration: PredeclarationType::None,
         }
         .to_type(),
@@ -132,7 +132,7 @@ pub fn try_function_parse(
 
             let name = NaiveFnKind::MemberFunction {
                 _type: FunctionTypeIdent::from_type(&_type).unwrap(),
-                function_name: CXIdent::from(name.as_str()),
+                function_name: CXIdent::new(name.as_str()),
             };
 
             let Ok(params) = parse_params(data) else {
@@ -199,7 +199,7 @@ pub(crate) fn parse_function_contract(
                 
                 let return_val_name = if try_next!(data.tokens, punctuator!(OpenParen)) {
                     assert_token_matches!(data.tokens, identifier!(ret));
-                    let name = CXIdent::from(ret.as_str());
+                    let name = CXIdent::new(ret.as_str());
                     
                     assert_token_matches!(data.tokens, punctuator!(CloseParen));
                     Some(name)

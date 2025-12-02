@@ -2,7 +2,7 @@ use crate::attributes::*;
 use crate::typing::{any_to_basic_type, bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_bytecode_data::{
     BCFunctionMap, BCBlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue,
-    MIRUnit,
+    BCUnit,
 };
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
@@ -68,8 +68,8 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(param_val))
             }
 
-            BCValue::IntImmediate { val, type_ } => {
-                let int_type = bc_llvm_type(self.context, type_)?;
+            BCValue::IntImmediate { val, _type: _type } => {
+                let int_type = bc_llvm_type(self.context, _type)?;
                 let int_val = int_type
                     .into_int_type()
                     .const_int(*val as u64, true)
@@ -78,8 +78,8 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(int_val))
             }
 
-            BCValue::FloatImmediate { val, type_ } => {
-                let float_type = bc_llvm_type(self.context, type_)?;
+            BCValue::FloatImmediate { val, _type: _type } => {
+                let float_type = bc_llvm_type(self.context, _type)?;
                 let float_val = float_type
                     .into_float_type()
                     .const_float(val.into())
@@ -145,7 +145,7 @@ impl<'a> CodegenValue<'a> {
 }
 
 pub fn bytecode_aot_codegen(
-    bytecode: &MIRUnit,
+    bytecode: &BCUnit,
     output_path: &str,
     optimization_level: OptimizationLevel,
 ) -> Option<Vec<u8>> {

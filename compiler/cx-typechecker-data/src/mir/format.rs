@@ -1,4 +1,4 @@
-use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRUnOp, MIRValue};
+use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRRegister, MIRUnOp, MIRValue};
 use crate::mir::program::{MIRBasicBlock, MIRFunction, MIRUnit};
 use crate::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
@@ -36,7 +36,7 @@ impl Display for MIRFunction {
 impl Display for MIRBasicBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.id)?;
-        for instruction in &self.expressions {
+        for instruction in &self.instructions {
             writeln!(f, "\t{instruction}")?;
         }
         Ok(())
@@ -72,21 +72,24 @@ impl Display for TCParameter {
     }
 }
 
+impl Display for MIRRegister {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             MIRInstruction::Alias { result, value } => write!(f, "%{result} = alias {value}"),
-            MIRInstruction::CreateStackRegion { result, _type } => {
+            MIRInstruction::CreateEmptyStackRegion { result, _type } => {
                 write!(f, "%{result} = create_region {_type}")
             }
-            MIRInstruction::CreateRegionCopy {
+            MIRInstruction::CopyStackRegionInto {
                 result,
                 source: target,
                 _type,
             } => write!(f, "%{result} = region_copy {target} as {_type}"),
-            MIRInstruction::LoadGlobal { result, name } => {
-                write!(f, "%{result} = load_global {name}")
-            }
             MIRInstruction::MemoryRead {
                 result,
                 source,
@@ -100,6 +103,7 @@ impl Display for MIRInstruction {
                 source,
                 field_index,
                 struct_type,
+                ..
             } => write!(
                 f,
                 "%{result} = struct_get {source}, index {field_index} of {struct_type}"
@@ -137,23 +141,24 @@ impl Display for MIRInstruction {
                 }
                 write!(f, ")")
             }
-            MIRInstruction::ConstructSumType {
-                result,
+            MIRInstruction::ConstructTaggedUnionInto {
                 variant_index,
+                memory,
                 value,
                 sum_type,
             } => write!(
                 f,
-                "%{result} = construct_sum {sum_type}::variant({variant_index}) with {value}"
+                "construct_sum {sum_type}::variant({variant_index}) with {value} into {memory}"
             ),
             MIRInstruction::Loop {
+                loop_id,
                 condition_precheck,
                 condition,
                 body,
                 merge,
             } => write!(
                 f,
-                "loop (precheck: {condition_precheck}) cond({condition}) body({body}) merge({merge})"
+                "loop id: {loop_id} (precheck: {condition_precheck}) cond({condition}) body({body}) merge({merge})"
             ),
             MIRInstruction::LoopContinue { loop_id } => write!(f, "loop_continue {loop_id}"),
             MIRInstruction::Branch {
@@ -374,8 +379,8 @@ impl Display for CXTypeKind {
             }
             CXTypeKind::Unit => write!(f, "()"),
             CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "*strong {}", inner_type),
-            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "*{}", inner_type),
-            CXTypeKind::MemoryReference(inner) => write!(f, "&{}", inner),
+            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
+            CXTypeKind::MemoryReference(inner) => write!(f, "{}&", inner),
             CXTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             CXTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
             CXTypeKind::Function { prototype } => write!(f, "{prototype}"),

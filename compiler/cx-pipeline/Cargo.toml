@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-backend-llvm = ["dep:cx-backend-llvm"]
+backend-llvm = [] #["dep:cx-backend-llvm"]
 
 [dependencies]
 speedy = { version = "0.8.7" }
@@ -15,8 +15,8 @@ cx-lexer = { path = "../cx-lexer" }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-bytecode = { path = "../cx-bytecode" }
-cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
-cx-backend-cranelift = { path = "../cx-backend-cranelift" }
+# cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
+# cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-lexer-data = { path = "../cx-lexer-data" }

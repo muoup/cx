@@ -369,7 +369,7 @@ impl CXType {
     pub fn map_name(&mut self, f: impl FnOnce(&str) -> String) {
         if let Some(name) = self.get_name() {
             let new_name = f(name);
-            self.set_name(CXIdent::from(new_name));
+            self.set_name(CXIdent::new(new_name));
         }
     }
 
@@ -417,10 +417,49 @@ impl CXType {
             CXTypeKind::Array { size, inner_type } => size * inner_type.type_size(),
 
             CXTypeKind::TaggedUnion { variants, .. } => {
-                variants.iter().map(|(_, t)| t.type_size()).max().unwrap_or(0) + 1
+                variants
+                    .iter()
+                    .map(|(_, t)| t.type_size())
+                    .max()
+                    .unwrap_or(0)
+                    + 1
             }
-            
-            CXTypeKind::Function { .. } => unreachable!()
+
+            CXTypeKind::Function { .. } => unreachable!(),
+        }
+    }
+    
+    pub fn type_alignment(&self) -> usize {
+        match &self.kind {
+            CXTypeKind::Integer { _type, .. } => _type.bytes(),
+            CXTypeKind::Float { _type } => _type.bytes(),
+            CXTypeKind::Bool => 1,
+            CXTypeKind::Unit => 1,
+            CXTypeKind::Opaque { size, .. } => *size,
+            CXTypeKind::MemoryReference(_)
+            | CXTypeKind::PointerTo { .. }
+            | CXTypeKind::StrongPointer { .. } => std::mem::size_of::<usize>(),
+
+            CXTypeKind::Structured { fields, .. } => fields
+                .iter()
+                .map(|(_, t)| t.type_alignment())
+                .max()
+                .unwrap_or(1),
+            CXTypeKind::Union { variants, .. } => variants
+                .iter()
+                .map(|(_, t)| t.type_alignment())
+                .max()
+                .unwrap_or(1),
+
+            CXTypeKind::Array { inner_type, .. } => inner_type.type_alignment(),
+
+            CXTypeKind::TaggedUnion { variants, .. } => variants
+                .iter()
+                .map(|(_, t)| t.type_alignment())
+                .max()
+                .unwrap_or(1),
+
+            CXTypeKind::Function { .. } => unreachable!(),
         }
     }
 
@@ -547,19 +586,5 @@ impl CXFunctionPrototype {
     pub fn apply_template_mangling(&mut self) {
         self.name
             .template_mangle2(&self.return_type, self.params.iter().map(|p| &p._type));
-
-        // match &self.name.kind {
-        //     CXFunctionKind::Standard { name } => {
-        //         let new_name = CXIdent::from(CXFunctionKind::standard_template_mangle(name.as_str(), &self));
-
-        //         let CXFunctionKind::Standard { name } = &mut self.name.kind else {
-        //             unreachable!();
-        //         };
-
-        //         *name = new_name;
-        //     },
-
-        //     _ => {}
-        // }
     }
 }

@@ -68,7 +68,7 @@ impl Default for CXFunctionIdentifier {
     fn default() -> Self {
         CXFunctionIdentifier::Standard {
             kind: CXFunctionKind::Standard {
-                name: CXIdent::from(""),
+                name: CXIdent::new(""),
             }
         }
     }

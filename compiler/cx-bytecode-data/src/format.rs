@@ -1,11 +1,10 @@
 use crate::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use crate::{
-    BCGlobalType, BCInstruction, BCInstructionKind, BCValue, MIRBlock, MIRFloatBinOp, MIRFloatUnOp,
-    MIRFunction, MIRFunctionPrototype, MIRIntBinOp, MIRIntUnOp, MIRPtrBinOp, MIRUnit,
+    BCFloatBinOp, BCFloatUnOp, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BCRegister, BCValue, BCBasicBlock, BCFunction, BCFunctionPrototype, BCUnit
 };
 use std::fmt::{Display, Formatter};
 
-impl Display for MIRUnit {
+impl Display for BCUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Bytecode Program:")?;
 
@@ -21,7 +20,7 @@ impl Display for MIRUnit {
     }
 }
 
-impl Display for MIRFunction {
+impl Display for BCFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.prototype)?;
 
@@ -33,25 +32,19 @@ impl Display for MIRFunction {
     }
 }
 
-impl Display for MIRBlock {
+impl Display for BCBasicBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, ".{}:", self.id)?;
 
-        for (i, instruction) in self.body.iter().enumerate() {
-            write!(f, "\t")?;
-
-            if !instruction.value_type.is_void() {
-                write!(f, "_{i} = ")?;
-            }
-
-            writeln!(f, "{instruction}")?;
+        for instruction in self.body.iter() {
+            writeln!(f, "\t{instruction}")?;
         }
 
         Ok(())
     }
 }
 
-impl Display for MIRFunctionPrototype {
+impl Display for BCFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}(", self.name)?;
 
@@ -68,13 +61,11 @@ impl Display for MIRFunctionPrototype {
 
 impl Display for BCInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.kind)?;
-
-        if !self.value_type.is_void() {
-            write!(f, "\n\t\t ({})", self.value_type)?;
+        if let Some(result) = &self.result {
+            write!(f, "{} = ", result)?;
         }
-
-        Ok(())
+        
+        write!(f, "{}", self.kind)
     }
 }
 
@@ -98,14 +89,19 @@ impl Display for BCGlobalType {
     }
 }
 
+impl Display for BCRegister {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "%{}", self.name)
+    }
+}
+
 impl Display for BCValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             BCValue::NULL => write!(f, "null"),
-            BCValue::ParameterRef(index) => write!(f, "p{index}"),
-            BCValue::IntImmediate { val, .. } => write!(f, "{val}"),
-            BCValue::FloatImmediate { val, .. } => write!(f, "{val}"),
-            BCValue::LoadOf(_, value) => write!(f, "*{value}"),
+            BCValue::ParameterRef(index) => write!(f, "param @{index}"),
+            BCValue::IntImmediate { val, _type } => write!(f, "{_type} {val}"),
+            BCValue::FloatImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FunctionRef(name) => write!(f, "{name}"),
             BCValue::Global(id) => write!(f, "g{id}"),
             BCValue::Register { register, _type } => write!(f, "{_type} {register}"),
@@ -116,14 +112,17 @@ impl Display for BCValue {
 impl Display for BCInstructionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            BCInstructionKind::Temp { value } => {
+            BCInstructionKind::Alias { value } => {
                 write!(f, "{value}")
             }
             BCInstructionKind::Allocate { _type, .. } => {
-                write!(f, "stackallocate {_type}")
+                write!(f, "alloca {_type}")
             }
             BCInstructionKind::Store { value, memory, .. } => {
-                write!(f, "*{memory} := {value}")
+                write!(f, "store {value} in {memory}")
+            }
+            BCInstructionKind::Load { memory, _type, .. } => {
+                write!(f, "load {_type} {memory}")
             }
             BCInstructionKind::ZeroMemory { memory, _type } => {
                 write!(f, "*{memory} := 0")
@@ -135,27 +134,12 @@ impl Display for BCInstructionKind {
             } => {
                 write!(f, "{struct_}.[{field_index}]")
             }
-            BCInstructionKind::BoolExtend { value } => {
-                write!(f, "bool_extend {value}")
-            }
-            BCInstructionKind::ZExtend { value } => {
-                write!(f, "zextend {value}")
-            }
-            BCInstructionKind::SExtend { value } => {
-                write!(f, "sextend {value}")
-            }
-            BCInstructionKind::Trunc { value } => {
-                write!(f, "trunc {value}")
-            }
-            BCInstructionKind::PtrToInt { value } => {
-                write!(f, "ptr_to_int {value}")
-            }
-            BCInstructionKind::IntToPtrDiff { value, ptr_type } => {
-                write!(f, "int_to_ptrdiff ({ptr_type}*) {value}")
-            }
-            BCInstructionKind::IntToPtr { value } => {
-                write!(f, "int_to_ptr {value}")
-            }
+            BCInstructionKind::IntToPtrDiff { value, ptr_inner } => {
+                write!(f, "int_to_ptr_diff {value} ({ptr_inner})")
+            },
+            BCInstructionKind::Coerce { value, coercion_type } => {
+                write!(f, "coerce {value} ({coercion_type:?})")
+            },
             BCInstructionKind::Return { value } => {
                 write!(f, "return")?;
 
@@ -175,7 +159,7 @@ impl Display for BCInstructionKind {
             BCInstructionKind::Phi { predecessors: from } => {
                 write!(f, "phi")?;
                 if !from.is_empty() {
-                    write!(f, " from [")?;
+                    write!(f, " [")?;
                     for (i, (value, block_id)) in from.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -188,9 +172,6 @@ impl Display for BCInstructionKind {
             }
             BCInstructionKind::Jump { target } => {
                 write!(f, "jump {target}")
-            }
-            BCInstructionKind::GotoDefer => {
-                write!(f, "goto defer")
             }
             BCInstructionKind::JumpTable {
                 value,
@@ -251,20 +232,11 @@ impl Display for BCInstructionKind {
             BCInstructionKind::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             }
-            BCInstructionKind::BitCast { value } => {
-                write!(f, "bit_cast {value}")
-            }
-            BCInstructionKind::IntToFloat { from, value } => {
-                write!(f, "int_to_float ({from}) {value}")
-            }
-            BCInstructionKind::FloatToInt { from, value } => {
-                write!(f, "float_to_int ({from}) {value}")
-            }
-            BCInstructionKind::FloatCast { value } => {
-                write!(f, "float_cast {value}")
-            }
             BCInstructionKind::CompilerAssertion { condition, message } => {
                 write!(f, "compiler_assertion {condition} ({message})")
+            }
+            BCInstructionKind::CompilerAssumption { condition } => {
+                write!(f, "compiler_assumption {condition}")
             }
             BCInstructionKind::NOP => {
                 write!(f, "nop")
@@ -273,106 +245,106 @@ impl Display for BCInstructionKind {
     }
 }
 
-impl Display for MIRPtrBinOp {
+impl Display for BCPtrBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                MIRPtrBinOp::ADD => "+",
-                MIRPtrBinOp::SUB => "-",
+                BCPtrBinOp::ADD => "+",
+                BCPtrBinOp::SUB => "-",
 
-                MIRPtrBinOp::EQ => "==",
-                MIRPtrBinOp::NE => "!=",
+                BCPtrBinOp::EQ => "==",
+                BCPtrBinOp::NE => "!=",
 
-                MIRPtrBinOp::LT => "<",
-                MIRPtrBinOp::GT => ">",
-                MIRPtrBinOp::LE => "<=",
-                MIRPtrBinOp::GE => ">=",
+                BCPtrBinOp::LT => "<",
+                BCPtrBinOp::GT => ">",
+                BCPtrBinOp::LE => "<=",
+                BCPtrBinOp::GE => ">=",
             },
         )
     }
 }
 
-impl Display for MIRIntBinOp {
+impl Display for BCIntBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                MIRIntBinOp::ADD => "+",
-                MIRIntBinOp::SUB => "-",
-                MIRIntBinOp::MUL => "*",
-                MIRIntBinOp::IDIV => "i/",
-                MIRIntBinOp::IREM => "i%",
+                BCIntBinOp::ADD => "+",
+                BCIntBinOp::SUB => "-",
+                BCIntBinOp::MUL => "*",
+                BCIntBinOp::IDIV => "i/",
+                BCIntBinOp::IREM => "i%",
 
-                MIRIntBinOp::UDIV => "u/",
-                MIRIntBinOp::UREM => "u%",
+                BCIntBinOp::UDIV => "u/",
+                BCIntBinOp::UREM => "u%",
 
-                MIRIntBinOp::SHL => "<<",
-                MIRIntBinOp::ASHR => "a>>",
-                MIRIntBinOp::LSHR => "l>>",
+                BCIntBinOp::SHL => "<<",
+                BCIntBinOp::ASHR => "a>>",
+                BCIntBinOp::LSHR => "l>>",
 
-                MIRIntBinOp::BAND => "&",
-                MIRIntBinOp::BOR => "|",
-                MIRIntBinOp::BXOR => "^",
+                BCIntBinOp::BAND => "&",
+                BCIntBinOp::BOR => "|",
+                BCIntBinOp::BXOR => "^",
 
-                MIRIntBinOp::LAND => "&&",
-                MIRIntBinOp::LOR => "||",
+                BCIntBinOp::LAND => "&&",
+                BCIntBinOp::LOR => "||",
 
-                MIRIntBinOp::EQ => "==",
-                MIRIntBinOp::NE => "!=",
+                BCIntBinOp::EQ => "==",
+                BCIntBinOp::NE => "!=",
 
-                MIRIntBinOp::ILT => "<",
-                MIRIntBinOp::IGT => ">",
-                MIRIntBinOp::ILE => "<=",
-                MIRIntBinOp::IGE => ">=",
+                BCIntBinOp::ILT => "<",
+                BCIntBinOp::IGT => ">",
+                BCIntBinOp::ILE => "<=",
+                BCIntBinOp::IGE => ">=",
 
-                MIRIntBinOp::ULT => "(u) <",
-                MIRIntBinOp::UGT => "(u) >",
-                MIRIntBinOp::ULE => "(u) <=",
-                MIRIntBinOp::UGE => "(u) >=",
+                BCIntBinOp::ULT => "(u) <",
+                BCIntBinOp::UGT => "(u) >",
+                BCIntBinOp::ULE => "(u) <=",
+                BCIntBinOp::UGE => "(u) >=",
             },
         )
     }
 }
 
-impl Display for MIRIntUnOp {
+impl Display for BCIntUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                MIRIntUnOp::BNOT => "~",
-                MIRIntUnOp::LNOT => "!",
-                MIRIntUnOp::NEG => "-",
+                BCIntUnOp::BNOT => "~",
+                BCIntUnOp::LNOT => "!",
+                BCIntUnOp::NEG => "-",
             },
         )
     }
 }
 
-impl Display for MIRFloatBinOp {
+impl Display for BCFloatBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                MIRFloatBinOp::ADD => "+",
-                MIRFloatBinOp::SUB => "-",
-                MIRFloatBinOp::FMUL => "*",
-                MIRFloatBinOp::FDIV => "/",
+                BCFloatBinOp::ADD => "+",
+                BCFloatBinOp::SUB => "-",
+                BCFloatBinOp::FMUL => "*",
+                BCFloatBinOp::FDIV => "/",
             },
         )
     }
 }
 
-impl Display for MIRFloatUnOp {
+impl Display for BCFloatUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                MIRFloatUnOp::NEG => "-",
+                BCFloatUnOp::NEG => "-",
             },
         )
     }
@@ -454,9 +426,6 @@ impl Display for BCTypeKind {
             }
 
             BCTypeKind::Unit => write!(f, "()"),
-            BCTypeKind::VariableSized { size, alignment } => {
-                write!(f, "variable_sized (size: {size}, alignment: {alignment})")
-            }
         }
     }
 }

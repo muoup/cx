@@ -1,21 +1,21 @@
-use crate::environment::TCEnvironment;
-use crate::log_typecheck_error;
+use crate::environment::TypeEnvironment;
+use crate::logtype_check_error;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::contract::contracted_function_call;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
-use cx_typechecker_data::ast::TCBaseMappings;
 use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_typechecker_data::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRValue};
+use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXTypeKind};
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
 pub(crate) fn typecheck_access(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
@@ -47,31 +47,9 @@ pub(crate) fn typecheck_access(
 
     let lhs_inner = lhs_inner.ptr_inner().cloned().unwrap_or(lhs_inner);
 
-    let fields = match &lhs_inner.kind {
-        CXTypeKind::Structured { fields, .. }
-        | CXTypeKind::Union {
-            variants: fields, ..
-        } => fields,
-
-        _ => {
-            return log_typecheck_error!(
-                env,
-                expr,
-                "Member access on {}, expected struct or union type",
-                lhs_inner
-            );
-        }
-    };
-
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
-            if let Some(i) = fields
-                .iter()
-                .position(|(field_name, _)| field_name.as_str() == name.as_str())
-            {
-                let (_, field_type) = &fields[i];
-                let field_type = field_type.clone();
-
+            if let Some(struct_field) = struct_field(&lhs_inner, name) {
                 let result = env.builder.new_register();
 
                 match &lhs_inner.kind {
@@ -79,7 +57,8 @@ pub(crate) fn typecheck_access(
                         env.builder.add_instruction(MIRInstruction::StructGet {
                             result: result.clone(),
                             source: lhs_val,
-                            field_index: i,
+                            field_index: struct_field.index,
+                            field_offset: struct_field.offset,
                             struct_type: lhs_inner.clone(),
                         })
                     }
@@ -96,12 +75,39 @@ pub(crate) fn typecheck_access(
 
                 return Ok(MIRValue::Register {
                     register: result,
-                    _type: field_type.mem_ref_to(),
+                    _type: struct_field.field_type.mem_ref_to(),
+                });
+            }
+            
+            if let CXTypeKind::Union { variants, .. } = &lhs_inner.kind {
+                let Some((_, field_type)) = variants
+                    .iter()
+                    .find(|(field_name, _)| field_name.as_str() == name.as_str())
+                else {
+                    return logtype_check_error!(
+                        env,
+                        expr,
+                        " Union type {} has no field named {}",
+                        lhs_inner,
+                        name
+                    );
+                };
+
+                let result = env.builder.new_register();
+
+                env.builder.add_instruction(MIRInstruction::Alias {
+                    result: result.clone(),
+                    value: lhs_val,
+                });
+
+                return Ok(MIRValue::Register {
+                    register: result,
+                    _type: field_type.clone().mem_ref_to()
                 });
             }
 
             let Some(type_name) = lhs_inner.get_name() else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     lhs,
                     " Member function call on {} without a type name",
@@ -110,12 +116,12 @@ pub(crate) fn typecheck_access(
             };
 
             let fn_ident = CXFunctionKind::Member {
-                base_type: CXIdent::from(type_name),
+                base_type: CXIdent::new(type_name),
                 name: name.clone(),
             };
 
             let Some(prototype) = env.get_realized_func(&fn_ident.into()) else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     lhs,
                     " Member access on {} with invalid member name {name}",
@@ -134,7 +140,7 @@ pub(crate) fn typecheck_access(
             template_input,
         } => {
             let Some(type_name) = lhs_inner.get_identifier() else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     lhs,
                     " Member function call on {} without a base name",
@@ -143,7 +149,7 @@ pub(crate) fn typecheck_access(
             };
 
             let ident = NaiveFnKind::MemberFunction {
-                function_name: CXIdent::from(name.as_str()),
+                function_name: CXIdent::new(name.as_str()),
                 _type: FunctionTypeIdent::Standard(type_name.clone()),
             };
             let input = complete_template_args(env, base_data, template_input)?;
@@ -155,7 +161,7 @@ pub(crate) fn typecheck_access(
             })
         }
 
-        _ => log_typecheck_error!(
+        _ => logtype_check_error!(
             env,
             expr,
             " Invalid rhs for access expression, found {:?}",
@@ -165,8 +171,8 @@ pub(crate) fn typecheck_access(
 }
 
 pub(crate) fn comma_separated<'a>(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     expr: &'a CXExpr,
 ) -> CXResult<Vec<(&'a CXExpr, MIRValue)>> {
     let mut expr_iter = expr;
@@ -193,8 +199,8 @@ pub(crate) fn comma_separated<'a>(
 }
 
 pub(crate) fn typecheck_method_call(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
@@ -211,7 +217,7 @@ pub(crate) fn typecheck_method_call(
     };
 
     let CXTypeKind::Function { prototype } = &loaded_lhs_type.kind else {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " Attempted to call non-function type {}",
@@ -222,7 +228,7 @@ pub(crate) fn typecheck_method_call(
     let mut tc_args = comma_separated(env, base_data, rhs)?;
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " Method {} expects {} arguments, found {}",
@@ -233,7 +239,7 @@ pub(crate) fn typecheck_method_call(
     }
 
     if tc_args.len() < prototype.params.len() {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " Method {} expects at least {} arguments, found {}",
@@ -308,7 +314,7 @@ pub(crate) fn typecheck_method_call(
             }
 
             _ => {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
@@ -323,8 +329,8 @@ pub(crate) fn typecheck_method_call(
 }
 
 pub(crate) fn typecheck_is(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
@@ -339,7 +345,7 @@ pub(crate) fn typecheck_is(
         ..
     } = &loaded_lhs_type.kind
     else {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " 'is' operator requires a tagged union on the left-hand side, found {}",
@@ -353,7 +359,7 @@ pub(crate) fn typecheck_is(
         inner,
     } = &rhs.kind
     else {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " 'is' operator requires a type constructor on the right-hand side, found {:?}",
@@ -362,7 +368,7 @@ pub(crate) fn typecheck_is(
     };
 
     if expected_union_name != union_name {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
@@ -372,7 +378,7 @@ pub(crate) fn typecheck_is(
     }
 
     let CXExprKind::Identifier(inner_var_name) = &inner.kind else {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             inner,
             " 'is' operator requires a variant name identifier in the type constructor, found {:?}",
@@ -381,7 +387,7 @@ pub(crate) fn typecheck_is(
     };
 
     if loaded_lhs_type.get_name() != Some(union_name.as_str()) {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
@@ -396,7 +402,7 @@ pub(crate) fn typecheck_is(
         .find(|(_, (name, _))| name == variant_name.as_str())
         .map(|(i, (_, _ty))| (i, _ty))
     else {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             expr,
             " 'is' operator variant name '{}' not found in tagged union {}",
@@ -434,8 +440,8 @@ pub(crate) fn typecheck_is(
 }
 
 pub(crate) fn typecheck_binop(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     op: CXBinOp,
     lhs: &CXExpr,
     rhs: &CXExpr,
@@ -511,7 +517,7 @@ pub(crate) fn typecheck_binop(
         }
 
         (CXTypeKind::StrongPointer { .. }, _) | (_, CXTypeKind::StrongPointer { .. }) => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 "R-value strong pointers must be assigned to an l-value before being used \
@@ -522,7 +528,7 @@ pub(crate) fn typecheck_binop(
         }
 
         _ => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 " Invalid binary operation {op} for types {} and {}",
@@ -534,7 +540,7 @@ pub(crate) fn typecheck_binop(
 }
 
 pub(crate) fn typecheck_bool_bool_binop(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     op: CXBinOp,
     lhs: MIRValue,
     rhs: MIRValue,
@@ -545,7 +551,7 @@ pub(crate) fn typecheck_bool_bool_binop(
         CXBinOp::LOr => (MIRBinOp::OR, CXTypeKind::Bool.into()),
 
         _ => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 " Invalid boolean binary operation {op}",
@@ -569,7 +575,7 @@ pub(crate) fn typecheck_bool_bool_binop(
 }
 
 pub(crate) fn typecheck_int_int_binop(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     op: CXBinOp,
     mut lhs: MIRValue,
     mut rhs: MIRValue,
@@ -666,7 +672,7 @@ pub(crate) fn typecheck_int_int_binop(
         CXBinOp::NotEqual => (MIRBinOp::NEQ, CXTypeKind::Bool.into()),
 
         _ => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 " Invalid integer binary operation {op} for types {} and {}",
@@ -691,14 +697,14 @@ pub(crate) fn typecheck_int_int_binop(
 }
 
 pub(crate) fn typecheck_int_ptr_binop(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     op: CXBinOp,
     pointer_inner: &CXType,
     non_pointer: MIRValue,
     pointer: MIRValue,
 ) -> CXResult<MIRValue> {
     if op == CXBinOp::Subtract {
-        return log_typecheck_error!(
+        return logtype_check_error!(
             env,
             &CXExpr::default(),
             " Invalid operation [integer] - [pointer] for types {} and {}",
@@ -711,7 +717,7 @@ pub(crate) fn typecheck_int_ptr_binop(
 }
 
 pub(crate) fn typecheck_ptr_int_binop(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     op: CXBinOp,
     pointer_inner: &CXType,
     pointer: MIRValue,
@@ -799,7 +805,7 @@ pub(crate) fn typecheck_ptr_int_binop(
 }
 
 pub(crate) fn typecheck_ptr_ptr_binop(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     op: CXBinOp,
     lhs: MIRValue,
     rhs: MIRValue,
@@ -814,7 +820,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
         CXBinOp::NotEqual => MIRBinOp::NEQ,
 
         _ => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 " Invalid binary operation {op} for pointer types",
@@ -834,4 +840,41 @@ pub(crate) fn typecheck_ptr_ptr_binop(
         register: result,
         _type: CXTypeKind::Bool.into(),
     })
+}
+
+struct StructField {
+    index: usize,
+    offset: usize,
+    field_type: CXType,
+}
+
+fn struct_field<'a>(
+    struct_type: &CXType,
+    field_name: &CXIdent,
+) -> Option<StructField> {
+    let mut field_index = 0;
+    let mut field_offset = 0;
+    
+    let CXTypeKind::Structured { fields, .. } = &struct_type.kind else {
+        unreachable!()
+    };
+    
+    for (field_name_i, field_type) in fields.iter() {
+        if field_offset % field_type.type_alignment() != 0 {
+            field_offset += field_type.type_alignment() - (field_offset % field_type.type_alignment());
+        }
+        
+        if field_name_i.as_str() == field_name.as_str() {
+            return Some(StructField {
+                index: field_index,
+                offset: field_offset,
+                field_type: field_type.clone(),
+            });
+        }
+
+        field_offset += field_type.type_size();
+        field_index += 1;
+    }
+    
+    None
 }

@@ -1,9 +1,9 @@
-use cx_bytecode_data::MIRUnit;
+use cx_bytecode_data::BCUnit;
 use cx_pipeline_data::OptimizationLevel;
 
 #[cfg(feature = "backend-llvm")]
 pub(crate) fn llvm_compile(
-    bytecode: &MIRUnit,
+    bytecode: &BCUnit,
     output: &str,
     optimization_level: OptimizationLevel,
 ) -> Option<Vec<u8>> {
@@ -11,12 +11,12 @@ pub(crate) fn llvm_compile(
 }
 
 #[cfg(not(feature = "backend-llvm"))]
-pub(crate) fn llvm_compile(_: &MIRUnit, _: &str, _: OptimizationLevel) -> Option<Vec<u8>> {
+pub(crate) fn llvm_compile(_: &BCUnit, _: &str, _: OptimizationLevel) -> Option<Vec<u8>> {
     panic!(
         "LLVM backend is not enabled. Please enable the `backend-llvm` feature to compile with its implementation."
     );
 }
 
-pub(crate) fn cranelift_compile(bytecode: &MIRUnit, output: &str) -> Option<Vec<u8>> {
+pub(crate) fn cranelift_compile(bytecode: &BCUnit, output: &str) -> Option<Vec<u8>> {
     cx_backend_cranelift::bytecode_aot_codegen(bytecode, output)
 }

@@ -1,5 +1,5 @@
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, BCRegister},
+    expression::{MIRInstruction, MIRRegister},
     program::{MIRBasicBlock, MIRFunction},
     types::CXFunctionPrototype,
 };
@@ -25,7 +25,8 @@ pub(crate) struct MIRFunctionContext {
     pub current_block: BlockPointer,
     pub defer_last_pointer: usize,
 
-    pub temp_counter: usize,
+    pub temp_register_counter: usize,
+    pub temp_block_counter: usize,
 }
 
 impl MIRBuilder {
@@ -40,28 +41,29 @@ impl MIRBuilder {
         let function_context = MIRFunctionContext {
             current_prototype: prototype,
             standard_blocks: vec![MIRBasicBlock {
-                id: CXIdent::from("entry"),
-                expressions: Vec::new(),
+                id: CXIdent::new("entry"),
+                instructions: Vec::new(),
             }],
             defer_blocks: Vec::new(),
 
             current_block: BlockPointer::Standard(0),
             defer_last_pointer: 0,
 
-            temp_counter: 0,
+            temp_register_counter: 0,
+            temp_block_counter: 0,
         };
 
         self.function_context = Some(function_context);
     }
 
-    pub fn new_register(&mut self) -> BCRegister {
+    pub fn new_register(&mut self) -> MIRRegister {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
         };
 
-        let id = format!("{}", func_ctx.temp_counter);
-        func_ctx.temp_counter += 1;
-        BCRegister::from(id)
+        let id = format!("{}", func_ctx.temp_register_counter);
+        func_ctx.temp_register_counter += 1;
+        MIRRegister::new(id)
     }
 
     pub fn current_block(&mut self) -> &mut MIRBasicBlock {
@@ -76,7 +78,7 @@ impl MIRBuilder {
     }
 
     pub fn add_instruction(&mut self, instruction: MIRInstruction) {
-        self.current_block().expressions.push(instruction);
+        self.current_block().instructions.push(instruction);
     }
 
     pub fn add_jump(&mut self, target_block: CXIdent) {
@@ -90,7 +92,10 @@ impl MIRBuilder {
             unreachable!()
         };
 
-        CXIdent::from(format!("block_{}", func_ctx.standard_blocks.len()))
+        let id = func_ctx.temp_block_counter;
+        func_ctx.temp_block_counter += 1;
+        
+        CXIdent::new(format!("block_{}", id))
     }
     
     pub fn new_named_block_id(&mut self, name: &str) -> CXIdent {
@@ -98,7 +103,10 @@ impl MIRBuilder {
             unreachable!()
         };
         
-        CXIdent::from(format!("block_{}_{}", func_ctx.standard_blocks.len(), name))
+        let id = func_ctx.temp_block_counter;
+        func_ctx.temp_block_counter += 1;
+        
+        CXIdent::new(format!("block_{}_{}", id, name))
     }
     
     pub fn get_defer_end(&self) -> usize {
@@ -132,7 +140,7 @@ impl MIRBuilder {
             BlockPointer::Standard(_) => {
                 func_ctx.standard_blocks.push(MIRBasicBlock {
                     id: block_id,
-                    expressions: Vec::new(),
+                    instructions: Vec::new(),
                 });
 
                 BlockPointer::Standard(func_ctx.standard_blocks.len() - 1)
@@ -140,7 +148,7 @@ impl MIRBuilder {
             BlockPointer::Defer(_) => {
                 func_ctx.defer_blocks.push(MIRBasicBlock {
                     id: block_id,
-                    expressions: Vec::new(),
+                    instructions: Vec::new(),
                 });
 
                 BlockPointer::Defer(func_ctx.defer_blocks.len() - 1)

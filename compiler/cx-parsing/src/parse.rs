@@ -16,7 +16,7 @@ use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
     functions::{parse_destructor_prototype, try_function_parse},
     parser::ParserData,
-    templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
+    templates::{note_templatedtype_s, parse_template_prototype, unnote_templatedtype_s},
     types::parse_initializer,
 };
 
@@ -45,7 +45,7 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         .kind
     {
         keyword!(Import) => data.tokens.goto_statement_end()?,
-        keyword!(Typedef) => parse_typedef(data)?,
+        keyword!(Typedef) => parsetype_def(data)?,
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
@@ -77,7 +77,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     Ok(())
 }
 
-pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
+pub(crate) fn parsetype_def(data: &mut ParserData) -> CXResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef));
     let start_index = data.tokens.index;
 
@@ -87,7 +87,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         None
     };
 
-    let (name, type_) = parse_initializer(data)?;
+    let (name, _type) = parse_initializer(data)?;
 
     let Some(name) = name else {
         return log_preparse_error!(
@@ -98,7 +98,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon));
 
-    data.add_type(name.as_string(), type_, template_prototype);
+    data.add_type(name.as_string(), _type, template_prototype);
     Ok(())
 }
 
@@ -116,9 +116,9 @@ fn parse_fn_merge(
     } else {
         match template_prototype {
             Some(template_prototype) => {
-                note_templated_types(data, &template_prototype);
+                note_templatedtype_s(data, &template_prototype);
                 let body = parse_body(data)?;
-                unnote_templated_types(data, &template_prototype);
+                unnote_templatedtype_s(data, &template_prototype);
 
                 data.add_function(prototype.clone(), Some(template_prototype));
                 data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
@@ -170,7 +170,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             data.add_global_variable(
                 name.as_string(),
                 CXGlobalVariable::Standard {
-                    type_: return_type,
+                    _type: return_type,
                     is_mutable: true,
                     initializer: Some(initial_value),
                 },
@@ -181,7 +181,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             data.add_global_variable(
                 name.as_string(),
                 CXGlobalVariable::Standard {
-                    type_: return_type,
+                    _type: return_type,
                     is_mutable: true,
                     initializer: None,
                 },
@@ -243,7 +243,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
         return log_preparse_error!(tokens, "Expected intrinsic identifier"); 
     }
 
-    Ok(CXIdent::from(ss))
+    Ok(CXIdent::new(ss))
 }
 
 pub fn parse_std_ident(tokens: &mut TokenIter) -> CXResult<CXIdent> {
@@ -255,5 +255,5 @@ pub fn parse_std_ident(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     
     tokens.next();
 
-    Ok(CXIdent::from(ident))
+    Ok(CXIdent::new(ident))
 }

@@ -28,7 +28,7 @@ pub struct CXAST {
 pub enum CXFunctionStmt {
     TypeDecl {
         name: Option<String>,
-        type_: CXNaiveType,
+        _type: CXNaiveType,
     },
 
     FunctionDefinition {
@@ -114,7 +114,7 @@ pub enum CXGlobalVariable {
     EnumConstant(i32),
 
     Standard {
-        type_: CXNaiveType,
+        _type: CXNaiveType,
         is_mutable: bool,
         initializer: Option<CXExpr>,
     },
@@ -210,7 +210,7 @@ pub enum CXExprKind {
         expr: Box<CXExpr>,
     },
     VarDeclaration {
-        type_: CXNaiveType,
+        _type: CXNaiveType,
         name: CXIdent,
     },
     TypeConstructor {

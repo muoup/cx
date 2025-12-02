@@ -1,17 +1,13 @@
 use cx_parsing_data::ast::CXExpr;
-use cx_typechecker_data::{
-    ast::TCBaseMappings,
-    mir::{
-        expression::{MIRInstruction, MIRValue},
-        types::{CXFunctionPrototype, TCParameter},
-    },
-};
+use cx_typechecker_data::mir::{
+        expression::{MIRInstruction, MIRValue}, program::MIRBaseMappings, types::{CXFunctionPrototype, TCParameter}
+    };
 use cx_util::CXResult;
 
-use crate::{environment::TCEnvironment, log_typecheck_error, type_checking::typechecker::typecheck_expr};
+use crate::{environment::TypeEnvironment, logtype_check_error, type_checking::typechecker::typecheck_expr};
 
 fn create_clause_scope(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     prototype: &CXFunctionPrototype,
     parameters: &[MIRValue],
 ) -> CXResult<()> {
@@ -30,9 +26,9 @@ fn create_clause_scope(
 }
 
 fn assume_clause(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     prototype: &CXFunctionPrototype,
-    base_data: &TCBaseMappings,
+    base_data: &MIRBaseMappings,
     parameters: &[MIRValue],
     clause: &CXExpr,
 ) -> CXResult<()> {
@@ -49,9 +45,9 @@ fn assume_clause(
 }
 
 fn assert_clause(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     prototype: &CXFunctionPrototype,
-    base_data: &TCBaseMappings,
+    base_data: &MIRBaseMappings,
     parameters: &[MIRValue],
     clause: &CXExpr,
 ) -> CXResult<()> {
@@ -68,7 +64,7 @@ fn assert_clause(
 }
 
 pub fn contracted_function_return(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     return_value: Option<MIRValue>,
 ) -> CXResult<()> {
     let prototype = env.current_function();
@@ -76,7 +72,7 @@ pub fn contracted_function_return(
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
         if let Some(result_reg) = &result_reg {
             let Some(return_value) = &return_value else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     postcondition,
                     "Function postcondition cannot refer to result of function with void return type"
@@ -109,8 +105,8 @@ pub fn contracted_function_return(
 }
 
 pub fn contracted_function_call(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     prototype: &CXFunctionPrototype,
     function: MIRValue,
     parameters: &[MIRValue],
@@ -134,7 +130,7 @@ pub fn contracted_function_call(
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
         if let Some(result_reg) = &result_reg {
             let Some(result) = result.clone() else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     postcondition,
                     "Function postcondition cannot refer to result of function with void return type"

@@ -2,20 +2,20 @@ use std::sync::Arc;
 
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_pipeline_data::CompilationUnit;
-use cx_typechecker_data::ast::TCBaseMappings;
+use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXTemplateInput, CXType, CXTypeKind};
 use cx_util::{CXResult, log_error};
 
-use crate::environment::TCEnvironment;
+use crate::environment::TypeEnvironment;
 use crate::type_completion::complete_type;
 use crate::type_completion::prototypes::_complete_fn_prototype;
 use crate::type_completion::templates::instantiate_type_template;
 
 pub(crate) fn base_data_from_module<'a>(
-    env: &mut TCEnvironment,
-    base_data: &'a TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &'a MIRBaseMappings,
     external_module: Option<&String>,
-) -> (Option<Arc<TCBaseMappings>>, &'a TCBaseMappings) {
+) -> (Option<Arc<MIRBaseMappings>>, &'a MIRBaseMappings) {
     match external_module {
         Some(module) => {
             let arc = env
@@ -32,8 +32,8 @@ pub(crate) fn base_data_from_module<'a>(
 }
 
 pub(crate) fn _complete_template_input(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     external_module: Option<&String>,
     input: &CXNaiveTemplateInput,
 ) -> CXResult<CXTemplateInput> {
@@ -49,8 +49,8 @@ pub(crate) fn _complete_template_input(
 }
 
 pub(crate) fn _complete_type(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     ty: &CXNaiveType,
 ) -> CXResult<CXType> {
     let mut recurse_ty = |ty: &CXNaiveType| {

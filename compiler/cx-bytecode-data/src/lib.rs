@@ -5,12 +5,12 @@ use std::collections::HashMap;
 mod format;
 pub mod types;
 
-pub type BCFunctionMap = HashMap<String, MIRFunctionPrototype>;
+pub type BCFunctionMap = HashMap<String, BCFunctionPrototype>;
 
 #[derive(Debug, Clone)]
-pub struct MIRUnit {
+pub struct BCUnit {
     pub fn_map: BCFunctionMap,
-    pub fn_defs: Vec<MIRFunction>,
+    pub fn_defs: Vec<BCFunction>,
 
     pub global_vars: Vec<BCGlobalValue>,
 }
@@ -49,39 +49,59 @@ pub enum BCValue {
         _type: BCType,
     },
     ParameterRef(u32),
-    IntImmediate { type_: BCIntegerType, val: i64 },
-    FloatImmediate { type_: BCFloatType, val: FloatWrapper },
+    IntImmediate {
+        _type: BCIntegerType,
+        val: i64,
+    },
+    FloatImmediate {
+        _type: BCFloatType,
+        val: FloatWrapper,
+    },
     Global(ElementID),
     FunctionRef(CXIdent),
-    LoadOf(BCType, Box<BCValue>),
 }
 
-pub type BCRegister = CXIdent;
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct BCRegister {
+    pub name: CXIdent,
+}
 pub type BCBlockID = CXIdent;
 
+impl BCRegister {
+    pub fn new<T: Into<CXIdent>>(name: T) -> Self {
+        BCRegister { name: name.into() }
+    }
+}
+
+impl Into<CXIdent> for BCRegister {
+    fn into(self) -> CXIdent {
+        self.name
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct MIRParameter {
+pub struct BCParameter {
     pub name: Option<String>,
     pub _type: BCType,
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRFunctionPrototype {
+pub struct BCFunctionPrototype {
     pub name: String,
     pub return_type: BCType,
-    pub params: Vec<MIRParameter>,
+    pub params: Vec<BCParameter>,
     pub var_args: bool,
     pub linkage: LinkageType,
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRFunction {
-    pub prototype: MIRFunctionPrototype,
-    pub blocks: Vec<MIRBlock>,
+pub struct BCFunction {
+    pub prototype: BCFunctionPrototype,
+    pub blocks: Vec<BCBasicBlock>,
 }
 
 #[derive(Debug, Clone)]
-pub struct MIRBlock {
+pub struct BCBasicBlock {
     pub id: BCBlockID,
     pub body: Vec<BCInstruction>,
 }
@@ -107,113 +127,82 @@ pub enum BCInstructionKind {
         field_offset: usize,
     },
 
-    Temp {
+    Alias {
         value: BCValue,
     },
 
     Store {
         memory: BCValue,
         value: BCValue,
-        type_: BCType,
+        _type: BCType,
+    },
+
+    Load {
+        memory: BCValue,
+        _type: BCType,
     },
 
     ZeroMemory {
         memory: BCValue,
         _type: BCType,
     },
-
-    // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
-    // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
-    // an error,
-    BoolExtend {
+    
+    IntToPtrDiff {
         value: BCValue,
+        ptr_inner: BCType,
     },
 
-    ZExtend {
+    Coerce {
         value: BCValue,
-    },
-
-    SExtend {
-        value: BCValue,
+        coercion_type: BCCoercionType,
     },
 
     Phi {
         predecessors: Vec<(BCValue, BCBlockID)>,
     },
 
-    Trunc {
-        value: BCValue,
-    },
-
-    IntToPtrDiff {
-        value: BCValue,
-        ptr_type: BCType,
-    },
-
-    IntToPtr {
-        value: BCValue,
-    },
-
     PointerBinOp {
-        op: MIRPtrBinOp,
+        op: BCPtrBinOp,
         ptr_type: BCType,
         left: BCValue,
         right: BCValue,
     },
 
     IntegerBinOp {
-        op: MIRIntBinOp,
+        op: BCIntBinOp,
         left: BCValue,
         right: BCValue,
     },
 
     IntegerUnOp {
-        op: MIRIntUnOp,
+        op: BCIntUnOp,
         value: BCValue,
     },
 
     FloatBinOp {
-        op: MIRFloatBinOp,
+        op: BCFloatBinOp,
         left: BCValue,
         right: BCValue,
     },
 
     FloatUnOp {
-        op: MIRFloatUnOp,
+        op: BCFloatUnOp,
         value: BCValue,
     },
 
     DirectCall {
         args: Vec<BCValue>,
-        method_sig: MIRFunctionPrototype,
+        method_sig: BCFunctionPrototype,
     },
 
     IndirectCall {
         func_ptr: BCValue,
         args: Vec<BCValue>,
-        method_sig: MIRFunctionPrototype,
+        method_sig: BCFunctionPrototype,
     },
 
     GetFunctionAddr {
         func: String,
-    },
-
-    IntToFloat {
-        from: BCType,
-        value: BCValue,
-    },
-
-    FloatToInt {
-        from: BCType,
-        value: BCValue,
-    },
-
-    PtrToInt {
-        value: BCValue,
-    },
-
-    FloatCast {
-        value: BCValue,
     },
 
     Branch {
@@ -221,8 +210,6 @@ pub enum BCInstructionKind {
         true_block: BCBlockID,
         false_block: BCBlockID,
     },
-
-    GotoDefer,
 
     Jump {
         target: BCBlockID,
@@ -238,15 +225,13 @@ pub enum BCInstructionKind {
         value: Option<BCValue>,
     },
 
-    BitCast {
-        value: BCValue,
-    },
-    
-    // During debug builds, we can insert assertions to validate assumptions
-    // During release builds, these can either be no-ops or compiler hints
     CompilerAssertion {
         condition: BCValue,
         message: BCValue,
+    },
+    
+    CompilerAssumption {
+        condition: BCValue
     },
 
     NOP,
@@ -254,15 +239,18 @@ pub enum BCInstructionKind {
 
 impl BCInstructionKind {
     pub fn is_block_terminating(&self) -> bool {
-        matches!(self, BCInstructionKind::JumpTable { .. }
-            | BCInstructionKind::Branch { .. }
-            | BCInstructionKind::Jump { .. }
-            | BCInstructionKind::Return { .. })
+        matches!(
+            self,
+            BCInstructionKind::JumpTable { .. }
+                | BCInstructionKind::Branch { .. }
+                | BCInstructionKind::Jump { .. }
+                | BCInstructionKind::Return { .. }
+        )
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRPtrBinOp {
+pub enum BCPtrBinOp {
     ADD,
     SUB,
 
@@ -275,7 +263,7 @@ pub enum MIRPtrBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRIntBinOp {
+pub enum BCIntBinOp {
     ADD,
     SUB,
     MUL,
@@ -307,14 +295,14 @@ pub enum MIRIntBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRIntUnOp {
+pub enum BCIntUnOp {
     BNOT,
     LNOT,
     NEG,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRFloatBinOp {
+pub enum BCFloatBinOp {
     ADD,
     SUB,
     FMUL,
@@ -322,6 +310,24 @@ pub enum MIRFloatBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRFloatUnOp {
+pub enum BCFloatUnOp {
     NEG,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BCCoercionType {
+    // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
+    // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
+    // an error,
+    BoolExtend,
+
+    ZExtend,
+    SExtend,
+    Trunc,
+    IntToPtr,
+    IntToFloat,
+    FloatToInt,
+    PtrToInt,
+    FloatCast,
+    BitCast
 }

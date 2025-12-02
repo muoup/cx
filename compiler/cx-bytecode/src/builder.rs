@@ -1,42 +1,47 @@
 use std::collections::HashMap;
 
-use crate::mir_lowering::cx_maps::convert_cx_func_map;
-use crate::{BytecodeResult, MIRUnit};
+use crate::mir_lowering::types::convert_cx_prototype;
+use crate::{BCUnit, BytecodeResult};
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::*;
-use cx_typechecker_data::ast::TCAST;
-use cx_typechecker_data::mir::expression::BCRegister;
+use cx_typechecker_data::mir::expression::MIRRegister;
+use cx_typechecker_data::mir::program::MIRUnit;
 use cx_util::format::dump_all;
+use cx_util::identifier::CXIdent;
 use cx_util::unsafe_float::FloatWrapper;
 use cx_util::CXResult;
 
 #[derive(Debug)]
-pub struct MIRBuilder {
-    functions: Vec<MIRFunction>,
+pub struct BCBuilder {
+    functions: Vec<BCFunction>,
     global_variables: Vec<BCGlobalValue>,
 
     pub fn_map: BCFunctionMap,
-    symbol_table: HashMap<BCRegister, BCValue>,
+    symbol_table: HashMap<MIRRegister, BCValue>,
 
     function_context: Option<BytecodeFunctionContext>,
 }
 
 #[derive(Debug)]
 pub struct BytecodeFunctionContext {
-    prototype: MIRFunctionPrototype,
+    prototype: BCFunctionPrototype,
     current_block: usize,
     register_counter: u32,
 
-    blocks: Vec<MIRBlock>,
+    blocks: Vec<BCBasicBlock>,
 }
 
-impl MIRBuilder {
-    pub fn new(ast: &TCAST) -> Self {
-        MIRBuilder {
+impl BCBuilder {
+    pub fn new(mir: &MIRUnit) -> Self {
+        BCBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
 
-            fn_map: convert_cx_func_map(&ast.fn_map),
+            fn_map: mir
+                .prototypes
+                .iter()
+                .map(|proto| (proto.name.mangle(), convert_cx_prototype(proto)))
+                .collect(),
             symbol_table: HashMap::new(),
 
             function_context: None,
@@ -49,10 +54,10 @@ impl MIRBuilder {
         let reg_id = context.register_counter;
         context.register_counter += 1;
 
-        BCRegister::from(format!("{}", reg_id).as_str())
+        BCRegister::new(format!("{}", reg_id))
     }
 
-    pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype) {
+    pub fn new_function(&mut self, fn_prototype: BCFunctionPrototype) {
         self.function_context = Some(BytecodeFunctionContext {
             prototype: fn_prototype,
             current_block: 0,
@@ -61,7 +66,9 @@ impl MIRBuilder {
             blocks: Vec::new(),
         });
 
-        let entry_block = BCBlockID::from("entry");
+        let entry_block = BCBlockID::new("entry");
+        
+        self.symbol_table.clear();
         self.create_block(entry_block.clone());
         self.set_current_block(entry_block);
     }
@@ -69,7 +76,7 @@ impl MIRBuilder {
     pub fn finish_function(&mut self) {
         let context = self.function_context.take().unwrap();
 
-        self.functions.push(MIRFunction {
+        self.functions.push(BCFunction {
             prototype: context.prototype,
             blocks: context.blocks,
         });
@@ -91,11 +98,19 @@ impl MIRBuilder {
             .expect("Attempted to access function context with no current function selected")
     }
 
-    pub fn insert_symbol(&mut self, mir_value: BCRegister, bc_value: BCValue) {
+    pub fn insert_symbol(&mut self, mir_value: MIRRegister, bc_value: BCValue) {
         self.symbol_table.insert(mir_value, bc_value);
     }
+    
+    #[allow(dead_code)]
+    pub fn dump_symbols(&self) {
+        println!("--- Symbol Table ---");
+        for (key, value) in self.symbol_table.iter() {
+            println!("{} => {}", key, value);
+        }
+    }
 
-    pub fn get_symbol(&self, name: &BCRegister) -> Option<BCValue> {
+    pub fn get_symbol(&self, name: &MIRRegister) -> Option<BCValue> {
         self.symbol_table.get(name).cloned()
     }
 
@@ -103,6 +118,18 @@ impl MIRBuilder {
         self.global_variables.push(value);
 
         (self.global_variables.len() - 1) as u32
+    }
+    
+    pub fn create_static_string(&mut self, value: String) -> BCValue {
+        let global_index = self.global_variables.len() as u32;
+
+        self.global_variables.push(BCGlobalValue {
+            name: CXIdent::from(format!("str_{}", global_index)),
+            _type: BCGlobalType::StringLiteral(value),
+            linkage: LinkageType::Static
+        });
+
+        BCValue::Global(global_index)
     }
 
     fn current_block_closed(&self) -> bool {
@@ -117,7 +144,7 @@ impl MIRBuilder {
         &mut self,
         instruction: BCInstructionKind,
         value_type: BCType,
-        result: Option<BCRegister>,
+        result: Option<MIRRegister>,
     ) -> CXResult<BCValue> {
         if self.current_block_closed() {
             return Ok(BCValue::NULL);
@@ -156,32 +183,38 @@ impl MIRBuilder {
         }
     }
 
-    pub fn get_value_type(&self, value: &BCValue) -> Option<BCType> {
+    pub fn get_value_type(&self, value: &BCValue) -> BCType {
         match value {
-            BCValue::NULL => Some(BCType::unit()),
+            BCValue::NULL => BCType::unit(),
 
-            BCValue::Register { _type, .. } => Some(_type.clone()),
+            BCValue::Register { _type, .. } => _type.clone(),
 
-            BCValue::LoadOf(type_, _) => Some(type_.clone()),
-            BCValue::FloatImmediate { type_, .. } => Some(BCTypeKind::Float(type_.clone()).into()),
-            BCValue::IntImmediate { type_, .. } => Some(BCTypeKind::Integer(type_.clone()).into()),
+            BCValue::FloatImmediate { _type, .. } => BCTypeKind::Float(_type.clone()).into(),
+            BCValue::IntImmediate { _type, .. } => BCTypeKind::Integer(_type.clone()).into(),
 
             BCValue::ParameterRef(param_index) => {
                 let context = self.fun();
-                let param = context.prototype.params.get(*param_index as usize)?;
+                let param = context
+                    .prototype
+                    .params
+                    .get(*param_index as usize)
+                    .expect("Parameter index out of bounds in function prototype");
 
-                Some(param._type.clone())
+                param._type.clone()
             }
             BCValue::Global(global_index) => {
-                let global = self.global_variables.get(*global_index as usize)?;
+                let global = self
+                    .global_variables
+                    .get(*global_index as usize)
+                    .expect("Global variable index out of bounds");
 
                 match &global._type {
-                    BCGlobalType::StringLiteral(..) => Some(BCType::default_pointer()),
-                    BCGlobalType::Variable { _type, .. } => Some(_type.clone()),
+                    BCGlobalType::StringLiteral(..) => BCType::default_pointer(),
+                    BCGlobalType::Variable { _type, .. } => _type.clone(),
                 }
             }
 
-            BCValue::FunctionRef(_) => Some(BCType::default_pointer()),
+            BCValue::FunctionRef(_) => BCType::default_pointer(),
         }
     }
 
@@ -198,7 +231,7 @@ impl MIRBuilder {
     pub fn int_const(&self, value: i32, _type: BCIntegerType) -> BCValue {
         BCValue::IntImmediate {
             val: value as i64,
-            type_: _type.clone(),
+            _type: _type.clone(),
         }
     }
 
@@ -213,14 +246,14 @@ impl MIRBuilder {
     pub fn float_const(&self, value: f64, _type: BCFloatType) -> BCValue {
         BCValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            type_: _type.clone(),
+            _type: _type.clone(),
         }
     }
 
     pub fn create_block(&mut self, id: BCBlockID) {
         let context = self.fun_mut();
 
-        context.blocks.push(MIRBlock {
+        context.blocks.push(BCBasicBlock {
             id,
             body: Vec::new(),
         });
@@ -258,20 +291,12 @@ impl MIRBuilder {
             .map(|ctx| ctx.prototype.name.as_str())
     }
 
-    pub fn finish(self) -> Option<MIRUnit> {
-        Some(MIRUnit {
+    pub fn finish(self) -> BCUnit {
+        BCUnit {
             fn_map: self.fn_map,
             fn_defs: self.functions,
 
             global_vars: self.global_variables,
-        })
-    }
-
-    pub fn load_value(&mut self, ptr: BCValue, _type: BCType) -> Option<BCValue> {
-        if _type.is_structure() {
-            return Some(ptr);
         }
-
-        Some(BCValue::LoadOf(_type, Box::new(ptr)))
     }
 }

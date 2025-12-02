@@ -1,16 +1,16 @@
-use crate::environment::{TCEnvironment, TCTemplateRequest};
+use crate::environment::{TypeEnvironment, MIRTemplateRequest};
 use crate::type_completion::complete_fn_prototype;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind};
-use cx_typechecker_data::ast::TCBaseMappings;
+use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
 pub(crate) type Overwrites = Vec<(String, CXType)>;
 
-pub(crate) fn add_templated_types(
-    env: &mut TCEnvironment,
+pub(crate) fn add_templatedtype_s(
+    env: &mut TypeEnvironment,
     args: &CXTemplatePrototype,
     input: &CXTemplateInput,
 ) -> Overwrites {
@@ -25,7 +25,7 @@ pub(crate) fn add_templated_types(
     overwrites
 }
 
-pub(crate) fn restore_template_overwrites(env: &mut TCEnvironment, overwrites: Overwrites) {
+pub(crate) fn restore_template_overwrites(env: &mut TypeEnvironment, overwrites: Overwrites) {
     for (ident, arg_type) in overwrites.into_iter() {
         env.realized_types.insert(ident, arg_type);
     }
@@ -45,8 +45,8 @@ pub fn mangle_template_name(name: &str, input: &CXTemplateInput) -> String {
 }
 
 pub(crate) fn instantiate_type_template(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     input: &CXNaiveTemplateInput,
     name: &str,
 ) -> CXResult<CXType> {
@@ -72,15 +72,15 @@ pub(crate) fn instantiate_type_template(
 
     let shell = &template.resource.shell;
 
-    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
+    let overwrites = add_templatedtype_s(env, &template.resource.prototype, &completed_input);
     let mut cx_type = _complete_type(env, base_data, shell)?;
     restore_template_overwrites(env, overwrites);
 
-    cx_type.set_name(CXIdent::from(template_name.as_str()));
+    cx_type.set_name(CXIdent::new(template_name.as_str()));
     env.add_type(template_name, cx_type.clone());
 
     let destructor_ident = NaiveFnKind::Destructor(FunctionTypeIdent::Templated(
-        CXIdent::from(name),
+        CXIdent::new(name),
         input.clone(),
     ));
 
@@ -96,8 +96,8 @@ pub(crate) fn instantiate_type_template(
 }
 
 pub(crate) fn instantiate_function_template(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     name: &NaiveFnKind,
     input: &CXTemplateInput,
 ) -> CXResult<CXFunctionPrototype> {
@@ -120,7 +120,7 @@ pub(crate) fn instantiate_function_template(
     let template_prototype = &resource.prototype;
     let shell = &resource.shell;
 
-    let overwrites = add_templated_types(env, template_prototype, input);
+    let overwrites = add_templatedtype_s(env, template_prototype, input);
 
     let mut instantiated = complete_fn_prototype(env, base_data, None, shell)?;
     instantiated.apply_template_mangling();
@@ -131,7 +131,7 @@ pub(crate) fn instantiate_function_template(
 
     env.realized_fns
         .insert(instantiated.name.clone(), instantiated.clone());
-    env.requests.push(TCTemplateRequest {
+    env.requests.push(MIRTemplateRequest {
         module_origin: module_origin.clone(),
         name: name.clone(),
         input: input.clone(),

@@ -1,5 +1,5 @@
-use crate::environment::TCEnvironment;
-use crate::log_typecheck_error;
+use crate::environment::TypeEnvironment;
+use crate::logtype_check_error;
 use crate::type_checking::binary_ops::{
     typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call,
 };
@@ -9,8 +9,8 @@ use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
-use cx_typechecker_data::ast::{TCBaseMappings, TCGlobalVarKind, TCGlobalVariable};
 use cx_typechecker_data::mir::expression::{MIRBinOp, MIRInstruction, MIRUnOp, MIRValue};
+use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
 use cx_typechecker_data::mir::types::{CXIntegerType, CXTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -24,8 +24,8 @@ fn anonymous_name_gen() -> String {
 }
 
 pub fn typecheck_expr(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
     Ok(match &expr.kind {
@@ -51,12 +51,12 @@ pub fn typecheck_expr(
 
         CXExprKind::StringLiteral { val } => {
             let anonymous_name = anonymous_name_gen();
-            let name_ident = CXIdent::from(anonymous_name.clone());
+            let name_ident = CXIdent::new(anonymous_name.clone());
 
             env.realized_globals.insert(
                 anonymous_name.clone(),
-                TCGlobalVariable {
-                    kind: TCGlobalVarKind::StringLiteral {
+                MIRGlobalVariable {
+                    kind: MIRGlobalVarKind::StringLiteral {
                         name: name_ident.clone(),
                         value: val.clone(),
                     },
@@ -66,7 +66,7 @@ pub fn typecheck_expr(
             );
 
             MIRValue::GlobalValue {
-                name: CXIdent::from(anonymous_name),
+                name: CXIdent::new(anonymous_name),
                 _type: env
                     .get_realized_type("char")
                     .unwrap()
@@ -76,28 +76,28 @@ pub fn typecheck_expr(
             }
         }
 
-        CXExprKind::VarDeclaration { type_, name } => {
-            let type_ = env.complete_type(base_data, type_)?;
+        CXExprKind::VarDeclaration { _type, name } => {
+            let _type = env.complete_type(base_data, _type)?;
             let result = env.builder.new_register();
 
             env.builder
-                .add_instruction(MIRInstruction::CreateStackRegion {
+                .add_instruction(MIRInstruction::CreateEmptyStackRegion {
                     result: result.clone(),
-                    _type: type_.clone(),
+                    _type: _type.clone(),
                 });
 
             env.insert_symbol(
                 name.as_string(),
                 MIRValue::Register {
                     register: result.clone(),
-                    _type: type_.clone().mem_ref_to(),
+                    _type: _type.clone().mem_ref_to(),
                 },
             );
-            acknowledge_declared_type(env, base_data, &type_);
+            acknowledge_declared_type(env, base_data, &_type);
 
             MIRValue::Register {
                 register: result,
-                _type: type_.mem_ref_to(),
+                _type: _type.mem_ref_to(),
             }
         }
 
@@ -115,7 +115,7 @@ pub fn typecheck_expr(
             } else if let Some(global) = global_expr(env, base_data, name.as_str()).ok() {
                 global
             } else {
-                return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
+                return logtype_check_error!(env, expr, "Identifier '{}' not found", name);
             }
         }
 
@@ -162,7 +162,7 @@ pub fn typecheck_expr(
                 false_block: else_block.clone(),
             });
 
-            env.builder.add_block(then_block);
+            env.builder.add_and_set_block(then_block);
             env.push_scope(Some(merge_block.clone()), None);
             typecheck_expr(env, base_data, then_branch)?;
             env.pop_scope();
@@ -170,14 +170,14 @@ pub fn typecheck_expr(
             env.builder.add_jump(merge_block.clone());
 
             if let Some(else_branch) = else_branch {
-                env.builder.set_block(else_block);
+                env.builder.add_and_set_block(else_block);
                 env.push_scope(Some(merge_block.clone()), None);
                 typecheck_expr(env, base_data, else_branch)?;
                 env.pop_scope();
                 env.builder.add_jump(merge_block.clone());
             }
 
-            env.builder.set_block(merge_block);
+            env.builder.add_and_set_block(merge_block);
             env.pop_scope();
 
             MIRValue::NULL
@@ -199,6 +199,7 @@ pub fn typecheck_expr(
             let condition_tc = typecheck_expr(env, base_data, condition)
                 .and_then(|c| coerce_condition(env, expr, c))?;
             env.builder.add_instruction(MIRInstruction::Loop {
+                loop_id: condition_block.clone(),
                 condition: condition_tc,
                 condition_precheck: *pre_eval,
                 body: body_block.clone(),
@@ -238,6 +239,7 @@ pub fn typecheck_expr(
             let condition = typecheck_expr(env, base_data, condition)
                 .and_then(|c| coerce_condition(env, expr, c))?;
             env.builder.add_instruction(MIRInstruction::Loop {
+                loop_id: condition_block.clone(),
                 condition,
                 condition_precheck: true,
                 body: body_block.clone(),
@@ -274,7 +276,7 @@ pub fn typecheck_expr(
                 .map(|inner| inner.break_to.as_ref())
                 .flatten()
             else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     " 'break' used outside of a loop or switch context"
@@ -293,7 +295,7 @@ pub fn typecheck_expr(
                 .map(|inner| inner.continue_to.as_ref())
                 .flatten()
             else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     " 'continue' used outside of a loop context"
@@ -325,7 +327,7 @@ pub fn typecheck_expr(
                 (None, _) if return_type.is_unit() => {}
 
                 (Some(_), _) => {
-                    return log_typecheck_error!(
+                    return logtype_check_error!(
                         env,
                         expr,
                         " Cannot return from function {} with a void return type",
@@ -334,7 +336,7 @@ pub fn typecheck_expr(
                 }
 
                 (None, _) => {
-                    return log_typecheck_error!(
+                    return logtype_check_error!(
                         env,
                         expr,
                         " Function {} expects a return value, but none was provided",
@@ -362,7 +364,7 @@ pub fn typecheck_expr(
                 CXUnOp::PreIncrement(increment_amount)
                 | CXUnOp::PostIncrement(increment_amount) => {
                     let Some(inner) = operand_type.mem_ref_inner() else {
-                        return log_typecheck_error!(
+                        return logtype_check_error!(
                             env,
                             operand,
                             " Cannot apply pre-increment to a non-reference {}",
@@ -458,7 +460,7 @@ pub fn typecheck_expr(
                         }
 
                         _ => {
-                            return log_typecheck_error!(
+                            return logtype_check_error!(
                                 env,
                                 operand,
                                 " Pre-increment operator requires an integer or pointer type, found {}",
@@ -473,7 +475,7 @@ pub fn typecheck_expr(
                     let loaded_operand_type = loaded_operand.get_type();
                     
                     if !loaded_operand_type.is_integer() {
-                        return log_typecheck_error!(
+                        return logtype_check_error!(
                             env,
                             operand,
                             " Logical NOT operator requires an integer type, found {}",
@@ -499,7 +501,7 @@ pub fn typecheck_expr(
                     let loaded_op_type = loaded_op_val.get_type();
 
                     if !loaded_op_type.is_integer() {
-                        return log_typecheck_error!(
+                        return logtype_check_error!(
                             env,
                             operand,
                             " Bitwise NOT operator requires an integer type, found {}",
@@ -529,7 +531,7 @@ pub fn typecheck_expr(
                         CXTypeKind::Float { .. } => MIRUnOp::FNEG,
 
                         _ => {
-                            return log_typecheck_error!(
+                            return logtype_check_error!(
                                 env,
                                 operand,
                                 " Negation operator requires an integer or float type, found {}",
@@ -553,7 +555,7 @@ pub fn typecheck_expr(
 
                 CXUnOp::AddressOf => {
                     let Some(inner) = operand_type.mem_ref_inner() else {
-                        return log_typecheck_error!(
+                        return logtype_check_error!(
                             env,
                             operand,
                             " Cannot take address of a non-reference type"
@@ -579,7 +581,7 @@ pub fn typecheck_expr(
                     let loaded_operand_type = loaded_operand.get_type();
 
                     let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
-                        return log_typecheck_error!(
+                        return logtype_check_error!(
                             env,
                             operand,
                             " Cannot dereference a non-pointer type {}",
@@ -618,7 +620,7 @@ pub fn typecheck_expr(
             rhs,
         } => {
             if let Some(_) = op {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     " Compound assignment operators (e.g. +=, -=) are not yet supported"
@@ -631,7 +633,7 @@ pub fn typecheck_expr(
             let rhs_val = typecheck_expr(env, base_data, rhs)?;
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     " Cannot assign to non-reference type {}",
@@ -645,7 +647,7 @@ pub fn typecheck_expr(
             if inner.get_specifier(CX_CONST)
                 && !matches!(lhs.kind, CXExprKind::VarDeclaration { .. })
             {
-                return log_typecheck_error!(env, expr, " Cannot assign to a const type");
+                return logtype_check_error!(env, expr, " Cannot assign to a const type");
             }
 
             let rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
@@ -703,7 +705,7 @@ pub fn typecheck_expr(
         } => {
             let union_type = env.get_type(base_data, type_name.as_str())?;
             let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
-                return log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
+                return logtype_check_error!(env, expr, " Unknown type: {}", type_name);
             };
 
             let Some((i, variant_type)) = variants
@@ -712,7 +714,7 @@ pub fn typecheck_expr(
                 .find(|(_, (variant_name, _))| variant_name == name.as_str())
                 .map(|(i, (_, variant_type))| (i, variant_type.clone()))
             else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     " Variant '{}' not found in tagged union type {}",
@@ -724,17 +726,27 @@ pub fn typecheck_expr(
             let inner = typecheck_expr(env, base_data, inner)
                 .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
 
-            let result = env.builder.new_register();
+            let result_region = env.builder.new_register();
+            env.builder.add_instruction(
+                MIRInstruction::CreateEmptyStackRegion {
+                    result: result_region.clone(),
+                    _type: union_type.clone(),
+                },
+            );
+            
             env.builder
-                .add_instruction(MIRInstruction::ConstructSumType {
-                    result: result.clone(),
+                .add_instruction(MIRInstruction::ConstructTaggedUnionInto {
                     value: inner,
+                    memory: MIRValue::Register {
+                        register: result_region.clone(),
+                        _type: union_type.clone(),
+                    },
                     variant_index: i,
                     sum_type: union_type.clone(),
                 });
 
             MIRValue::Register {
-                register: result,
+                register: result_region,
                 _type: variant_type,
             }
         }
@@ -830,8 +842,8 @@ pub fn typecheck_expr(
 }
 
 pub(crate) fn global_expr(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     ident: &str,
 ) -> CXResult<MIRValue> {
     if let Some(global) = env.realized_globals.get(ident) {
@@ -855,15 +867,15 @@ pub(crate) fn global_expr(
         }),
 
         CXGlobalVariable::Standard {
-            type_,
+            _type,
             initializer,
             is_mutable,
         } => {
-            let _type = env.complete_type(base_data, type_)?;
+            let _type = env.complete_type(base_data, _type)?;
             let initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
-                        return log_typecheck_error!(
+                        return logtype_check_error!(
                             env,
                             init_expr,
                             " CX currently only supports integer initializers for global variable initialization"
@@ -878,9 +890,9 @@ pub(crate) fn global_expr(
 
             env.realized_globals.insert(
                 ident.to_string(),
-                TCGlobalVariable {
-                    kind: TCGlobalVarKind::Variable {
-                        name: CXIdent::from(ident.to_string()),
+                MIRGlobalVariable {
+                    kind: MIRGlobalVarKind::Variable {
+                        name: CXIdent::new(ident.to_string()),
                         _type,
                         initializer,
                     },
@@ -894,14 +906,14 @@ pub(crate) fn global_expr(
     }
 }
 
-fn tcglobal_expr(global: &TCGlobalVariable) -> CXResult<MIRValue> {
+fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRValue> {
     match &global.kind {
-        TCGlobalVarKind::Variable { name, _type, .. } => Ok(MIRValue::GlobalValue {
+        MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRValue::GlobalValue {
             name: name.clone(),
             _type: _type.clone(),
         }),
 
-        TCGlobalVarKind::StringLiteral { .. } => {
+        MIRGlobalVarKind::StringLiteral { .. } => {
             unreachable!("String literals cannot be referenced via an identifier")
         }
     }

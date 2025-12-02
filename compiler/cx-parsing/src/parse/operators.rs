@@ -84,7 +84,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 return Ok(None);
             }
 
-            let Some((None, type_)) = parse_initializer(data).ok() else {
+            let Some((None, _type)) = parse_initializer(data).ok() else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };
@@ -94,7 +94,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             );
 
-            Some(CXUnOp::ExplicitCast(type_))
+            Some(CXUnOp::ExplicitCast(_type))
         }
 
         _ => {

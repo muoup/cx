@@ -60,7 +60,7 @@ impl<'a> ParserData<'a> {
     pub fn add_type(
         &mut self,
         name: String,
-        type_: CXNaiveType,
+        _type: CXNaiveType,
         prototype: Option<CXTemplatePrototype>,
     ) {
         match prototype {
@@ -70,7 +70,7 @@ impl<'a> ParserData<'a> {
                     ModuleResource::new(
                         CXTypeTemplate {
                             prototype: proto.clone(),
-                            shell: type_,
+                            shell: _type,
                         },
                         self.visibility,
                         CXLinkageMode::Standard,
@@ -80,7 +80,7 @@ impl<'a> ParserData<'a> {
             None => {
                 self.ast.type_data.insert_standard(
                     name,
-                    ModuleResource::new(type_, self.visibility, CXLinkageMode::Standard),
+                    ModuleResource::new(_type, self.visibility, CXLinkageMode::Standard),
                 );
             }
         }

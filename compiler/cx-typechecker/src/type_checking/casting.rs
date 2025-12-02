@@ -5,10 +5,10 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{environment::TCEnvironment, log_typecheck_error};
+use crate::{environment::TypeEnvironment, logtype_check_error};
 
 pub(crate) fn coerce_value(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     expr: &CXExpr,
     mut value: MIRValue,
 ) -> CXResult<MIRValue> {
@@ -43,7 +43,7 @@ pub(crate) fn coerce_value(
 }
 
 pub(crate) fn coerce_condition(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     expr: &CXExpr,
     value: MIRValue,
 ) -> CXResult<MIRValue> {
@@ -66,7 +66,7 @@ pub(crate) fn coerce_condition(
 }
 
 pub(crate) fn explicit_cast(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     expr: &CXExpr,
     value: MIRValue,
     to_type: &CXType,
@@ -110,7 +110,7 @@ pub(crate) fn explicit_cast(
         }
 
         _ => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 "No explicit cast from {} to {}",
@@ -122,7 +122,7 @@ pub(crate) fn explicit_cast(
 }
 
 pub fn implicit_cast(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     expr: &CXExpr,
     value: MIRValue,
     to_type: &CXType,
@@ -193,7 +193,7 @@ pub fn implicit_cast(
 
         (CXTypeKind::MemoryReference(inner), _) if same_type(inner.as_ref(), to_type) => {
             if !inner.copyable() {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     "Cannot implicitly copy value of type {} to type {}",
@@ -204,7 +204,7 @@ pub fn implicit_cast(
 
             let result = env.builder.new_register();
             let MIRValue::Register { register, .. } = &value else {
-                return log_typecheck_error!(
+                return logtype_check_error!(
                     env,
                     expr,
                     "Expected register value for memory reference copy, got {}",
@@ -214,7 +214,7 @@ pub fn implicit_cast(
 
             if to_type.is_structured() {
                 env.builder
-                    .add_instruction(MIRInstruction::CreateRegionCopy {
+                    .add_instruction(MIRInstruction::CopyStackRegionInto {
                         result: result.clone(),
                         source: register.clone(),
                         _type: *inner.clone(),
@@ -278,7 +278,7 @@ pub fn implicit_cast(
         ) if same_type(inner.as_ref(), &from_type) => Ok(value),
 
         _ => {
-            return log_typecheck_error!(
+            return logtype_check_error!(
                 env,
                 expr,
                 "No implicit cast from {} to {}",

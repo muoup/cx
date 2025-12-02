@@ -1,12 +1,11 @@
-use crate::builder::MIRBuilder;
+use crate::builder::BCBuilder;
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
-use cx_bytecode_data::{BCFunctionMap, LinkageType, MIRFunctionPrototype, MIRParameter};
-use cx_typechecker_data::function_map::CXFnMap;
+use cx_bytecode_data::{LinkageType, BCFunctionPrototype, BCParameter};
 use cx_typechecker_data::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind,
 };
 
-impl MIRBuilder {
+impl BCBuilder {
     pub(crate) fn convert_cx_type(&self, cx_type: &CXType) -> BCType {
         convert_type(cx_type)
     }
@@ -15,8 +14,16 @@ impl MIRBuilder {
     pub(crate) fn convert_cx_prototype(
         &self,
         cx_proto: &CXFunctionPrototype,
-    ) -> MIRFunctionPrototype {
+    ) -> BCFunctionPrototype {
         convert_cx_prototype(cx_proto)
+    }
+    
+    pub(crate) fn convert_integer_type(&self, cx_itype: &CXIntegerType) -> BCIntegerType {
+        convert_integer_type(cx_itype)
+    }
+    
+    pub(crate) fn convert_float_type(&self, cx_ftype: &CXFloatType) -> BCFloatType {
+        convert_float_type(cx_ftype)
     }
 }
 
@@ -36,11 +43,11 @@ fn convert_argument_type(cx_type: &CXType) -> BCType {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> MIRFunctionPrototype {
+pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunctionPrototype {
     let mut params = cx_proto
         .params
         .iter()
-        .map(|param| MIRParameter {
+        .map(|param| BCParameter {
             name: param.name.as_ref().map(|name| name.as_string()),
             _type: convert_argument_type(&param._type),
         })
@@ -51,7 +58,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> MIRFunctio
     if cx_proto.return_type.is_structured() {
         params.insert(
             0,
-            MIRParameter {
+            BCParameter {
                 name: Some("__internal_buffer".to_string()),
                 _type: BCType::default_pointer(),
             },
@@ -60,7 +67,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> MIRFunctio
         return_type = BCType::default_pointer();
     }
 
-    let prototype = MIRFunctionPrototype {
+    let prototype = BCFunctionPrototype {
         name: cx_proto.mangle_name(),
         return_type: return_type.clone(),
         params: params.clone(),
@@ -69,13 +76,6 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> MIRFunctio
     };
 
     prototype
-}
-
-pub(crate) fn convert_cx_func_map(cx_proto: &CXFnMap) -> BCFunctionMap {
-    cx_proto
-        .values()
-        .map(|cx_proto| (cx_proto.mangle_name(), convert_cx_prototype(cx_proto)))
-        .collect::<BCFunctionMap>()
 }
 
 fn convert_integer_type(itype: &CXIntegerType) -> BCIntegerType {
@@ -125,7 +125,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
 
             BCTypeKind::Pointer {
                 nullable: false,
-                dereferenceable: inner_as_bc.fixed_size() as u32,
+                dereferenceable: inner_as_bc.size() as u32,
             }
         }
 

@@ -10,8 +10,8 @@ pub fn is_intrinsic_type(name: &str) -> bool {
 }
 
 pub const INTRINSIC_IMPORTS: &[&str] = &[
-    // "std/intrinsic/memory.cx", 
-    "std/intrinsic/assertion.cx"
+    // "std/intrinsic/memory.cx",
+    "std/intrinsic/assertion.cx",
 ];
 
 pub const INTRINSIC_TYPES: &[(&str, CXTypeKind)] = &[

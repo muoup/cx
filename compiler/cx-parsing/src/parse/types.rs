@@ -33,7 +33,7 @@ fn predeclaration_type(
 fn defined_type(
     data: &mut ParserData,
     name: Option<CXIdent>,
-    type_: CXNaiveType,
+    _type: CXNaiveType,
     template_prototype: Option<CXTemplatePrototype>,
     predeclaration: PredeclarationType,
 ) -> CXResult<CXNaiveType> {
@@ -41,7 +41,7 @@ fn defined_type(
         // If structure definition has a name, add it to the type map and return
         // the identifier pointer to that type
 
-        data.add_type(name.as_string(), type_, template_prototype);
+        data.add_type(name.as_string(), _type, template_prototype);
 
         Ok(CXNaiveTypeKind::Identifier {
             name,
@@ -52,7 +52,7 @@ fn defined_type(
         // If the structure definition is anonymous, it can only be parsed as
         // an in-place type.
 
-        Ok(type_)
+        Ok(_type)
     }
 }
 
@@ -144,7 +144,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
         data,
         name,
         CXNaiveTypeKind::Identifier {
-            name: CXIdent::from("int"),
+            name: CXIdent::new("int"),
             predeclaration: PredeclarationType::None,
         }
         .to_type(),
@@ -268,7 +268,7 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
     spec_acc
 }
 
-pub(crate) fn parse_typemods(
+pub(crate) fn parsetype_mods(
     data: &mut ParserData,
     acc_type: CXNaiveType,
 ) -> CXResult<(Option<CXIdent>, CXNaiveType)> {
@@ -303,7 +303,7 @@ pub(crate) fn parse_typemods(
                 },
             );
 
-            parse_typemods(data, acc_type)
+            parsetype_mods(data, acc_type)
         }
 
         keyword!(Weak) => {
@@ -319,7 +319,7 @@ pub(crate) fn parse_typemods(
                 },
             );
 
-            parse_typemods(data, acc_type)
+            parsetype_mods(data, acc_type)
         }
 
         operator!(Asterisk) => {
@@ -327,7 +327,7 @@ pub(crate) fn parse_typemods(
             let specs = parse_specifier(&mut data.tokens);
             let acc_type = acc_type.pointer_to(false, specs);
 
-            parse_typemods(data, acc_type)
+            parsetype_mods(data, acc_type)
         }
 
         punctuator!(OpenParen) => {
@@ -350,7 +350,7 @@ pub(crate) fn parse_typemods(
             } = parse_params(data)?;
 
             let prototype = CXNaivePrototype {
-                name: NaiveFnKind::Standard(CXIdent::from("__internal_fnptr")),
+                name: NaiveFnKind::Standard(CXIdent::new("__internal_fnptr")),
                 return_type: acc_type,
                 params,
                 var_args,
@@ -374,7 +374,7 @@ pub(crate) fn parse_typemods(
     }
 }
 
-pub(crate) fn parse_suffix_typemod(
+pub(crate) fn parse_suffixtype_mod(
     tokens: &mut TokenIter,
     acc_type: CXNaiveType,
 ) -> CXResult<CXNaiveType> {
@@ -463,9 +463,9 @@ pub(crate) fn parse_base_mods(
     data: &mut ParserData,
     acc_type: CXNaiveType,
 ) -> CXResult<(Option<CXIdent>, CXNaiveType)> {
-    let (name, modified_type) = parse_typemods(data, acc_type)?;
+    let (name, modified_type) = parsetype_mods(data, acc_type)?;
 
-    Ok((name, parse_suffix_typemod(&mut data.tokens, modified_type)?))
+    Ok((name, parse_suffixtype_mod(&mut data.tokens, modified_type)?))
 }
 
 pub(crate) fn parse_initializer(data: &mut ParserData) -> CXResult<(Option<CXIdent>, CXNaiveType)> {

@@ -39,7 +39,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue)
 
             if let Some(initial_value) = initial_value {
                 let bytes: [u8; 8] = i64::to_ne_bytes(*initial_value);
-                let type_size = _type.fixed_size();
+                let type_size = _type.size();
                 let relevant_data = bytes
                     .iter()
                     .skip(8 - type_size)
@@ -49,7 +49,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &BCGlobalValue)
                 data.define(relevant_data.into_boxed_slice());
                 state.object_module.define_data(id, &data).expect("");
             } else {
-                let size = _type.fixed_size();
+                let size = _type.size();
                 data.define_zeroinit(size);
                 state.object_module.define_data(id, &data).expect("");
             }

@@ -1,5 +1,3 @@
-use crate::BCValue;
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct BCType {
     pub kind: BCTypeKind,
@@ -64,28 +62,8 @@ pub enum BCTypeKind {
         name: String,
         fields: Vec<(String, BCType)>,
     },
-
-    VariableSized {
-        size: Box<BCValue>,
-        alignment: u8,
-    },
-
+    
     Unit,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MIRTypeSize {
-    Fixed(usize),
-    Variable(BCValue),
-}
-
-impl MIRTypeSize {
-    pub fn assert_fixed(self, msg: &str) -> usize {
-        match self {
-            MIRTypeSize::Fixed(size) => size,
-            MIRTypeSize::Variable(_) => panic!("{msg}: expected fixed size, got variable"),
-        }
-    }
 }
 
 impl From<BCTypeKind> for BCType {
@@ -95,25 +73,18 @@ impl From<BCTypeKind> for BCType {
 }
 
 impl BCType {
-    pub fn size(&self) -> MIRTypeSize {
-        match &self.kind {
-            BCTypeKind::VariableSized { size, .. } => MIRTypeSize::Variable(*size.clone()),
-            _ => MIRTypeSize::Fixed(self.fixed_size()),
-        }
-    }
-
-    pub fn fixed_size(&self) -> usize {
+    pub fn size(&self) -> usize {
         match &self.kind {
             BCTypeKind::Opaque { bytes } => *bytes,
             BCTypeKind::Integer(_type) => _type.bytes() as usize,
             BCTypeKind::Float(_type) => _type.bytes() as usize,
             BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            BCTypeKind::Array { element, size } => element.fixed_size() * size,
+            BCTypeKind::Array { element, size } => element.size() * size,
             BCTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
 
                 for (_, field_type) in fields {
-                    let field_size = field_type.fixed_size();
+                    let field_size = field_type.size();
                     let field_alignment = field_type.alignment();
 
                     // Align current size to the field's alignment
@@ -129,14 +100,12 @@ impl BCType {
             }
             BCTypeKind::Union { fields, .. } => fields
                 .iter()
-                .map(|(_, field)| field.fixed_size())
+                .map(|(_, field)| field.size())
                 .max()
                 .unwrap(),
 
             BCTypeKind::Bool => 1,
             BCTypeKind::Unit => 0,
-
-            _ => panic!("Invalid type for fixed size: {:?}", self.kind),
         }
     }
 
@@ -159,7 +128,6 @@ impl BCType {
                 .max()
                 .unwrap_or(1),
             BCTypeKind::Unit => 1,
-            BCTypeKind::VariableSized { alignment, .. } => *alignment,
         }
     }
 

@@ -12,8 +12,8 @@ use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotK
 use cranelift_module::Module;
 use cx_bytecode_data::types::{BCType, BCTypeKind, MIRTypeSize};
 use cx_bytecode_data::{
-    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, MIRPtrBinOp, BCInstruction, LinkageType,
-    MIRFunctionPrototype, MIRIntBinOp, MIRParameter, BCInstructionKind,
+    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCPtrBinOp, BCInstruction, LinkageType,
+    MIRFunctionPrototype, BCIntBinOp, MIRParameter, BCInstructionKind,
 };
 use std::ops::IndexMut;
 
@@ -22,7 +22,7 @@ pub(crate) fn codegen_instruction(
     instruction: &BCInstruction,
 ) -> Option<CodegenValue> {
     match &instruction.kind {
-        BCInstructionKind::Temp { value } => context.get_value(value),
+        BCInstructionKind::Alias { value } => context.get_value(value),
 
         BCInstructionKind::Allocate { _type, alignment } => {
             let slot = match _type.size() {
@@ -162,7 +162,7 @@ pub(crate) fn codegen_instruction(
         }
 
         BCInstructionKind::IntToPtrDiff { value, ptr_type } => {
-            let size = ptr_type.fixed_size();
+            let size = ptr_type.size();
             let val = context.get_value(value).unwrap();
 
             let ptr_diff = context
@@ -184,38 +184,38 @@ pub(crate) fn codegen_instruction(
 
             let inst =
                 match op {
-                    MIRPtrBinOp::ADD => context.builder.ins().iadd(left, right),
-                    MIRPtrBinOp::SUB => context.builder.ins().isub(left, right),
+                    BCPtrBinOp::ADD => context.builder.ins().iadd(left, right),
+                    BCPtrBinOp::SUB => context.builder.ins().isub(left, right),
 
-                    MIRPtrBinOp::EQ => {
+                    BCPtrBinOp::EQ => {
                         context
                             .builder
                             .ins()
                             .icmp(ir::condcodes::IntCC::Equal, left, right)
                     }
-                    MIRPtrBinOp::NE => {
+                    BCPtrBinOp::NE => {
                         context
                             .builder
                             .ins()
                             .icmp(ir::condcodes::IntCC::NotEqual, left, right)
                     }
 
-                    MIRPtrBinOp::LT => context.builder.ins().icmp(
+                    BCPtrBinOp::LT => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedLessThan,
                         left,
                         right,
                     ),
-                    MIRPtrBinOp::GT => context.builder.ins().icmp(
+                    BCPtrBinOp::GT => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedGreaterThan,
                         left,
                         right,
                     ),
-                    MIRPtrBinOp::LE => context.builder.ins().icmp(
+                    BCPtrBinOp::LE => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedLessThanOrEqual,
                         left,
                         right,
                     ),
-                    MIRPtrBinOp::GE => context.builder.ins().icmp(
+                    BCPtrBinOp::GE => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedGreaterThanOrEqual,
                         left,
                         right,
@@ -230,24 +230,24 @@ pub(crate) fn codegen_instruction(
             let right = context.get_value(right).unwrap().as_value();
 
             let inst = match op {
-                MIRIntBinOp::ADD => context.builder.ins().iadd(left, right),
-                MIRIntBinOp::SUB => context.builder.ins().isub(left, right),
-                MIRIntBinOp::MUL => context.builder.ins().imul(left, right),
-                MIRIntBinOp::IDIV => context.builder.ins().sdiv(left, right),
-                MIRIntBinOp::IREM => context.builder.ins().srem(left, right),
+                BCIntBinOp::ADD => context.builder.ins().iadd(left, right),
+                BCIntBinOp::SUB => context.builder.ins().isub(left, right),
+                BCIntBinOp::MUL => context.builder.ins().imul(left, right),
+                BCIntBinOp::IDIV => context.builder.ins().sdiv(left, right),
+                BCIntBinOp::IREM => context.builder.ins().srem(left, right),
 
-                MIRIntBinOp::UDIV => context.builder.ins().udiv(left, right),
-                MIRIntBinOp::UREM => context.builder.ins().urem(left, right),
+                BCIntBinOp::UDIV => context.builder.ins().udiv(left, right),
+                BCIntBinOp::UREM => context.builder.ins().urem(left, right),
 
-                MIRIntBinOp::SHL => context.builder.ins().ishl(left, right),
-                MIRIntBinOp::ASHR => context.builder.ins().sshr(left, right),
-                MIRIntBinOp::LSHR => context.builder.ins().ushr(left, right),
+                BCIntBinOp::SHL => context.builder.ins().ishl(left, right),
+                BCIntBinOp::ASHR => context.builder.ins().sshr(left, right),
+                BCIntBinOp::LSHR => context.builder.ins().ushr(left, right),
 
-                MIRIntBinOp::BAND => context.builder.ins().band(left, right),
-                MIRIntBinOp::BOR => context.builder.ins().bor(left, right),
-                MIRIntBinOp::BXOR => context.builder.ins().bxor(left, right),
+                BCIntBinOp::BAND => context.builder.ins().band(left, right),
+                BCIntBinOp::BOR => context.builder.ins().bor(left, right),
+                BCIntBinOp::BXOR => context.builder.ins().bxor(left, right),
 
-                MIRIntBinOp::LAND => {
+                BCIntBinOp::LAND => {
                     let left = context
                         .builder
                         .ins()
@@ -261,7 +261,7 @@ pub(crate) fn codegen_instruction(
                     context.builder.ins().band(left, right)
                 }
 
-                MIRIntBinOp::LOR => {
+                BCIntBinOp::LOR => {
                     let left = context
                         .builder
                         .ins()
@@ -275,59 +275,59 @@ pub(crate) fn codegen_instruction(
                     context.builder.ins().bor(left, right)
                 }
 
-                MIRIntBinOp::EQ => {
+                BCIntBinOp::EQ => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::Equal, left, right)
                 }
-                MIRIntBinOp::NE => {
+                BCIntBinOp::NE => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::NotEqual, left, right)
                 }
 
-                MIRIntBinOp::ILT => {
+                BCIntBinOp::ILT => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::SignedLessThan, left, right)
                 }
-                MIRIntBinOp::IGT => {
+                BCIntBinOp::IGT => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right)
                 }
-                MIRIntBinOp::ILE => context.builder.ins().icmp(
+                BCIntBinOp::ILE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::SignedLessThanOrEqual,
                     left,
                     right,
                 ),
-                MIRIntBinOp::IGE => context.builder.ins().icmp(
+                BCIntBinOp::IGE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::SignedGreaterThanOrEqual,
                     left,
                     right,
                 ),
 
-                MIRIntBinOp::ULT => {
+                BCIntBinOp::ULT => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::UnsignedLessThan, left, right)
                 }
-                MIRIntBinOp::UGT => context.builder.ins().icmp(
+                BCIntBinOp::UGT => context.builder.ins().icmp(
                     ir::condcodes::IntCC::UnsignedGreaterThan,
                     left,
                     right,
                 ),
-                MIRIntBinOp::ULE => context.builder.ins().icmp(
+                BCIntBinOp::ULE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::UnsignedLessThanOrEqual,
                     left,
                     right,
                 ),
-                MIRIntBinOp::UGE => context.builder.ins().icmp(
+                BCIntBinOp::UGE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::UnsignedGreaterThanOrEqual,
                     left,
                     right,
@@ -341,9 +341,9 @@ pub(crate) fn codegen_instruction(
             let val = context.get_value(value).unwrap();
 
             let inst = match op {
-                MIRIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
-                MIRIntUnOp::BNOT => context.builder.ins().bnot(val.as_value()),
-                MIRIntUnOp::LNOT => {
+                BCIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
+                BCIntUnOp::BNOT => context.builder.ins().bnot(val.as_value()),
+                BCIntUnOp::LNOT => {
                     context
                         .builder
                         .ins()
@@ -359,7 +359,7 @@ pub(crate) fn codegen_instruction(
             let _type = &instruction.value_type;
 
             match op {
-                MIRFloatUnOp::NEG => Some(CodegenValue::Value(
+                BCFloatUnOp::NEG => Some(CodegenValue::Value(
                     context.builder.ins().fneg(val.as_value()),
                 )),
             }
@@ -370,10 +370,10 @@ pub(crate) fn codegen_instruction(
             let right = context.get_value(right).unwrap().as_value();
 
             Some(CodegenValue::Value(match op {
-                MIRFloatBinOp::ADD => context.builder.ins().fadd(left, right),
-                MIRFloatBinOp::SUB => context.builder.ins().fsub(left, right),
-                MIRFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
-                MIRFloatBinOp::FDIV => context.builder.ins().fdiv(left, right),
+                BCFloatBinOp::ADD => context.builder.ins().fadd(left, right),
+                BCFloatBinOp::SUB => context.builder.ins().fsub(left, right),
+                BCFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
+                BCFloatBinOp::FDIV => context.builder.ins().fdiv(left, right),
             }))
         }
 
@@ -432,13 +432,13 @@ pub(crate) fn codegen_instruction(
         BCInstructionKind::Store {
             memory,
             value,
-            type_,
+            _type,
         } => {
             let target = context.get_value(memory).unwrap().as_value();
             let value = context.get_value(value).unwrap().as_value();
 
-            if type_.is_structure() {
-                let size = type_.fixed_size();
+            if _type.is_structure() {
+                let size = _type.size();
                 let size_literal = context
                     .builder
                     .ins()

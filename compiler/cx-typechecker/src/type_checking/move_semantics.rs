@@ -1,9 +1,12 @@
-use crate::environment::TCEnvironment;
-use cx_typechecker_data::{ast::TCBaseMappings, mir::types::{CXType, CXTypeKind}};
+use crate::environment::TypeEnvironment;
+use cx_typechecker_data::mir::{
+    program::MIRBaseMappings,
+    types::{CXType, CXTypeKind},
+};
 
 pub(crate) fn acknowledge_declared_type(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     ty: &CXType,
 ) -> bool {
     if env.deconstructors.contains(ty) {

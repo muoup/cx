@@ -2,7 +2,10 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
 
-pub type BCRegister = CXIdent;
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct MIRRegister {
+    pub name: CXIdent,
+}
 
 #[derive(Clone, Debug, Default)]
 pub enum MIRValue {
@@ -28,7 +31,7 @@ pub enum MIRValue {
         _type: CXType,
     },
     Register {
-        register: BCRegister,
+        register: MIRRegister,
         _type: CXType,
     },
 
@@ -39,28 +42,30 @@ pub enum MIRValue {
 #[derive(Clone, Debug)]
 pub enum MIRInstruction {
     Alias {
-        result: BCRegister,
+        result: MIRRegister,
         value: MIRValue,
     },
 
-    CreateStackRegion {
-        result: BCRegister,
+    CreateEmptyStackRegion {
+        result: MIRRegister,
         _type: CXType,
     },
     
-    CreateRegionCopy {
-        result: BCRegister,
-        source: BCRegister,
+    CopyStackRegionInto {
+        result: MIRRegister,
+        source: MIRRegister,
         _type: CXType,
     },
-
-    LoadGlobal {
-        result: BCRegister,
-        name: CXIdent,
+    
+    ConstructTaggedUnionInto {
+        variant_index: usize,
+        memory: MIRValue,
+        value: MIRValue,
+        sum_type: CXType
     },
 
     MemoryRead {
-        result: BCRegister,
+        result: MIRRegister,
         source: MIRValue,
         _type: CXType,
     },
@@ -71,45 +76,40 @@ pub enum MIRInstruction {
     },
 
     StructGet {
-        result: BCRegister,
+        result: MIRRegister,
         source: MIRValue,
         field_index: usize,
+        field_offset: usize,
         struct_type: CXType,
     },
     
     TaggedUnionGet {
-        result: BCRegister,
+        result: MIRRegister,
         source: MIRValue,
         variant_type: CXType,
     },
     
     TaggedUnionIs {
-        result: BCRegister,
+        result: MIRRegister,
         source: MIRValue,
         tag_id: usize
     },
 
     ArrayGet {
-        result: BCRegister,
+        result: MIRRegister,
         source: MIRValue,
         index: MIRValue,
         element_type: CXType,
     },
 
     CallFunction {
-        result: Option<BCRegister>,
+        result: Option<MIRRegister>,
         function: MIRValue,
         arguments: Vec<MIRValue>,
     },
-    
-    ConstructSumType {
-        result: BCRegister,
-        variant_index: usize,
-        value: MIRValue,
-        sum_type: CXType
-    },
 
     Loop {
+        loop_id: CXIdent,
         condition_precheck: bool,
         condition: MIRValue,
         body: CXIdent,
@@ -141,20 +141,20 @@ pub enum MIRInstruction {
     },
 
     BinOp {
-        result: BCRegister,
+        result: MIRRegister,
         lhs: MIRValue,
         rhs: MIRValue,
         op: MIRBinOp,
     },
 
     UnOp {
-        result: BCRegister,
+        result: MIRRegister,
         operand: MIRValue,
         op: MIRUnOp,
     },
 
     Coercion {
-        result: BCRegister,
+        result: MIRRegister,
         operand: MIRValue,
         cast_type: MIRCoercion,
     },
@@ -170,7 +170,7 @@ pub enum MIRInstruction {
     },
 
     Havoc {
-        target: BCRegister,
+        target: MIRRegister,
     },
 }
 
@@ -259,5 +259,17 @@ impl MIRValue {
             MIRValue::Register { _type, .. } => _type.clone(),
             MIRValue::NULL => CXType::unit(),
         }
+    }
+}
+
+impl MIRRegister {
+    pub fn new<T: Into<CXIdent>>(name: T) -> Self {
+        MIRRegister { name: name.into() }
+    }
+}
+
+impl Into<CXIdent> for MIRRegister {
+    fn into(self) -> CXIdent {
+        self.name
     }
 }

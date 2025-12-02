@@ -4,18 +4,17 @@ use cx_parsing_data::{
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::{
-    ast::TCBaseMappings,
     function_map::CXFunctionKind,
-    mir::{expression::{MIRInstruction, MIRValue}, types::{CXFunctionPrototype, CXTemplateInput, TCParameter}},
+    mir::{expression::{MIRInstruction, MIRValue}, program::MIRBaseMappings, types::{CXFunctionPrototype, CXTemplateInput, TCParameter}},
 };
 use cx_util::CXResult;
 
 use crate::{
-    environment::TCEnvironment,
+    environment::TypeEnvironment,
     type_checking::typechecker::{global_expr, typecheck_expr},
     type_completion::{
         complete_fn_prototype,
-        templates::{add_templated_types, restore_template_overwrites},
+        templates::{add_templatedtype_s, restore_template_overwrites},
     },
 };
 
@@ -27,8 +26,8 @@ pub(crate) mod structured_initialization;
 pub(crate) mod typechecker;
 
 fn generate_function(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     prototype: CXFunctionPrototype,
     body: &CXExpr,
 ) -> CXResult<()> {
@@ -40,7 +39,7 @@ fn generate_function(
         
         let region = env.builder.new_register();
         env.builder.add_instruction(
-            MIRInstruction::CreateStackRegion {
+            MIRInstruction::CreateEmptyStackRegion {
                 result: region.clone(),
                 _type: _type.clone(),
             }
@@ -75,7 +74,7 @@ fn generate_function(
     Ok(())
 }
 
-pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAST) -> CXResult<()> {
+pub fn typecheck(env: &mut TypeEnvironment, base_data: &MIRBaseMappings, ast: &CXAST) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
@@ -108,7 +107,7 @@ pub fn typecheck(env: &mut TCEnvironment, base_data: &TCBaseMappings, ast: &CXAS
 }
 
 pub fn realize_fn_implementation(
-    env: &mut TCEnvironment,
+    env: &mut TypeEnvironment,
     origin: &CompilationUnit,
     template_name: &NaiveFnKind,
     input: &CXTemplateInput,
@@ -134,7 +133,7 @@ pub fn realize_fn_implementation(
         })
         .expect("Function template body not found");
 
-    let overwrites = add_templated_types(env, &template.prototype, input);
+    let overwrites = add_templatedtype_s(env, &template.prototype, input);
     let mut prototype = env.complete_prototype(base_data.as_ref(), None, &template.shell)?;
 
     prototype.apply_template_mangling();
@@ -148,8 +147,8 @@ pub fn realize_fn_implementation(
 }
 
 pub fn complete_base_globals<'a>(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
 ) -> CXResult<()> {
     for name in base_data.global_variables.keys() {
         global_expr(env, base_data, name.as_str())?;
@@ -159,8 +158,8 @@ pub fn complete_base_globals<'a>(
 }
 
 pub fn complete_base_functions(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
 ) -> CXResult<()> {
     for (_, cx_fn) in base_data.fn_data.standard_iter() {
         complete_fn_prototype(

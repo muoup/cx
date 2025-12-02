@@ -109,13 +109,13 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
     data.change_comma_mode(false);
 
     loop {
-        let Ok((name, type_)) = parse_base_mods(data, base_type.clone()) else {
+        let Ok((name, _type)) = parse_base_mods(data, base_type.clone()) else {
             return log_parse_error!(data, "Failed to parse type declaration");
         };
 
         if let Some(name) = name {
             decls.push(
-                CXExprKind::VarDeclaration { type_, name }
+                CXExprKind::VarDeclaration { _type, name }
                     .into_expr(start_index, data.tokens.index),
             );
         } else {
@@ -124,7 +124,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
 
             let CXNaiveTypeKind::Identifier {
                 name: type_name, ..
-            } = type_.kind
+            } = _type.kind
             else {
                 log_error!("Identifier expected")
             };
@@ -333,15 +333,15 @@ pub(crate) fn parse_expr_val(
             );
 
             let return_type = if is_type_decl(data) {
-                let (None, type_) = parse_initializer(data)? else {
+                let (None, _type) = parse_initializer(data)? else {
                     return log_parse_error!(data, "Failed to parse type declaration for sizeof");
                 };
 
                 CXExprKind::SizeOf {
                     expr: Box::new(
                         CXExprKind::VarDeclaration {
-                            name: CXIdent::from("__internal_sizeof_dummy_decl"),
-                            type_,
+                            name: CXIdent::new("__internal_sizeof_dummy_decl"),
+                            _type,
                         }
                         .into_expr(start_index, data.tokens.index),
                     ),

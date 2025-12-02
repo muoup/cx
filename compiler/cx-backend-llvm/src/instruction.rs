@@ -5,7 +5,7 @@ use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_l
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_bytecode_data::types::{BCType, BCTypeKind, MIRTypeSize};
 use cx_bytecode_data::{
-    MIRFloatBinOp, MIRFloatUnOp, MIRIntUnOp, BCBlockID, BCInstruction, LinkageType,
+    BCFloatBinOp, BCFloatUnOp, BCIntUnOp, BCBlockID, BCInstruction, LinkageType,
     MIRFunctionPrototype, MIRParameter, BCInstructionKind,
 };
 use cx_util::log_error;
@@ -34,7 +34,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
     block_instruction: &BCInstruction,
 ) -> Option<CodegenValue<'a>> {
     Some(match &block_instruction.kind {
-        BCInstructionKind::Temp { value } => function_state.get_value(value)?,
+        BCInstructionKind::Alias { value } => function_state.get_value(value)?,
 
         BCInstructionKind::Allocate { _type, alignment } => {
             let inst = match _type.size() {
@@ -218,7 +218,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         BCInstructionKind::Store {
             value,
-            type_,
+            _type,
             memory,
         } => {
             let any_value = function_state.get_value(value).unwrap().get_value();
@@ -230,7 +230,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .get_value()
                 .into_pointer_value();
 
-            if type_.is_structure() {
+            if _type.is_structure() {
                 function_state
                     .builder
                     .build_memcpy(
@@ -241,7 +241,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                         global_state
                             .context
                             .i64_type()
-                            .const_int(type_.fixed_size() as u64, false),
+                            .const_int(_type.size() as u64, false),
                     )
                     .unwrap();
             } else {
@@ -325,22 +325,22 @@ pub(crate) fn generate_instruction<'a, 'b>(
             };
 
             CodegenValue::Value(match op {
-                MIRIntUnOp::NEG if signed => function_state
+                BCIntUnOp::NEG if signed => function_state
                     .builder
                     .build_int_nsw_neg(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                MIRIntUnOp::NEG => function_state
+                BCIntUnOp::NEG => function_state
                     .builder
                     .build_int_neg(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                MIRIntUnOp::BNOT => function_state
+                BCIntUnOp::BNOT => function_state
                     .builder
                     .build_not(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                MIRIntUnOp::LNOT => function_state
+                BCIntUnOp::LNOT => function_state
                     .builder
                     .build_int_compare(
                         inkwell::IntPredicate::EQ,
@@ -379,7 +379,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_float_value();
 
             CodegenValue::Value(match op {
-                MIRFloatUnOp::NEG => function_state
+                BCFloatUnOp::NEG => function_state
                     .builder
                     .build_float_neg(value, inst_num().as_str())
                     .unwrap()
@@ -399,25 +399,25 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_float_value();
 
             CodegenValue::Value(match op {
-                MIRFloatBinOp::ADD => function_state
+                BCFloatBinOp::ADD => function_state
                     .builder
                     .build_float_add(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                MIRFloatBinOp::SUB => function_state
+                BCFloatBinOp::SUB => function_state
                     .builder
                     .build_float_sub(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                MIRFloatBinOp::FMUL => function_state
+                BCFloatBinOp::FMUL => function_state
                     .builder
                     .build_float_mul(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                MIRFloatBinOp::FDIV => function_state
+                BCFloatBinOp::FDIV => function_state
                     .builder
                     .build_float_div(left_value, right_value, inst_num().as_str())
                     .unwrap()

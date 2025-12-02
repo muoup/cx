@@ -59,7 +59,7 @@ impl Display for CXGlobalVariable {
             }
 
             CXGlobalVariable::Standard {
-                type_,
+                _type,
                 is_mutable,
                 initializer,
             } => {
@@ -67,7 +67,7 @@ impl Display for CXGlobalVariable {
                     f,
                     "global variable {} {}",
                     if *is_mutable { "mut" } else { "const" },
-                    type_
+                    _type
                 )?;
 
                 if let Some(initializer) = initializer {
@@ -83,11 +83,11 @@ impl Display for CXGlobalVariable {
 impl Display for CXFunctionStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXFunctionStmt::TypeDecl { name, type_ } => {
+            CXFunctionStmt::TypeDecl { name, _type } => {
                 if let Some(name) = name {
-                    writeln!(f, "type {} = {}", name, type_)
+                    writeln!(f, "type {} = {}", name, _type)
                 } else {
-                    writeln!(f, "type {}", type_)
+                    writeln!(f, "type {}", _type)
                 }
             }
 
@@ -147,8 +147,8 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
             }
 
-            CXExprKind::VarDeclaration { name, type_ } => {
-                writeln!(f, "VarDeclaration {}: {}", name, type_)
+            CXExprKind::VarDeclaration { name, _type } => {
+                writeln!(f, "VarDeclaration {}: {}", name, _type)
             }
 
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
@@ -383,7 +383,7 @@ impl Display for CXNaivePrototype {
             .map(|param| {
                 format!(
                     "{}: {}",
-                    param.name.as_ref().unwrap_or(&CXIdent::from("_")),
+                    param.name.as_ref().unwrap_or(&CXIdent::new("_")),
                     param._type
                 )
             })
