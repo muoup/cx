@@ -1,5 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::logtype_check_error;
+use crate::log_typecheck_error;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::contract::contracted_function_call;
 use crate::type_checking::typechecker::typecheck_expr;
@@ -7,7 +7,9 @@ use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
-use cx_typechecker_data::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRValue};
+use cx_typechecker_data::mir::expression::{
+    MIRBinOp, MIRBoolBinOp, MIRCoercion, MIRInstruction, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRValue
+};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXTypeKind};
 use cx_util::CXResult;
@@ -22,7 +24,7 @@ pub(crate) fn typecheck_access(
 ) -> CXResult<MIRValue> {
     let mut lhs_val = typecheck_expr(env, base_data, lhs)?;
     let lhs_type = lhs_val.get_type();
-    
+
     // Here, out aim is to continue with lhs_val being one indirection from the memory,
     // i.e. we need a pointer to the region.
     let lhs_inner = match lhs_type.mem_ref_inner() {
@@ -32,14 +34,14 @@ pub(crate) fn typecheck_access(
             lhs_val = coerce_value(env, lhs, lhs_val)?;
             lhs_val.get_type()
         }
-        
+
         // If we simply have a region reference, that is sufficient as a pointer,
         Some(inner) => inner.clone(),
 
         // Technically speaking, if we have a owned struct / naked struct type,
         // we can also treat that type as a pointer, as a struct must exist
         // in memory, and its alias is thus a pointer by definition.
-        // 
+        //
         // This may have to change when we introduce structs that fit in registers,
         // but for now, this is acceptable.
         _ => lhs_type.clone(),
@@ -78,13 +80,13 @@ pub(crate) fn typecheck_access(
                     _type: struct_field.field_type.mem_ref_to(),
                 });
             }
-            
+
             if let CXTypeKind::Union { variants, .. } = &lhs_inner.kind {
                 let Some((_, field_type)) = variants
                     .iter()
                     .find(|(field_name, _)| field_name.as_str() == name.as_str())
                 else {
-                    return logtype_check_error!(
+                    return log_typecheck_error!(
                         env,
                         expr,
                         " Union type {} has no field named {}",
@@ -102,12 +104,12 @@ pub(crate) fn typecheck_access(
 
                 return Ok(MIRValue::Register {
                     register: result,
-                    _type: field_type.clone().mem_ref_to()
+                    _type: field_type.clone().mem_ref_to(),
                 });
             }
 
             let Some(type_name) = lhs_inner.get_name() else {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     lhs,
                     " Member function call on {} without a type name",
@@ -121,7 +123,7 @@ pub(crate) fn typecheck_access(
             };
 
             let Some(prototype) = env.get_realized_func(&fn_ident.into()) else {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     lhs,
                     " Member access on {} with invalid member name {name}",
@@ -140,7 +142,7 @@ pub(crate) fn typecheck_access(
             template_input,
         } => {
             let Some(type_name) = lhs_inner.get_identifier() else {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     lhs,
                     " Member function call on {} without a base name",
@@ -161,7 +163,7 @@ pub(crate) fn typecheck_access(
             })
         }
 
-        _ => logtype_check_error!(
+        _ => log_typecheck_error!(
             env,
             expr,
             " Invalid rhs for access expression, found {:?}",
@@ -217,7 +219,7 @@ pub(crate) fn typecheck_method_call(
     };
 
     let CXTypeKind::Function { prototype } = &loaded_lhs_type.kind else {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " Attempted to call non-function type {}",
@@ -228,7 +230,7 @@ pub(crate) fn typecheck_method_call(
     let mut tc_args = comma_separated(env, base_data, rhs)?;
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " Method {} expects {} arguments, found {}",
@@ -239,7 +241,7 @@ pub(crate) fn typecheck_method_call(
     }
 
     if tc_args.len() < prototype.params.len() {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " Method {} expects at least {} arguments, found {}",
@@ -314,7 +316,7 @@ pub(crate) fn typecheck_method_call(
             }
 
             _ => {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     expr,
                     " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
@@ -345,7 +347,7 @@ pub(crate) fn typecheck_is(
         ..
     } = &loaded_lhs_type.kind
     else {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator requires a tagged union on the left-hand side, found {}",
@@ -359,7 +361,7 @@ pub(crate) fn typecheck_is(
         inner,
     } = &rhs.kind
     else {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator requires a type constructor on the right-hand side, found {:?}",
@@ -368,7 +370,7 @@ pub(crate) fn typecheck_is(
     };
 
     if expected_union_name != union_name {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
@@ -378,7 +380,7 @@ pub(crate) fn typecheck_is(
     }
 
     let CXExprKind::Identifier(inner_var_name) = &inner.kind else {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             inner,
             " 'is' operator requires a variant name identifier in the type constructor, found {:?}",
@@ -387,7 +389,7 @@ pub(crate) fn typecheck_is(
     };
 
     if loaded_lhs_type.get_name() != Some(union_name.as_str()) {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
@@ -402,7 +404,7 @@ pub(crate) fn typecheck_is(
         .find(|(_, (name, _))| name == variant_name.as_str())
         .map(|(i, (_, _ty))| (i, _ty))
     else {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             expr,
             " 'is' operator variant name '{}' not found in tagged union {}",
@@ -473,23 +475,21 @@ pub(crate) fn typecheck_binop(
         (CXTypeKind::Integer { .. }, CXTypeKind::Integer { .. }) => {
             typecheck_int_int_binop(env, op, lhs, rhs, expr)
         }
-        
-        (CXTypeKind::Bool, CXTypeKind::Bool) => {
-            typecheck_bool_bool_binop(env, op, lhs, rhs, expr)
-        }
+
+        (CXTypeKind::Bool, CXTypeKind::Bool) => typecheck_bool_bool_binop(env, op, lhs, rhs, expr),
 
         (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => {
             let coerced_bool = env.builder.new_register();
-            
+
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: coerced_bool.clone(),
                 operand: rhs.clone(),
-                cast_type: MIRCoercion::IntToBool
+                cast_type: MIRCoercion::IntToBool,
             });
 
             let rhs = MIRValue::Register {
                 register: coerced_bool,
-                _type: CXTypeKind::Bool.into()
+                _type: CXTypeKind::Bool.into(),
             };
 
             typecheck_bool_bool_binop(env, op, lhs, rhs, expr)
@@ -497,11 +497,11 @@ pub(crate) fn typecheck_binop(
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => {
             let coerced_bool = env.builder.new_register();
-            
+
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: coerced_bool.clone(),
                 operand: lhs.clone(),
-                cast_type: MIRCoercion::IntToBool
+                cast_type: MIRCoercion::IntToBool,
             });
 
             let lhs = MIRValue::Register {
@@ -517,7 +517,7 @@ pub(crate) fn typecheck_binop(
         }
 
         (CXTypeKind::StrongPointer { .. }, _) | (_, CXTypeKind::StrongPointer { .. }) => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 "R-value strong pointers must be assigned to an l-value before being used \
@@ -528,7 +528,7 @@ pub(crate) fn typecheck_binop(
         }
 
         _ => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 " Invalid binary operation {op} for types {} and {}",
@@ -546,12 +546,12 @@ pub(crate) fn typecheck_bool_bool_binop(
     rhs: MIRValue,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let (operator, result_type) = match op {
-        CXBinOp::LAnd => (MIRBinOp::AND, CXTypeKind::Bool.into()),
-        CXBinOp::LOr => (MIRBinOp::OR, CXTypeKind::Bool.into()),
-
+    let operator = match op {
+        CXBinOp::LAnd => MIRBoolBinOp::LAND,
+        CXBinOp::LOr => MIRBoolBinOp::LOR,
+        
         _ => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 " Invalid boolean binary operation {op}",
@@ -560,9 +560,9 @@ pub(crate) fn typecheck_bool_bool_binop(
     };
 
     let result = env.builder.new_register();
-    
+
     env.builder.add_instruction(MIRInstruction::BinOp {
-        op: operator,
+        op: MIRBinOp::Bool { op: operator },
         result: result.clone(),
         lhs,
         rhs,
@@ -570,7 +570,7 @@ pub(crate) fn typecheck_bool_bool_binop(
 
     Ok(MIRValue::Register {
         register: result,
-        _type: result_type,
+        _type: CXTypeKind::Bool.into()
     })
 }
 
@@ -618,7 +618,7 @@ pub(crate) fn typecheck_int_int_binop(
         unreachable!("Expected integer type for result in int-int binop");
     };
 
-    if lhs_itype.bytes() > rhs_itype.bytes() {
+    let itype = if lhs_itype.bytes() > rhs_itype.bytes() {
         let coerced_rhs = env.builder.new_register();
 
         env.builder.add_instruction(MIRInstruction::Coercion {
@@ -635,6 +635,8 @@ pub(crate) fn typecheck_int_int_binop(
             register: coerced_rhs,
             _type: lhs_type.clone(),
         };
+
+        *lhs_itype
     } else if rhs_itype.bytes() < lhs_itype.bytes() {
         let coerced_lhs = env.builder.new_register();
 
@@ -652,27 +654,59 @@ pub(crate) fn typecheck_int_int_binop(
             register: coerced_lhs,
             _type: rhs_type.clone(),
         };
-    }
 
-    let (operator, result_type) = match op {
-        CXBinOp::Add => (MIRBinOp::ADD, lhs_type.clone()),
-        CXBinOp::Subtract => (MIRBinOp::SUB, lhs_type.clone()),
-        CXBinOp::Multiply if !result_signed => (MIRBinOp::MUL, lhs_type.clone()),
-        CXBinOp::Multiply if *result_signed => (MIRBinOp::IMUL, lhs_type.clone()),
-        CXBinOp::Divide if !result_signed => (MIRBinOp::DIV, lhs_type.clone()),
-        CXBinOp::Divide if *result_signed => (MIRBinOp::IDIV, lhs_type.clone()),
-        CXBinOp::Modulus if !result_signed => (MIRBinOp::MOD, lhs_type.clone()),
-        CXBinOp::Modulus if *result_signed => (MIRBinOp::IMOD, lhs_type.clone()),
+        *rhs_itype
+    } else {
+        *lhs_itype
+    };
 
-        CXBinOp::Less => (MIRBinOp::LT, CXTypeKind::Bool.into()),
-        CXBinOp::Greater => (MIRBinOp::GT, CXTypeKind::Bool.into()),
-        CXBinOp::LessEqual => (MIRBinOp::LE, CXTypeKind::Bool.into()),
-        CXBinOp::GreaterEqual => (MIRBinOp::GE, CXTypeKind::Bool.into()),
-        CXBinOp::Equal => (MIRBinOp::EQ, CXTypeKind::Bool.into()),
-        CXBinOp::NotEqual => (MIRBinOp::NEQ, CXTypeKind::Bool.into()),
+    let operator = MIRBinOp::Integer {
+        itype,
+        op: match op {
+            CXBinOp::Add => MIRIntegerBinOp::ADD,
+            CXBinOp::Subtract => MIRIntegerBinOp::SUB,
+            CXBinOp::Multiply => MIRIntegerBinOp::MUL,
+            CXBinOp::Divide => MIRIntegerBinOp::DIV,
+            CXBinOp::Modulus => MIRIntegerBinOp::MOD,
+            CXBinOp::Less if !*result_signed => MIRIntegerBinOp::LT,
+            CXBinOp::Less if *result_signed => MIRIntegerBinOp::ILT,
+            CXBinOp::Greater if !*result_signed => MIRIntegerBinOp::GT,
+            CXBinOp::Greater if *result_signed => MIRIntegerBinOp::IGT,
+            CXBinOp::LessEqual if !*result_signed => MIRIntegerBinOp::LE,
+            CXBinOp::LessEqual if *result_signed => MIRIntegerBinOp::ILE,
+            CXBinOp::GreaterEqual if !*result_signed => MIRIntegerBinOp::GE,
+            CXBinOp::GreaterEqual if *result_signed => MIRIntegerBinOp::IGE,
+            CXBinOp::Equal => MIRIntegerBinOp::EQ,
+            CXBinOp::NotEqual => MIRIntegerBinOp::NE,
+            
+            _ => {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Invalid integer binary operation {op} for types {} and {}",
+                    lhs_type,
+                    rhs_type
+                );
+            }
+        },
+    };
+
+    let result_type = match op {
+        CXBinOp::Add
+        | CXBinOp::Subtract
+        | CXBinOp::Multiply
+        | CXBinOp::Divide
+        | CXBinOp::Modulus => result_type.clone(),
+
+        CXBinOp::Less
+        | CXBinOp::Greater
+        | CXBinOp::LessEqual
+        | CXBinOp::GreaterEqual
+        | CXBinOp::Equal
+        | CXBinOp::NotEqual => CXTypeKind::Bool.into(),
 
         _ => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 " Invalid integer binary operation {op} for types {} and {}",
@@ -704,7 +738,7 @@ pub(crate) fn typecheck_int_ptr_binop(
     pointer: MIRValue,
 ) -> CXResult<MIRValue> {
     if op == CXBinOp::Subtract {
-        return logtype_check_error!(
+        return log_typecheck_error!(
             env,
             &CXExpr::default(),
             " Invalid operation [integer] - [pointer] for types {} and {}",
@@ -726,44 +760,59 @@ pub(crate) fn typecheck_ptr_int_binop(
     match op {
         // Requires one pointer and one integer
         CXBinOp::Add | CXBinOp::Subtract | CXBinOp::ArrayIndex => {
-            let inner_size = pointer_inner.type_size();
-            let scaled_integer = env.builder.new_register();
             let rhs_type = integer.get_type();
+            let int_sized_pointer = CXTypeKind::Integer {
+                _type: CXIntegerType::I64,
+                signed: true,
+            }
+            .into();
+
+            let coerced_integer =
+                implicit_cast(env, &CXExpr::default(), integer, &int_sized_pointer)?;
 
             let CXTypeKind::Integer { _type, .. } = &rhs_type.kind else {
                 unreachable!("Expected integer type for pointer-integer binary operation");
             };
 
-            env.builder.add_instruction(MIRInstruction::BinOp {
-                op: MIRBinOp::MUL,
-                result: scaled_integer.clone(),
-                lhs: integer.clone(),
-                rhs: MIRValue::IntLiteral {
-                    value: inner_size as i64,
-                    _type: _type.clone(),
-                    signed: false,
-                },
-            });
+            let result = env.builder.new_register();
+            let (operation, return_type) = match op {
+                CXBinOp::Add => (
+                    MIRBinOp::PtrDiff {
+                        op: MIRPtrDiffBinOp::ADD,
+                        ptr_inner: Box::new(pointer_inner.clone()),
+                    },
+                    pointer_inner.clone().pointer_to(),
+                ),
 
-            let coerced_pointer = env.builder.new_register();
+                CXBinOp::ArrayIndex => (
+                    MIRBinOp::PtrDiff {
+                        op: MIRPtrDiffBinOp::ADD,
+                        ptr_inner: Box::new(pointer_inner.clone()),
+                    },
+                    pointer_inner.clone().mem_ref_to(),
+                ),
+
+                CXBinOp::Subtract => (
+                    MIRBinOp::PtrDiff {
+                        op: MIRPtrDiffBinOp::SUB,
+                        ptr_inner: Box::new(pointer_inner.clone()),
+                    },
+                    pointer_inner.clone().pointer_to(),
+                ),
+                
+                _ => unreachable!(),
+            };
 
             env.builder.add_instruction(MIRInstruction::BinOp {
-                op: match op {
-                    CXBinOp::Add | CXBinOp::ArrayIndex => MIRBinOp::ADD,
-                    CXBinOp::Subtract => MIRBinOp::SUB,
-                    _ => unreachable!(),
-                },
-                result: coerced_pointer.clone(),
+                op: operation,
+                result: result.clone(),
                 lhs: pointer,
-                rhs: MIRValue::Register {
-                    register: scaled_integer,
-                    _type: rhs_type,
-                },
+                rhs: coerced_integer,
             });
 
             Ok(MIRValue::Register {
-                register: coerced_pointer,
-                _type: pointer_inner.clone().pointer_to(),
+                register: result,
+                _type: return_type,
             })
         }
 
@@ -812,15 +861,15 @@ pub(crate) fn typecheck_ptr_ptr_binop(
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
     let operator = match op {
-        CXBinOp::LessEqual => MIRBinOp::LE,
-        CXBinOp::GreaterEqual => MIRBinOp::GE,
-        CXBinOp::Less => MIRBinOp::LT,
-        CXBinOp::Greater => MIRBinOp::GT,
-        CXBinOp::Equal => MIRBinOp::EQ,
-        CXBinOp::NotEqual => MIRBinOp::NEQ,
+        CXBinOp::LessEqual => MIRPtrBinOp::LE,
+        CXBinOp::GreaterEqual => MIRPtrBinOp::GE,
+        CXBinOp::Less => MIRPtrBinOp::LT,
+        CXBinOp::Greater => MIRPtrBinOp::GT,
+        CXBinOp::Equal => MIRPtrBinOp::EQ,
+        CXBinOp::NotEqual => MIRPtrBinOp::NE,
 
         _ => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 " Invalid binary operation {op} for pointer types",
@@ -830,7 +879,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
 
     let result = env.builder.new_register();
     env.builder.add_instruction(MIRInstruction::BinOp {
-        op: operator,
+        op: MIRBinOp::Pointer { op: operator },
         result: result.clone(),
         lhs,
         rhs,
@@ -848,22 +897,20 @@ struct StructField {
     field_type: CXType,
 }
 
-fn struct_field<'a>(
-    struct_type: &CXType,
-    field_name: &CXIdent,
-) -> Option<StructField> {
+fn struct_field<'a>(struct_type: &CXType, field_name: &CXIdent) -> Option<StructField> {
     let mut field_index = 0;
     let mut field_offset = 0;
-    
+
     let CXTypeKind::Structured { fields, .. } = &struct_type.kind else {
         unreachable!()
     };
-    
+
     for (field_name_i, field_type) in fields.iter() {
         if field_offset % field_type.type_alignment() != 0 {
-            field_offset += field_type.type_alignment() - (field_offset % field_type.type_alignment());
+            field_offset +=
+                field_type.type_alignment() - (field_offset % field_type.type_alignment());
         }
-        
+
         if field_name_i.as_str() == field_name.as_str() {
             return Some(StructField {
                 index: field_index,
@@ -875,6 +922,6 @@ fn struct_field<'a>(
         field_offset += field_type.type_size();
         field_index += 1;
     }
-    
+
     None
 }

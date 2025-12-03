@@ -1,4 +1,6 @@
-use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRRegister, MIRUnOp, MIRValue};
+use crate::mir::expression::{
+    MIRBinOp, MIRCoercion, MIRInstruction, MIRRegister, MIRUnOp, MIRValue,
+};
 use crate::mir::program::{MIRBasicBlock, MIRFunction, MIRUnit};
 use crate::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
@@ -150,17 +152,27 @@ impl Display for MIRInstruction {
                 f,
                 "construct_sum {sum_type}::variant({variant_index}) with {value} into {memory}"
             ),
-            MIRInstruction::Loop {
+            MIRInstruction::LoopPreHeader {
                 loop_id,
                 condition_precheck,
-                condition,
-                body,
-                merge,
+                condition_block,
+                body_block,
             } => write!(
                 f,
-                "loop id: {loop_id} (precheck: {condition_precheck}) cond({condition}) body({body}) merge({merge})"
+                "loop_preheader id {loop_id} condition: {condition_block} body: {body_block} precheck: {condition_precheck}"
             ),
-            MIRInstruction::LoopContinue { loop_id } => write!(f, "loop_continue {loop_id}"),
+            MIRInstruction::LoopConditionBranch {
+                loop_id,
+                condition,
+                body_block,
+                exit_block,
+            } => write!(
+                f,
+                "loop_branch id {loop_id} if {condition} -> {body_block} else -> {exit_block}"
+            ),
+            MIRInstruction::LoopContinue { loop_id, condition_block } => {
+                write!(f, "loop_continue id {loop_id} to {condition_block}")
+            },
             MIRInstruction::Branch {
                 condition,
                 true_block,
@@ -226,7 +238,7 @@ impl Display for MIRValue {
             ),
             MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
             MIRValue::FunctionReference { prototype, .. } => {
-                write!(f, "fn_ref({})", prototype.name)
+                write!(f, "fn @{}", prototype.name)
             }
             MIRValue::GlobalValue { name, _type } => write!(f, "{_type} global {name}"),
             MIRValue::Parameter { index, _type } => write!(f, "{_type} param {index}"),
@@ -238,43 +250,13 @@ impl Display for MIRValue {
 
 impl Display for MIRBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                MIRBinOp::ADD => "add",
-                MIRBinOp::SUB => "sub",
-                MIRBinOp::MUL => "mul",
-                MIRBinOp::DIV => "div",
-                MIRBinOp::MOD => "mod",
-                MIRBinOp::IMUL => "imul",
-                MIRBinOp::IDIV => "idiv",
-                MIRBinOp::IMOD => "imod",
-                MIRBinOp::FADD => "fadd",
-                MIRBinOp::FSUB => "fsub",
-                MIRBinOp::FMUL => "fmul",
-                MIRBinOp::FDIV => "fdiv",
-                MIRBinOp::AND => "and",
-                MIRBinOp::OR => "or",
-                MIRBinOp::XOR => "xor",
-                MIRBinOp::SHL => "shl",
-                MIRBinOp::SHR => "shr",
-                MIRBinOp::EQ => "eq",
-                MIRBinOp::NEQ => "neq",
-                MIRBinOp::LT => "lt",
-                MIRBinOp::LE => "le",
-                MIRBinOp::GT => "gt",
-                MIRBinOp::GE => "ge",
-                MIRBinOp::ILT => "ilt",
-                MIRBinOp::ILE => "ile",
-                MIRBinOp::IGT => "igt",
-                MIRBinOp::IGE => "ige",
-                MIRBinOp::FLT => "flt",
-                MIRBinOp::FLE => "fle",
-                MIRBinOp::FGT => "fgt",
-                MIRBinOp::FGE => "fge",
-            }
-        )
+        match self {
+            MIRBinOp::Float { ftype, op } => write!(f, "f{} {:?}", ftype.bytes() * 8, op),
+            MIRBinOp::Integer { itype, op } => write!(f, "i{} {:?}", itype.bytes() * 8, op),
+            MIRBinOp::Bool { op } => write!(f, "bool {:?}", op),
+            MIRBinOp::PtrDiff { ptr_inner, op } => write!(f, "ptrdiff<{}> {:?}", ptr_inner, op),
+            MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
+        }
     }
 }
 

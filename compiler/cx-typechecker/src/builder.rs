@@ -65,8 +65,19 @@ impl MIRBuilder {
         func_ctx.temp_register_counter += 1;
         MIRRegister::new(id)
     }
+    
+    pub fn current_block(&self) -> &MIRBasicBlock {
+        let Some(func_ctx) = &self.function_context else {
+            unreachable!()
+        };
 
-    pub fn current_block(&mut self) -> &mut MIRBasicBlock {
+        match &func_ctx.current_block {
+            BlockPointer::Standard(index) => &func_ctx.standard_blocks[*index],
+            BlockPointer::Defer(index) => &func_ctx.defer_blocks[*index],
+        }
+    }
+
+    pub fn current_block_mut(&mut self) -> &mut MIRBasicBlock {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
         };
@@ -76,9 +87,18 @@ impl MIRBuilder {
             BlockPointer::Defer(index) => &mut func_ctx.defer_blocks[*index],
         }
     }
+    
+    pub fn current_block_closed(&self) -> bool {
+        let block = self.current_block();
+        let last_instruction = block.instructions.last();
+        
+        last_instruction
+            .map(|instr| instr.is_block_terminator())
+            .unwrap_or(false)
+    }
 
     pub fn add_instruction(&mut self, instruction: MIRInstruction) {
-        self.current_block().instructions.push(instruction);
+        self.current_block_mut().instructions.push(instruction);
     }
 
     pub fn add_jump(&mut self, target_block: CXIdent) {

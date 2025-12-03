@@ -5,7 +5,7 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, logtype_check_error};
+use crate::{environment::TypeEnvironment, log_typecheck_error};
 
 pub(crate) fn coerce_value(
     env: &mut TypeEnvironment,
@@ -110,7 +110,7 @@ pub(crate) fn explicit_cast(
         }
 
         _ => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 "No explicit cast from {} to {}",
@@ -193,7 +193,7 @@ pub fn implicit_cast(
 
         (CXTypeKind::MemoryReference(inner), _) if same_type(inner.as_ref(), to_type) => {
             if !inner.copyable() {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     expr,
                     "Cannot implicitly copy value of type {} to type {}",
@@ -204,7 +204,7 @@ pub fn implicit_cast(
 
             let result = env.builder.new_register();
             let MIRValue::Register { register, .. } = &value else {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     expr,
                     "Expected register value for memory reference copy, got {}",
@@ -278,7 +278,7 @@ pub fn implicit_cast(
         ) if same_type(inner.as_ref(), &from_type) => Ok(value),
 
         _ => {
-            return logtype_check_error!(
+            return log_typecheck_error!(
                 env,
                 expr,
                 "No implicit cast from {} to {}",

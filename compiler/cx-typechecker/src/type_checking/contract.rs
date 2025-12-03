@@ -4,7 +4,7 @@ use cx_typechecker_data::mir::{
     };
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, logtype_check_error, type_checking::typechecker::typecheck_expr};
+use crate::{environment::TypeEnvironment, log_typecheck_error, type_checking::typechecker::typecheck_expr};
 
 fn create_clause_scope(
     env: &mut TypeEnvironment,
@@ -72,7 +72,7 @@ pub fn contracted_function_return(
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
         if let Some(result_reg) = &result_reg {
             let Some(return_value) = &return_value else {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     postcondition,
                     "Function postcondition cannot refer to result of function with void return type"
@@ -130,7 +130,7 @@ pub fn contracted_function_call(
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
         if let Some(result_reg) = &result_reg {
             let Some(result) = result.clone() else {
-                return logtype_check_error!(
+                return log_typecheck_error!(
                     env,
                     postcondition,
                     "Function postcondition cannot refer to result of function with void return type"

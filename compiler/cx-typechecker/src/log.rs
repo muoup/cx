@@ -20,7 +20,7 @@ impl CXErrorTrait for TypeError {
 }
 
 #[macro_export]
-macro_rules! logtype_check_error {
+macro_rules! log_typecheck_error {
     ($env:expr, $expr:expr, $($arg:tt)*) => {
         {
             let message = format!("TYPE ERROR: {}", format!($($arg)*));

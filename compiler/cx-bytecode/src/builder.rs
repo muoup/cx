@@ -66,11 +66,7 @@ impl BCBuilder {
             blocks: Vec::new(),
         });
 
-        let entry_block = BCBlockID::new("entry");
-        
         self.symbol_table.clear();
-        self.create_block(entry_block.clone());
-        self.set_current_block(entry_block);
     }
 
     pub fn finish_function(&mut self) {

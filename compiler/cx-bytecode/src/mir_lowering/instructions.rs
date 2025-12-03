@@ -6,7 +6,7 @@ use cx_typechecker_data::mir::{
     expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRUnOp, MIRValue},
     types::CXTypeKind,
 };
-use cx_util::{identifier::CXIdent, CXError, CXResult};
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::{builder::BCBuilder, mir_lowering::tagged_union::tagged_union_tag_addr};
 
@@ -142,15 +142,14 @@ pub fn lower_instruction(
             tag_id,
         } => {
             let bc_source = lower_value(builder, source)?;
-            let tag_type = BCType::from(BCTypeKind::Integer(BCIntegerType::I8));
+            let tagged_union = builder.get_value_type(&bc_source);
 
-            let BCTypeKind::Struct { fields, .. } = builder.get_value_type(&bc_source).kind else {
-                unreachable!("Tagged union source is not a struct");
-            };
+            let tag_ptr = tagged_union_tag_addr(builder, bc_source.clone(), tagged_union)?;
+            let tag_type = BCType::from(BCTypeKind::Integer(BCIntegerType::I8));
 
             let actual_tag_id = builder.add_instruction(
                 BCInstructionKind::Load {
-                    memory: bc_source.clone(),
+                    memory: tag_ptr,
                     _type: tag_type.clone(),
                 },
                 tag_type.clone(),
@@ -283,15 +282,62 @@ pub fn lower_instruction(
             }
         }
 
-        MIRInstruction::Loop {
-            loop_id,
+        MIRInstruction::LoopPreHeader {
+            loop_id: _,
             condition_precheck,
-            condition,
-            body,
-            merge,
-        } => todo!(),
+            condition_block,
+            body_block,
+        } => {
+            let jump_to = if *condition_precheck {
+                condition_block.clone()
+            } else {
+                body_block.clone()
+            };
 
-        MIRInstruction::LoopContinue { loop_id } => todo!(),
+            builder.add_instruction(
+                BCInstructionKind::Jump { target: jump_to },
+                BCType::unit(),
+                None,
+            )?;
+
+            Ok(BCValue::NULL)
+        }
+
+        MIRInstruction::LoopConditionBranch {
+            loop_id: _,
+            condition,
+            body_block,
+            exit_block,
+        } => {
+            let bc_condition = lower_value(builder, condition)?;
+
+            builder.add_instruction(
+                BCInstructionKind::Branch {
+                    condition: bc_condition,
+                    true_block: body_block.clone(),
+                    false_block: exit_block.clone(),
+                },
+                BCType::unit(),
+                None,
+            )?;
+
+            Ok(BCValue::NULL)
+        },
+        
+        MIRInstruction::LoopContinue {
+            loop_id: _,
+            condition_block,
+        } => {
+            builder.add_instruction(
+                BCInstructionKind::Jump {
+                    target: condition_block.clone(),
+                },
+                BCType::unit(),
+                None,
+            )?;
+
+            Ok(BCValue::NULL)
+        },
 
         MIRInstruction::Branch {
             condition,
@@ -366,53 +412,6 @@ pub fn lower_instruction(
             rhs,
             op,
         } => match op {
-            MIRBinOp::ADD => {
-                let bc_lhs = lower_value(builder, lhs)?;
-                let bc_rhs = lower_value(builder, rhs)?;
-                let bc_type = builder.get_value_type(&bc_lhs);
-
-                builder.add_instruction(
-                    BCInstructionKind::IntegerBinOp {
-                        left: bc_lhs,
-                        right: bc_rhs,
-                        op: BCIntBinOp::ADD,
-                    },
-                    bc_type,
-                    Some(result.clone()),
-                )
-            }
-
-            MIRBinOp::GT => {
-                let bc_lhs = lower_value(builder, lhs)?;
-                let bc_rhs = lower_value(builder, rhs)?;
-
-                builder.add_instruction(
-                    BCInstructionKind::IntegerBinOp {
-                        left: bc_lhs,
-                        right: bc_rhs,
-                        op: BCIntBinOp::UGT,
-                    },
-                    BCTypeKind::Bool.into(),
-                    Some(result.clone()),
-                )
-            }
-
-            MIRBinOp::AND => {
-                let bc_lhs = lower_value(builder, lhs)?;
-                let bc_rhs = lower_value(builder, rhs)?;
-                let result_type = builder.convert_cx_type(&lhs.get_type());
-
-                builder.add_instruction(
-                    BCInstructionKind::IntegerBinOp {
-                        left: bc_lhs,
-                        right: bc_rhs,
-                        op: BCIntBinOp::LAND,
-                    },
-                    result_type,
-                    Some(result.clone()),
-                )
-            }
-
             _ => todo!("Operator: {:?}", op),
         },
 
@@ -420,25 +419,23 @@ pub fn lower_instruction(
             result,
             operand,
             op,
-        } => {
-            match op {
-                MIRUnOp::LNOT => {
-                    let bc_operand = lower_value(builder, operand)?;
-                    let result_type = builder.convert_cx_type(&operand.get_type());
+        } => match op {
+            MIRUnOp::LNOT => {
+                let bc_operand = lower_value(builder, operand)?;
+                let result_type = builder.convert_cx_type(&operand.get_type());
 
-                    builder.add_instruction(
-                        BCInstructionKind::IntegerUnOp {
-                            value: bc_operand,
-                            op: cx_bytecode_data::BCIntUnOp::LNOT
-                        },
-                        result_type,
-                        Some(result.clone()),
-                    )
-                }
-
-                _ => todo!("Unary Operator: {:?}", op),
+                builder.add_instruction(
+                    BCInstructionKind::IntegerUnOp {
+                        value: bc_operand,
+                        op: cx_bytecode_data::BCIntUnOp::LNOT,
+                    },
+                    result_type,
+                    Some(result.clone()),
+                )
             }
-        }
+
+            _ => todo!("Unary Operator: {:?}", op),
+        },
 
         MIRInstruction::Coercion {
             result,
@@ -500,7 +497,7 @@ pub fn lower_instruction(
                 None,
             )
         }
-        
+
         MIRInstruction::Assume { value } => {
             let bc_value = lower_value(builder, value)?;
 

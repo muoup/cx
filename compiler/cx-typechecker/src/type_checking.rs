@@ -5,9 +5,9 @@ use cx_parsing_data::{
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::{
     function_map::CXFunctionKind,
-    mir::{expression::{MIRInstruction, MIRValue}, program::MIRBaseMappings, types::{CXFunctionPrototype, CXTemplateInput, TCParameter}},
+    mir::{expression::{MIRInstruction, MIRValue}, program::MIRBaseMappings, types::{CXFunctionPrototype, CXIntegerType, CXTemplateInput, TCParameter}},
 };
-use cx_util::CXResult;
+use cx_util::{CXError, CXResult};
 
 use crate::{
     environment::TypeEnvironment,
@@ -68,6 +68,33 @@ fn generate_function(
     }
        
     typecheck_expr(env, base_data, body)?;
+    
+    if !env.builder.current_block_closed() {
+        if env.builder.current_prototype().return_type.is_unit() {
+            env.builder.add_instruction(
+                MIRInstruction::Return {
+                    value: None
+                }
+            );
+        } else if env.builder.current_prototype().mangle_name() == "main" {
+            env.builder.add_instruction(
+                MIRInstruction::Return {
+                    value: Some(MIRValue::IntLiteral {
+                        value: 0,
+                        signed: true,
+                        _type: CXIntegerType::I32
+                    })
+                }
+            );
+        } else {
+            return CXError::create_result(
+                format!(
+                    "Function '{}' is missing a return statement",
+                    env.builder.current_prototype().mangle_name()
+                ),
+            );        
+        }
+    }
 
     env.builder.finish_function();
     env.pop_scope();

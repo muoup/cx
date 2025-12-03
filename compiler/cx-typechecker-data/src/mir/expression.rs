@@ -20,7 +20,7 @@ pub enum MIRValue {
     },
     FunctionReference {
         prototype: CXFunctionPrototype,
-        implicit_variables: Vec<MIRValue>
+        implicit_variables: Vec<MIRValue>,
     },
     GlobalValue {
         name: CXIdent,
@@ -50,18 +50,18 @@ pub enum MIRInstruction {
         result: MIRRegister,
         _type: CXType,
     },
-    
+
     CopyStackRegionInto {
         result: MIRRegister,
         source: MIRRegister,
         _type: CXType,
     },
-    
+
     ConstructTaggedUnionInto {
         variant_index: usize,
         memory: MIRValue,
         value: MIRValue,
-        sum_type: CXType
+        sum_type: CXType,
     },
 
     MemoryRead {
@@ -82,17 +82,17 @@ pub enum MIRInstruction {
         field_offset: usize,
         struct_type: CXType,
     },
-    
+
     TaggedUnionGet {
         result: MIRRegister,
         source: MIRValue,
         variant_type: CXType,
     },
-    
+
     TaggedUnionIs {
         result: MIRRegister,
         source: MIRValue,
-        tag_id: usize
+        tag_id: usize,
     },
 
     ArrayGet {
@@ -107,17 +107,24 @@ pub enum MIRInstruction {
         function: MIRValue,
         arguments: Vec<MIRValue>,
     },
-
-    Loop {
+    
+    LoopPreHeader {
         loop_id: CXIdent,
         condition_precheck: bool,
-        condition: MIRValue,
-        body: CXIdent,
-        merge: CXIdent,
+        condition_block: CXIdent,
+        body_block: CXIdent
     },
-
+    
+    LoopConditionBranch {
+        loop_id: CXIdent,
+        condition: MIRValue,
+        body_block: CXIdent,
+        exit_block: CXIdent,
+    },
+    
     LoopContinue {
         loop_id: CXIdent,
+        condition_block: CXIdent,
     },
 
     Branch {
@@ -129,7 +136,7 @@ pub enum MIRInstruction {
     Jump {
         target: CXIdent,
     },
-    
+
     JumpTable {
         condition: MIRValue,
         targets: Vec<(u64, CXIdent)>,
@@ -175,42 +182,81 @@ pub enum MIRInstruction {
 }
 
 #[derive(Clone, Debug)]
-pub enum MIRBinOp {
-    ADD,
-    SUB,
-    MUL,
-    DIV,
-    MOD,
-    IMUL,
-    IDIV,
-    IMOD,
+pub enum MIRIntegerBinOp {
+    ADD, SUB, MUL, DIV, MOD, 
+    IMUL, IDIV, IMOD,
     
+    EQ, NE, LT, LE, GT, GE,
+    ILT, ILE, IGT, IGE,
+}
+
+#[derive(Clone, Debug)]
+pub enum MIRPtrDiffBinOp {
+    ADD,
+    SUB
+}
+
+#[derive(Clone, Debug)]
+pub enum MIRBoolBinOp {
+    LAND,
+    LOR,
+}
+
+#[derive(Clone, Debug)]
+pub enum MIRPtrBinOp {
+    EQ,
+    NE,
+    LT,
+    GT,
+    LE,
+    GE,
+}
+
+#[derive(Clone, Debug)]
+pub enum MIRFloatBinOp {
     FADD,
     FSUB,
     FMUL,
     FDIV,
 
-    AND,
-    OR,
-    XOR,
-    SHL,
-    SHR,
-
     EQ,
     NEQ,
 
-    LT,
-    LE,
-    GT,
-    GE,
-    ILT,
-    ILE,
-    IGT,
-    IGE,
     FLT,
     FLE,
     FGT,
     FGE,
+}
+
+#[derive(Clone, Debug)]
+pub enum MIRBinOp {
+    Integer {
+        itype: CXIntegerType,
+        op: MIRIntegerBinOp,
+    },
+    
+    Bool {
+        op: MIRBoolBinOp,
+    },
+    
+    Float { 
+        ftype: CXFloatType,
+        op: MIRFloatBinOp
+    },
+    
+    /**
+     *  Any binary operation instruction of this type must have the pointer value as the lhs, and the integer value as the rhs.
+     */
+    PtrDiff {
+        op: MIRPtrDiffBinOp,
+        
+        // Boxed for size reasons
+        ptr_inner: Box<CXType>
+    },
+    
+    Pointer {
+        op: MIRPtrBinOp,
+    },   
 }
 
 #[derive(Clone, Debug)]
@@ -240,6 +286,21 @@ pub enum MIRCoercion {
     ReinterpretBits,
 }
 
+impl MIRInstruction {
+    pub fn is_block_terminator(&self) -> bool {
+        matches!(
+            self,
+            MIRInstruction::Return { .. }
+                | MIRInstruction::Jump { .. }
+                | MIRInstruction::Branch { .. }
+                | MIRInstruction::LoopPreHeader { .. }
+                | MIRInstruction::LoopConditionBranch { .. }
+                | MIRInstruction::LoopContinue { .. }
+                | MIRInstruction::JumpTable { .. }
+        )
+    }
+}
+
 impl MIRValue {
     pub fn get_type(&self) -> CXType {
         match self {
@@ -254,9 +315,9 @@ impl MIRValue {
                 prototype: Box::new(prototype.clone()),
             })
             .pointer_to(),
-            MIRValue::Parameter { _type, .. } |
-            MIRValue::GlobalValue { _type, .. } |
-            MIRValue::Register { _type, .. } => _type.clone(),
+            MIRValue::Parameter { _type, .. }
+            | MIRValue::GlobalValue { _type, .. }
+            | MIRValue::Register { _type, .. } => _type.clone(),
             MIRValue::NULL => CXType::unit(),
         }
     }
