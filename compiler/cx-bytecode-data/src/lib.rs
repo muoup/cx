@@ -307,6 +307,13 @@ pub enum BCFloatBinOp {
     SUB,
     FMUL,
     FDIV,
+
+    EQ,
+    NEQ,
+    FLT,
+    FLE,
+    FGT,
+    FGE,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

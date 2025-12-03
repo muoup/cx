@@ -333,6 +333,13 @@ impl Display for BCFloatBinOp {
                 BCFloatBinOp::SUB => "-",
                 BCFloatBinOp::FMUL => "*",
                 BCFloatBinOp::FDIV => "/",
+                
+                BCFloatBinOp::EQ => "==",
+                BCFloatBinOp::NEQ => "!=",
+                BCFloatBinOp::FLT => "<",
+                BCFloatBinOp::FLE => "<=",
+                BCFloatBinOp::FGT => ">",
+                BCFloatBinOp::FGE => ">=",
             },
         )
     }
