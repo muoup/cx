@@ -8,7 +8,8 @@ use crate::mir::{expression::MIRInstruction, types::{CXFunctionPrototype, CXType
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
     pub prototypes: Vec<CXFunctionPrototype>,
-    pub functions: Vec<MIRFunction>
+    pub functions: Vec<MIRFunction>,
+    pub global_variables: Vec<MIRGlobalVariable>,
 }
 
 #[derive(Debug, Clone)]

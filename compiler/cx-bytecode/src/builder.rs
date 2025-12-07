@@ -97,7 +97,7 @@ impl BCBuilder {
     pub fn insert_symbol(&mut self, mir_value: MIRRegister, bc_value: BCValue) {
         self.symbol_table.insert(mir_value, bc_value);
     }
-    
+
     #[allow(dead_code)]
     pub fn dump_symbols(&self) {
         println!("--- Symbol Table ---");
@@ -106,6 +106,16 @@ impl BCBuilder {
         }
     }
 
+    pub fn get_global_symbol(&self, name: &str) -> Option<BCValue> {
+        for (index, global_var) in self.global_variables.iter().enumerate() {
+            if global_var.name.as_str() == name {
+                return Some(BCValue::Global(index as u32));
+            }
+        }
+
+        None
+    }
+    
     pub fn get_symbol(&self, name: &MIRRegister) -> Option<BCValue> {
         self.symbol_table.get(name).cloned()
     }
@@ -115,14 +125,14 @@ impl BCBuilder {
 
         (self.global_variables.len() - 1) as u32
     }
-    
+
     pub fn create_static_string(&mut self, value: String) -> BCValue {
         let global_index = self.global_variables.len() as u32;
 
         self.global_variables.push(BCGlobalValue {
             name: CXIdent::from(format!("str_{}", global_index)),
             _type: BCGlobalType::StringLiteral(value),
-            linkage: LinkageType::Static
+            linkage: LinkageType::Static,
         });
 
         BCValue::Global(global_index)

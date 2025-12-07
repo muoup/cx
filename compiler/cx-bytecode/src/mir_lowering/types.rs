@@ -1,6 +1,7 @@
 use crate::builder::BCBuilder;
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::{LinkageType, BCFunctionPrototype, BCParameter};
+use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind,
 };
@@ -24,6 +25,10 @@ impl BCBuilder {
     
     pub(crate) fn convert_float_type(&self, cx_ftype: &CXFloatType) -> BCFloatType {
         convert_float_type(cx_ftype)
+    }
+    
+    pub fn convert_linkage(&self, linkage: CXLinkageMode) -> LinkageType {
+        convert_linkage(linkage)
     }
 }
 
@@ -92,6 +97,14 @@ fn convert_float_type(ftype: &CXFloatType) -> BCFloatType {
     match ftype {
         CXFloatType::F32 => BCFloatType::F32,
         CXFloatType::F64 => BCFloatType::F64,
+    }
+}
+
+fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
+    match linkage {
+        CXLinkageMode::Standard => LinkageType::Standard,
+        CXLinkageMode::Extern => LinkageType::External,
+        CXLinkageMode::Static => LinkageType::Static,
     }
 }
 

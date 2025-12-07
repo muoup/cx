@@ -235,6 +235,7 @@ impl TypeEnvironment<'_> {
         Ok(MIRUnit {
             functions: self.builder.generated_functions,
             prototypes: self.realized_fns.into_values().collect(),
+            global_variables: self.realized_globals.into_values().collect(),
         })
     }
 }

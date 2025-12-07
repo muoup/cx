@@ -1,7 +1,7 @@
 use crate::mir::expression::{
     MIRBinOp, MIRCoercion, MIRInstruction, MIRRegister, MIRUnOp, MIRValue,
 };
-use crate::mir::program::{MIRBasicBlock, MIRFunction, MIRUnit};
+use crate::mir::program::{MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
 use crate::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
 };
@@ -11,12 +11,19 @@ impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "MIR Unit:")?;
 
+        writeln!(f, "\nFunction Prototypes:")?;
         for prototype in &self.prototypes {
             writeln!(f, "{prototype}")?;
         }
 
+        writeln!(f, "\nFunctions:")?;
         for function in &self.functions {
             writeln!(f, "{function}")?;
+        }
+        
+        writeln!(f, "\nEnd of MIR Unit")?;
+        for global in &self.global_variables {
+            writeln!(f, "{global}")?;
         }
 
         Ok(())
@@ -63,6 +70,44 @@ impl Display for CXFunctionPrototype {
         write!(f, ") -> {}", self.return_type)
     }
 }
+
+impl Display for MIRGlobalVariable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "global {} ", self.linkage)?;
+        write!(f, "{}", self.kind)?;
+        write!(f, " [{}]", if self.is_mutable { "mutable" } else { "immutable" })?;
+        Ok(())
+    }
+}
+
+impl Display for MIRGlobalVarKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MIRGlobalVarKind::StringLiteral { name, value } => {
+                // do basic sanitization of the string value for display
+                let escaped_value = value
+                    .replace('\\', "\\\\")
+                    .replace('\n', "\\n")
+                    .replace('\t', "\\t")
+                    .replace('\"', "\\\"");
+                
+                write!(f, "string {} = \"{}\"", name, escaped_value)
+            }
+            MIRGlobalVarKind::Variable {
+                name,
+                _type,
+                initializer,
+            } => {
+                if let Some(init) = initializer {
+                    write!(f, "{} {} = {}", _type, name, init)
+                } else {
+                    write!(f, "{} {}", _type, name)
+                }
+            }
+        }
+    }
+}
+
 
 impl Display for TCParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

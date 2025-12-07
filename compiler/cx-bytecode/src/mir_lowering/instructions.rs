@@ -1,9 +1,11 @@
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCCoercionType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
+    BCCoercionType, BCGlobalType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
+    BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{MIRCoercion, MIRInstruction, MIRUnOp, MIRValue},
+    program::{MIRGlobalVarKind, MIRGlobalVariable},
     types::CXTypeKind,
 };
 use cx_util::{identifier::CXIdent, CXResult};
@@ -513,8 +515,6 @@ pub fn lower_instruction(
 
         // Only relevant for verification, so no-op in bytecode
         MIRInstruction::Havoc { .. } => Ok(BCValue::NULL),
-        
-        _ => todo!(),
     }
 }
 
@@ -559,9 +559,12 @@ pub(crate) fn lower_value(builder: &mut BCBuilder, value: &MIRValue) -> CXResult
         } => Ok(BCValue::FunctionRef(CXIdent::new(prototype.name.mangle()))),
 
         MIRValue::GlobalValue { name, _type } => {
-            // let global = lower_global_variable(builder, name, &builder.convert_cx_type(_type))?;
-
-            Ok(BCValue::NULL)
+            builder.get_global_symbol(name.as_str()).ok_or_else(|| {
+                panic!(
+                    "Global variable {:?} not found in global symbol table",
+                    name
+                )
+            })
         }
 
         MIRValue::Parameter { index, _type: _ } => Ok(BCValue::ParameterRef(*index as u32)),
@@ -570,10 +573,35 @@ pub(crate) fn lower_value(builder: &mut BCBuilder, value: &MIRValue) -> CXResult
     }
 }
 
-fn lower_global_variable(
+pub(crate) fn lower_global_value(
     builder: &mut BCBuilder,
-    name: &CXIdent,
-    _type: &BCType,
+    global: &MIRGlobalVariable,
 ) -> CXResult<BCGlobalValue> {
-    
+    let bc_linkage = builder.convert_linkage(global.linkage);
+
+    match &global.kind {
+        MIRGlobalVarKind::StringLiteral { name, value } => Ok(BCGlobalValue {
+            name: name.clone(),
+            _type: BCGlobalType::StringLiteral(value.clone()),
+            linkage: bc_linkage,
+        }),
+
+        MIRGlobalVarKind::Variable {
+            name,
+            _type,
+            initializer,
+        } => {
+            let bc_type = builder.convert_cx_type(_type);
+            let bc_initializer = initializer.clone();
+
+            Ok(BCGlobalValue {
+                name: name.clone(),
+                _type: BCGlobalType::Variable {
+                    _type: bc_type,
+                    initial_value: bc_initializer,
+                },
+                linkage: bc_linkage,
+            })
+        }
+    }
 }
