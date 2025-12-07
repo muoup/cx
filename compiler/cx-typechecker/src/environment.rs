@@ -44,6 +44,7 @@ pub struct TypeEnvironment<'a> {
     pub deconstructors: HashSet<CXType>,
 
     pub current_function: Option<CXFunctionPrototype>,
+    pub arg_vals: Vec<MIRValue>,
     pub symbol_table: ScopedMap<MIRValue>,
     pub scope_stack: Vec<Scope>,
 
@@ -78,6 +79,8 @@ impl TypeEnvironment<'_> {
             requests: Vec::new(),
             deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
+            
+            arg_vals: Vec::new(),
 
             in_external_templated_function: false,
         }

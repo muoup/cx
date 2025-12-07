@@ -1,3 +1,4 @@
+use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
 use cx_bytecode::generate_bytecode;
 use cx_lexer_data::TokenIter;
@@ -10,15 +11,17 @@ use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
+use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
+use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::Write;
 
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
@@ -221,8 +224,8 @@ pub(crate) fn perform_job(
                 panic!("Pre-parsing failed for unit: {}", job.unit);
             });
             output.module = job.unit.to_string();
-
-            if !job.unit.as_str().contains("std") {
+            
+            if !job.unit.as_str().contains("/std/") {
                 output
                     .imports
                     .extend(INTRINSIC_IMPORTS.iter().map(|s| s.to_string()));
@@ -314,20 +317,17 @@ pub(crate) fn perform_job(
                 e.pretty_print();
                 panic!("Template realization failed for unit: {}", job.unit);
             });
-            
+
             let mir = env.finish_mir_unit().unwrap_or_else(|e| {
                 e.pretty_print();
                 panic!("MIR generation failed for unit: {}", job.unit);
             });
 
             // if !job.unit.is_std_lib() {
-                dump_data(&mir);
+            dump_data(&mir);
             // }
 
-            context
-                .module_db
-                .mir
-                .insert(job.unit.clone(), mir);
+            context.module_db.mir.insert(job.unit.clone(), mir);
         }
 
         CompilationStep::BytecodeGen => {
@@ -348,37 +348,36 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Codegen => {
-            todo!()
-            // let bytecode = context.module_db.bytecode.take(&job.unit);
-            // let mut internal_directory = internal_directory(context, &job.unit);
-            // internal_directory.push(".o");
+            let bytecode = context.module_db.bytecode.take(&job.unit);
+            let mut internal_directory = internal_directory(context, &job.unit);
+            internal_directory.push(".o");
 
-            // let buffer = match context.config.backend {
-            //     CompilerBackend::LLVM => llvm_compile(
-            //         &bytecode,
-            //         internal_directory.to_str()?,
-            //         context.config.optimization_level,
-            //     )
-            //     .expect("LLVM code generation failed"),
+            let buffer = match context.config.backend {
+                CompilerBackend::LLVM => llvm_compile(
+                    &bytecode,
+                    internal_directory.to_str()?,
+                    context.config.optimization_level,
+                )
+                .expect("LLVM code generation failed"),
+                CompilerBackend::Cranelift => {
+                    cranelift_compile(&bytecode, internal_directory.to_str()?)
+                        .expect("Cranelift code generation failed")
+                }
+            };
 
-            //     CompilerBackend::Cranelift => {
-            //         cranelift_compile(&bytecode, internal_directory.to_str()?)
-            //             .expect("Cranelift code generation failed")
-            //     }
-            // };
+            let mut file =
+                std::fs::File::create(&internal_directory).expect("Failed to create object file");
 
-            // let mut file =
-            //     std::fs::File::create(&internal_directory).expect("Failed to create object file");
-            // file.lock_exclusive()
-            //     .expect("Failed to lock object file for writing");
+            file.lock_exclusive()
+                .expect("Failed to lock object file for writing");
+            file.write_all(&buffer)
+                .expect("Failed to write object file");
 
-            // file.write_all(&buffer)
-            //     .expect("Failed to write object file");
-            // context
-            //     .linking_files
-            //     .lock()
-            //     .expect("Deadlock on linking files mutex")
-            //     .insert(internal_directory);
+            context
+                .linking_files
+                .lock()
+                .expect("Deadlock on linking files mutex")
+                .insert(internal_directory);
         }
     }
 

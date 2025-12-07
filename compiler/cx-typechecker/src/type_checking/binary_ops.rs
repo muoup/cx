@@ -550,6 +550,9 @@ pub(crate) fn typecheck_bool_bool_binop(
         CXBinOp::LAnd => MIRBoolBinOp::LAND,
         CXBinOp::LOr => MIRBoolBinOp::LOR,
         
+        CXBinOp::Equal => MIRBoolBinOp::EQ,
+        CXBinOp::NotEqual => MIRBoolBinOp::NE,
+        
         _ => {
             return log_typecheck_error!(
                 env,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::inst_calling::prepare_function_sig;
 use crate::instruction::codegen_instruction;
 use crate::routines::convert_linkage;
@@ -6,12 +8,12 @@ use crate::{FunctionState, GlobalState, VariableTable};
 use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
-use cx_bytecode_data::{BCBlockID, ElementID, MIRBlock, MIRFunction, MIRFunctionPrototype, BCValue};
+use cx_bytecode_data::{BCBasicBlock, BCFunction, BCFunctionPrototype};
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
-    prototype: &MIRFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
     let linkage = convert_linkage(prototype.linkage);
@@ -31,23 +33,15 @@ pub(crate) fn codegen_fn_prototype(
     Some(())
 }
 
-pub(crate) fn codegen_block(
-    context: &mut FunctionState,
-    fn_block: &MIRBlock,
-    block_id: BCBlockID,
-) {
-    let block = context.get_block(block_id);
+pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &BCBasicBlock) {
+    let block = context.get_block(&fn_block.id);
     context.builder.switch_to_block(block);
 
-    for (value_id, instr) in fn_block.body.iter().enumerate() {
+    for instr in fn_block.body.iter() {
         if let Some(val) = codegen_instruction(context, instr) {
-            context.variable_table.insert(
-                BCValue::BlockResult {
-                    block_id,
-                    value_id: value_id as u32,
-                },
-                val,
-            );
+            if let Some(result) = instr.result.as_ref() {
+                context.variable_table.insert(result.clone(), val);
+            }
         };
 
         if instr.kind.is_block_terminating() {
@@ -60,7 +54,7 @@ pub(crate) fn codegen_function(
     global_state: &mut GlobalState,
     func_id: FuncId,
     func_sig: Signature,
-    bc_func: &MIRFunction,
+    bc_func: &BCFunction,
 ) -> Option<()> {
     let mut func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), func_sig);
 
@@ -75,21 +69,22 @@ pub(crate) fn codegen_function(
 
         function_ids: &mut global_state.function_ids,
 
-        defer_offset: bc_func.blocks.len(),
-
         variable_table: VariableTable::new(),
-        block_map: Vec::new(),
+        block_map: HashMap::new(),
         fn_params: Vec::new(),
 
         builder,
         pointer_type,
     };
 
-    for _ in 0..bc_func.blocks.len() + bc_func.defer_blocks.len() {
-        context.block_map.push(context.builder.create_block());
+    for fn_block in bc_func.blocks.iter() {
+        let block = context.builder.create_block();
+
+        context.block_map.insert(fn_block.id.clone(), block);
     }
 
-    let first_block = context.get_block(BCBlockID::Block(0));
+    let first_block = bc_func.blocks.first().map(|b| &b.id).unwrap();
+    let first_block = context.get_block(first_block);
 
     for arg in bc_func.prototype.params.iter() {
         let cranelift_type = get_cranelift_type(&arg._type);
@@ -100,20 +95,8 @@ pub(crate) fn codegen_function(
         context.fn_params.push(arg);
     }
 
-    for (block_id, fn_block) in bc_func.blocks.iter().enumerate() {
-        codegen_block(
-            &mut context,
-            fn_block,
-            BCBlockID::Block(block_id as ElementID),
-        );
-    }
-
-    for (block_id, fn_block) in bc_func.defer_blocks.iter().enumerate() {
-        codegen_block(
-            &mut context,
-            fn_block,
-            BCBlockID::DeferredBlock(block_id as ElementID),
-        );
+    for fn_block in bc_func.blocks.iter() {
+        codegen_block(&mut context, fn_block);
     }
 
     context.builder.seal_all_blocks();

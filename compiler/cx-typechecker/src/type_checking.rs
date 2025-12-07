@@ -33,6 +33,7 @@ fn generate_function(
 ) -> CXResult<()> {
     env.push_scope(None, None);
     env.builder.start_function(prototype.clone());
+    env.arg_vals.clear();
     
     for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
         let Some(name) = name else { continue; };
@@ -57,6 +58,11 @@ fn generate_function(
                 },
             }
         );
+        
+        env.arg_vals.push(MIRValue::Register {
+            register: region.clone(),
+            _type: _type.clone().mem_ref_to(),
+        });
 
         env.insert_symbol(
             name.as_string(),

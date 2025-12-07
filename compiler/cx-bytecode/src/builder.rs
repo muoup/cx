@@ -116,6 +116,10 @@ impl BCBuilder {
         None
     }
     
+    pub fn get_prototype(&self, name: &str) -> Option<&BCFunctionPrototype> {
+        self.fn_map.get(name)
+    }
+    
     pub fn get_symbol(&self, name: &MIRRegister) -> Option<BCValue> {
         self.symbol_table.get(name).cloned()
     }

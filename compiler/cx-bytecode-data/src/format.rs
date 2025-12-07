@@ -1,6 +1,6 @@
 use crate::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use crate::{
-    BCFloatBinOp, BCFloatUnOp, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BCRegister, BCValue, BCBasicBlock, BCFunction, BCFunctionPrototype, BCUnit
+    BCBasicBlock, BCBoolBinOp, BCBoolUnOp, BCFloatBinOp, BCFloatUnOp, BCFunction, BCFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BCRegister, BCUnit, BCValue
 };
 use std::fmt::{Display, Formatter};
 
@@ -119,10 +119,10 @@ impl Display for BCInstructionKind {
                 write!(f, "alloca {_type}")
             }
             BCInstructionKind::Store { value, memory, .. } => {
-                write!(f, "store {value} in {memory}")
+                write!(f, "store {value}, {memory}")
             }
             BCInstructionKind::Load { memory, _type, .. } => {
-                write!(f, "load {_type} {memory}")
+                write!(f, "load {_type}, {memory}")
             }
             BCInstructionKind::ZeroMemory { memory, _type } => {
                 write!(f, "*{memory} := 0")
@@ -137,7 +137,7 @@ impl Display for BCInstructionKind {
             BCInstructionKind::IntToPtrDiff { value, ptr_inner } => {
                 write!(f, "int_to_ptr_diff {value} ({ptr_inner})")
             },
-            BCInstructionKind::Coerce { value, coercion_type } => {
+            BCInstructionKind::Coercion { value, coercion_type } => {
                 write!(f, "coerce {value} ({coercion_type:?})")
             },
             BCInstructionKind::Return { value } => {
@@ -220,11 +220,17 @@ impl Display for BCInstructionKind {
             BCInstructionKind::IntegerBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [i]")
             }
+            BCInstructionKind::BooleanBinOp { left, right, op } => {
+                write!(f, "{left} {op} {right} [b]")
+            }
             BCInstructionKind::IntegerUnOp { op, value } => {
                 write!(f, "{op:?} {value} [i]")
             }
             BCInstructionKind::FloatBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [f]")
+            }
+            BCInstructionKind::BooleanUnOp { op, value } => {
+                write!(f, "{op:?} {value} [b]")
             }
             BCInstructionKind::FloatUnOp { op, value } => {
                 write!(f, "{op:?} {value} [f]")
@@ -232,15 +238,10 @@ impl Display for BCInstructionKind {
             BCInstructionKind::GetFunctionAddr { func: func_name } => {
                 write!(f, "get_function_addr {func_name}")
             }
-            BCInstructionKind::CompilerAssertion { condition, message } => {
-                write!(f, "compiler_assertion {condition} ({message})")
-            }
             BCInstructionKind::CompilerAssumption { condition } => {
                 write!(f, "compiler_assumption {condition}")
             }
-            BCInstructionKind::NOP => {
-                write!(f, "nop")
-            }
+
         }
     }
 }
@@ -309,6 +310,22 @@ impl Display for BCIntBinOp {
     }
 }
 
+impl Display for BCBoolBinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                BCBoolBinOp::LAND => "&&",
+                BCBoolBinOp::LOR => "||",
+
+                BCBoolBinOp::EQ => "==",
+                BCBoolBinOp::NE => "!=",
+            },
+        )
+    }
+}
+
 impl Display for BCIntUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -357,6 +374,18 @@ impl Display for BCFloatUnOp {
     }
 }
 
+impl Display for BCBoolUnOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                BCBoolUnOp::LNOT => "!",
+            },
+        )
+    }
+}
+
 impl Display for BCType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
@@ -398,10 +427,10 @@ impl Display for BCTypeKind {
                 dereferenceable,
             } => {
                 if !*nullable {
-                    write!(f, "!")?;
+                    write!(f, "nonnull ")?;
                 }
 
-                write!(f, "*")?;
+                write!(f, "ptr")?;
 
                 if *dereferenceable > 0 {
                     write!(f, " (deref: {dereferenceable})")

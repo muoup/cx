@@ -101,9 +101,13 @@ pub(crate) fn explicit_cast(
             coerce(MIRCoercion::ReinterpretBits)
         }
 
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => coerce(MIRCoercion::PtrToInt),
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { _type, .. }) => {
+            coerce(MIRCoercion::PtrToInt { to_type: *_type })
+        }
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. }) => coerce(MIRCoercion::IntToPtr),
+        (CXTypeKind::Integer { signed, .. }, CXTypeKind::PointerTo { .. }) => {
+            coerce(MIRCoercion::IntToPtr { sextend: *signed })
+        }
 
         (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. }) => {
             coerce(MIRCoercion::ReinterpretBits)
@@ -148,7 +152,9 @@ pub fn implicit_cast(
     };
 
     match (&from_type.kind, &to_type.kind) {
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => coerce(MIRCoercion::PtrToInt),
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { _type, .. }) => {
+            coerce(MIRCoercion::PtrToInt { to_type: *_type })
+        }
 
         (
             CXTypeKind::Integer {
@@ -178,12 +184,18 @@ pub fn implicit_cast(
         }
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => coerce(MIRCoercion::IntToBool),
-        (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => coerce(MIRCoercion::BoolToInt),
-        (CXTypeKind::Float { .. }, CXTypeKind::Float { _type: to_type }) => {
-            coerce(MIRCoercion::FPIntegral { to_type: *to_type })
+        (CXTypeKind::Bool, CXTypeKind::Integer { _type, .. }) => {
+            coerce(MIRCoercion::BoolToInt { to_type: *_type })
         }
-        (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => coerce(MIRCoercion::IntToFloat),
-        (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => coerce(MIRCoercion::FloatToInt),
+        (CXTypeKind::Float { .. }, CXTypeKind::Float { _type: to_type }) => {
+            coerce(MIRCoercion::FloatCast { to_type: *to_type })
+        }
+        (CXTypeKind::Integer { signed, .. }, CXTypeKind::Float { _type, .. }) => {
+            coerce(MIRCoercion::IntToFloat { to_type: *_type, sextend: *signed })
+        }
+        (CXTypeKind::Float { .. }, CXTypeKind::Integer { _type, signed, .. }) => {
+            coerce(MIRCoercion::FloatToInt { to_type: *_type, sextend: *signed })
+        }
 
         (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. })
         | (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. })
@@ -220,13 +232,11 @@ pub fn implicit_cast(
                         _type: *inner.clone(),
                     });
             } else {
-                env.builder.add_instruction(
-                    MIRInstruction::MemoryRead {
-                        result: result.clone(),
-                        source: value,
-                        _type: *inner.clone(),
-                    },
-                )
+                env.builder.add_instruction(MIRInstruction::MemoryRead {
+                    result: result.clone(),
+                    source: value,
+                    _type: *inner.clone(),
+                })
             }
 
             Ok(MIRValue::Register {

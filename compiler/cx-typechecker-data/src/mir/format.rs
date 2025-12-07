@@ -1,7 +1,9 @@
 use crate::mir::expression::{
     MIRBinOp, MIRCoercion, MIRInstruction, MIRRegister, MIRUnOp, MIRValue,
 };
-use crate::mir::program::{MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
+use crate::mir::program::{
+    MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit,
+};
 use crate::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
 };
@@ -20,7 +22,7 @@ impl Display for MIRUnit {
         for function in &self.functions {
             writeln!(f, "{function}")?;
         }
-        
+
         writeln!(f, "\nEnd of MIR Unit")?;
         for global in &self.global_variables {
             writeln!(f, "{global}")?;
@@ -75,7 +77,15 @@ impl Display for MIRGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "global {} ", self.linkage)?;
         write!(f, "{}", self.kind)?;
-        write!(f, " [{}]", if self.is_mutable { "mutable" } else { "immutable" })?;
+        write!(
+            f,
+            " [{}]",
+            if self.is_mutable {
+                "mutable"
+            } else {
+                "immutable"
+            }
+        )?;
         Ok(())
     }
 }
@@ -90,7 +100,7 @@ impl Display for MIRGlobalVarKind {
                     .replace('\n', "\\n")
                     .replace('\t', "\\t")
                     .replace('\"', "\\\"");
-                
+
                 write!(f, "string {} = \"{}\"", name, escaped_value)
             }
             MIRGlobalVarKind::Variable {
@@ -107,7 +117,6 @@ impl Display for MIRGlobalVarKind {
         }
     }
 }
-
 
 impl Display for TCParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -215,9 +224,12 @@ impl Display for MIRInstruction {
                 f,
                 "loop_branch id {loop_id} if {condition} -> {body_block} else -> {exit_block}"
             ),
-            MIRInstruction::LoopContinue { loop_id, condition_block } => {
+            MIRInstruction::LoopContinue {
+                loop_id,
+                condition_block,
+            } => {
                 write!(f, "loop_continue id {loop_id} to {condition_block}")
-            },
+            }
             MIRInstruction::Branch {
                 condition,
                 true_block,
@@ -330,13 +342,18 @@ impl Display for MIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            MIRCoercion::FPIntegral { to_type } => write!(f, "fp_integral(to: {})", to_type),
-            MIRCoercion::PtrToInt => write!(f, "ptr_to_int"),
-            MIRCoercion::IntToPtr => write!(f, "int_to_ptr"),
-            MIRCoercion::IntToFloat => write!(f, "int_to_float"),
+            MIRCoercion::FloatCast { to_type } => write!(f, "fp_integral(to: {})", to_type),
+            MIRCoercion::PtrToInt { to_type } => write!(f, "ptr_to_int(to: {})", to_type),
+            MIRCoercion::IntToPtr { sextend }=> write!(f, "int_to_ptr({})", if *sextend { "sext" } else { "zext" }),
+            MIRCoercion::IntToFloat { to_type, sextend } => write!(
+                f,
+                "int_to_float({}, to: {})",
+                if *sextend { "sext" } else { "zext" },
+                to_type
+            ),
             MIRCoercion::IntToBool => write!(f, "int_to_bool"),
-            MIRCoercion::BoolToInt => write!(f, "bool_to_int"),
-            MIRCoercion::FloatToInt => write!(f, "float_to_int"),
+            MIRCoercion::BoolToInt { to_type } => write!(f, "bool_to_int(to: {})", to_type),
+            MIRCoercion::FloatToInt { sextend, to_type } => write!(f, "float_to_int({}, to: {})", if *sextend { "sext" } else { "zext" }, to_type),
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
         }
     }

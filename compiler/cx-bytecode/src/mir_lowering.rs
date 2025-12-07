@@ -7,6 +7,8 @@ use crate::{
 };
 
 pub(crate) mod binary_ops;
+pub(crate) mod coercion;
+
 pub mod instructions;
 pub mod tagged_union;
 pub mod types;

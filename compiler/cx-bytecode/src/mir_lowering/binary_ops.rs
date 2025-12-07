@@ -1,6 +1,5 @@
 use cx_bytecode_data::{
-    types::{BCType, BCTypeKind},
-    BCFloatBinOp, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
+    BCBoolBinOp, BCFloatBinOp, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue, types::{BCType, BCTypeKind}
 };
 use cx_typechecker_data::mir::{
     expression::{
@@ -197,12 +196,15 @@ fn lower_bool_binop(
     let bc_rhs = lower_value(builder, rhs)?;
 
     let bc_op = match op {
-        MIRBoolBinOp::LAND => BCIntBinOp::LAND,
-        MIRBoolBinOp::LOR => BCIntBinOp::LOR,
+        MIRBoolBinOp::LAND => BCBoolBinOp::LAND,
+        MIRBoolBinOp::LOR => BCBoolBinOp::LOR,
+        
+        MIRBoolBinOp::EQ => BCBoolBinOp::EQ,
+        MIRBoolBinOp::NE => BCBoolBinOp::NE,
     };
 
     builder.add_instruction(
-        BCInstructionKind::IntegerBinOp {
+        BCInstructionKind::BooleanBinOp {
             op: bc_op,
             left: bc_lhs,
             right: bc_rhs,

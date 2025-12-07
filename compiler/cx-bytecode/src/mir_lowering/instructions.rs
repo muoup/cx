@@ -1,10 +1,10 @@
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCCoercionType, BCGlobalType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
+    BCGlobalType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
     BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRCoercion, MIRInstruction, MIRUnOp, MIRValue},
+    expression::{MIRInstruction, MIRUnOp, MIRValue},
     program::{MIRGlobalVarKind, MIRGlobalVariable},
     types::CXTypeKind,
 };
@@ -12,7 +12,7 @@ use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::{
     builder::BCBuilder,
-    mir_lowering::{binary_ops::lower_binop, tagged_union::tagged_union_tag_addr},
+    mir_lowering::{binary_ops::lower_binop, coercion::lower_coercion, tagged_union::tagged_union_tag_addr},
 };
 
 #[allow(dead_code)]
@@ -258,13 +258,14 @@ pub fn lower_instruction(
 
             if let MIRValue::FunctionReference { prototype, .. } = function {
                 let bc_prototype = builder.convert_cx_prototype(prototype);
+                let return_type = builder.convert_cx_type(&prototype.return_type);
 
                 builder.add_instruction(
                     BCInstructionKind::DirectCall {
                         args: bc_arguments,
                         method_sig: bc_prototype,
                     },
-                    BCType::unit(), // Placeholder, should be the actual return type
+                    return_type,
                     result.as_ref().cloned(),
                 )
             } else {
@@ -274,6 +275,7 @@ pub fn lower_instruction(
 
                 let bc_function = lower_value(builder, function)?;
                 let bc_prototype = builder.convert_cx_prototype(prototype.as_ref());
+                let return_type = builder.convert_cx_type(&prototype.return_type);
 
                 builder.add_instruction(
                     BCInstructionKind::IndirectCall {
@@ -281,7 +283,7 @@ pub fn lower_instruction(
                         args: bc_arguments,
                         method_sig: bc_prototype,
                     },
-                    BCType::unit(), // Placeholder, should be the actual return type
+                    return_type,
                     result.as_ref().cloned(),
                 )
             }
@@ -444,57 +446,19 @@ pub fn lower_instruction(
             result,
             operand,
             cast_type,
-        } => {
-            let bc_operand = lower_value(builder, operand)?;
-
-            match cast_type {
-                MIRCoercion::Integral { sextend, to_type } => {
-                    let bc_to_type = builder.convert_cx_type(
-                        &CXTypeKind::Integer {
-                            signed: false,
-                            _type: *to_type,
-                        }
-                        .into(),
-                    );
-
-                    if to_type.bytes() < operand.get_type().type_size() {
-                        builder.add_instruction(
-                            BCInstructionKind::Coerce {
-                                value: bc_operand,
-                                coercion_type: BCCoercionType::Trunc,
-                            },
-                            bc_to_type,
-                            Some(result.clone()),
-                        )
-                    } else {
-                        builder.add_instruction(
-                            BCInstructionKind::Coerce {
-                                value: bc_operand,
-                                coercion_type: if *sextend {
-                                    BCCoercionType::SExtend
-                                } else {
-                                    BCCoercionType::ZExtend
-                                },
-                            },
-                            bc_to_type,
-                            Some(result.clone()),
-                        )
-                    }
-                }
-
-                _ => todo!("Coercion: {cast_type:?}"),
-            }
-        }
+        } => lower_coercion(builder, result.clone(), operand, *cast_type),
 
         MIRInstruction::Assert { value, message } => {
             let global_string = builder.create_static_string(message.clone());
-
             let bc_condition = lower_value(builder, value)?;
-
+            
+            let prototype = builder.get_prototype("__compiler_assert")
+                .expect("Compiler assert prototype not found");
+            
             builder.add_instruction(
-                BCInstructionKind::CompilerAssertion {
-                    condition: bc_condition,
-                    message: global_string,
+                BCInstructionKind::DirectCall {
+                    args: vec![bc_condition, global_string],
+                    method_sig: prototype.clone(),
                 },
                 BCType::unit(),
                 None,

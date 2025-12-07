@@ -358,7 +358,7 @@ pub fn typecheck_expr(
                 }
             }
 
-            contracted_function_return(env, value_tc.clone())?;
+            contracted_function_return(env, base_data, value_tc.clone())?;
 
             MIRValue::NULL
         }

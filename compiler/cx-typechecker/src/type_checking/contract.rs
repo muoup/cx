@@ -1,10 +1,16 @@
 use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
-        expression::{MIRInstruction, MIRValue}, program::MIRBaseMappings, types::{CXFunctionPrototype, TCParameter}
-    };
+    expression::{MIRInstruction, MIRValue},
+    program::MIRBaseMappings,
+    types::{CXFunctionPrototype, CXType, CXTypeKind, TCParameter},
+};
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, log_typecheck_error, type_checking::typechecker::typecheck_expr};
+use crate::{
+    environment::TypeEnvironment,
+    log_typecheck_error,
+    type_checking::{casting::implicit_cast, typechecker::typecheck_expr},
+};
 
 fn create_clause_scope(
     env: &mut TypeEnvironment,
@@ -12,16 +18,15 @@ fn create_clause_scope(
     parameters: &[MIRValue],
 ) -> CXResult<()> {
     env.push_scope(None, None);
-    
+
     for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
-        let Some(name) = name else { continue; };
-        
-        env.insert_symbol(
-            name.as_string(),
-            parameters[i].clone()
-        );
+        let Some(name) = name else {
+            continue;
+        };
+
+        env.insert_symbol(name.as_string(), parameters[i].clone());
     }
-    
+
     Ok(())
 }
 
@@ -33,14 +38,14 @@ fn assume_clause(
     clause: &CXExpr,
 ) -> CXResult<()> {
     create_clause_scope(env, prototype, parameters)?;
-    
-    let result = typecheck_expr(env, base_data, clause)?;
-    env.builder.add_instruction(
-        MIRInstruction::Assume { value: result }
-    );
-    
+
+    let result = typecheck_expr(env, base_data, clause)
+        .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
+    env.builder
+        .add_instruction(MIRInstruction::Assume { value: result });
+
     env.pop_scope();
-    
+
     Ok(())
 }
 
@@ -50,25 +55,29 @@ fn assert_clause(
     base_data: &MIRBaseMappings,
     parameters: &[MIRValue],
     clause: &CXExpr,
+    message: Option<&str>,
 ) -> CXResult<()> {
     create_clause_scope(env, prototype, parameters)?;
-    
-    let result = typecheck_expr(env, base_data, clause)?;
-    env.builder.add_instruction(
-        MIRInstruction::Assert { value: result, message: "Contract clause failed".to_string() }
-    );
-    
+
+    let result = typecheck_expr(env, base_data, clause)
+        .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
+    env.builder.add_instruction(MIRInstruction::Assert {
+        value: result,
+        message: format!("Function contract violated: {}", message.unwrap_or("")),
+    });
+
     env.pop_scope();
-    
+
     Ok(())
 }
 
 pub fn contracted_function_return(
     env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     return_value: Option<MIRValue>,
 ) -> CXResult<()> {
-    let prototype = env.current_function();
-    
+    let prototype = env.current_function().clone();
+
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
         if let Some(result_reg) = &result_reg {
             let Some(return_value) = &return_value else {
@@ -78,29 +87,30 @@ pub fn contracted_function_return(
                     "Function postcondition cannot refer to result of function with void return type"
                 );
             };
-            
-            env.insert_symbol(
-                result_reg.as_string(),
-                return_value.clone(),
-            );
+
+            env.insert_symbol(result_reg.as_string(), return_value.clone());
         }
-        
+
+        // We know this is safe, arg_vals will always remain unmutated during typechecking,
+        // it is only instantiated at the start of function typechecking and cleared at the end.
+        let unsafe_arg_vals = unsafe { std::mem::transmute(env.arg_vals.as_slice()) };
+
         env.push_scope(None, None);
-        
-        env.builder.add_instruction(
-            MIRInstruction::Assert {
-                value: return_value.clone().unwrap(),
-                message: "Function postcondition failed".to_string(),
-            }
-        );
-        
+        assert_clause(
+            env,
+            &prototype,
+            base_data,
+            unsafe_arg_vals,
+            postcondition,
+            Some("Postcondition not met"),
+        )?;
         env.pop_scope();
     }
-    
+
     env.builder.add_instruction(MIRInstruction::Return {
         value: return_value,
     });
-    
+
     Ok(())
 }
 
@@ -112,21 +122,28 @@ pub fn contracted_function_call(
     parameters: &[MIRValue],
 ) -> CXResult<MIRValue> {
     if let Some(precondition) = &prototype.contract.precondition {
-        assert_clause(env, prototype, base_data, &parameters, precondition)?;
+        assert_clause(
+            env,
+            prototype,
+            base_data,
+            &parameters,
+            precondition,
+            Some("Precondition not met"),
+        )?;
     }
-    
+
     let result = if !prototype.return_type.is_unit() {
         Some(env.builder.new_register())
     } else {
         None
     };
-    
+
     env.builder.add_instruction(MIRInstruction::CallFunction {
         result: result.clone(),
         function,
         arguments: parameters.iter().cloned().collect(),
     });
-    
+
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
         if let Some(result_reg) = &result_reg {
             let Some(result) = result.clone() else {
@@ -136,16 +153,16 @@ pub fn contracted_function_call(
                     "Function postcondition cannot refer to result of function with void return type"
                 );
             };
-            
+
             env.insert_symbol(
                 result_reg.as_string(),
                 MIRValue::Register {
                     register: result.clone(),
                     _type: prototype.return_type.clone(),
-                }
+                },
             );
         }
-        
+
         assume_clause(env, prototype, base_data, parameters, postcondition)?;
     }
 

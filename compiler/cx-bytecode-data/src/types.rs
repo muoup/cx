@@ -20,7 +20,7 @@ impl BCType {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum BCIntegerType {
     I8,
     I16,
@@ -29,7 +29,7 @@ pub enum BCIntegerType {
     I128,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum BCFloatType {
     F32,
     F64,

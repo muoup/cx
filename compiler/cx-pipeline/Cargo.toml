@@ -16,7 +16,7 @@ cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
 cx-bytecode = { path = "../cx-bytecode" }
 # cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
-# cx-backend-cranelift = { path = "../cx-backend-cranelift" }
+cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-lexer-data = { path = "../cx-lexer-data" }

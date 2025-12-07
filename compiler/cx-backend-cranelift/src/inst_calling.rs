@@ -5,11 +5,11 @@ use cranelift::codegen::ir::{FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_bytecode_data::{MIRFunctionPrototype, MIRParameter, BCValue};
+use cx_bytecode_data::{BCFunctionPrototype, BCParameter, BCValue};
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
-    prototype: &MIRFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<Signature> {
     let mut sig = Signature::new(object_module.target_config().default_call_conv);
 
@@ -18,7 +18,7 @@ pub(crate) fn prepare_function_sig(
             .push(get_cranelift_abi_type(&prototype.return_type));
     }
 
-    for MIRParameter { _type: _type, .. } in prototype.params.iter() {
+    for BCParameter { _type, .. } in prototype.params.iter() {
         sig.params.push(get_cranelift_abi_type(_type));
     }
 
@@ -56,7 +56,7 @@ pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> Option<C
 pub(crate) fn get_func_ref(
     context: &mut FunctionState,
     func_id: FuncId,
-    prototype: &MIRFunctionPrototype,
+    prototype: &BCFunctionPrototype,
     args: &[Value],
 ) -> Option<FuncRef> {
     if !prototype.var_args || args.len() == prototype.params.len() {

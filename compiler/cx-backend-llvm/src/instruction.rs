@@ -694,48 +694,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::CompilerAssertion { condition, message } => {
-            let condition_value = function_state
-                .get_value(condition)?
-                .get_value()
-                .into_int_value();
-
-            let assert_prototype = MIRFunctionPrototype {
-                name: "__compiler_assert".to_string(),
-                params: vec![
-                    MIRParameter {
-                        name: None,
-                        _type: BCTypeKind::Bool.into(),
-                    },
-                    MIRParameter {
-                        name: None,
-                        _type: BCType::default_pointer(),
-                    },
-                ],
-                return_type: BCType::unit(),
-                var_args: false,
-                linkage: LinkageType::External,
-            };
-            let message_ref = function_state.get_value(message)?.get_value();
-
-            let assert_function = get_function(global_state, &assert_prototype)
-                .expect("Failed to get assert function");
-
-            function_state
-                .builder
-                .build_direct_call(
-                    assert_function,
-                    &[
-                        condition_value.into(),
-                        any_to_basic_val(message_ref)?.into(),
-                    ],
-                    inst_num().as_str(),
-                )
-                .unwrap();
-
-            CodegenValue::NULL
-        }
-
         BCInstructionKind::NOP => {
             // NOP instruction does nothing, just return NULL
             CodegenValue::NULL

@@ -152,7 +152,7 @@ pub enum BCInstructionKind {
         ptr_inner: BCType,
     },
 
-    Coerce {
+    Coercion {
         value: BCValue,
         coercion_type: BCCoercionType,
     },
@@ -173,6 +173,12 @@ pub enum BCInstructionKind {
         left: BCValue,
         right: BCValue,
     },
+    
+    BooleanBinOp {
+        op: BCBoolBinOp,
+        left: BCValue,
+        right: BCValue,
+    },
 
     IntegerUnOp {
         op: BCIntUnOp,
@@ -187,6 +193,11 @@ pub enum BCInstructionKind {
 
     FloatUnOp {
         op: BCFloatUnOp,
+        value: BCValue,
+    },
+    
+    BooleanUnOp {
+        op: BCBoolUnOp,
         value: BCValue,
     },
 
@@ -225,16 +236,9 @@ pub enum BCInstructionKind {
         value: Option<BCValue>,
     },
 
-    CompilerAssertion {
-        condition: BCValue,
-        message: BCValue,
-    },
-    
     CompilerAssumption {
         condition: BCValue
     },
-
-    NOP,
 }
 
 impl BCInstructionKind {
@@ -295,6 +299,15 @@ pub enum BCIntBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BCBoolBinOp {
+    LAND,
+    LOR,
+    
+    EQ,
+    NE
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BCIntUnOp {
     BNOT,
     LNOT,
@@ -317,24 +330,26 @@ pub enum BCFloatBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BCBoolUnOp {
+    LNOT,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BCFloatUnOp {
     NEG,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BCCoercionType {
-    // Since a bool in Cranelift is represented as an i8, extending from an i8 to an i8
-    // should be a no-op, but using a plain ZExtend attempts to convert it, thus causing
-    // an error,
     BoolExtend,
-
     ZExtend,
     SExtend,
     Trunc,
-    IntToPtr,
-    IntToFloat,
-    FloatToInt,
+    FloatCast { from: BCFloatType },
+    IntToPtr { from: BCIntegerType, sextend: bool },
+    IntToFloat { from: BCIntegerType, sextend: bool },
+    IntToBool { from: BCIntegerType },
+    FloatToInt { from: BCFloatType, sextend: bool },
     PtrToInt,
-    FloatCast,
     BitCast
 }

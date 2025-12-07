@@ -107,21 +107,21 @@ pub enum MIRInstruction {
         function: MIRValue,
         arguments: Vec<MIRValue>,
     },
-    
+
     LoopPreHeader {
         loop_id: CXIdent,
         condition_precheck: bool,
         condition_block: CXIdent,
-        body_block: CXIdent
+        body_block: CXIdent,
     },
-    
+
     LoopConditionBranch {
         loop_id: CXIdent,
         condition: MIRValue,
         body_block: CXIdent,
         exit_block: CXIdent,
     },
-    
+
     LoopContinue {
         loop_id: CXIdent,
         condition_block: CXIdent,
@@ -183,23 +183,40 @@ pub enum MIRInstruction {
 
 #[derive(Clone, Debug)]
 pub enum MIRIntegerBinOp {
-    ADD, SUB, MUL, DIV, MOD, 
-    IMUL, IDIV, IMOD,
-    
-    EQ, NE, LT, LE, GT, GE,
-    ILT, ILE, IGT, IGE,
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    MOD,
+    IMUL,
+    IDIV,
+    IMOD,
+
+    EQ,
+    NE,
+    LT,
+    LE,
+    GT,
+    GE,
+    ILT,
+    ILE,
+    IGT,
+    IGE,
 }
 
 #[derive(Clone, Debug)]
 pub enum MIRPtrDiffBinOp {
     ADD,
-    SUB
+    SUB,
 }
 
 #[derive(Clone, Debug)]
 pub enum MIRBoolBinOp {
     LAND,
     LOR,
+    
+    EQ,
+    NE,
 }
 
 #[derive(Clone, Debug)]
@@ -234,29 +251,29 @@ pub enum MIRBinOp {
         itype: CXIntegerType,
         op: MIRIntegerBinOp,
     },
-    
+
     Bool {
         op: MIRBoolBinOp,
     },
-    
-    Float { 
+
+    Float {
         ftype: CXFloatType,
-        op: MIRFloatBinOp
+        op: MIRFloatBinOp,
     },
-    
+
     /**
      *  Any binary operation instruction of this type must have the pointer value as the lhs, and the integer value as the rhs.
      */
     PtrDiff {
         op: MIRPtrDiffBinOp,
-        
+
         // Boxed for size reasons
-        ptr_inner: Box<CXType>
+        ptr_inner: Box<CXType>,
     },
-    
+
     Pointer {
         op: MIRPtrBinOp,
-    },   
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -268,21 +285,54 @@ pub enum MIRUnOp {
     LNOT,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum MIRCoercion {
+    // Any integer to any integer conversion
     Integral {
         sextend: bool,
         to_type: CXIntegerType,
     },
-    FPIntegral {
+
+    // Any float to any float conversion
+    FloatCast {
         to_type: CXFloatType,
     },
-    PtrToInt,
-    IntToPtr,
-    IntToFloat,
+
+    // Boolean (i1) to any integer type. This exists mostly for Cranelift, as internally a boolean
+    // is simply a byte, and doing an integral cast from Bool -> i8 would create a coercion instruction
+    // that Cranelift cannot handle. There could have been a filter for this, but that ended up causing
+    // proving more difficult than just having a dedicated coercion type for it.
+    BoolToInt {
+        to_type: CXIntegerType,
+    },
+
+    // Any integer type to a floating point number, sizes of types need not match
+    IntToFloat {
+        to_type: CXFloatType,
+        sextend: bool,
+    },
+
+    // Any float type to any integer type, sizes of types need not match
+    FloatToInt {
+        to_type: CXIntegerType,
+        sextend: bool,
+    },
+
+    // Pointer to any specified integer type
+    PtrToInt {
+        to_type: CXIntegerType,
+    },
+
+    // Any sized integer type to a pointer
+    IntToPtr {
+        sextend: bool
+    },
+
+    // Any integer type to a boolean (i1)
     IntToBool,
-    BoolToInt,
-    FloatToInt,
+
+    // Conversions between equally sized types that do not change the bit representation,
+    // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
 }
 

@@ -3,6 +3,7 @@
 int contract(int a, int b) 
 where
     pre: (a > 0 && b > 0),
+    // Note that signed overflow is UB in C, so this a sound postcondition
     post(result): (result > a && result > b)
 {
     return a + b;
