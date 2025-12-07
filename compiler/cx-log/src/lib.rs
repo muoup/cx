@@ -74,9 +74,8 @@ pub fn pretty_underline_error(
 
     let (error_line, mut error_padding) = get_error_loc(&file_contents, start_index);
 
-    // This is unsafe and something is wrong, but not getting anything printed is very frustrating.
-    let error_line_start = unsafe { start_index.unchecked_sub(error_padding) };
-    let mut remaining_error_chars = unsafe { end_index.unchecked_sub(start_index) };
+    let error_line_start = start_index.saturating_sub(error_padding);
+    let mut remaining_error_chars = end_index.saturating_sub(start_index);
 
     let link = format!(
         "{}:{}:{}",

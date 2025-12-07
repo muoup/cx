@@ -6,6 +6,7 @@ use crate::{builder::BCBuilder, mir_lowering::instructions::lower_instruction};
 pub mod instructions;
 pub mod tagged_union;
 pub mod types;
+pub(crate) mod binary_ops;
 
 pub fn lower_mir(builder: &mut BCBuilder, mir: &MIRUnit) -> CXResult<()> {
     // for global_var in ast.global_variables.iter() {

@@ -1,17 +1,17 @@
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCCoercionType, BCFloatBinOp, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
+    BCCoercionType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{
-        MIRBinOp, MIRBoolBinOp, MIRCoercion, MIRFloatBinOp, MIRInstruction, MIRIntegerBinOp,
-        MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp, MIRValue,
-    },
+    expression::{MIRCoercion, MIRInstruction, MIRUnOp, MIRValue},
     types::CXTypeKind,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::{builder::BCBuilder, mir_lowering::tagged_union::tagged_union_tag_addr};
+use crate::{
+    builder::BCBuilder,
+    mir_lowering::{binary_ops::lower_binop, tagged_union::tagged_union_tag_addr},
+};
 
 #[allow(dead_code)]
 pub fn lower_instruction(
@@ -325,8 +325,8 @@ pub fn lower_instruction(
             )?;
 
             Ok(BCValue::NULL)
-        },
-        
+        }
+
         MIRInstruction::LoopContinue {
             loop_id: _,
             condition_block,
@@ -340,7 +340,7 @@ pub fn lower_instruction(
             )?;
 
             Ok(BCValue::NULL)
-        },
+        }
 
         MIRInstruction::Branch {
             condition,
@@ -414,146 +414,7 @@ pub fn lower_instruction(
             lhs,
             rhs,
             op,
-        } => {
-            let bc_lhs = lower_value(builder, lhs)?;
-            let bc_rhs = lower_value(builder, rhs)?;
-
-            match op {
-                MIRBinOp::Integer { itype: _, op } => {
-                    let lhs_type = lhs.get_type();
-                    
-                    let (bc_op, is_comparison) = match op {
-                        MIRIntegerBinOp::ADD => (BCIntBinOp::ADD, false),
-                        MIRIntegerBinOp::SUB => (BCIntBinOp::SUB, false),
-                        MIRIntegerBinOp::MUL => (BCIntBinOp::MUL, false),
-                        MIRIntegerBinOp::IMUL => (BCIntBinOp::MUL, false),
-                        MIRIntegerBinOp::DIV => (BCIntBinOp::UDIV, false),
-                        MIRIntegerBinOp::IDIV => (BCIntBinOp::IDIV, false),
-                        MIRIntegerBinOp::MOD => (BCIntBinOp::UREM, false),
-                        MIRIntegerBinOp::IMOD => (BCIntBinOp::IREM, false),
-                        MIRIntegerBinOp::EQ => (BCIntBinOp::EQ, true),
-                        MIRIntegerBinOp::NE => (BCIntBinOp::NE, true),
-                        MIRIntegerBinOp::LT => (BCIntBinOp::ULT, true),
-                        MIRIntegerBinOp::LE => (BCIntBinOp::ULE, true),
-                        MIRIntegerBinOp::GT => (BCIntBinOp::UGT, true),
-                        MIRIntegerBinOp::GE => (BCIntBinOp::UGE, true),
-                        MIRIntegerBinOp::ILT => (BCIntBinOp::ILT, true),
-                        MIRIntegerBinOp::ILE => (BCIntBinOp::ILE, true),
-                        MIRIntegerBinOp::IGT => (BCIntBinOp::IGT, true),
-                        MIRIntegerBinOp::IGE => (BCIntBinOp::IGE, true),
-                    };
-
-                    let result_type = if is_comparison {
-                        BCType::from(BCTypeKind::Bool)
-                    } else {
-                        builder.convert_cx_type(&lhs.get_type())
-                    };
-
-                    builder.add_instruction(
-                        BCInstructionKind::IntegerBinOp {
-                            op: bc_op,
-                            left: bc_lhs,
-                            right: bc_rhs,
-                        },
-                        result_type,
-                        Some(result.clone()),
-                    )
-                }
-                MIRBinOp::Bool { op } => {
-                    let bc_op = match op {
-                        MIRBoolBinOp::LAND => BCIntBinOp::LAND,
-                        MIRBoolBinOp::LOR => BCIntBinOp::LOR,
-                    };
-                    builder.add_instruction(
-                        BCInstructionKind::IntegerBinOp {
-                            op: bc_op,
-                            left: bc_lhs,
-                            right: bc_rhs,
-                        },
-                        BCType::from(BCTypeKind::Bool),
-                        Some(result.clone()),
-                    )
-                }
-                MIRBinOp::Float { ftype: _, op } => {
-                    let (bc_op, is_comparison) = match op {
-                        MIRFloatBinOp::FADD => (BCFloatBinOp::ADD, false),
-                        MIRFloatBinOp::FSUB => (BCFloatBinOp::SUB, false),
-                        MIRFloatBinOp::FMUL => (BCFloatBinOp::FMUL, false),
-                        MIRFloatBinOp::FDIV => (BCFloatBinOp::FDIV, false),
-                        MIRFloatBinOp::EQ => (BCFloatBinOp::EQ, true),
-                        MIRFloatBinOp::NEQ => (BCFloatBinOp::NEQ, true),
-                        MIRFloatBinOp::FLT => (BCFloatBinOp::FLT, true),
-                        MIRFloatBinOp::FLE => (BCFloatBinOp::FLE, true),
-                        MIRFloatBinOp::FGT => (BCFloatBinOp::FGT, true),
-                        MIRFloatBinOp::FGE => (BCFloatBinOp::FGE, true),
-                    };
-
-                    let result_type = if is_comparison {
-                        BCType::from(BCTypeKind::Bool)
-                    } else {
-                        builder.convert_cx_type(&lhs.get_type())
-                    };
-
-                    builder.add_instruction(
-                        BCInstructionKind::FloatBinOp {
-                            op: bc_op,
-                            left: bc_lhs,
-                            right: bc_rhs,
-                        },
-                        result_type,
-                        Some(result.clone()),
-                    )
-                }
-                MIRBinOp::PtrDiff { op, ptr_inner } => {
-                    let bc_element_type = builder.convert_cx_type(ptr_inner.as_ref());
-
-                    let index_as_ptrdiff = builder.add_instruction(
-                        BCInstructionKind::IntToPtrDiff {
-                            value: bc_rhs,
-                            ptr_inner: bc_element_type.clone(),
-                        },
-                        BCType::default_pointer(),
-                        None,
-                    )?;
-
-                    let bc_op = match op {
-                        MIRPtrDiffBinOp::ADD => BCPtrBinOp::ADD,
-                        MIRPtrDiffBinOp::SUB => BCPtrBinOp::SUB,
-                    };
-
-                    builder.add_instruction(
-                        BCInstructionKind::PointerBinOp {
-                            op: bc_op,
-                            ptr_type: bc_element_type,
-                            left: bc_lhs,
-                            right: index_as_ptrdiff,
-                        },
-                        BCType::default_pointer(),
-                        Some(result.clone()),
-                    )
-                }
-                MIRBinOp::Pointer { op } => {
-                    let bc_op = match op {
-                        MIRPtrBinOp::EQ => BCPtrBinOp::EQ,
-                        MIRPtrBinOp::NE => BCPtrBinOp::NE,
-                        MIRPtrBinOp::LT => BCPtrBinOp::LT,
-                        MIRPtrBinOp::GT => BCPtrBinOp::GT,
-                        MIRPtrBinOp::LE => BCPtrBinOp::LE,
-                        MIRPtrBinOp::GE => BCPtrBinOp::GE,
-                    };
-                    builder.add_instruction(
-                        BCInstructionKind::PointerBinOp {
-                            op: bc_op,
-                            ptr_type: BCType::default_pointer(),
-                            left: bc_lhs,
-                            right: bc_rhs,
-                        },
-                        BCType::from(BCTypeKind::Bool),
-                        Some(result.clone()),
-                    )
-                }
-            }
-        }
+        } => lower_binop(builder, result, op, lhs, rhs),
 
         MIRInstruction::UnOp {
             result,
@@ -652,6 +513,7 @@ pub fn lower_instruction(
 
         // Only relevant for verification, so no-op in bytecode
         MIRInstruction::Havoc { .. } => Ok(BCValue::NULL),
+        
         _ => todo!(),
     }
 }
@@ -713,5 +575,5 @@ fn lower_global_variable(
     name: &CXIdent,
     _type: &BCType,
 ) -> CXResult<BCGlobalValue> {
-    todo!()
+    
 }
