@@ -26,7 +26,7 @@ macro_rules! log_typecheck_error {
             let message = format!("TYPE ERROR: {}", format!($($arg)*));
             
             if (cfg!(debug_assertions)) {
-                println!("EXPR: {}", $expr);
+                println!("EXPR:\n{}", $expr);
                 panic!("ERROR: {message}");
             }
 

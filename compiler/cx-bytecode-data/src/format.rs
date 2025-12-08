@@ -102,6 +102,7 @@ impl Display for BCValue {
             BCValue::ParameterRef(index) => write!(f, "param @{index}"),
             BCValue::IntImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FloatImmediate { val, _type } => write!(f, "{_type} {val}"),
+            BCValue::BoolImmediate(val) => write!(f, "bool {val}"),
             BCValue::FunctionRef(name) => write!(f, "{name}"),
             BCValue::Global(id) => write!(f, "g{id}"),
             BCValue::Register { register, _type } => write!(f, "{_type} {register}"),

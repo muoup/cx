@@ -120,7 +120,6 @@ pub enum OperatorType {
     Decrement,
 
     Comma,
-    ArrayIndex,
     Access,
     ScopeRes,
 

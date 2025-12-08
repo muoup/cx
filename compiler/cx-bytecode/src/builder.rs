@@ -115,11 +115,11 @@ impl BCBuilder {
 
         None
     }
-    
+
     pub fn get_prototype(&self, name: &str) -> Option<&BCFunctionPrototype> {
         self.fn_map.get(name)
     }
-    
+
     pub fn get_symbol(&self, name: &MIRRegister) -> Option<BCValue> {
         self.symbol_table.get(name).cloned()
     }
@@ -150,7 +150,44 @@ impl BCBuilder {
         last_inst.kind.is_block_terminating()
     }
 
-    pub fn add_instruction(
+    // Creates an instruction without a direct mapping to a MIR instruction
+    // In effect, this just means that the generator will need to create a new register
+    // if a result is expected
+    pub fn add_new_instruction(
+        &mut self,
+        instruction: BCInstructionKind,
+        value_type: BCType,
+        result_expected: bool,
+    ) -> CXResult<BCValue> {
+        if self.current_block_closed() {
+            return Ok(BCValue::NULL);
+        }
+
+        let result = if result_expected {
+            Some(self.new_register())
+        } else {
+            None
+        };
+
+        let context = self.fun_mut();
+        let current_block = context.current_block;
+
+        context.blocks[current_block].body.push(BCInstruction {
+            kind: instruction,
+            value_type: value_type.clone(),
+            result: result.clone(),
+        });
+
+        match result {
+            Some(reg) => Ok(BCValue::Register {
+                register: reg,
+                _type: value_type,
+            }),
+            None => Ok(BCValue::NULL),
+        }
+    }
+
+    pub fn add_instruction_translated(
         &mut self,
         instruction: BCInstructionKind,
         value_type: BCType,
@@ -201,6 +238,7 @@ impl BCBuilder {
 
             BCValue::FloatImmediate { _type, .. } => BCTypeKind::Float(_type.clone()).into(),
             BCValue::IntImmediate { _type, .. } => BCTypeKind::Integer(_type.clone()).into(),
+            BCValue::BoolImmediate { .. } => BCType::from(BCTypeKind::Bool),
 
             BCValue::ParameterRef(param_index) => {
                 let context = self.fun();

@@ -8,7 +8,8 @@ use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_parsing_data::data::{FunctionTypeIdent, NaiveFnKind};
 use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_typechecker_data::mir::expression::{
-    MIRBinOp, MIRBoolBinOp, MIRCoercion, MIRInstruction, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRValue
+    MIRBinOp, MIRBoolBinOp, MIRCoercion, MIRInstruction, MIRIntegerBinOp, MIRPtrBinOp,
+    MIRPtrDiffBinOp, MIRValue,
 };
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXTypeKind};
@@ -228,6 +229,27 @@ pub(crate) fn typecheck_method_call(
     };
 
     let mut tc_args = comma_separated(env, base_data, rhs)?;
+
+    let MIRValue::FunctionReference {
+        prototype: _,
+        implicit_variables,
+    } = &lhs_val
+    else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Expected function reference for method call, found {}",
+            lhs_val
+        );
+    };
+
+    let faux_expr = CXExpr::default();
+
+    tc_args = implicit_variables
+        .into_iter()
+        .map(|val| (&faux_expr, val.clone()))
+        .chain(tc_args.into_iter())
+        .collect();
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
         return log_typecheck_error!(
@@ -449,12 +471,30 @@ pub(crate) fn typecheck_binop(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let lhs = typecheck_expr(env, base_data, lhs).and_then(|e| coerce_value(env, lhs, e))?;
-    let lhs_type = lhs.get_type();
+    match op {
+        CXBinOp::LAnd | CXBinOp::LOr => {
+            return typecheck_short_circuit(env, base_data, op, lhs, rhs, expr);
+        }
 
-    let rhs = typecheck_expr(env, base_data, rhs).and_then(|e| coerce_value(env, rhs, e))?;
-    let rhs_type = rhs.get_type();
+        _ => {}
+    }
 
+    let mir_lhs = typecheck_expr(env, base_data, lhs).and_then(|e| coerce_value(env, lhs, e))?;
+    let mir_rhs = typecheck_expr(env, base_data, rhs).and_then(|e| coerce_value(env, rhs, e))?;
+    
+    typecheck_binop_mir_vals(env, op, mir_lhs, mir_rhs, expr)
+}
+
+pub(crate) fn typecheck_binop_mir_vals(
+    env: &mut TypeEnvironment,
+    op: CXBinOp,
+    mir_lhs: MIRValue,
+    mir_rhs: MIRValue,
+    expr: &CXExpr,
+) -> CXResult<MIRValue> {
+    let lhs_type = mir_lhs.get_type();
+    let rhs_type = mir_rhs.get_type();
+    
     match (&lhs_type.kind, &rhs_type.kind) {
         (
             CXTypeKind::PointerTo {
@@ -462,7 +502,7 @@ pub(crate) fn typecheck_binop(
                 ..
             },
             CXTypeKind::Integer { .. },
-        ) => typecheck_ptr_int_binop(env, op.clone(), l_inner.as_ref(), lhs, rhs),
+        ) => typecheck_ptr_int_binop(env, op.clone(), l_inner.as_ref(), mir_lhs, mir_rhs),
 
         (
             CXTypeKind::Integer { .. },
@@ -470,29 +510,31 @@ pub(crate) fn typecheck_binop(
                 inner_type: r_inner,
                 ..
             },
-        ) => typecheck_int_ptr_binop(env, op.clone(), r_inner.as_ref(), lhs, rhs),
+        ) => typecheck_int_ptr_binop(env, op.clone(), r_inner.as_ref(), mir_lhs, mir_rhs),
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Integer { .. }) => {
-            typecheck_int_int_binop(env, op, lhs, rhs, expr)
+            typecheck_int_int_binop(env, op, mir_lhs, mir_rhs, expr)
         }
 
-        (CXTypeKind::Bool, CXTypeKind::Bool) => typecheck_bool_bool_binop(env, op, lhs, rhs, expr),
+        (CXTypeKind::Bool, CXTypeKind::Bool) => {
+            typecheck_bool_bool_binop(env, op, mir_lhs, mir_rhs, expr)
+        }
 
-        (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => {
+        (CXTypeKind::Bool, CXTypeKind::Integer { _type, .. }) => {
             let coerced_bool = env.builder.new_register();
 
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: coerced_bool.clone(),
-                operand: rhs.clone(),
-                cast_type: MIRCoercion::IntToBool,
+                operand: mir_lhs.clone(),
+                cast_type: MIRCoercion::BoolToInt { to_type: *_type },
             });
 
-            let rhs = MIRValue::Register {
+            let lhs = MIRValue::Register {
                 register: coerced_bool,
-                _type: CXTypeKind::Bool.into(),
+                _type: rhs_type.clone(),
             };
 
-            typecheck_bool_bool_binop(env, op, lhs, rhs, expr)
+            typecheck_int_int_binop(env, op, lhs, mir_rhs, expr)
         }
 
         (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => {
@@ -500,20 +542,25 @@ pub(crate) fn typecheck_binop(
 
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: coerced_bool.clone(),
-                operand: lhs.clone(),
-                cast_type: MIRCoercion::IntToBool,
+                operand: mir_rhs.clone(),
+                cast_type: MIRCoercion::BoolToInt {
+                    to_type: match &lhs_type.kind {
+                        CXTypeKind::Integer { _type, .. } => *_type,
+                        _ => unreachable!(),
+                    },
+                },
             });
 
-            let lhs = MIRValue::Register {
+            let rhs = MIRValue::Register {
                 register: coerced_bool,
                 _type: lhs_type.clone(),
             };
 
-            typecheck_bool_bool_binop(env, op, lhs, rhs, expr)
+            typecheck_int_int_binop(env, op, mir_lhs, rhs, expr)
         }
 
         (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
-            typecheck_ptr_ptr_binop(env, op, lhs, rhs, expr)
+            typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr)
         }
 
         (CXTypeKind::StrongPointer { .. }, _) | (_, CXTypeKind::StrongPointer { .. }) => {
@@ -521,7 +568,7 @@ pub(crate) fn typecheck_binop(
                 env,
                 expr,
                 "R-value strong pointers must be assigned to an l-value before being used \
-                in binary operations, found '{op}' with types {} and {}",
+                    in binary operations, found '{op}' with types {} and {}",
                 lhs_type,
                 rhs_type
             );
@@ -546,35 +593,44 @@ pub(crate) fn typecheck_bool_bool_binop(
     rhs: MIRValue,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let operator = match op {
-        CXBinOp::LAnd => MIRBoolBinOp::LAND,
-        CXBinOp::LOr => MIRBoolBinOp::LOR,
-        
+    let op = match op {
         CXBinOp::Equal => MIRBoolBinOp::EQ,
         CXBinOp::NotEqual => MIRBoolBinOp::NE,
         
+        CXBinOp::LAnd | CXBinOp::LOr => {
+            unreachable!("Short-circuiting logical operations should be handled separately");
+        }
+
         _ => {
             return log_typecheck_error!(
                 env,
                 expr,
-                " Invalid boolean binary operation {op}",
+                " Invalid boolean binary operation {op} for types {} and {}",
+                lhs.get_type(),
+                rhs.get_type()
             );
         }
     };
+    
+    match op {
+        MIRBoolBinOp::EQ | MIRBoolBinOp::NE => {
+            let result = env.builder.new_register();
 
-    let result = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::BinOp {
+                op: MIRBinOp::Bool { op: op },
+                result: result.clone(),
+                lhs,
+                rhs,
+            });
 
-    env.builder.add_instruction(MIRInstruction::BinOp {
-        op: MIRBinOp::Bool { op: operator },
-        result: result.clone(),
-        lhs,
-        rhs,
-    });
+            Ok(MIRValue::Register {
+                register: result,
+                _type: CXTypeKind::Bool.into(),
+            })
+        }
 
-    Ok(MIRValue::Register {
-        register: result,
-        _type: CXTypeKind::Bool.into()
-    })
+        _ => unreachable!()
+    }
 }
 
 pub(crate) fn typecheck_int_int_binop(
@@ -681,7 +737,7 @@ pub(crate) fn typecheck_int_int_binop(
             CXBinOp::GreaterEqual if *result_signed => MIRIntegerBinOp::IGE,
             CXBinOp::Equal => MIRIntegerBinOp::EQ,
             CXBinOp::NotEqual => MIRIntegerBinOp::NE,
-            
+
             _ => {
                 return log_typecheck_error!(
                     env,
@@ -778,32 +834,24 @@ pub(crate) fn typecheck_ptr_int_binop(
             };
 
             let result = env.builder.new_register();
-            let (operation, return_type) = match op {
-                CXBinOp::Add => (
-                    MIRBinOp::PtrDiff {
-                        op: MIRPtrDiffBinOp::ADD,
-                        ptr_inner: Box::new(pointer_inner.clone()),
-                    },
-                    pointer_inner.clone().pointer_to(),
-                ),
+            let operation = match op {
+                CXBinOp::Add | CXBinOp::ArrayIndex => MIRBinOp::PtrDiff {
+                    op: MIRPtrDiffBinOp::ADD,
+                    ptr_inner: Box::new(pointer_inner.clone()),
+                },
 
-                CXBinOp::ArrayIndex => (
-                    MIRBinOp::PtrDiff {
-                        op: MIRPtrDiffBinOp::ADD,
-                        ptr_inner: Box::new(pointer_inner.clone()),
-                    },
-                    pointer_inner.clone().mem_ref_to(),
-                ),
+                CXBinOp::Subtract => MIRBinOp::PtrDiff {
+                    op: MIRPtrDiffBinOp::SUB,
+                    ptr_inner: Box::new(pointer_inner.clone()),
+                },
 
-                CXBinOp::Subtract => (
-                    MIRBinOp::PtrDiff {
-                        op: MIRPtrDiffBinOp::SUB,
-                        ptr_inner: Box::new(pointer_inner.clone()),
-                    },
-                    pointer_inner.clone().pointer_to(),
-                ),
-                
                 _ => unreachable!(),
+            };
+
+            let return_type = match op {
+                CXBinOp::ArrayIndex => pointer_inner.clone().mem_ref_to(),
+
+                _ => pointer_inner.clone().pointer_to(),
             };
 
             env.builder.add_instruction(MIRInstruction::BinOp {
@@ -890,6 +938,71 @@ pub(crate) fn typecheck_ptr_ptr_binop(
 
     Ok(MIRValue::Register {
         register: result,
+        _type: CXTypeKind::Bool.into(),
+    })
+}
+
+fn typecheck_short_circuit(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    op: CXBinOp,
+    lhs: &CXExpr,
+    rhs: &CXExpr,
+    _expr: &CXExpr,
+) -> CXResult<MIRValue> {
+    let lhs = typecheck_expr(env, base_data, lhs)
+        .and_then(|e| coerce_value(env, lhs, e))
+        .and_then(|v| implicit_cast(env, lhs, v, &CXTypeKind::Bool.into()))?;
+
+    let start_block = env.builder.current_block().id.clone();
+    let continue_block = env.builder.new_block_id();
+    let short_circuit_block = env.builder.new_block_id();
+
+    let literal = match op {
+        CXBinOp::LAnd => MIRValue::BoolLiteral { value: false },
+        CXBinOp::LOr => MIRValue::BoolLiteral { value: true },
+
+        _ => unreachable!(),
+    };
+
+    let first_comparison = env.builder.new_register();
+    env.builder.add_instruction(MIRInstruction::BinOp {
+        op: MIRBinOp::Bool {
+            op: MIRBoolBinOp::EQ,
+        },
+        result: first_comparison.clone(),
+        lhs: lhs.clone(),
+        rhs: literal.clone(),
+    });
+
+    env.builder.add_instruction(MIRInstruction::Branch {
+        condition: MIRValue::Register {
+            register: first_comparison,
+            _type: CXTypeKind::Bool.into(),
+        },
+        true_block: short_circuit_block.clone(),
+        false_block: continue_block.clone(),
+    });
+
+    env.builder.add_and_set_block(continue_block.clone());
+    let rhs = typecheck_expr(env, base_data, rhs)
+        .and_then(|e| coerce_value(env, rhs, e))
+        .and_then(|v| implicit_cast(env, rhs, v, &CXTypeKind::Bool.into()))?;
+
+    env.builder.add_instruction(MIRInstruction::Jump {
+        target: short_circuit_block.clone(),
+    });
+
+    env.builder.add_and_set_block(short_circuit_block.clone());
+    let final_result = env.builder.new_register();
+
+    env.builder.add_instruction(MIRInstruction::Phi {
+        result: final_result.clone(),
+        predecessors: vec![(literal, start_block), (rhs, continue_block)],
+    });
+
+    Ok(MIRValue::Register {
+        register: final_result,
         _type: CXTypeKind::Bool.into(),
     })
 }

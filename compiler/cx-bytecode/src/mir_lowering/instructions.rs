@@ -1,7 +1,6 @@
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCGlobalType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
-    BCValue,
+    BCGlobalType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRUnOp, MIRValue},
@@ -12,7 +11,9 @@ use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::{
     builder::BCBuilder,
-    mir_lowering::{binary_ops::lower_binop, coercion::lower_coercion, tagged_union::tagged_union_tag_addr},
+    mir_lowering::{
+        binary_ops::lower_binop, coercion::lower_coercion, tagged_union::tagged_union_tag_addr,
+    },
 };
 
 #[allow(dead_code)]
@@ -28,15 +29,15 @@ pub fn lower_instruction(
             Ok(BCValue::NULL)
         }
 
-        MIRInstruction::CopyStackRegionInto {
-            result,
+        MIRInstruction::CopyRegionInto {
+            destination: result,
             source,
             _type,
         } => {
             let bc_source = builder.get_symbol(source).unwrap();
 
             let bc_type = builder.convert_cx_type(_type);
-            let new_region = builder.add_instruction(
+            let new_region = builder.add_instruction_translated(
                 BCInstructionKind::Allocate {
                     alignment: bc_type.alignment(),
                     _type: bc_type.clone(),
@@ -45,7 +46,7 @@ pub fn lower_instruction(
                 None,
             )?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Store {
                     memory: new_region.clone(),
                     value: bc_source.clone(),
@@ -57,13 +58,13 @@ pub fn lower_instruction(
 
             builder.insert_symbol(result.clone(), new_region);
 
-            Ok(bc_source)
+            Ok(BCValue::NULL)
         }
 
-        MIRInstruction::CreateEmptyStackRegion { result, _type } => {
+        MIRInstruction::CreateStackRegion { result, _type } => {
             let bc_type = builder.convert_cx_type(_type);
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Allocate {
                     alignment: bc_type.alignment(),
                     _type: bc_type,
@@ -81,7 +82,7 @@ pub fn lower_instruction(
             let bc_source = lower_value(builder, source)?;
             let bc_type = builder.convert_cx_type(_type);
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Load {
                     memory: bc_source,
                     _type: bc_type.clone(),
@@ -96,7 +97,7 @@ pub fn lower_instruction(
             let bc_value = lower_value(builder, value)?;
             let bc_type = builder.get_value_type(&bc_value);
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Store {
                     memory: bc_target,
                     value: bc_value,
@@ -117,7 +118,7 @@ pub fn lower_instruction(
             let bc_source = lower_value(builder, source)?;
             let bc_struct_type = builder.convert_cx_type(struct_type);
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::StructAccess {
                     struct_: bc_source,
                     struct_type: bc_struct_type,
@@ -152,7 +153,7 @@ pub fn lower_instruction(
             let tag_ptr = tagged_union_tag_addr(builder, bc_source.clone(), tagged_union)?;
             let tag_type = BCType::from(BCTypeKind::Integer(BCIntegerType::I8));
 
-            let actual_tag_id = builder.add_instruction(
+            let actual_tag_id = builder.add_instruction_translated(
                 BCInstructionKind::Load {
                     memory: tag_ptr,
                     _type: tag_type.clone(),
@@ -161,7 +162,7 @@ pub fn lower_instruction(
                 None,
             )?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::IntegerBinOp {
                     left: actual_tag_id,
                     right: BCValue::IntImmediate {
@@ -189,7 +190,7 @@ pub fn lower_instruction(
 
             let tag_ptr = tagged_union_tag_addr(builder, bc_value.clone(), sum_as_bc_type)?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Store {
                     memory: bc_memory,
                     value: bc_value,
@@ -199,7 +200,7 @@ pub fn lower_instruction(
                 None,
             )?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Store {
                     memory: tag_ptr,
                     value: BCValue::IntImmediate {
@@ -225,7 +226,7 @@ pub fn lower_instruction(
             let bc_index = lower_value(builder, index)?;
             let bc_element_type = builder.convert_cx_type(element_type);
 
-            let index_as_ptrdiff = builder.add_instruction(
+            let index_as_ptrdiff = builder.add_instruction_translated(
                 BCInstructionKind::IntToPtrDiff {
                     value: bc_index,
                     ptr_inner: bc_element_type.clone(),
@@ -234,7 +235,7 @@ pub fn lower_instruction(
                 None,
             )?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::PointerBinOp {
                     left: bc_source,
                     right: index_as_ptrdiff,
@@ -260,7 +261,7 @@ pub fn lower_instruction(
                 let bc_prototype = builder.convert_cx_prototype(prototype);
                 let return_type = builder.convert_cx_type(&prototype.return_type);
 
-                builder.add_instruction(
+                builder.add_instruction_translated(
                     BCInstructionKind::DirectCall {
                         args: bc_arguments,
                         method_sig: bc_prototype,
@@ -277,7 +278,7 @@ pub fn lower_instruction(
                 let bc_prototype = builder.convert_cx_prototype(prototype.as_ref());
                 let return_type = builder.convert_cx_type(&prototype.return_type);
 
-                builder.add_instruction(
+                builder.add_instruction_translated(
                     BCInstructionKind::IndirectCall {
                         func_ptr: bc_function,
                         args: bc_arguments,
@@ -301,7 +302,7 @@ pub fn lower_instruction(
                 body_block.clone()
             };
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Jump { target: jump_to },
                 BCType::unit(),
                 None,
@@ -318,7 +319,7 @@ pub fn lower_instruction(
         } => {
             let bc_condition = lower_value(builder, condition)?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Branch {
                     condition: bc_condition,
                     true_block: body_block.clone(),
@@ -335,7 +336,7 @@ pub fn lower_instruction(
             loop_id: _,
             condition_block,
         } => {
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Jump {
                     target: condition_block.clone(),
                 },
@@ -353,7 +354,7 @@ pub fn lower_instruction(
         } => {
             let bc_condition = lower_value(builder, condition)?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Branch {
                     condition: bc_condition,
                     true_block: true_block.clone(),
@@ -367,7 +368,7 @@ pub fn lower_instruction(
         }
 
         MIRInstruction::Jump { target } => {
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Jump {
                     target: target.clone(),
                 },
@@ -385,7 +386,7 @@ pub fn lower_instruction(
         } => {
             let bc_condition = lower_value(builder, condition)?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::JumpTable {
                     value: bc_condition,
                     targets: targets.clone(),
@@ -404,13 +405,35 @@ pub fn lower_instruction(
                 .map(|v| lower_value(builder, v))
                 .transpose()?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Return { value: bc_value },
                 BCType::unit(),
                 None,
             )?;
 
             Ok(BCValue::NULL)
+        }
+
+        MIRInstruction::Phi {
+            result,
+            predecessors: incomings,
+        } => {
+            let result_type = incomings[0].0.get_type();
+            let result_type = builder.convert_cx_type(&result_type);
+
+            let predecessors = incomings
+                .iter()
+                .map(|(val, block)| {
+                    let bc_val = lower_value(builder, val)?;
+                    Ok((bc_val, block.clone()))
+                })
+                .collect::<CXResult<Vec<(BCValue, CXIdent)>>>()?;
+
+            builder.add_instruction_translated(
+                BCInstructionKind::Phi { predecessors },
+                result_type,
+                Some(result.clone()),
+            )
         }
 
         MIRInstruction::BinOp {
@@ -429,7 +452,7 @@ pub fn lower_instruction(
                 let bc_operand = lower_value(builder, operand)?;
                 let result_type = builder.convert_cx_type(&operand.get_type());
 
-                builder.add_instruction(
+                builder.add_instruction_translated(
                     BCInstructionKind::IntegerUnOp {
                         value: bc_operand,
                         op: cx_bytecode_data::BCIntUnOp::LNOT,
@@ -451,11 +474,12 @@ pub fn lower_instruction(
         MIRInstruction::Assert { value, message } => {
             let global_string = builder.create_static_string(message.clone());
             let bc_condition = lower_value(builder, value)?;
-            
-            let prototype = builder.get_prototype("__compiler_assert")
+
+            let prototype = builder
+                .get_prototype("__compiler_assert")
                 .expect("Compiler assert prototype not found");
-            
-            builder.add_instruction(
+
+            builder.add_instruction_translated(
                 BCInstructionKind::DirectCall {
                     args: vec![bc_condition, global_string],
                     method_sig: prototype.clone(),
@@ -468,7 +492,7 @@ pub fn lower_instruction(
         MIRInstruction::Assume { value } => {
             let bc_value = lower_value(builder, value)?;
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::CompilerAssumption {
                     condition: bc_value,
                 },
@@ -516,6 +540,8 @@ pub(crate) fn lower_value(builder: &mut BCBuilder, value: &MIRValue) -> CXResult
                 _type: bc_type,
             })
         }
+
+        MIRValue::BoolLiteral { value } => Ok(BCValue::BoolImmediate(*value)),
 
         MIRValue::FunctionReference {
             prototype,

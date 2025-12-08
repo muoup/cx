@@ -16,7 +16,11 @@ pub fn lower_coercion(
     let bc_value = lower_value(builder, value)?;
 
     match coercion_type {
-        MIRCoercion::ReinterpretBits => Ok(bc_value),
+        MIRCoercion::ReinterpretBits => {
+            builder.insert_symbol(result, bc_value.clone());
+            
+            Ok(bc_value)
+        },
 
         MIRCoercion::Integral { sextend, to_type } => {
             let bc_itype = builder.convert_integer_type(&to_type);
@@ -26,7 +30,7 @@ pub fn lower_coercion(
             let to_bytes = to_type.bytes();
             
             if from_bytes > to_bytes {
-                builder.add_instruction(
+                builder.add_instruction_translated(
                     BCInstructionKind::Coercion {
                         coercion_type: BCCoercionType::Trunc,
                         value: bc_value,
@@ -35,7 +39,7 @@ pub fn lower_coercion(
                     Some(result),
                 )
             } else if sextend { 
-                builder.add_instruction(
+                builder.add_instruction_translated(
                     BCInstructionKind::Coercion {
                         coercion_type: BCCoercionType::SExtend,
                         value: bc_value,
@@ -44,7 +48,7 @@ pub fn lower_coercion(
                     Some(result),
                 )
             } else {
-                builder.add_instruction(
+                builder.add_instruction_translated(
                     BCInstructionKind::Coercion {
                         coercion_type: BCCoercionType::ZExtend,
                         value: bc_value,
@@ -58,7 +62,7 @@ pub fn lower_coercion(
         MIRCoercion::BoolToInt { to_type } => {
             let bc_itype = builder.convert_integer_type(&to_type);
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::BoolExtend,
                     value: bc_value,
@@ -75,7 +79,7 @@ pub fn lower_coercion(
                 unreachable!()
             };
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::FloatCast { from },
                     value: bc_value,
@@ -93,7 +97,7 @@ pub fn lower_coercion(
                 unreachable!()
             };
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::IntToFloat {
                         from: from_itype,
@@ -110,7 +114,7 @@ pub fn lower_coercion(
             let bc_itype = builder.convert_integer_type(&to_type);
             let to_type = BCType::from(BCTypeKind::Integer(bc_itype));
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::PtrToInt,
                     value: bc_value,
@@ -126,7 +130,7 @@ pub fn lower_coercion(
                 unreachable!()
             };
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::IntToPtr {
                         from: *bc_itype,
@@ -147,7 +151,7 @@ pub fn lower_coercion(
                 unreachable!()
             };
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::IntToBool { from: *from_itype },
                     value: bc_value,
@@ -167,7 +171,7 @@ pub fn lower_coercion(
                 unreachable!()
             };
 
-            builder.add_instruction(
+            builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::FloatToInt {
                         from: from_ftype.clone(),

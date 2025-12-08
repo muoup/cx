@@ -5,8 +5,10 @@ use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
-use cx_typechecker_data::mir::expression::MIRValue;
-use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRBasicBlock, MIRUnit, MIRGlobalVariable};
+use cx_typechecker_data::mir::expression::{MIRInstruction, MIRRegister, MIRValue};
+use cx_typechecker_data::mir::program::{
+    MIRBaseMappings, MIRBasicBlock, MIRGlobalVariable, MIRUnit,
+};
 use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -27,6 +29,8 @@ pub struct Scope {
     pub break_to: Option<CXIdent>,
     pub continue_to: Option<CXIdent>,
 }
+
+pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
     pub tokens: &'a [Token],
@@ -79,7 +83,7 @@ impl TypeEnvironment<'_> {
             requests: Vec::new(),
             deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
-            
+
             arg_vals: Vec::new(),
 
             in_external_templated_function: false,
@@ -195,6 +199,30 @@ impl TypeEnvironment<'_> {
         None
     }
 
+    fn start_defer(&mut self) {
+        let Some(func_ctx) = &mut self.builder.function_context else {
+            unreachable!()
+        };
+
+        let mut instructions = Vec::new();
+
+        if !func_ctx.current_prototype.return_type.is_unit() {
+            let return_acc = MIRRegister {
+                name: CXIdent::new(DEFER_ACCUMULATION_REGISTER),
+            };
+
+            instructions.push(MIRInstruction::Phi {
+                result: return_acc,
+                predecessors: vec![],
+            })
+        }
+
+        func_ctx.defer_blocks.push(MIRBasicBlock {
+            id: CXIdent::new("defer_entry"),
+            instructions,
+        });
+    }
+
     pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
@@ -206,18 +234,14 @@ impl TypeEnvironment<'_> {
         let Some(func_ctx) = &mut self.builder.function_context else {
             unreachable!()
         };
+        let previous_pointer = func_ctx.current_block.clone();
 
         if func_ctx.defer_blocks.is_empty() {
-            func_ctx.defer_blocks.push(MIRBasicBlock {
-                id: CXIdent::new("defer_entry"),
-                instructions: Vec::new(),
-            });
+            self.start_defer();
         }
-        let previous_pointer = func_ctx.current_block.clone();
 
         self.builder
             .set_pointer(BlockPointer::Defer(self.builder.get_defer_end()));
-        self.builder.set_block(CXIdent::new("defer_entry"));
 
         let result = f(self);
 

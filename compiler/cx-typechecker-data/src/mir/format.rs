@@ -39,7 +39,7 @@ impl Display for MIRFunction {
         for block in &self.basic_blocks {
             writeln!(f, "{block}")?;
         }
-
+        
         Ok(())
     }
 }
@@ -130,27 +130,27 @@ impl Display for TCParameter {
 
 impl Display for MIRRegister {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "%{}", self.name)
     }
 }
 
 impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRInstruction::Alias { result, value } => write!(f, "%{result} = alias {value}"),
-            MIRInstruction::CreateEmptyStackRegion { result, _type } => {
-                write!(f, "%{result} = create_region {_type}")
+            MIRInstruction::Alias { result, value } => write!(f, "{result} = alias {value}"),
+            MIRInstruction::CreateStackRegion { result, _type } => {
+                write!(f, "{result} = create_region {_type}")
             }
-            MIRInstruction::CopyStackRegionInto {
-                result,
-                source: target,
+            MIRInstruction::CopyRegionInto {
+                destination,
+                source,
                 _type,
-            } => write!(f, "%{result} = region_copy {target} as {_type}"),
+            } => write!(f, "copy region {_type} {source} into {destination}"),
             MIRInstruction::MemoryRead {
                 result,
                 source,
                 _type,
-            } => write!(f, "%{result} = mem_read {source} as {_type}"),
+            } => write!(f, "{result} = mem_read {source} as {_type}"),
             MIRInstruction::MemoryWrite { target, value } => {
                 write!(f, "mem_write {target}, {value}")
             }
@@ -162,31 +162,31 @@ impl Display for MIRInstruction {
                 ..
             } => write!(
                 f,
-                "%{result} = struct_get {source}, index {field_index} of {struct_type}"
+                "{result} = struct_get {source}, index {field_index} of {struct_type}"
             ),
             MIRInstruction::TaggedUnionGet {
                 result,
                 source,
                 variant_type,
-            } => write!(f, "%{result} = tagged_union_get {source} as {variant_type}"),
+            } => write!(f, "{result} = tagged_union_get {source} as {variant_type}"),
             MIRInstruction::TaggedUnionIs {
                 result,
                 source,
                 tag_id,
-            } => write!(f, "%{result} = tagged_union_is {source}, tag {tag_id}"),
+            } => write!(f, "{result} = tagged_union_is {source}, tag {tag_id}"),
             MIRInstruction::ArrayGet {
                 result,
                 source,
                 index,
                 ..
-            } => write!(f, "%{result} = array_get {source}[{index}]"),
+            } => write!(f, "{result} = array_get {source}[{index}]"),
             MIRInstruction::CallFunction {
                 result,
                 function,
                 arguments,
             } => {
                 if let Some(result) = result {
-                    write!(f, "%{result} = ")?;
+                    write!(f, "{result} = ")?;
                 }
                 write!(f, "call {function}(")?;
                 for (i, arg) in arguments.iter().enumerate() {
@@ -235,6 +235,16 @@ impl Display for MIRInstruction {
                 true_block,
                 false_block,
             } => write!(f, "branch {condition} ? {true_block} : {false_block}"),
+            MIRInstruction::Phi { result, predecessors: incomings } => {
+                write!(f, "{result} = phi ")?;
+                for (i, (value, block)) in incomings.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{value} from {block}")?;
+                }
+                Ok(())
+            }
             MIRInstruction::Jump { target } => write!(f, "jump {target}"),
             MIRInstruction::JumpTable {
                 condition,
@@ -262,17 +272,17 @@ impl Display for MIRInstruction {
                 lhs,
                 rhs,
                 op,
-            } => write!(f, "%{result} = binop({op}) {lhs}, {rhs}"),
+            } => write!(f, "{result} = binop({op}) {lhs}, {rhs}"),
             MIRInstruction::UnOp {
                 result,
                 operand,
                 op,
-            } => write!(f, "%{result} = unop({op}) {operand}"),
+            } => write!(f, "{result} = unop({op}) {operand}"),
             MIRInstruction::Coercion {
                 result,
                 operand,
                 cast_type,
-            } => write!(f, "%{result} = coercion({cast_type}) {operand}"),
+            } => write!(f, "{result} = coercion({cast_type}) {operand}"),
             MIRInstruction::Assert { value, message } => write!(f, "assert {value} \"{message}\""),
             MIRInstruction::Assume { value } => write!(f, "assume {value}"),
             MIRInstruction::Havoc { target } => write!(f, "havoc %{target}"),
@@ -294,12 +304,13 @@ impl Display for MIRValue {
                 _type.bytes() * 8
             ),
             MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
+            MIRValue::BoolLiteral { value } => write!(f, "bool {}", if *value { "true" } else { "false" }),
             MIRValue::FunctionReference { prototype, .. } => {
                 write!(f, "fn @{}", prototype.name)
             }
             MIRValue::GlobalValue { name, _type } => write!(f, "{_type} global {name}"),
             MIRValue::Parameter { index, _type } => write!(f, "{_type} param {index}"),
-            MIRValue::Register { register, _type } => write!(f, "{_type} %{register}"),
+            MIRValue::Register { register, _type } => write!(f, "{_type} {register}"),
             MIRValue::NULL => write!(f, "null"),
         }
     }

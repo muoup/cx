@@ -9,6 +9,9 @@ pub struct MIRRegister {
 
 #[derive(Clone, Debug, Default)]
 pub enum MIRValue {
+    BoolLiteral {
+        value: bool,
+    },
     IntLiteral {
         value: i64,
         signed: bool,
@@ -46,13 +49,13 @@ pub enum MIRInstruction {
         value: MIRValue,
     },
 
-    CreateEmptyStackRegion {
+    CreateStackRegion {
         result: MIRRegister,
         _type: CXType,
     },
 
-    CopyStackRegionInto {
-        result: MIRRegister,
+    CopyRegionInto {
+        destination: MIRRegister,
         source: MIRRegister,
         _type: CXType,
     },
@@ -164,6 +167,11 @@ pub enum MIRInstruction {
         result: MIRRegister,
         operand: MIRValue,
         cast_type: MIRCoercion,
+    },
+    
+    Phi {
+        result: MIRRegister,
+        predecessors: Vec<(MIRValue, CXIdent)>,
     },
 
     // ---- Verification Nodes ----
@@ -365,6 +373,7 @@ impl MIRValue {
                 prototype: Box::new(prototype.clone()),
             })
             .pointer_to(),
+            MIRValue::BoolLiteral { .. } => CXType::from(CXTypeKind::Bool),
             MIRValue::Parameter { _type, .. }
             | MIRValue::GlobalValue { _type, .. }
             | MIRValue::Register { _type, .. } => _type.clone(),

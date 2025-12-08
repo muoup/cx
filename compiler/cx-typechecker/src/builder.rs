@@ -1,9 +1,11 @@
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRRegister},
+    expression::{MIRInstruction, MIRRegister, MIRValue},
     program::{MIRBasicBlock, MIRFunction},
     types::CXFunctionPrototype,
 };
 use cx_util::identifier::CXIdent;
+
+use crate::environment::DEFER_ACCUMULATION_REGISTER;
 
 pub(crate) struct MIRBuilder {
     pub generated_functions: Vec<MIRFunction>,
@@ -106,6 +108,59 @@ impl MIRBuilder {
             target: target_block,
         });
     }
+    
+    pub fn add_return(&mut self, value: Option<MIRValue>) {
+        if self.in_defer() {
+            if let Some(_) = value {
+                // Case 1: The return block has a return value, this overrides the defer accumulation register
+                // FIXME: We might need to handle cleaning up the defer accumulation register here
+                self.add_instruction(MIRInstruction::Return {
+                    value: value,
+                });
+            } else {
+                let value = MIRValue::Register {
+                    register: MIRRegister::new(DEFER_ACCUMULATION_REGISTER),
+                    _type: self.current_prototype().return_type.clone(),
+                };
+                
+                self.add_instruction(MIRInstruction::Return {
+                    value: Some(value),
+                });
+            }
+        } else {
+            if let Some(defer_start) = self.get_defer_start() {
+                self.add_instruction(MIRInstruction::Jump {
+                    target: defer_start,
+                });
+                
+                let current_block = self.current_block().id.clone();
+                
+                if let Some(value) = value {
+                    let Some(func_ctx) = &mut self.function_context else {
+                        unreachable!()
+                    };
+                    
+                    let return_acc = func_ctx
+                        .defer_blocks
+                        .first_mut()
+                        .unwrap()
+                        .instructions
+                        .first_mut()
+                        .unwrap();
+                    
+                    let MIRInstruction::Phi { predecessors, .. } = return_acc else {
+                        unreachable!()
+                    };
+                    
+                    predecessors.push((value, current_block));
+                }
+            } else {
+                self.add_instruction(MIRInstruction::Return {
+                    value: value,
+                });
+            }
+        }
+    }
 
     pub fn new_block_id(&mut self) -> CXIdent {
         let Some(func_ctx) = &mut self.function_context else {
@@ -127,6 +182,15 @@ impl MIRBuilder {
         func_ctx.temp_block_counter += 1;
         
         CXIdent::new(format!("block_{}_{}", id, name))
+    }
+    
+    pub fn get_defer_start(&self) -> Option<CXIdent> {
+        let Some(func_ctx) = &self.function_context else {
+            unreachable!()
+        };
+        
+        func_ctx.defer_blocks.first()
+            .map(|b| b.id.clone())
     }
     
     pub fn get_defer_end(&self) -> usize {
@@ -183,7 +247,8 @@ impl MIRBuilder {
 
         func_ctx.current_block = pointer;
     }
-
+    
+    #[allow(dead_code)]
     pub fn set_block(&mut self, block_id: CXIdent) {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
@@ -229,13 +294,27 @@ impl MIRBuilder {
     }
 
     pub fn finish_function(&mut self) {
+        let Some(func_ctx) = &self.function_context else {
+            unreachable!()
+        };
+        
+        if !func_ctx.defer_blocks.is_empty() {
+            let pointer = BlockPointer::Defer(self.get_defer_end());
+            self.set_pointer(pointer);
+            self.add_return(None);
+        }
+        
         let Some(func_ctx) = self.function_context.take() else {
             unreachable!()
         };
+        
+        let full_blocks = func_ctx.standard_blocks.into_iter()
+            .chain(func_ctx.defer_blocks.into_iter())
+            .collect();
 
         let mir_function = MIRFunction {
             prototype: func_ctx.current_prototype,
-            basic_blocks: func_ctx.standard_blocks,
+            basic_blocks: full_blocks
         };
 
         self.generated_functions.push(mir_function);

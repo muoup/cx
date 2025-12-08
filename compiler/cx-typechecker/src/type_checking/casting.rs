@@ -10,35 +10,35 @@ use crate::{environment::TypeEnvironment, log_typecheck_error};
 pub(crate) fn coerce_value(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
-    mut value: MIRValue,
+    value: MIRValue,
 ) -> CXResult<MIRValue> {
     if let Some(inner) = value.get_type().mem_ref_inner() {
-        value = implicit_cast(env, expr, value, inner)?;
-    }
+        match &inner.kind {
+            CXTypeKind::Array { inner_type, .. } => {
+                let pointer_to = inner_type.clone().pointer_to();
+                let new_register = env.builder.new_register();
 
-    match &value.get_type().kind {
-        CXTypeKind::Array { inner_type, .. } => {
-            let pointer_to = inner_type.clone().pointer_to();
-            let new_register = env.builder.new_register();
+                env.builder.add_instruction(MIRInstruction::Coercion {
+                    result: new_register.clone(),
+                    operand: value,
+                    cast_type: MIRCoercion::ReinterpretBits,
+                });
 
-            env.builder.add_instruction(MIRInstruction::Coercion {
-                result: new_register.clone(),
-                operand: value,
-                cast_type: MIRCoercion::ReinterpretBits,
-            });
+                Ok(MIRValue::Register {
+                    register: new_register,
+                    _type: pointer_to,
+                })
+            }
 
-            Ok(MIRValue::Register {
-                register: new_register,
-                _type: pointer_to,
-            })
+            CXTypeKind::Function { prototype, .. } => Ok(MIRValue::FunctionReference {
+                prototype: *prototype.clone(),
+                implicit_variables: vec![],
+            }),
+
+            _ => implicit_cast(env, expr, value, inner)
         }
-
-        CXTypeKind::Function { prototype, .. } => Ok(MIRValue::FunctionReference {
-            prototype: *prototype.clone(),
-            implicit_variables: vec![],
-        }),
-
-        _ => Ok(value),
+    } else {
+        Ok(value)
     }
 }
 
@@ -191,10 +191,16 @@ pub fn implicit_cast(
             coerce(MIRCoercion::FloatCast { to_type: *to_type })
         }
         (CXTypeKind::Integer { signed, .. }, CXTypeKind::Float { _type, .. }) => {
-            coerce(MIRCoercion::IntToFloat { to_type: *_type, sextend: *signed })
+            coerce(MIRCoercion::IntToFloat {
+                to_type: *_type,
+                sextend: *signed,
+            })
         }
         (CXTypeKind::Float { .. }, CXTypeKind::Integer { _type, signed, .. }) => {
-            coerce(MIRCoercion::FloatToInt { to_type: *_type, sextend: *signed })
+            coerce(MIRCoercion::FloatToInt {
+                to_type: *_type,
+                sextend: *signed,
+            })
         }
 
         (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. })
@@ -226,11 +232,16 @@ pub fn implicit_cast(
 
             if to_type.is_structured() {
                 env.builder
-                    .add_instruction(MIRInstruction::CopyStackRegionInto {
+                    .add_instruction(MIRInstruction::CreateStackRegion {
                         result: result.clone(),
-                        source: register.clone(),
-                        _type: *inner.clone(),
+                        _type: to_type.clone(),
                     });
+
+                env.builder.add_instruction(MIRInstruction::CopyRegionInto {
+                    destination: result.clone(),
+                    source: register.clone(),
+                    _type: *inner.clone(),
+                });
             } else {
                 env.builder.add_instruction(MIRInstruction::MemoryRead {
                     result: result.clone(),

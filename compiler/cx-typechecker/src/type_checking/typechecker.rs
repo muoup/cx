@@ -1,7 +1,7 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::binary_ops::{
-    typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call,
+    typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is, typecheck_method_call
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::contract::contracted_function_return;
@@ -9,7 +9,7 @@ use crate::type_checking::move_semantics::acknowledge_declared_type;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
-use cx_typechecker_data::mir::expression::{MIRBinOp, MIRInstruction, MIRPtrDiffBinOp, MIRUnOp, MIRValue};
+use cx_typechecker_data::mir::expression::{MIRBinOp, MIRInstruction, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRUnOp, MIRValue};
 use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
 use cx_typechecker_data::mir::types::{CXIntegerType, CXTypeKind};
 use cx_util::identifier::CXIdent;
@@ -81,7 +81,7 @@ pub fn typecheck_expr(
             let result = env.builder.new_register();
 
             env.builder
-                .add_instruction(MIRInstruction::CreateEmptyStackRegion {
+                .add_instruction(MIRInstruction::CreateStackRegion {
                     result: result.clone(),
                     _type: _type.clone(),
                 });
@@ -271,6 +271,7 @@ pub fn typecheck_expr(
  
             env.push_scope(None, None);
             typecheck_expr(env, base_data, increment)?;
+            env.builder.add_jump(condition_block.clone());
             env.pop_scope();
  
             env.pop_scope();
@@ -397,9 +398,9 @@ pub fn typecheck_expr(
                         CXTypeKind::Integer { _type, signed, .. } => {
                             env.builder.add_instruction(MIRInstruction::BinOp {
                                 result: result.clone(),
-                                op: MIRBinOp::PtrDiff { 
-                                    op: MIRPtrDiffBinOp::ADD,
-                                    ptr_inner: Box::new(inner.clone()),
+                                op: MIRBinOp::Integer { 
+                                    itype: *_type,
+                                    op: MIRIntegerBinOp::ADD
                                 },
                                 lhs: MIRValue::Register {
                                     register: load.clone(),
@@ -636,18 +637,17 @@ pub fn typecheck_expr(
             lhs,
             rhs,
         } => {
-            if let Some(_) = op {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    " Compound assignment operators (e.g. +=, -=) are not yet supported"
-                );
-            }
-
             let lhs_val = typecheck_expr(env, base_data, lhs)?;
             let lhs_type = lhs_val.get_type();
 
-            let rhs_val = typecheck_expr(env, base_data, rhs)?;
+            let mut rhs_val = typecheck_expr(env, base_data, rhs)?;
+            
+            if let Some(op) = op {
+                let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
+                let loaded_rhs = coerce_value(env, expr, rhs_val)?;
+                
+                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
+            }
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
                 return log_typecheck_error!(
@@ -745,7 +745,7 @@ pub fn typecheck_expr(
 
             let result_region = env.builder.new_register();
             env.builder
-                .add_instruction(MIRInstruction::CreateEmptyStackRegion {
+                .add_instruction(MIRInstruction::CreateStackRegion {
                     result: result_region.clone(),
                     _type: union_type.clone(),
                 });

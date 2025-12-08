@@ -5,7 +5,11 @@ use cx_parsing_data::{
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::{
     function_map::CXFunctionKind,
-    mir::{expression::{MIRInstruction, MIRValue}, program::MIRBaseMappings, types::{CXFunctionPrototype, CXIntegerType, CXTemplateInput, TCParameter}},
+    mir::{
+        expression::{MIRInstruction, MIRValue},
+        program::MIRBaseMappings,
+        types::{CXFunctionPrototype, CXIntegerType, CXTemplateInput, TCParameter},
+    },
 };
 use cx_util::{CXError, CXResult};
 
@@ -18,9 +22,9 @@ use crate::{
     },
 };
 
-pub(crate) mod contract;
 pub(crate) mod binary_ops;
 pub(crate) mod casting;
+pub(crate) mod contract;
 pub(crate) mod move_semantics;
 pub(crate) mod structured_initialization;
 pub(crate) mod typechecker;
@@ -34,31 +38,30 @@ fn generate_function(
     env.push_scope(None, None);
     env.builder.start_function(prototype.clone());
     env.arg_vals.clear();
-    
+
     for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
-        let Some(name) = name else { continue; };
-        
+        let Some(name) = name else {
+            continue;
+        };
+
         let region = env.builder.new_register();
-        env.builder.add_instruction(
-            MIRInstruction::CreateEmptyStackRegion {
+        env.builder
+            .add_instruction(MIRInstruction::CreateStackRegion {
                 result: region.clone(),
                 _type: _type.clone(),
-            }
-        );
-        
-        env.builder.add_instruction(
-            MIRInstruction::MemoryWrite {
-                target: MIRValue::Register { 
-                    register: region.clone(),
-                    _type: _type.clone(),
-                },
-                value: MIRValue::Parameter {
-                    index: i,
-                    _type: _type.clone(),
-                },
-            }
-        );
-        
+            });
+
+        env.builder.add_instruction(MIRInstruction::MemoryWrite {
+            target: MIRValue::Register {
+                register: region.clone(),
+                _type: _type.clone(),
+            },
+            value: MIRValue::Parameter {
+                index: i,
+                _type: _type.clone(),
+            },
+        });
+
         env.arg_vals.push(MIRValue::Register {
             register: region.clone(),
             _type: _type.clone().mem_ref_to(),
@@ -72,33 +75,23 @@ fn generate_function(
             },
         );
     }
-       
+
     typecheck_expr(env, base_data, body)?;
-    
+
     if !env.builder.current_block_closed() {
         if env.builder.current_prototype().return_type.is_unit() {
-            env.builder.add_instruction(
-                MIRInstruction::Return {
-                    value: None
-                }
-            );
+            env.builder.add_return(None);
         } else if env.builder.current_prototype().mangle_name() == "main" {
-            env.builder.add_instruction(
-                MIRInstruction::Return {
-                    value: Some(MIRValue::IntLiteral {
-                        value: 0,
-                        signed: true,
-                        _type: CXIntegerType::I32
-                    })
-                }
-            );
+            env.builder.add_return(Some(MIRValue::IntLiteral {
+                value: 0,
+                signed: true,
+                _type: CXIntegerType::I32,
+            }));
         } else {
-            return CXError::create_result(
-                format!(
-                    "Function '{}' is missing a return statement",
-                    env.builder.current_prototype().mangle_name()
-                ),
-            );        
+            return CXError::create_result(format!(
+                "Function '{}' is missing a return statement",
+                env.builder.current_prototype().mangle_name()
+            ));
         }
     }
 
@@ -107,7 +100,11 @@ fn generate_function(
     Ok(())
 }
 
-pub fn typecheck(env: &mut TypeEnvironment, base_data: &MIRBaseMappings, ast: &CXAST) -> CXResult<()> {
+pub fn typecheck(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    ast: &CXAST,
+) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {

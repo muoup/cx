@@ -742,7 +742,7 @@ pub(crate) fn codegen_instruction(
             let zero = context
                 .builder
                 .ins()
-                .iconst(ir::Type::int(from.bytes() as u16).unwrap(), 0);
+                .iconst(ir::Type::int((from.bytes() * 8) as u16).unwrap(), 0);
 
             Some(CodegenValue::Value(context.builder.ins().icmp(
                 ir::condcodes::IntCC::NotEqual,

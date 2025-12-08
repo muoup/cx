@@ -71,7 +71,7 @@ fn lower_int_binop(
         OperationCategory::Comparison => BCType::from(BCTypeKind::Bool),
     };
 
-    builder.add_instruction(
+    builder.add_instruction_translated(
         BCInstructionKind::IntegerBinOp {
             op: bc_op,
             left: bc_lhs,
@@ -105,7 +105,7 @@ fn lower_float_binop(
         MIRFloatBinOp::FGE => BCFloatBinOp::FGE,
     };
 
-    builder.add_instruction(
+    builder.add_instruction_translated(
         BCInstructionKind::FloatBinOp {
             op: bc_op,
             left: bc_lhs,
@@ -128,13 +128,13 @@ fn lower_ptrdiff_binop(
     let bc_rhs = lower_value(builder, rhs)?;
     let bc_element_type = builder.convert_cx_type(ptr_inner);
 
-    let index_as_ptrdiff = builder.add_instruction(
+    let index_as_ptrdiff = builder.add_new_instruction(
         BCInstructionKind::IntToPtrDiff {
             value: bc_rhs,
             ptr_inner: bc_element_type.clone(),
         },
         BCType::default_pointer(),
-        None,
+        true
     )?;
 
     let bc_op = match op {
@@ -142,7 +142,7 @@ fn lower_ptrdiff_binop(
         MIRPtrDiffBinOp::SUB => BCPtrBinOp::SUB,
     };
 
-    builder.add_instruction(
+    builder.add_instruction_translated(
         BCInstructionKind::PointerBinOp {
             op: bc_op,
             ptr_type: bc_element_type,
@@ -173,7 +173,7 @@ fn lower_ptr_binop(
         MIRPtrBinOp::GE => BCPtrBinOp::GE,
     };
 
-    builder.add_instruction(
+    builder.add_instruction_translated(
         BCInstructionKind::PointerBinOp {
             op: bc_op,
             ptr_type: BCType::default_pointer(),
@@ -203,7 +203,7 @@ fn lower_bool_binop(
         MIRBoolBinOp::NE => BCBoolBinOp::NE,
     };
 
-    builder.add_instruction(
+    builder.add_instruction_translated(
         BCInstructionKind::BooleanBinOp {
             op: bc_op,
             left: bc_lhs,

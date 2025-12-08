@@ -106,11 +106,8 @@ pub fn contracted_function_return(
         )?;
         env.pop_scope();
     }
-
-    env.builder.add_instruction(MIRInstruction::Return {
-        value: return_value,
-    });
-
+    
+    env.builder.add_return(return_value.clone());
     Ok(())
 }
 

@@ -57,6 +57,7 @@ pub enum BCValue {
         _type: BCFloatType,
         val: FloatWrapper,
     },
+    BoolImmediate(bool),
     Global(ElementID),
     FunctionRef(CXIdent),
 }
