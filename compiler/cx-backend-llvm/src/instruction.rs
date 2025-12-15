@@ -632,10 +632,12 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }
+        
+        
 
         BCInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::Trunc | BCCoercionType::IntToBool { .. },
+            coercion_type: BCCoercionType::Trunc
         } => {
             let value = function_state
                 .get_value(value)?

@@ -357,7 +357,6 @@ pub enum BCCoercionType {
     FloatCast { from: BCFloatType },
     IntToPtr { from: BCIntegerType, sextend: bool },
     IntToFloat { from: BCIntegerType, sextend: bool },
-    IntToBool { from: BCIntegerType },
     FloatToInt { from: BCFloatType, sextend: bool },
     PtrToInt,
     BitCast

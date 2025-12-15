@@ -736,24 +736,6 @@ pub(crate) fn codegen_instruction(
         }
 
         BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::IntToBool { from },
-            value,
-        } => {
-            let val = context.get_value(value).unwrap().as_value();
-
-            let zero = context
-                .builder
-                .ins()
-                .iconst(ir::Type::int((from.bytes() * 8) as u16).unwrap(), 0);
-
-            Some(CodegenValue::Value(context.builder.ins().icmp(
-                ir::condcodes::IntCC::NotEqual,
-                val,
-                zero,
-            )))
-        }
-
-        BCInstructionKind::Coercion {
             coercion_type: BCCoercionType::BitCast,
             value,
         } => {
