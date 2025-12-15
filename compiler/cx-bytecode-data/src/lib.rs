@@ -137,6 +137,13 @@ pub enum BCInstructionKind {
         value: BCValue,
         _type: BCType,
     },
+    
+    Memcpy {
+        dest: BCValue,
+        src: BCValue,
+        size: BCValue,
+        alignment: u8,
+    },
 
     Load {
         memory: BCValue,
@@ -271,6 +278,7 @@ pub enum BCPtrBinOp {
 pub enum BCIntBinOp {
     ADD,
     SUB,
+    IMUL,
     MUL,
     IDIV,
     UDIV,

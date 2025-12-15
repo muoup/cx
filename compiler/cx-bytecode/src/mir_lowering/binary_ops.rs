@@ -49,7 +49,7 @@ fn lower_int_binop(
         MIRIntegerBinOp::ADD => (BCIntBinOp::ADD, OperationCategory::Arithmetic),
         MIRIntegerBinOp::SUB => (BCIntBinOp::SUB, OperationCategory::Arithmetic),
         MIRIntegerBinOp::MUL => (BCIntBinOp::MUL, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::IMUL => (BCIntBinOp::MUL, OperationCategory::Arithmetic),
+        MIRIntegerBinOp::IMUL => (BCIntBinOp::IMUL, OperationCategory::Arithmetic),
         MIRIntegerBinOp::DIV => (BCIntBinOp::UDIV, OperationCategory::Arithmetic),
         MIRIntegerBinOp::IDIV => (BCIntBinOp::IDIV, OperationCategory::Arithmetic),
         MIRIntegerBinOp::MOD => (BCIntBinOp::UREM, OperationCategory::Arithmetic),

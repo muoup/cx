@@ -1,6 +1,6 @@
 use crate::GlobalState;
-use cx_bytecode_data::types::{BCType, BCTypeKind};
-use cx_bytecode_data::{LinkageType, MIRFunctionPrototype};
+use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
+use cx_bytecode_data::{BCFunctionPrototype, LinkageType};
 use inkwell::AddressSpace;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
@@ -48,17 +48,20 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> Option<BasicValueEnum
 pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
     Some(match &_type.kind {
         BCTypeKind::Unit => context.void_type().as_any_type_enum(),
-        BCTypeKind::Signed { bytes, .. } | BCTypeKind::Integer { bytes, .. } => match *bytes {
-            1 => context.i8_type().as_any_type_enum(),
-            2 => context.i16_type().as_any_type_enum(),
-            4 => context.i32_type().as_any_type_enum(),
-            8 => context.i64_type().as_any_type_enum(),
-
-            _ => panic!("Invalid integer size"),
+        BCTypeKind::Integer(_type) => match _type {
+            BCIntegerType::I8 => context.i8_type().as_any_type_enum(),
+            BCIntegerType::I16 => context.i16_type().as_any_type_enum(),
+            BCIntegerType::I32 => context.i32_type().as_any_type_enum(),
+            BCIntegerType::I64 => context.i64_type().as_any_type_enum(),
+            BCIntegerType::I128 => context.i128_type().as_any_type_enum(),
         },
+
         BCTypeKind::Bool => context.bool_type().as_any_type_enum(),
-        BCTypeKind::Float { bytes: 4 } => context.f32_type().as_any_type_enum(),
-        BCTypeKind::Float { bytes: 8 } => context.f64_type().as_any_type_enum(),
+
+        BCTypeKind::Float(_type) => match _type {
+            BCFloatType::F32 => context.f32_type().as_any_type_enum(),
+            BCFloatType::F64 => context.f64_type().as_any_type_enum(),
+        },
 
         BCTypeKind::Array { element, size } => {
             let inner_llvm_type = bc_llvm_type(context, element)?;
@@ -109,7 +112,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
 
 pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
-    prototype: &MIRFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<FunctionType<'a>> {
     let args = prototype
         .params
@@ -124,16 +127,22 @@ pub(crate) fn bc_llvm_prototype<'a>(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    Some(match bc_llvm_type(state.context, &prototype.return_type).unwrap() {
-        AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
-        AnyTypeEnum::FloatType(float_type) => {
-            float_type.fn_type(args.as_slice(), prototype.var_args)
-        }
-        AnyTypeEnum::PointerType(ptr_type) => ptr_type.fn_type(args.as_slice(), prototype.var_args),
-        AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), prototype.var_args),
+    Some(
+        match bc_llvm_type(state.context, &prototype.return_type).unwrap() {
+            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
+            AnyTypeEnum::FloatType(float_type) => {
+                float_type.fn_type(args.as_slice(), prototype.var_args)
+            }
+            AnyTypeEnum::PointerType(ptr_type) => {
+                ptr_type.fn_type(args.as_slice(), prototype.var_args)
+            }
+            AnyTypeEnum::VoidType(void_type) => {
+                void_type.fn_type(args.as_slice(), prototype.var_args)
+            }
 
-        _ty => panic!("Invalid return type, found: {_ty:?}"),
-    })
+            _ty => panic!("Invalid return type, found: {_ty:?}"),
+        },
+    )
 }
 
 pub(crate) fn convert_linkage(linkage: LinkageType) -> Linkage {

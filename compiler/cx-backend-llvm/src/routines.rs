@@ -1,12 +1,12 @@
 use crate::GlobalState;
 use crate::typing::bc_llvm_prototype;
-use cx_bytecode_data::MIRFunctionPrototype;
+use cx_bytecode_data::BCFunctionPrototype;
 use cx_util::log_error;
 use inkwell::values::FunctionValue;
 
 pub(crate) fn get_function<'a>(
     global_state: &GlobalState<'a>,
-    prototype: &MIRFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<FunctionValue<'a>> {
     if let Some(function_val) = global_state.module.get_function(&prototype.name) {
         return Some(function_val);

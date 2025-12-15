@@ -209,7 +209,7 @@ pub fn implicit_cast(
             coerce(MIRCoercion::ReinterpretBits)
         }
 
-        (CXTypeKind::MemoryReference(inner), _) if same_type(inner.as_ref(), to_type) => {
+        (CXTypeKind::MemoryReference(inner), _) => {
             if !inner.copyable() {
                 return log_typecheck_error!(
                     env,
@@ -230,11 +230,11 @@ pub fn implicit_cast(
                 );
             };
 
-            if to_type.is_structured() {
+            if inner.is_structured() {
                 env.builder
                     .add_instruction(MIRInstruction::CreateStackRegion {
                         result: result.clone(),
-                        _type: to_type.clone(),
+                        _type: *inner.clone(),
                     });
 
                 env.builder.add_instruction(MIRInstruction::CopyRegionInto {
@@ -250,26 +250,12 @@ pub fn implicit_cast(
                 })
             }
 
-            Ok(MIRValue::Register {
+            let result_value = MIRValue::Register {
                 register: result,
-                _type: to_type.clone(),
-            })
-        }
-
-        (CXTypeKind::MemoryReference(inner), _) => {
-            let loaded = env.builder.new_register();
-            env.builder.add_instruction(MIRInstruction::MemoryRead {
-                result: loaded.clone(),
-                source: value,
-                _type: *inner.clone(),
-            });
-
-            let loaded_as_value = MIRValue::Register {
-                register: loaded,
-                _type: *inner.clone(),
+                _type: *inner.clone()
             };
-
-            implicit_cast(env, expr, loaded_as_value, to_type)
+            
+            implicit_cast(env, expr, result_value, to_type)
         }
 
         (_, CXTypeKind::MemoryReference(inner))

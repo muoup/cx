@@ -1,6 +1,8 @@
 use crate::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use crate::{
-    BCBasicBlock, BCBoolBinOp, BCBoolUnOp, BCFloatBinOp, BCFloatUnOp, BCFunction, BCFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BCRegister, BCUnit, BCValue
+    BCBasicBlock, BCBoolBinOp, BCBoolUnOp, BCFloatBinOp, BCFloatUnOp, BCFunction,
+    BCFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp,
+    BCPtrBinOp, BCRegister, BCUnit, BCValue,
 };
 use std::fmt::{Display, Formatter};
 
@@ -64,7 +66,7 @@ impl Display for BCInstruction {
         if let Some(result) = &self.result {
             write!(f, "{} = ", result)?;
         }
-        
+
         write!(f, "{}", self.kind)
     }
 }
@@ -119,8 +121,17 @@ impl Display for BCInstructionKind {
             BCInstructionKind::Allocate { _type, .. } => {
                 write!(f, "alloca {_type}")
             }
-            BCInstructionKind::Store { value, memory, .. } => {
-                write!(f, "store {value}, {memory}")
+            BCInstructionKind::Store {
+                value,
+                memory,
+                _type,
+            } => {
+                write!(f, "store ({_type}) {value}, {memory}")
+            }
+            BCInstructionKind::Memcpy {
+                dest, src, size, ..
+            } => {
+                write!(f, "memcpy {dest}, {src}, {size}")
             }
             BCInstructionKind::Load { memory, _type, .. } => {
                 write!(f, "load {_type}, {memory}")
@@ -137,10 +148,13 @@ impl Display for BCInstructionKind {
             }
             BCInstructionKind::IntToPtrDiff { value, ptr_inner } => {
                 write!(f, "int_to_ptr_diff {value} ({ptr_inner})")
-            },
-            BCInstructionKind::Coercion { value, coercion_type } => {
+            }
+            BCInstructionKind::Coercion {
+                value,
+                coercion_type,
+            } => {
                 write!(f, "coerce {value} ({coercion_type:?})")
-            },
+            }
             BCInstructionKind::Return { value } => {
                 write!(f, "return")?;
 
@@ -242,7 +256,6 @@ impl Display for BCInstructionKind {
             BCInstructionKind::CompilerAssumption { condition } => {
                 write!(f, "compiler_assumption {condition}")
             }
-
         }
     }
 }
@@ -277,11 +290,11 @@ impl Display for BCIntBinOp {
                 BCIntBinOp::ADD => "+",
                 BCIntBinOp::SUB => "-",
                 BCIntBinOp::MUL => "*",
-                BCIntBinOp::IDIV => "i/",
-                BCIntBinOp::IREM => "i%",
-
+                BCIntBinOp::IMUL => "i*",
                 BCIntBinOp::UDIV => "u/",
+                BCIntBinOp::IDIV => "i/",
                 BCIntBinOp::UREM => "u%",
+                BCIntBinOp::IREM => "i%",
 
                 BCIntBinOp::SHL => "<<",
                 BCIntBinOp::ASHR => "a>>",
@@ -351,7 +364,7 @@ impl Display for BCFloatBinOp {
                 BCFloatBinOp::SUB => "-",
                 BCFloatBinOp::FMUL => "*",
                 BCFloatBinOp::FDIV => "/",
-                
+
                 BCFloatBinOp::EQ => "==",
                 BCFloatBinOp::NEQ => "!=",
                 BCFloatBinOp::FLT => "<",

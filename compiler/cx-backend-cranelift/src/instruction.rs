@@ -12,7 +12,8 @@ use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotK
 use cranelift_module::Module;
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCTypeKind};
 use cx_bytecode_data::{
-    BCBoolBinOp, BCBoolUnOp, BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp
+    BCBoolBinOp, BCBoolUnOp, BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction,
+    BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp,
 };
 use std::ops::IndexMut;
 
@@ -255,7 +256,7 @@ pub(crate) fn codegen_instruction(
             let inst = match op {
                 BCIntBinOp::ADD => context.builder.ins().iadd(left, right),
                 BCIntBinOp::SUB => context.builder.ins().isub(left, right),
-                BCIntBinOp::MUL => context.builder.ins().imul(left, right),
+                BCIntBinOp::IMUL | BCIntBinOp::MUL => context.builder.ins().imul(left, right),
                 BCIntBinOp::IDIV => context.builder.ins().sdiv(left, right),
                 BCIntBinOp::IREM => context.builder.ins().srem(left, right),
 
@@ -401,17 +402,16 @@ pub(crate) fn codegen_instruction(
 
             Some(CodegenValue::Value(inst))
         }
-        
+
         BCInstructionKind::BooleanUnOp { op, value } => {
             let val = context.get_value(value).unwrap().as_value();
 
             match op {
-                BCBoolUnOp::LNOT => Some(CodegenValue::Value(
-                    context
-                        .builder
-                        .ins()
-                        .icmp_imm(ir::condcodes::IntCC::Equal, val, 0),
-                )),
+                BCBoolUnOp::LNOT => Some(CodegenValue::Value(context.builder.ins().icmp_imm(
+                    ir::condcodes::IntCC::Equal,
+                    val,
+                    0,
+                ))),
             }
         }
 
@@ -523,25 +523,27 @@ pub(crate) fn codegen_instruction(
             let target = context.get_value(memory).unwrap().as_value();
             let value = context.get_value(value).unwrap().as_value();
 
-            if _type.is_structure() {
-                let size = _type.size();
-                let size_literal = context
-                    .builder
-                    .ins()
-                    .iconst(ir::Type::int(64).unwrap(), size as i64);
+            context
+                .builder
+                .ins()
+                .store(MemFlags::new(), value, target, 0);
 
-                context.builder.call_memcpy(
-                    *context.target_frontend_config,
-                    target,
-                    value,
-                    size_literal,
-                )
-            } else {
-                context
-                    .builder
-                    .ins()
-                    .store(MemFlags::new(), value, target, 0);
-            }
+            Some(CodegenValue::NULL)
+        }
+
+        BCInstructionKind::Memcpy {
+            dest,
+            src,
+            size,
+            alignment: _,
+        } => {
+            let dest = context.get_value(dest).unwrap().as_value();
+            let src = context.get_value(src).unwrap().as_value();
+            let size = context.get_value(size).unwrap().as_value();
+
+            context
+                .builder
+                .call_memcpy(*context.target_frontend_config, dest, src, size);
 
             Some(CodegenValue::NULL)
         }

@@ -9,4 +9,4 @@ cx-bytecode-data = { path = "../cx-bytecode-data" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-util = { path = "../cx-util" }
 
-inkwell = { version="0.6.0", default-features = false, features=["llvm18-1"] }
+inkwell = { version="0.7.1", default-features = false, features=["llvm21-1"] }

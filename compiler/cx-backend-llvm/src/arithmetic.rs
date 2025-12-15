@@ -125,19 +125,18 @@ pub(crate) fn generate_int_binop<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     left_value: IntValue<'a>,
     right_value: IntValue<'a>,
-    op: BCIntBinOp,
-    signed: bool,
+    op: BCIntBinOp
 ) -> Option<CodegenValue<'a>> {
     let inst_return = match op {
-        BCIntBinOp::ADD if signed => function_state
-            .builder
-            .build_int_nsw_add(
-                left_value,
-                right_value,
-                crate::instruction::inst_num().as_str(),
-            )
-            .ok()?
-            .as_any_value_enum(),
+        // BCIntBinOp::ADD if signed => function_state
+        //     .builder
+        //     .build_int_nsw_add(
+        //         left_value,
+        //         right_value,
+        //         crate::instruction::inst_num().as_str(),
+        //     )
+        //     .ok()?
+        //     .as_any_value_enum(),
         BCIntBinOp::ADD => function_state
             .builder
             .build_int_add(
@@ -147,15 +146,15 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::SUB if signed => function_state
-            .builder
-            .build_int_nsw_sub(
-                left_value,
-                right_value,
-                crate::instruction::inst_num().as_str(),
-            )
-            .ok()?
-            .as_any_value_enum(),
+        // BCIntBinOp::SUB if signed => function_state
+        //     .builder
+        //     .build_int_nsw_sub(
+        //         left_value,
+        //         right_value,
+        //         crate::instruction::inst_num().as_str(),
+        //     )
+        //     .ok()?
+        //     .as_any_value_enum(),
         BCIntBinOp::SUB => function_state
             .builder
             .build_int_sub(
@@ -165,7 +164,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
             )
             .ok()?
             .as_any_value_enum(),
-        BCIntBinOp::MUL if signed => function_state
+        BCIntBinOp::IMUL => function_state
             .builder
             .build_int_nsw_mul(
                 left_value,

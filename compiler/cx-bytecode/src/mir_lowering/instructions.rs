@@ -30,33 +30,27 @@ pub fn lower_instruction(
         }
 
         MIRInstruction::CopyRegionInto {
-            destination: result,
+            destination,
             source,
             _type,
         } => {
+            let bc_dest = builder.get_symbol(destination).unwrap();
             let bc_source = builder.get_symbol(source).unwrap();
-
             let bc_type = builder.convert_cx_type(_type);
-            let new_region = builder.add_instruction_translated(
-                BCInstructionKind::Allocate {
-                    alignment: bc_type.alignment(),
-                    _type: bc_type.clone(),
-                },
-                BCType::default_pointer(),
-                None,
-            )?;
 
             builder.add_instruction_translated(
-                BCInstructionKind::Store {
-                    memory: new_region.clone(),
-                    value: bc_source.clone(),
-                    _type: bc_type,
+                BCInstructionKind::Memcpy {
+                    dest: bc_dest.clone(),
+                    src: bc_source.clone(),
+                    size: BCValue::IntImmediate {
+                        val: bc_type.size() as i64,
+                        _type: BCIntegerType::I64,
+                    },
+                    alignment: bc_type.alignment()
                 },
                 BCType::default_pointer(),
                 None,
             )?;
-
-            builder.insert_symbol(result.clone(), new_region);
 
             Ok(BCValue::NULL)
         }
