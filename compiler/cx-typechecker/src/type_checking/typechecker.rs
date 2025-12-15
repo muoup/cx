@@ -926,7 +926,7 @@ fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRValue> {
     match &global.kind {
         MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRValue::GlobalValue {
             name: name.clone(),
-            _type: _type.clone(),
+            _type: _type.clone().mem_ref_to(),
         }),
 
         MIRGlobalVarKind::StringLiteral { .. } => {

@@ -34,14 +34,14 @@ pub fn lower_instruction(
             source,
             _type,
         } => {
-            let bc_dest = builder.get_symbol(destination).unwrap();
-            let bc_source = builder.get_symbol(source).unwrap();
+            let bc_dest = lower_value(builder, destination)?;
+            let bc_source = lower_value(builder, source)?;
             let bc_type = builder.convert_cx_type(_type);
 
             builder.add_instruction_translated(
                 BCInstructionKind::Memcpy {
-                    dest: bc_dest.clone(),
-                    src: bc_source.clone(),
+                    dest: bc_dest,
+                    src: bc_source,
                     size: BCValue::IntImmediate {
                         val: bc_type.size() as i64,
                         _type: BCIntegerType::I64,

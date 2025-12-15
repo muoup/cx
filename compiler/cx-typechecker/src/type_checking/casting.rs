@@ -221,15 +221,7 @@ pub fn implicit_cast(
             }
 
             let result = env.builder.new_register();
-            let MIRValue::Register { register, .. } = &value else {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    "Expected register value for memory reference copy, got {}",
-                    value
-                );
-            };
-
+            
             if inner.is_structured() {
                 env.builder
                     .add_instruction(MIRInstruction::CreateStackRegion {
@@ -238,8 +230,11 @@ pub fn implicit_cast(
                     });
 
                 env.builder.add_instruction(MIRInstruction::CopyRegionInto {
-                    destination: result.clone(),
-                    source: register.clone(),
+                    destination: MIRValue::Register {
+                        register: result.clone(),
+                        _type: inner.clone().pointer_to(),
+                    },
+                    source: value,
                     _type: *inner.clone(),
                 });
             } else {

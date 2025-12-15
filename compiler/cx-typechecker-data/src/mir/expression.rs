@@ -55,8 +55,8 @@ pub enum MIRInstruction {
     },
 
     CopyRegionInto {
-        destination: MIRRegister,
-        source: MIRRegister,
+        destination: MIRValue,
+        source: MIRValue,
         _type: CXType,
     },
 
