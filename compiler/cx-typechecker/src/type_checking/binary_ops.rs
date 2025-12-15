@@ -16,6 +16,28 @@ use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, CXType, CXType
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
+pub(crate) fn handle_assignment(
+    env: &mut TypeEnvironment,
+    lhs: &MIRValue,
+    rhs: &MIRValue,
+    value_type: &CXType,
+) -> CXResult<()> {
+    if value_type.is_memory_resident() {
+        env.builder.add_instruction(MIRInstruction::CopyRegionInto {
+            destination: lhs.clone(),
+            source: rhs.clone(),
+            _type: value_type.clone(),
+        });
+    } else {
+        env.builder.add_instruction(MIRInstruction::MemoryWrite {
+            target: lhs.clone(),
+            value: rhs.clone(),
+        });
+    }
+
+    Ok(())
+}
+
 pub(crate) fn typecheck_access(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -23,7 +45,7 @@ pub(crate) fn typecheck_access(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let mut lhs_val = typecheck_expr(env, base_data, lhs)?;
+    let mut lhs_val = typecheck_expr(env, base_data, lhs, None)?;
     let lhs_type = lhs_val.get_type();
 
     // Here, out aim is to continue with lhs_val being one indirection from the memory,
@@ -52,7 +74,7 @@ pub(crate) fn typecheck_access(
 
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
-            if let Some(struct_field) = struct_field(&lhs_inner, name) {
+            if let Some(struct_field) = struct_field(&lhs_inner, name.as_str()) {
                 let result = env.builder.new_register();
 
                 match &lhs_inner.kind {
@@ -191,11 +213,11 @@ pub(crate) fn comma_separated<'a>(
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        exprs.push((rhs, typecheck_expr(env, base_data, rhs)?));
+        exprs.push((rhs, typecheck_expr(env, base_data, rhs, None)?));
         expr_iter = lhs;
     }
 
-    exprs.push((expr_iter, typecheck_expr(env, base_data, expr_iter)?));
+    exprs.push((expr_iter, typecheck_expr(env, base_data, expr_iter, None)?));
     exprs.reverse();
 
     Ok(exprs)
@@ -208,7 +230,7 @@ pub(crate) fn typecheck_method_call(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let lhs_val = typecheck_expr(env, base_data, lhs)?;
+    let lhs_val = typecheck_expr(env, base_data, lhs, None)?;
 
     let loaded_lhs = coerce_value(env, lhs, lhs_val.clone())?;
     let loaded_lhs_type = loaded_lhs.get_type();
@@ -359,7 +381,7 @@ pub(crate) fn typecheck_is(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let tc_lhs = typecheck_expr(env, base_data, lhs)?;
+    let tc_lhs = typecheck_expr(env, base_data, lhs, None)?;
     let loaded_lhs_val = coerce_value(env, lhs, tc_lhs)?;
     let loaded_lhs_type = loaded_lhs_val.get_type();
 
@@ -479,8 +501,8 @@ pub(crate) fn typecheck_binop(
         _ => {}
     }
 
-    let mir_lhs = typecheck_expr(env, base_data, lhs).and_then(|e| coerce_value(env, lhs, e))?;
-    let mir_rhs = typecheck_expr(env, base_data, rhs).and_then(|e| coerce_value(env, rhs, e))?;
+    let mir_lhs = typecheck_expr(env, base_data, lhs, None).and_then(|e| coerce_value(env, lhs, e))?;
+    let mir_rhs = typecheck_expr(env, base_data, rhs, None).and_then(|e| coerce_value(env, rhs, e))?;
 
     typecheck_binop_mir_vals(env, op, mir_lhs, mir_rhs, expr)
 }
@@ -1023,7 +1045,7 @@ fn typecheck_short_circuit(
     rhs: &CXExpr,
     _expr: &CXExpr,
 ) -> CXResult<MIRValue> {
-    let lhs = typecheck_expr(env, base_data, lhs)
+    let lhs = typecheck_expr(env, base_data, lhs, None)
         .and_then(|e| coerce_value(env, lhs, e))
         .and_then(|v| implicit_cast(env, lhs, v, &CXTypeKind::Bool.into()))?;
 
@@ -1058,7 +1080,7 @@ fn typecheck_short_circuit(
     });
 
     env.builder.add_and_set_block(continue_block.clone());
-    let rhs = typecheck_expr(env, base_data, rhs)
+    let rhs = typecheck_expr(env, base_data, rhs, None)
         .and_then(|e| coerce_value(env, rhs, e))
         .and_then(|v| implicit_cast(env, rhs, v, &CXTypeKind::Bool.into()))?;
 
@@ -1080,13 +1102,13 @@ fn typecheck_short_circuit(
     })
 }
 
-struct StructField {
-    index: usize,
-    offset: usize,
-    field_type: CXType,
+pub(crate) struct StructField {
+    pub index: usize,
+    pub offset: usize,
+    pub field_type: CXType,
 }
 
-fn struct_field<'a>(struct_type: &CXType, field_name: &CXIdent) -> Option<StructField> {
+pub(crate) fn struct_field<'a>(struct_type: &CXType, field_name: &str) -> Option<StructField> {
     let mut field_index = 0;
     let mut field_offset = 0;
 
@@ -1100,7 +1122,7 @@ fn struct_field<'a>(struct_type: &CXType, field_name: &CXIdent) -> Option<Struct
                 field_type.type_alignment() - (field_offset % field_type.type_alignment());
         }
 
-        if field_name_i.as_str() == field_name.as_str() {
+        if field_name_i.as_str() == field_name {
             return Some(StructField {
                 index: field_index,
                 offset: field_offset,

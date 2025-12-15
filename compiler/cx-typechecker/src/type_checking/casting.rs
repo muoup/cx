@@ -5,7 +5,7 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, log_typecheck_error};
+use crate::{environment::TypeEnvironment, log_typecheck_error, type_checking::binary_ops::handle_assignment};
 
 pub(crate) fn coerce_value(
     env: &mut TypeEnvironment,
@@ -221,34 +221,25 @@ pub fn implicit_cast(
             }
 
             let result = env.builder.new_register();
+            let result_value = MIRValue::Register {
+                register: result.clone(),
+                _type: *inner.clone()
+            };
             
-            if inner.is_structured() {
+            if inner.is_memory_resident() {
                 env.builder
                     .add_instruction(MIRInstruction::CreateStackRegion {
                         result: result.clone(),
                         _type: *inner.clone(),
                     });
-
-                env.builder.add_instruction(MIRInstruction::CopyRegionInto {
-                    destination: MIRValue::Register {
-                        register: result.clone(),
-                        _type: inner.clone().pointer_to(),
-                    },
-                    source: value,
-                    _type: *inner.clone(),
-                });
+                handle_assignment(env, &result_value, &value, inner)?;
             } else {
                 env.builder.add_instruction(MIRInstruction::MemoryRead {
-                    result: result.clone(),
+                    result: result,
                     source: value,
                     _type: *inner.clone(),
                 })
             }
-
-            let result_value = MIRValue::Register {
-                register: result,
-                _type: *inner.clone()
-            };
             
             implicit_cast(env, expr, result_value, to_type)
         }
@@ -259,7 +250,7 @@ pub fn implicit_cast(
             CXTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) && from_type.is_structured() => {
+        ) if same_type(inner.as_ref(), &from_type) && from_type.is_memory_resident() => {
             coerce(MIRCoercion::ReinterpretBits)
         }
 

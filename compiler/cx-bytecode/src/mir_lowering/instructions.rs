@@ -12,7 +12,7 @@ use cx_util::{identifier::CXIdent, CXResult};
 use crate::{
     builder::BCBuilder,
     mir_lowering::{
-        binary_ops::lower_binop, coercion::lower_coercion, tagged_union::tagged_union_tag_addr,
+        binary_ops::{lower_binop, lower_call_params}, coercion::lower_coercion, tagged_union::tagged_union_tag_addr,
     },
 };
 
@@ -246,14 +246,10 @@ pub fn lower_instruction(
             function,
             arguments,
         } => {
-            let bc_arguments = arguments
-                .iter()
-                .map(|arg| lower_value(builder, arg))
-                .collect::<CXResult<Vec<BCValue>>>()?;
-
             if let MIRValue::FunctionReference { prototype, .. } = function {
                 let bc_prototype = builder.convert_cx_prototype(prototype);
                 let return_type = builder.convert_cx_type(&prototype.return_type);
+                let bc_arguments = lower_call_params(builder, &arguments, &bc_prototype)?;
 
                 builder.add_instruction_translated(
                     BCInstructionKind::DirectCall {
@@ -271,6 +267,7 @@ pub fn lower_instruction(
                 let bc_function = lower_value(builder, function)?;
                 let bc_prototype = builder.convert_cx_prototype(prototype.as_ref());
                 let return_type = builder.convert_cx_type(&prototype.return_type);
+                let bc_arguments = lower_call_params(builder, &arguments, &bc_prototype)?;
 
                 builder.add_instruction_translated(
                     BCInstructionKind::IndirectCall {

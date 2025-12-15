@@ -268,7 +268,7 @@ impl CXType {
         matches!(self.kind, CXTypeKind::Array { .. })
     }
 
-    pub fn is_structured(&self) -> bool {
+    pub fn is_memory_resident(&self) -> bool {
         matches!(
             self.kind,
             CXTypeKind::Structured { .. }

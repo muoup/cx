@@ -1,5 +1,7 @@
 use cx_bytecode_data::{
-    BCBoolBinOp, BCFloatBinOp, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue, types::{BCType, BCTypeKind}
+    types::{BCType, BCTypeKind},
+    BCBoolBinOp, BCFloatBinOp, BCFunctionPrototype, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
+    BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{
@@ -134,7 +136,7 @@ fn lower_ptrdiff_binop(
             ptr_inner: bc_element_type.clone(),
         },
         BCType::default_pointer(),
-        true
+        true,
     )?;
 
     let bc_op = match op {
@@ -198,7 +200,7 @@ fn lower_bool_binop(
     let bc_op = match op {
         MIRBoolBinOp::LAND => BCBoolBinOp::LAND,
         MIRBoolBinOp::LOR => BCBoolBinOp::LOR,
-        
+
         MIRBoolBinOp::EQ => BCBoolBinOp::EQ,
         MIRBoolBinOp::NE => BCBoolBinOp::NE,
     };
@@ -212,4 +214,32 @@ fn lower_bool_binop(
         BCType::from(BCTypeKind::Bool),
         Some(result.clone()),
     )
+}
+
+pub fn lower_call_params(
+    builder: &mut BCBuilder,
+    params: &[MIRValue],
+    prototype: &BCFunctionPrototype,
+) -> CXResult<Vec<BCValue>> {
+    let mut lowered_params = Vec::new();
+
+    if let Some(buffer_type) = prototype.temp_buffer.as_ref() {
+        let temp_buffer = builder.add_new_instruction(
+            BCInstructionKind::Allocate {
+                _type: buffer_type.clone(),
+                alignment: buffer_type.alignment(),
+            },
+            BCType::default_pointer(),
+            true,
+        )?;
+
+        lowered_params.push(temp_buffer);
+    }
+
+    for param in params.iter() {
+        let bc_value = lower_value(builder, param)?;
+        lowered_params.push(bc_value);
+    }
+
+    Ok(lowered_params)
 }

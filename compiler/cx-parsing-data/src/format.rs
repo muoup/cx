@@ -337,20 +337,20 @@ impl Display for CXNaiveTypeKind {
             CXNaiveTypeKind::Structured { name, fields } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(
                     f,
                     "struct {} {{ {} }}",
-                    name.as_ref().map(|n| n.as_str()).unwrap_or(""),
+                    name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
                     fields_str
                 )
             }
             CXNaiveTypeKind::Union { name, fields } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(

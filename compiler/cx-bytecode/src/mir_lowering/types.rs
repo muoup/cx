@@ -1,6 +1,6 @@
 use crate::builder::BCBuilder;
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
-use cx_bytecode_data::{LinkageType, BCFunctionPrototype, BCParameter};
+use cx_bytecode_data::{BCFunctionPrototype, BCParameter, LinkageType};
 use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::mir::types::{
     CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind,
@@ -18,15 +18,15 @@ impl BCBuilder {
     ) -> BCFunctionPrototype {
         convert_cx_prototype(cx_proto)
     }
-    
+
     pub(crate) fn convert_integer_type(&self, cx_itype: &CXIntegerType) -> BCIntegerType {
         convert_integer_type(cx_itype)
     }
-    
+
     pub(crate) fn convert_float_type(&self, cx_ftype: &CXFloatType) -> BCFloatType {
         convert_float_type(cx_ftype)
     }
-    
+
     pub fn convert_linkage(&self, linkage: CXLinkageMode) -> LinkageType {
         convert_linkage(linkage)
     }
@@ -39,12 +39,10 @@ fn convert_type(cx_type: &CXType) -> BCType {
 }
 
 fn convert_argument_type(cx_type: &CXType) -> BCType {
-    let bc_type = convert_type(cx_type);
-
-    match &bc_type.kind {
-        BCTypeKind::Struct { .. } | BCTypeKind::Union { .. } => BCType::default_pointer(),
-
-        _ => bc_type,
+    if cx_type.is_memory_resident() {
+        BCType::default_pointer()
+    } else {
+        convert_type(cx_type)
     }
 }
 
@@ -59,8 +57,9 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunction
         .collect::<Vec<_>>();
 
     let mut return_type = convert_type(&cx_proto.return_type);
+    let mut buffer_type = None;
 
-    if cx_proto.return_type.is_structured() {
+    if cx_proto.return_type.is_memory_resident() {
         params.insert(
             0,
             BCParameter {
@@ -70,6 +69,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunction
         );
 
         return_type = BCType::default_pointer();
+        buffer_type = Some(convert_type(&cx_proto.return_type));
     }
 
     let prototype = BCFunctionPrototype {
@@ -78,6 +78,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunction
         params: params.clone(),
         var_args: cx_proto.var_args,
         linkage: LinkageType::Standard,
+        temp_buffer: buffer_type,
     };
 
     prototype

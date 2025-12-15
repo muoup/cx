@@ -145,7 +145,7 @@ impl Display for MIRInstruction {
                 destination,
                 source,
                 _type,
-            } => write!(f, "copy region {_type} {source} into {destination}"),
+            } => write!(f, "copy region ({_type}) {source} into {destination}"),
             MIRInstruction::MemoryRead {
                 result,
                 source,
@@ -388,49 +388,26 @@ impl Display for CXTypeKind {
             ),
             CXTypeKind::Float { _type } => write!(f, "{}", _type),
             CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { name, fields, .. } => {
+            CXTypeKind::Structured { name, .. } => {
                 write!(
                     f,
                     "struct {}",
                     name.as_ref()
                         .map(|n| n.to_string())
                         .unwrap_or_else(|| "".to_string())
-                )?;
-                write!(f, " {{ ")?;
-                for (i, (name, _type)) in fields.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}: {}", name, _type)?;
-                }
-                write!(f, " }}")
+                )
             }
-            CXTypeKind::Union { name, variants } => {
+            CXTypeKind::Union { name, .. } => {
                 write!(
                     f,
                     "union {}",
                     name.as_ref()
                         .map(|n| n.to_string())
                         .unwrap_or_else(|| "".to_string())
-                )?;
-                write!(f, " {{ ")?;
-                for (i, (name, _type)) in variants.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}: {}", name, _type)?;
-                }
-                write!(f, " }}")
+                )
             }
-            CXTypeKind::TaggedUnion { name, variants } => {
-                write!(f, "tagged_union {} {{ ", name)?;
-                for (i, (name, _type)) in variants.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}: {}", name, _type)?;
-                }
-                write!(f, " }}")
+            CXTypeKind::TaggedUnion { name, .. } => {
+                write!(f, "tagged_union {} ", name)
             }
             CXTypeKind::Unit => write!(f, "()"),
             CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "*strong {}", inner_type),

@@ -44,39 +44,46 @@ fn generate_function(
             continue;
         };
 
-        let region = env.builder.new_register();
-        env.builder
-            .add_instruction(MIRInstruction::CreateStackRegion {
-                result: region.clone(),
-                _type: _type.clone(),
+        if _type.is_memory_resident() {
+            env.insert_symbol(
+                name.as_string(),
+                MIRValue::Parameter { index: i, _type: _type.clone().mem_ref_to() },
+            );
+        } else {
+            let region = env.builder.new_register();
+            env.builder
+                .add_instruction(MIRInstruction::CreateStackRegion {
+                    result: region.clone(),
+                    _type: _type.clone(),
+                });
+
+            env.builder.add_instruction(MIRInstruction::MemoryWrite {
+                target: MIRValue::Register {
+                    register: region.clone(),
+                    _type: _type.clone(),
+                },
+                value: MIRValue::Parameter {
+                    index: i,
+                    _type: _type.clone(),
+                },
             });
 
-        env.builder.add_instruction(MIRInstruction::MemoryWrite {
-            target: MIRValue::Register {
+            env.arg_vals.push(MIRValue::Register {
                 register: region.clone(),
-                _type: _type.clone(),
-            },
-            value: MIRValue::Parameter {
-                index: i,
-                _type: _type.clone(),
-            },
-        });
-
-        env.arg_vals.push(MIRValue::Register {
-            register: region.clone(),
-            _type: _type.clone().mem_ref_to(),
-        });
-
-        env.insert_symbol(
-            name.as_string(),
-            MIRValue::Register {
-                register: region,
                 _type: _type.clone().mem_ref_to(),
-            },
-        );
+            });
+
+            env.insert_symbol(
+                name.as_string(),
+                MIRValue::Register {
+                    register: region,
+                    _type: _type.clone().mem_ref_to(),
+                },
+            );
+        }
     }
 
-    typecheck_expr(env, base_data, body)?;
+    typecheck_expr(env, base_data, body, None)?;
 
     if !env.builder.current_block_closed() {
         if env.builder.current_prototype().return_type.is_unit() {

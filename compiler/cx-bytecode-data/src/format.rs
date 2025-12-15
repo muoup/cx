@@ -459,7 +459,7 @@ impl Display for BCTypeKind {
             BCTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
-                    .map(|(name, _type)| format!("{name}: {_type}"))
+                    .map(|(_, _type)| format!("{_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -468,7 +468,7 @@ impl Display for BCTypeKind {
             BCTypeKind::Union { fields, .. } => {
                 let fields = fields
                     .iter()
-                    .map(|(name, _type)| format!("{name}: {_type}"))
+                    .map(|(_, _type)| format!("{_type}"))
                     .collect::<Vec<_>>()
                     .join(", ");
 

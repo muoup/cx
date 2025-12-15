@@ -39,8 +39,13 @@ fn assume_clause(
 ) -> CXResult<()> {
     create_clause_scope(env, prototype, parameters)?;
 
-    let result = typecheck_expr(env, base_data, clause)
-        .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
+    let result = typecheck_expr(
+        env,
+        base_data,
+        clause,
+        Some(&CXType::from(CXTypeKind::Bool)),
+    )
+    .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
     env.builder
         .add_instruction(MIRInstruction::Assume { value: result });
 
@@ -59,8 +64,13 @@ fn assert_clause(
 ) -> CXResult<()> {
     create_clause_scope(env, prototype, parameters)?;
 
-    let result = typecheck_expr(env, base_data, clause)
-        .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
+    let result = typecheck_expr(
+        env,
+        base_data,
+        clause,
+        Some(&CXType::from(CXTypeKind::Bool)),
+    )
+    .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
     env.builder.add_instruction(MIRInstruction::Assert {
         value: result,
         message: format!("Function contract violated: {}", message.unwrap_or("")),
@@ -107,7 +117,10 @@ pub fn contracted_function_return(
         env.pop_scope();
     }
     
-    env.builder.add_return(return_value.clone());
+    env.builder.add_instruction(MIRInstruction::Return {
+        value: return_value,
+    });
+
     Ok(())
 }
 
@@ -135,10 +148,13 @@ pub fn contracted_function_call(
         None
     };
 
+    let arguments = parameters.to_vec();
+    let return_type = prototype.return_type.clone();
+
     env.builder.add_instruction(MIRInstruction::CallFunction {
         result: result.clone(),
         function,
-        arguments: parameters.iter().cloned().collect(),
+        arguments,
     });
 
     if let Some((result_reg, postcondition)) = &prototype.contract.postcondition {
@@ -166,7 +182,7 @@ pub fn contracted_function_call(
     Ok(match result {
         Some(result) => MIRValue::Register {
             register: result,
-            _type: prototype.return_type.clone(),
+            _type: return_type,
         },
         None => MIRValue::NULL,
     })

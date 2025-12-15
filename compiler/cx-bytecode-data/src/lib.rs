@@ -93,6 +93,7 @@ pub struct BCFunctionPrototype {
     pub params: Vec<BCParameter>,
     pub var_args: bool,
     pub linkage: LinkageType,
+    pub temp_buffer: Option<BCType>
 }
 
 #[derive(Debug, Clone)]
