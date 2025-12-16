@@ -7,7 +7,13 @@ use cx_typechecker_data::mir::{
 use cx_util::CXResult;
 
 use crate::{
-    environment::TypeEnvironment, log_typecheck_error, type_checking::{binary_ops::{handle_assignment, struct_field}, casting::implicit_cast, typechecker::typecheck_expr},
+    environment::TypeEnvironment,
+    log_typecheck_error,
+    type_checking::{
+        binary_ops::{handle_assignment, struct_field},
+        casting::implicit_cast,
+        typechecker::typecheck_expr,
+    },
 };
 
 pub fn typecheck_initializer_list(
@@ -77,17 +83,16 @@ fn typecheck_array_initializer(
     }
 
     let array_size = size.unwrap_or_else(|| indices.len());
-    let array_type = CXTypeKind::Array {
+    let array_type = CXType::from(CXTypeKind::Array {
         inner_type: Box::new(inner_type.clone()),
         size: array_size,
-    }
-    .into();
+    });
 
     let region = env.builder.new_register();
     env.builder
         .add_instruction(MIRInstruction::CreateStackRegion {
             result: region.clone(),
-            _type: array_type,
+            _type: array_type.clone(),
         });
 
     let region_val = MIRValue::Register {
@@ -105,9 +110,10 @@ fn typecheck_array_initializer(
             index: MIRValue::IntLiteral {
                 value: i as i64,
                 _type: CXIntegerType::I64,
-                signed: true
+                signed: true,
             },
             element_type: inner_type.clone(),
+            array_type: array_type.clone(),
         });
 
         env.builder.add_instruction(MIRInstruction::MemoryWrite {
@@ -183,7 +189,7 @@ fn typecheck_structured_initializer(
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
             .and_then(|v| implicit_cast(env, &index.value, v, field_type))?;
-        
+
         let Some(struct_field) = struct_field(to_type, field_name.as_str()) else {
             return log_typecheck_error!(
                 env,
@@ -193,7 +199,7 @@ fn typecheck_structured_initializer(
                 to_type
             );
         };
-        
+
         let element_ptr = env.builder.new_register();
         env.builder.add_instruction(MIRInstruction::StructGet {
             result: element_ptr.clone(),
@@ -202,12 +208,12 @@ fn typecheck_structured_initializer(
             field_offset: struct_field.offset,
             struct_type: to_type.clone(),
         });
-        
+
         let element_ptr_val = MIRValue::Register {
             register: element_ptr,
             _type: field_type.clone().mem_ref_to(),
         };
-        
+
         handle_assignment(env, &element_ptr_val, &value, field_type)?;
         initialized_fields[counter] = true;
 

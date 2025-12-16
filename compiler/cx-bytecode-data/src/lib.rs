@@ -155,11 +155,6 @@ pub enum BCInstructionKind {
         memory: BCValue,
         _type: BCType,
     },
-    
-    IntToPtrDiff {
-        value: BCValue,
-        ptr_inner: BCType,
-    },
 
     Coercion {
         value: BCValue,
@@ -173,6 +168,7 @@ pub enum BCInstructionKind {
     PointerBinOp {
         op: BCPtrBinOp,
         ptr_type: BCType,
+        type_padded_size: u64,
         left: BCValue,
         right: BCValue,
     },

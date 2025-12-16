@@ -216,6 +216,12 @@ impl CXType {
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
     }
+    
+    pub fn memory_resident_type(&self) -> &CXType {
+        self.mem_ref_inner()
+            .or_else(|| self.ptr_inner())
+            .unwrap_or(self)
+    }
 
     pub fn mem_ref_inner(&self) -> Option<&CXType> {
         let CXTypeKind::MemoryReference(inner) = &self.kind else {
@@ -223,6 +229,14 @@ impl CXType {
         };
 
         Some(inner.as_ref())
+    }
+    
+    pub fn array_inner(&self) -> Option<&CXType> {
+        let CXTypeKind::Array { inner_type, .. } = &self.kind else {
+            return None;
+        };
+
+        Some(inner_type.as_ref())
     }
 
     pub fn ptr_inner(&self) -> Option<&CXType> {
@@ -232,6 +246,7 @@ impl CXType {
 
         Some(inner_type.as_ref())
     }
+    
     pub fn pointer_to(self) -> Self {
         CXType {
             specifiers: 0,
@@ -401,7 +416,7 @@ impl CXType {
                 
                 for (_, t) in fields {
                     let align = t.type_alignment();
-                    offset += align - (offset % align);
+                    offset = (offset * align + align - 1) / align;
                     offset += t.type_size();
                 }
                 
@@ -429,13 +444,19 @@ impl CXType {
         }
     }
     
+    pub fn padded_size(&self) -> u64 {
+        let size = self.type_size() as u64;
+        let align = self.type_alignment() as u64;
+        (size + align - 1) / align * align
+    }
+    
     pub fn type_alignment(&self) -> usize {
         match &self.kind {
-            CXTypeKind::Integer { _type, .. } => _type.bytes(),
-            CXTypeKind::Float { _type } => _type.bytes(),
+            CXTypeKind::Integer { _type, .. } => _type.bytes().min(8),
+            CXTypeKind::Float { _type } => _type.bytes().min(8),
             CXTypeKind::Bool => 1,
             CXTypeKind::Unit => 1,
-            CXTypeKind::Opaque { size, .. } => *size,
+            CXTypeKind::Opaque { size, .. } => (*size).min(8),
             CXTypeKind::MemoryReference(_)
             | CXTypeKind::PointerTo { .. }
             | CXTypeKind::StrongPointer { .. } => std::mem::size_of::<usize>(),
@@ -444,12 +465,12 @@ impl CXType {
                 .iter()
                 .map(|(_, t)| t.type_alignment())
                 .max()
-                .unwrap_or(1),
+                .unwrap_or(8),
             CXTypeKind::Union { variants, .. } => variants
                 .iter()
                 .map(|(_, t)| t.type_alignment())
                 .max()
-                .unwrap_or(1),
+                .unwrap_or(8),
 
             CXTypeKind::Array { inner_type, .. } => inner_type.type_alignment(),
 
@@ -457,7 +478,7 @@ impl CXType {
                 .iter()
                 .map(|(_, t)| t.type_alignment())
                 .max()
-                .unwrap_or(1),
+                .unwrap_or(8),
 
             CXTypeKind::Function { .. } => unreachable!(),
         }
@@ -538,12 +559,12 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
 
         (
             CXTypeKind::Structured {
-                fields: t1_fields, ..
+                fields: t1_fields, copyable: c1, ..
             },
             CXTypeKind::Structured {
-                fields: t2_fields, ..
+                fields: t2_fields, copyable: c2, ..
             },
-        ) => t1_fields
+        ) => c1 == c2 && t1_fields
             .iter()
             .zip(t2_fields.iter())
             .all(|(f1, f2)| same_type(&f1.1, &f2.1)),

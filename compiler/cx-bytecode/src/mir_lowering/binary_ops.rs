@@ -130,15 +130,6 @@ fn lower_ptrdiff_binop(
     let bc_rhs = lower_value(builder, rhs)?;
     let bc_element_type = builder.convert_cx_type(ptr_inner);
 
-    let index_as_ptrdiff = builder.add_new_instruction(
-        BCInstructionKind::IntToPtrDiff {
-            value: bc_rhs,
-            ptr_inner: bc_element_type.clone(),
-        },
-        BCType::default_pointer(),
-        true,
-    )?;
-
     let bc_op = match op {
         MIRPtrDiffBinOp::ADD => BCPtrBinOp::ADD,
         MIRPtrDiffBinOp::SUB => BCPtrBinOp::SUB,
@@ -148,8 +139,9 @@ fn lower_ptrdiff_binop(
         BCInstructionKind::PointerBinOp {
             op: bc_op,
             ptr_type: bc_element_type,
+            type_padded_size: ptr_inner.padded_size(),
             left: bc_lhs,
-            right: index_as_ptrdiff,
+            right: bc_rhs,
         },
         BCType::default_pointer(),
         Some(result.clone()),
@@ -179,6 +171,7 @@ fn lower_ptr_binop(
         BCInstructionKind::PointerBinOp {
             op: bc_op,
             ptr_type: BCType::default_pointer(),
+            type_padded_size: 0,
             left: bc_lhs,
             right: bc_rhs,
         },

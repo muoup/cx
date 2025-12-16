@@ -323,9 +323,9 @@ pub(crate) fn perform_job(
                 panic!("MIR generation failed for unit: {}", job.unit);
             });
 
-            // if !job.unit.is_std_lib() {
-            dump_data(&mir);
-            // }
+            if !job.unit.is_std_lib() {
+                dump_data(&mir);
+            }
 
             context.module_db.mir.insert(job.unit.clone(), mir);
         }

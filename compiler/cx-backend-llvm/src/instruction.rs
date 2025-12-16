@@ -123,8 +123,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
             }
         }
 
-        BCInstructionKind::IntToPtrDiff { value, .. } => function_state.get_value(value)?.clone(),
-
         BCInstructionKind::Coercion {
             value,
             coercion_type: BCCoercionType::BitCast,
@@ -284,17 +282,18 @@ pub(crate) fn generate_instruction<'a, 'b>(
         BCInstructionKind::PointerBinOp {
             left,
             ptr_type,
+            type_padded_size,
             right,
             op,
+            ..
         } => {
             let left_value = function_state.get_value(left).unwrap().get_value();
-
             let right_value = function_state.get_value(right).unwrap().get_value();
 
             generate_ptr_binop(
                 global_state,
                 function_state,
-                ptr_type,
+                *type_padded_size,
                 left_value,
                 right_value,
                 *op,

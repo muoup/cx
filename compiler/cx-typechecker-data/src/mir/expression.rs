@@ -102,6 +102,7 @@ pub enum MIRInstruction {
         result: MIRRegister,
         source: MIRValue,
         index: MIRValue,
+        array_type: CXType,
         element_type: CXType,
     },
 
@@ -338,7 +339,7 @@ pub enum MIRCoercion {
 
     // Any integer type to a boolean (i1)
     IntToBool,
-
+    
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,

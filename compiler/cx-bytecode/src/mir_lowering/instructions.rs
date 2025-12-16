@@ -1,6 +1,6 @@
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCGlobalType, BCGlobalValue, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
+    BCGlobalType, BCGlobalValue, BCInstructionKind, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRUnOp, MIRValue},
@@ -220,27 +220,20 @@ pub fn lower_instruction(
             result,
             source,
             index,
+            array_type,
             element_type,
         } => {
             let bc_source = lower_value(builder, source)?;
             let bc_index = lower_value(builder, index)?;
-            let bc_element_type = builder.convert_cx_type(element_type);
-
-            let index_as_ptrdiff = builder.add_instruction_translated(
-                BCInstructionKind::IntToPtrDiff {
-                    value: bc_index,
-                    ptr_inner: bc_element_type.clone(),
-                },
-                BCType::default_pointer(),
-                None,
-            )?;
-
+            let bc_array_type = builder.convert_cx_type(array_type);
+            
             builder.add_instruction_translated(
                 BCInstructionKind::PointerBinOp {
                     left: bc_source,
-                    right: index_as_ptrdiff,
+                    right: bc_index,
                     op: BCPtrBinOp::ADD,
-                    ptr_type: bc_element_type,
+                    ptr_type: bc_array_type,
+                    type_padded_size: element_type.padded_size(),
                 },
                 BCType::default_pointer(),
                 Some(result.clone()),

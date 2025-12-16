@@ -336,7 +336,7 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Return { value } => {
-            let mut value_tc = if let Some(value) = value {
+            let value_tc = if let Some(value) = value {
                 let return_type = &env.current_function().return_type.clone();
                 let val = typecheck_expr(env, base_data, value, Some(return_type))
                     .and_then(|v| coerce_value(env, expr, v))?;
@@ -348,13 +348,12 @@ pub fn typecheck_expr_inner(
 
             let return_type = &env.current_function().return_type.clone();
 
-            match (&mut value_tc, return_type) {
+            let value = match (&value_tc, &return_type) {
                 (Some(some_value), return_type) if !return_type.is_unit() => {
-                    *some_value =
-                        implicit_cast(env, expr, std::mem::take(some_value), return_type)?;
+                    Some(implicit_cast(env, expr, some_value.clone(), return_type)?)
                 }
 
-                (None, _) if return_type.is_unit() => {}
+                (None, _) if return_type.is_unit() => None,
 
                 (Some(_), _) => {
                     return log_typecheck_error!(
@@ -373,9 +372,9 @@ pub fn typecheck_expr_inner(
                         env.current_function()
                     );
                 }
-            }
+            };
 
-            contracted_function_return(env, base_data, value_tc.clone())?;
+            contracted_function_return(env, base_data, value)?;
 
             MIRValue::NULL
         }
@@ -392,7 +391,7 @@ pub fn typecheck_expr_inner(
                 | CXUnOp::PostIncrement(increment_amount) => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let operand_type = operand_val.get_type();
-                    
+
                     let Some(inner) = operand_type.mem_ref_inner() else {
                         return log_typecheck_error!(
                             env,

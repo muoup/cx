@@ -5,41 +5,68 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, log_typecheck_error, type_checking::binary_ops::handle_assignment};
+use crate::{
+    environment::TypeEnvironment, log_typecheck_error, type_checking::binary_ops::handle_assignment,
+};
 
 pub(crate) fn coerce_value(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
     value: MIRValue,
 ) -> CXResult<MIRValue> {
-    if let Some(inner) = value.get_type().mem_ref_inner() {
-        match &inner.kind {
-            CXTypeKind::Array { inner_type, .. } => {
-                let pointer_to = inner_type.clone().pointer_to();
-                let new_register = env.builder.new_register();
+    let value_type = value.get_type();
+    let mem_ref_inner = value_type.mem_ref_inner();
 
-                env.builder.add_instruction(MIRInstruction::Coercion {
-                    result: new_register.clone(),
-                    operand: value,
-                    cast_type: MIRCoercion::ReinterpretBits,
-                });
-
-                Ok(MIRValue::Register {
-                    register: new_register,
-                    _type: pointer_to,
-                })
-            }
-
-            CXTypeKind::Function { prototype, .. } => Ok(MIRValue::FunctionReference {
-                prototype: *prototype.clone(),
-                implicit_variables: vec![],
-            }),
-
-            _ => implicit_cast(env, expr, value, inner)
-        }
+    if let Some(mem_ref_inner) = mem_ref_inner {
+        implicit_cast(env, expr, value, &mem_ref_inner)
     } else {
         Ok(value)
     }
+    
+    // match &inner_type.kind {
+    //     // There are certain types where a memory reference to them is essentially equivalent to
+    //     // their plain type. If we for instance have an array type, in memory, that is a pointer to
+    //     // the base of the array, and if we have a memory reference to that, it is still just a pointer to the
+    //     // base of the array. And for most semantic purposes, if we actually want to use either a &int[4] or a int[4],
+    //     // it makes sense to treat them both as an int*
+    //     CXTypeKind::Array {
+    //         inner_type: element_type,
+    //         ..
+    //     } => {
+    //         let pointer_to = element_type.clone().pointer_to();
+    //         let new_register = env.builder.new_register();
+
+    //         env.builder.add_instruction(MIRInstruction::ArrayGet {
+    //             result: new_register.clone(),
+    //             source: value,
+    //             index: MIRValue::IntLiteral {
+    //                 value: 0,
+    //                 signed: false,
+    //                 _type: CXIntegerType::I64,
+    //             },
+    //             array_type: inner_type.clone(),
+    //             element_type: *element_type.clone(),
+    //         });
+
+    //         Ok(MIRValue::Register {
+    //             register: new_register,
+    //             _type: pointer_to,
+    //         })
+    //     }
+
+    //     CXTypeKind::Function { prototype, .. } => Ok(MIRValue::FunctionReference {
+    //         prototype: *prototype.clone(),
+    //         implicit_variables: vec![],
+    //     }),
+
+    //     _ => {
+    //         if let Some(inner) = mem_ref_inner {
+    //             implicit_cast(env, expr, value, &inner.clone())
+    //         } else {
+    //             Ok(value)
+    //         }
+    //     }
+    // }
 }
 
 pub(crate) fn coerce_condition(
@@ -157,23 +184,14 @@ pub fn implicit_cast(
         }
 
         (
-            CXTypeKind::Integer {
-                _type: t1,
-                signed: s1,
-                ..
-            },
+            CXTypeKind::Integer { _type: t1, .. },
             CXTypeKind::Integer {
                 _type: t2,
                 signed: s2,
                 ..
             },
         ) => {
-            if t1.bytes() > t2.bytes() {
-                coerce(MIRCoercion::Integral {
-                    to_type: *t1,
-                    sextend: *s1,
-                })
-            } else if t1.bytes() < t2.bytes() {
+            if t1.bytes() != t2.bytes() {
                 coerce(MIRCoercion::Integral {
                     to_type: *t2,
                     sextend: *s2,
@@ -209,6 +227,32 @@ pub fn implicit_cast(
             coerce(MIRCoercion::ReinterpretBits)
         }
 
+        (
+            CXTypeKind::MemoryReference(inner1),
+            CXTypeKind::PointerTo {
+                inner_type: inner2, ..
+            },
+        ) if same_type(inner1.as_ref(), inner2.as_ref()) => coerce(MIRCoercion::ReinterpretBits),
+
+        (
+            CXTypeKind::MemoryReference(inner1),
+            CXTypeKind::PointerTo { inner_type: inner2, .. }
+        ) if inner1.is_array() => {
+            let inner1_inner = inner1.array_inner().unwrap();
+            
+            if same_type(&inner1_inner, inner2.as_ref()) {
+                coerce(MIRCoercion::ReinterpretBits)
+            } else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "No implicit cast from {} to {}",
+                    from_type,
+                    to_type
+                );
+            }
+        },
+        
         (CXTypeKind::MemoryReference(inner), _) => {
             if !inner.copyable() {
                 return log_typecheck_error!(
@@ -223,9 +267,9 @@ pub fn implicit_cast(
             let result = env.builder.new_register();
             let result_value = MIRValue::Register {
                 register: result.clone(),
-                _type: *inner.clone()
+                _type: *inner.clone(),
             };
-            
+
             if inner.is_memory_resident() {
                 env.builder
                     .add_instruction(MIRInstruction::CreateStackRegion {
@@ -240,7 +284,7 @@ pub fn implicit_cast(
                     _type: *inner.clone(),
                 })
             }
-            
+
             implicit_cast(env, expr, result_value, to_type)
         }
 
@@ -261,7 +305,25 @@ pub fn implicit_cast(
             CXTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(_type, inner) => coerce(MIRCoercion::ReinterpretBits),
+        ) if same_type(_type, inner) => {
+            let result = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::ArrayGet {
+                result: result.clone(),
+                source: value,
+                index: MIRValue::IntLiteral {
+                    value: 0,
+                    signed: false,
+                    _type: CXIntegerType::I64,
+                },
+                array_type: from_type.clone(),
+                element_type: *inner.clone(),
+            });
+
+            Ok(MIRValue::Register {
+                register: result,
+                _type: to_type.clone(),
+            })
+        }
 
         (
             CXTypeKind::Function { .. },

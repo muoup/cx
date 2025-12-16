@@ -44,7 +44,8 @@ mod regression_tests {
         sum_type,
         function_contract,
         basic_succeeding_contract,
-        array_passing
+        array_passing,
+        padded_array
     );
 }
 

@@ -111,10 +111,10 @@ impl BCType {
 
     pub fn alignment(&self) -> u8 {
         match &self.kind {
-            BCTypeKind::Opaque { bytes } => (*bytes).max(8) as u8,
+            BCTypeKind::Opaque { bytes } => (*bytes).min(8) as u8,
             BCTypeKind::Bool => 1,
-            BCTypeKind::Integer(_type) => _type.bytes(),
-            BCTypeKind::Float(_type) => _type.bytes(),
+            BCTypeKind::Integer(_type) => _type.bytes().min(8),
+            BCTypeKind::Float(_type) => _type.bytes().min(8),
             BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
             BCTypeKind::Array { element, .. } => element.alignment(),
             BCTypeKind::Struct { fields, .. } => fields

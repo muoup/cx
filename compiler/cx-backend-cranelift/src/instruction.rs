@@ -163,18 +163,6 @@ pub(crate) fn codegen_instruction(
             Some(val)
         }
 
-        BCInstructionKind::IntToPtrDiff { value, ptr_inner } => {
-            let size = ptr_inner.size();
-            let val = context.get_value(value).unwrap();
-
-            let ptr_diff = context
-                .builder
-                .ins()
-                .imul_imm(val.as_value(), Imm64::from(size as i64));
-
-            CodegenValue::Value(ptr_diff).into()
-        }
-
         BCInstructionKind::Coercion {
             coercion_type: BCCoercionType::IntToPtr { from: _, sextend },
             value,
@@ -200,7 +188,7 @@ pub(crate) fn codegen_instruction(
         }
 
         BCInstructionKind::PointerBinOp {
-            op, left, right, ..
+            op, left, right, type_padded_size, ..
         } => {
             let left = context.get_value(left).unwrap().as_value();
             let right = context.get_value(right).unwrap().as_value();
@@ -208,8 +196,21 @@ pub(crate) fn codegen_instruction(
 
             let inst =
                 match op {
-                    BCPtrBinOp::ADD => context.builder.ins().iadd(left, right),
-                    BCPtrBinOp::SUB => context.builder.ins().isub(left, right),
+                    BCPtrBinOp::ADD => {
+                        let right_scaled = context.builder
+                            .ins()
+                            .imul_imm(right, *type_padded_size as i64); // assuming type_padded_size is 1 for simplicity
+                        
+                        context.builder.ins().iadd(left, right_scaled)
+                    },
+                    
+                    BCPtrBinOp::SUB => {
+                        let right_scaled = context.builder
+                            .ins()
+                            .imul_imm(right, *type_padded_size as i64);
+                        
+                        context.builder.ins().isub(left, right_scaled)
+                    }
 
                     BCPtrBinOp::EQ => {
                         context

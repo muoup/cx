@@ -153,7 +153,7 @@ pub(crate) fn typecheck_access(
                     lhs_inner
                 );
             };
-            
+
             let lhs_val_as_pointer = env.builder.new_register();
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: lhs_val_as_pointer.clone(),
@@ -165,7 +165,7 @@ pub(crate) fn typecheck_access(
                 prototype,
                 implicit_variables: vec![MIRValue::Register {
                     register: lhs_val_as_pointer,
-                    _type: lhs_inner.clone().pointer_to()
+                    _type: lhs_inner.clone().pointer_to(),
                 }],
             })
         }
@@ -201,7 +201,7 @@ pub(crate) fn typecheck_access(
                 prototype,
                 implicit_variables: vec![MIRValue::Register {
                     register: lhs_val_as_pointer,
-                    _type: lhs_inner.clone().pointer_to()
+                    _type: lhs_inner.clone().pointer_to(),
                 }],
             })
         }
@@ -284,7 +284,7 @@ pub(crate) fn typecheck_method_call(
             lhs_val
         );
     };
-    
+
     let faux_expr = CXExpr::default();
 
     tc_args = implicit_variables
@@ -543,12 +543,30 @@ pub(crate) fn typecheck_binop(
         _ => {}
     }
 
-    let mir_lhs =
-        typecheck_expr(env, base_data, lhs, None).and_then(|e| coerce_value(env, lhs, e))?;
-    let mir_rhs =
-        typecheck_expr(env, base_data, rhs, None).and_then(|e| coerce_value(env, rhs, e))?;
+    let mir_lhs = typecheck_expr(env, base_data, lhs, None)?;
+    let mir_rhs = typecheck_expr(env, base_data, rhs, None)?;
 
     typecheck_binop_mir_vals(env, op, mir_lhs, mir_rhs, expr)
+}
+
+fn binop_coerce_value(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    val: MIRValue,
+) -> CXResult<MIRValue> {
+    let val_type = val.get_type();
+ 
+    let Some(inner) = val_type.mem_ref_inner() else {
+        return Ok(val);
+    };
+    
+    match &inner.kind {
+        CXTypeKind::Array { inner_type, .. } => {
+            implicit_cast(env, expr, val, &inner_type.clone().pointer_to())
+        },
+        
+        _ => coerce_value(env, expr, val),
+    }
 }
 
 pub(crate) fn typecheck_binop_mir_vals(
@@ -558,6 +576,9 @@ pub(crate) fn typecheck_binop_mir_vals(
     mir_rhs: MIRValue,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
+    let mir_lhs = binop_coerce_value(env, expr, mir_lhs)?;
+    let mir_rhs = binop_coerce_value(env, expr, mir_rhs)?;
+    
     let lhs_type = mir_lhs.get_type();
     let rhs_type = mir_rhs.get_type();
 
@@ -819,7 +840,7 @@ pub(crate) fn typecheck_int_int_binop(
     let itype = if lhs_itype.bytes() > rhs_itype.bytes() {
         rhs = implicit_cast(env, expr, rhs.clone(), &lhs_type)?;
         rhs_type = lhs_type.clone();
-        
+
         *lhs_itype
     } else if rhs_itype.bytes() > lhs_itype.bytes() {
         lhs = implicit_cast(env, expr, lhs.clone(), &rhs_type)?;
@@ -971,7 +992,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 lhs: pointer,
                 rhs: coerced_integer,
             });
-
+            
             Ok(MIRValue::Register {
                 register: result,
                 _type: return_type,
@@ -1127,16 +1148,17 @@ pub(crate) struct StructField {
 pub(crate) fn struct_field<'a>(struct_type: &CXType, field_name: &str) -> Option<StructField> {
     let mut field_index = 0;
     let mut field_offset = 0;
+    
+    let struct_type = struct_type.memory_resident_type();
 
     let CXTypeKind::Structured { fields, .. } = &struct_type.kind else {
-        unreachable!()
+        unreachable!("Invalid type for struct_field: {}", struct_type);
     };
 
     for (field_name_i, field_type) in fields.iter() {
-        if field_offset % field_type.type_alignment() != 0 {
-            field_offset +=
-                field_type.type_alignment() - (field_offset % field_type.type_alignment());
-        }
+        let field_alignment = field_type.type_alignment();
+
+        field_offset = (field_offset * field_alignment + field_alignment - 1) / field_alignment;
 
         if field_name_i.as_str() == field_name {
             return Some(StructField {

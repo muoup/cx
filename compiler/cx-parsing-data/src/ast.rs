@@ -283,27 +283,3 @@ impl CXExprKind {
         )
     }
 }
-
-#[derive(Debug, Clone, Readable, Writable)]
-pub enum CXCastType {
-    NOOP,
-
-    IntegralCast,
-    FloatCast,
-    IntToFloat,
-    IntToBool,
-    FloatToInt,
-    BitCast,
-    IntegralTrunc,
-    IntToPtrDiff,
-    PtrToInt,
-    IntToPtr,
-    FunctionToPointerDecay,
-    Load,
-
-    // The difference between a memory reference and a bare type is that a memory reference
-    // is stored in memory. A structured type is itself a memory reference despite this
-    // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
-    // used to create an explicit no-op to appease the typechecker.
-    Reinterpret,
-}

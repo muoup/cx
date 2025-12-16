@@ -158,11 +158,12 @@ impl Display for MIRInstruction {
                 result,
                 source,
                 field_index,
+                field_offset,
                 struct_type,
                 ..
             } => write!(
                 f,
-                "{result} = struct_get {source}, index {field_index} of {struct_type}"
+                "{result} = struct_get {source}, index {field_index} of {struct_type} (offset: {field_offset})"
             ),
             MIRInstruction::TaggedUnionTag {
                 result,

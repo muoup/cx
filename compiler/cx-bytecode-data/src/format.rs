@@ -61,16 +61,6 @@ impl Display for BCFunctionPrototype {
     }
 }
 
-impl Display for BCInstruction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(result) = &self.result {
-            write!(f, "{} = ", result)?;
-        }
-
-        write!(f, "{}", self.kind)
-    }
-}
-
 impl Display for BCGlobalType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -112,9 +102,13 @@ impl Display for BCValue {
     }
 }
 
-impl Display for BCInstructionKind {
+impl Display for BCInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
+        if let Some(result) = &self.result {
+            write!(f, "{} = ", result)?;
+        }
+        
+        match &self.kind {
             BCInstructionKind::Alias { value } => {
                 write!(f, "{value}")
             }
@@ -142,18 +136,17 @@ impl Display for BCInstructionKind {
             BCInstructionKind::StructAccess {
                 struct_,
                 field_index,
+                field_offset,
                 ..
             } => {
-                write!(f, "{struct_}.[{field_index}]")
+                write!(f, "{struct_}.[{field_index}] (+{field_offset})")
             }
-            BCInstructionKind::IntToPtrDiff { value, ptr_inner } => {
-                write!(f, "int_to_ptr_diff {value} ({ptr_inner})")
-            }
+
             BCInstructionKind::Coercion {
                 value,
                 coercion_type,
             } => {
-                write!(f, "coerce {value} ({coercion_type:?})")
+                write!(f, "{} coerce {value} ({coercion_type:?})", self.value_type)
             }
             BCInstructionKind::Return { value } => {
                 write!(f, "return")?;
@@ -227,10 +220,11 @@ impl Display for BCInstructionKind {
             BCInstructionKind::PointerBinOp {
                 left,
                 ptr_type,
+                type_padded_size,
                 right,
                 op,
             } => {
-                write!(f, "{left} {op} {right} [{ptr_type}*]")
+                write!(f, "{left} {op} {right} [{ptr_type}*, {type_padded_size}]")
             }
             BCInstructionKind::IntegerBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [i]")

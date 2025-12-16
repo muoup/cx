@@ -2,7 +2,8 @@ use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_bytecode_data::types::{BCType, BCTypeKind};
 use cx_bytecode_data::{
-    BCBasicBlock, BCBlockID, BCFunction, BCFunctionMap, BCFunctionPrototype, BCUnit, BCValue, ElementID
+    BCBasicBlock, BCBlockID, BCFunction, BCFunctionMap, BCFunctionPrototype, BCUnit, BCValue,
+    ElementID,
 };
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
@@ -14,7 +15,7 @@ use inkwell::types::FunctionType;
 use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
-use crate::instruction::{inst_num, reset_num};
+use crate::instruction::reset_num;
 use cx_pipeline_data::OptimizationLevel;
 use cx_util::format::dump_data;
 use inkwell::basic_block::BasicBlock;
@@ -64,7 +65,7 @@ impl<'a> FunctionState<'a, '_> {
 
                 Some(CodegenValue::Value(param_val))
             }
-            
+
             BCValue::BoolImmediate(val) => {
                 let bool_type = self.context.bool_type();
                 let bool_val = bool_type
@@ -210,10 +211,12 @@ pub fn bytecode_aot_codegen(
         )
         .expect("Failed to run passes");
 
-    dump_data(&format!(
-        "{}",
-        global_state.module.print_to_string().to_string_lossy()
-    ));
+    if !output_path.contains("std/") {
+        dump_data(&format!(
+                "{}",
+                global_state.module.print_to_string().to_string_lossy()
+            ));   
+    }
 
     let buff = target_machine
         .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
@@ -256,16 +259,11 @@ fn fn_aot_codegen(bytecode: &BCFunction, global_state: &GlobalState) -> Option<(
     for block in bytecode.blocks.iter() {
         global_state
             .context
-            .append_basic_block(func_val, block.id.as_str()); 
+            .append_basic_block(func_val, block.id.as_str());
     }
 
     for block in bytecode.blocks.iter() {
-        codegen_block(
-            global_state,
-            &mut function_state,
-            &block.id,
-            block,
-        );
+        codegen_block(global_state, &mut function_state, &block.id, block);
     }
 
     Some(())
@@ -297,9 +295,7 @@ fn codegen_block<'a, 'b>(
                 _type: inst.value_type.clone(),
             };
 
-            function_state
-                .value_map
-                .insert(bc_reg, value.clone());
+            function_state.value_map.insert(bc_reg, value.clone());
         }
 
         if inst.kind.is_block_terminating() {

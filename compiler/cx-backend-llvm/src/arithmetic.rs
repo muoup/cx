@@ -7,39 +7,21 @@ use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 pub(crate) fn generate_ptr_binop<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    ptr_type: &BCType,
+    type_padded_size: u64,
     left_value: AnyValueEnum<'a>,
     right_value: AnyValueEnum<'a>,
     op: BCPtrBinOp,
 ) -> Option<CodegenValue<'a>> {
-    let ptr_type = bc_llvm_type(global_state.context, ptr_type)?;
-
     Some(CodegenValue::Value(match op {
         BCPtrBinOp::ADD => unsafe {
-            let basic_type = any_to_basic_type(ptr_type).unwrap_or_else(|| {
-                panic!("Expected a basic type for pointer addition, found: {ptr_type:?}")
-            });
-
-            function_state
+            let i8_type = global_state.context.i8_type();
+            let scaled_right = function_state
                 .builder
-                .build_in_bounds_gep(
-                    basic_type,
-                    left_value.into_pointer_value(),
-                    &[right_value.into_int_value()],
-                    crate::instruction::inst_num().as_str(),
-                )
-                .ok()?
-                .as_any_value_enum()
-        },
-        BCPtrBinOp::SUB => unsafe {
-            let basic_type = any_to_basic_type(ptr_type).unwrap_or_else(|| {
-                panic!("Expected a basic type for pointer subtraction, found: {ptr_type:?}")
-            });
-
-            let negative = function_state
-                .builder
-                .build_int_neg(
+                .build_int_mul(
                     right_value.into_int_value(),
+                    global_state.context
+                        .i64_type()
+                        .const_int(type_padded_size, false),
                     crate::instruction::inst_num().as_str(),
                 )
                 .ok()?
@@ -48,9 +30,42 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
             function_state
                 .builder
                 .build_in_bounds_gep(
-                    basic_type,
+                    i8_type,
                     left_value.into_pointer_value(),
-                    &[negative.into_int_value()],
+                    &[scaled_right.into_int_value()],
+                    crate::instruction::inst_num().as_str(),
+                )
+                .ok()?
+                .as_any_value_enum()
+        },
+        BCPtrBinOp::SUB => unsafe {
+            let negative = function_state
+                .builder
+                .build_int_neg(
+                    right_value.into_int_value(),
+                    crate::instruction::inst_num().as_str(),
+                )
+                .ok()?
+                .as_any_value_enum();
+            
+            let scaled_right = function_state
+                .builder
+                .build_int_mul(
+                    negative.into_int_value(),
+                    global_state.context
+                        .i64_type()
+                        .const_int(type_padded_size, false),
+                    crate::instruction::inst_num().as_str(),
+                )
+                .ok()?
+                .as_any_value_enum();
+
+            function_state
+                .builder
+                .build_in_bounds_gep(
+                    global_state.context.i8_type(),
+                    left_value.into_pointer_value(),
+                    &[scaled_right.into_int_value()],
                     crate::instruction::inst_num().as_str(),
                 )
                 .ok()?
