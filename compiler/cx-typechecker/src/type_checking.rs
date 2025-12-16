@@ -40,7 +40,7 @@ fn generate_function(
     env.builder.start_function(prototype.clone());
     env.arg_vals.clear();
 
-    for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
+    for TCParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
             continue;
         };

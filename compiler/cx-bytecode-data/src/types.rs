@@ -111,7 +111,7 @@ impl BCType {
 
     pub fn alignment(&self) -> u8 {
         match &self.kind {
-            BCTypeKind::Opaque { bytes } => *bytes as u8,
+            BCTypeKind::Opaque { bytes } => (*bytes).max(8) as u8,
             BCTypeKind::Bool => 1,
             BCTypeKind::Integer(_type) => _type.bytes(),
             BCTypeKind::Float(_type) => _type.bytes(),
@@ -121,12 +121,12 @@ impl BCType {
                 .iter()
                 .map(|(_, field)| field.alignment())
                 .max()
-                .unwrap_or(1),
+                .unwrap_or(8),
             BCTypeKind::Union { fields, .. } => fields
                 .iter()
                 .map(|(_, field)| field.alignment())
                 .max()
-                .unwrap_or(1),
+                .unwrap_or(8),
             BCTypeKind::Unit => 1,
         }
     }

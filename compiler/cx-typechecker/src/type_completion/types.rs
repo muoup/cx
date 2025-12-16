@@ -40,9 +40,7 @@ pub(crate) fn _complete_template_input(
     let _ty = input
         .params
         .iter()
-        .map(|param| {
-            complete_type(env, base_data, external_module, param)
-        })
+        .map(|param| complete_type(env, base_data, external_module, param))
         .collect::<CXResult<Vec<_>>>()?;
 
     Ok(CXTemplateInput { args: _ty })
@@ -53,9 +51,7 @@ pub(crate) fn _complete_type(
     base_data: &MIRBaseMappings,
     ty: &CXNaiveType,
 ) -> CXResult<CXType> {
-    let mut recurse_ty = |ty: &CXNaiveType| {
-        _complete_type(env, base_data, ty)
-    };
+    let mut recurse_ty = |ty: &CXNaiveType| _complete_type(env, base_data, ty);
 
     match &ty.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
@@ -70,7 +66,7 @@ pub(crate) fn _complete_type(
                     inner.external_module.as_ref(),
                     &inner.resource,
                 );
-                
+
                 return ty;
             };
 
@@ -110,6 +106,14 @@ pub(crate) fn _complete_type(
             }))
         }
 
+        CXNaiveTypeKind::MemoryReference { inner_type } => {
+            let inner_type = recurse_ty(inner_type.as_ref())?;
+
+            Ok(CXType::from(CXTypeKind::MemoryReference(Box::new(
+                inner_type,
+            ))))
+        }
+
         CXNaiveTypeKind::PointerTo { inner_type, weak } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
@@ -143,7 +147,6 @@ pub(crate) fn _complete_type(
                 base_identifier: name.clone(),
                 fields,
 
-                move_semantics: true,
                 copyable: true,
             }))
         }

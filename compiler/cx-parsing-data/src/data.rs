@@ -128,6 +128,9 @@ pub enum CXNaiveTypeKind {
     ExplicitSizedArray(Box<CXNaiveType>, usize),
     ImplicitSizedArray(Box<CXNaiveType>),
 
+    MemoryReference {
+        inner_type: Box<CXNaiveType>,
+    },
     PointerTo {
         inner_type: Box<CXNaiveType>,
         weak: bool,

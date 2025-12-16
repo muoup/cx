@@ -153,10 +153,20 @@ pub(crate) fn typecheck_access(
                     lhs_inner
                 );
             };
+            
+            let lhs_val_as_pointer = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::Coercion {
+                result: lhs_val_as_pointer.clone(),
+                operand: lhs_val,
+                cast_type: MIRCoercion::ReinterpretBits,
+            });
 
             Ok(MIRValue::FunctionReference {
                 prototype,
-                implicit_variables: vec![lhs_val],
+                implicit_variables: vec![MIRValue::Register {
+                    register: lhs_val_as_pointer,
+                    _type: lhs_inner.clone().pointer_to()
+                }],
             })
         }
 
@@ -180,9 +190,19 @@ pub(crate) fn typecheck_access(
             let input = complete_template_args(env, base_data, template_input)?;
             let prototype = env.get_func_templated(base_data, &ident, &input)?;
 
+            let lhs_val_as_pointer = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::Coercion {
+                result: lhs_val_as_pointer.clone(),
+                operand: lhs_val,
+                cast_type: MIRCoercion::ReinterpretBits,
+            });
+
             Ok(MIRValue::FunctionReference {
                 prototype,
-                implicit_variables: vec![lhs_val],
+                implicit_variables: vec![MIRValue::Register {
+                    register: lhs_val_as_pointer,
+                    _type: lhs_inner.clone().pointer_to()
+                }],
             })
         }
 
@@ -264,7 +284,7 @@ pub(crate) fn typecheck_method_call(
             lhs_val
         );
     };
-
+    
     let faux_expr = CXExpr::default();
 
     tc_args = implicit_variables
@@ -764,7 +784,7 @@ pub(crate) fn typecheck_int_int_binop(
 
     let CXTypeKind::Integer {
         _type: lhs_itype,
-        signed: lhs_signed,
+        signed: _,
     } = &lhs_type.kind
     else {
         unreachable!("Expected integer type for lhs in int-int binop");
@@ -772,7 +792,7 @@ pub(crate) fn typecheck_int_int_binop(
 
     let CXTypeKind::Integer {
         _type: rhs_itype,
-        signed: rhs_signed,
+        signed: _,
     } = &rhs_type.kind
     else {
         unreachable!("Expected integer type for rhs in int-int binop");
@@ -797,41 +817,13 @@ pub(crate) fn typecheck_int_int_binop(
     };
 
     let itype = if lhs_itype.bytes() > rhs_itype.bytes() {
-        let coerced_rhs = env.builder.new_register();
-
-        env.builder.add_instruction(MIRInstruction::Coercion {
-            result: coerced_rhs.clone(),
-            operand: rhs.clone(),
-            cast_type: MIRCoercion::Integral {
-                sextend: *rhs_signed,
-                to_type: *lhs_itype,
-            },
-        });
-
+        rhs = implicit_cast(env, expr, rhs.clone(), &lhs_type)?;
         rhs_type = lhs_type.clone();
-        rhs = MIRValue::Register {
-            register: coerced_rhs,
-            _type: lhs_type.clone(),
-        };
-
+        
         *lhs_itype
-    } else if rhs_itype.bytes() < lhs_itype.bytes() {
-        let coerced_lhs = env.builder.new_register();
-
-        env.builder.add_instruction(MIRInstruction::Coercion {
-            result: coerced_lhs.clone(),
-            operand: lhs.clone(),
-            cast_type: MIRCoercion::Integral {
-                sextend: *lhs_signed,
-                to_type: *rhs_itype,
-            },
-        });
-
+    } else if rhs_itype.bytes() > lhs_itype.bytes() {
+        lhs = implicit_cast(env, expr, lhs.clone(), &rhs_type)?;
         lhs_type = rhs_type.clone();
-        lhs = MIRValue::Register {
-            register: coerced_lhs,
-            _type: rhs_type.clone(),
-        };
 
         *rhs_itype
     } else {

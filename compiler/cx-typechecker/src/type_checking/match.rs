@@ -224,7 +224,7 @@ pub fn typecheck_match(
             union_name: expected_union_name,
             variants,
         } => {
-            for (i, (pattern, name)) in arms.iter().enumerate() {
+            for (i, (pattern, _)) in arms.iter().enumerate() {
                 let CXExprKind::TypeConstructor {
                     union_name,
                     variant_name,

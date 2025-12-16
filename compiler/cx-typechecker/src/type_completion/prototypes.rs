@@ -18,7 +18,7 @@ pub(crate) fn apply_implicit_fn_attr(mut proto: CXNaivePrototype) -> CXNaiveProt
             0,
             CXNaiveParameter {
                 name: Some(CXIdent::new("this")),
-                _type: implicit_member.as_type().pointer_to(false, 0),
+                _type: implicit_member.as_type().pointer_to(true, 0)
             },
         );
     }

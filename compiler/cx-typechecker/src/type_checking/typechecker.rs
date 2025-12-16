@@ -36,13 +36,7 @@ pub fn typecheck_expr(
     expr: &CXExpr,
     expected_type: Option<&CXType>,
 ) -> CXResult<MIRValue> {
-    let value = typecheck_expr_inner(env, base_data, expr, expected_type)?;
-
-    if let Some(expected_type) = expected_type {
-        implicit_cast(env, expr, value, expected_type)
-    } else {
-        Ok(value)
-    }
+    typecheck_expr_inner(env, base_data, expr, expected_type)
 }
 
 pub fn typecheck_expr_inner(
@@ -393,12 +387,12 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::UnOp { operator, operand } => {
-            let operand_val = typecheck_expr(env, base_data, operand, None)?;
-            let operand_type = operand_val.get_type();
-
             match operator {
                 CXUnOp::PreIncrement(increment_amount)
                 | CXUnOp::PostIncrement(increment_amount) => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let operand_type = operand_val.get_type();
+                    
                     let Some(inner) = operand_type.mem_ref_inner() else {
                         return log_typecheck_error!(
                             env,
@@ -459,6 +453,7 @@ pub fn typecheck_expr_inner(
                         }
 
                         CXTypeKind::PointerTo { inner_type, .. } => {
+                            let operand_val = typecheck_expr(env, base_data, operand, None)?;
                             let element_stride = inner_type.type_size();
 
                             env.builder.add_instruction(MIRInstruction::BinOp {
@@ -513,6 +508,7 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::LNot => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let loaded_operand = coerce_value(env, expr, operand_val)?;
                     let loaded_operand_type = loaded_operand.get_type();
 
@@ -539,6 +535,7 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::BNot => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
@@ -565,6 +562,7 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::Negative => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
@@ -596,6 +594,8 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::AddressOf => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let operand_type = operand_val.get_type();
                     let Some(inner) = operand_type.mem_ref_inner() else {
                         return log_typecheck_error!(
                             env,
@@ -645,11 +645,9 @@ pub fn typecheck_expr_inner(
 
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, to_type)?;
-                    let tc_expr = typecheck_expr(env, base_data, operand, Some(&to_type))?;
+                    let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
 
-                    let loaded_value = coerce_value(env, expr, tc_expr)?;
-
-                    explicit_cast(env, expr, loaded_value, &to_type)?
+                    explicit_cast(env, expr, operand_val, &to_type)?
                 }
             }
         }
@@ -770,7 +768,8 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))?;
+            let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
+                .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
 
             let result_region = env.builder.new_register();
             env.builder

@@ -7,7 +7,7 @@ use cx_typechecker_data::mir::{
 use cx_util::CXResult;
 
 use crate::{
-    environment::TypeEnvironment, log_typecheck_error, type_checking::{binary_ops::{handle_assignment, struct_field}, typechecker::typecheck_expr},
+    environment::TypeEnvironment, log_typecheck_error, type_checking::{binary_ops::{handle_assignment, struct_field}, casting::implicit_cast, typechecker::typecheck_expr},
 };
 
 pub fn typecheck_initializer_list(
@@ -181,7 +181,8 @@ fn typecheck_structured_initializer(
         }
 
         let (field_name, field_type) = &fields[counter];
-        let value = typecheck_expr(env, base_data, &index.value, Some(field_type))?;
+        let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
+            .and_then(|v| implicit_cast(env, &index.value, v, field_type))?;
         
         let Some(struct_field) = struct_field(to_type, field_name.as_str()) else {
             return log_typecheck_error!(

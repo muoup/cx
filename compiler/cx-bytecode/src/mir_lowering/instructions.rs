@@ -180,7 +180,7 @@ pub fn lower_instruction(
                         val: *variant_index as i64,
                         _type: BCIntegerType::I8,
                     },
-                    _type: value_as_bc_type.clone(),
+                    _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
                 },
                 BCType::unit(),
                 false,
@@ -192,7 +192,7 @@ pub fn lower_instruction(
                         dest: bc_memory.clone(),
                         src: bc_value.clone(),
                         size: BCValue::IntImmediate {
-                            val: sum_type.type_size() as i64,
+                            val: value_as_bc_type.size() as i64,
                             _type: BCIntegerType::I64,
                         },
                         alignment: value_as_bc_type.alignment(),

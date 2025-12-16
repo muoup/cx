@@ -25,11 +25,6 @@ macro_rules! log_typecheck_error {
         {
             let message = format!("TYPE ERROR: {}", format!($($arg)*));
             
-            if (cfg!(debug_assertions)) {
-                println!("EXPR:\n{}", $expr);
-                panic!("ERROR: {message}");
-            }
-
             Err(Box::new(crate::log::TypeError {
                 message: message,
                 token_start: $expr.start_index,

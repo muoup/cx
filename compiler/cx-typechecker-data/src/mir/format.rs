@@ -316,7 +316,7 @@ impl Display for MIRValue {
                 write!(f, "fn @{}", prototype.name)
             }
             MIRValue::GlobalValue { name, _type } => write!(f, "{_type} global {name}"),
-            MIRValue::Parameter { name, _type } => write!(f, "{_type} param {name}"),
+            MIRValue::Parameter { name, _type } => write!(f, "{_type} p@{name}"),
             MIRValue::Register { register, _type } => write!(f, "{_type} {register}"),
             MIRValue::NULL => write!(f, "null"),
         }

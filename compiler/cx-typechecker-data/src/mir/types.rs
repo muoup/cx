@@ -83,7 +83,6 @@ pub enum CXTypeKind {
         base_identifier: Option<CXIdent>,
         fields: Vec<(String, CXType)>,
 
-        move_semantics: bool,
         copyable: bool,
     },
     Union {
@@ -374,18 +373,6 @@ impl CXType {
         if let Some(name) = self.get_name() {
             let new_name = f(name);
             self.set_name(CXIdent::new(new_name));
-        }
-    }
-
-    pub fn has_move_semantics(&self) -> bool {
-        match &self.kind {
-            CXTypeKind::Structured { move_semantics, .. } => *move_semantics,
-            CXTypeKind::StrongPointer { .. } => true,
-            CXTypeKind::TaggedUnion { variants, .. } => {
-                variants.iter().any(|(_, t)| t.has_move_semantics())
-            }
-
-            _ => false,
         }
     }
 

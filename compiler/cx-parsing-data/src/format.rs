@@ -352,6 +352,9 @@ impl Display for CXNaiveTypeKind {
             CXNaiveTypeKind::TemplatedIdentifier { name, input } => write!(f, "{name}{input}"),
             CXNaiveTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXNaiveTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
+            CXNaiveTypeKind::MemoryReference { inner_type } => {
+                write!(f, "&{}", inner_type)
+            }
             CXNaiveTypeKind::PointerTo { inner_type, weak } => {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }
