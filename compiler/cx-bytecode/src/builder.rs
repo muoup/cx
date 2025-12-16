@@ -116,6 +116,10 @@ impl BCBuilder {
         None
     }
 
+    pub fn current_prototype(&self) -> &BCFunctionPrototype {
+        &self.fun().prototype
+    }
+    
     pub fn get_prototype(&self, name: &str) -> Option<&BCFunctionPrototype> {
         self.fn_map.get(name)
     }

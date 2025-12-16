@@ -307,7 +307,7 @@ pub(crate) fn typecheck_method_call(
         // All varargs arguments must be lvalues, coerce_value is necessary here
         *val = coerce_value(env, *expr, std::mem::take(val))?;
         let arg_type = val.get_type();
-        
+
         match &arg_type.kind {
             CXTypeKind::PointerTo { .. } => {
                 // Pointer types are already compatible with varargs, no need to cast
@@ -382,20 +382,20 @@ pub(crate) fn typecheck_is(
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
     let tc_lhs = typecheck_expr(env, base_data, lhs, None)?;
-    let loaded_lhs_val = coerce_value(env, lhs, tc_lhs)?;
-    let loaded_lhs_type = loaded_lhs_val.get_type();
+    let tc_type = tc_lhs.get_type();
+    let union_type = tc_type.mem_ref_inner().unwrap_or(&tc_type);
 
     let CXTypeKind::TaggedUnion {
         name: expected_union_name,
         variants,
         ..
-    } = &loaded_lhs_type.kind
+    } = &union_type.kind
     else {
         return log_typecheck_error!(
             env,
             expr,
             " 'is' operator requires a tagged union on the left-hand side, found {}",
-            loaded_lhs_type
+            union_type
         );
     };
 
@@ -432,17 +432,17 @@ pub(crate) fn typecheck_is(
         );
     };
 
-    if loaded_lhs_type.get_name() != Some(union_name.as_str()) {
+    if union_type.get_name() != Some(union_name.as_str()) {
         return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
-            loaded_lhs_type,
+            union_type,
             union_name.as_string()
         );
     }
 
-    let Some((tag_value, variant_type)) = variants
+    let Some((tag_value_comparison, variant_type)) = variants
         .iter()
         .enumerate()
         .find(|(_, (name, _))| name == variant_name.as_str())
@@ -457,17 +457,39 @@ pub(crate) fn typecheck_is(
         );
     };
 
+    let get_tag = env.builder.new_register();
+    env.builder.add_instruction(MIRInstruction::TaggedUnionTag {
+        result: get_tag.clone(),
+        source: tc_lhs.clone(),
+        sum_type: union_type.clone(),
+    });
+
     let comparison = env.builder.new_register();
-    env.builder.add_instruction(MIRInstruction::TaggedUnionIs {
+    env.builder.add_instruction(MIRInstruction::BinOp {
         result: comparison.clone(),
-        source: loaded_lhs_val.clone(),
-        tag_id: tag_value,
+        lhs: MIRValue::Register {
+            register: get_tag,
+            _type: CXTypeKind::Integer {
+                _type: CXIntegerType::I8,
+                signed: false,
+            }
+            .into(),
+        },
+        rhs: MIRValue::IntLiteral {
+            value: tag_value_comparison as i64,
+            signed: false,
+            _type: CXIntegerType::I8,
+        },
+        op: MIRBinOp::Integer {
+            itype: CXIntegerType::I8,
+            op: MIRIntegerBinOp::EQ,
+        },
     });
 
     let result = env.builder.new_register();
     env.builder.add_instruction(MIRInstruction::TaggedUnionGet {
         result: result.clone(),
-        source: loaded_lhs_val,
+        source: tc_lhs,
         variant_type: variant_type.clone(),
     });
 
@@ -475,7 +497,7 @@ pub(crate) fn typecheck_is(
         inner_var_name.as_string(),
         MIRValue::Register {
             register: result,
-            _type: variant_type.clone(),
+            _type: variant_type.clone().mem_ref_to(),
         },
     );
 
@@ -501,8 +523,10 @@ pub(crate) fn typecheck_binop(
         _ => {}
     }
 
-    let mir_lhs = typecheck_expr(env, base_data, lhs, None).and_then(|e| coerce_value(env, lhs, e))?;
-    let mir_rhs = typecheck_expr(env, base_data, rhs, None).and_then(|e| coerce_value(env, rhs, e))?;
+    let mir_lhs =
+        typecheck_expr(env, base_data, lhs, None).and_then(|e| coerce_value(env, lhs, e))?;
+    let mir_rhs =
+        typecheck_expr(env, base_data, rhs, None).and_then(|e| coerce_value(env, rhs, e))?;
 
     typecheck_binop_mir_vals(env, op, mir_lhs, mir_rhs, expr)
 }
@@ -721,10 +745,10 @@ pub(crate) fn typecheck_float_float_binop(
         lhs,
         rhs,
     });
-    
+
     Ok(MIRValue::Register {
         register: result,
-        _type: result_type
+        _type: result_type,
     })
 }
 

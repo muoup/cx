@@ -12,7 +12,7 @@ pub fn tagged_union_tag_addr(builder: &mut BCBuilder, value: BCValue, _type: BCT
     
     let tag_offset = fields[0].1.size();
     
-    builder.add_instruction_translated(
+    builder.add_new_instruction(
         BCInstructionKind::StructAccess { 
             struct_: value,
             struct_type: _type.clone(),
@@ -20,6 +20,6 @@ pub fn tagged_union_tag_addr(builder: &mut BCBuilder, value: BCValue, _type: BCT
             field_offset: tag_offset,
         },
         BCType::default_pointer(),
-        None,
+        true
     )
 }

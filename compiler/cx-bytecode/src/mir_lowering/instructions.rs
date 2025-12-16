@@ -12,7 +12,9 @@ use cx_util::{identifier::CXIdent, CXResult};
 use crate::{
     builder::BCBuilder,
     mir_lowering::{
-        binary_ops::{lower_binop, lower_call_params}, coercion::lower_coercion, tagged_union::tagged_union_tag_addr,
+        binary_ops::{lower_binop, lower_call_params},
+        coercion::lower_coercion,
+        tagged_union::tagged_union_tag_addr,
     },
 };
 
@@ -46,7 +48,7 @@ pub fn lower_instruction(
                         val: bc_type.size() as i64,
                         _type: BCIntegerType::I64,
                     },
-                    alignment: bc_type.alignment()
+                    alignment: bc_type.alignment(),
                 },
                 BCType::default_pointer(),
                 None,
@@ -128,7 +130,6 @@ pub fn lower_instruction(
             // For now, the content of a tagged union is stored plainly at the pointer location,
             // with the index appended at the end for alignment purposes. Thus, getting the value
             // is simply aliasing the pointer.
-
             let bc_source = lower_value(builder, source)?;
 
             builder.insert_symbol(result.clone(), bc_source.clone());
@@ -136,36 +137,23 @@ pub fn lower_instruction(
             Ok(bc_source)
         }
 
-        MIRInstruction::TaggedUnionIs {
+        MIRInstruction::TaggedUnionTag {
             result,
             source,
-            tag_id,
+            sum_type,
         } => {
             let bc_source = lower_value(builder, source)?;
-            let tagged_union = builder.get_value_type(&bc_source);
+            let tagged_union = builder.convert_cx_type(sum_type);
 
             let tag_ptr = tagged_union_tag_addr(builder, bc_source.clone(), tagged_union)?;
             let tag_type = BCType::from(BCTypeKind::Integer(BCIntegerType::I8));
 
-            let actual_tag_id = builder.add_instruction_translated(
+            builder.add_instruction_translated(
                 BCInstructionKind::Load {
                     memory: tag_ptr,
                     _type: tag_type.clone(),
                 },
                 tag_type.clone(),
-                None,
-            )?;
-
-            builder.add_instruction_translated(
-                BCInstructionKind::IntegerBinOp {
-                    left: actual_tag_id,
-                    right: BCValue::IntImmediate {
-                        val: *tag_id as i64,
-                        _type: BCIntegerType::I8,
-                    },
-                    op: BCIntBinOp::EQ,
-                },
-                BCTypeKind::Bool.into(),
                 Some(result.clone()),
             )
         }
@@ -176,36 +164,54 @@ pub fn lower_instruction(
             value,
             sum_type,
         } => {
+            let value_type = value.get_type();
+
             let sum_as_bc_type = builder.convert_cx_type(sum_type);
-            let value_as_bc_type = builder.convert_cx_type(&value.get_type());
+            let value_as_bc_type = builder.convert_cx_type(&value_type);
 
             let bc_value = lower_value(builder, value)?;
             let bc_memory = lower_value(builder, memory)?;
 
-            let tag_ptr = tagged_union_tag_addr(builder, bc_value.clone(), sum_as_bc_type)?;
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Store {
-                    memory: bc_memory,
-                    value: bc_value,
-                    _type: value_as_bc_type,
-                },
-                BCType::unit(),
-                None,
-            )?;
-
-            builder.add_instruction_translated(
+            let tag_ptr = tagged_union_tag_addr(builder, bc_memory.clone(), sum_as_bc_type)?;
+            builder.add_new_instruction(
                 BCInstructionKind::Store {
                     memory: tag_ptr,
                     value: BCValue::IntImmediate {
                         val: *variant_index as i64,
                         _type: BCIntegerType::I8,
                     },
-                    _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+                    _type: value_as_bc_type.clone(),
                 },
                 BCType::unit(),
-                None,
+                false,
             )?;
+
+            if value_type.is_memory_resident() {
+                builder.add_new_instruction(
+                    BCInstructionKind::Memcpy {
+                        dest: bc_memory.clone(),
+                        src: bc_value.clone(),
+                        size: BCValue::IntImmediate {
+                            val: sum_type.type_size() as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                        alignment: value_as_bc_type.alignment(),
+                    },
+                    BCType::default_pointer(),
+                    false,
+                )?;
+            } else if !value_type.is_unit() {
+                // For non-memory-resident types, we can store directly
+                builder.add_instruction_translated(
+                    BCInstructionKind::Store {
+                        memory: bc_memory.clone(),
+                        value: bc_value.clone(),
+                        _type: value_as_bc_type.clone(),
+                    },
+                    BCType::unit(),
+                    None,
+                )?;
+            }
 
             Ok(BCValue::NULL)
         }
@@ -396,11 +402,42 @@ pub fn lower_instruction(
                 .map(|v| lower_value(builder, v))
                 .transpose()?;
 
-            builder.add_instruction_translated(
-                BCInstructionKind::Return { value: bc_value },
-                BCType::unit(),
-                None,
-            )?;
+            let current_function = builder.current_prototype();
+
+            if let Some(temp_buff) = &current_function.temp_buffer {
+                let Some(return_value) = bc_value else {
+                    unreachable!()
+                };
+
+                let return_buffer = BCValue::ParameterRef(0);
+                builder.add_new_instruction(
+                    BCInstructionKind::Memcpy {
+                        dest: return_buffer.clone(),
+                        src: return_value.clone(),
+                        size: BCValue::IntImmediate {
+                            val: temp_buff.size() as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                        alignment: current_function.return_type.alignment(),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+
+                builder.add_instruction_translated(
+                    BCInstructionKind::Return {
+                        value: Some(return_buffer),
+                    },
+                    BCType::unit(),
+                    None,
+                )?;
+            } else {
+                builder.add_instruction_translated(
+                    BCInstructionKind::Return { value: bc_value },
+                    BCType::unit(),
+                    None,
+                )?;
+            }
 
             Ok(BCValue::NULL)
         }
@@ -548,7 +585,22 @@ pub(crate) fn lower_value(builder: &mut BCBuilder, value: &MIRValue) -> CXResult
             })
         }
 
-        MIRValue::Parameter { index, _type: _ } => Ok(BCValue::ParameterRef(*index as u32)),
+        MIRValue::Parameter { name, _type: _ } => {
+            let index = builder
+                .current_prototype()
+                .params
+                .iter()
+                .position(|param| {
+                    param
+                        .name
+                        .as_ref()
+                        .map(|p_name| p_name.as_str() == name.as_str())
+                        .unwrap_or(false)
+                })
+                .expect("Parameter not found in function prototype");
+
+            Ok(BCValue::ParameterRef(index as u32))
+        }
 
         MIRValue::NULL => Ok(BCValue::NULL),
     }

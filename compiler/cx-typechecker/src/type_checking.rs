@@ -25,6 +25,7 @@ use crate::{
 pub(crate) mod binary_ops;
 pub(crate) mod casting;
 pub(crate) mod contract;
+pub(crate) mod r#match;
 pub(crate) mod move_semantics;
 pub(crate) mod structured_initialization;
 pub(crate) mod typechecker;
@@ -47,7 +48,7 @@ fn generate_function(
         if _type.is_memory_resident() {
             env.insert_symbol(
                 name.as_string(),
-                MIRValue::Parameter { index: i, _type: _type.clone().mem_ref_to() },
+                MIRValue::Parameter { name: name.clone(), _type: _type.clone().mem_ref_to() },
             );
         } else {
             let region = env.builder.new_register();
@@ -63,7 +64,7 @@ fn generate_function(
                     _type: _type.clone(),
                 },
                 value: MIRValue::Parameter {
-                    index: i,
+                    name: name.clone(),
                     _type: _type.clone(),
                 },
             });

@@ -544,11 +544,12 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .get_value(value)?
                 .get_value()
                 .into_int_value();
-
+            let value_type = value.get_type();
+            
             let targets = targets
                 .iter()
                 .map(|(value, block)| {
-                    let value = global_state.context.i32_type().const_int(*value, false);
+                    let value = value_type.const_int(*value, false);
                     let block = function_state.get_block(block).unwrap();
 
                     (value, block)

@@ -1,7 +1,8 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::binary_ops::{
-    handle_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is, typecheck_method_call
+    handle_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
+    typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::contract::contracted_function_return;
@@ -25,6 +26,7 @@ fn anonymous_name_gen() -> String {
     format!("__anon_{id}")
 }
 
+use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
 use cx_typechecker_data::mir::types::CXType;
 
@@ -43,7 +45,7 @@ pub fn typecheck_expr(
     }
 }
 
-fn typecheck_expr_inner(
+pub fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
@@ -305,9 +307,9 @@ fn typecheck_expr_inner(
 
             let Some(break_to) = env
                 .scope_stack
-                .last()
-                .map(|inner| inner.break_to.as_ref())
-                .flatten()
+                .iter()
+                .rfind(|inner| inner.break_to.is_some())
+                .and_then(|s| s.break_to.clone())
             else {
                 return log_typecheck_error!(
                     env,
@@ -317,16 +319,16 @@ fn typecheck_expr_inner(
             };
 
             // TODO: Handle cleanup of deferred expressions here
-            env.builder.add_jump(break_to.clone());
+            env.builder.add_jump(break_to);
             MIRValue::NULL
         }
 
         CXExprKind::Continue => {
             let Some(continue_to) = env
                 .scope_stack
-                .last()
-                .map(|inner| inner.continue_to.as_ref())
-                .flatten()
+                .iter()
+                .rfind(|inner| inner.continue_to.is_some())
+                .and_then(|s| s.continue_to.clone())
             else {
                 return log_typecheck_error!(
                     env,
@@ -335,7 +337,7 @@ fn typecheck_expr_inner(
                 );
             };
 
-            env.builder.add_jump(continue_to.clone());
+            env.builder.add_jump(continue_to);
             MIRValue::NULL
         }
 
@@ -695,7 +697,7 @@ fn typecheck_expr_inner(
 
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val, &inner)?;
             handle_assignment(env, &lhs_val, &coerced_rhs_val, &inner)?;
-            
+
             if inner.is_memory_resident() {
                 // If the inner type is a memory-resident, we need to just return a pointer to
                 // the location, rhs_val is a pointer to now-dead temporary memory.
@@ -777,21 +779,20 @@ fn typecheck_expr_inner(
                     _type: union_type.clone(),
                 });
 
+            let memory = MIRValue::Register {
+                register: result_region.clone(),
+                _type: union_type.clone(),
+            };
+
             env.builder
                 .add_instruction(MIRInstruction::ConstructTaggedUnionInto {
+                    memory: memory.clone(),
                     value: inner,
-                    memory: MIRValue::Register {
-                        register: result_region.clone(),
-                        _type: union_type.clone(),
-                    },
                     variant_index: i,
                     sum_type: union_type.clone(),
                 });
 
-            MIRValue::Register {
-                register: result_region,
-                _type: variant_type,
-            }
+            memory
         }
 
         CXExprKind::Unit => MIRValue::NULL,
@@ -812,71 +813,20 @@ fn typecheck_expr_inner(
             block,
             cases,
             default_case,
-        } => {
-            env.push_scope(None, None);
+        } => typecheck_switch(
+            env,
+            base_data,
+            condition,
+            block,
+            cases,
+            default_case.as_ref(),
+        )?,
 
-            let condition_value = typecheck_expr(env, base_data, condition, None)?;
-
-            env.pop_scope();
-
-            let (default_block, merge_block) = if default_case.is_some() {
-                (
-                    env.builder.new_named_block_id("default_block"),
-                    env.builder.new_named_block_id("merge_block"),
-                )
-            } else {
-                let merge_block = env.builder.new_named_block_id("merge_block");
-                (merge_block.clone(), merge_block)
-            };
-
-            env.push_scope(None, Some(merge_block.clone()));
-
-            let case_blocks = cases
-                .iter()
-                .map(|_| env.builder.new_named_block_id("case_block"))
-                .collect::<Vec<_>>();
-
-            let mut sorted_cases = cases.clone();
-            sorted_cases.sort_by(|a, b| a.1.cmp(&b.1));
-
-            env.builder.add_instruction(MIRInstruction::JumpTable {
-                condition: condition_value,
-                targets: sorted_cases
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (case, _))| (*case, case_blocks[i].clone()))
-                    .collect(),
-                default: default_block.clone(),
-            });
-
-            let mut case_iter = sorted_cases.iter().map(|(_, i)| *i);
-            let mut case_block_iter = case_blocks.iter();
-            let mut next_index = case_iter.next();
-
-            for (i, expr) in block.iter().enumerate() {
-                while next_index == Some(i) {
-                    let case_block = case_block_iter.next().unwrap();
-                    next_index = case_iter.next();
-                    env.builder.add_and_set_block(case_block.clone());
-                }
-
-                if *default_case == Some(i) {
-                    env.builder.add_jump(default_block.clone());
-                    env.builder.add_and_set_block(default_block.clone());
-                }
-
-                typecheck_expr(env, base_data, expr, None)?;
-            }
-
-            env.builder.add_jump(merge_block);
-            env.pop_scope();
-
-            MIRValue::NULL
-        }
-
-        CXExprKind::Match { .. } => {
-            todo!()
-        }
+        CXExprKind::Match {
+            condition,
+            arms,
+            default,
+        } => typecheck_match(env, base_data, expr, condition, arms, default.as_ref())?,
 
         CXExprKind::Taken => {
             unreachable!("Taken expressions should not be present in the typechecker")

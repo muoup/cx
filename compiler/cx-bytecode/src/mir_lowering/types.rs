@@ -166,7 +166,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
                 ),
                 (
                     "tag".to_string(),
-                    BCTypeKind::Integer(BCIntegerType::I32).into(),
+                    BCTypeKind::Integer(BCIntegerType::I8).into(),
                 ),
             ],
         },

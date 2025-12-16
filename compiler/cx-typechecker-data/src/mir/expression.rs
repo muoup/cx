@@ -30,7 +30,7 @@ pub enum MIRValue {
         _type: CXType,
     },
     Parameter {
-        index: usize,
+        name: CXIdent,
         _type: CXType,
     },
     Register {
@@ -85,19 +85,19 @@ pub enum MIRInstruction {
         field_offset: usize,
         struct_type: CXType,
     },
+    
+    TaggedUnionTag {
+        result: MIRRegister,
+        source: MIRValue,
+        sum_type: CXType,
+    },
 
     TaggedUnionGet {
         result: MIRRegister,
         source: MIRValue,
         variant_type: CXType,
     },
-
-    TaggedUnionIs {
-        result: MIRRegister,
-        source: MIRValue,
-        tag_id: usize,
-    },
-
+    
     ArrayGet {
         result: MIRRegister,
         source: MIRValue,

@@ -39,7 +39,7 @@ impl Display for MIRFunction {
         for block in &self.basic_blocks {
             writeln!(f, "{block}")?;
         }
-        
+
         Ok(())
     }
 }
@@ -164,16 +164,18 @@ impl Display for MIRInstruction {
                 f,
                 "{result} = struct_get {source}, index {field_index} of {struct_type}"
             ),
+            MIRInstruction::TaggedUnionTag {
+                result,
+                source,
+                sum_type,
+            } => {
+                write!(f, "{result} = tagged_union_tag {source} of {sum_type}")
+            }
             MIRInstruction::TaggedUnionGet {
                 result,
                 source,
                 variant_type,
             } => write!(f, "{result} = tagged_union_get {source} as {variant_type}"),
-            MIRInstruction::TaggedUnionIs {
-                result,
-                source,
-                tag_id,
-            } => write!(f, "{result} = tagged_union_is {source}, tag {tag_id}"),
             MIRInstruction::ArrayGet {
                 result,
                 source,
@@ -235,7 +237,10 @@ impl Display for MIRInstruction {
                 true_block,
                 false_block,
             } => write!(f, "branch {condition} ? {true_block} : {false_block}"),
-            MIRInstruction::Phi { result, predecessors: incomings } => {
+            MIRInstruction::Phi {
+                result,
+                predecessors: incomings,
+            } => {
                 write!(f, "{result} = phi ")?;
                 for (i, (value, block)) in incomings.iter().enumerate() {
                     if i > 0 {
@@ -304,12 +309,14 @@ impl Display for MIRValue {
                 _type.bytes() * 8
             ),
             MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
-            MIRValue::BoolLiteral { value } => write!(f, "bool {}", if *value { "true" } else { "false" }),
+            MIRValue::BoolLiteral { value } => {
+                write!(f, "bool {}", if *value { "true" } else { "false" })
+            }
             MIRValue::FunctionReference { prototype, .. } => {
                 write!(f, "fn @{}", prototype.name)
             }
             MIRValue::GlobalValue { name, _type } => write!(f, "{_type} global {name}"),
-            MIRValue::Parameter { index, _type } => write!(f, "{_type} param {index}"),
+            MIRValue::Parameter { name, _type } => write!(f, "{_type} param {name}"),
             MIRValue::Register { register, _type } => write!(f, "{_type} {register}"),
             MIRValue::NULL => write!(f, "null"),
         }
@@ -355,7 +362,9 @@ impl Display for MIRCoercion {
             ),
             MIRCoercion::FloatCast { to_type } => write!(f, "fp_integral(to: {})", to_type),
             MIRCoercion::PtrToInt { to_type } => write!(f, "ptr_to_int(to: {})", to_type),
-            MIRCoercion::IntToPtr { sextend }=> write!(f, "int_to_ptr({})", if *sextend { "sext" } else { "zext" }),
+            MIRCoercion::IntToPtr { sextend } => {
+                write!(f, "int_to_ptr({})", if *sextend { "sext" } else { "zext" })
+            }
             MIRCoercion::IntToFloat { to_type, sextend } => write!(
                 f,
                 "int_to_float({}, to: {})",
@@ -364,7 +373,12 @@ impl Display for MIRCoercion {
             ),
             MIRCoercion::IntToBool => write!(f, "int_to_bool"),
             MIRCoercion::BoolToInt { to_type } => write!(f, "bool_to_int(to: {})", to_type),
-            MIRCoercion::FloatToInt { sextend, to_type } => write!(f, "float_to_int({}, to: {})", if *sextend { "sext" } else { "zext" }, to_type),
+            MIRCoercion::FloatToInt { sextend, to_type } => write!(
+                f,
+                "float_to_int({}, to: {})",
+                if *sextend { "sext" } else { "zext" },
+                to_type
+            ),
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
         }
     }

@@ -27,7 +27,6 @@ pub fn lower_mir(builder: &mut BCBuilder, mir: &MIRUnit) -> CXResult<()> {
 
 pub fn generate_function(builder: &mut BCBuilder, function: &MIRFunction) -> CXResult<()> {
     let bc_prototype = builder.convert_cx_prototype(&function.prototype);
-
     builder.new_function(bc_prototype);
 
     for block in function.basic_blocks.iter() {

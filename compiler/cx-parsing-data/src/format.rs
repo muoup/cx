@@ -130,9 +130,7 @@ impl<'a> Display for CXExprFormatter<'a> {
                 self.indent(f)?;
                 writeln!(f, "}}")
             }
-
             CXExprKind::Identifier(ident) => writeln!(f, "Identifier {}", ident),
-
             CXExprKind::TemplatedIdentifier {
                 name: fn_name,
                 template_input,
@@ -146,17 +144,14 @@ impl<'a> Display for CXExprFormatter<'a> {
 
                 writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
             }
-
             CXExprKind::VarDeclaration { name, _type } => {
                 writeln!(f, "VarDeclaration {}: {}", name, _type)
             }
-
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
             CXExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),
             CXExprKind::StringLiteral { val, .. } => {
                 writeln!(f, "StringLiteral \"{}\"", val.escape_default())
             }
-
             CXExprKind::Return { value } => {
                 writeln!(f, "Return")?;
                 if let Some(value) = value {
@@ -164,19 +159,16 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-
             CXExprKind::BinOp { lhs, rhs, op } => {
                 writeln!(f, "BinOp {:?}", op)?;
                 CXExprFormatter::new(lhs, self.depth + 1).fmt(f)?;
                 CXExprFormatter::new(rhs, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-
             CXExprKind::Move { expr } => {
                 writeln!(f, "Move")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-
             CXExprKind::InitializerList { indices } => {
                 writeln!(f, "InitializerList")?;
                 for index in indices {
@@ -184,12 +176,10 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-
             CXExprKind::UnOp { operator, operand } => {
                 writeln!(f, "UnOp {:?}", operator)?;
                 CXExprFormatter::new(operand, self.depth + 1).fmt(f)
             }
-
             CXExprKind::If {
                 condition,
                 then_branch,
@@ -203,7 +193,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-
             CXExprKind::For {
                 init,
                 condition,
@@ -217,7 +206,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-
             CXExprKind::While {
                 condition, body, ..
             } => {
@@ -226,22 +214,58 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-
             CXExprKind::Defer { expr } => {
                 writeln!(f, "Defer")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-
             CXExprKind::New { _type } => {
                 writeln!(f, "New {}", _type)
             }
-
             CXExprKind::SizeOf { expr } => {
                 writeln!(f, "SizeOf")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-
-            _ => writeln!(f, "{:?}", self.expr.kind),
+            CXExprKind::Taken => writeln!(f, "Taken"),
+            CXExprKind::Unit => writeln!(f, "Unit"),
+            CXExprKind::Match { condition, arms, default } => {
+                writeln!(f, "Match")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                for (pattern, arm_expr) in arms {
+                    self.indent(f)?;
+                    writeln!(f, "Pattern: {}", pattern)?;
+                    CXExprFormatter::new(arm_expr, self.depth + 1).fmt(f)?;
+                }
+                if let Some(default_expr) = default {
+                    self.indent(f)?;
+                    writeln!(f, "Default:")?;
+                    CXExprFormatter::new(default_expr, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            },
+            CXExprKind::Switch { condition, block, cases, default_case } => {
+                writeln!(f, "Switch")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                for (case_value, case_expr) in cases {
+                    self.indent(f)?;
+                    writeln!(f, "Case: {} -> ID: {}", case_value, case_expr)?;
+                }
+                if let Some(default_expr) = default_case {
+                    self.indent(f)?;
+                    writeln!(f, "Default -> ID: {}", default_expr)?;
+                }
+                for (i, stmt) in block.iter().enumerate() {
+                    self.indent(f)?;
+                    writeln!(f, "Stmt[{}]: ", i)?;
+                    CXExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            }
+            CXExprKind::TypeConstructor { union_name, variant_name, inner } => {
+                writeln!(f, "TypeConstructor {}::{}", union_name, variant_name)?;
+                CXExprFormatter::new(inner, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Break => writeln!(f, "Break"),
+            CXExprKind::Continue => writeln!(f, "Continue"),
         }
     }
 }

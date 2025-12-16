@@ -281,6 +281,10 @@ impl CXType {
     pub fn is_opaque(&self) -> bool {
         matches!(self.kind, CXTypeKind::Opaque { .. })
     }
+    
+    pub fn is_tagged_union(&self) -> bool {
+        matches!(self.kind, CXTypeKind::TaggedUnion { .. })
+    }
 
     pub fn is_function(&self) -> bool {
         matches!(self.kind, CXTypeKind::Function { .. })
@@ -406,8 +410,17 @@ impl CXType {
             | CXTypeKind::StrongPointer { .. } => std::mem::size_of::<usize>(),
 
             CXTypeKind::Structured { fields, .. } => {
-                fields.iter().map(|(_, t)| t.type_size()).sum()
+                let mut offset = 0;
+                
+                for (_, t) in fields {
+                    let align = t.type_alignment();
+                    offset += align - (offset % align);
+                    offset += t.type_size();
+                }
+                
+                offset
             }
+            
             CXTypeKind::Union { variants, .. } => variants
                 .iter()
                 .map(|(_, t)| t.type_size())
