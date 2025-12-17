@@ -160,12 +160,12 @@ impl MIRBuilder {
     
     pub fn add_return(&mut self, value: Option<MIRValue>) {
         if self.in_defer() {
-            if let Some(_) = value {
+            if value.is_some() {
                 // Case 1: The return block has a return value, this overrides the defer accumulation register
                 // FIXME: We might need to handle cleaning up the defer accumulation register here
                 invoke_remaining_destructions(self);
                 self.add_instruction(MIRInstruction::Return {
-                    value: value,
+                    value,
                 });
             } else {
                 let value = MIRValue::Register {
@@ -178,39 +178,37 @@ impl MIRBuilder {
                     value: Some(value),
                 });
             }
-        } else {
-            if let Some(defer_start) = self.get_defer_start() {
-                self.add_instruction(MIRInstruction::Jump {
-                    target: defer_start,
-                });
+        } else if let Some(defer_start) = self.get_defer_start() {
+            self.add_instruction(MIRInstruction::Jump {
+                target: defer_start,
+            });
+            
+            let current_block = self.current_block().id.clone();
+            
+            if let Some(value) = value {
+                let Some(func_ctx) = &mut self.function_context else {
+                    unreachable!()
+                };
                 
-                let current_block = self.current_block().id.clone();
+                let return_acc = func_ctx
+                    .defer_blocks
+                    .first_mut()
+                    .unwrap()
+                    .instructions
+                    .first_mut()
+                    .unwrap();
                 
-                if let Some(value) = value {
-                    let Some(func_ctx) = &mut self.function_context else {
-                        unreachable!()
-                    };
-                    
-                    let return_acc = func_ctx
-                        .defer_blocks
-                        .first_mut()
-                        .unwrap()
-                        .instructions
-                        .first_mut()
-                        .unwrap();
-                    
-                    let MIRInstruction::Phi { predecessors, .. } = return_acc else {
-                        unreachable!()
-                    };
-                    
-                    predecessors.push((value, current_block));
-                }
-            } else {
-                invoke_remaining_destructions(self);
-                self.add_instruction(MIRInstruction::Return {
-                    value: value,
-                });
+                let MIRInstruction::Phi { predecessors, .. } = return_acc else {
+                    unreachable!()
+                };
+                
+                predecessors.push((value, current_block));
             }
+        } else {
+            invoke_remaining_destructions(self);
+            self.add_instruction(MIRInstruction::Return {
+                value,
+            });
         }
     }
 
@@ -361,7 +359,7 @@ impl MIRBuilder {
         };
         
         let full_blocks = func_ctx.standard_blocks.into_iter()
-            .chain(func_ctx.defer_blocks.into_iter())
+            .chain(func_ctx.defer_blocks)
             .collect();
 
         let mir_function = MIRFunction {

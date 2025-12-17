@@ -248,7 +248,7 @@ pub fn lower_instruction(
             if let MIRValue::FunctionReference { prototype, .. } = function {
                 let bc_prototype = builder.convert_cx_prototype(prototype);
                 let return_type = builder.convert_cx_type(&prototype.return_type);
-                let bc_arguments = lower_call_params(builder, &arguments, &bc_prototype)?;
+                let bc_arguments = lower_call_params(builder, arguments, &bc_prototype)?;
 
                 builder.add_instruction_translated(
                     BCInstructionKind::DirectCall {
@@ -266,7 +266,7 @@ pub fn lower_instruction(
                 let bc_function = lower_value(builder, function)?;
                 let bc_prototype = builder.convert_cx_prototype(prototype.as_ref());
                 let return_type = builder.convert_cx_type(&prototype.return_type);
-                let bc_arguments = lower_call_params(builder, &arguments, &bc_prototype)?;
+                let bc_arguments = lower_call_params(builder, arguments, &bc_prototype)?;
 
                 builder.add_instruction_translated(
                     BCInstructionKind::IndirectCall {
@@ -522,7 +522,7 @@ pub fn lower_instruction(
             )
         }
 
-        MIRInstruction::LifetimeStart { name, region, _type } => {
+        MIRInstruction::LifetimeStart { name: _, region: _, _type } => {
             // Nothing for now, will eventually integrate with LLVM's lifetime intrinsics
 
             Ok(BCValue::NULL)
@@ -644,7 +644,7 @@ pub(crate) fn lower_global_value(
             initializer,
         } => {
             let bc_type = builder.convert_cx_type(_type);
-            let bc_initializer = initializer.clone();
+            let bc_initializer = *initializer;
 
             Ok(BCGlobalValue {
                 name: name.clone(),

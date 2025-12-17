@@ -25,7 +25,7 @@ pub fn is_type_decl(data: &mut ParserData) -> bool {
     match &tok.unwrap().kind {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum) => true,
 
-        identifier!(name) if is_intrinsic_type(&name) => true,
+        identifier!(name) if is_intrinsic_type(name) => true,
         identifier!(name)
             if data
                 .pp_contents
@@ -57,7 +57,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     if try_next!(data.tokens, TokenKind::Keyword(_)) {
         data.tokens.back();
 
-        if let Some(expr) = parse_keyword_expr(data).ok() {
+        if let Ok(expr) = parse_keyword_expr(data) {
             return Ok(expr);
         }
     }
@@ -599,7 +599,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
         }
 
         _ => {
-            let keyword_type = keyword_type.clone();
+            let keyword_type = *keyword_type;
             data.tokens.back();
             
             return log_parse_error!(

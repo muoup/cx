@@ -11,7 +11,7 @@ pub(crate) mod mir_lowering;
 pub type BytecodeResult<T> = Option<T>;
 
 pub fn generate_bytecode(mir: &MIRUnit) -> CXResult<BCUnit> {
-    let mut builder = BCBuilder::new(&mir);
+    let mut builder = BCBuilder::new(mir);
     
     lower_mir(&mut builder, mir)?;
     

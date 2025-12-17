@@ -254,7 +254,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
     let mut spec_acc: CXTypeSpecifier = 0;
 
-    while let Some(TokenKind::Specifier(spec)) = next_kind!(tokens).ok() {
+    while let Ok(TokenKind::Specifier(spec)) = next_kind!(tokens) {
         match spec {
             SpecifierType::Const => spec_acc |= CX_CONST,
             SpecifierType::Volatile => spec_acc |= CX_VOLATILE,

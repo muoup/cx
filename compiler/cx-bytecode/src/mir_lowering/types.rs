@@ -72,16 +72,16 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunction
         buffer_type = Some(convert_type(&cx_proto.return_type));
     }
 
-    let prototype = BCFunctionPrototype {
+    
+
+    BCFunctionPrototype {
         name: cx_proto.mangle_name(),
         return_type: return_type.clone(),
         params: params.clone(),
         var_args: cx_proto.var_args,
         linkage: LinkageType::Standard,
         temp_buffer: buffer_type,
-    };
-
-    prototype
+    }
 }
 
 fn convert_integer_type(itype: &CXIntegerType) -> BCIntegerType {

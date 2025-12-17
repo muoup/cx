@@ -175,7 +175,7 @@ pub(crate) fn parse_function_contract(
         postcondition: None,
     };
 
-    while let Some(next) = peek_next_kind!(data.tokens).ok() {
+    while let Ok(next) = peek_next_kind!(data.tokens) {
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
@@ -222,7 +222,7 @@ pub(crate) fn parse_function_contract(
         }
     }
 
-    return Ok(contract);
+    Ok(contract)
 }
 
 pub(crate) struct ParseParamsResult {

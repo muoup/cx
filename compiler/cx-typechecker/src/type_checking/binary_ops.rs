@@ -288,9 +288,9 @@ pub(crate) fn typecheck_method_call(
     let faux_expr = CXExpr::default();
 
     tc_args = implicit_variables
-        .into_iter()
+        .iter()
         .map(|val| (&faux_expr, val.clone()))
-        .chain(tc_args.into_iter())
+        .chain(tc_args)
         .collect();
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
@@ -319,13 +319,13 @@ pub(crate) fn typecheck_method_call(
 
     // Standard argument coercion
     for ((expr, val), param) in tc_args.iter_mut().zip(prototype.params.iter()) {
-        *val = implicit_cast(env, *expr, std::mem::take(val), &param._type)?;
+        *val = implicit_cast(env, expr, std::mem::take(val), &param._type)?;
     }
 
     // Varargs argument coercion
     for (expr, val) in tc_args.iter_mut().skip(canon_params) {
         // All varargs arguments must be lvalues, coerce_value is necessary here
-        *val = coerce_value(env, *expr, std::mem::take(val))?;
+        *val = coerce_value(env, expr, std::mem::take(val))?;
         let arg_type = val.get_type();
 
         match &arg_type.kind {
@@ -336,7 +336,7 @@ pub(crate) fn typecheck_method_call(
             CXTypeKind::Integer { signed, .. } => {
                 *val = implicit_cast(
                     env,
-                    *expr,
+                    expr,
                     std::mem::take(val),
                     &CXTypeKind::Integer {
                         _type: CXIntegerType::I64,
@@ -351,7 +351,7 @@ pub(crate) fn typecheck_method_call(
             } => {
                 *val = implicit_cast(
                     env,
-                    *expr,
+                    expr,
                     std::mem::take(val),
                     &CXTypeKind::Float {
                         _type: CXFloatType::F64,
@@ -369,7 +369,7 @@ pub(crate) fn typecheck_method_call(
             CXTypeKind::Bool => {
                 *val = implicit_cast(
                     env,
-                    *expr,
+                    expr,
                     std::mem::take(val),
                     &CXTypeKind::Integer {
                         _type: CXIntegerType::I64,
@@ -654,13 +654,13 @@ pub(crate) fn typecheck_binop_mir_vals(
             typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr)
         }
         _ => {
-            return log_typecheck_error!(
+            log_typecheck_error!(
                 env,
                 expr,
                 " Invalid binary operation {op} for types {} and {}",
                 lhs_type,
                 rhs_type
-            );
+            )
         }
     }
 }
@@ -696,7 +696,7 @@ pub(crate) fn typecheck_bool_bool_binop(
             let result = env.builder.new_register();
 
             env.builder.add_instruction(MIRInstruction::BinOp {
-                op: MIRBinOp::Bool { op: op },
+                op: MIRBinOp::Bool { op },
                 result: result.clone(),
                 lhs,
                 rhs,
@@ -767,7 +767,7 @@ pub(crate) fn typecheck_float_float_binop(
     let result = env.builder.new_register();
     env.builder.add_instruction(MIRInstruction::BinOp {
         op: MIRBinOp::Float {
-            ftype: ftype,
+            ftype,
             op: fp_op,
         },
         result: result.clone(),
@@ -1146,7 +1146,7 @@ pub(crate) fn struct_field<'a>(struct_type: &CXType, field_name: &str) -> Option
     for (field_name_i, field_type) in fields.iter() {
         let field_alignment = field_type.type_alignment();
 
-        field_offset = (field_offset * field_alignment + field_alignment - 1) / field_alignment;
+        field_offset = (field_offset * field_alignment).div_ceil(field_alignment);
 
         if field_name_i.as_str() == field_name {
             return Some(StructField {

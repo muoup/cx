@@ -4,7 +4,7 @@ use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{BCUnit, BytecodeResult};
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::*;
-use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
+use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_typechecker_data::mir::expression::MIRRegister;
 use cx_typechecker_data::mir::program::MIRUnit;
 use cx_typechecker_data::mir::types::CXType;
@@ -248,8 +248,8 @@ impl BCBuilder {
 
             BCValue::Register { _type, .. } => _type.clone(),
 
-            BCValue::FloatImmediate { _type, .. } => BCTypeKind::Float(_type.clone()).into(),
-            BCValue::IntImmediate { _type, .. } => BCTypeKind::Integer(_type.clone()).into(),
+            BCValue::FloatImmediate { _type, .. } => BCTypeKind::Float(*_type).into(),
+            BCValue::IntImmediate { _type, .. } => BCTypeKind::Integer(*_type).into(),
             BCValue::BoolImmediate { .. } => BCType::from(BCTypeKind::Bool),
 
             BCValue::ParameterRef(param_index) => {
@@ -280,7 +280,7 @@ impl BCBuilder {
 
     pub fn match_int_const(&self, value: i32, _type: &BCType) -> BCValue {
         match &_type.kind {
-            BCTypeKind::Integer(_type) => self.int_const(value, _type.clone()),
+            BCTypeKind::Integer(_type) => self.int_const(value, *_type),
 
             _ => {
                 panic!("PANIC: Attempted to match integer constant with non-integer type: {_type}")
@@ -291,13 +291,13 @@ impl BCBuilder {
     pub fn int_const(&self, value: i32, _type: BCIntegerType) -> BCValue {
         BCValue::IntImmediate {
             val: value as i64,
-            _type: _type.clone(),
+            _type: _type,
         }
     }
 
     pub fn match_float_const(&self, value: f64, _type: &BCType) -> BCValue {
         match &_type.kind {
-            BCTypeKind::Float(_type) => self.float_const(value, _type.clone()),
+            BCTypeKind::Float(_type) => self.float_const(value, *_type),
 
             _ => panic!("PANIC: Attempted to match float constant with non-float type: {_type}"),
         }
@@ -306,7 +306,7 @@ impl BCBuilder {
     pub fn float_const(&self, value: f64, _type: BCFloatType) -> BCValue {
         BCValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            _type: _type.clone(),
+            _type: _type,
         }
     }
 

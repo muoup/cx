@@ -121,15 +121,14 @@ pub fn typecheck_expr_inner(
         CXExprKind::Identifier(name) => {
             if let Some(symbol_val) = env.symbol_value(name.as_str()) {
                 symbol_val.clone()
-            } else if let Some(function_type) = env
+            } else if let Ok(function_type) = env
                 .get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
-                .ok()
             {
                 MIRValue::FunctionReference {
                     prototype: function_type.clone(),
                     implicit_variables: vec![],
                 }
-            } else if let Some(global) = global_expr(env, base_data, name.as_str()).ok() {
+            } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 global
             } else {
                 return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
@@ -423,8 +422,8 @@ pub fn typecheck_expr_inner(
                                 },
                                 rhs: MIRValue::IntLiteral {
                                     value: *increment_amount as i64,
-                                    _type: _type.clone(),
-                                    signed: signed.clone(),
+                                    _type: *_type,
+                                    signed: *signed,
                                 },
                             });
 
@@ -692,8 +691,8 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            let coerced_rhs_val = implicit_cast(env, expr, rhs_val, &inner)?;
-            handle_assignment(env, &lhs_val, &coerced_rhs_val, &inner)?;
+            let coerced_rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
+            handle_assignment(env, &lhs_val, &coerced_rhs_val, inner)?;
 
             if inner.is_memory_resident() {
                 // If the inner type is a memory-resident, we need to just return a pointer to

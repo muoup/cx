@@ -74,9 +74,9 @@ impl BCRegister {
     }
 }
 
-impl Into<CXIdent> for BCRegister {
-    fn into(self) -> CXIdent {
-        self.name
+impl From<BCRegister> for CXIdent {
+    fn from(val: BCRegister) -> Self {
+        val.name
     }
 }
 

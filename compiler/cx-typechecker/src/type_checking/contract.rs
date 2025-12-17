@@ -136,7 +136,7 @@ pub fn contracted_function_call(
             env,
             prototype,
             base_data,
-            &parameters,
+            parameters,
             precondition,
             Some("Precondition not met"),
         )?;

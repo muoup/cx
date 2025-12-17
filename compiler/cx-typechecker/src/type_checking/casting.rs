@@ -18,7 +18,7 @@ pub(crate) fn coerce_value(
     let mem_ref_inner = value_type.mem_ref_inner();
 
     if let Some(mem_ref_inner) = mem_ref_inner {
-        implicit_cast(env, expr, value, &mem_ref_inner)
+        implicit_cast(env, expr, value, mem_ref_inner)
     } else {
         Ok(value)
     }
@@ -137,13 +137,13 @@ pub(crate) fn explicit_cast(
         }
 
         _ => {
-            return log_typecheck_error!(
+            log_typecheck_error!(
                 env,
                 expr,
                 "No explicit cast from {} to {}",
                 from_type,
                 to_type
-            );
+            )
         }
     }
 }
@@ -234,16 +234,16 @@ pub fn implicit_cast(
         ) if inner1.is_array() => {
             let inner1_inner = inner1.array_inner().unwrap();
             
-            if same_type(&inner1_inner, inner2.as_ref()) {
+            if same_type(inner1_inner, inner2.as_ref()) {
                 coerce(MIRCoercion::ReinterpretBits)
             } else {
-                return log_typecheck_error!(
+                log_typecheck_error!(
                     env,
                     expr,
                     "No implicit cast from {} to {}",
                     from_type,
                     to_type
-                );
+                )
             }
         },
         
@@ -273,7 +273,7 @@ pub fn implicit_cast(
                 handle_assignment(env, &result_value, &value, inner)?;
             } else {
                 env.builder.add_instruction(MIRInstruction::MemoryRead {
-                    result: result,
+                    result,
                     source: value,
                     _type: *inner.clone(),
                 })
@@ -327,13 +327,13 @@ pub fn implicit_cast(
         ) if same_type(inner.as_ref(), &from_type) => Ok(value),
 
         _ => {
-            return log_typecheck_error!(
+            log_typecheck_error!(
                 env,
                 expr,
                 "No implicit cast from {} to {}",
                 from_type,
                 to_type
-            );
+            )
         }
     }
 }

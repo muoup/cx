@@ -25,8 +25,8 @@ macro_rules! log_typecheck_error {
         {
             let message = format!("TYPE ERROR: {}", format!($($arg)*));
             
-            Err(Box::new(crate::log::TypeError {
-                message: message,
+            Err(Box::new($crate::log::TypeError {
+                message,
                 token_start: $expr.start_index,
                 token_end: $expr.end_index,
                 compilation_unit: $env.compilation_unit.as_path().to_owned(),

@@ -409,7 +409,7 @@ impl CXType {
                 
                 for (_, t) in fields {
                     let align = t.type_alignment();
-                    offset = (offset * align + align - 1) / align;
+                    offset = (offset * align).div_ceil(align);
                     offset += t.type_size();
                 }
                 
@@ -440,7 +440,7 @@ impl CXType {
     pub fn padded_size(&self) -> u64 {
         let size = self.type_size() as u64;
         let align = self.type_alignment() as u64;
-        (size + align - 1) / align * align
+        size.div_ceil(align) * align
     }
     
     pub fn type_alignment(&self) -> usize {

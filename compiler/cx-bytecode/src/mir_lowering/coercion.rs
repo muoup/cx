@@ -175,8 +175,8 @@ pub fn lower_coercion(
             builder.add_instruction_translated(
                 BCInstructionKind::Coercion {
                     coercion_type: BCCoercionType::FloatToInt {
-                        from: from_ftype.clone(),
-                        sextend: sextend,
+                        from: *from_ftype,
+                        sextend,
                     },
                     value: bc_value,
                 },

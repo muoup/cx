@@ -11,15 +11,15 @@ impl From<f64> for FloatWrapper {
     }
 }
 
-impl Into<f64> for &FloatWrapper {
-    fn into(self) -> f64 {
-        f64::from_bits(self.bits)
+impl From<&FloatWrapper> for f64 {
+    fn from(val: &FloatWrapper) -> Self {
+        f64::from_bits(val.bits)
     }
 }
 
-impl Into<f32> for &FloatWrapper {
-    fn into(self) -> f32 {
-        let value: f64 = self.into();
+impl From<&FloatWrapper> for f32 {
+    fn from(val: &FloatWrapper) -> Self {
+        let value: f64 = val.into();
         value as f32
     }
 }

@@ -49,7 +49,7 @@ pub fn typecheck_switch(
         targets: sorted_cases
             .iter()
             .enumerate()
-            .map(|(i, (case, _))| (*case as u64, case_blocks[i].clone()))
+            .map(|(i, (case, _))| ((*case), case_blocks[i].clone()))
             .collect(),
         default: default_block.clone(),
     });
@@ -61,13 +61,12 @@ pub fn typecheck_switch(
     env.push_scope(None, Some(merge_block.clone()));
     
     for (i, expr) in block.iter().enumerate() {
-        if let Some(ref mut inner) = next_index {
-            if *inner == i {
+        if let Some(ref mut inner) = next_index
+            && *inner == i {
                 let case_block = case_block_iter.next().unwrap();
                 *inner = case_iter.next().unwrap_or(usize::MAX);
                 env.builder.add_and_set_block(case_block.clone());
             }
-        }
 
         if default_case == Some(&i) {
             env.builder.add_and_set_block(default_block.clone());

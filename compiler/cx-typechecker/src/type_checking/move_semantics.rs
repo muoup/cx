@@ -21,7 +21,7 @@ pub fn acknowledge_declared_object(
     env.builder.add_instruction(MIRInstruction::LifetimeStart {
         name,
         region: register,
-        _type: _type,
+        _type,
     });
 }
 
@@ -38,8 +38,7 @@ pub fn invoke_remaining_destructions(builder: &mut MIRBuilder) {
         .lifetime_stack_ref()
         .iter()
         .rev()
-        .map(|scope| scope.iter().rev().cloned())
-        .flatten()
+        .flat_map(|scope| scope.iter().rev().cloned())
         .collect::<Vec<Lifetime>>();
 
     for lifetime in scopes.into_iter() {

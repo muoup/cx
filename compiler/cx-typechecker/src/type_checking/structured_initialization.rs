@@ -70,8 +70,8 @@ fn typecheck_array_initializer(
         }
     }
 
-    if let Some(size) = size {
-        if indices.len() > size {
+    if let Some(size) = size
+        && indices.len() > size {
             return log_typecheck_error!(
                 env,
                 &CXExpr::default(),
@@ -80,9 +80,8 @@ fn typecheck_array_initializer(
                 indices.len()
             );
         }
-    }
 
-    let array_size = size.unwrap_or_else(|| indices.len());
+    let array_size = size.unwrap_or(indices.len());
     let array_type = CXType::from(CXTypeKind::Array {
         inner_type: Box::new(inner_type.clone()),
         size: array_size,

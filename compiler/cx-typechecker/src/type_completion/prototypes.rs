@@ -112,15 +112,13 @@ pub fn _complete_fn_prototype(
 
     let prototype = CXFunctionPrototype {
         name: ident.clone(),
-        return_type: return_type,
+        return_type,
         params: parameters,
         contract: prototype.contract.clone(),
         var_args: prototype.var_args,
     };
 
-    if !env.realized_fns.contains_key(&ident) {
-        env.realized_fns.insert(ident, prototype.clone());
-    }
+    env.realized_fns.entry(ident).or_insert_with(|| prototype.clone());
     
     Ok(prototype)
 }

@@ -75,7 +75,7 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(bool_val))
             }
 
-            BCValue::IntImmediate { val, _type: _type } => {
+            BCValue::IntImmediate { val, _type } => {
                 let as_type = BCType::from(BCTypeKind::Integer(*_type));
 
                 let int_type = bc_llvm_type(self.context, &as_type)?;
@@ -87,7 +87,7 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(int_val))
             }
 
-            BCValue::FloatImmediate { val, _type: _type } => {
+            BCValue::FloatImmediate { val, _type } => {
                 let as_type = BCType::from(BCTypeKind::Float(*_type));
 
                 let float_type = bc_llvm_type(self.context, &as_type)?;

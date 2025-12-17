@@ -281,7 +281,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         BCInstructionKind::PointerBinOp {
             left,
-            ptr_type,
+            ptr_type: _,
             type_padded_size,
             right,
             op,
@@ -731,7 +731,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         BCInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::PtrToInt { .. },
+            coercion_type: BCCoercionType::PtrToInt,
         } => {
             let value = function_state
                 .get_value(value)?
@@ -771,7 +771,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::CompilerAssumption { condition } => {
+        BCInstructionKind::CompilerAssumption { condition: _ } => {
             // TODO: Implement assumptions in LLVM
 
             CodegenValue::NULL

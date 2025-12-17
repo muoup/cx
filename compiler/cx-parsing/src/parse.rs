@@ -234,7 +234,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
 pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     let mut ss = String::new();
 
-    while let Some(TokenKind::Intrinsic(ident)) = peek_next_kind!(tokens).ok() {
+    while let Ok(TokenKind::Intrinsic(ident)) = peek_next_kind!(tokens) {
         ss.push_str(format!("{ident:?}").to_lowercase().as_str());
         tokens.next();
     }

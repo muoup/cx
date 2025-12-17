@@ -21,7 +21,7 @@ macro_rules! log_parse_error {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            Err(Box::new(crate::log::ParseErrorLog {
+            Err(Box::new($crate::log::ParseErrorLog {
                 message,
                 file: $data.tokens.file.clone(),
                 token: $data.tokens.slice[$data.tokens.index].clone(),
@@ -36,7 +36,7 @@ macro_rules! log_preparse_error {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
 
-            Err(Box::new(crate::log::ParseErrorLog {
+            Err(Box::new($crate::log::ParseErrorLog {
                 message,
                 file: $toks.file.clone(),
                 token: $toks.peek().unwrap().clone(),

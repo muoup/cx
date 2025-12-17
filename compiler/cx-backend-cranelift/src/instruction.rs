@@ -8,7 +8,7 @@ use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
-use cranelift::prelude::{Imm64, InstBuilder, MemFlags, StackSlotData, StackSlotKind};
+use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCTypeKind};
 use cx_bytecode_data::{

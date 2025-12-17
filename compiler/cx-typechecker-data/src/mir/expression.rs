@@ -377,11 +377,11 @@ impl MIRValue {
     pub fn get_type(&self) -> CXType {
         match self {
             MIRValue::IntLiteral { _type, signed, .. } => CXType::from(CXTypeKind::Integer {
-                _type: _type.clone(),
+                _type: *_type,
                 signed: *signed,
             }),
             MIRValue::FloatLiteral { _type, .. } => CXType::from(CXTypeKind::Float {
-                _type: _type.clone(),
+                _type: *_type,
             }),
             MIRValue::FunctionReference { prototype, .. } => CXType::from(CXTypeKind::Function {
                 prototype: Box::new(prototype.clone()),
@@ -402,8 +402,8 @@ impl MIRRegister {
     }
 }
 
-impl Into<CXIdent> for MIRRegister {
-    fn into(self) -> CXIdent {
-        self.name
+impl From<MIRRegister> for CXIdent {
+    fn from(val: MIRRegister) -> Self {
+        val.name
     }
 }
