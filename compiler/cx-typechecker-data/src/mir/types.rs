@@ -95,12 +95,6 @@ pub enum CXTypeKind {
     },
     Unit,
 
-    StrongPointer {
-        inner_type: Box<CXType>,
-        is_array: bool,
-        // move_semantics always true
-    },
-
     PointerTo {
         inner_type: Box<CXType>,
 
@@ -274,10 +268,6 @@ impl CXType {
         matches!(self.kind, CXTypeKind::PointerTo { .. })
     }
 
-    pub fn is_strong_pointer(&self) -> bool {
-        matches!(self.kind, CXTypeKind::StrongPointer { .. })
-    }
-
     pub fn is_array(&self) -> bool {
         matches!(self.kind, CXTypeKind::Array { .. })
     }
@@ -408,8 +398,7 @@ impl CXType {
             CXTypeKind::Unit => 0,
             CXTypeKind::Opaque { size, .. } => *size,
             CXTypeKind::MemoryReference(_)
-            | CXTypeKind::PointerTo { .. }
-            | CXTypeKind::StrongPointer { .. } => std::mem::size_of::<usize>(),
+            | CXTypeKind::PointerTo { .. } => std::mem::size_of::<usize>(),
 
             CXTypeKind::Structured { fields, .. } => {
                 let mut offset = 0;
@@ -458,8 +447,7 @@ impl CXType {
             CXTypeKind::Unit => 1,
             CXTypeKind::Opaque { size, .. } => (*size).min(8),
             CXTypeKind::MemoryReference(_)
-            | CXTypeKind::PointerTo { .. }
-            | CXTypeKind::StrongPointer { .. } => std::mem::size_of::<usize>(),
+            | CXTypeKind::PointerTo { .. } => std::mem::size_of::<usize>(),
 
             CXTypeKind::Structured { fields, .. } => fields
                 .iter()
@@ -545,17 +533,6 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
                 ..
             },
         ) => same_type(t1_type, t2_type),
-
-        (
-            CXTypeKind::StrongPointer {
-                inner_type: t1_inner,
-                ..
-            },
-            CXTypeKind::StrongPointer {
-                inner_type: t2_inner,
-                ..
-            },
-        ) => same_type(t1_inner, t2_inner),
 
         (
             CXTypeKind::Structured {

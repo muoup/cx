@@ -14,16 +14,6 @@ pub(crate) fn acknowledge_declared_type(
     }
 
     match &ty.kind {
-        CXTypeKind::StrongPointer { inner_type, .. } => {
-            let _ = acknowledge_declared_type(env, base_data, inner_type);
-
-            // Strong pointers, due to some problems with how identically defined types
-            // defined separately have different UUIDs, we just handle all strong pointers
-            // in-place in the function they are used in. May be revisited later.
-
-            true
-        }
-
         CXTypeKind::Structured {
             name: Some(_name),
             fields,
@@ -43,4 +33,12 @@ pub(crate) fn acknowledge_declared_type(
 
         _ => false,
     }
+}
+
+pub fn acknowledge_object_destructed(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    ty: &CXType,
+) {
+    let _ = acknowledge_declared_type(env, base_data, ty);
 }

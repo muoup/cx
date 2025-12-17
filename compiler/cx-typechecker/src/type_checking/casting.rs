@@ -136,10 +136,6 @@ pub(crate) fn explicit_cast(
             coerce(MIRCoercion::IntToPtr { sextend: *signed })
         }
 
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. }) => {
-            coerce(MIRCoercion::ReinterpretBits)
-        }
-
         _ => {
             return log_typecheck_error!(
                 env,
@@ -221,9 +217,7 @@ pub fn implicit_cast(
             })
         }
 
-        (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. })
-        | (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. })
-        | (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
+        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
             coerce(MIRCoercion::ReinterpretBits)
         }
 

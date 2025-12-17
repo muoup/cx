@@ -358,9 +358,7 @@ impl Display for CXNaiveTypeKind {
             CXNaiveTypeKind::PointerTo { inner_type, weak } => {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }
-            CXNaiveTypeKind::StrongPointer { inner, is_array } => {
-                write!(f, "{inner} strong* [is_array={is_array}]")
-            }
+
             CXNaiveTypeKind::Structured { name, fields } => {
                 let fields_str = fields
                     .iter()

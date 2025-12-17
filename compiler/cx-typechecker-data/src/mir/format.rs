@@ -425,7 +425,6 @@ impl Display for CXTypeKind {
                 write!(f, "tagged_union {} ", name)
             }
             CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::StrongPointer { inner_type, .. } => write!(f, "*strong {}", inner_type),
             CXTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
             CXTypeKind::MemoryReference(inner) => write!(f, "{}&", inner),
             CXTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),

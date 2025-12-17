@@ -122,26 +122,12 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
 
         CXTypeKind::Float { _type } => BCTypeKind::Float(convert_float_type(_type)),
 
-        CXTypeKind::StrongPointer { is_array: true, .. }
-        | CXTypeKind::PointerTo {
+        CXTypeKind::PointerTo {
             nullable: false, ..
         } => BCTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
         },
-
-        CXTypeKind::StrongPointer {
-            is_array: false,
-            inner_type: inner,
-            ..
-        } => {
-            let inner_as_bc = convert_type(inner);
-
-            BCTypeKind::Pointer {
-                nullable: false,
-                dereferenceable: inner_as_bc.size() as u32,
-            }
-        }
 
         CXTypeKind::Function { .. } | CXTypeKind::PointerTo { nullable: true, .. } => {
             BCTypeKind::Pointer {

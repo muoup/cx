@@ -653,18 +653,6 @@ pub(crate) fn typecheck_binop_mir_vals(
         (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
             typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr)
         }
-
-        (CXTypeKind::StrongPointer { .. }, _) | (_, CXTypeKind::StrongPointer { .. }) => {
-            return log_typecheck_error!(
-                env,
-                expr,
-                "R-value strong pointers must be assigned to an l-value before being used \
-                    in binary operations, found '{op}' with types {} and {}",
-                lhs_type,
-                rhs_type
-            );
-        }
-
         _ => {
             return log_typecheck_error!(
                 env,

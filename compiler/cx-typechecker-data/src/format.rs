@@ -13,18 +13,6 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
             mangled.push('P');
             mangled.push_str(&type_mangle(inner_type));
         }
-        CXTypeKind::StrongPointer {
-            inner_type,
-            is_array,
-        } => {
-            mangled.push('S');
-            if *is_array {
-                mangled.push('A');
-            } else {
-                mangled.push('P');
-            }
-            mangled.push_str(&type_mangle(inner_type));
-        }
         CXTypeKind::MemoryReference(inner_type) => {
             mangled.push('R');
             mangled.push_str(&type_mangle(inner_type));

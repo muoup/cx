@@ -278,34 +278,6 @@ pub(crate) fn parsetype_mods(
     let start_index = data.tokens.index;
 
     match &next_tok.kind {
-        keyword!(Strong) => {
-            data.tokens.next();
-
-            let is_array = match &next_kind!(data.tokens)? {
-                TokenKind::Operator(OperatorType::Asterisk) => false,
-                TokenKind::Punctuator(PunctuatorType::OpenBracket) => {
-                    assert_token_matches!(
-                        data.tokens,
-                        TokenKind::Punctuator(PunctuatorType::CloseBracket)
-                    );
-                    true
-                }
-
-                _ => log_error!("Expected '*' or '[]' after 'strong' keyword"),
-            };
-
-            let specs = parse_specifier(&mut data.tokens);
-            let acc_type = CXNaiveType::new(
-                specs,
-                CXNaiveTypeKind::StrongPointer {
-                    inner: Box::new(acc_type),
-                    is_array,
-                },
-            );
-
-            parsetype_mods(data, acc_type)
-        }
-
         keyword!(Weak) => {
             data.tokens.next();
             assert_token_matches!(data.tokens, operator!(Asterisk));

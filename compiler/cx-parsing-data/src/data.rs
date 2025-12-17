@@ -135,10 +135,6 @@ pub enum CXNaiveTypeKind {
         inner_type: Box<CXNaiveType>,
         weak: bool,
     },
-    StrongPointer {
-        inner: Box<CXNaiveType>,
-        is_array: bool,
-    },
 
     Structured {
         name: Option<CXIdent>,

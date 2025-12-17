@@ -97,15 +97,6 @@ pub(crate) fn _complete_type(
             }))
         }
 
-        CXNaiveTypeKind::StrongPointer { inner, is_array } => {
-            let inner_type = recurse_ty(inner)?;
-
-            Ok(CXType::from(CXTypeKind::StrongPointer {
-                inner_type: Box::new(inner_type),
-                is_array: *is_array,
-            }))
-        }
-
         CXNaiveTypeKind::MemoryReference { inner_type } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
