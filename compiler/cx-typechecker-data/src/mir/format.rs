@@ -137,6 +137,11 @@ impl Display for MIRRegister {
 impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            MIRInstruction::LifetimeStart { name, region, _type, .. } => {
+                write!(f, "lifetime_start {_type} {name} {region}")
+            }
+            MIRInstruction::LifetimeEnd { name, region, _type, .. } => write!(f, "lifetime_end {_type} {name} {region}"),
+            
             MIRInstruction::Alias { result, value } => write!(f, "{result} = alias {value}"),
             MIRInstruction::CreateStackRegion { result, _type } => {
                 write!(f, "{result} = create_region {_type}")

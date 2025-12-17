@@ -1,6 +1,5 @@
 use crate::typing::{any_to_basic_type, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_bytecode_data::types::BCType;
 use cx_bytecode_data::{BCPtrBinOp, BCIntBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 

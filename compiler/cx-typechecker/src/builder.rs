@@ -1,11 +1,11 @@
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRRegister, MIRValue},
     program::{MIRBasicBlock, MIRFunction},
-    types::CXFunctionPrototype,
+    types::{CXFunctionPrototype, CXType},
 };
 use cx_util::identifier::CXIdent;
 
-use crate::environment::DEFER_ACCUMULATION_REGISTER;
+use crate::{environment::DEFER_ACCUMULATION_REGISTER, type_checking::move_semantics::{acknowledge_destructed_object, invoke_remaining_destructions}};
 
 pub(crate) struct MIRBuilder {
     pub generated_functions: Vec<MIRFunction>,
@@ -18,12 +18,21 @@ pub enum BlockPointer {
     Defer(usize),
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct Lifetime {
+    pub name: String,
+    pub region: MIRRegister,
+    pub _type: CXType,
+}
+
 pub(crate) struct MIRFunctionContext {
     pub current_prototype: CXFunctionPrototype,
-
+    
     pub standard_blocks: Vec<MIRBasicBlock>,
     pub defer_blocks: Vec<MIRBasicBlock>,
 
+    pub lifetime_stack: Vec<Vec<Lifetime>>,
+    
     pub current_block: BlockPointer,
     pub defer_last_pointer: usize,
 
@@ -47,6 +56,8 @@ impl MIRBuilder {
                 instructions: Vec::new(),
             }],
             defer_blocks: Vec::new(),
+            
+            lifetime_stack: Vec::new(),
 
             current_block: BlockPointer::Standard(0),
             defer_last_pointer: 0,
@@ -56,6 +67,7 @@ impl MIRBuilder {
         };
 
         self.function_context = Some(function_context);
+        self.push_scope();
     }
 
     pub fn new_register(&mut self) -> MIRRegister {
@@ -102,6 +114,43 @@ impl MIRBuilder {
     pub fn add_instruction(&mut self, instruction: MIRInstruction) {
         self.current_block_mut().instructions.push(instruction);
     }
+    
+    pub fn lifetime_stack_ref(&self) -> &[Vec<Lifetime>] {
+        let Some(func_ctx) = &self.function_context else {
+            unreachable!()
+        };
+
+        &func_ctx.lifetime_stack
+    }
+    
+    pub fn add_lifetime(&mut self, lifetime: Lifetime) {
+        let Some(func_ctx) = &mut self.function_context else {
+            unreachable!()
+        };
+
+        let current_scope = func_ctx.lifetime_stack.last_mut().unwrap();
+        current_scope.push(lifetime);
+    }
+    
+    pub fn push_scope(&mut self) {
+        let Some(func_ctx) = &mut self.function_context else {
+            unreachable!()
+        };
+
+        func_ctx.lifetime_stack.push(Vec::new());
+    }
+    
+    pub fn pop_scope(&mut self) {
+        let Some(func_ctx) = &mut self.function_context else {
+            unreachable!()
+        };
+
+        let scope = func_ctx.lifetime_stack.pop().unwrap();
+        
+        for lifetime in scope.into_iter().rev() {
+            acknowledge_destructed_object(self, lifetime);
+        }
+    }
 
     pub fn add_jump(&mut self, target_block: CXIdent) {
         self.add_instruction(MIRInstruction::Jump {
@@ -114,6 +163,7 @@ impl MIRBuilder {
             if let Some(_) = value {
                 // Case 1: The return block has a return value, this overrides the defer accumulation register
                 // FIXME: We might need to handle cleaning up the defer accumulation register here
+                invoke_remaining_destructions(self);
                 self.add_instruction(MIRInstruction::Return {
                     value: value,
                 });
@@ -123,6 +173,7 @@ impl MIRBuilder {
                     _type: self.current_prototype().return_type.clone(),
                 };
                 
+                invoke_remaining_destructions(self);
                 self.add_instruction(MIRInstruction::Return {
                     value: Some(value),
                 });
@@ -155,6 +206,7 @@ impl MIRBuilder {
                     predecessors.push((value, current_block));
                 }
             } else {
+                invoke_remaining_destructions(self);
                 self.add_instruction(MIRInstruction::Return {
                     value: value,
                 });

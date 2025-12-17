@@ -305,6 +305,10 @@ impl CXType {
     pub fn is_unit(&self) -> bool {
         matches!(self.kind, CXTypeKind::Unit)
     }
+    
+    pub fn is_structure(&self) -> bool {
+        matches!(self.kind, CXTypeKind::Structured { .. })
+    }
 
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, CXTypeKind::MemoryReference(_))

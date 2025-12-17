@@ -13,7 +13,7 @@ use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXTy
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::builder::{BlockPointer, MIRBuilder};
 use crate::type_completion::templates::instantiate_function_template;
@@ -45,10 +45,9 @@ pub struct TypeEnvironment<'a> {
     pub(crate) builder: MIRBuilder,
 
     pub requests: Vec<MIRTemplateRequest>,
-    pub deconstructors: HashSet<CXType>,
-
     pub current_function: Option<CXFunctionPrototype>,
     pub arg_vals: Vec<MIRValue>,
+
     pub symbol_table: ScopedMap<MIRValue>,
     pub scope_stack: Vec<Scope>,
 
@@ -81,7 +80,6 @@ impl TypeEnvironment<'_> {
 
             scope_stack: Vec::new(),
             requests: Vec::new(),
-            deconstructors: HashSet::new(),
             symbol_table: ScopedMap::new(),
 
             arg_vals: Vec::new(),
@@ -96,11 +94,19 @@ impl TypeEnvironment<'_> {
             break_to,
             continue_to,
         });
+        
+        if self.current_function.is_some() {
+            self.builder.push_scope();
+        }
     }
 
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
-        self.scope_stack.pop();
+        self.scope_stack.pop().unwrap();
+        
+        if self.current_function.is_some() {
+            self.builder.pop_scope();
+        }
     }
 
     pub fn insert_symbol(&mut self, name: String, value: MIRValue) {
@@ -157,7 +163,7 @@ impl TypeEnvironment<'_> {
         self.realized_types.get(name).cloned()
     }
 
-    pub fn destructor_exists(&self, base_data: &MIRBaseMappings, _type: &CXType) -> bool {
+    pub fn get_destructor(&self, base_data: &MIRBaseMappings, _type: &CXType) -> bool {
         let Some(type_name) = _type.get_identifier() else {
             return false;
         };

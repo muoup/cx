@@ -26,9 +26,9 @@ pub(crate) mod binary_ops;
 pub(crate) mod casting;
 pub(crate) mod contract;
 pub(crate) mod r#match;
-pub(crate) mod move_semantics;
 pub(crate) mod structured_initialization;
 pub(crate) mod typechecker;
+pub(crate) mod move_semantics;
 
 fn generate_function(
     env: &mut TypeEnvironment,

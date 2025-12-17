@@ -6,7 +6,7 @@ use crate::type_checking::binary_ops::{
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::contract::contracted_function_return;
-use crate::type_checking::move_semantics::acknowledge_declared_type;
+use crate::type_checking::move_semantics::acknowledge_declared_object;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
@@ -103,6 +103,7 @@ pub fn typecheck_expr_inner(
                     _type: _type.clone(),
                 });
 
+            acknowledge_declared_object(env, name.to_string(), result.clone(), _type.clone());
             env.insert_symbol(
                 name.as_string(),
                 MIRValue::Register {
@@ -110,7 +111,6 @@ pub fn typecheck_expr_inner(
                     _type: _type.clone().mem_ref_to(),
                 },
             );
-            acknowledge_declared_type(env, base_data, &_type);
 
             MIRValue::Register {
                 register: result,

@@ -359,7 +359,7 @@ impl Display for CXNaiveTypeKind {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }
 
-            CXNaiveTypeKind::Structured { name, fields } => {
+            CXNaiveTypeKind::Structured { name, fields, .. } => {
                 let fields_str = fields
                     .iter()
                     .map(|(_, ty)| format!("{ty}"))

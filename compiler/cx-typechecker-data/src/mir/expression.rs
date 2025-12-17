@@ -175,7 +175,20 @@ pub enum MIRInstruction {
         predecessors: Vec<(MIRValue, CXIdent)>,
     },
 
+    LifetimeStart {
+        name: String,
+        region: MIRRegister,
+        _type: CXType,
+    },
+    
+    LifetimeEnd {
+        name: String,
+        region: MIRRegister,
+        _type: CXType,
+    },
+    
     // ---- Verification Nodes ----
+    
     Assert {
         value: MIRValue,
         message: String,

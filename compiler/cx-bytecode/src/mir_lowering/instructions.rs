@@ -226,7 +226,7 @@ pub fn lower_instruction(
             let bc_source = lower_value(builder, source)?;
             let bc_index = lower_value(builder, index)?;
             let bc_array_type = builder.convert_cx_type(array_type);
-            
+
             builder.add_instruction_translated(
                 BCInstructionKind::PointerBinOp {
                     left: bc_source,
@@ -520,6 +520,32 @@ pub fn lower_instruction(
                 BCType::unit(),
                 None,
             )
+        }
+
+        MIRInstruction::LifetimeStart { name, region, _type } => {
+            // Nothing for now, will eventually integrate with LLVM's lifetime intrinsics
+
+            Ok(BCValue::NULL)
+        }
+
+        MIRInstruction::LifetimeEnd { name, region, _type } => {
+            if let Some(deconstructor) = builder.get_deconstructor(_type) {
+                let bc_ptr = builder.get_symbol(region)
+                    .expect("Region pointer not found in symbol table for lifetime end");
+                
+                println!("Adding deconstructor call for lifetime end of variable {}", name);
+                
+                builder.add_new_instruction(
+                    BCInstructionKind::DirectCall {
+                        args: vec![bc_ptr],
+                        method_sig: deconstructor.clone(),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+            }
+
+            Ok(BCValue::NULL)
         }
 
         // Only relevant for verification, so no-op in bytecode

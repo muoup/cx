@@ -1,5 +1,5 @@
 use crate::parse::ParserData;
-use cx_lexer_data::token::{OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use cx_lexer_data::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_parsing_data::ast::CXGlobalVariable;
 use cx_parsing_data::data::{
@@ -8,7 +8,7 @@ use cx_parsing_data::data::{
 };
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_util::identifier::CXIdent;
-use cx_util::{log_error, CXResult};
+use cx_util::CXResult;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{parse_template_args, try_parse_template};
@@ -61,7 +61,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 
     let name = parse_std_ident(&mut data.tokens).ok();
     let template_prototype = try_parse_template(&mut data.tokens)?;
-
+    
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Struct);
     }
