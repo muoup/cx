@@ -1,27 +1,31 @@
 use cx_lexer_data::token::Token;
-use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType, NaiveFnIdent, NaiveFnKind};
+use cx_parsing_data::ast::CXExpr;
+use cx_parsing_data::data::{CXFunctionKind, CXNaivePrototype, CXNaiveType};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::CXTypeMap;
-use cx_typechecker_data::function_map::{CXFnMap, CXFunctionIdentifier};
+use cx_typechecker_data::function_map::CXFnMap;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::mir::expression::{MIRInstruction, MIRRegister, MIRValue};
 use cx_typechecker_data::mir::program::{
     MIRBaseMappings, MIRBasicBlock, MIRGlobalVariable, MIRUnit,
 };
-use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
 use crate::builder::{BlockPointer, MIRBuilder};
-use crate::type_completion::templates::instantiate_function_template;
+use crate::environment::function_query::{query_destructor, query_member_function, query_standard_function};
 use crate::type_completion::{complete_fn_prototype, complete_type};
+
+pub(crate) mod function_query;
+pub(crate) mod name_mangling;
 
 pub struct MIRTemplateRequest {
     pub module_origin: Option<String>,
-    pub name: NaiveFnKind,
+    pub kind: CXFunctionKind,
     pub input: CXTemplateInput,
 }
 
@@ -45,7 +49,7 @@ pub struct TypeEnvironment<'a> {
     pub(crate) builder: MIRBuilder,
 
     pub requests: Vec<MIRTemplateRequest>,
-    pub current_function: Option<CXFunctionPrototype>,
+    pub current_function: Option<MIRFunctionPrototype>,
     pub arg_vals: Vec<MIRValue>,
 
     pub symbol_table: ScopedMap<MIRValue>,
@@ -94,7 +98,7 @@ impl TypeEnvironment<'_> {
             break_to,
             continue_to,
         });
-        
+
         if self.current_function.is_some() {
             self.builder.push_scope();
         }
@@ -103,7 +107,7 @@ impl TypeEnvironment<'_> {
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
         self.scope_stack.pop().unwrap();
-        
+
         if self.current_function.is_some() {
             self.builder.pop_scope();
         }
@@ -113,7 +117,7 @@ impl TypeEnvironment<'_> {
         self.symbol_table.insert(name, value);
     }
 
-    pub fn add_type(&mut self, name: String, ty: CXType) {
+    pub fn add_type(&mut self, name: String, ty: MIRType) {
         self.realized_types.insert(name, ty);
     }
 
@@ -121,37 +125,11 @@ impl TypeEnvironment<'_> {
         self.symbol_table.get(name)
     }
 
-    pub fn get_func(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        name: &NaiveFnIdent,
-    ) -> CXResult<CXFunctionPrototype> {
-        let Some(base_fn) = base_data.fn_data.get_standard(name) else {
-            return CXError::create_result(format!("Function not found: {:?}", name));
-        };
-
-        complete_fn_prototype(
-            self,
-            base_data,
-            base_fn.external_module.as_ref(),
-            &base_fn.resource,
-        )
-    }
-
-    pub fn get_func_templated(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        name: &NaiveFnKind,
-        input: &CXTemplateInput,
-    ) -> CXResult<CXFunctionPrototype> {
-        instantiate_function_template(self, base_data, name, input)
-    }
-
-    pub fn get_realized_func(&self, name: &CXFunctionIdentifier) -> Option<CXFunctionPrototype> {
+    pub fn get_realized_func(&self, name: &str) -> Option<MIRFunctionPrototype> {
         self.realized_fns.get(name).cloned()
     }
 
-    pub fn get_type(&mut self, base_data: &MIRBaseMappings, name: &str) -> CXResult<CXType> {
+    pub fn get_type(&mut self, base_data: &MIRBaseMappings, name: &str) -> CXResult<MIRType> {
         let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
             return CXError::create_result(format!("Type not found: {}", name));
         };
@@ -159,21 +137,15 @@ impl TypeEnvironment<'_> {
         complete_type(self, base_data, _ty.external_module.as_ref(), &_ty.resource)
     }
 
-    pub fn get_realized_type(&self, name: &str) -> Option<CXType> {
+    pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
         self.realized_types.get(name).cloned()
     }
 
-    pub fn get_destructor(&self, base_data: &MIRBaseMappings, _type: &CXType) -> bool {
-        let Some(type_name) = _type.get_identifier() else {
-            return false;
-        };
-
-        base_data
-            .fn_data
-            .is_key_any(&NaiveFnIdent::Destructor(type_name.clone()))
+    pub fn get_destructor(&mut self, base_data: &MIRBaseMappings, _type: &MIRType) -> Option<MIRFunctionPrototype> {
+        query_destructor(self, base_data, _type)
     }
 
-    pub fn current_function(&self) -> &CXFunctionPrototype {
+    pub fn current_function(&self) -> &MIRFunctionPrototype {
         self.builder.current_prototype()
     }
 
@@ -181,7 +153,7 @@ impl TypeEnvironment<'_> {
         &mut self,
         base_data: &MIRBaseMappings,
         _type: &CXNaiveType,
-    ) -> CXResult<CXType> {
+    ) -> CXResult<MIRType> {
         complete_type(self, base_data, None, _type)
     }
 
@@ -190,19 +162,29 @@ impl TypeEnvironment<'_> {
         base_data: &MIRBaseMappings,
         external_module: Option<&String>,
         prototype: &CXNaivePrototype,
-    ) -> CXResult<CXFunctionPrototype> {
+    ) -> CXResult<MIRFunctionPrototype> {
         complete_fn_prototype(self, base_data, external_module, prototype)
     }
-
-    pub fn complete_fn_ident(
+    
+    pub fn get_standard_function(
         &mut self,
-        ident: &CXFunctionIdentifier,
-    ) -> Option<CXFunctionPrototype> {
-        if let Some(prototype) = self.get_realized_func(ident) {
-            return Some(prototype);
-        }
+        base_data: &MIRBaseMappings,
+        expr: &CXExpr,
+        key: &CXIdent,
+        template_input: Option<&CXTemplateInput>,
+    ) -> CXResult<MIRFunctionPrototype> {
+        query_standard_function(self, base_data, expr, key, template_input)
+    }
 
-        None
+    pub fn get_member_function(
+        &mut self,
+        base_data: &MIRBaseMappings,
+        expr: &CXExpr,
+        member_type: &MIRType,
+        name: &CXIdent,
+        template_input: Option<&CXTemplateInput>,
+    ) -> CXResult<MIRFunctionPrototype> {
+        query_member_function(self, base_data, expr, member_type, name, template_input)
     }
 
     fn start_defer(&mut self) {

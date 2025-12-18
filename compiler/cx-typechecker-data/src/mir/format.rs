@@ -5,7 +5,7 @@ use crate::mir::program::{
     MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit,
 };
 use crate::mir::types::{
-    CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind, TCParameter,
+    CXFloatType, MIRFunctionPrototype, CXIntegerType, MIRType, MIRTypeKind, MIRParameter,
 };
 use std::fmt::{Display, Formatter};
 
@@ -54,7 +54,7 @@ impl Display for MIRBasicBlock {
     }
 }
 
-impl Display for CXFunctionPrototype {
+impl Display for MIRFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "fn {}(", self.name)?;
         for (i, param) in self.params.iter().enumerate() {
@@ -118,7 +118,7 @@ impl Display for MIRGlobalVarKind {
     }
 }
 
-impl Display for TCParameter {
+impl Display for MIRParameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.name {
             write!(f, "{name}: {}", self._type)
@@ -390,25 +390,25 @@ impl Display for MIRCoercion {
     }
 }
 
-impl Display for CXType {
+impl Display for MIRType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Here you might want to add specifiers if they are relevant for display
         write!(f, "{}", self.kind)
     }
 }
 
-impl Display for CXTypeKind {
+impl Display for MIRTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXTypeKind::Integer { _type, signed } => write!(
+            MIRTypeKind::Integer { _type, signed } => write!(
                 f,
                 "{}{}",
                 if *signed { 'i' } else { 'u' },
                 _type.bytes() * 8
             ),
-            CXTypeKind::Float { _type } => write!(f, "{}", _type),
-            CXTypeKind::Bool => write!(f, "bool"),
-            CXTypeKind::Structured { name, .. } => {
+            MIRTypeKind::Float { _type } => write!(f, "{}", _type),
+            MIRTypeKind::Bool => write!(f, "bool"),
+            MIRTypeKind::Structured { name, .. } => {
                 write!(
                     f,
                     "struct {}",
@@ -417,7 +417,7 @@ impl Display for CXTypeKind {
                         .unwrap_or_else(|| "".to_string())
                 )
             }
-            CXTypeKind::Union { name, .. } => {
+            MIRTypeKind::Union { name, .. } => {
                 write!(
                     f,
                     "union {}",
@@ -426,15 +426,15 @@ impl Display for CXTypeKind {
                         .unwrap_or_else(|| "".to_string())
                 )
             }
-            CXTypeKind::TaggedUnion { name, .. } => {
+            MIRTypeKind::TaggedUnion { name, .. } => {
                 write!(f, "tagged_union {} ", name)
             }
-            CXTypeKind::Unit => write!(f, "()"),
-            CXTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
-            CXTypeKind::MemoryReference(inner) => write!(f, "{}&", inner),
-            CXTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
-            CXTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
-            CXTypeKind::Function { prototype } => write!(f, "{prototype}"),
+            MIRTypeKind::Unit => write!(f, "()"),
+            MIRTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
+            MIRTypeKind::MemoryReference(inner) => write!(f, "{}&", inner),
+            MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
+            MIRTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
+            MIRTypeKind::Function { prototype } => write!(f, "{prototype}"),
         }
     }
 }

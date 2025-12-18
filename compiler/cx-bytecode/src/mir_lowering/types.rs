@@ -3,18 +3,18 @@ use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::{BCFunctionPrototype, BCParameter, LinkageType};
 use cx_parsing_data::data::CXLinkageMode;
 use cx_typechecker_data::mir::types::{
-    CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind,
+    CXFloatType, MIRFunctionPrototype, CXIntegerType, MIRType, MIRTypeKind,
 };
 
 impl BCBuilder {
-    pub(crate) fn convert_cx_type(&self, cx_type: &CXType) -> BCType {
+    pub(crate) fn convert_cx_type(&self, cx_type: &MIRType) -> BCType {
         convert_type(cx_type)
     }
 
     #[allow(dead_code)]
     pub(crate) fn convert_cx_prototype(
         &self,
-        cx_proto: &CXFunctionPrototype,
+        cx_proto: &MIRFunctionPrototype,
     ) -> BCFunctionPrototype {
         convert_cx_prototype(cx_proto)
     }
@@ -32,13 +32,13 @@ impl BCBuilder {
     }
 }
 
-fn convert_type(cx_type: &CXType) -> BCType {
+fn convert_type(cx_type: &MIRType) -> BCType {
     BCType {
         kind: convert_type_kind(&cx_type.kind),
     }
 }
 
-fn convert_argument_type(cx_type: &CXType) -> BCType {
+fn convert_argument_type(cx_type: &MIRType) -> BCType {
     if cx_type.is_memory_resident() {
         BCType::default_pointer()
     } else {
@@ -46,7 +46,7 @@ fn convert_argument_type(cx_type: &CXType) -> BCType {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunctionPrototype {
+pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> BCFunctionPrototype {
     let mut params = cx_proto
         .params
         .iter()
@@ -75,7 +75,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &CXFunctionPrototype) -> BCFunction
     
 
     BCFunctionPrototype {
-        name: cx_proto.mangle_name(),
+        name: cx_proto.name.to_string(),
         return_type: return_type.clone(),
         params: params.clone(),
         var_args: cx_proto.var_args,
@@ -109,34 +109,34 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
+pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> BCTypeKind {
     match cx_type_kind {
-        CXTypeKind::Opaque { size, .. } => BCTypeKind::Opaque { bytes: *size },
+        MIRTypeKind::Opaque { size, .. } => BCTypeKind::Opaque { bytes: *size },
 
-        CXTypeKind::Bool => BCTypeKind::Bool,
+        MIRTypeKind::Bool => BCTypeKind::Bool,
 
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: _,
             _type: itype,
         } => BCTypeKind::Integer(convert_integer_type(itype)),
 
-        CXTypeKind::Float { _type } => BCTypeKind::Float(convert_float_type(_type)),
+        MIRTypeKind::Float { _type } => BCTypeKind::Float(convert_float_type(_type)),
 
-        CXTypeKind::PointerTo {
+        MIRTypeKind::PointerTo {
             nullable: false, ..
         } => BCTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
         },
 
-        CXTypeKind::Function { .. } | CXTypeKind::PointerTo { nullable: true, .. } => {
+        MIRTypeKind::Function { .. } | MIRTypeKind::PointerTo { nullable: true, .. } => {
             BCTypeKind::Pointer {
                 nullable: true,
                 dereferenceable: 0,
             }
         }
 
-        CXTypeKind::TaggedUnion { name, variants } => BCTypeKind::Struct {
+        MIRTypeKind::TaggedUnion { name, variants } => BCTypeKind::Struct {
             name: name.as_string(),
             fields: vec![
                 (
@@ -157,7 +157,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
             ],
         },
 
-        CXTypeKind::Array {
+        MIRTypeKind::Array {
             inner_type: _type,
             size,
         } => BCTypeKind::Array {
@@ -165,12 +165,12 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
             size: *size,
         },
 
-        CXTypeKind::MemoryReference(..) => BCTypeKind::Pointer {
+        MIRTypeKind::MemoryReference(..) => BCTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
         },
 
-        CXTypeKind::Structured { fields, name, .. } => BCTypeKind::Struct {
+        MIRTypeKind::Structured { fields, name, .. } => BCTypeKind::Struct {
             name: match name {
                 Some(name) => name.as_string(),
                 None => "".to_string(),
@@ -180,7 +180,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
                 .map(|(_name, _type)| (_name.clone(), convert_type(_type)))
                 .collect::<Vec<_>>(),
         },
-        CXTypeKind::Union {
+        MIRTypeKind::Union {
             variants: fields,
             name,
         } => BCTypeKind::Union {
@@ -194,6 +194,6 @@ pub(crate) fn convert_type_kind(cx_type_kind: &CXTypeKind) -> BCTypeKind {
                 .collect::<Vec<_>>(),
         },
 
-        CXTypeKind::Unit => BCTypeKind::Unit,
+        MIRTypeKind::Unit => BCTypeKind::Unit,
     }
 }

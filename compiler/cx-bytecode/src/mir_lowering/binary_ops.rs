@@ -8,7 +8,7 @@ use cx_typechecker_data::mir::{
         MIRBinOp, MIRBoolBinOp, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
         MIRRegister, MIRValue,
     },
-    types::CXType,
+    types::MIRType,
 };
 use cx_util::CXResult;
 
@@ -124,7 +124,7 @@ fn lower_ptrdiff_binop(
     lhs: &MIRValue,
     rhs: &MIRValue,
     op: &MIRPtrDiffBinOp,
-    ptr_inner: &CXType,
+    ptr_inner: &MIRType,
 ) -> CXResult<BCValue> {
     let bc_lhs = lower_value(builder, lhs)?;
     let bc_rhs = lower_value(builder, rhs)?;

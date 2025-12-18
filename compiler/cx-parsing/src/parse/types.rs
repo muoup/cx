@@ -3,8 +3,7 @@ use cx_lexer_data::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_parsing_data::ast::CXGlobalVariable;
 use cx_parsing_data::data::{
-    CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, CXTypeSpecifier,
-    NaiveFnKind, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
+    CX_CONST, CX_RESTRICT, CX_VOLATILE, CXFunctionKind, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, CXTypeSpecifier, PredeclarationType
 };
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_util::identifier::CXIdent;
@@ -61,7 +60,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXNaiveType> {
 
     let name = parse_std_ident(&mut data.tokens).ok();
     let template_prototype = try_parse_template(&mut data.tokens)?;
-    
+
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Struct);
     }
@@ -322,7 +321,7 @@ pub(crate) fn parsetype_mods(
             } = parse_params(data)?;
 
             let prototype = CXNaivePrototype {
-                name: NaiveFnKind::Standard(CXIdent::new("__internal_fnptr")),
+                kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
                 return_type: acc_type,
                 params,
                 var_args,

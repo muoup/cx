@@ -2,8 +2,8 @@ use cx_lexer_data::{identifier, keyword, operator, punctuator};
 use cx_parsing_data::{
     assert_token_matches,
     data::{
-        CXFunctionContract, CXNaiveParameter, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind,
-        CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind, PredeclarationType,
+        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXNaiveParameter,
+        CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, PredeclarationType,
     },
     peek_next_kind, try_next,
 };
@@ -24,7 +24,7 @@ pub struct FunctionDeclaration {
 
 fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
     CXNaivePrototype {
-        name: NaiveFnKind::Destructor(FunctionTypeIdent::from_type(&_type).unwrap()),
+        kind: CXFunctionKind::Destructor(CXFunctionTypeIdent::from_type(&_type).unwrap()),
 
         return_type: CXNaiveTypeKind::Identifier {
             name: CXIdent::new("void"),
@@ -35,7 +35,7 @@ fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
         var_args: false,
         this_param: true,
 
-        contract: CXFunctionContract::default()
+        contract: CXFunctionContract::default(),
     }
 }
 
@@ -88,7 +88,7 @@ pub fn try_function_parse(
             let args = parse_params(data)?;
             let prototype = CXNaivePrototype {
                 return_type,
-                name: NaiveFnKind::Standard(name.clone()),
+                kind: CXFunctionKind::Standard(name.clone()),
                 params: args.params,
                 var_args: args.var_args,
                 this_param: args.contains_this,
@@ -130,9 +130,9 @@ pub fn try_function_parse(
             let name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens)?;
 
-            let name = NaiveFnKind::MemberFunction {
-                _type: FunctionTypeIdent::from_type(&_type).unwrap(),
-                function_name: CXIdent::new(name.as_str()),
+            let name = CXFunctionKind::MemberFunction {
+                member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
+                name: CXIdent::new(name.as_str()),
             };
 
             let Ok(params) = parse_params(data) else {
@@ -144,7 +144,7 @@ pub fn try_function_parse(
 
             let prototype = CXNaivePrototype {
                 return_type,
-                name,
+                kind: name,
                 params: params.params,
                 var_args: params.var_args,
                 this_param: params.contains_this,
@@ -163,9 +163,7 @@ pub fn try_function_parse(
     }
 }
 
-pub(crate) fn parse_function_contract(
-    data: &mut ParserData,
-) -> CXResult<CXFunctionContract> {
+pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
     if !try_next!(data.tokens, keyword!(Where)) {
         return Ok(CXFunctionContract::default());
     }
@@ -179,7 +177,10 @@ pub(crate) fn parse_function_contract(
         match next {
             keyword!(Precondition) => {
                 if contract.precondition.is_some() {
-                    return log_parse_error!(data, "Precondition already defined in function contract.");
+                    return log_parse_error!(
+                        data,
+                        "Precondition already defined in function contract."
+                    );
                 }
 
                 data.tokens.next();
@@ -192,21 +193,24 @@ pub(crate) fn parse_function_contract(
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
-                    return log_parse_error!(data, "Postcondition already defined in function contract.");
+                    return log_parse_error!(
+                        data,
+                        "Postcondition already defined in function contract."
+                    );
                 }
 
                 data.tokens.next();
-                
+
                 let return_val_name = if try_next!(data.tokens, punctuator!(OpenParen)) {
                     assert_token_matches!(data.tokens, identifier!(ret));
                     let name = CXIdent::new(ret.as_str());
-                    
+
                     assert_token_matches!(data.tokens, punctuator!(CloseParen));
                     Some(name)
                 } else {
                     None
                 };
-                
+
                 assert_token_matches!(data.tokens, punctuator!(Colon));
                 assert_token_matches!(data.tokens, punctuator!(OpenParen));
                 let expr = parse_expr(data)?;

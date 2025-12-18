@@ -1,24 +1,19 @@
 use crate::environment::TypeEnvironment;
+use crate::environment::name_mangling::base_mangle_fn_name;
 use crate::type_completion::complete_type;
-use crate::type_completion::types::_complete_type;
-use cx_parsing_data::data::{
-    CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput, NaiveFnKind,
-};
-use cx_typechecker_data::function_map::{CXFunctionIdentifier, CXFunctionKind};
+use cx_parsing_data::data::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{
-    CXFunctionPrototype, CXTemplateInput, TCParameter,
-};
+use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRParameter};
+use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
-use cx_util::{CXResult, log_error};
 
 pub(crate) fn apply_implicit_fn_attr(mut proto: CXNaivePrototype) -> CXNaivePrototype {
-    if let Some(implicit_member) = proto.name.implicit_member() {
+    if let Some(implicit_member) = proto.kind.implicit_member() {
         proto.params.insert(
             0,
             CXNaiveParameter {
                 name: Some(CXIdent::new("this")),
-                _type: implicit_member.as_type().pointer_to(true, 0)
+                _type: implicit_member.as_type().pointer_to(true, 0),
             },
         );
     }
@@ -40,61 +35,12 @@ pub fn complete_template_args(
     Ok(CXTemplateInput { args })
 }
 
-pub(crate) fn complete_fn_ident(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    ident: &NaiveFnKind,
-) -> CXResult<CXFunctionIdentifier> {
-    match ident {
-        NaiveFnKind::MemberFunction {
-            function_name,
-            _type,
-        } => {
-            let base = _type.as_type();
-            let Ok(_ty) = env.complete_type(base_data, &base) else {
-                log_error!("Unknown type for member function: {function_name} of type {_type}");
-            };
-
-            let Some(cx_type) = _ty.get_identifier() else {
-                log_error!(
-                    "Member function base type should be identifiable: {function_name} of type {_type}"
-                );
-            };
-
-            Ok(CXFunctionKind::Member {
-                base_type: cx_type.clone(),
-                name: function_name.clone(),
-            }
-            .into())
-        }
-
-        NaiveFnKind::Destructor(name) => {
-            let base = name.as_type();
-            let Ok(_ty) = _complete_type(env, base_data, &base) else {
-                log_error!("Unknown type for destructor: {name}");
-            };
-
-            let Some(cx_type) = _ty.get_identifier() else {
-                log_error!("Destructor base type should be identifiable: {name}");
-            };
-
-            Ok(CXFunctionKind::Destructor {
-                base_type: cx_type.clone(),
-            }
-            .into())
-        }
-
-        NaiveFnKind::Standard(name) => Ok(CXFunctionKind::Standard { name: name.clone() }.into()),
-    }
-}
-
 pub fn _complete_fn_prototype(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     prototype: &CXNaivePrototype,
-) -> CXResult<CXFunctionPrototype> {
+) -> CXResult<MIRFunctionPrototype> {
     let prototype = apply_implicit_fn_attr(prototype.clone());
-    let ident = complete_fn_ident(env, base_data, &prototype.name)?;
     let return_type = env.complete_type(base_data, &prototype.return_type)?;
 
     let parameters = prototype
@@ -103,22 +49,26 @@ pub fn _complete_fn_prototype(
         .map(|CXNaiveParameter { name, _type }| {
             let param_type = env.complete_type(base_data, _type)?;
 
-            Ok(TCParameter {
+            Ok(MIRParameter {
                 name: name.clone(),
                 _type: param_type,
             })
         })
         .collect::<CXResult<Vec<_>>>()?;
 
-    let prototype = CXFunctionPrototype {
-        name: ident.clone(),
+    let name = base_mangle_fn_name(env, base_data, &prototype.kind)?;
+
+    let prototype = MIRFunctionPrototype {
+        name: name.clone().into(),
         return_type,
         params: parameters,
         contract: prototype.contract.clone(),
         var_args: prototype.var_args,
     };
 
-    env.realized_fns.entry(ident).or_insert_with(|| prototype.clone());
-    
+    env.realized_fns
+        .entry(name)
+        .or_insert_with(|| prototype.clone());
+
     Ok(prototype)
 }

@@ -5,7 +5,7 @@ use crate::type_checking::typechecker::{typecheck_expr, typecheck_expr_inner};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
 use cx_typechecker_data::mir::expression::{MIRInstruction, MIRValue};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{CXIntegerType, CXType, CXTypeKind};
+use cx_typechecker_data::mir::types::{CXIntegerType, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
@@ -89,7 +89,7 @@ enum MatchCondition<'a> {
     TaggedUnionTag {
         tag_value: MIRValue,
         union_name: CXIdent,
-        variants: &'a [(String, CXType)],
+        variants: &'a [(String, MIRType)],
     },
 }
 
@@ -97,7 +97,7 @@ fn get_match_condition_value<'a>(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
     expr_value: MIRValue,
-    expr_type: &'a CXType,
+    expr_type: &'a MIRType,
 ) -> CXResult<MatchCondition<'a>> {
     let (is_memory_ref, expr_type) = expr_type
         .mem_ref_inner()
@@ -105,16 +105,16 @@ fn get_match_condition_value<'a>(
         .unwrap_or_else(|| (false, expr_type));
 
     Ok(match (is_memory_ref, &expr_type.kind) {
-        (true, CXTypeKind::Integer { .. }) => {
+        (true, MIRTypeKind::Integer { .. }) => {
             let coerced_value = coerce_value(env, expr, expr_value)?;
             MatchCondition::Integer(coerced_value)
         }
 
-        (false, CXTypeKind::Integer { .. }) => MatchCondition::Integer(expr_value),
+        (false, MIRTypeKind::Integer { .. }) => MatchCondition::Integer(expr_value),
 
         (
             _,
-            CXTypeKind::TaggedUnion {
+            MIRTypeKind::TaggedUnion {
                 name: union_name,
                 variants,
             },
@@ -129,7 +129,7 @@ fn get_match_condition_value<'a>(
             MatchCondition::TaggedUnionTag {
                 tag_value: MIRValue::Register {
                     register: tag_value,
-                    _type: CXType::from(CXTypeKind::Integer {
+                    _type: MIRType::from(MIRTypeKind::Integer {
                         signed: true,
                         _type: CXIntegerType::I8,
                     }),

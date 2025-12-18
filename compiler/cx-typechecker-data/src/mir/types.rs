@@ -1,27 +1,27 @@
 use std::hash::{Hash, Hasher};
 
-use crate::format::type_mangle;
-use crate::function_map::CXFunctionIdentifier;
 use cx_parsing_data::ast::VisibilityMode;
 use cx_parsing_data::data::{CXFunctionContract, CXTypeSpecifier};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
+use crate::mir::name_mangling::type_mangle;
+
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct CXType {
+pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
 
-    pub kind: CXTypeKind,
+    pub kind: MIRTypeKind,
 }
 
-impl CXType {
+impl MIRType {
     pub fn mangle(&self) -> String {
         type_mangle(self)
     }
 }
 
-impl Hash for CXType {
+impl Hash for MIRType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.visibility.hash(state);
         self.specifiers.hash(state);
@@ -30,46 +30,52 @@ impl Hash for CXType {
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub struct TCParameter {
+pub struct MIRParameter {
     pub name: Option<CXIdent>,
-    pub _type: CXType,
+    pub _type: MIRType,
 }
 
 #[derive(Debug, Clone, Default, Readable, Writable)]
-pub struct CXFunctionPrototype {
-    pub name: CXFunctionIdentifier,
-    pub return_type: CXType,
-    pub params: Vec<TCParameter>,
+pub struct MIRFunctionPrototype {
+    pub name: CXIdent,
+    pub return_type: MIRType,
+    pub params: Vec<MIRParameter>,
     pub var_args: bool,
     pub contract: CXFunctionContract,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXTemplateInput {
-    pub args: Vec<CXType>,
+    pub args: Vec<MIRType>,
 }
 
-impl PartialEq<Self> for CXType {
+impl PartialEq<Self> for MIRType {
     fn eq(&self, other: &Self) -> bool {
         same_type(self, other)
     }
 }
 
-impl Eq for CXType {}
+impl Eq for MIRType {}
 
-impl Default for CXType {
+impl Default for MIRType {
     fn default() -> Self {
-        CXType {
+        MIRType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
 
-            kind: CXTypeKind::Unit,
+            kind: MIRTypeKind::Unit,
         }
     }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
-pub enum CXTypeKind {
+pub struct TemplateInstantiationInformation {
+    base_name: CXIdent,
+    template_input: CXTemplateInput,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub enum MIRTypeKind {
     Integer {
         _type: CXIntegerType,
         signed: bool,
@@ -80,39 +86,40 @@ pub enum CXTypeKind {
     Bool,
     Structured {
         name: Option<CXIdent>,
-        base_identifier: Option<CXIdent>,
-        fields: Vec<(String, CXType)>,
+        // Boxed for size reasons
+        template_info: Option<Box<TemplateInstantiationInformation>>,
+        fields: Vec<(String, MIRType)>,
 
         copyable: bool,
     },
     Union {
         name: Option<CXIdent>,
-        variants: Vec<(String, CXType)>,
+        variants: Vec<(String, MIRType)>,
     },
     TaggedUnion {
         name: CXIdent,
-        variants: Vec<(String, CXType)>,
+        variants: Vec<(String, MIRType)>,
     },
     Unit,
 
     PointerTo {
-        inner_type: Box<CXType>,
+        inner_type: Box<MIRType>,
 
         sizeless_array: bool,
         weak: bool,
         nullable: bool,
     },
-    MemoryReference(Box<CXType>),
+    MemoryReference(Box<MIRType>),
     Array {
         size: usize,
-        inner_type: Box<CXType>,
+        inner_type: Box<MIRType>,
     },
     Opaque {
-        name: String,
+        name: CXIdent,
         size: usize,
     },
     Function {
-        prototype: Box<CXFunctionPrototype>,
+        prototype: Box<MIRFunctionPrototype>,
     },
 }
 
@@ -171,18 +178,18 @@ impl CXFloatType {
     }
 }
 
-impl CXType {
+impl MIRType {
     pub fn unit() -> Self {
-        CXType {
+        MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
 
-            kind: CXTypeKind::Unit,
+            kind: MIRTypeKind::Unit,
         }
     }
 
-    pub fn new(specifiers: CXTypeSpecifier, underlying_type: CXTypeKind) -> Self {
-        CXType {
+    pub fn new(specifiers: CXTypeSpecifier, underlying_type: MIRTypeKind) -> Self {
+        MIRType {
             visibility: VisibilityMode::Private,
             specifiers,
 
@@ -210,43 +217,43 @@ impl CXType {
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
     }
-    
-    pub fn memory_resident_type(&self) -> &CXType {
+
+    pub fn memory_resident_type(&self) -> &MIRType {
         self.mem_ref_inner()
             .or_else(|| self.ptr_inner())
             .unwrap_or(self)
     }
 
-    pub fn mem_ref_inner(&self) -> Option<&CXType> {
-        let CXTypeKind::MemoryReference(inner) = &self.kind else {
+    pub fn mem_ref_inner(&self) -> Option<&MIRType> {
+        let MIRTypeKind::MemoryReference(inner) = &self.kind else {
             return None;
         };
 
         Some(inner.as_ref())
     }
-    
-    pub fn array_inner(&self) -> Option<&CXType> {
-        let CXTypeKind::Array { inner_type, .. } = &self.kind else {
+
+    pub fn array_inner(&self) -> Option<&MIRType> {
+        let MIRTypeKind::Array { inner_type, .. } = &self.kind else {
             return None;
         };
 
         Some(inner_type.as_ref())
     }
 
-    pub fn ptr_inner(&self) -> Option<&CXType> {
-        let CXTypeKind::PointerTo { inner_type, .. } = &self.kind else {
+    pub fn ptr_inner(&self) -> Option<&MIRType> {
+        let MIRTypeKind::PointerTo { inner_type, .. } = &self.kind else {
             return None;
         };
 
         Some(inner_type.as_ref())
     }
-    
+
     pub fn pointer_to(self) -> Self {
-        CXType {
+        MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
 
-            kind: CXTypeKind::PointerTo {
+            kind: MIRTypeKind::PointerTo {
                 inner_type: Box::new(self),
 
                 sizeless_array: false,
@@ -257,138 +264,127 @@ impl CXType {
     }
 
     pub fn mem_ref_to(self) -> Self {
-        CXType {
+        MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
-            kind: CXTypeKind::MemoryReference(Box::new(self)),
+            kind: MIRTypeKind::MemoryReference(Box::new(self)),
         }
     }
 
     pub fn is_pointer(&self) -> bool {
-        matches!(self.kind, CXTypeKind::PointerTo { .. })
+        matches!(self.kind, MIRTypeKind::PointerTo { .. })
     }
 
     pub fn is_array(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Array { .. })
+        matches!(self.kind, MIRTypeKind::Array { .. })
     }
 
     pub fn is_memory_resident(&self) -> bool {
         matches!(
             self.kind,
-            CXTypeKind::Structured { .. }
-                | CXTypeKind::Union { .. }
-                | CXTypeKind::TaggedUnion { .. }
-                | CXTypeKind::Array { .. }
+            MIRTypeKind::Structured { .. }
+                | MIRTypeKind::Union { .. }
+                | MIRTypeKind::TaggedUnion { .. }
+                | MIRTypeKind::Array { .. }
         )
     }
 
     pub fn is_opaque(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Opaque { .. })
+        matches!(self.kind, MIRTypeKind::Opaque { .. })
     }
-    
+
     pub fn is_tagged_union(&self) -> bool {
-        matches!(self.kind, CXTypeKind::TaggedUnion { .. })
+        matches!(self.kind, MIRTypeKind::TaggedUnion { .. })
     }
 
     pub fn is_function(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Function { .. })
+        matches!(self.kind, MIRTypeKind::Function { .. })
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Integer { .. } | CXTypeKind::Bool)
+        matches!(self.kind, MIRTypeKind::Integer { .. } | MIRTypeKind::Bool)
     }
 
     pub fn is_float(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Float { .. })
+        matches!(self.kind, MIRTypeKind::Float { .. })
     }
 
     pub fn is_unit(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Unit)
+        matches!(self.kind, MIRTypeKind::Unit)
     }
-    
+
     pub fn is_structure(&self) -> bool {
-        matches!(self.kind, CXTypeKind::Structured { .. })
+        matches!(self.kind, MIRTypeKind::Structured { .. })
     }
 
     pub fn is_memory_reference(&self) -> bool {
-        matches!(self.kind, CXTypeKind::MemoryReference(_))
+        matches!(self.kind, MIRTypeKind::MemoryReference(_))
     }
 
     pub fn was_template_instantiated(&self) -> bool {
         match &self.kind {
-            CXTypeKind::Structured {
-                base_identifier, ..
-            } => {
-                let Some(base_name) = base_identifier else {
-                    return false;
-                };
-
-                let Some(name) = self.get_name() else {
-                    return false;
-                };
-
-                base_name.as_str() != name
-            }
+            MIRTypeKind::Structured { template_info, .. } => template_info.is_some(),
 
             _ => false,
         }
     }
 
-    pub fn get_name(&self) -> Option<&str> {
+    pub fn get_name(&self) -> Option<&CXIdent> {
         match &self.kind {
-            CXTypeKind::Structured { name, .. } | CXTypeKind::Union { name, .. } => {
-                name.as_ref().map(|n| n.as_str())
-            }
-            CXTypeKind::Opaque { name, .. } => Some(name),
-            CXTypeKind::TaggedUnion { name, .. } => Some(name.as_str()),
+            MIRTypeKind::Structured { name, .. } | MIRTypeKind::Union { name, .. } => name.as_ref(),
+            MIRTypeKind::Opaque { name, .. } => Some(name),
+            MIRTypeKind::TaggedUnion { name, .. } => Some(name),
 
             _ => None,
         }
     }
 
-    pub fn get_fn_ident(&self) -> Option<&CXFunctionIdentifier> {
+    pub fn get_fn_name(&self) -> Option<&CXIdent> {
         match &self.kind {
-            CXTypeKind::Function { prototype } => Some(&prototype.name),
+            MIRTypeKind::Function { prototype } => Some(&prototype.name),
             _ => None,
         }
     }
 
-    pub fn get_identifier(&self) -> Option<&CXIdent> {
+    pub fn get_base_identifier(&self) -> Option<&CXIdent> {
         match &self.kind {
-            CXTypeKind::Structured {
-                base_identifier, ..
-            } => base_identifier.as_ref(),
+            MIRTypeKind::Structured {
+                name,
+                template_info,
+                ..
+            } => template_info
+                .as_ref()
+                .map(|info| &info.base_name)
+                .or_else(|| name.as_ref()),
 
             _ => None,
         }
     }
 
-    pub fn set_name(&mut self, name: CXIdent) {
+    pub fn add_template_info(&mut self, new_name: CXIdent, template_input: CXTemplateInput) {
         match &mut self.kind {
-            CXTypeKind::Structured {
+            MIRTypeKind::Structured {
                 name: n,
-                base_identifier,
+                template_info,
                 ..
             } => {
-                *base_identifier = n.clone();
-                *n = Some(name)
-            }
-            CXTypeKind::Union { name: n, .. } => *n = Some(name),
-            _ => {}
-        }
-    }
+                let old_name = std::mem::take(n).expect("Templated types cannot be nameless");
 
-    pub fn map_name(&mut self, f: impl FnOnce(&str) -> String) {
-        if let Some(name) = self.get_name() {
-            let new_name = f(name);
-            self.set_name(CXIdent::new(new_name));
+                *n = Some(new_name.clone());
+                *template_info = Some(Box::new(TemplateInstantiationInformation {
+                    base_name: old_name,
+                    template_input,
+                }));
+            }
+            MIRTypeKind::Union { name: n, .. } => *n = Some(new_name),
+            _ => {}
         }
     }
 
     pub fn copyable(&self) -> bool {
         match &self.kind {
-            CXTypeKind::Structured { copyable, .. } => *copyable,
-            CXTypeKind::TaggedUnion { variants, .. } => variants.iter().all(|(_, t)| t.copyable()),
+            MIRTypeKind::Structured { copyable, .. } => *copyable,
+            MIRTypeKind::TaggedUnion { variants, .. } => variants.iter().all(|(_, t)| t.copyable()),
 
             _ => true,
         }
@@ -396,35 +392,36 @@ impl CXType {
 
     pub fn type_size(&self) -> usize {
         match &self.kind {
-            CXTypeKind::Integer { _type, .. } => _type.bytes(),
-            CXTypeKind::Float { _type } => _type.bytes(),
-            CXTypeKind::Bool => 1,
-            CXTypeKind::Unit => 0,
-            CXTypeKind::Opaque { size, .. } => *size,
-            CXTypeKind::MemoryReference(_)
-            | CXTypeKind::PointerTo { .. } => std::mem::size_of::<usize>(),
+            MIRTypeKind::Integer { _type, .. } => _type.bytes(),
+            MIRTypeKind::Float { _type } => _type.bytes(),
+            MIRTypeKind::Bool => 1,
+            MIRTypeKind::Unit => 0,
+            MIRTypeKind::Opaque { size, .. } => *size,
+            MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
+                std::mem::size_of::<usize>()
+            }
 
-            CXTypeKind::Structured { fields, .. } => {
+            MIRTypeKind::Structured { fields, .. } => {
                 let mut offset = 0;
-                
+
                 for (_, t) in fields {
                     let align = t.type_alignment();
                     offset = (offset * align).div_ceil(align);
                     offset += t.type_size();
                 }
-                
+
                 offset
             }
-            
-            CXTypeKind::Union { variants, .. } => variants
+
+            MIRTypeKind::Union { variants, .. } => variants
                 .iter()
                 .map(|(_, t)| t.type_size())
                 .max()
                 .unwrap_or(0),
 
-            CXTypeKind::Array { size, inner_type } => size * inner_type.type_size(),
+            MIRTypeKind::Array { size, inner_type } => size * inner_type.type_size(),
 
-            CXTypeKind::TaggedUnion { variants, .. } => {
+            MIRTypeKind::TaggedUnion { variants, .. } => {
                 variants
                     .iter()
                     .map(|(_, t)| t.type_size())
@@ -433,46 +430,47 @@ impl CXType {
                     + 1
             }
 
-            CXTypeKind::Function { .. } => unreachable!(),
+            MIRTypeKind::Function { .. } => unreachable!(),
         }
     }
-    
+
     pub fn padded_size(&self) -> u64 {
         let size = self.type_size() as u64;
         let align = self.type_alignment() as u64;
         size.div_ceil(align) * align
     }
-    
+
     pub fn type_alignment(&self) -> usize {
         match &self.kind {
-            CXTypeKind::Integer { _type, .. } => _type.bytes().min(8),
-            CXTypeKind::Float { _type } => _type.bytes().min(8),
-            CXTypeKind::Bool => 1,
-            CXTypeKind::Unit => 1,
-            CXTypeKind::Opaque { size, .. } => (*size).min(8),
-            CXTypeKind::MemoryReference(_)
-            | CXTypeKind::PointerTo { .. } => std::mem::size_of::<usize>(),
+            MIRTypeKind::Integer { _type, .. } => _type.bytes().min(8),
+            MIRTypeKind::Float { _type } => _type.bytes().min(8),
+            MIRTypeKind::Bool => 1,
+            MIRTypeKind::Unit => 1,
+            MIRTypeKind::Opaque { size, .. } => (*size).min(8),
+            MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
+                std::mem::size_of::<usize>()
+            }
 
-            CXTypeKind::Structured { fields, .. } => fields
+            MIRTypeKind::Structured { fields, .. } => fields
                 .iter()
                 .map(|(_, t)| t.type_alignment())
                 .max()
                 .unwrap_or(8),
-            CXTypeKind::Union { variants, .. } => variants
-                .iter()
-                .map(|(_, t)| t.type_alignment())
-                .max()
-                .unwrap_or(8),
-
-            CXTypeKind::Array { inner_type, .. } => inner_type.type_alignment(),
-
-            CXTypeKind::TaggedUnion { variants, .. } => variants
+            MIRTypeKind::Union { variants, .. } => variants
                 .iter()
                 .map(|(_, t)| t.type_alignment())
                 .max()
                 .unwrap_or(8),
 
-            CXTypeKind::Function { .. } => unreachable!(),
+            MIRTypeKind::Array { inner_type, .. } => inner_type.type_alignment(),
+
+            MIRTypeKind::TaggedUnion { variants, .. } => variants
+                .iter()
+                .map(|(_, t)| t.type_alignment())
+                .max()
+                .unwrap_or(8),
+
+            MIRTypeKind::Function { .. } => unreachable!(),
         }
     }
 
@@ -482,12 +480,12 @@ impl CXType {
      *   having to write out a full type when it is not used.
      */
     pub fn internal_function() -> Self {
-        CXType::new(
+        MIRType::new(
             0,
-            CXTypeKind::Function {
-                prototype: Box::new(CXFunctionPrototype {
-                    name: CXFunctionIdentifier::default(),
-                    return_type: CXType::unit(),
+            MIRTypeKind::Function {
+                prototype: Box::new(MIRFunctionPrototype {
+                    name: CXIdent::from("__internal_function"),
+                    return_type: MIRType::unit(),
                     params: vec![],
                     var_args: false,
                     contract: CXFunctionContract::default(),
@@ -497,9 +495,9 @@ impl CXType {
     }
 }
 
-impl From<CXTypeKind> for CXType {
-    fn from(kind: CXTypeKind) -> Self {
-        CXType {
+impl From<MIRTypeKind> for MIRType {
+    fn from(kind: MIRTypeKind) -> Self {
+        MIRType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
@@ -507,7 +505,7 @@ impl From<CXTypeKind> for CXType {
     }
 }
 
-pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
+pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
     let t1_name = t1.get_name();
     let t2_name = t2.get_name();
 
@@ -517,40 +515,47 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
 
     match (&t1.kind, &t2.kind) {
         (
-            CXTypeKind::Array {
+            MIRTypeKind::Array {
                 inner_type: t1_type,
                 ..
             },
-            CXTypeKind::Array {
+            MIRTypeKind::Array {
                 inner_type: t2_type,
                 ..
             },
         ) => same_type(t1_type, t2_type),
 
         (
-            CXTypeKind::PointerTo {
+            MIRTypeKind::PointerTo {
                 inner_type: t1_type,
                 ..
             },
-            CXTypeKind::PointerTo {
+            MIRTypeKind::PointerTo {
                 inner_type: t2_type,
                 ..
             },
         ) => same_type(t1_type, t2_type),
 
         (
-            CXTypeKind::Structured {
-                fields: t1_fields, copyable: c1, ..
+            MIRTypeKind::Structured {
+                fields: t1_fields,
+                copyable: c1,
+                ..
             },
-            CXTypeKind::Structured {
-                fields: t2_fields, copyable: c2, ..
+            MIRTypeKind::Structured {
+                fields: t2_fields,
+                copyable: c2,
+                ..
             },
-        ) => c1 == c2 && t1_fields
-            .iter()
-            .zip(t2_fields.iter())
-            .all(|(f1, f2)| same_type(&f1.1, &f2.1)),
+        ) => {
+            c1 == c2
+                && t1_fields
+                    .iter()
+                    .zip(t2_fields.iter())
+                    .all(|(f1, f2)| same_type(&f1.1, &f2.1))
+        }
 
-        (CXTypeKind::Function { prototype: p1 }, CXTypeKind::Function { prototype: p2 }) => {
+        (MIRTypeKind::Function { prototype: p1 }, MIRTypeKind::Function { prototype: p2 }) => {
             same_type(&p1.return_type, &p2.return_type)
                 && p1
                     .params
@@ -560,33 +565,22 @@ pub fn same_type(t1: &CXType, t2: &CXType) -> bool {
         }
 
         (
-            CXTypeKind::Integer {
+            MIRTypeKind::Integer {
                 _type: t1_type,
                 signed: t1_signed,
             },
-            CXTypeKind::Integer {
+            MIRTypeKind::Integer {
                 _type: t2_type,
                 signed: t2_signed,
             },
         ) => *t1_type == *t2_type && *t1_signed == *t2_signed,
 
-        (CXTypeKind::Float { _type: t1_type }, CXTypeKind::Float { _type: t2_type }) => {
+        (MIRTypeKind::Float { _type: t1_type }, MIRTypeKind::Float { _type: t2_type }) => {
             *t1_type == *t2_type
         }
 
-        (CXTypeKind::Bool, CXTypeKind::Bool) | (CXTypeKind::Unit, CXTypeKind::Unit) => true,
+        (MIRTypeKind::Bool, MIRTypeKind::Bool) | (MIRTypeKind::Unit, MIRTypeKind::Unit) => true,
 
         _ => false,
-    }
-}
-
-impl CXFunctionPrototype {
-    pub fn mangle_name(&self) -> String {
-        self.name.mangle()
-    }
-
-    pub fn apply_template_mangling(&mut self) {
-        self.name
-            .template_mangle2(&self.return_type, self.params.iter().map(|p| &p._type));
     }
 }

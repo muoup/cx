@@ -2,7 +2,7 @@ use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRValue},
     program::MIRBaseMappings,
-    types::{CXFunctionPrototype, CXType, CXTypeKind, TCParameter},
+    types::{MIRFunctionPrototype, MIRType, MIRTypeKind, MIRParameter},
 };
 use cx_util::CXResult;
 
@@ -14,12 +14,12 @@ use crate::{
 
 fn create_clause_scope(
     env: &mut TypeEnvironment,
-    prototype: &CXFunctionPrototype,
+    prototype: &MIRFunctionPrototype,
     parameters: &[MIRValue],
 ) -> CXResult<()> {
     env.push_scope(None, None);
 
-    for (i, TCParameter { name, _type }) in prototype.params.iter().enumerate() {
+    for (i, MIRParameter { name, _type }) in prototype.params.iter().enumerate() {
         let Some(name) = name else {
             continue;
         };
@@ -32,7 +32,7 @@ fn create_clause_scope(
 
 fn assume_clause(
     env: &mut TypeEnvironment,
-    prototype: &CXFunctionPrototype,
+    prototype: &MIRFunctionPrototype,
     base_data: &MIRBaseMappings,
     parameters: &[MIRValue],
     clause: &CXExpr,
@@ -43,9 +43,9 @@ fn assume_clause(
         env,
         base_data,
         clause,
-        Some(&CXType::from(CXTypeKind::Bool)),
+        Some(&MIRType::from(MIRTypeKind::Bool)),
     )
-    .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
+    .and_then(|value| implicit_cast(env, clause, value, &MIRType::from(MIRTypeKind::Bool)))?;
     env.builder
         .add_instruction(MIRInstruction::Assume { value: result });
 
@@ -56,7 +56,7 @@ fn assume_clause(
 
 fn assert_clause(
     env: &mut TypeEnvironment,
-    prototype: &CXFunctionPrototype,
+    prototype: &MIRFunctionPrototype,
     base_data: &MIRBaseMappings,
     parameters: &[MIRValue],
     clause: &CXExpr,
@@ -68,9 +68,9 @@ fn assert_clause(
         env,
         base_data,
         clause,
-        Some(&CXType::from(CXTypeKind::Bool)),
+        Some(&MIRType::from(MIRTypeKind::Bool)),
     )
-    .and_then(|value| implicit_cast(env, clause, value, &CXType::from(CXTypeKind::Bool)))?;
+    .and_then(|value| implicit_cast(env, clause, value, &MIRType::from(MIRTypeKind::Bool)))?;
     env.builder.add_instruction(MIRInstruction::Assert {
         value: result,
         message: format!("Function contract violated: {}", message.unwrap_or("")),
@@ -127,7 +127,7 @@ pub fn contracted_function_return(
 pub fn contracted_function_call(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    prototype: &CXFunctionPrototype,
+    prototype: &MIRFunctionPrototype,
     function: MIRValue,
     parameters: &[MIRValue],
 ) -> CXResult<MIRValue> {

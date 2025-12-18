@@ -1,15 +1,19 @@
-use crate::environment::{TypeEnvironment, MIRTemplateRequest};
+use crate::environment::function_query::query_destructor;
+use crate::environment::name_mangling::mangle_templated_fn_name;
+use crate::environment::{MIRTemplateRequest, TypeEnvironment};
 use crate::type_completion::complete_fn_prototype;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
-use cx_parsing_data::data::{CXNaiveTemplateInput, CXTemplatePrototype, FunctionTypeIdent, NaiveFnKind};
+use cx_parsing_data::data::{
+    CXFunctionTemplate, CXNaiveTemplateInput, CXTemplatePrototype, ModuleResource,
+};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{CXFunctionPrototype, CXTemplateInput, CXType};
+use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
-pub(crate) type Overwrites = Vec<(String, CXType)>;
+pub(crate) type Overwrites = Vec<(String, MIRType)>;
 
-pub(crate) fn add_templatedtype_s(
+pub(crate) fn add_templated_types(
     env: &mut TypeEnvironment,
     args: &CXTemplatePrototype,
     input: &CXTemplateInput,
@@ -49,7 +53,7 @@ pub(crate) fn instantiate_type_template(
     base_data: &MIRBaseMappings,
     input: &CXNaiveTemplateInput,
     name: &str,
-) -> CXResult<CXType> {
+) -> CXResult<MIRType> {
     let completed_input = _complete_template_input(env, base_data, None, input)?;
 
     let template_name = mangle_template_name(name, &completed_input);
@@ -72,72 +76,73 @@ pub(crate) fn instantiate_type_template(
 
     let shell = &template.resource.shell;
 
-    let overwrites = add_templatedtype_s(env, &template.resource.prototype, &completed_input);
+    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
     let mut cx_type = _complete_type(env, base_data, shell)?;
     restore_template_overwrites(env, overwrites);
 
-    cx_type.set_name(CXIdent::new(template_name.as_str()));
+    cx_type.add_template_info(
+        CXIdent::new(template_name.as_str()),
+        completed_input.clone(),
+    );
     env.add_type(template_name, cx_type.clone());
 
-    let destructor_ident = NaiveFnKind::Destructor(FunctionTypeIdent::Templated(
-        CXIdent::new(name),
-        input.clone(),
-    ));
-
-    if base_data
-        .fn_data
-        .get_template(&(&destructor_ident).into())
-        .is_some()
-    {
-        instantiate_function_template(env, base_data, &destructor_ident, &completed_input)?;
-    }
+    // This method is expected to error if we cannot find the destructor, so we are okay
+    // to disregard the result here.
+    let _ = query_destructor(env, base_data, &cx_type);
 
     Ok(cx_type)
+}
+
+pub(crate) fn complete_function_template(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    template: &ModuleResource<CXFunctionTemplate>,
+) -> CXResult<MIRFunctionPrototype> {
+    let resource = &template.resource;
+    let shell = &resource.shell;
+
+    let mut completed = complete_fn_prototype(env, base_data, None, shell)?;
+    completed.name = mangle_templated_fn_name(
+        env,
+        base_data,
+        &template.resource.shell.kind,
+        &completed.return_type,
+        &completed
+            .params
+            .iter()
+            .map(|param| param._type.clone())
+            .collect::<Vec<_>>(),
+    )?
+    .into();
+
+    Ok(completed)
 }
 
 pub(crate) fn instantiate_function_template(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    name: &NaiveFnKind,
+    template: &ModuleResource<CXFunctionTemplate>,
     input: &CXTemplateInput,
-) -> CXResult<CXFunctionPrototype> {
-    let cache = base_data.fn_data.get_template(&name.into())
-        .ok_or_else(|| {
-            log_error!(
-                "Function template not found: {}<{}>",
-                name,
-                input
-                    .args
-                    .iter()
-                    .map(|param| format!("{param}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        })?;
-    let resource = &cache.resource;
-
-    let module_origin = &cache.external_module;
+) -> CXResult<MIRFunctionPrototype> {
+    let resource = &template.resource;
+    let module_origin = &template.external_module;
     let template_prototype = &resource.prototype;
-    let shell = &resource.shell;
 
-    let overwrites = add_templatedtype_s(env, template_prototype, input);
+    let overwrites = add_templated_types(env, template_prototype, input);
+    let instantiated = complete_function_template(env, base_data, template)?;
 
-    let mut instantiated = complete_fn_prototype(env, base_data, None, shell)?;
-    instantiated.apply_template_mangling();
-
-    if let Some(generated) = env.get_realized_func(&instantiated.name) {
+    if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
         return Ok(generated);
     }
 
     env.realized_fns
-        .insert(instantiated.name.clone(), instantiated.clone());
+        .insert(instantiated.name.to_string(), instantiated.clone());
     env.requests.push(MIRTemplateRequest {
         module_origin: module_origin.clone(),
-        name: name.clone(),
+        kind: template.resource.shell.kind.clone(),
         input: input.clone(),
     });
 
     restore_template_overwrites(env, overwrites);
-
     Ok(instantiated)
 }

@@ -1,7 +1,7 @@
 use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
     expression::{MIRCoercion, MIRInstruction, MIRValue},
-    types::{CXIntegerType, CXType, CXTypeKind, same_type},
+    types::{CXIntegerType, MIRType, MIRTypeKind, same_type},
 };
 use cx_util::CXResult;
 
@@ -84,7 +84,7 @@ pub(crate) fn coerce_condition(
         env,
         expr,
         value,
-        &CXTypeKind::Integer {
+        &MIRTypeKind::Integer {
             signed: false,
             _type: CXIntegerType::I64,
         }
@@ -96,7 +96,7 @@ pub(crate) fn explicit_cast(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
     value: MIRValue,
-    to_type: &CXType,
+    to_type: &MIRType,
 ) -> CXResult<MIRValue> {
     if let Ok(val) = implicit_cast(env, expr, value.clone(), to_type) {
         return Ok(val);
@@ -118,21 +118,21 @@ pub(crate) fn explicit_cast(
     };
 
     match (&from_type.kind, &to_type.kind) {
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
             coerce(MIRCoercion::ReinterpretBits)
         }
 
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { _type, .. })
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. })
             if (*_type == CXIntegerType::I64) =>
         {
             coerce(MIRCoercion::ReinterpretBits)
         }
 
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { _type, .. }) => {
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
             coerce(MIRCoercion::PtrToInt { to_type: *_type })
         }
 
-        (CXTypeKind::Integer { signed, .. }, CXTypeKind::PointerTo { .. }) => {
+        (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::PointerTo { .. }) => {
             coerce(MIRCoercion::IntToPtr { sextend: *signed })
         }
 
@@ -152,7 +152,7 @@ pub fn implicit_cast(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
     value: MIRValue,
-    to_type: &CXType,
+    to_type: &MIRType,
 ) -> CXResult<MIRValue> {
     let from_type = value.get_type();
 
@@ -175,13 +175,13 @@ pub fn implicit_cast(
     };
 
     match (&from_type.kind, &to_type.kind) {
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { _type, .. }) => {
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
             coerce(MIRCoercion::PtrToInt { to_type: *_type })
         }
 
         (
-            CXTypeKind::Integer { _type: t1, .. },
-            CXTypeKind::Integer {
+            MIRTypeKind::Integer { _type: t1, .. },
+            MIRTypeKind::Integer {
                 _type: t2,
                 signed: s2,
                 ..
@@ -197,40 +197,40 @@ pub fn implicit_cast(
             }
         }
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => coerce(MIRCoercion::IntToBool),
-        (CXTypeKind::Bool, CXTypeKind::Integer { _type, .. }) => {
+        (MIRTypeKind::Integer { .. }, MIRTypeKind::Bool) => coerce(MIRCoercion::IntToBool),
+        (MIRTypeKind::Bool, MIRTypeKind::Integer { _type, .. }) => {
             coerce(MIRCoercion::BoolToInt { to_type: *_type })
         }
-        (CXTypeKind::Float { .. }, CXTypeKind::Float { _type: to_type }) => {
+        (MIRTypeKind::Float { .. }, MIRTypeKind::Float { _type: to_type }) => {
             coerce(MIRCoercion::FloatCast { to_type: *to_type })
         }
-        (CXTypeKind::Integer { signed, .. }, CXTypeKind::Float { _type, .. }) => {
+        (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::Float { _type, .. }) => {
             coerce(MIRCoercion::IntToFloat {
                 to_type: *_type,
                 sextend: *signed,
             })
         }
-        (CXTypeKind::Float { .. }, CXTypeKind::Integer { _type, signed, .. }) => {
+        (MIRTypeKind::Float { .. }, MIRTypeKind::Integer { _type, signed, .. }) => {
             coerce(MIRCoercion::FloatToInt {
                 to_type: *_type,
                 sextend: *signed,
             })
         }
 
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
             coerce(MIRCoercion::ReinterpretBits)
         }
 
         (
-            CXTypeKind::MemoryReference(inner1),
-            CXTypeKind::PointerTo {
+            MIRTypeKind::MemoryReference(inner1),
+            MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
         ) if same_type(inner1.as_ref(), inner2.as_ref()) => coerce(MIRCoercion::ReinterpretBits),
 
         (
-            CXTypeKind::MemoryReference(inner1),
-            CXTypeKind::PointerTo { inner_type: inner2, .. }
+            MIRTypeKind::MemoryReference(inner1),
+            MIRTypeKind::PointerTo { inner_type: inner2, .. }
         ) if inner1.is_array() => {
             let inner1_inner = inner1.array_inner().unwrap();
             
@@ -247,7 +247,7 @@ pub fn implicit_cast(
             }
         },
         
-        (CXTypeKind::MemoryReference(inner), _) => {
+        (MIRTypeKind::MemoryReference(inner), _) => {
             if !inner.copyable() {
                 return log_typecheck_error!(
                     env,
@@ -282,10 +282,10 @@ pub fn implicit_cast(
             implicit_cast(env, expr, result_value, to_type)
         }
 
-        (_, CXTypeKind::MemoryReference(inner))
+        (_, MIRTypeKind::MemoryReference(inner))
         | (
             _,
-            CXTypeKind::PointerTo {
+            MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
         ) if same_type(inner.as_ref(), &from_type) && from_type.is_memory_resident() => {
@@ -293,10 +293,10 @@ pub fn implicit_cast(
         }
 
         (
-            CXTypeKind::Array {
+            MIRTypeKind::Array {
                 inner_type: _type, ..
             },
-            CXTypeKind::PointerTo {
+            MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
         ) if same_type(_type, inner) => {
@@ -320,8 +320,8 @@ pub fn implicit_cast(
         }
 
         (
-            CXTypeKind::Function { .. },
-            CXTypeKind::PointerTo {
+            MIRTypeKind::Function { .. },
+            MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
         ) if same_type(inner.as_ref(), &from_type) => Ok(value),

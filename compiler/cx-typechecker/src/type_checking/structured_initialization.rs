@@ -2,7 +2,7 @@ use cx_parsing_data::ast::{CXExpr, CXInitIndex};
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRValue},
     program::MIRBaseMappings,
-    types::{CXIntegerType, CXType, CXTypeKind},
+    types::{CXIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -21,30 +21,30 @@ pub fn typecheck_initializer_list(
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     indices: &[CXInitIndex],
-    to_type: Option<&CXType>,
+    to_type: Option<&MIRType>,
 ) -> CXResult<MIRValue> {
     let Some(to_type) = to_type else {
         return log_typecheck_error!(env, expr, " Initializer lists must have an explicit type");
     };
 
     let to_type = match &to_type.kind {
-        CXTypeKind::MemoryReference(inner) => inner.as_ref(),
+        MIRTypeKind::MemoryReference(inner) => inner.as_ref(),
         _ => to_type,
     };
 
     match &to_type.kind {
-        CXTypeKind::Array {
+        MIRTypeKind::Array {
             inner_type: _type,
             size,
         } => typecheck_array_initializer(env, base_data, indices, _type, Some(*size), to_type),
 
-        CXTypeKind::PointerTo {
+        MIRTypeKind::PointerTo {
             inner_type: inner,
             sizeless_array: true,
             ..
         } => typecheck_array_initializer(env, base_data, indices, inner.as_ref(), None, to_type),
 
-        CXTypeKind::Structured { .. } => {
+        MIRTypeKind::Structured { .. } => {
             typecheck_structured_initializer(env, base_data, expr, indices, to_type)
         }
 
@@ -56,9 +56,9 @@ fn typecheck_array_initializer(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     indices: &[CXInitIndex],
-    inner_type: &CXType,
+    inner_type: &MIRType,
     size: Option<usize>,
-    to_type: &CXType,
+    to_type: &MIRType,
 ) -> CXResult<MIRValue> {
     for index in indices {
         if let Some(name) = &index.name {
@@ -82,7 +82,7 @@ fn typecheck_array_initializer(
         }
 
     let array_size = size.unwrap_or(indices.len());
-    let array_type = CXType::from(CXTypeKind::Array {
+    let array_type = MIRType::from(MIRTypeKind::Array {
         inner_type: Box::new(inner_type.clone()),
         size: array_size,
     });
@@ -132,9 +132,9 @@ fn typecheck_structured_initializer(
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     indices: &[CXInitIndex],
-    to_type: &CXType,
+    to_type: &MIRType,
 ) -> CXResult<MIRValue> {
-    let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
+    let MIRTypeKind::Structured { fields, .. } = &to_type.kind else {
         return log_typecheck_error!(
             env,
             expr,

@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use cx_parsing_data::{ast::CXGlobalVariable, data::{CXLinkageMode, ModuleResource}, naive_map::{CXNaiveFnMap, CXNaiveTypeMap}};
 use cx_util::identifier::CXIdent;
 
-use crate::mir::{expression::MIRInstruction, types::{CXFunctionPrototype, CXType}};
+use crate::mir::{expression::MIRInstruction, types::{MIRFunctionPrototype, MIRType}};
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
-    pub prototypes: Vec<CXFunctionPrototype>,
+    pub prototypes: Vec<MIRFunctionPrototype>,
     pub functions: Vec<MIRFunction>,
     pub global_variables: Vec<MIRGlobalVariable>,
 }
@@ -22,7 +22,7 @@ pub struct MIRBaseMappings {
     
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
-    pub prototype: CXFunctionPrototype,
+    pub prototype: MIRFunctionPrototype,
     pub basic_blocks: Vec<MIRBasicBlock>,
 }
 
@@ -47,7 +47,7 @@ pub enum MIRGlobalVarKind {
     },
     Variable {
         name: CXIdent,
-        _type: CXType,
+        _type: MIRType,
         initializer: Option<i64>,
     },   
 }

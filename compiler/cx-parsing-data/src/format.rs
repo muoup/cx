@@ -1,7 +1,13 @@
-use std::fmt::{Display, Formatter, Result};
 use cx_util::identifier::CXIdent;
+use std::fmt::{Display, Formatter, Result};
 
-use crate::{ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST}, data::{CXLinkageMode, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, FunctionTypeIdent, NaiveFnKind}};
+use crate::{
+    ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
+    data::{
+        CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXNaivePrototype, CXNaiveTemplateInput,
+        CXNaiveType, CXNaiveTypeKind, CXTemplate,
+    },
+};
 
 // Helper struct for indented formatting of CXExpr
 struct CXExprFormatter<'a> {
@@ -227,7 +233,11 @@ impl<'a> Display for CXExprFormatter<'a> {
             }
             CXExprKind::Taken => writeln!(f, "Taken"),
             CXExprKind::Unit => writeln!(f, "Unit"),
-            CXExprKind::Match { condition, arms, default } => {
+            CXExprKind::Match {
+                condition,
+                arms,
+                default,
+            } => {
                 writeln!(f, "Match")?;
                 CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (pattern, arm_expr) in arms {
@@ -241,8 +251,13 @@ impl<'a> Display for CXExprFormatter<'a> {
                     CXExprFormatter::new(default_expr, self.depth + 1).fmt(f)?;
                 }
                 Ok(())
-            },
-            CXExprKind::Switch { condition, block, cases, default_case } => {
+            }
+            CXExprKind::Switch {
+                condition,
+                block,
+                cases,
+                default_case,
+            } => {
                 writeln!(f, "Switch")?;
                 CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (case_value, case_expr) in cases {
@@ -260,7 +275,11 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-            CXExprKind::TypeConstructor { union_name, variant_name, inner } => {
+            CXExprKind::TypeConstructor {
+                union_name,
+                variant_name,
+                inner,
+            } => {
                 writeln!(f, "TypeConstructor {}::{}", union_name, variant_name)?;
                 CXExprFormatter::new(inner, self.depth + 1).fmt(f)
             }
@@ -414,7 +433,7 @@ impl Display for CXNaivePrototype {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "{} {}({})", self.return_type, self.name, params_str)
+        write!(f, "{} {}({})", self.return_type, self.kind, params_str)
     }
 }
 
@@ -430,29 +449,35 @@ impl Display for CXNaiveTemplateInput {
     }
 }
 
-impl Display for NaiveFnKind {
+impl<Shell: Display> Display for CXTemplate<Shell> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.shell.fmt(f)?;
+
+        let params_str = self.prototype.types.join(", ");
+        write!(f, "<{params_str}>")
+    }
+}
+
+impl Display for CXFunctionTypeIdent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            NaiveFnKind::Standard(name) => write!(f, "{name}"),
-            NaiveFnKind::MemberFunction {
-                _type,
-                function_name,
-            } => {
-                write!(f, "_{_type}_{function_name}")
-            }
-            NaiveFnKind::Destructor(name) => {
-                write!(f, "~{name}")
+            CXFunctionTypeIdent::Standard(name) => write!(f, "{name}"),
+            CXFunctionTypeIdent::Templated(name, template_input) => {
+                write!(f, "{}{}", name, template_input)
             }
         }
     }
 }
 
-impl Display for FunctionTypeIdent {
+impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FunctionTypeIdent::Standard(name) => write!(f, "{name}"),
-            FunctionTypeIdent::Templated(name, args) => {
-                write!(f, "{name}<{args}>")
+            CXFunctionKind::Standard(name) => write!(f, "{name}"),
+            CXFunctionKind::MemberFunction { member_type, name } => {
+                write!(f, "{member_type}::{name}")
+            }
+            CXFunctionKind::Destructor(base) => {
+                write!(f, "~{base}")
             }
         }
     }

@@ -9,12 +9,12 @@ use crate::type_checking::contract::contracted_function_return;
 use crate::type_checking::move_semantics::acknowledge_declared_object;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
-use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
+use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
 use cx_typechecker_data::mir::expression::{
     MIRBinOp, MIRInstruction, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRUnOp, MIRValue,
 };
 use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_typechecker_data::mir::types::{CXIntegerType, CXTypeKind};
+use cx_typechecker_data::mir::types::{CXIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -28,13 +28,13 @@ fn anonymous_name_gen() -> String {
 
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
-use cx_typechecker_data::mir::types::CXType;
+use cx_typechecker_data::mir::types::MIRType;
 
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
-    expected_type: Option<&CXType>,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<MIRValue> {
     typecheck_expr_inner(env, base_data, expr, expected_type)
 }
@@ -43,7 +43,7 @@ pub fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
-    expected_type: Option<&CXType>,
+    expected_type: Option<&MIRType>,
 ) -> CXResult<MIRValue> {
     Ok(match &expr.kind {
         CXExprKind::Block { exprs } => {
@@ -121,8 +121,7 @@ pub fn typecheck_expr_inner(
         CXExprKind::Identifier(name) => {
             if let Some(symbol_val) = env.symbol_value(name.as_str()) {
                 symbol_val.clone()
-            } else if let Ok(function_type) = env
-                .get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
+            } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
             {
                 MIRValue::FunctionReference {
                     prototype: function_type.clone(),
@@ -143,10 +142,7 @@ pub fn typecheck_expr_inner(
             // in CXNaiveType contexts.
 
             let input = complete_template_args(env, base_data, template_input)?;
-            let ident = NaiveFnKind::Standard(name.clone());
-
-            let function = env.get_func_templated(base_data, &ident, &input)?;
-
+            let function = env.get_standard_function(base_data, expr, name, Some(&input))?;
             MIRValue::FunctionReference {
                 prototype: function.clone(),
                 implicit_variables: vec![],
@@ -409,7 +405,7 @@ pub fn typecheck_expr_inner(
                     });
 
                     match &inner.kind {
-                        CXTypeKind::Integer { _type, signed, .. } => {
+                        MIRTypeKind::Integer { _type, signed, .. } => {
                             env.builder.add_instruction(MIRInstruction::BinOp {
                                 result: result.clone(),
                                 op: MIRBinOp::Integer {
@@ -450,7 +446,7 @@ pub fn typecheck_expr_inner(
                             }
                         }
 
-                        CXTypeKind::PointerTo { inner_type, .. } => {
+                        MIRTypeKind::PointerTo { inner_type, .. } => {
                             let operand_val = typecheck_expr(env, base_data, operand, None)?;
                             let element_stride = inner_type.type_size();
 
@@ -528,7 +524,7 @@ pub fn typecheck_expr_inner(
 
                     MIRValue::Register {
                         register: result,
-                        _type: CXTypeKind::Bool.into(),
+                        _type: MIRTypeKind::Bool.into(),
                     }
                 }
 
@@ -565,8 +561,8 @@ pub fn typecheck_expr_inner(
                     let loaded_op_type = loaded_op_val.get_type();
 
                     let operator = match &loaded_op_type.kind {
-                        CXTypeKind::Integer { .. } => MIRUnOp::NEG,
-                        CXTypeKind::Float { .. } => MIRUnOp::FNEG,
+                        MIRTypeKind::Integer { .. } => MIRUnOp::NEG,
+                        MIRTypeKind::Float { .. } => MIRUnOp::FNEG,
 
                         _ => {
                             return log_typecheck_error!(
@@ -747,7 +743,7 @@ pub fn typecheck_expr_inner(
             inner,
         } => {
             let union_type = env.get_type(base_data, type_name.as_str())?;
-            let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
+            let MIRTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
                 return log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
 

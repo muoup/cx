@@ -3,13 +3,11 @@ pub mod function_map;
 
 pub mod mir;
 
-mod format;
-
 use cx_parsing_data::data::{CXTypeTemplate, ModuleResource};
 use speedy::{Readable, Writable};
 use std::collections::{HashMap, HashSet};
 
-use crate::mir::types::{CXTemplateInput, CXType};
+use crate::mir::types::{CXTemplateInput, MIRType};
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct TemplateCache<Template> {
@@ -25,8 +23,8 @@ pub struct GenericData<Standard, Template> {
 
 pub type GenericMap<Type> = HashMap<String, Type>;
 
-pub type CXTypeData = GenericData<CXType, CXTypeTemplate>;
-pub type CXTypeMap = GenericMap<CXType>;
+pub type CXTypeData = GenericData<MIRType, CXTypeTemplate>;
+pub type CXTypeMap = GenericMap<MIRType>;
 
 impl<Type, TemplatedType> GenericData<Type, TemplatedType> {
     pub fn new() -> Self {

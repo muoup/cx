@@ -4,10 +4,10 @@ use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{BCUnit, BytecodeResult};
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::*;
-use cx_typechecker_data::function_map::CXFunctionKind;
 use cx_typechecker_data::mir::expression::MIRRegister;
+use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
 use cx_typechecker_data::mir::program::MIRUnit;
-use cx_typechecker_data::mir::types::CXType;
+use cx_typechecker_data::mir::types::MIRType;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::unsafe_float::FloatWrapper;
@@ -42,7 +42,7 @@ impl BCBuilder {
             fn_map: mir
                 .prototypes
                 .iter()
-                .map(|proto| (proto.name.mangle(), convert_cx_prototype(proto)))
+                .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
                 .collect(),
             symbol_table: HashMap::new(),
 
@@ -96,10 +96,9 @@ impl BCBuilder {
             .expect("Attempted to access function context with no current function selected")
     }
     
-    pub fn get_deconstructor(&self, _type: &CXType) -> Option<&BCFunctionPrototype> {
-        let destructor_name = CXFunctionKind::deconstructor_mangle_ty(_type);
-     
-        self.get_prototype(destructor_name.as_ref()?)
+    pub fn get_deconstructor(&self, _type: &MIRType) -> Option<&BCFunctionPrototype> {
+        let destructor_name = base_mangle_deconstructor(_type);
+        self.get_prototype(destructor_name.as_str())
     }
 
     pub fn insert_symbol(&mut self, mir_value: MIRRegister, bc_value: BCValue) {

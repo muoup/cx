@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{CXTemplateInput, CXType, CXTypeKind};
+use cx_typechecker_data::mir::types::{CXTemplateInput, MIRType, MIRTypeKind};
 use cx_util::{CXResult, log_error};
 
 use crate::environment::TypeEnvironment;
@@ -50,7 +50,7 @@ pub(crate) fn _complete_type(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     ty: &CXNaiveType,
-) -> CXResult<CXType> {
+) -> CXResult<MIRType> {
     let mut recurse_ty = |ty: &CXNaiveType| _complete_type(env, base_data, ty);
 
     match &ty.kind {
@@ -80,7 +80,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {
             let inner_type = recurse_ty(inner)?;
 
-            Ok(CXType::from(CXTypeKind::Array {
+            Ok(MIRType::from(MIRTypeKind::Array {
                 inner_type: Box::new(inner_type),
                 size: *size,
             }))
@@ -89,7 +89,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::ImplicitSizedArray(inner) => {
             let inner_type = recurse_ty(inner)?;
 
-            Ok(CXType::from(CXTypeKind::PointerTo {
+            Ok(MIRType::from(MIRTypeKind::PointerTo {
                 inner_type: Box::new(inner_type),
                 sizeless_array: true,
                 weak: false,
@@ -100,7 +100,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::MemoryReference { inner_type } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
-            Ok(CXType::from(CXTypeKind::MemoryReference(Box::new(
+            Ok(MIRType::from(MIRTypeKind::MemoryReference(Box::new(
                 inner_type,
             ))))
         }
@@ -108,7 +108,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::PointerTo { inner_type, weak } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
-            Ok(CXType::from(CXTypeKind::PointerTo {
+            Ok(MIRType::from(MIRTypeKind::PointerTo {
                 inner_type: Box::new(inner_type),
                 weak: *weak,
                 sizeless_array: false,
@@ -119,7 +119,7 @@ pub(crate) fn _complete_type(
         CXNaiveTypeKind::FunctionPointer { prototype } => {
             let prototype = _complete_fn_prototype(env, base_data, prototype)?;
 
-            Ok(CXType::from(CXTypeKind::Function {
+            Ok(MIRType::from(MIRTypeKind::Function {
                 prototype: Box::new(prototype),
             }))
         }
@@ -133,9 +133,9 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
-            Ok(CXType::from(CXTypeKind::Structured {
+            Ok(MIRType::from(MIRTypeKind::Structured {
                 name: name.clone(),
-                base_identifier: name.clone(),
+                template_info: None,
                 fields,
 
                 copyable: true,
@@ -151,7 +151,7 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
-            Ok(CXType::from(CXTypeKind::Union {
+            Ok(MIRType::from(MIRTypeKind::Union {
                 name: name.clone(),
                 variants: fields,
             }))
@@ -166,7 +166,7 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
-            Ok(CXType::from(CXTypeKind::TaggedUnion {
+            Ok(MIRType::from(MIRTypeKind::TaggedUnion {
                 name: name.clone(),
                 variants,
             }))

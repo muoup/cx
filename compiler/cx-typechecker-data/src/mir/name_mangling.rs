@@ -1,33 +1,44 @@
-use std::fmt::Display;
+use crate::mir::types::{MIRType, MIRTypeKind};
 
-use crate::{
-    function_map::{CXFunctionIdentifier, CXFunctionKind},
-    mir::types::{CXType, CXTypeKind},
-};
+pub fn base_mangle_standard(name: &str) -> String {
+    format!("{}", name)
+}
 
-pub(crate) fn type_mangle(ty: &CXType) -> String {
+pub fn base_mangle_member(name: &str, member_type: &MIRType) -> String {
+    format!("_M{}_{}", member_type.mangle(), name)
+}
+
+pub fn base_mangle_destructor(_type: &MIRType) -> String {
+    format!("_D_{}", _type.mangle())
+}
+
+pub fn base_mangle_deconstructor(_type: &MIRType) -> String {
+    format!("_DC_{}", _type.mangle())
+}
+
+pub(crate) fn type_mangle(ty: &MIRType) -> String {
     let mut mangled = String::new();
 
     match &ty.kind {
-        CXTypeKind::PointerTo { inner_type, .. } => {
+        MIRTypeKind::PointerTo { inner_type, .. } => {
             mangled.push('P');
             mangled.push_str(&type_mangle(inner_type));
         }
-        CXTypeKind::MemoryReference(inner_type) => {
+        MIRTypeKind::MemoryReference(inner_type) => {
             mangled.push('R');
             mangled.push_str(&type_mangle(inner_type));
         }
-        CXTypeKind::Opaque { size, .. } => {
+        MIRTypeKind::Opaque { size, .. } => {
             mangled.push('O');
             mangled.push_str(&size.to_string());
         }
-        CXTypeKind::Array { size, inner_type } => {
+        MIRTypeKind::Array { size, inner_type } => {
             mangled.push('A');
             mangled.push_str(&size.to_string());
             mangled.push('_');
             mangled.push_str(&type_mangle(inner_type));
         }
-        CXTypeKind::Function { prototype } => {
+        MIRTypeKind::Function { prototype } => {
             mangled.push('F');
             mangled.push_str(&type_mangle(&prototype.return_type));
             for param in &prototype.params {
@@ -35,7 +46,7 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
             }
             mangled.push(prototype.var_args as u8 as char);
         }
-        CXTypeKind::Structured { name, fields, .. } => {
+        MIRTypeKind::Structured { name, fields, .. } => {
             mangled.push('S');
 
             if let Some(n) = name {
@@ -52,7 +63,7 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
                 mangled.push_str(&type_mangle(&field.1));
             }
         }
-        CXTypeKind::Union { variants, .. } => {
+        MIRTypeKind::Union { variants, .. } => {
             mangled.push('U');
             mangled.push_str(&variants.len().to_string());
             mangled.push('_');
@@ -60,7 +71,7 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
                 mangled.push_str(&type_mangle(&variant.1));
             }
         }
-        CXTypeKind::TaggedUnion { variants, .. } => {
+        MIRTypeKind::TaggedUnion { variants, .. } => {
             mangled.push('T');
             mangled.push_str(&variants.len().to_string());
             mangled.push('_');
@@ -68,44 +79,22 @@ pub(crate) fn type_mangle(ty: &CXType) -> String {
                 mangled.push_str(&type_mangle(&variant.1));
             }
         }
-        CXTypeKind::Integer { _type, signed } => {
+        MIRTypeKind::Integer { _type, signed } => {
             mangled.push('I');
             mangled.push_str(&_type.bytes().to_string());
             mangled.push(if *signed { 's' } else { 'u' });
         }
-        CXTypeKind::Float { _type } => {
+        MIRTypeKind::Float { _type } => {
             mangled.push('F');
             mangled.push_str(&_type.bytes().to_string());
         }
-        CXTypeKind::Bool => {
+        MIRTypeKind::Bool => {
             mangled.push('B');
         }
-        CXTypeKind::Unit => {
+        MIRTypeKind::Unit => {
             mangled.push('v');
         }
     }
 
     mangled
-}
-
-impl Display for CXFunctionIdentifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let kind = match &self {
-            CXFunctionIdentifier::Standard { kind } => kind,
-            CXFunctionIdentifier::Templated { kind, .. } => kind,
-        };
-
-        match &kind {
-            CXFunctionKind::Standard { name } => write!(f, "{}", name.as_string()),
-            CXFunctionKind::Member { base_type, name } => {
-                write!(f, "{}::{}", base_type.as_string(), name.as_string())
-            }
-            CXFunctionKind::Destructor { base_type } => {
-                write!(f, "{}::~{}", base_type.as_string(), base_type.as_string())
-            }
-            CXFunctionKind::Deconstructor { base_type } => {
-                write!(f, "{}::__deconstruct", base_type.as_string())
-            }
-        }
-    }
 }

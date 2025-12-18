@@ -15,14 +15,14 @@ pub(crate) fn realize_templates(
             None => job.clone(),
         };
 
-        if !requests_fulfilled.insert((request.name.clone(), request.input.clone())) {
+        if !requests_fulfilled.insert((request.kind.clone(), request.input.clone())) {
             continue;
         }
         
         realize_fn_implementation(
             env,
             &origin,
-            &request.name,
+            &request.kind,
             &request.input,
         )?;
     }

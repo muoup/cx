@@ -94,7 +94,7 @@ impl<'a> ParserData<'a> {
         match prototype {
             Some(proto) => {
                 self.ast.function_data.insert_template(
-                    (&function.name).into(),
+                    function.kind.into_key(),
                     ModuleResource::new(
                         CXFunctionTemplate {
                             prototype: proto.clone(),
@@ -107,7 +107,7 @@ impl<'a> ParserData<'a> {
             }
             None => {
                 self.ast.function_data.insert_standard(
-                    (&function.name).into(),
+                    function.kind.into_key(),
                     ModuleResource::new(function, self.visibility, CXLinkageMode::Standard),
                 );
             }

@@ -5,7 +5,7 @@ use cx_bytecode_data::{
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRUnOp, MIRValue},
     program::{MIRGlobalVarKind, MIRGlobalVariable},
-    types::CXTypeKind,
+    types::MIRTypeKind,
 };
 use cx_util::{identifier::CXIdent, CXResult};
 
@@ -259,7 +259,7 @@ pub fn lower_instruction(
                     result.as_ref().cloned(),
                 )
             } else {
-                let CXTypeKind::Function { prototype, .. } = function.get_type().kind else {
+                let MIRTypeKind::Function { prototype, .. } = function.get_type().kind else {
                     unreachable!("Function value is not of function type");
                 };
 
@@ -522,19 +522,31 @@ pub fn lower_instruction(
             )
         }
 
-        MIRInstruction::LifetimeStart { name: _, region: _, _type } => {
+        MIRInstruction::LifetimeStart {
+            name: _,
+            region: _,
+            _type,
+        } => {
             // Nothing for now, will eventually integrate with LLVM's lifetime intrinsics
 
             Ok(BCValue::NULL)
         }
 
-        MIRInstruction::LifetimeEnd { name, region, _type } => {
+        MIRInstruction::LifetimeEnd {
+            name,
+            region,
+            _type,
+        } => {
             if let Some(deconstructor) = builder.get_deconstructor(_type) {
-                let bc_ptr = builder.get_symbol(region)
+                let bc_ptr = builder
+                    .get_symbol(region)
                     .expect("Region pointer not found in symbol table for lifetime end");
-                
-                println!("Adding deconstructor call for lifetime end of variable {}", name);
-                
+
+                println!(
+                    "Adding deconstructor call for lifetime end of variable {}",
+                    name
+                );
+
                 builder.add_new_instruction(
                     BCInstructionKind::DirectCall {
                         args: vec![bc_ptr],
@@ -593,7 +605,7 @@ pub(crate) fn lower_value(builder: &mut BCBuilder, value: &MIRValue) -> CXResult
         MIRValue::FunctionReference {
             prototype,
             implicit_variables: _,
-        } => Ok(BCValue::FunctionRef(CXIdent::new(prototype.name.mangle()))),
+        } => Ok(BCValue::FunctionRef(prototype.name.clone())),
 
         MIRValue::GlobalValue { name, _type } => {
             builder.get_global_symbol(name.as_str()).ok_or_else(|| {

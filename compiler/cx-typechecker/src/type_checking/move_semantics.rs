@@ -4,14 +4,14 @@ use crate::{
 };
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRRegister},
-    types::CXType,
+    types::MIRType,
 };
 
 pub fn acknowledge_declared_object(
     env: &mut TypeEnvironment,
     name: String,
     register: MIRRegister,
-    _type: CXType,
+    _type: MIRType,
 ) {
     env.builder.add_lifetime(Lifetime {
         name: name.clone(),

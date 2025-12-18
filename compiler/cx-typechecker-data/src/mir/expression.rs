@@ -1,6 +1,6 @@
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::mir::types::{CXFloatType, CXFunctionPrototype, CXIntegerType, CXType, CXTypeKind};
+use crate::mir::types::{CXFloatType, MIRFunctionPrototype, CXIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct MIRRegister {
@@ -22,20 +22,20 @@ pub enum MIRValue {
         _type: CXFloatType,
     },
     FunctionReference {
-        prototype: CXFunctionPrototype,
+        prototype: MIRFunctionPrototype,
         implicit_variables: Vec<MIRValue>,
     },
     GlobalValue {
         name: CXIdent,
-        _type: CXType,
+        _type: MIRType,
     },
     Parameter {
         name: CXIdent,
-        _type: CXType,
+        _type: MIRType,
     },
     Register {
         register: MIRRegister,
-        _type: CXType,
+        _type: MIRType,
     },
 
     #[default]
@@ -51,26 +51,26 @@ pub enum MIRInstruction {
 
     CreateStackRegion {
         result: MIRRegister,
-        _type: CXType,
+        _type: MIRType,
     },
 
     CopyRegionInto {
         destination: MIRValue,
         source: MIRValue,
-        _type: CXType,
+        _type: MIRType,
     },
 
     ConstructTaggedUnionInto {
         variant_index: usize,
         memory: MIRValue,
         value: MIRValue,
-        sum_type: CXType,
+        sum_type: MIRType,
     },
 
     MemoryRead {
         result: MIRRegister,
         source: MIRValue,
-        _type: CXType,
+        _type: MIRType,
     },
 
     MemoryWrite {
@@ -83,27 +83,27 @@ pub enum MIRInstruction {
         source: MIRValue,
         field_index: usize,
         field_offset: usize,
-        struct_type: CXType,
+        struct_type: MIRType,
     },
     
     TaggedUnionTag {
         result: MIRRegister,
         source: MIRValue,
-        sum_type: CXType,
+        sum_type: MIRType,
     },
 
     TaggedUnionGet {
         result: MIRRegister,
         source: MIRValue,
-        variant_type: CXType,
+        variant_type: MIRType,
     },
     
     ArrayGet {
         result: MIRRegister,
         source: MIRValue,
         index: MIRValue,
-        array_type: CXType,
-        element_type: CXType,
+        array_type: MIRType,
+        element_type: MIRType,
     },
 
     CallFunction {
@@ -178,13 +178,13 @@ pub enum MIRInstruction {
     LifetimeStart {
         name: String,
         region: MIRRegister,
-        _type: CXType,
+        _type: MIRType,
     },
     
     LifetimeEnd {
         name: String,
         region: MIRRegister,
-        _type: CXType,
+        _type: MIRType,
     },
     
     // ---- Verification Nodes ----
@@ -290,7 +290,7 @@ pub enum MIRBinOp {
         op: MIRPtrDiffBinOp,
 
         // Boxed for size reasons
-        ptr_inner: Box<CXType>,
+        ptr_inner: Box<MIRType>,
     },
 
     Pointer {
@@ -374,24 +374,24 @@ impl MIRInstruction {
 }
 
 impl MIRValue {
-    pub fn get_type(&self) -> CXType {
+    pub fn get_type(&self) -> MIRType {
         match self {
-            MIRValue::IntLiteral { _type, signed, .. } => CXType::from(CXTypeKind::Integer {
+            MIRValue::IntLiteral { _type, signed, .. } => MIRType::from(MIRTypeKind::Integer {
                 _type: *_type,
                 signed: *signed,
             }),
-            MIRValue::FloatLiteral { _type, .. } => CXType::from(CXTypeKind::Float {
+            MIRValue::FloatLiteral { _type, .. } => MIRType::from(MIRTypeKind::Float {
                 _type: *_type,
             }),
-            MIRValue::FunctionReference { prototype, .. } => CXType::from(CXTypeKind::Function {
+            MIRValue::FunctionReference { prototype, .. } => MIRType::from(MIRTypeKind::Function {
                 prototype: Box::new(prototype.clone()),
             })
             .pointer_to(),
-            MIRValue::BoolLiteral { .. } => CXType::from(CXTypeKind::Bool),
+            MIRValue::BoolLiteral { .. } => MIRType::from(MIRTypeKind::Bool),
             MIRValue::Parameter { _type, .. }
             | MIRValue::GlobalValue { _type, .. }
             | MIRValue::Register { _type, .. } => _type.clone(),
-            MIRValue::NULL => CXType::unit(),
+            MIRValue::NULL => MIRType::unit(),
         }
     }
 }

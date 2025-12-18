@@ -1,7 +1,7 @@
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRRegister, MIRValue},
     program::{MIRBasicBlock, MIRFunction},
-    types::{CXFunctionPrototype, CXType},
+    types::{MIRFunctionPrototype, MIRType},
 };
 use cx_util::identifier::CXIdent;
 
@@ -22,11 +22,11 @@ pub enum BlockPointer {
 pub(crate) struct Lifetime {
     pub name: String,
     pub region: MIRRegister,
-    pub _type: CXType,
+    pub _type: MIRType,
 }
 
 pub(crate) struct MIRFunctionContext {
-    pub current_prototype: CXFunctionPrototype,
+    pub current_prototype: MIRFunctionPrototype,
     
     pub standard_blocks: Vec<MIRBasicBlock>,
     pub defer_blocks: Vec<MIRBasicBlock>,
@@ -48,7 +48,7 @@ impl MIRBuilder {
         }
     }
 
-    pub fn start_function(&mut self, prototype: CXFunctionPrototype) {
+    pub fn start_function(&mut self, prototype: MIRFunctionPrototype) {
         let function_context = MIRFunctionContext {
             current_prototype: prototype,
             standard_blocks: vec![MIRBasicBlock {
@@ -327,7 +327,7 @@ impl MIRBuilder {
         unreachable!("Block ID not found: {}", block_id);
     }
 
-    pub fn current_prototype(&self) -> &CXFunctionPrototype {
+    pub fn current_prototype(&self) -> &MIRFunctionPrototype {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
         };
