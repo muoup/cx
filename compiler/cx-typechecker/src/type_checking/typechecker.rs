@@ -1,17 +1,20 @@
-use crate::environment::TCEnvironment;
+use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::binary_ops::{
-    typecheck_access, typecheck_binop, typecheck_is, typecheck_method_call,
+    handle_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
+    typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
-use crate::type_checking::move_semantics::acknowledge_declared_type;
+use crate::type_checking::contract::contracted_function_return;
+use crate::type_checking::move_semantics::acknowledge_declared_object;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
-use cx_parsing_data::data::{CX_CONST, CXLinkageMode, NaiveFnIdent, NaiveFnKind};
-use cx_typechecker_data::ast::{
-    TCBaseMappings, TCExpr, TCExprKind, TCGlobalVarKind, TCGlobalVariable, TCInitIndex, TCTagMatch,
+use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
+use cx_typechecker_data::mir::expression::{
+    MIRBinOp, MIRInstruction, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRUnOp, MIRValue,
 };
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind, TCFunctionPrototype};
+use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
+use cx_typechecker_data::mir::types::{CXIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -23,83 +26,54 @@ fn anonymous_name_gen() -> String {
     format!("__anon_{id}")
 }
 
-pub(crate) fn in_method_env(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
-    prototype: &TCFunctionPrototype,
-    expr: &CXExpr,
-) -> CXResult<TCExpr> {
-    setup_method_env(env, prototype);
-    let tc_expr = typecheck_expr(env, base_data, expr)?;
-    cleanup_method_env(env);
-
-    Ok(tc_expr)
-}
-
-pub(crate) fn setup_method_env(env: &mut TCEnvironment, prototype: &TCFunctionPrototype) {
-    env.push_scope();
-
-    for param in prototype.params.iter() {
-        if let Some(name) = &param.name {
-            env.insert_symbol(name.as_string(), param._type.clone().mem_ref_to());
-        }
-    }
-
-    env.current_function = Some(prototype.clone());
-}
-
-pub(crate) fn cleanup_method_env(env: &mut TCEnvironment) {
-    env.current_function = None;
-    env.pop_scope();
-}
+use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
+use crate::type_checking::structured_initialization::typecheck_initializer_list;
+use cx_typechecker_data::mir::types::MIRType;
 
 pub fn typecheck_expr(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     expr: &CXExpr,
-) -> CXResult<TCExpr> {
+    expected_type: Option<&MIRType>,
+) -> CXResult<MIRValue> {
+    typecheck_expr_inner(env, base_data, expr, expected_type)
+}
+
+pub fn typecheck_expr_inner(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    expected_type: Option<&MIRType>,
+) -> CXResult<MIRValue> {
     Ok(match &expr.kind {
         CXExprKind::Block { exprs } => {
-            env.push_scope();
-
-            let tc_exprs = exprs
+            exprs
                 .iter()
-                .map(|e| typecheck_expr(env, base_data, e))
+                .map(|e| typecheck_expr(env, base_data, e, None))
                 .collect::<CXResult<Vec<_>>>()?;
 
-            env.pop_scope();
-
-            TCExpr {
-                _type: CXType::unit(),
-                kind: TCExprKind::Block {
-                    statements: tc_exprs,
-                },
-            }
+            MIRValue::NULL
         }
 
-        CXExprKind::IntLiteral { val, bytes } => TCExpr {
-            _type: CXType::from(CXTypeKind::Integer {
-                signed: true,
-                bytes: *bytes,
-            }),
-            kind: TCExprKind::IntLiteral { value: *val },
+        CXExprKind::IntLiteral { val, bytes } => MIRValue::IntLiteral {
+            value: *val,
+            _type: CXIntegerType::from_bytes(*bytes).unwrap(),
+            signed: true,
         },
 
-        CXExprKind::FloatLiteral { val, bytes } => TCExpr {
-            _type: CXType::from(CXTypeKind::Float { bytes: *bytes }),
-            kind: TCExprKind::FloatLiteral {
-                value: (*val).into(),
-            },
+        CXExprKind::FloatLiteral { val, bytes } => MIRValue::FloatLiteral {
+            value: *val,
+            _type: cx_typechecker_data::mir::types::CXFloatType::from_bytes(*bytes).unwrap(),
         },
 
         CXExprKind::StringLiteral { val } => {
             let anonymous_name = anonymous_name_gen();
-            let name_ident = CXIdent::from(anonymous_name.clone());
+            let name_ident = CXIdent::new(anonymous_name.clone());
 
             env.realized_globals.insert(
                 anonymous_name.clone(),
-                TCGlobalVariable {
-                    kind: TCGlobalVarKind::StringLiteral {
+                MIRGlobalVariable {
+                    kind: MIRGlobalVarKind::StringLiteral {
                         name: name_ident.clone(),
                         value: val.clone(),
                     },
@@ -108,53 +82,55 @@ pub fn typecheck_expr(
                 },
             );
 
-            TCExpr {
+            MIRValue::GlobalValue {
+                name: CXIdent::new(anonymous_name),
                 _type: env
                     .get_realized_type("char")
                     .unwrap()
                     .clone()
                     .pointer_to()
                     .add_specifier(CX_CONST),
-                kind: TCExprKind::GlobalVariableReference { name: name_ident },
             }
         }
 
-        CXExprKind::VarDeclaration { type_, name } => {
-            let type_ = env.complete_type(base_data, type_)?;
+        CXExprKind::VarDeclaration { _type, name } => {
+            let _type = env.complete_type(base_data, _type)?;
+            let result = env.builder.new_register();
 
-            env.insert_symbol(name.as_string(), type_.clone().mem_ref_to());
-            acknowledge_declared_type(env, base_data, &type_);
+            env.builder
+                .add_instruction(MIRInstruction::CreateStackRegion {
+                    result: result.clone(),
+                    _type: _type.clone(),
+                });
 
-            TCExpr {
-                _type: type_.clone().mem_ref_to(),
-                kind: TCExprKind::VariableDeclaration {
-                    name: name.clone(),
-                    type_,
+            acknowledge_declared_object(env, name.to_string(), result.clone(), _type.clone());
+            env.insert_symbol(
+                name.as_string(),
+                MIRValue::Register {
+                    register: result.clone(),
+                    _type: _type.clone().mem_ref_to(),
                 },
+            );
+
+            MIRValue::Register {
+                register: result,
+                _type: _type.mem_ref_to(),
             }
         }
 
         CXExprKind::Identifier(name) => {
-            if let Some(symbol_type) = env.symbol_type(name.as_str()) {
-                TCExpr {
-                    _type: symbol_type.clone(),
-                    kind: TCExprKind::VariableReference { name: name.clone() },
-                }
-            } else if let Some(function_type) = env
-                .get_func(base_data, &NaiveFnIdent::Standard(name.clone()))
-                .ok()
+            if let Some(symbol_val) = env.symbol_value(name.as_str()) {
+                symbol_val.clone()
+            } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
             {
-                TCExpr {
-                    _type: CXTypeKind::Function {
-                        prototype: Box::new(function_type.clone()),
-                    }
-                    .into(),
-                    kind: TCExprKind::FunctionReference,
+                MIRValue::FunctionReference {
+                    prototype: function_type.clone(),
+                    implicit_variables: vec![],
                 }
-            } else if let Some(global) = global_expr(env, base_data, name.as_str()).ok() {
+            } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 global
             } else {
-                log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
+                return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
             }
         }
 
@@ -166,16 +142,10 @@ pub fn typecheck_expr(
             // in CXNaiveType contexts.
 
             let input = complete_template_args(env, base_data, template_input)?;
-            let ident = NaiveFnKind::Standard(name.clone());
-            
-            let function = env.get_func_templated(base_data, &ident, &input)?;
-
-            TCExpr {
-                _type: CXTypeKind::Function {
-                    prototype: Box::new(function.clone()),
-                }
-                .into(),
-                kind: TCExprKind::FunctionReference,
+            let function = env.get_standard_function(base_data, expr, name, Some(&input))?;
+            MIRValue::FunctionReference {
+                prototype: function.clone(),
+                implicit_variables: vec![],
             }
         }
 
@@ -184,28 +154,45 @@ pub fn typecheck_expr(
             then_branch,
             else_branch,
         } => {
-            env.push_scope();
-
-            let mut condition_tc = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut condition_tc)?;
-
-            let then_tc = typecheck_expr(env, base_data, then_branch)?;
-            let else_tc = if let Some(else_branch) = else_branch {
-                Some(typecheck_expr(env, base_data, else_branch)?)
+            let then_block = env.builder.new_block_id();
+            let (else_block, merge_block) = if else_branch.is_some() {
+                (env.builder.new_block_id(), env.builder.new_block_id())
             } else {
-                None
+                let merge_block = env.builder.new_block_id();
+                (merge_block.clone(), merge_block.clone())
             };
 
+            // Scope for condition
+            env.push_scope(None, None);
+            
+            let condition_value = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c))?;
+            
+            env.builder.add_instruction(MIRInstruction::Branch {
+                condition: condition_value,
+                true_block: then_block.clone(),
+                false_block: else_block.clone(),
+            });
+
+            env.builder.add_and_set_block(then_block);
+            env.push_scope(Some(merge_block.clone()), None);
+            typecheck_expr(env, base_data, then_branch, None)?;
             env.pop_scope();
 
-            TCExpr {
-                _type: then_tc._type.clone(),
-                kind: TCExprKind::If {
-                    condition: Box::new(condition_tc),
-                    then_branch: Box::new(then_tc),
-                    else_branch: else_tc.map(Box::new),
-                },
+            env.builder.add_jump(merge_block.clone());
+
+            if let Some(else_branch) = else_branch {
+                env.builder.add_and_set_block(else_block);
+                env.push_scope(Some(merge_block.clone()), None);
+                typecheck_expr(env, base_data, else_branch, None)?;
+                env.pop_scope();
+                env.builder.add_jump(merge_block.clone());
             }
+
+            env.builder.add_and_set_block(merge_block);
+            env.pop_scope();
+
+            MIRValue::NULL
         }
 
         CXExprKind::While {
@@ -213,23 +200,43 @@ pub fn typecheck_expr(
             body,
             pre_eval,
         } => {
-            env.push_scope();
+            let condition_block = env.builder.new_block_id();
+            let body_block = env.builder.new_block_id();
+            let merge_block = env.builder.new_block_id();
 
-            let mut condition_tc = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut condition_tc)?;
+            env.builder.add_instruction(MIRInstruction::LoopPreHeader {
+                loop_id: condition_block.clone(),
+                condition_precheck: *pre_eval,
+                condition_block: condition_block.clone(),
+                body_block: body_block.clone(),
+            });
 
-            let body_tc = typecheck_expr(env, base_data, body)?;
+            env.builder.add_and_set_block(condition_block.clone());
+
+            env.push_scope(None, None);
+            let condition_val = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c))?;
+            env.builder
+                .add_instruction(MIRInstruction::LoopConditionBranch {
+                    loop_id: condition_block.clone(),
+                    condition: condition_val,
+                    body_block: body_block.clone(),
+                    exit_block: merge_block.clone(),
+                });
+
+            env.builder.add_and_set_block(body_block);
+            env.push_scope(Some(merge_block.clone()), Some(condition_block.clone()));
+            typecheck_expr(env, base_data, body, None)?;
+            env.pop_scope();
+            env.builder.add_instruction(MIRInstruction::LoopContinue {
+                loop_id: condition_block.clone(),
+                condition_block: condition_block.clone(),
+            });
 
             env.pop_scope();
+            env.builder.add_and_set_block(merge_block);
 
-            TCExpr {
-                _type: body_tc._type.clone(),
-                kind: TCExprKind::While {
-                    condition: Box::new(condition_tc),
-                    body: Box::new(body_tc),
-                    pre_eval: *pre_eval,
-                },
-            }
+            MIRValue::NULL
         }
 
         CXExprKind::For {
@@ -238,59 +245,113 @@ pub fn typecheck_expr(
             increment,
             body,
         } => {
-            env.push_scope();
+            let condition_block = env.builder.new_block_id();
+            let body_block = env.builder.new_block_id();
+            let increment_block = env.builder.new_block_id();
+            let merge_block = env.builder.new_block_id();
 
-            let init_tc = typecheck_expr(env, base_data, init)?;
-            let mut condition_tc = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut condition_tc)?;
+            env.push_scope(None, None);
+            typecheck_expr(env, base_data, init, None)?;
+            env.builder.add_instruction(MIRInstruction::LoopPreHeader {
+                loop_id: condition_block.clone(),
+                condition_precheck: true,
+                condition_block: condition_block.clone(),
+                body_block: body_block.clone(),
+            });
 
-            let increment_tc = typecheck_expr(env, base_data, increment)?;
-            let body_tc = typecheck_expr(env, base_data, body)?;
+            env.builder.add_and_set_block(condition_block.clone());
+            let condition = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c))?;
+            env.builder
+                .add_instruction(MIRInstruction::LoopConditionBranch {
+                    loop_id: condition_block.clone(),
+                    condition,
+                    body_block: body_block.clone(),
+                    exit_block: merge_block.clone(),
+                });
 
+            env.builder.add_and_set_block(body_block);
+
+            env.push_scope(Some(merge_block.clone()), Some(condition_block.clone()));
+            typecheck_expr(env, base_data, body, None)?;
             env.pop_scope();
 
-            TCExpr {
-                _type: body_tc._type.clone(),
-                kind: TCExprKind::For {
-                    init: Box::new(init_tc),
-                    condition: Box::new(condition_tc),
-                    increment: Box::new(increment_tc),
-                    body: Box::new(body_tc),
-                },
-            }
+            env.builder.add_jump(increment_block.clone());
+            env.builder.add_and_set_block(increment_block);
+
+            env.push_scope(None, None);
+            typecheck_expr(env, base_data, increment, None)?;
+            env.builder.add_jump(condition_block.clone());
+            env.pop_scope();
+
+            env.pop_scope();
+            env.builder.add_and_set_block(merge_block);
+
+            MIRValue::NULL
         }
 
-        CXExprKind::Break => TCExpr {
-            _type: CXType::from(CXTypeKind::Unit),
-            kind: TCExprKind::Break,
-        },
+        CXExprKind::Break => {
+            // Q: What's the easiest way to convert from Option<&Option<T>> to Option<&T>?
+            // A: Using and_then twice.
 
-        CXExprKind::Continue => TCExpr {
-            _type: CXType::from(CXTypeKind::Unit),
-            kind: TCExprKind::Continue,
-        },
+            let Some(break_to) = env
+                .scope_stack
+                .iter()
+                .rfind(|inner| inner.break_to.is_some())
+                .and_then(|s| s.break_to.clone())
+            else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " 'break' used outside of a loop or switch context"
+                );
+            };
+
+            // TODO: Handle cleanup of deferred expressions here
+            env.builder.add_jump(break_to);
+            MIRValue::NULL
+        }
+
+        CXExprKind::Continue => {
+            let Some(continue_to) = env
+                .scope_stack
+                .iter()
+                .rfind(|inner| inner.continue_to.is_some())
+                .and_then(|s| s.continue_to.clone())
+            else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " 'continue' used outside of a loop context"
+                );
+            };
+
+            env.builder.add_jump(continue_to);
+            MIRValue::NULL
+        }
 
         CXExprKind::Return { value } => {
-            let mut value_tc = if let Some(value) = value {
-                let mut val = typecheck_expr(env, base_data, value)?;
-                coerce_value(&mut val)?;
+            let value_tc = if let Some(value) = value {
+                let return_type = &env.current_function().return_type.clone();
+                let val = typecheck_expr(env, base_data, value, Some(return_type))
+                    .and_then(|v| coerce_value(env, expr, v))?;
 
                 Some(val)
             } else {
                 None
             };
 
-            let return_type = &env.current_function().return_type;
+            let return_type = &env.current_function().return_type.clone();
 
-            match (&mut value_tc, return_type) {
-                (Some(value_tc), return_type) if !return_type.is_unit() => {
-                    implicit_cast(value_tc, return_type)?;
+            let value = match (&value_tc, &return_type) {
+                (Some(some_value), return_type) if !return_type.is_unit() => {
+                    Some(implicit_cast(env, expr, some_value.clone(), return_type)?)
                 }
 
-                (None, _) if return_type.is_unit() => {}
+                (None, _) if return_type.is_unit() => None,
 
                 (Some(_), _) => {
-                    log_typecheck_error!(
+                    return log_typecheck_error!(
                         env,
                         expr,
                         " Cannot return from function {} with a void return type",
@@ -299,139 +360,288 @@ pub fn typecheck_expr(
                 }
 
                 (None, _) => {
-                    log_typecheck_error!(
+                    return log_typecheck_error!(
                         env,
                         expr,
                         " Function {} expects a return value, but none was provided",
                         env.current_function()
                     );
                 }
-            }
+            };
 
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Unit),
-                kind: TCExprKind::Return {
-                    value: value_tc.map(Box::new),
-                },
-            }
+            contracted_function_return(env, base_data, value)?;
+
+            MIRValue::NULL
         }
 
-        CXExprKind::Defer { expr } => TCExpr {
-            _type: CXType::from(CXTypeKind::Unit),
-            kind: TCExprKind::Defer {
-                operand: Box::new(typecheck_expr(env, base_data, expr)?),
-            },
-        },
+        CXExprKind::Defer { expr } => {
+            env.in_defer(|e| typecheck_expr(e, base_data, expr, None))?;
+
+            MIRValue::NULL
+        }
 
         CXExprKind::UnOp { operator, operand } => {
-            let mut operand_tc = typecheck_expr(env, base_data, operand)?;
-
             match operator {
-                CXUnOp::PreIncrement(_) | CXUnOp::PostIncrement(_) => {
-                    let Some(inner) = operand_tc._type.mem_ref_inner() else {
-                        log_typecheck_error!(
+                CXUnOp::PreIncrement(increment_amount)
+                | CXUnOp::PostIncrement(increment_amount) => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let operand_type = operand_val.get_type();
+
+                    let Some(inner) = operand_type.mem_ref_inner() else {
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Cannot apply pre-increment to a non-reference {}",
-                            operand_tc._type
+                            operand_type
                         );
                     };
 
+                    let load = env.builder.new_register();
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::MemoryRead {
+                        result: load.clone(),
+                        source: operand_val.clone(),
+                        _type: inner.clone(),
+                    });
+
                     match &inner.kind {
-                        CXTypeKind::Integer { .. } | CXTypeKind::PointerTo { .. } => (),
+                        MIRTypeKind::Integer { _type, signed, .. } => {
+                            env.builder.add_instruction(MIRInstruction::BinOp {
+                                result: result.clone(),
+                                op: MIRBinOp::Integer {
+                                    itype: *_type,
+                                    op: MIRIntegerBinOp::ADD,
+                                },
+                                lhs: MIRValue::Register {
+                                    register: load.clone(),
+                                    _type: inner.clone(),
+                                },
+                                rhs: MIRValue::IntLiteral {
+                                    value: *increment_amount as i64,
+                                    _type: *_type,
+                                    signed: *signed,
+                                },
+                            });
 
-                        _ => log_typecheck_error!(
-                            env,
-                            operand,
-                            " Pre-increment operator requires an integer or pointer type, found {}",
-                            inner
-                        ),
-                    }
+                            env.builder.add_instruction(MIRInstruction::MemoryWrite {
+                                target: operand_val,
+                                value: MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+                            });
 
-                    TCExpr {
-                        _type: operand_tc._type.clone(),
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
-                        },
+                            match operator {
+                                CXUnOp::PreIncrement(_) => MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+
+                                CXUnOp::PostIncrement(_) => MIRValue::Register {
+                                    register: load,
+                                    _type: inner.clone(),
+                                },
+
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        MIRTypeKind::PointerTo { inner_type, .. } => {
+                            let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                            let element_stride = inner_type.type_size();
+
+                            env.builder.add_instruction(MIRInstruction::BinOp {
+                                result: result.clone(),
+                                op: MIRBinOp::PtrDiff {
+                                    op: MIRPtrDiffBinOp::ADD,
+                                    ptr_inner: inner_type.clone(),
+                                },
+                                lhs: MIRValue::Register {
+                                    register: load.clone(),
+                                    _type: inner.clone(),
+                                },
+                                rhs: MIRValue::IntLiteral {
+                                    value: (*increment_amount as i64) * (element_stride as i64),
+                                    _type: CXIntegerType::from_bytes(8).unwrap(),
+                                    signed: true,
+                                },
+                            });
+
+                            env.builder.add_instruction(MIRInstruction::MemoryWrite {
+                                target: operand_val,
+                                value: MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+                            });
+
+                            match operator {
+                                CXUnOp::PreIncrement(_) => MIRValue::Register {
+                                    register: result.clone(),
+                                    _type: inner.clone(),
+                                },
+
+                                CXUnOp::PostIncrement(_) => MIRValue::Register {
+                                    register: load,
+                                    _type: inner.clone(),
+                                },
+
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        _ => {
+                            return log_typecheck_error!(
+                                env,
+                                operand,
+                                " Pre-increment operator requires an integer or pointer type, found {}",
+                                inner
+                            );
+                        }
                     }
                 }
 
-                CXUnOp::LNot | CXUnOp::BNot | CXUnOp::Negative => {
-                    coerce_value(&mut operand_tc)?;
+                CXUnOp::LNot => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let loaded_operand = coerce_value(env, expr, operand_val)?;
+                    let loaded_operand_type = loaded_operand.get_type();
 
-                    if !operand_tc._type.is_integer() {
-                        implicit_cast(
-                            &mut operand_tc,
-                            &CXType::from(CXTypeKind::Integer {
-                                signed: true,
-                                bytes: 8,
-                            }),
-                        )?;
+                    if !loaded_operand_type.is_integer() {
+                        return log_typecheck_error!(
+                            env,
+                            operand,
+                            " Logical NOT operator requires an integer type, found {}",
+                            loaded_operand_type
+                        );
                     }
 
-                    let return_type = match operator {
-                        CXUnOp::LNot => CXType::from(CXTypeKind::Bool),
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::UnOp {
+                        result: result.clone(),
+                        op: MIRUnOp::LNOT,
+                        operand: loaded_operand,
+                    });
 
-                        _ => operand_tc._type.clone(),
+                    MIRValue::Register {
+                        register: result,
+                        _type: MIRTypeKind::Bool.into(),
+                    }
+                }
+
+                CXUnOp::BNot => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let loaded_op_type = loaded_op_val.get_type();
+
+                    if !loaded_op_type.is_integer() {
+                        return log_typecheck_error!(
+                            env,
+                            operand,
+                            " Bitwise NOT operator requires an integer type, found {}",
+                            loaded_op_type
+                        );
+                    }
+
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::UnOp {
+                        result: result.clone(),
+                        op: MIRUnOp::BNOT,
+                        operand: loaded_op_val,
+                    });
+
+                    MIRValue::Register {
+                        register: result,
+                        _type: loaded_op_type,
+                    }
+                }
+
+                CXUnOp::Negative => {
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let loaded_op_type = loaded_op_val.get_type();
+
+                    let operator = match &loaded_op_type.kind {
+                        MIRTypeKind::Integer { .. } => MIRUnOp::NEG,
+                        MIRTypeKind::Float { .. } => MIRUnOp::FNEG,
+
+                        _ => {
+                            return log_typecheck_error!(
+                                env,
+                                operand,
+                                " Negation operator requires an integer or float type, found {}",
+                                loaded_op_type
+                            );
+                        }
                     };
 
-                    TCExpr {
-                        _type: return_type,
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
-                        },
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::UnOp {
+                        result: result.clone(),
+                        op: operator,
+                        operand: loaded_op_val,
+                    });
+
+                    MIRValue::Register {
+                        register: result,
+                        _type: loaded_op_type,
                     }
                 }
 
                 CXUnOp::AddressOf => {
-                    let Some(inner) = operand_tc._type.mem_ref_inner() else {
-                        log_typecheck_error!(
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let operand_type = operand_val.get_type();
+                    let Some(inner) = operand_type.mem_ref_inner() else {
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Cannot take address of a non-reference type"
                         );
                     };
 
-                    TCExpr {
+                    let register = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::Alias {
+                        result: register.clone(),
+                        value: operand_val,
+                    });
+
+                    MIRValue::Register {
+                        register,
                         _type: inner.clone().pointer_to(),
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
-                        },
                     }
                 }
 
                 CXUnOp::Dereference => {
-                    coerce_value(&mut operand_tc)?;
+                    // If the operand is a memory reference of a pointer type, we need to load the value first
+                    let loaded_operand = typecheck_expr(env, base_data, operand, None)
+                        .and_then(|v| coerce_value(env, expr, v))?;
+                    let loaded_operand_type = loaded_operand.get_type();
 
-                    let Some(inner) = operand_tc._type.ptr_inner().cloned() else {
-                        log_typecheck_error!(
+                    let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
+                        return log_typecheck_error!(
                             env,
                             operand,
                             " Cannot dereference a non-pointer type {}",
-                            operand_tc._type
+                            loaded_operand_type
                         );
                     };
 
-                    coerce_value(&mut operand_tc)?;
+                    let result = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::Alias {
+                        result: result.clone(),
+                        value: loaded_operand,
+                    });
 
-                    TCExpr {
+                    MIRValue::Register {
+                        register: result,
                         _type: inner.mem_ref_to(),
-                        kind: TCExprKind::UnOp {
-                            operator: operator.clone(),
-                            operand: Box::new(operand_tc),
-                        },
                     }
                 }
 
                 CXUnOp::ExplicitCast(to_type) => {
-                    coerce_value(&mut operand_tc)?;
                     let to_type = env.complete_type(base_data, to_type)?;
-                    explicit_cast(&mut operand_tc, &to_type)?;
+                    let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
 
-                    operand_tc
+                    explicit_cast(env, expr, operand_val, &to_type)?
                 }
             }
         }
@@ -441,33 +651,51 @@ pub fn typecheck_expr(
             lhs,
             rhs,
         } => {
-            let lhs = typecheck_expr(env, base_data, lhs)?;
-            let mut rhs = typecheck_expr(env, base_data, rhs)?;
+            let lhs_val = typecheck_expr(env, base_data, lhs, None)?;
+            let lhs_type = lhs_val.get_type();
 
-            let Some(inner) = lhs._type.mem_ref_inner() else {
-                log_typecheck_error!(
+            let rhs_expected_type = if op.is_some() {
+                None
+            } else {
+                lhs_type.mem_ref_inner()
+            };
+
+            let mut rhs_val = typecheck_expr(env, base_data, rhs, rhs_expected_type)?;
+
+            if let Some(op) = op {
+                let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
+                let loaded_rhs = coerce_value(env, expr, rhs_val)?;
+
+                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
+            }
+
+            let Some(inner) = lhs_type.mem_ref_inner() else {
+                return log_typecheck_error!(
                     env,
                     expr,
                     " Cannot assign to non-reference type {}",
-                    lhs._type
+                    lhs_type
                 );
             };
 
+            // TODO: This is probably better to do at the VarDeclaration-level, where its type
+            // returned in this function is non-const, but the variable-table reference type
+            // is, but for now this will do until we refactor that part.
             if inner.get_specifier(CX_CONST)
-                && !matches!(lhs.kind, TCExprKind::VariableDeclaration { .. })
+                && !matches!(lhs.kind, CXExprKind::VarDeclaration { .. })
             {
-                log_typecheck_error!(env, expr, " Cannot assign to a const type");
+                return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            implicit_cast(&mut rhs, inner)?;
+            let coerced_rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
+            handle_assignment(env, &lhs_val, &coerced_rhs_val, inner)?;
 
-            TCExpr {
-                _type: lhs._type.clone(),
-                kind: TCExprKind::Assignment {
-                    target: Box::new(lhs),
-                    value: Box::new(rhs),
-                    additional_op: op.as_ref().map(|op| *op.clone()),
-                },
+            if inner.is_memory_resident() {
+                // If the inner type is a memory-resident, we need to just return a pointer to
+                // the location, rhs_val is a pointer to now-dead temporary memory.
+                lhs_val
+            } else {
+                coerced_rhs_val
             }
         }
 
@@ -490,105 +718,23 @@ pub fn typecheck_expr(
         } => typecheck_method_call(env, base_data, lhs, rhs, expr)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
-            let lhs = typecheck_expr(env, base_data, lhs)?;
-            let rhs = typecheck_expr(env, base_data, rhs)?;
-
-            typecheck_binop(env, op.clone(), lhs, rhs, expr)?
+            typecheck_binop(env, base_data, op.clone(), lhs, rhs, expr)?
         }
 
-        CXExprKind::Move { expr: move_expr } => {
-            let expr_tc = typecheck_expr(env, base_data, move_expr)?;
-
-            let Some(inner) = expr_tc._type.mem_ref_inner() else {
-                log_typecheck_error!(
-                    env,
-                    move_expr,
-                    " Move expression requires a reference type, found {}",
-                    expr_tc._type
-                );
-            };
-
-            if !inner.has_move_semantics() {
-                log_typecheck_error!(
-                    env,
-                    move_expr,
-                    "Value of type {} has no move semantics",
-                    inner
-                );
-            }
-
-            TCExpr {
-                _type: inner.clone(),
-                kind: TCExprKind::Move {
-                    operand: Box::new(expr_tc),
-                },
-            }
+        CXExprKind::Move { .. } => {
+            todo!(
+                "Intrinsic strong pointers are no longer supported, move semantics for structs are not yet implemented"
+            );
         }
 
         CXExprKind::New { _type } => {
-            let mut _type = env.complete_type(base_data, _type)?;
-
-            let (_type, array_length) = match _type.kind {
-                CXTypeKind::Array {
-                    inner_type, size, ..
-                } => {
-                    let length = TCExpr {
-                        _type: CXType::from(CXTypeKind::Integer {
-                            signed: true,
-                            bytes: 8,
-                        }),
-                        kind: TCExprKind::IntLiteral { value: size as i64 },
-                    };
-
-                    (*inner_type, Some(Box::new(length)))
-                }
-
-                CXTypeKind::VariableLengthArray {
-                    _type: inner_type,
-                    size,
-                } => {
-                    let mut size = *size;
-                    coerce_value(&mut size)?;
-
-                    _type = inner_type.clone().pointer_to();
-                    (*inner_type, Some(Box::new(size)))
-                }
-
-                _ => (_type, None),
-            };
-
-            TCExpr {
-                _type: CXType::from(CXTypeKind::StrongPointer {
-                    inner_type: Box::new(_type.clone()),
-                    is_array: array_length.is_some(),
-                }),
-                kind: TCExprKind::New {
-                    _type: _type.clone(),
-                    array_length,
-                },
-            }
+            todo!(
+                "Intrinsic strong pointers are no longer supported, new semantics for 'new' tbd."
+            );
         }
 
         CXExprKind::InitializerList { indices } => {
-            let mut tc_indices = Vec::new();
-
-            for index in indices.iter() {
-                let mut tc_expr = typecheck_expr(env, base_data, &index.value)?;
-                coerce_value(&mut tc_expr)?;
-
-                tc_indices.push(TCInitIndex {
-                    name: index.name.clone(),
-                    index: index.index,
-                    value: tc_expr,
-                });
-            }
-
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Unit), // Placeholder, will be set during assignment
-                kind: TCExprKind::InitializerList {
-                    indices: tc_indices,
-                },
-            }
+            typecheck_initializer_list(env, base_data, expr, indices, expected_type)?
         }
 
         CXExprKind::TypeConstructor {
@@ -597,8 +743,8 @@ pub fn typecheck_expr(
             inner,
         } => {
             let union_type = env.get_type(base_data, type_name.as_str())?;
-            let CXTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
-                log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
+            let MIRTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
+                return log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
 
             let Some((i, variant_type)) = variants
@@ -607,7 +753,7 @@ pub fn typecheck_expr(
                 .find(|(_, (variant_name, _))| variant_name == name.as_str())
                 .map(|(i, (_, variant_type))| (i, variant_type.clone()))
             else {
-                log_typecheck_error!(
+                return log_typecheck_error!(
                     env,
                     expr,
                     " Variant '{}' not found in tagged union type {}",
@@ -616,39 +762,42 @@ pub fn typecheck_expr(
                 );
             };
 
-            let mut inner = typecheck_expr(env, base_data, inner)?;
-            implicit_cast(&mut inner, &variant_type)?;
+            let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
+                .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
 
-            TCExpr {
-                _type: union_type.clone().mem_ref_to(),
-                kind: TCExprKind::TypeConstructor {
-                    name: name.clone(),
+            let result_region = env.builder.new_register();
+            env.builder
+                .add_instruction(MIRInstruction::CreateStackRegion {
+                    result: result_region.clone(),
+                    _type: union_type.clone(),
+                });
 
-                    union_type,
-                    variant_type,
+            let memory = MIRValue::Register {
+                register: result_region.clone(),
+                _type: union_type.clone(),
+            };
+
+            env.builder
+                .add_instruction(MIRInstruction::ConstructTaggedUnionInto {
+                    memory: memory.clone(),
+                    value: inner,
                     variant_index: i,
+                    sum_type: union_type.clone(),
+                });
 
-                    input: Box::new(inner),
-                },
-            }
+            memory
         }
 
-        CXExprKind::Unit => TCExpr {
-            _type: CXType::from(CXTypeKind::Unit),
-            kind: TCExprKind::Unit,
-        },
+        CXExprKind::Unit => MIRValue::NULL,
 
         CXExprKind::SizeOf { expr } => {
-            let tc_expr = typecheck_expr(env, base_data, expr)?;
+            let tc_expr = typecheck_expr(env, base_data, expr, None)?;
+            let tc_type = tc_expr.get_type();
 
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Integer {
-                    signed: true,
-                    bytes: 8,
-                }),
-                kind: TCExprKind::SizeOf {
-                    _type: tc_expr._type,
-                },
+            MIRValue::IntLiteral {
+                value: tc_type.type_size() as i64,
+                _type: CXIntegerType::I64,
+                signed: false,
             }
         }
 
@@ -657,141 +806,20 @@ pub fn typecheck_expr(
             block,
             cases,
             default_case,
-        } => {
-            let mut tc_condition = typecheck_expr(env, base_data, condition)?;
-            coerce_condition(&mut tc_condition)?;
-
-            let tc_stmts = block
-                .iter()
-                .map(|e| typecheck_expr(env, base_data, e))
-                .collect::<CXResult<Vec<_>>>()?;
-
-            TCExpr {
-                _type: CXType::from(CXTypeKind::Unit),
-                kind: TCExprKind::CSwitch {
-                    condition: Box::new(tc_condition),
-                    block: tc_stmts,
-                    cases: cases.clone(),
-                    default_case: *default_case,
-                },
-            }
-        }
+        } => typecheck_switch(
+            env,
+            base_data,
+            condition,
+            block,
+            cases,
+            default_case.as_ref(),
+        )?,
 
         CXExprKind::Match {
             condition,
             arms,
             default,
-        } => {
-            let mut match_value = typecheck_expr(env, base_data, condition)?;
-            coerce_value(&mut match_value)?;
-
-            match &match_value._type.kind {
-                CXTypeKind::TaggedUnion {
-                    name: expected_union_name,
-                    variants,
-                    ..
-                } => {
-                    let mut tc_arms = Vec::new();
-
-                    for (value, block) in arms.iter() {
-                        env.push_scope();
-
-                        let CXExprKind::TypeConstructor {
-                            union_name,
-                            variant_name,
-                            inner,
-                        } = &value.kind
-                        else {
-                            log_typecheck_error!(
-                                env,
-                                value,
-                                " Expected Type Constructor in 'match' arm, found: {}",
-                                value
-                            );
-                        };
-
-                        let CXExprKind::Identifier(instance_name) = &inner.as_ref().kind else {
-                            log_typecheck_error!(
-                                env,
-                                inner.as_ref(),
-                                " Expected identifier in 'match' arm, found: {}",
-                                inner
-                            );
-                        };
-                        let instance_name = instance_name.clone();
-
-                        if union_name.as_str() != expected_union_name.as_str() {
-                            log_typecheck_error!(
-                                env,
-                                value,
-                                " Mismatched type in 'match' arm, expected '{}', found '{}'",
-                                match_value._type,
-                                union_name
-                            );
-                        }
-
-                        let Some((idx, variant_type)) = variants
-                            .iter()
-                            .enumerate()
-                            .find(|(_i, (name, _))| name == variant_name.as_str())
-                            .map(|(i, (_, variant_type))| (i, variant_type.clone()))
-                        else {
-                            log_typecheck_error!(
-                                env,
-                                value,
-                                " Variant '{}' not found in tagged union type {}",
-                                variant_name,
-                                union_name
-                            );
-                        };
-
-                        env.insert_symbol(
-                            instance_name.as_string(),
-                            variant_type.clone().mem_ref_to(),
-                        );
-                        let tc_block = typecheck_expr(env, base_data, block)?;
-
-                        tc_arms.push(TCTagMatch {
-                            tag_value: idx as u64,
-                            body: Box::new(tc_block),
-
-                            instance_name,
-                            variant_type,
-                        });
-
-                        env.pop_scope();
-                    }
-
-                    let default_case = default
-                        .as_ref()
-                        .map(|d| {
-                            env.push_scope();
-                            let Ok(tc_default) = typecheck_expr(env, base_data, d) else {
-                                log_typecheck_error!(
-                                    env,
-                                    d,
-                                    " Failed to typecheck default case in 'match' expression"
-                                );
-                            };
-                            env.pop_scope();
-
-                            Ok(Box::new(tc_default))
-                        })
-                        .transpose()?;
-
-                    TCExpr {
-                        _type: CXType::from(CXTypeKind::Unit),
-                        kind: TCExprKind::Match {
-                            condition: Box::new(match_value),
-                            cases: tc_arms,
-                            default_case,
-                        },
-                    }
-                }
-
-                _ => todo!("Integer-based matching"),
-            }
-        }
+        } => typecheck_match(env, base_data, expr, condition, arms, default.as_ref())?,
 
         CXExprKind::Taken => {
             unreachable!("Taken expressions should not be present in the typechecker")
@@ -800,19 +828,17 @@ pub fn typecheck_expr(
 }
 
 pub(crate) fn global_expr(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     ident: &str,
-) -> CXResult<TCExpr> {
+) -> CXResult<MIRValue> {
     if let Some(global) = env.realized_globals.get(ident) {
         return tcglobal_expr(global);
     }
 
-    let Some(module_res) = base_data
-        .global_variables
-        .get(ident) else {
-            return CXError::create_result(format!("Global variable '{}' not found", ident));
-        };
+    let Some(module_res) = base_data.global_variables.get(ident) else {
+        return CXError::create_result(format!("Global variable '{}' not found", ident));
+    };
 
     let module_res = match env.in_external_templated_function {
         true => module_res.clone().transfer(""),
@@ -820,24 +846,22 @@ pub(crate) fn global_expr(
     };
 
     match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Ok(TCExpr {
-            _type: CXType::from(CXTypeKind::Integer {
-                signed: true,
-                bytes: 8,
-            }),
-            kind: TCExprKind::IntLiteral { value: *val as i64 },
+        CXGlobalVariable::EnumConstant(val) => Ok(MIRValue::IntLiteral {
+            value: *val as i64,
+            _type: CXIntegerType::from_bytes(8).unwrap(),
+            signed: true,
         }),
 
         CXGlobalVariable::Standard {
-            type_,
+            _type,
             initializer,
             is_mutable,
         } => {
-            let _type = env.complete_type(base_data, type_)?;
+            let _type = env.complete_type(base_data, _type)?;
             let initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
-                        log_typecheck_error!(
+                        return log_typecheck_error!(
                             env,
                             init_expr,
                             " CX currently only supports integer initializers for global variable initialization"
@@ -852,9 +876,9 @@ pub(crate) fn global_expr(
 
             env.realized_globals.insert(
                 ident.to_string(),
-                TCGlobalVariable {
-                    kind: TCGlobalVarKind::Variable {
-                        name: CXIdent::from(ident.to_string()),
+                MIRGlobalVariable {
+                    kind: MIRGlobalVarKind::Variable {
+                        name: CXIdent::new(ident.to_string()),
                         _type,
                         initializer,
                     },
@@ -868,14 +892,14 @@ pub(crate) fn global_expr(
     }
 }
 
-fn tcglobal_expr(global: &TCGlobalVariable) -> CXResult<TCExpr> {
+fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRValue> {
     match &global.kind {
-        TCGlobalVarKind::Variable { name, _type, .. } => Ok(TCExpr {
+        MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRValue::GlobalValue {
+            name: name.clone(),
             _type: _type.clone().mem_ref_to(),
-            kind: TCExprKind::GlobalVariableReference { name: name.clone() },
         }),
 
-        TCGlobalVarKind::StringLiteral { .. } => {
+        MIRGlobalVarKind::StringLiteral { .. } => {
             unreachable!("String literals cannot be referenced via an identifier")
         }
     }

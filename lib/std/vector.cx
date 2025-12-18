@@ -8,6 +8,10 @@ struct vector<T> {
     usize capacity;
 };
 
+~vector<T>(this) {
+    free(this.data);
+}
+
 vector<T> create_vector<T>() {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),

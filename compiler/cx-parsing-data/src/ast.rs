@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_util::{hashable_float::FloatWrapper, identifier::CXIdent};
+use cx_util::{unsafe_float::FloatWrapper, identifier::CXIdent};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
@@ -28,7 +28,7 @@ pub struct CXAST {
 pub enum CXFunctionStmt {
     TypeDecl {
         name: Option<String>,
-        type_: CXNaiveType,
+        _type: CXNaiveType,
     },
 
     FunctionDefinition {
@@ -114,7 +114,7 @@ pub enum CXGlobalVariable {
     EnumConstant(i32),
 
     Standard {
-        type_: CXNaiveType,
+        _type: CXNaiveType,
         is_mutable: bool,
         initializer: Option<CXExpr>,
     },
@@ -210,7 +210,7 @@ pub enum CXExprKind {
         expr: Box<CXExpr>,
     },
     VarDeclaration {
-        type_: CXNaiveType,
+        _type: CXNaiveType,
         name: CXIdent,
     },
     TypeConstructor {
@@ -282,28 +282,4 @@ impl CXExprKind {
                 | CXExprKind::Taken
         )
     }
-}
-
-#[derive(Debug, Clone, Readable, Writable)]
-pub enum CXCastType {
-    NOOP,
-
-    IntegralCast,
-    FloatCast,
-    IntToFloat,
-    IntToBool,
-    FloatToInt,
-    BitCast,
-    IntegralTrunc,
-    IntToPtrDiff,
-    PtrToInt,
-    IntToPtr,
-    FunctionToPointerDecay,
-    Load,
-
-    // The difference between a memory reference and a bare type is that a memory reference
-    // is stored in memory. A structured type is itself a memory reference despite this
-    // dichotomy, so when attempting to convert from a mem(struct) to struct, this is
-    // used to create an explicit no-op to appease the typechecker.
-    Reinterpret,
 }

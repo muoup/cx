@@ -120,7 +120,6 @@ pub enum OperatorType {
     Decrement,
 
     Comma,
-    ArrayIndex,
     Access,
     ScopeRes,
 
@@ -174,7 +173,7 @@ pub enum KeywordType {
     Restrict,
 
     Sizeof,
-
+    
     // CX Specific
     Import,
     Defer,

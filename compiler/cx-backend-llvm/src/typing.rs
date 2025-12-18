@@ -1,6 +1,6 @@
 use crate::GlobalState;
-use cx_mir_data::types::{MIRType, MIRTypeKind};
-use cx_mir_data::{LinkageType, MIRFunctionPrototype};
+use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
+use cx_bytecode_data::{BCFunctionPrototype, LinkageType};
 use inkwell::AddressSpace;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
@@ -45,40 +45,43 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> Option<BasicValueEnum
     }
 }
 
-pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<AnyTypeEnum<'a>> {
+pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<AnyTypeEnum<'a>> {
     Some(match &_type.kind {
-        MIRTypeKind::Unit => context.void_type().as_any_type_enum(),
-        MIRTypeKind::Signed { bytes, .. } | MIRTypeKind::Unsigned { bytes, .. } => match *bytes {
-            1 => context.i8_type().as_any_type_enum(),
-            2 => context.i16_type().as_any_type_enum(),
-            4 => context.i32_type().as_any_type_enum(),
-            8 => context.i64_type().as_any_type_enum(),
-
-            _ => panic!("Invalid integer size"),
+        BCTypeKind::Unit => context.void_type().as_any_type_enum(),
+        BCTypeKind::Integer(_type) => match _type {
+            BCIntegerType::I8 => context.i8_type().as_any_type_enum(),
+            BCIntegerType::I16 => context.i16_type().as_any_type_enum(),
+            BCIntegerType::I32 => context.i32_type().as_any_type_enum(),
+            BCIntegerType::I64 => context.i64_type().as_any_type_enum(),
+            BCIntegerType::I128 => context.i128_type().as_any_type_enum(),
         },
-        MIRTypeKind::Bool => context.bool_type().as_any_type_enum(),
-        MIRTypeKind::Float { bytes: 4 } => context.f32_type().as_any_type_enum(),
-        MIRTypeKind::Float { bytes: 8 } => context.f64_type().as_any_type_enum(),
 
-        MIRTypeKind::Array { element, size } => {
+        BCTypeKind::Bool => context.bool_type().as_any_type_enum(),
+
+        BCTypeKind::Float(_type) => match _type {
+            BCFloatType::F32 => context.f32_type().as_any_type_enum(),
+            BCFloatType::F64 => context.f64_type().as_any_type_enum(),
+        },
+
+        BCTypeKind::Array { element, size } => {
             let inner_llvm_type = bc_llvm_type(context, element)?;
             let basic_type = any_to_basic_type(inner_llvm_type)?;
 
             basic_type.array_type(*size as u32).as_any_type_enum()
         }
-        MIRTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+        BCTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
 
-        MIRTypeKind::Struct { name, fields } => {
+        BCTypeKind::Struct { name, fields } => {
             if let Some(_type) = context.get_struct_type(name.as_str()) {
                 return Some(_type.as_any_type_enum());
             }
 
-            let _types = fields
+            let type_s = fields
                 .iter()
                 .map(|(_, field_type)| {
-                    let type_ = bc_llvm_type(context, field_type)?;
+                    let _type = bc_llvm_type(context, field_type)?;
 
-                    any_to_basic_type(type_)
+                    any_to_basic_type(_type)
                 })
                 .collect::<Option<Vec<_>>>()?;
 
@@ -89,15 +92,15 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<
             };
 
             let struct_def = context.opaque_struct_type(struct_name.as_str());
-            struct_def.set_body(_types.as_slice(), false);
+            struct_def.set_body(type_s.as_slice(), false);
 
             return context
                 .get_struct_type(struct_name.as_str())
                 .map(|s| s.as_any_type_enum());
         }
 
-        MIRTypeKind::Union { .. } => {
-            let _type_size = _type.fixed_size();
+        BCTypeKind::Union { .. } => {
+            let _type_size = _type.size();
             let array_type = context.i8_type().array_type(_type_size as u32);
 
             array_type.as_any_type_enum()
@@ -109,7 +112,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &MIRType) -> Option<
 
 pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
-    prototype: &MIRFunctionPrototype,
+    prototype: &BCFunctionPrototype,
 ) -> Option<FunctionType<'a>> {
     let args = prototype
         .params
@@ -124,16 +127,22 @@ pub(crate) fn bc_llvm_prototype<'a>(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    Some(match bc_llvm_type(state.context, &prototype.return_type).unwrap() {
-        AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
-        AnyTypeEnum::FloatType(float_type) => {
-            float_type.fn_type(args.as_slice(), prototype.var_args)
-        }
-        AnyTypeEnum::PointerType(ptr_type) => ptr_type.fn_type(args.as_slice(), prototype.var_args),
-        AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), prototype.var_args),
+    Some(
+        match bc_llvm_type(state.context, &prototype.return_type).unwrap() {
+            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
+            AnyTypeEnum::FloatType(float_type) => {
+                float_type.fn_type(args.as_slice(), prototype.var_args)
+            }
+            AnyTypeEnum::PointerType(ptr_type) => {
+                ptr_type.fn_type(args.as_slice(), prototype.var_args)
+            }
+            AnyTypeEnum::VoidType(void_type) => {
+                void_type.fn_type(args.as_slice(), prototype.var_args)
+            }
 
-        _ty => panic!("Invalid return type, found: {_ty:?}"),
-    })
+            _ty => panic!("Invalid return type, found: {_ty:?}"),
+        },
+    )
 }
 
 pub(crate) fn convert_linkage(linkage: LinkageType) -> Linkage {

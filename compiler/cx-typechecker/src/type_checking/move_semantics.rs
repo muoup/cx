@@ -1,43 +1,48 @@
-use crate::environment::TCEnvironment;
-use cx_typechecker_data::{ast::TCBaseMappings, cx_types::{CXType, CXTypeKind}};
+use crate::{
+    builder::{Lifetime, MIRBuilder},
+    environment::TypeEnvironment,
+};
+use cx_typechecker_data::mir::{
+    expression::{MIRInstruction, MIRRegister},
+    types::MIRType,
+};
 
-pub(crate) fn acknowledge_declared_type(
-    env: &mut TCEnvironment,
-    base_data: &TCBaseMappings,
-    ty: &CXType,
-) -> bool {
-    if env.deconstructors.contains(ty) {
-        return true;
-    }
+pub fn acknowledge_declared_object(
+    env: &mut TypeEnvironment,
+    name: String,
+    register: MIRRegister,
+    _type: MIRType,
+) {
+    env.builder.add_lifetime(Lifetime {
+        name: name.clone(),
+        region: register.clone(),
+        _type: _type.clone(),
+    });
 
-    match &ty.kind {
-        CXTypeKind::StrongPointer { inner_type, .. } => {
-            let _ = acknowledge_declared_type(env, base_data, inner_type);
+    env.builder.add_instruction(MIRInstruction::LifetimeStart {
+        name,
+        region: register,
+        _type,
+    });
+}
 
-            // Strong pointers, due to some problems with how identically defined types
-            // defined separately have different UUIDs, we just handle all strong pointers
-            // in-place in the function they are used in. May be revisited later.
+pub fn acknowledge_destructed_object(builder: &mut MIRBuilder, lifetime: Lifetime) {
+    builder.add_instruction(MIRInstruction::LifetimeEnd {
+        name: lifetime.name,
+        region: lifetime.region,
+        _type: lifetime._type,
+    });
+}
 
-            true
-        }
+pub fn invoke_remaining_destructions(builder: &mut MIRBuilder) {
+    let scopes = builder
+        .lifetime_stack_ref()
+        .iter()
+        .rev()
+        .flat_map(|scope| scope.iter().rev().cloned())
+        .collect::<Vec<Lifetime>>();
 
-        CXTypeKind::Structured {
-            name: Some(_name),
-            fields,
-            ..
-        } => {
-            let any_field_deconstructable = fields
-                .iter()
-                .any(|(_, field_type)| acknowledge_declared_type(env, base_data, field_type));
-
-            if !any_field_deconstructable && !env.destructor_exists(base_data, ty) {
-                return false;
-            }
-
-            env.deconstructors.insert(ty.clone());
-            true
-        }
-
-        _ => false,
+    for lifetime in scopes.into_iter() {
+        acknowledge_destructed_object(builder, lifetime);
     }
 }

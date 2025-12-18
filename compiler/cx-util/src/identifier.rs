@@ -46,11 +46,23 @@ impl CXIdent {
         self.data = data.into();
     }
 
-    pub fn from<T: Into<Arc<str>>>(str: T) -> Self {
+    pub fn new<T: Into<Arc<str>>>(str: T) -> Self {
         CXIdent { data: str.into() }
     }
 
     pub fn map_data<F: FnOnce(&str) -> String>(&mut self, f: F) {
         self.data = f(self.data.as_ref()).into();
+    }
+}
+
+impl From<String> for CXIdent {
+    fn from(value: String) -> Self {
+        CXIdent { data: Arc::from(value) }
+    }
+}
+
+impl From<&str> for CXIdent {
+    fn from(value: &str) -> Self {
+        CXIdent { data: Arc::from(value) }
     }
 }

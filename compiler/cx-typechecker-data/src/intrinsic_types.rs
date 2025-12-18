@@ -1,4 +1,4 @@
-use crate::cx_types::CXTypeKind;
+use crate::mir::types::{CXFloatType, CXIntegerType, MIRTypeKind};
 
 pub fn is_intrinsic_type(name: &str) -> bool {
     for (intrinsic_name, _) in INTRINSIC_TYPES.iter() {
@@ -9,181 +9,203 @@ pub fn is_intrinsic_type(name: &str) -> bool {
     false
 }
 
-pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/memory.cx", "std/intrinsic/assertion.cx"];
+pub const INTRINSIC_IMPORTS: &[&str] = &[
+    "std/intrinsic/assertion.cx",
+];
 
-pub const INTRINSIC_TYPES: &[(&str, CXTypeKind)] = &[
-    ("void", CXTypeKind::Unit),
-    ("bool", CXTypeKind::Bool),
+pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
+    ("void", MIRTypeKind::Unit),
+    ("bool", MIRTypeKind::Bool),
     (
         "i8",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 1,
+            _type: CXIntegerType::I8,
         },
     ),
     (
         "i16",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 2,
+            _type: CXIntegerType::I16,
         },
     ),
     (
         "i32",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "i64",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "u8",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 1,
+            _type: CXIntegerType::I8,
         },
     ),
     (
         "u16",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 2,
+            _type: CXIntegerType::I16,
         },
     ),
     (
         "u32",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "u64",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "usize",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: std::mem::size_of::<usize>() as u8,
+            _type: CXIntegerType::from_bytes(std::mem::size_of::<usize>() as u8).unwrap(),
         },
     ),
     (
         "isize",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: std::mem::size_of::<isize>() as u8,
+            _type: CXIntegerType::from_bytes(std::mem::size_of::<isize>() as u8).unwrap(),
         },
     ),
-    ("f32", CXTypeKind::Float { bytes: 4 }),
-    ("f64", CXTypeKind::Float { bytes: 8 }),
+    (
+        "f32",
+        MIRTypeKind::Float {
+            _type: CXFloatType::F32,
+        },
+    ),
+    (
+        "f64",
+        MIRTypeKind::Float {
+            _type: CXFloatType::F64,
+        },
+    ),
     (
         "int",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "signed int",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "unsigned int",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "signed",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "unsigned",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 4,
+            _type: CXIntegerType::I32,
         },
     ),
     (
         "long",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "long int",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "unsigned long",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "long long",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "long long int",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "unsigned long long",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 8,
+            _type: CXIntegerType::I64,
         },
     ),
     (
         "char",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 1,
+            _type: CXIntegerType::I8,
         },
     ),
     (
         "unsigned char",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: false,
-            bytes: 1,
+            _type: CXIntegerType::I8,
         },
     ),
     (
         "signed char",
-        CXTypeKind::Integer {
+        MIRTypeKind::Integer {
             signed: true,
-            bytes: 1,
+            _type: CXIntegerType::I8,
         },
     ),
-    ("float", CXTypeKind::Float { bytes: 4 }),
-    ("double", CXTypeKind::Float { bytes: 8 }),
+    (
+        "float",
+        MIRTypeKind::Float {
+            _type: CXFloatType::F32,
+        },
+    ),
+    (
+        "double",
+        MIRTypeKind::Float {
+            _type: CXFloatType::F64,
+        },
+    ),
 ];

@@ -39,9 +39,9 @@ pub enum CompilationStep {
      *  declared with a struct/enum/union keyword. This step is necessary to resolve ambiguities during parsing.
      *
      *  Also handles lexing and preprocessing of the source code, which is required before parsing can occur.
-     *  
+     *
      *  Requires: The raw source code of the compilation unit.
-     * 
+     *
      *  Outputs:  A list of lexemes / tokens from lexing and preprocessing, along with a type symbol set.
      */
     PreParse = 1 << 0,
@@ -57,7 +57,7 @@ pub enum CompilationStep {
      *  Outputs:  A naively parsed AST.
      */
     ASTParse = 1 << 1,
-    
+
     /**
      *  Prior to typechecking, the compiler must combine all publically accessible types and functions
      *  from imports into the current compilation unit's AST. This is similar to ImportCombine, however
@@ -67,7 +67,7 @@ pub enum CompilationStep {
      *  but rather a list of incomplete type's and their module origins, so that during typechecking, if a type
      *  or function is needed, the typechecker can complete the type knowing where relevant information about
      *  internal types that not be publicly accessible is stored.
-     * 
+     *
      *  Requires: A naively parsed AST, along with the type and function definitions of imports.
      *  Outputs:  A base data structure, containing the publically accessible types and functions of imports
      *  along with their module origins, along with the same data from the current compilation unit.
