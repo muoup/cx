@@ -18,6 +18,10 @@ use crate::{
     },
 };
 
+const LIVENESS_TYPE : BCType = BCType {
+    kind: BCTypeKind::Integer(BCIntegerType::I8),
+};
+
 #[allow(dead_code)]
 pub fn lower_instruction(
     builder: &mut BCBuilder,
@@ -524,21 +528,93 @@ pub fn lower_instruction(
 
         MIRInstruction::LifetimeStart {
             name: _,
-            region: _,
+            region,
             _type,
         } => {
-            // Nothing for now, will eventually integrate with LLVM's lifetime intrinsics
+            if builder.get_deconstructor(_type).is_some() {
+                let liveness = builder.add_new_instruction(
+                    BCInstructionKind::Allocate {
+                        _type: LIVENESS_TYPE.clone(),
+                        alignment: 1,
+                    },
+                    BCType::default_pointer(),
+                    true,
+                )?;
+
+                builder.add_new_instruction(
+                    BCInstructionKind::Store {
+                        memory: liveness.clone(),
+                        value: BCValue::IntImmediate{ _type: BCIntegerType::I8, val: 1 },
+                        _type: BCType::from(BCTypeKind::Bool),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+
+                let BCValue::Register { register, .. } = liveness else {
+                    unreachable!("Expected register for region with deconstructor");
+                };
+
+                builder.add_liveness_mapping(region.clone(), register);
+            }
 
             Ok(BCValue::NULL)
         }
 
         MIRInstruction::LifetimeEnd {
+            name: _,
             region,
             _type,
             ..
         } => {
             if let Some(deconstructor) = builder.get_deconstructor(_type) {
-                
+                let deconstructor = deconstructor.clone();
+
+                let current_blocks = builder.block_count();
+                let destroy_block =
+                    CXIdent::from(format!("{}_{}", current_blocks, "LifetimeDestroy"));
+                let merge_block = CXIdent::from(format!("{}_{}", current_blocks, "LifetimeMerge"));
+
+                let liveness = builder
+                    .get_liveness_mapping(region)
+                    .cloned()
+                    .expect("Region pointer not found in liveness mapping for lifetime end");
+
+                let liveness_val = builder.add_new_instruction(
+                    BCInstructionKind::Load {
+                        memory: BCValue::Register {
+                            register: liveness.clone(),
+                            _type: BCType::default_pointer(),
+                        },
+                        _type: LIVENESS_TYPE.clone(),
+                    },
+                    LIVENESS_TYPE.clone(),
+                    true,
+                )?;
+
+                let liveness_cond = builder.add_new_instruction(
+                    BCInstructionKind::BooleanBinOp {
+                        op: cx_bytecode_data::BCBoolBinOp::NE,
+                        left: liveness_val,
+                        right: BCValue::IntImmediate { _type: BCIntegerType::I8, val: 0 },
+                    },
+                    BCType::from(BCTypeKind::Bool),
+                    true,
+                )?;
+
+                builder.add_new_instruction(
+                    BCInstructionKind::Branch {
+                        condition: liveness_cond,
+                        true_block: destroy_block.clone(),
+                        false_block: merge_block.clone(),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+
+                builder.create_block(destroy_block.clone());
+                builder.set_current_block(destroy_block);
+
                 let bc_ptr = builder
                     .get_symbol(region)
                     .expect("Region pointer not found in symbol table for lifetime end");
@@ -546,12 +622,44 @@ pub fn lower_instruction(
                 builder.add_new_instruction(
                     BCInstructionKind::DirectCall {
                         args: vec![bc_ptr],
-                        method_sig: deconstructor.clone(),
+                        method_sig: deconstructor,
                     },
                     BCType::unit(),
                     false,
                 )?;
+
+                builder.add_new_instruction(
+                    BCInstructionKind::Jump {
+                        target: merge_block.clone(),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+
+                builder.create_block(merge_block.clone());
+                builder.set_current_block(merge_block);
             }
+
+            Ok(BCValue::NULL)
+        }
+
+        MIRInstruction::LeakLifetime { region, .. } => {
+            let liveness = builder
+                .get_liveness_mapping(region)
+                .expect("Region pointer not found in liveness mapping for leak lifetime");
+
+            builder.add_new_instruction(
+                BCInstructionKind::Store {
+                    memory: BCValue::Register {
+                        register: liveness.clone(),
+                        _type: LIVENESS_TYPE.clone(),
+                    },
+                    value: BCValue::IntImmediate { _type: BCIntegerType::I8, val: 0 },
+                    _type: BCType::from(BCTypeKind::Bool),
+                },
+                BCType::unit(),
+                false,
+            )?;
 
             Ok(BCValue::NULL)
         }

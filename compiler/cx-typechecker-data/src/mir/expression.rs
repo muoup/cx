@@ -187,6 +187,11 @@ pub enum MIRInstruction {
         _type: MIRType,
     },
     
+    LeakLifetime {
+        region: MIRRegister,
+        _type: MIRType,
+    },
+    
     // ---- Verification Nodes ----
     
     Assert {

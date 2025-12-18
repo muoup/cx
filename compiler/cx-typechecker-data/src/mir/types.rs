@@ -12,7 +12,7 @@ pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
     pub kind: MIRTypeKind,
- 
+
     pub deconstruction_needed: bool,
 }
 
@@ -65,7 +65,7 @@ impl Default for MIRType {
             specifiers: 0,
 
             kind: MIRTypeKind::Unit,
-            deconstruction_needed: false
+            deconstruction_needed: false,
         }
     }
 }
@@ -91,8 +91,6 @@ pub enum MIRTypeKind {
         // Boxed for size reasons
         template_info: Option<Box<TemplateInstantiationInformation>>,
         fields: Vec<(String, MIRType)>,
-
-        copyable: bool,
     },
     Union {
         name: Option<CXIdent>,
@@ -187,7 +185,7 @@ impl MIRType {
             visibility: VisibilityMode::Private,
 
             kind: MIRTypeKind::Unit,
-            deconstruction_needed: false
+            deconstruction_needed: false,
         }
     }
 
@@ -197,7 +195,7 @@ impl MIRType {
             specifiers,
 
             kind: underlying_type,
-            deconstruction_needed: false
+            deconstruction_needed: false,
         }
     }
 
@@ -264,7 +262,7 @@ impl MIRType {
                 weak: false,
                 nullable: true,
             },
-            deconstruction_needed: false
+            deconstruction_needed: false,
         }
     }
 
@@ -273,7 +271,7 @@ impl MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
             kind: MIRTypeKind::MemoryReference(Box::new(self)),
-            deconstruction_needed: false
+            deconstruction_needed: false,
         }
     }
 
@@ -366,12 +364,10 @@ impl MIRType {
             _ => None,
         }
     }
-    
+
     pub fn get_template_data(&self) -> Option<&TemplateInstantiationInformation> {
         match &self.kind {
-            MIRTypeKind::Structured { template_info, .. } => {
-                template_info.as_deref()
-            }
+            MIRTypeKind::Structured { template_info, .. } => template_info.as_deref(),
 
             _ => None,
         }
@@ -394,15 +390,6 @@ impl MIRType {
             }
             MIRTypeKind::Union { name: n, .. } => *n = Some(new_name),
             _ => {}
-        }
-    }
-
-    pub fn copyable(&self) -> bool {
-        match &self.kind {
-            MIRTypeKind::Structured { copyable, .. } => *copyable,
-            MIRTypeKind::TaggedUnion { variants, .. } => variants.iter().all(|(_, t)| t.copyable()),
-
-            _ => true,
         }
     }
 
@@ -517,7 +504,7 @@ impl From<MIRTypeKind> for MIRType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
-            deconstruction_needed: false
+            deconstruction_needed: false,
         }
     }
 }
@@ -555,22 +542,17 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
 
         (
             MIRTypeKind::Structured {
-                fields: t1_fields,
-                copyable: c1,
-                ..
+                name: n1, fields: t1_fields, ..
             },
             MIRTypeKind::Structured {
-                fields: t2_fields,
-                copyable: c2,
-                ..
+                name: n2, fields: t2_fields, ..
             },
-        ) => {
-            c1 == c2
-                && t1_fields
-                    .iter()
-                    .zip(t2_fields.iter())
-                    .all(|(f1, f2)| same_type(&f1.1, &f2.1))
-        }
+        ) => 
+          n1 == n2 && 
+            t1_fields
+            .iter()
+            .zip(t2_fields.iter())
+            .all(|(f1, f2)| same_type(&f1.1, &f2.1)),
 
         (MIRTypeKind::Function { prototype: p1 }, MIRTypeKind::Function { prototype: p2 }) => {
             same_type(&p1.return_type, &p2.return_type)

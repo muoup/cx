@@ -10,7 +10,7 @@ use cx_util::{CXResult, identifier::CXIdent};
 use crate::{environment::{MIRFunctionGenRequest, TypeEnvironment}, type_checking::binary_ops::struct_field};
 
 pub(crate) fn generate_deconstructor(env: &mut TypeEnvironment, base_data: &MIRBaseMappings, _type: MIRType) -> CXResult<()> {
-    let Some(func) = env.get_deconstructor(base_data, &_type) else {
+    let Some(func) = env.get_deconstructor(&_type) else {
         unreachable!("Deconstructor prototype should be inserted before generation request")
     };
 
@@ -28,7 +28,7 @@ pub(crate) fn generate_deconstructor(env: &mut TypeEnvironment, base_data: &MIRB
             for (field_name, field_type) in fields {
                 let struct_field = struct_field(&_type, field_name).unwrap();
                 
-                if let Some(func) = env.get_deconstructor(base_data, field_type) {
+                if let Some(func) = env.get_deconstructor(field_type) {
                     let pointer = env.builder.new_register();
                     env.builder.add_instruction(
                         MIRInstruction::StructGet {
@@ -99,13 +99,15 @@ pub fn process_new_type(
         push_deconstructor_request(env, _type);
         return;
     }
+ 
+    println!("FN MAP: {}", env.realized_fns.keys().cloned().collect::<Vec<_>>().join(", "));
 
     match &_type.kind {
         MIRTypeKind::Structured { fields, .. } => {
             // Even if we do not have a destructor, if any of our fields have destructors,
             // we need to generate a deconstructor for this type as well.
             for (_field_name, field_type) in fields.iter() {
-                if env.get_deconstructor(base_data, field_type).is_some() {
+                if env.get_deconstructor(field_type).is_some() {
                     push_deconstructor_request(env, _type.clone());
                     break;
                 }

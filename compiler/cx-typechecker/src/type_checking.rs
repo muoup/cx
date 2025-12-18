@@ -12,8 +12,13 @@ use cx_util::{CXError, CXResult};
 
 use crate::{
     environment::{TypeEnvironment, deconstruction::generate_deconstructor},
-    type_checking::typechecker::{global_expr, typecheck_expr},
-    type_completion::templates::{add_templated_types, complete_function_template, restore_template_overwrites},
+    type_checking::{
+        move_semantics::acknowledge_declared_object,
+        typechecker::{global_expr, typecheck_expr},
+    },
+    type_completion::templates::{
+        add_templated_types, complete_function_template, restore_template_overwrites,
+    },
 };
 
 pub mod binary_ops;
@@ -41,13 +46,24 @@ fn generate_function(
         };
 
         if _type.is_memory_resident() {
+            let alias = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::Alias {
+                result: alias.clone(),
+                value: MIRValue::Parameter {
+                    name: name.clone(),
+                    _type: _type.clone(),
+                },
+            });
+
             env.insert_symbol(
                 name.as_string(),
-                MIRValue::Parameter {
-                    name: name.clone(),
-                    _type: _type.clone().mem_ref_to(),
+                MIRValue::Register {
+                    register: alias.clone(),
+                    _type: _type.clone(),
                 },
             );
+
+            acknowledge_declared_object(env, name.to_string(), alias, _type.clone());
         } else {
             let region = env.builder.new_register();
             env.builder
@@ -55,6 +71,8 @@ fn generate_function(
                     result: region.clone(),
                     _type: _type.clone(),
                 });
+
+            acknowledge_declared_object(env, name.to_string(), region.clone(), _type.clone());
 
             env.builder.add_instruction(MIRInstruction::MemoryWrite {
                 target: MIRValue::Register {

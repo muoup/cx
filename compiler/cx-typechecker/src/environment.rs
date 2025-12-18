@@ -155,8 +155,8 @@ impl TypeEnvironment<'_> {
         self.realized_types.get(name).cloned()
     }
 
-    pub fn get_deconstructor(&mut self, base_data: &MIRBaseMappings, _type: &MIRType) -> Option<MIRFunctionPrototype> {
-        query_deconstructor(self, base_data, _type)
+    pub fn get_deconstructor(&mut self, _type: &MIRType) -> Option<MIRFunctionPrototype> {
+        query_deconstructor(self, _type)
     }
 
     pub fn get_destructor(
@@ -189,6 +189,10 @@ impl TypeEnvironment<'_> {
             .inspect(|prototype| {
                 self.realized_fns.insert(prototype.name.to_string(), prototype.clone());
             })
+    }
+    
+    pub fn is_copyable(&mut self, ty: &MIRType) -> bool {
+        self.get_deconstructor(ty).is_none()
     }
 
     pub fn get_standard_function(

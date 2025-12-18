@@ -248,7 +248,7 @@ pub fn implicit_cast(
         },
         
         (MIRTypeKind::MemoryReference(inner), _) => {
-            if !inner.copyable() {
+            if !env.is_copyable(inner) {
                 return log_typecheck_error!(
                     env,
                     expr,

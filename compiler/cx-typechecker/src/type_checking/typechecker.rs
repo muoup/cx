@@ -721,10 +721,38 @@ pub fn typecheck_expr_inner(
             typecheck_binop(env, base_data, op.clone(), lhs, rhs, expr)?
         }
 
-        CXExprKind::Move { .. } => {
-            todo!(
-                "Intrinsic strong pointers are no longer supported, move semantics for structs are not yet implemented"
-            );
+        CXExprKind::Move { expr: inner_expr, .. } => {
+            let val = typecheck_expr(env, base_data, inner_expr, None)?;
+            let val_type = val.get_type();
+            
+            let Some(inner) = val_type.mem_ref_inner() else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Cannot move from a non-reference type {}",
+                    val_type
+                );
+            };
+            
+            let MIRValue::Register { register, .. } = &val else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Can only move from register-based values, found {}",
+                    val
+                );
+            };
+            
+            // TODO: Mark source as 'moved from' in some way to prevent further use
+            env.builder.add_instruction(MIRInstruction::LeakLifetime {
+                region: register.clone(),
+                _type: inner.clone(),
+            });
+            
+            return Ok(MIRValue::Register {
+                register: register.clone(),
+                _type: inner.clone(),
+            });
         }
 
         CXExprKind::New { _type } => {

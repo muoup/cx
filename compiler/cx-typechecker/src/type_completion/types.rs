@@ -137,8 +137,6 @@ pub(crate) fn _complete_type(
                 name: name.clone(),
                 template_info: None,
                 fields,
-
-                copyable: true,
             });
             
             if let Some(name) = name {

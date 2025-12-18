@@ -19,8 +19,10 @@ pub struct BCBuilder {
     global_variables: Vec<BCGlobalValue>,
 
     pub fn_map: BCFunctionMap,
+    
     symbol_table: HashMap<MIRRegister, BCValue>,
-
+    liveness_table: HashMap<MIRRegister, BCRegister>,
+    
     function_context: Option<BytecodeFunctionContext>,
 }
 
@@ -45,6 +47,7 @@ impl BCBuilder {
                 .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
                 .collect(),
             symbol_table: HashMap::new(),
+            liveness_table: HashMap::new(),
 
             function_context: None,
         }
@@ -121,6 +124,14 @@ impl BCBuilder {
         }
 
         None
+    }
+    
+    pub fn add_liveness_mapping(&mut self, mir_reg: MIRRegister, bc_reg: BCRegister) {
+        self.liveness_table.insert(mir_reg, bc_reg);
+    }
+    
+    pub fn get_liveness_mapping(&self, mir_reg: &MIRRegister) -> Option<&BCRegister> {
+        self.liveness_table.get(mir_reg)
     }
 
     pub fn current_prototype(&self) -> &BCFunctionPrototype {
@@ -324,6 +335,12 @@ impl BCBuilder {
         let block_id = fun.blocks.iter().position(|b| b.id == block);
 
         self.fun_mut().current_block = block_id.expect("Block ID not found in function blocks");
+    }
+    
+    pub fn block_count(&self) -> usize {
+        let fun = self.fun();
+
+        fun.blocks.len()
     }
 
     pub fn current_block(&self) -> BCBlockID {

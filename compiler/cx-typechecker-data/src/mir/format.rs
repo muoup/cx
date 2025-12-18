@@ -141,6 +141,7 @@ impl Display for MIRInstruction {
                 write!(f, "lifetime_start {_type} {name} {region}")
             }
             MIRInstruction::LifetimeEnd { name, region, _type, .. } => write!(f, "lifetime_end {_type} {name} {region}"),
+            MIRInstruction::LeakLifetime { region, _type } => write!(f, "leak_lifetime {_type} {region}"),
             
             MIRInstruction::Alias { result, value } => write!(f, "{result} = alias {value}"),
             MIRInstruction::CreateStackRegion { result, _type } => {
