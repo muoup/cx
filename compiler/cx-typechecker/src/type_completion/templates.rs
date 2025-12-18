@@ -1,7 +1,6 @@
-use crate::environment::function_query::query_destructor;
 use crate::environment::name_mangling::mangle_templated_fn_name;
-use crate::environment::{MIRTemplateRequest, TypeEnvironment};
-use crate::type_completion::complete_fn_prototype;
+use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
+use crate::type_completion::complete_prototype_no_insert;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
 use cx_parsing_data::data::{
     CXFunctionTemplate, CXNaiveTemplateInput, CXTemplatePrototype, ModuleResource,
@@ -55,9 +54,8 @@ pub(crate) fn instantiate_type_template(
     name: &str,
 ) -> CXResult<MIRType> {
     let completed_input = _complete_template_input(env, base_data, None, input)?;
-
     let template_name = mangle_template_name(name, &completed_input);
-
+    
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
         return Ok(template.clone());
     }
@@ -73,7 +71,7 @@ pub(crate) fn instantiate_type_template(
                 .join(", ")
         );
     };
-
+    
     let shell = &template.resource.shell;
 
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
@@ -84,12 +82,8 @@ pub(crate) fn instantiate_type_template(
         CXIdent::new(template_name.as_str()),
         completed_input.clone(),
     );
-    env.add_type(template_name, cx_type.clone());
-
-    // This method is expected to error if we cannot find the destructor, so we are okay
-    // to disregard the result here.
-    let _ = query_destructor(env, base_data, &cx_type);
-
+    
+    env.add_type(base_data, template_name, cx_type.clone());
     Ok(cx_type)
 }
 
@@ -101,7 +95,7 @@ pub(crate) fn complete_function_template(
     let resource = &template.resource;
     let shell = &resource.shell;
 
-    let mut completed = complete_fn_prototype(env, base_data, None, shell)?;
+    let mut completed = complete_prototype_no_insert(env, base_data, None, shell)?;
     completed.name = mangle_templated_fn_name(
         env,
         base_data,
@@ -127,17 +121,17 @@ pub(crate) fn instantiate_function_template(
     let resource = &template.resource;
     let module_origin = &template.external_module;
     let template_prototype = &resource.prototype;
-
+    
     let overwrites = add_templated_types(env, template_prototype, input);
     let instantiated = complete_function_template(env, base_data, template)?;
-
+    
     if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
         return Ok(generated);
     }
 
     env.realized_fns
         .insert(instantiated.name.to_string(), instantiated.clone());
-    env.requests.push(MIRTemplateRequest {
+    env.requests.push(MIRFunctionGenRequest::Template {
         module_origin: module_origin.clone(),
         kind: template.resource.shell.kind.clone(),
         input: input.clone(),

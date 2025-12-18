@@ -10,7 +10,7 @@ pub mod prototypes;
 pub mod templates;
 pub mod types;
 
-pub fn complete_fn_prototype(
+pub fn complete_prototype_no_insert(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,

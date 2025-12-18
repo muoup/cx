@@ -11,8 +11,9 @@ use crate::mir::name_mangling::type_mangle;
 pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
-
     pub kind: MIRTypeKind,
+ 
+    pub deconstruction_needed: bool,
 }
 
 impl MIRType {
@@ -64,14 +65,15 @@ impl Default for MIRType {
             specifiers: 0,
 
             kind: MIRTypeKind::Unit,
+            deconstruction_needed: false
         }
     }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct TemplateInstantiationInformation {
-    base_name: CXIdent,
-    template_input: CXTemplateInput,
+    pub base_name: CXIdent,
+    pub template_input: CXTemplateInput,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -185,6 +187,7 @@ impl MIRType {
             visibility: VisibilityMode::Private,
 
             kind: MIRTypeKind::Unit,
+            deconstruction_needed: false
         }
     }
 
@@ -194,6 +197,7 @@ impl MIRType {
             specifiers,
 
             kind: underlying_type,
+            deconstruction_needed: false
         }
     }
 
@@ -260,6 +264,7 @@ impl MIRType {
                 weak: false,
                 nullable: true,
             },
+            deconstruction_needed: false
         }
     }
 
@@ -268,6 +273,7 @@ impl MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
             kind: MIRTypeKind::MemoryReference(Box::new(self)),
+            deconstruction_needed: false
         }
     }
 
@@ -356,6 +362,16 @@ impl MIRType {
                 .as_ref()
                 .map(|info| &info.base_name)
                 .or_else(|| name.as_ref()),
+
+            _ => None,
+        }
+    }
+    
+    pub fn get_template_data(&self) -> Option<&TemplateInstantiationInformation> {
+        match &self.kind {
+            MIRTypeKind::Structured { template_info, .. } => {
+                template_info.as_deref()
+            }
 
             _ => None,
         }
@@ -501,6 +517,7 @@ impl From<MIRTypeKind> for MIRType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
+            deconstruction_needed: false
         }
     }
 }

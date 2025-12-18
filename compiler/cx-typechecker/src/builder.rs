@@ -134,17 +134,17 @@ impl MIRBuilder {
     
     pub fn push_scope(&mut self) {
         let Some(func_ctx) = &mut self.function_context else {
-            unreachable!()
+            return;
         };
-
+        
         func_ctx.lifetime_stack.push(Vec::new());
     }
     
     pub fn pop_scope(&mut self) {
         let Some(func_ctx) = &mut self.function_context else {
-            unreachable!()
+            return;
         };
-
+        
         let scope = func_ctx.lifetime_stack.pop().unwrap();
         
         for lifetime in scope.into_iter().rev() {

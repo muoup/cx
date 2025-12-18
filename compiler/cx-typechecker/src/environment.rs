@@ -7,6 +7,7 @@ use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::function_map::CXFnMap;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::mir::expression::{MIRInstruction, MIRRegister, MIRValue};
+use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
 use cx_typechecker_data::mir::program::{
     MIRBaseMappings, MIRBasicBlock, MIRGlobalVariable, MIRUnit,
 };
@@ -17,16 +18,26 @@ use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
 use crate::builder::{BlockPointer, MIRBuilder};
-use crate::environment::function_query::{query_destructor, query_member_function, query_standard_function};
-use crate::type_completion::{complete_fn_prototype, complete_type};
+use crate::environment::deconstruction::process_new_type;
+use crate::environment::function_query::{
+    query_deconstructor, query_destructor, query_member_function, query_standard_function
+};
+use crate::type_completion::{complete_prototype_no_insert, complete_type};
 
+pub(crate) mod deconstruction;
 pub(crate) mod function_query;
 pub(crate) mod name_mangling;
 
-pub struct MIRTemplateRequest {
-    pub module_origin: Option<String>,
-    pub kind: CXFunctionKind,
-    pub input: CXTemplateInput,
+pub enum MIRFunctionGenRequest {
+    Template {
+        module_origin: Option<String>,
+        kind: CXFunctionKind,
+        input: CXTemplateInput,
+    },
+
+    Deconstruction {
+        _type: MIRType,
+    },
 }
 
 pub struct Scope {
@@ -48,7 +59,7 @@ pub struct TypeEnvironment<'a> {
 
     pub(crate) builder: MIRBuilder,
 
-    pub requests: Vec<MIRTemplateRequest>,
+    pub requests: Vec<MIRFunctionGenRequest>,
     pub current_function: Option<MIRFunctionPrototype>,
     pub arg_vals: Vec<MIRValue>,
 
@@ -98,27 +109,31 @@ impl TypeEnvironment<'_> {
             break_to,
             continue_to,
         });
-
-        if self.current_function.is_some() {
-            self.builder.push_scope();
-        }
+        self.builder.push_scope();
     }
 
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
         self.scope_stack.pop().unwrap();
-
-        if self.current_function.is_some() {
-            self.builder.pop_scope();
-        }
+        self.builder.pop_scope();
     }
-
+    
     pub fn insert_symbol(&mut self, name: String, value: MIRValue) {
         self.symbol_table.insert(name, value);
     }
 
-    pub fn add_type(&mut self, name: String, ty: MIRType) {
-        self.realized_types.insert(name, ty);
+    pub fn add_type(
+        &mut self,
+        base_data: &MIRBaseMappings,
+        name: String,
+        _type: MIRType,
+    ) -> Option<MIRType> {
+        let old = self.realized_types.remove(&name);
+        
+        self.realized_types.insert(name.clone(), _type.clone());
+        process_new_type(self, base_data, _type);
+
+        old
     }
 
     pub fn symbol_value(&self, name: &str) -> Option<&MIRValue> {
@@ -134,14 +149,22 @@ impl TypeEnvironment<'_> {
             return CXError::create_result(format!("Type not found: {}", name));
         };
 
-        complete_type(self, base_data, _ty.external_module.as_ref(), &_ty.resource)
+        self.complete_type(base_data, &_ty.resource)
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
         self.realized_types.get(name).cloned()
     }
 
-    pub fn get_destructor(&mut self, base_data: &MIRBaseMappings, _type: &MIRType) -> Option<MIRFunctionPrototype> {
+    pub fn get_deconstructor(&mut self, base_data: &MIRBaseMappings, _type: &MIRType) -> Option<MIRFunctionPrototype> {
+        query_deconstructor(self, base_data, _type)
+    }
+
+    pub fn get_destructor(
+        &mut self,
+        base_data: &MIRBaseMappings,
+        _type: &MIRType,
+    ) -> Option<MIRFunctionPrototype> {
         query_destructor(self, base_data, _type)
     }
 
@@ -163,9 +186,13 @@ impl TypeEnvironment<'_> {
         external_module: Option<&String>,
         prototype: &CXNaivePrototype,
     ) -> CXResult<MIRFunctionPrototype> {
-        complete_fn_prototype(self, base_data, external_module, prototype)
+        complete_prototype_no_insert(self, base_data, external_module, prototype)
+            .map(|prototype| {
+                self.realized_fns.insert(prototype.name.to_string(), prototype.clone());
+                prototype
+            })
     }
-    
+
     pub fn get_standard_function(
         &mut self,
         base_data: &MIRBaseMappings,

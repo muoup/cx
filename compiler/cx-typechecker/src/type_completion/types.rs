@@ -55,7 +55,7 @@ pub(crate) fn _complete_type(
 
     match &ty.kind {
         CXNaiveTypeKind::Identifier { name, .. } => {
-            if let Some(existing) = env.realized_types.get(&name.as_string()) {
+            if let Some(existing) = env.get_realized_type(&name.as_string()) {
                 return Ok(existing.clone());
             };
 
@@ -66,7 +66,7 @@ pub(crate) fn _complete_type(
                     inner.external_module.as_ref(),
                     &inner.resource,
                 );
-
+ 
                 return ty;
             };
 
@@ -132,14 +132,20 @@ pub(crate) fn _complete_type(
                     Ok((name.clone(), field_type))
                 })
                 .collect::<CXResult<Vec<_>>>()?;
-
-            Ok(MIRType::from(MIRTypeKind::Structured {
+            
+            let ty = MIRType::from(MIRTypeKind::Structured {
                 name: name.clone(),
                 template_info: None,
                 fields,
 
                 copyable: true,
-            }))
+            });
+            
+            if let Some(name) = name {
+                env.add_type(base_data, name.to_string(), ty.clone());
+            }
+            
+            Ok(ty)
         }
 
         CXNaiveTypeKind::Union { name, fields, .. } => {

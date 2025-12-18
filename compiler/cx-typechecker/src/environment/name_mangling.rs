@@ -1,5 +1,9 @@
 use cx_parsing_data::data::CXFunctionKind;
-use cx_typechecker_data::mir::{name_mangling::{base_mangle_destructor, base_mangle_member, base_mangle_standard}, program::MIRBaseMappings, types::MIRType};
+use cx_typechecker_data::mir::{
+    name_mangling::{base_mangle_destructor, base_mangle_member, base_mangle_standard},
+    program::MIRBaseMappings,
+    types::MIRType,
+};
 use cx_util::CXResult;
 
 use crate::environment::TypeEnvironment;
@@ -43,17 +47,15 @@ pub fn mangle_templated_fn_name(
     return_type: &MIRType,
     parameter_types: &[MIRType],
 ) -> CXResult<String> {
-    let prototype_mangling = prototype_mangle(return_type, parameter_types);
+    let base_mangle = base_mangle_fn_name(env, base_data, kind)?;
 
     // Destructors need not be mangled with template args, as they're only defining
     // trait is their destructing type.
     if matches!(kind, CXFunctionKind::Destructor { .. }) {
-        return Ok(prototype_mangling);
+        return Ok(base_mangle);
     }
 
-    Ok(format!(
-        "{}_{}",
-        base_mangle_fn_name(env, base_data, kind)?,
-        prototype_mangling
-    ))
+    let prototype_mangling = prototype_mangle(return_type, parameter_types);
+
+    Ok(format!("{}_{}", base_mangle, prototype_mangling))
 }

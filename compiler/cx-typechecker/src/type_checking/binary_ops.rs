@@ -1090,13 +1090,13 @@ fn typecheck_short_circuit(
     })
 }
 
-pub(crate) struct StructField {
+pub struct StructField {
     pub index: usize,
     pub offset: usize,
     pub field_type: MIRType,
 }
 
-pub(crate) fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<StructField> {
+pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<StructField> {
     let mut field_index = 0;
     let mut field_offset = 0;
     

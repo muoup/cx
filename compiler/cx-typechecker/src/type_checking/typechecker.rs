@@ -154,9 +154,6 @@ pub fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            // Scope for condition
-            env.push_scope(None, None);
-
             let then_block = env.builder.new_block_id();
             let (else_block, merge_block) = if else_branch.is_some() {
                 (env.builder.new_block_id(), env.builder.new_block_id())
@@ -165,9 +162,12 @@ pub fn typecheck_expr_inner(
                 (merge_block.clone(), merge_block.clone())
             };
 
+            // Scope for condition
+            env.push_scope(None, None);
+            
             let condition_value = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c))?;
-
+            
             env.builder.add_instruction(MIRInstruction::Branch {
                 condition: condition_value,
                 true_block: then_block.clone(),

@@ -533,19 +533,15 @@ pub fn lower_instruction(
         }
 
         MIRInstruction::LifetimeEnd {
-            name,
             region,
             _type,
+            ..
         } => {
             if let Some(deconstructor) = builder.get_deconstructor(_type) {
+                
                 let bc_ptr = builder
                     .get_symbol(region)
                     .expect("Region pointer not found in symbol table for lifetime end");
-
-                println!(
-                    "Adding deconstructor call for lifetime end of variable {}",
-                    name
-                );
 
                 builder.add_new_instruction(
                     BCInstructionKind::DirectCall {

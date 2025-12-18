@@ -1,6 +1,5 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::name_mangling::base_mangle_fn_name;
-use crate::type_completion::complete_type;
 use cx_parsing_data::data::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRParameter};
@@ -29,7 +28,7 @@ pub fn complete_template_args(
     let args = template_args
         .params
         .iter()
-        .map(|arg| complete_type(env, base_data, None, arg))
+        .map(|arg| env.complete_type(base_data, arg))
         .collect::<CXResult<Vec<_>>>()?;
 
     Ok(CXTemplateInput { args })
@@ -65,10 +64,6 @@ pub fn _complete_fn_prototype(
         contract: prototype.contract.clone(),
         var_args: prototype.var_args,
     };
-
-    env.realized_fns
-        .entry(name)
-        .or_insert_with(|| prototype.clone());
 
     Ok(prototype)
 }

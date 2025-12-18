@@ -164,13 +164,12 @@ pub(crate) fn codegen_instruction(
         }
 
         BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::IntToPtr { from: _, sextend },
+            coercion_type: BCCoercionType::IntToPtr { from: _type, sextend },
             value,
         } => {
-            let bytes = instruction.value_type.size();
             let val = context.get_value(value).unwrap();
 
-            if bytes < 8 {
+            if _type.bytes() < 8 {
                 if *sextend {
                     return Some(CodegenValue::Value(context.builder.ins().uextend(
                         get_cranelift_type(&instruction.value_type),

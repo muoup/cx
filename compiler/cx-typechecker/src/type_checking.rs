@@ -1,22 +1,26 @@
-use cx_parsing_data::{ast::{CXAST, CXExpr, CXFunctionStmt}, data::CXFunctionKind};
+use cx_parsing_data::{
+    ast::{CXAST, CXExpr, CXFunctionStmt},
+    data::CXFunctionKind,
+};
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRValue},
     program::MIRBaseMappings,
-    types::{CXIntegerType, CXTemplateInput, MIRFunctionPrototype, MIRParameter},
+    types::{CXIntegerType, CXTemplateInput, MIRFunctionPrototype, MIRParameter, MIRType},
 };
 use cx_util::{CXError, CXResult};
 
 use crate::{
-    environment::TypeEnvironment,
+    environment::{TypeEnvironment, deconstruction::generate_deconstructor},
     type_checking::typechecker::{global_expr, typecheck_expr},
     type_completion::{
-        complete_fn_prototype,
+        complete_prototype_no_insert,
         templates::{add_templated_types, complete_function_template, restore_template_overwrites},
     },
 };
 
-pub(crate) mod binary_ops;
+pub mod binary_ops;
+
 pub(crate) mod casting;
 pub(crate) mod contract;
 pub(crate) mod r#match;
@@ -134,6 +138,16 @@ pub fn typecheck(
     Ok(())
 }
 
+pub fn realize_deconstructor(
+    env: &mut TypeEnvironment,
+    origin: &CompilationUnit,
+    _type: MIRType,
+) -> CXResult<()> {
+    let base_data = env.module_data.base_mappings.get(origin);
+
+    generate_deconstructor(env, base_data.as_ref(), _type)
+}
+
 pub fn realize_fn_implementation(
     env: &mut TypeEnvironment,
     origin: &CompilationUnit,
@@ -187,12 +201,7 @@ pub fn complete_base_functions(
     base_data: &MIRBaseMappings,
 ) -> CXResult<()> {
     for (_, cx_fn) in base_data.fn_data.standard_iter() {
-        complete_fn_prototype(
-            env,
-            base_data,
-            cx_fn.external_module.as_ref(),
-            &cx_fn.resource,
-        )?;
+        env.complete_prototype(base_data, cx_fn.external_module.as_ref(), &cx_fn.resource)?;
     }
 
     Ok(())

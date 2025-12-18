@@ -18,6 +18,7 @@ pub fn acknowledge_declared_object(
         region: register.clone(),
         _type: _type.clone(),
     });
+
     env.builder.add_instruction(MIRInstruction::LifetimeStart {
         name,
         region: register,

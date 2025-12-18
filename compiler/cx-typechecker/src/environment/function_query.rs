@@ -1,6 +1,6 @@
 use cx_parsing_data::{ast::CXExpr, data::CXFunctionKey};
 use cx_typechecker_data::mir::{
-    name_mangling::{base_mangle_destructor, base_mangle_member, base_mangle_standard}, program::MIRBaseMappings, types::{CXTemplateInput, MIRFunctionPrototype, MIRType}
+    name_mangling::{base_mangle_deconstructor, base_mangle_destructor, base_mangle_member, base_mangle_standard}, program::MIRBaseMappings, types::{CXTemplateInput, MIRFunctionPrototype, MIRType}
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -32,11 +32,16 @@ fn deduce_function<'a>(
                 "Template argument deduction not yet implemented",
             );
         };
-
+        
         return instantiate_function_template(env, base_data, template, templated_input);
     }
-
-    todo!()
+    
+    return log_typecheck_error!(
+        env,
+        expr,
+        "Function with key {:?} not found in base mappings",
+        key,
+    );
 }
 
 pub fn query_member_function(
@@ -79,20 +84,46 @@ pub fn query_destructor(
     member_type: &MIRType,
 ) -> Option<MIRFunctionPrototype> {
     let mangled_name = base_mangle_destructor(member_type);
-
+    
     if let Some(func_proto) = env.get_realized_func(&mangled_name) {
         return Some(func_proto);
     }
-
+    
     let Some(base_name) = member_type.get_base_identifier() else {
         return None;
     };
-
+    
     let key = CXFunctionKey::Destructor {
         type_base_name: base_name.clone(),
     };
 
-    deduce_function(env, base_data, &CXExpr::default(), &key, None).ok()
+    let input = member_type.get_template_data()
+        .map(|d| &d.template_input);
+    deduce_function(env, base_data, &CXExpr::default(), &key, input).ok()
+}
+
+pub fn query_deconstructor(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    member_type: &MIRType,
+) -> Option<MIRFunctionPrototype> {
+    let mangled_name = base_mangle_deconstructor(member_type);
+    
+    if let Some(func_proto) = env.get_realized_func(&mangled_name) {
+        return Some(func_proto);
+    }
+    
+    let Some(base_name) = member_type.get_base_identifier() else {
+        return None;
+    };
+    
+    let key = CXFunctionKey::Destructor {
+        type_base_name: base_name.clone(),
+    };
+
+    let input = member_type.get_template_data()
+        .map(|d| &d.template_input);
+    deduce_function(env, base_data, &CXExpr::default(), &key, input).ok()
 }
 
 pub fn query_standard_function(
