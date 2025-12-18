@@ -1,7 +1,7 @@
 use crate::mir::types::{MIRType, MIRTypeKind};
 
 pub fn base_mangle_standard(name: &str) -> String {
-    format!("{}", name)
+    name.to_string()
 }
 
 pub fn base_mangle_member(name: &str, member_type: &MIRType) -> String {

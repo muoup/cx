@@ -7,7 +7,6 @@ use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::function_map::CXFnMap;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::mir::expression::{MIRInstruction, MIRRegister, MIRValue};
-use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
 use cx_typechecker_data::mir::program::{
     MIRBaseMappings, MIRBasicBlock, MIRGlobalVariable, MIRUnit,
 };
@@ -187,9 +186,8 @@ impl TypeEnvironment<'_> {
         prototype: &CXNaivePrototype,
     ) -> CXResult<MIRFunctionPrototype> {
         complete_prototype_no_insert(self, base_data, external_module, prototype)
-            .map(|prototype| {
+            .inspect(|prototype| {
                 self.realized_fns.insert(prototype.name.to_string(), prototype.clone());
-                prototype
             })
     }
 

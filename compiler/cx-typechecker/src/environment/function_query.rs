@@ -9,8 +9,8 @@ use crate::{
     type_completion::templates::instantiate_function_template,
 };
 
-fn deduce_function<'a>(
-    env: &'a mut TypeEnvironment,
+fn deduce_function(
+    env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     key: &CXFunctionKey,
@@ -36,12 +36,12 @@ fn deduce_function<'a>(
         return instantiate_function_template(env, base_data, template, templated_input);
     }
     
-    return log_typecheck_error!(
+    log_typecheck_error!(
         env,
         expr,
         "Function with key {:?} not found in base mappings",
         key,
-    );
+    )
 }
 
 pub fn query_member_function(

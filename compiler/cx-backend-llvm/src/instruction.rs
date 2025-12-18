@@ -695,8 +695,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     .build_unsigned_int_to_float(value, to_type, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-
-                _ => unreachable!(),
             })
         }
 
@@ -724,8 +722,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     .build_float_to_unsigned_int(value, to_type, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-
-                _ => unreachable!(),
             })
         }
 

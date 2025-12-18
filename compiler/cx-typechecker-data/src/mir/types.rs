@@ -361,7 +361,7 @@ impl MIRType {
             } => template_info
                 .as_ref()
                 .map(|info| &info.base_name)
-                .or_else(|| name.as_ref()),
+                .or(name.as_ref()),
 
             _ => None,
         }

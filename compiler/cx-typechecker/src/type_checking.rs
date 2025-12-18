@@ -13,10 +13,7 @@ use cx_util::{CXError, CXResult};
 use crate::{
     environment::{TypeEnvironment, deconstruction::generate_deconstructor},
     type_checking::typechecker::{global_expr, typecheck_expr},
-    type_completion::{
-        complete_prototype_no_insert,
-        templates::{add_templated_types, complete_function_template, restore_template_overwrites},
-    },
+    type_completion::templates::{add_templated_types, complete_function_template, restore_template_overwrites},
 };
 
 pub mod binary_ops;

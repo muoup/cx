@@ -290,7 +290,7 @@ impl BCBuilder {
     pub fn int_const(&self, value: i32, _type: BCIntegerType) -> BCValue {
         BCValue::IntImmediate {
             val: value as i64,
-            _type: _type,
+            _type,
         }
     }
 
@@ -305,7 +305,7 @@ impl BCBuilder {
     pub fn float_const(&self, value: f64, _type: BCFloatType) -> BCValue {
         BCValue::FloatImmediate {
             val: FloatWrapper::from(value),
-            _type: _type,
+            _type,
         }
     }
 
