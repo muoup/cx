@@ -81,7 +81,6 @@ pub enum MIRTypeKind {
     Float {
         _type: CXFloatType,
     },
-    Bool,
     Structured {
         name: Option<CXIdent>,
         // Boxed for size reasons
@@ -119,8 +118,9 @@ pub enum MIRTypeKind {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
 pub enum CXIntegerType {
+    I1,
     I8,
     I16,
     I32,
@@ -128,7 +128,7 @@ pub enum CXIntegerType {
     I128,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
 pub enum CXFloatType {
     F32,
     F64,
@@ -137,6 +137,7 @@ pub enum CXFloatType {
 impl CXIntegerType {
     pub const fn bytes(&self) -> usize {
         match self {
+            CXIntegerType::I1 => 1,
             CXIntegerType::I8 => 1,
             CXIntegerType::I16 => 2,
             CXIntegerType::I32 => 4,
@@ -180,6 +181,17 @@ impl MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
             kind: MIRTypeKind::Unit,
+        }
+    }
+    
+    pub fn bool() -> Self {
+        MIRType {
+            specifiers: 0,
+            visibility: VisibilityMode::Private,
+            kind: MIRTypeKind::Integer {
+                _type: CXIntegerType::I1,
+                signed: false,
+            },
         }
     }
 
@@ -306,7 +318,7 @@ impl MIRType {
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(self.kind, MIRTypeKind::Integer { .. } | MIRTypeKind::Bool)
+        matches!(self.kind, MIRTypeKind::Integer { .. })
     }
 
     pub fn is_float(&self) -> bool {
@@ -397,7 +409,6 @@ impl MIRType {
         match &self.kind {
             MIRTypeKind::Integer { _type, .. } => _type.bytes(),
             MIRTypeKind::Float { _type } => _type.bytes(),
-            MIRTypeKind::Bool => 1,
             MIRTypeKind::Unit => 0,
             MIRTypeKind::Opaque { size, .. } => *size,
             MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
@@ -447,7 +458,6 @@ impl MIRType {
         match &self.kind {
             MIRTypeKind::Integer { _type, .. } => _type.bytes().min(8),
             MIRTypeKind::Float { _type } => _type.bytes().min(8),
-            MIRTypeKind::Bool => 1,
             MIRTypeKind::Unit => 1,
             MIRTypeKind::Opaque { size, .. } => (*size).min(8),
             MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
@@ -577,7 +587,7 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
             *t1_type == *t2_type
         }
 
-        (MIRTypeKind::Bool, MIRTypeKind::Bool) | (MIRTypeKind::Unit, MIRTypeKind::Unit) => true,
+        (MIRTypeKind::Unit, MIRTypeKind::Unit) => true,
 
         _ => false,
     }

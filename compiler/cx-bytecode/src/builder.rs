@@ -260,7 +260,6 @@ impl BCBuilder {
 
             BCValue::FloatImmediate { _type, .. } => BCTypeKind::Float(*_type).into(),
             BCValue::IntImmediate { _type, .. } => BCTypeKind::Integer(*_type).into(),
-            BCValue::BoolImmediate { .. } => BCType::from(BCTypeKind::Bool),
 
             BCValue::ParameterRef(param_index) => {
                 let context = self.fun();

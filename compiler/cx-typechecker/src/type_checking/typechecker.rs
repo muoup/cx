@@ -529,13 +529,17 @@ pub fn typecheck_expr_inner(
 
                     MIRValue::Register {
                         register: result,
-                        _type: MIRTypeKind::Bool.into(),
+                        _type: MIRTypeKind::Integer {
+                            _type: CXIntegerType::I1,
+                            signed: false,
+                        }
+                        .into(),
                     }
                 }
 
                 CXUnOp::BNot => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let mut loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     if !loaded_op_type.is_integer() {
@@ -547,7 +551,26 @@ pub fn typecheck_expr_inner(
                         );
                     }
 
+                    // If the type is I1 (boolean), we must promote to I32 first
+                    if let MIRTypeKind::Integer {
+                        _type: CXIntegerType::I1,
+                        ..
+                    } = loaded_op_type.kind
+                    {
+                        loaded_op_val = implicit_cast(
+                            env,
+                            expr,
+                            loaded_op_val.clone(),
+                            &MIRType::from(MIRTypeKind::Integer {
+                                _type: CXIntegerType::I32,
+                                signed: true,
+                            }),
+                        )?;
+                    }
+
                     let result = env.builder.new_register();
+                    let result_type = loaded_op_val.get_type();
+
                     env.builder.add_instruction(MIRInstruction::UnOp {
                         result: result.clone(),
                         op: MIRUnOp::BNOT,
@@ -556,7 +579,7 @@ pub fn typecheck_expr_inner(
 
                     MIRValue::Register {
                         register: result,
-                        _type: loaded_op_type,
+                        _type: result_type,
                     }
                 }
 

@@ -1,6 +1,6 @@
 use crate::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use crate::{
-    BCBasicBlock, BCBoolBinOp, BCBoolUnOp, BCFloatBinOp, BCFloatUnOp, BCFunction,
+    BCBasicBlock, BCFloatBinOp, BCFloatUnOp, BCFunction,
     BCFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp,
     BCPtrBinOp, BCRegister, BCUnit, BCValue,
 };
@@ -94,7 +94,6 @@ impl Display for BCValue {
             BCValue::ParameterRef(index) => write!(f, "param @{index}"),
             BCValue::IntImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FloatImmediate { val, _type } => write!(f, "{_type} {val}"),
-            BCValue::BoolImmediate(val) => write!(f, "bool {val}"),
             BCValue::FunctionRef(name) => write!(f, "{name}"),
             BCValue::Global(id) => write!(f, "g{id}"),
             BCValue::Register { register, _type } => write!(f, "{_type} {register}"),
@@ -229,17 +228,11 @@ impl Display for BCInstruction {
             BCInstructionKind::IntegerBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [i]")
             }
-            BCInstructionKind::BooleanBinOp { left, right, op } => {
-                write!(f, "{left} {op} {right} [b]")
-            }
             BCInstructionKind::IntegerUnOp { op, value } => {
                 write!(f, "{op:?} {value} [i]")
             }
             BCInstructionKind::FloatBinOp { left, right, op } => {
                 write!(f, "{left} {op} {right} [f]")
-            }
-            BCInstructionKind::BooleanUnOp { op, value } => {
-                write!(f, "{op:?} {value} [b]")
             }
             BCInstructionKind::FloatUnOp { op, value } => {
                 write!(f, "{op:?} {value} [f]")
@@ -318,22 +311,6 @@ impl Display for BCIntBinOp {
     }
 }
 
-impl Display for BCBoolBinOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                BCBoolBinOp::LAND => "&&",
-                BCBoolBinOp::LOR => "||",
-
-                BCBoolBinOp::EQ => "==",
-                BCBoolBinOp::NE => "!=",
-            },
-        )
-    }
-}
-
 impl Display for BCIntUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -382,18 +359,6 @@ impl Display for BCFloatUnOp {
     }
 }
 
-impl Display for BCBoolUnOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                BCBoolUnOp::LNOT => "!",
-            },
-        )
-    }
-}
-
 impl Display for BCType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
@@ -403,6 +368,7 @@ impl Display for BCType {
 impl Display for BCIntegerType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            BCIntegerType::I1 => write!(f, "i1"),
             BCIntegerType::I8 => write!(f, "i8"),
             BCIntegerType::I16 => write!(f, "i16"),
             BCIntegerType::I32 => write!(f, "i32"),
@@ -425,7 +391,6 @@ impl Display for BCTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
             BCTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
-            BCTypeKind::Bool => write!(f, "bool"),
 
             BCTypeKind::Integer(_type) => write!(f, "{}", _type),
             BCTypeKind::Float(_type) => write!(f, "{}", _type),

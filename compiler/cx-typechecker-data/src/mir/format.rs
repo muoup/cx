@@ -316,9 +316,6 @@ impl Display for MIRValue {
                 _type.bytes() * 8
             ),
             MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
-            MIRValue::BoolLiteral { value } => {
-                write!(f, "bool {}", if *value { "true" } else { "false" })
-            }
             MIRValue::FunctionReference { prototype, .. } => {
                 write!(f, "fn @{}", prototype.name)
             }
@@ -335,7 +332,6 @@ impl Display for MIRBinOp {
         match self {
             MIRBinOp::Float { ftype, op } => write!(f, "f{} {:?}", ftype.bytes() * 8, op),
             MIRBinOp::Integer { itype, op } => write!(f, "i{} {:?}", itype.bytes() * 8, op),
-            MIRBinOp::Bool { op } => write!(f, "bool {:?}", op),
             MIRBinOp::PtrDiff { ptr_inner, op } => write!(f, "ptrdiff<{}> {:?}", ptr_inner, op),
             MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
@@ -378,8 +374,6 @@ impl Display for MIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            MIRCoercion::IntToBool => write!(f, "int_to_bool"),
-            MIRCoercion::BoolToInt { to_type } => write!(f, "bool_to_int(to: {})", to_type),
             MIRCoercion::FloatToInt { sextend, to_type } => write!(
                 f,
                 "float_to_int({}, to: {})",
@@ -408,7 +402,6 @@ impl Display for MIRTypeKind {
                 _type.bytes() * 8
             ),
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
-            MIRTypeKind::Bool => write!(f, "bool"),
             MIRTypeKind::Structured { name, .. } => {
                 write!(
                     f,

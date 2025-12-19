@@ -9,6 +9,12 @@ impl BCType {
             kind: BCTypeKind::Unit,
         }
     }
+    
+    pub fn bool() -> Self {
+        BCType {
+            kind: BCTypeKind::Integer(BCIntegerType::I1),
+        }
+    }
 
     pub fn default_pointer() -> Self {
         BCType {
@@ -22,6 +28,7 @@ impl BCType {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum BCIntegerType {
+    I1,
     I8,
     I16,
     I32,
@@ -40,7 +47,6 @@ pub enum BCTypeKind {
     Opaque {
         bytes: usize,
     },
-    Bool,
     
     Integer(BCIntegerType),
     Float(BCFloatType),
@@ -104,7 +110,6 @@ impl BCType {
                 .max()
                 .unwrap(),
 
-            BCTypeKind::Bool => 1,
             BCTypeKind::Unit => 0,
         }
     }
@@ -112,7 +117,6 @@ impl BCType {
     pub fn alignment(&self) -> u8 {
         match &self.kind {
             BCTypeKind::Opaque { bytes } => (*bytes).min(8) as u8,
-            BCTypeKind::Bool => 1,
             BCTypeKind::Integer(_type) => _type.bytes().min(8),
             BCTypeKind::Float(_type) => _type.bytes().min(8),
             BCTypeKind::Pointer { .. } => 8, // TODO: make this configurable
@@ -145,6 +149,7 @@ impl BCType {
 impl BCIntegerType {
     pub fn bytes(&self) -> u8 {
         match self {
+            BCIntegerType::I1 => 1,
             BCIntegerType::I8 => 1,
             BCIntegerType::I16 => 2,
             BCIntegerType::I32 => 4,

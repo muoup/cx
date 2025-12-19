@@ -545,7 +545,7 @@ pub fn lower_instruction(
                     BCInstructionKind::Store {
                         memory: liveness.clone(),
                         value: BCValue::IntImmediate{ _type: BCIntegerType::I8, val: 1 },
-                        _type: BCType::from(BCTypeKind::Bool),
+                        _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
                     },
                     BCType::unit(),
                     false,
@@ -593,12 +593,12 @@ pub fn lower_instruction(
                 )?;
 
                 let liveness_cond = builder.add_new_instruction(
-                    BCInstructionKind::BooleanBinOp {
-                        op: cx_bytecode_data::BCBoolBinOp::NE,
+                    BCInstructionKind::IntegerBinOp {
+                        op: cx_bytecode_data::BCIntBinOp::NE,
                         left: liveness_val,
                         right: BCValue::IntImmediate { _type: BCIntegerType::I8, val: 0 },
                     },
-                    BCType::from(BCTypeKind::Bool),
+                    BCType::bool(),
                     true,
                 )?;
 
@@ -655,7 +655,7 @@ pub fn lower_instruction(
                         _type: LIVENESS_TYPE.clone(),
                     },
                     value: BCValue::IntImmediate { _type: BCIntegerType::I8, val: 0 },
-                    _type: BCType::from(BCTypeKind::Bool),
+                    _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
                 },
                 BCType::unit(),
                 false,
@@ -703,8 +703,6 @@ pub(crate) fn lower_value(builder: &mut BCBuilder, value: &MIRValue) -> CXResult
                 _type: bc_type,
             })
         }
-
-        MIRValue::BoolLiteral { value } => Ok(BCValue::BoolImmediate(*value)),
 
         MIRValue::FunctionReference {
             prototype,

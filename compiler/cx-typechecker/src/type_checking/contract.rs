@@ -2,7 +2,7 @@ use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRValue},
     program::MIRBaseMappings,
-    types::{MIRFunctionPrototype, MIRType, MIRTypeKind, MIRParameter},
+    types::{MIRFunctionPrototype, MIRParameter, MIRType},
 };
 use cx_util::CXResult;
 
@@ -39,13 +39,8 @@ fn assume_clause(
 ) -> CXResult<()> {
     create_clause_scope(env, prototype, parameters)?;
 
-    let result = typecheck_expr(
-        env,
-        base_data,
-        clause,
-        Some(&MIRType::from(MIRTypeKind::Bool)),
-    )
-    .and_then(|value| implicit_cast(env, clause, value, &MIRType::from(MIRTypeKind::Bool)))?;
+    let result = typecheck_expr(env, base_data, clause, Some(&MIRType::bool()))
+        .and_then(|value| implicit_cast(env, clause, value, &MIRType::bool()))?;
     env.builder
         .add_instruction(MIRInstruction::Assume { value: result });
 
@@ -64,13 +59,8 @@ fn assert_clause(
 ) -> CXResult<()> {
     create_clause_scope(env, prototype, parameters)?;
 
-    let result = typecheck_expr(
-        env,
-        base_data,
-        clause,
-        Some(&MIRType::from(MIRTypeKind::Bool)),
-    )
-    .and_then(|value| implicit_cast(env, clause, value, &MIRType::from(MIRTypeKind::Bool)))?;
+    let result = typecheck_expr(env, base_data, clause, Some(&MIRType::bool()))
+        .and_then(|value| implicit_cast(env, clause, value, &MIRType::bool()))?;
     env.builder.add_instruction(MIRInstruction::Assert {
         value: result,
         message: format!("Function contract violated: {}", message.unwrap_or("")),
@@ -116,7 +106,7 @@ pub fn contracted_function_return(
         )?;
         env.pop_scope();
     }
-    
+
     env.builder.add_return(return_value);
     Ok(())
 }

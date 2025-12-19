@@ -114,12 +114,6 @@ impl FunctionState<'_> {
                 let value = self.builder.ins().f64const(as_f64);
                 Some(CodegenValue::Value(value))
             }
-            
-            BCValue::BoolImmediate(val) => {
-                let bool_value = if *val { 1 } else { 0 };
-                let value = self.builder.ins().iconst(ir::types::I8, bool_value);
-                Some(CodegenValue::Value(value))
-            }
 
             BCValue::Global(id) => {
                 let global_ref = self

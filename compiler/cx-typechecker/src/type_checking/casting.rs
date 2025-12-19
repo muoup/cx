@@ -1,6 +1,6 @@
 use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
-    expression::{MIRCoercion, MIRInstruction, MIRValue},
+    expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRIntegerBinOp, MIRValue},
     types::{CXIntegerType, MIRType, MIRTypeKind, same_type},
 };
 use cx_util::CXResult;
@@ -22,7 +22,7 @@ pub(crate) fn coerce_value(
     } else {
         Ok(value)
     }
-    
+
     // match &inner_type.kind {
     //     // There are certain types where a memory reference to them is essentially equivalent to
     //     // their plain type. If we for instance have an array type, in memory, that is a pointer to
@@ -180,6 +180,34 @@ pub fn implicit_cast(
         }
 
         (
+            MIRTypeKind::Integer { _type, .. },
+            MIRTypeKind::Integer {
+                _type: CXIntegerType::I1,
+                ..
+            },
+        ) => {
+            let result = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::BinOp {
+                result: result.clone(),
+                lhs: value,
+                rhs: MIRValue::IntLiteral {
+                    value: 0,
+                    signed: false,
+                    _type: *_type,
+                },
+                op: MIRBinOp::Integer {
+                    itype: *_type,
+                    op: MIRIntegerBinOp::NE,
+                },
+            });
+
+            Ok(MIRValue::Register {
+                register: result,
+                _type: to_type.clone(),
+            })
+        }
+
+        (
             MIRTypeKind::Integer { _type: t1, .. },
             MIRTypeKind::Integer {
                 _type: t2,
@@ -187,7 +215,7 @@ pub fn implicit_cast(
                 ..
             },
         ) => {
-            if t1.bytes() != t2.bytes() {
+            if t1 < t2 {
                 coerce(MIRCoercion::Integral {
                     to_type: *t2,
                     sextend: *s2,
@@ -197,10 +225,6 @@ pub fn implicit_cast(
             }
         }
 
-        (MIRTypeKind::Integer { .. }, MIRTypeKind::Bool) => coerce(MIRCoercion::IntToBool),
-        (MIRTypeKind::Bool, MIRTypeKind::Integer { _type, .. }) => {
-            coerce(MIRCoercion::BoolToInt { to_type: *_type })
-        }
         (MIRTypeKind::Float { .. }, MIRTypeKind::Float { _type: to_type }) => {
             coerce(MIRCoercion::FloatCast { to_type: *to_type })
         }
@@ -230,10 +254,12 @@ pub fn implicit_cast(
 
         (
             MIRTypeKind::MemoryReference(inner1),
-            MIRTypeKind::PointerTo { inner_type: inner2, .. }
+            MIRTypeKind::PointerTo {
+                inner_type: inner2, ..
+            },
         ) if inner1.is_array() => {
             let inner1_inner = inner1.array_inner().unwrap();
-            
+
             if same_type(inner1_inner, inner2.as_ref()) {
                 coerce(MIRCoercion::ReinterpretBits)
             } else {
@@ -245,8 +271,8 @@ pub fn implicit_cast(
                     to_type
                 )
             }
-        },
-        
+        }
+
         (MIRTypeKind::MemoryReference(inner), _) => {
             if !env.is_copyable(inner) {
                 return log_typecheck_error!(

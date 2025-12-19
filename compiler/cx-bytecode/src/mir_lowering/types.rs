@@ -86,6 +86,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> BCFunctio
 
 fn convert_integer_type(itype: &CXIntegerType) -> BCIntegerType {
     match itype {
+        CXIntegerType::I1 => BCIntegerType::I1,
         CXIntegerType::I8 => BCIntegerType::I8,
         CXIntegerType::I16 => BCIntegerType::I16,
         CXIntegerType::I32 => BCIntegerType::I32,
@@ -112,8 +113,6 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
 pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> BCTypeKind {
     match cx_type_kind {
         MIRTypeKind::Opaque { size, .. } => BCTypeKind::Opaque { bytes: *size },
-
-        MIRTypeKind::Bool => BCTypeKind::Bool,
 
         MIRTypeKind::Integer {
             signed: _,
