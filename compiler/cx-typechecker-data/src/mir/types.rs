@@ -12,8 +12,6 @@ pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
     pub kind: MIRTypeKind,
-
-    pub deconstruction_needed: bool,
 }
 
 impl MIRType {
@@ -63,9 +61,7 @@ impl Default for MIRType {
         MIRType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
-
             kind: MIRTypeKind::Unit,
-            deconstruction_needed: false,
         }
     }
 }
@@ -183,9 +179,7 @@ impl MIRType {
         MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
-
             kind: MIRTypeKind::Unit,
-            deconstruction_needed: false,
         }
     }
 
@@ -193,9 +187,7 @@ impl MIRType {
         MIRType {
             visibility: VisibilityMode::Private,
             specifiers,
-
             kind: underlying_type,
-            deconstruction_needed: false,
         }
     }
 
@@ -203,16 +195,26 @@ impl MIRType {
         self.visibility = visibility;
         self
     }
-
-    pub fn add_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        let mut clone = self.clone();
-        clone.specifiers |= specifier;
-        clone
+    
+    pub fn add_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
+        self.specifiers |= specifier;
+        self
     }
 
-    pub fn remove_specifier(&self, specifier: CXTypeSpecifier) -> Self {
+    pub fn with_specifier(&self, specifier: CXTypeSpecifier) -> Self {
         let mut clone = self.clone();
-        clone.specifiers &= !specifier;
+        clone.add_specifier(specifier);
+        clone
+    }
+    
+    pub fn remove_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
+        self.specifiers &= !specifier;
+        self
+    }
+
+    pub fn without_specifier(&self, specifier: CXTypeSpecifier) -> Self {
+        let mut clone = self.clone();
+        clone.remove_specifier(specifier);
         clone
     }
 
@@ -262,7 +264,6 @@ impl MIRType {
                 weak: false,
                 nullable: true,
             },
-            deconstruction_needed: false,
         }
     }
 
@@ -271,7 +272,6 @@ impl MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
             kind: MIRTypeKind::MemoryReference(Box::new(self)),
-            deconstruction_needed: false,
         }
     }
 
@@ -504,7 +504,6 @@ impl From<MIRTypeKind> for MIRType {
             visibility: VisibilityMode::Private,
             specifiers: 0,
             kind,
-            deconstruction_needed: false,
         }
     }
 }

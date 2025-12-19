@@ -6,7 +6,7 @@ use crate::type_checking::binary_ops::{
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::contract::contracted_function_return;
-use crate::type_checking::move_semantics::acknowledge_declared_object;
+use crate::type_checking::move_semantics::{acknowledge_declared_object, invoke_scope_destructors};
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
@@ -89,12 +89,12 @@ pub fn typecheck_expr_inner(
                     .unwrap()
                     .clone()
                     .pointer_to()
-                    .add_specifier(CX_CONST),
+                    .with_specifier(CX_CONST),
             }
         }
 
         CXExprKind::VarDeclaration { _type, name } => {
-            let _type = env.complete_type(base_data, _type)?;
+            let mut _type = env.complete_type(base_data, _type)?;
             let result = env.builder.new_register();
 
             env.builder
@@ -111,6 +111,10 @@ pub fn typecheck_expr_inner(
                     _type: _type.clone().mem_ref_to(),
                 },
             );
+
+            // If a variable declaration is const, any subsequent lookup should yield the const type,
+            // however the first declaration should be non-const, as we need to allow writing to it.
+            _type.remove_specifier(CX_CONST);
 
             MIRValue::Register {
                 register: result,
@@ -164,10 +168,10 @@ pub fn typecheck_expr_inner(
 
             // Scope for condition
             env.push_scope(None, None);
-            
+
             let condition_value = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c))?;
-            
+
             env.builder.add_instruction(MIRInstruction::Branch {
                 condition: condition_value,
                 true_block: then_block.clone(),
@@ -307,7 +311,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            // TODO: Handle cleanup of deferred expressions here
+            invoke_scope_destructors(&mut env.builder);
             env.builder.add_jump(break_to);
             MIRValue::NULL
         }
@@ -326,6 +330,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
+            invoke_scope_destructors(&mut env.builder);
             env.builder.add_jump(continue_to);
             MIRValue::NULL
         }
@@ -678,12 +683,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            // TODO: This is probably better to do at the VarDeclaration-level, where its type
-            // returned in this function is non-const, but the variable-table reference type
-            // is, but for now this will do until we refactor that part.
-            if inner.get_specifier(CX_CONST)
-                && !matches!(lhs.kind, CXExprKind::VarDeclaration { .. })
-            {
+            if inner.get_specifier(CX_CONST) {
                 return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
@@ -721,10 +721,12 @@ pub fn typecheck_expr_inner(
             typecheck_binop(env, base_data, op.clone(), lhs, rhs, expr)?
         }
 
-        CXExprKind::Move { expr: inner_expr, .. } => {
+        CXExprKind::Move {
+            expr: inner_expr, ..
+        } => {
             let val = typecheck_expr(env, base_data, inner_expr, None)?;
             let val_type = val.get_type();
-            
+
             let Some(inner) = val_type.mem_ref_inner() else {
                 return log_typecheck_error!(
                     env,
@@ -733,7 +735,7 @@ pub fn typecheck_expr_inner(
                     val_type
                 );
             };
-            
+
             let MIRValue::Register { register, .. } = &val else {
                 return log_typecheck_error!(
                     env,
@@ -742,13 +744,12 @@ pub fn typecheck_expr_inner(
                     val
                 );
             };
-            
-            // TODO: Mark source as 'moved from' in some way to prevent further use
+
             env.builder.add_instruction(MIRInstruction::LeakLifetime {
                 region: register.clone(),
                 _type: inner.clone(),
             });
-            
+
             return Ok(MIRValue::Register {
                 register: register.clone(),
                 _type: inner.clone(),

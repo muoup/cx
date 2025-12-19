@@ -34,6 +34,16 @@ pub fn acknowledge_destructed_object(builder: &mut MIRBuilder, lifetime: Lifetim
     });
 }
 
+pub fn invoke_scope_destructors(builder: &mut MIRBuilder) {
+    let lifetimes: Vec<_> = builder.lifetime_stack_ref().last()
+        .expect("No lifetime scope found")
+        .clone();
+
+    for lifetime in lifetimes.into_iter() {
+        acknowledge_destructed_object(builder, lifetime);
+    }
+}
+
 pub fn invoke_remaining_destructions(builder: &mut MIRBuilder) {
     let scopes = builder
         .lifetime_stack_ref()

@@ -41,6 +41,7 @@ mod regression_tests {
         templated_destructor,
         basic_global_variable,
         global_in_template,
+        valid_const_assignment,
         sum_type,
         function_contract,
         basic_succeeding_contract,
