@@ -44,7 +44,7 @@ pub fn invoke_scope_destructors(builder: &mut MIRBuilder) {
     }
 }
 
-pub fn invoke_remaining_destructions(builder: &mut MIRBuilder) {
+pub fn invoke_remaining_destructions(builder: &mut MIRBuilder, exclude: Option<&MIRRegister>) {
     let scopes = builder
         .lifetime_stack_ref()
         .iter()
@@ -53,6 +53,12 @@ pub fn invoke_remaining_destructions(builder: &mut MIRBuilder) {
         .collect::<Vec<Lifetime>>();
 
     for lifetime in scopes.into_iter() {
+        if let Some(exclude_reg) = exclude {
+            if &lifetime.region == exclude_reg {
+                continue;
+            }
+        }
+        
         acknowledge_destructed_object(builder, lifetime);
     }
 }

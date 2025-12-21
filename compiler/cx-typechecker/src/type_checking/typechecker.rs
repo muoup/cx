@@ -338,10 +338,30 @@ pub fn typecheck_expr_inner(
         CXExprKind::Return { value } => {
             let value_tc = if let Some(value) = value {
                 let return_type = &env.current_function().return_type.clone();
-                let val = typecheck_expr(env, base_data, value, Some(return_type))
-                    .and_then(|v| coerce_value(env, expr, v))?;
+                let val = typecheck_expr(env, base_data, value, Some(return_type))?;
+                let val_type = val.get_type();
 
-                Some(val)
+                if let Some(inner) = val_type.mem_ref_inner() {
+                    if inner.is_memory_resident() {
+                        if let MIRValue::Register { register, .. } = &val {
+                            // If the inner type is memory-resident and we have the direct alias,
+                            // then we can just return the value as is and avoid the copy, given
+                            // that a pass-by-value struct return will do the implicit memcpy for us.
+                            Some(
+                                MIRValue::Register {
+                                    register: register.clone(),
+                                    _type: inner.clone(),
+                                },
+                            )
+                        } else {
+                            Some(coerce_value(env, expr, val)?)
+                        }
+                    } else {
+                        Some(coerce_value(env, expr, val)?)
+                    }
+                } else {
+                    Some(val)
+                }
             } else {
                 None
             };

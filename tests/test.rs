@@ -16,7 +16,6 @@ macro_rules! test_files {
     };
 }
 
-#[cfg(test)]
 mod regression_tests {
     use super::*;
 
@@ -38,6 +37,7 @@ mod regression_tests {
         struct_parameter,
         template_include,
         vector,
+        delayed_cleanup,
         templated_destructor,
         basic_global_variable,
         global_in_template,

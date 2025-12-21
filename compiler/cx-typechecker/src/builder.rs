@@ -5,7 +5,10 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::identifier::CXIdent;
 
-use crate::{environment::DEFER_ACCUMULATION_REGISTER, type_checking::move_semantics::{acknowledge_destructed_object, invoke_remaining_destructions}};
+use crate::{
+    environment::DEFER_ACCUMULATION_REGISTER,
+    type_checking::move_semantics::{acknowledge_destructed_object, invoke_remaining_destructions},
+};
 
 pub(crate) struct MIRBuilder {
     pub generated_functions: Vec<MIRFunction>,
@@ -27,12 +30,12 @@ pub(crate) struct Lifetime {
 
 pub(crate) struct MIRFunctionContext {
     pub current_prototype: MIRFunctionPrototype,
-    
+
     pub standard_blocks: Vec<MIRBasicBlock>,
     pub defer_blocks: Vec<MIRBasicBlock>,
 
     pub lifetime_stack: Vec<Vec<Lifetime>>,
-    
+
     pub current_block: BlockPointer,
     pub defer_last_pointer: usize,
 
@@ -56,7 +59,7 @@ impl MIRBuilder {
                 instructions: Vec::new(),
             }],
             defer_blocks: Vec::new(),
-            
+
             lifetime_stack: Vec::new(),
 
             current_block: BlockPointer::Standard(0),
@@ -79,7 +82,7 @@ impl MIRBuilder {
         func_ctx.temp_register_counter += 1;
         MIRRegister::new(id)
     }
-    
+
     pub fn current_block(&self) -> &MIRBasicBlock {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
@@ -101,11 +104,11 @@ impl MIRBuilder {
             BlockPointer::Defer(index) => &mut func_ctx.defer_blocks[*index],
         }
     }
-    
+
     pub fn current_block_closed(&self) -> bool {
         let block = self.current_block();
         let last_instruction = block.instructions.last();
-        
+
         last_instruction
             .map(|instr| instr.is_block_terminator())
             .unwrap_or(false)
@@ -114,7 +117,7 @@ impl MIRBuilder {
     pub fn add_instruction(&mut self, instruction: MIRInstruction) {
         self.current_block_mut().instructions.push(instruction);
     }
-    
+
     pub fn lifetime_stack_ref(&self) -> &[Vec<Lifetime>] {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
@@ -122,7 +125,7 @@ impl MIRBuilder {
 
         &func_ctx.lifetime_stack
     }
-    
+
     pub fn add_lifetime(&mut self, lifetime: Lifetime) {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
@@ -131,22 +134,22 @@ impl MIRBuilder {
         let current_scope = func_ctx.lifetime_stack.last_mut().unwrap();
         current_scope.push(lifetime);
     }
-    
+
     pub fn push_scope(&mut self) {
         let Some(func_ctx) = &mut self.function_context else {
             return;
         };
-        
+
         func_ctx.lifetime_stack.push(Vec::new());
     }
-    
+
     pub fn pop_scope(&mut self) {
         let Some(func_ctx) = &mut self.function_context else {
             return;
         };
-        
+
         let scope = func_ctx.lifetime_stack.pop().unwrap();
-        
+
         for lifetime in scope.into_iter().rev() {
             acknowledge_destructed_object(self, lifetime);
         }
@@ -157,39 +160,50 @@ impl MIRBuilder {
             target: target_block,
         });
     }
-    
+
     pub fn add_return(&mut self, value: Option<MIRValue>) {
         if self.in_defer() {
             if value.is_some() {
                 // Case 1: The return block has a return value, this overrides the defer accumulation register
                 // FIXME: We might need to handle cleaning up the defer accumulation register here
-                invoke_remaining_destructions(self);
-                self.add_instruction(MIRInstruction::Return {
-                    value,
-                });
+
+                if self.current_prototype().return_type.is_memory_resident() {
+                    self.add_instruction(MIRInstruction::LifetimeEnd {
+                        name: DEFER_ACCUMULATION_REGISTER.to_owned(),
+                        region: MIRRegister::new(DEFER_ACCUMULATION_REGISTER),
+                        _type: self.current_prototype().return_type.clone(),
+                    });
+                }
+                
+                let exclude = if let MIRValue::Register { register, .. } = value.as_ref().unwrap() {
+                    Some(register)
+                } else {
+                    None
+                };
+
+                invoke_remaining_destructions(self, exclude);
+                self.add_instruction(MIRInstruction::Return { value });
             } else {
                 let value = MIRValue::Register {
                     register: MIRRegister::new(DEFER_ACCUMULATION_REGISTER),
                     _type: self.current_prototype().return_type.clone(),
                 };
-                
-                invoke_remaining_destructions(self);
-                self.add_instruction(MIRInstruction::Return {
-                    value: Some(value),
-                });
+
+                invoke_remaining_destructions(self, None);
+                self.add_instruction(MIRInstruction::Return { value: Some(value) });
             }
         } else if let Some(defer_start) = self.get_defer_start() {
             self.add_instruction(MIRInstruction::Jump {
                 target: defer_start,
             });
-            
+
             let current_block = self.current_block().id.clone();
-            
+
             if let Some(value) = value {
                 let Some(func_ctx) = &mut self.function_context else {
                     unreachable!()
                 };
-                
+
                 let return_acc = func_ctx
                     .defer_blocks
                     .first_mut()
@@ -197,18 +211,22 @@ impl MIRBuilder {
                     .instructions
                     .first_mut()
                     .unwrap();
-                
+
                 let MIRInstruction::Phi { predecessors, .. } = return_acc else {
                     unreachable!()
                 };
-                
+
                 predecessors.push((value, current_block));
             }
         } else {
-            invoke_remaining_destructions(self);
-            self.add_instruction(MIRInstruction::Return {
-                value,
-            });
+            let exclude = if let Some(MIRValue::Register { register, .. }) = value.as_ref() {
+                Some(register)
+            } else {
+                None
+            };
+            
+            invoke_remaining_destructions(self, exclude);
+            self.add_instruction(MIRInstruction::Return { value });
         }
     }
 
@@ -219,30 +237,29 @@ impl MIRBuilder {
 
         let id = func_ctx.temp_block_counter;
         func_ctx.temp_block_counter += 1;
-        
+
         CXIdent::new(format!("block_{}", id))
     }
-    
+
     pub fn new_named_block_id(&mut self, name: &str) -> CXIdent {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
         };
-        
+
         let id = func_ctx.temp_block_counter;
         func_ctx.temp_block_counter += 1;
-        
+
         CXIdent::new(format!("block_{}_{}", id, name))
     }
-    
+
     pub fn get_defer_start(&self) -> Option<CXIdent> {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
         };
-        
-        func_ctx.defer_blocks.first()
-            .map(|b| b.id.clone())
+
+        func_ctx.defer_blocks.first().map(|b| b.id.clone())
     }
-    
+
     pub fn get_defer_end(&self) -> usize {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
@@ -250,7 +267,7 @@ impl MIRBuilder {
 
         func_ctx.defer_last_pointer
     }
-    
+
     pub fn set_defer_end(&mut self, id: usize) {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
@@ -289,7 +306,7 @@ impl MIRBuilder {
             }
         }
     }
-    
+
     pub fn set_pointer(&mut self, pointer: BlockPointer) {
         let Some(func_ctx) = &mut self.function_context else {
             unreachable!()
@@ -297,7 +314,7 @@ impl MIRBuilder {
 
         func_ctx.current_block = pointer;
     }
-    
+
     #[allow(dead_code)]
     pub fn set_block(&mut self, block_id: CXIdent) {
         let Some(func_ctx) = &mut self.function_context else {
@@ -347,24 +364,26 @@ impl MIRBuilder {
         let Some(func_ctx) = &self.function_context else {
             unreachable!()
         };
-        
+
         if !func_ctx.defer_blocks.is_empty() {
             let pointer = BlockPointer::Defer(self.get_defer_end());
             self.set_pointer(pointer);
             self.add_return(None);
         }
-        
+
         let Some(func_ctx) = self.function_context.take() else {
             unreachable!()
         };
-        
-        let full_blocks = func_ctx.standard_blocks.into_iter()
+
+        let full_blocks = func_ctx
+            .standard_blocks
+            .into_iter()
             .chain(func_ctx.defer_blocks)
             .collect();
 
         let mir_function = MIRFunction {
             prototype: func_ctx.current_prototype,
-            basic_blocks: full_blocks
+            basic_blocks: full_blocks,
         };
 
         self.generated_functions.push(mir_function);
