@@ -1,6 +1,6 @@
 use cx_parsing_data::{ast::CXExpr, data::CXFunctionKey};
 use cx_typechecker_data::mir::{
-    name_mangling::{base_mangle_deconstructor, base_mangle_destructor, base_mangle_member, base_mangle_standard}, program::MIRBaseMappings, types::{CXTemplateInput, MIRFunctionPrototype, MIRType}
+    name_mangling::{base_mangle_deconstructor, base_mangle_destructor, base_mangle_member, base_mangle_static_member, base_mangle_standard}, program::MIRBaseMappings, types::{CXTemplateInput, MIRFunctionPrototype, MIRType}
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -67,6 +67,40 @@ pub fn query_member_function(
     }
 
     let key = CXFunctionKey::MemberFunction {
+        type_base_name: base_name.clone(),
+        name: name.clone(),
+    };
+
+    deduce_function(env, base_data, expr, &key, template_input)
+}
+
+pub fn query_static_member_function(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    member_type: &MIRType,
+    name: &CXIdent,
+    template_input: Option<&CXTemplateInput>,
+) -> CXResult<MIRFunctionPrototype> {
+    let Some(base_name) = member_type.get_base_identifier() else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            "Cannot query static member function '{}' on non-identifiable type '{}'",
+            name,
+            member_type,
+        );
+    };
+
+    if template_input.is_none() {
+        let mangled_name = base_mangle_static_member(name.as_str(), member_type);
+
+        if let Some(func_proto) = env.get_realized_func(&mangled_name) {
+            return Ok(func_proto);
+        }
+    }
+
+    let key = CXFunctionKey::StaticMemberFunction {
         type_base_name: base_name.clone(),
         name: name.clone(),
     };

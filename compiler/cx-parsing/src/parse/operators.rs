@@ -24,7 +24,7 @@ impl PrecOperator {
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex | CXBinOp::Is => 1,
+        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex | CXBinOp::Is | CXBinOp::ScopeRes => 1,
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -133,6 +133,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
 
         OperatorType::Access => CXBinOp::Access,
         OperatorType::Comma => CXBinOp::Comma,
+        OperatorType::ScopeRes => CXBinOp::ScopeRes,
 
         OperatorType::Equal => CXBinOp::Equal,
         OperatorType::NotEqual => CXBinOp::NotEqual,

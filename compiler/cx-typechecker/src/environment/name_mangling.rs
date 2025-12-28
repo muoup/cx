@@ -1,6 +1,6 @@
 use cx_parsing_data::data::CXFunctionKind;
 use cx_typechecker_data::mir::{
-    name_mangling::{base_mangle_destructor, base_mangle_member, base_mangle_standard},
+    name_mangling::{base_mangle_destructor, base_mangle_member, base_mangle_static_member, base_mangle_standard},
     program::MIRBaseMappings,
     types::MIRType,
 };
@@ -31,6 +31,11 @@ pub fn base_mangle_fn_name(
         CXFunctionKind::MemberFunction { name, member_type } => {
             let member_type = env.complete_type(base_data, &member_type.as_type())?;
             base_mangle_member(name.as_str(), &member_type)
+        }
+
+        CXFunctionKind::StaticMemberFunction { name, member_type } => {
+            let member_type = env.complete_type(base_data, &member_type.as_type())?;
+            base_mangle_static_member(name.as_str(), &member_type)
         }
 
         CXFunctionKind::Destructor(type_name) => {

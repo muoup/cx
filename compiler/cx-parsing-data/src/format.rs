@@ -315,6 +315,7 @@ impl Display for CXBinOp {
                 }
             }
             CXBinOp::Is => write!(f, "is"),
+            CXBinOp::ScopeRes => write!(f, "::"),
 
             CXBinOp::LAnd => write!(f, "&&"),
             CXBinOp::LOr => write!(f, "||"),
@@ -474,6 +475,9 @@ impl Display for CXFunctionKind {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
             CXFunctionKind::MemberFunction { member_type, name } => {
+                write!(f, "{member_type}::{name}")
+            }
+            CXFunctionKind::StaticMemberFunction { member_type, name } => {
                 write!(f, "{member_type}::{name}")
             }
             CXFunctionKind::Destructor(base) => {

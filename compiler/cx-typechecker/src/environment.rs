@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::builder::{BlockPointer, MIRBuilder};
 use crate::environment::deconstruction::process_new_type;
 use crate::environment::function_query::{
-    query_deconstructor, query_destructor, query_member_function, query_standard_function
+    query_deconstructor, query_destructor, query_member_function, query_static_member_function, query_standard_function
 };
 use crate::type_completion::{complete_prototype_no_insert, complete_type};
 
@@ -214,6 +214,17 @@ impl TypeEnvironment<'_> {
         template_input: Option<&CXTemplateInput>,
     ) -> CXResult<MIRFunctionPrototype> {
         query_member_function(self, base_data, expr, member_type, name, template_input)
+    }
+
+    pub fn get_static_member_function(
+        &mut self,
+        base_data: &MIRBaseMappings,
+        expr: &CXExpr,
+        member_type: &MIRType,
+        name: &CXIdent,
+        template_input: Option<&CXTemplateInput>,
+    ) -> CXResult<MIRFunctionPrototype> {
+        query_static_member_function(self, base_data, expr, member_type, name, template_input)
     }
 
     fn start_defer(&mut self) {

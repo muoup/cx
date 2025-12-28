@@ -1,0 +1,31 @@
+#include <stdio.h>
+
+struct MyStruct {
+    int x;
+    int y;
+};
+
+// Regular member function with 'this' parameter
+void MyStruct::print(this) {
+    printf("MyStruct: x=%d, y=%d\n", this->x, this->y);
+}
+
+// Static member function without 'this' parameter
+int MyStruct::create(int x, int y) {
+    printf("Creating MyStruct with x=%d, y=%d\n", x, y);
+    return x + y;
+}
+
+int main() {
+    // Test regular member function
+    MyStruct s;
+    s.x = 10;
+    s.y = 20;
+    s.print();
+
+    // Test static member function
+    int sum = MyStruct::create(5, 7);
+    printf("Sum from static function: %d\n", sum);
+    
+    return 0;
+}

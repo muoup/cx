@@ -128,22 +128,34 @@ pub(crate) fn typecheck_access(
                 });
             }
 
-            let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
+            // Try regular member function first
+            match env.get_member_function(base_data, expr, &lhs_inner, name, None) {
+                Ok(prototype) => {
+                    // Regular member function - pass lhs_val as implicit parameter
+                    let lhs_val_as_pointer = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::Coercion {
+                        result: lhs_val_as_pointer.clone(),
+                        operand: lhs_val,
+                        cast_type: MIRCoercion::ReinterpretBits,
+                    });
 
-            let lhs_val_as_pointer = env.builder.new_register();
-            env.builder.add_instruction(MIRInstruction::Coercion {
-                result: lhs_val_as_pointer.clone(),
-                operand: lhs_val,
-                cast_type: MIRCoercion::ReinterpretBits,
-            });
-
-            Ok(MIRValue::FunctionReference {
-                prototype,
-                implicit_variables: vec![MIRValue::Register {
-                    register: lhs_val_as_pointer,
-                    _type: lhs_inner.clone().pointer_to(),
-                }],
-            })
+                    Ok(MIRValue::FunctionReference {
+                        prototype,
+                        implicit_variables: vec![MIRValue::Register {
+                            register: lhs_val_as_pointer,
+                            _type: lhs_inner.clone().pointer_to(),
+                        }],
+                    })
+                }
+                Err(_) => {
+                    // Try static member function - don't pass lhs_val as implicit parameter
+                    let prototype = env.get_static_member_function(base_data, expr, &lhs_inner, name, None)?;
+                    Ok(MIRValue::FunctionReference {
+                        prototype,
+                        implicit_variables: vec![],
+                    })
+                }
+            }
         }
 
         CXExprKind::TemplatedIdentifier {
@@ -151,22 +163,35 @@ pub(crate) fn typecheck_access(
             template_input,
         } => {
             let input = complete_template_args(env, base_data, template_input)?;
-            let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, Some(&input))?;
+            
+            // Try regular member function first
+            match env.get_member_function(base_data, expr, &lhs_inner, name, Some(&input)) {
+                Ok(prototype) => {
+                    // Regular member function - pass lhs_val as implicit parameter
+                    let lhs_val_as_pointer = env.builder.new_register();
+                    env.builder.add_instruction(MIRInstruction::Coercion {
+                        result: lhs_val_as_pointer.clone(),
+                        operand: lhs_val,
+                        cast_type: MIRCoercion::ReinterpretBits,
+                    });
 
-            let lhs_val_as_pointer = env.builder.new_register();
-            env.builder.add_instruction(MIRInstruction::Coercion {
-                result: lhs_val_as_pointer.clone(),
-                operand: lhs_val,
-                cast_type: MIRCoercion::ReinterpretBits,
-            });
-
-            Ok(MIRValue::FunctionReference {
-                prototype,
-                implicit_variables: vec![MIRValue::Register {
-                    register: lhs_val_as_pointer,
-                    _type: lhs_inner.clone().pointer_to(),
-                }],
-            })
+                    Ok(MIRValue::FunctionReference {
+                        prototype,
+                        implicit_variables: vec![MIRValue::Register {
+                            register: lhs_val_as_pointer,
+                            _type: lhs_inner.clone().pointer_to(),
+                        }],
+                    })
+                }
+                Err(_) => {
+                    // Try static member function - don't pass lhs_val as implicit parameter
+                    let prototype = env.get_static_member_function(base_data, expr, &lhs_inner, name, Some(&input))?;
+                    Ok(MIRValue::FunctionReference {
+                        prototype,
+                        implicit_variables: vec![],
+                    })
+                }
+            }
         }
 
         _ => log_typecheck_error!(

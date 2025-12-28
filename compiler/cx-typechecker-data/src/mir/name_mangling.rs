@@ -8,6 +8,10 @@ pub fn base_mangle_member(name: &str, member_type: &MIRType) -> String {
     format!("_M{}_{}", member_type.mangle(), name)
 }
 
+pub fn base_mangle_static_member(name: &str, member_type: &MIRType) -> String {
+    format!("_SM{}_{}", member_type.mangle(), name)
+}
+
 pub fn base_mangle_destructor(_type: &MIRType) -> String {
     format!("_D_{}", _type.mangle())
 }

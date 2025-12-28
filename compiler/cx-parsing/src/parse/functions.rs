@@ -130,11 +130,6 @@ pub fn try_function_parse(
             let name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens)?;
 
-            let name = CXFunctionKind::MemberFunction {
-                member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
-                name: CXIdent::new(name.as_str()),
-            };
-
             let Ok(params) = parse_params(data) else {
                 return log_parse_error!(
                     data,
@@ -142,9 +137,22 @@ pub fn try_function_parse(
                 );
             };
 
+            // Determine if this is a static member function (no 'this' parameter)
+            let kind = if params.contains_this {
+                CXFunctionKind::MemberFunction {
+                    member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
+                    name: CXIdent::new(name.as_str()),
+                }
+            } else {
+                CXFunctionKind::StaticMemberFunction {
+                    member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
+                    name: CXIdent::new(name.as_str()),
+                }
+            };
+
             let prototype = CXNaivePrototype {
                 return_type,
-                kind: name,
+                kind,
                 params: params.params,
                 var_args: params.var_args,
                 this_param: params.contains_this,
