@@ -222,17 +222,28 @@ impl TypeEnvironment<'_> {
         };
 
         let mut instructions = Vec::new();
-
-        if !func_ctx.current_prototype.return_type.is_unit() {
+        let return_type = &func_ctx.current_prototype.return_type;
+        
+        if !return_type.is_unit() {
             let return_acc = MIRRegister {
                 name: CXIdent::new(DEFER_ACCUMULATION_REGISTER),
             };
 
             instructions.push(MIRInstruction::Phi {
-                result: return_acc,
+                result: return_acc.clone(),
                 predecessors: vec![],
-            })
-        }
+            });
+         
+            if return_type.is_memory_resident() {
+                instructions.push(
+                    MIRInstruction::LifetimeStart { 
+                        name: DEFER_ACCUMULATION_REGISTER.to_owned(),
+                        region: return_acc,
+                        _type: return_type.clone(), 
+                    }
+                )
+            }
+        };
 
         func_ctx.defer_blocks.push(MIRBasicBlock {
             id: CXIdent::new("defer_entry"),

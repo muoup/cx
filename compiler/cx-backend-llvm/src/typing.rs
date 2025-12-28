@@ -49,14 +49,13 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &BCType) -> Option<A
     Some(match &_type.kind {
         BCTypeKind::Unit => context.void_type().as_any_type_enum(),
         BCTypeKind::Integer(_type) => match _type {
+            BCIntegerType::I1 => context.bool_type().as_any_type_enum(),
             BCIntegerType::I8 => context.i8_type().as_any_type_enum(),
             BCIntegerType::I16 => context.i16_type().as_any_type_enum(),
             BCIntegerType::I32 => context.i32_type().as_any_type_enum(),
             BCIntegerType::I64 => context.i64_type().as_any_type_enum(),
             BCIntegerType::I128 => context.i128_type().as_any_type_enum(),
         },
-
-        BCTypeKind::Bool => context.bool_type().as_any_type_enum(),
 
         BCTypeKind::Float(_type) => match _type {
             BCFloatType::F32 => context.f32_type().as_any_type_enum(),

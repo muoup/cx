@@ -9,9 +9,6 @@ pub struct MIRRegister {
 
 #[derive(Clone, Debug, Default)]
 pub enum MIRValue {
-    BoolLiteral {
-        value: bool,
-    },
     IntLiteral {
         value: i64,
         signed: bool,
@@ -229,21 +226,17 @@ pub enum MIRIntegerBinOp {
     ILE,
     IGT,
     IGE,
+    
+    // Boolean/Bitwise Ops
+    AND,
+    OR,
+    XOR
 }
 
 #[derive(Clone, Debug)]
 pub enum MIRPtrDiffBinOp {
     ADD,
     SUB,
-}
-
-#[derive(Clone, Debug)]
-pub enum MIRBoolBinOp {
-    LAND,
-    LOR,
-    
-    EQ,
-    NE,
 }
 
 #[derive(Clone, Debug)]
@@ -277,10 +270,6 @@ pub enum MIRBinOp {
     Integer {
         itype: CXIntegerType,
         op: MIRIntegerBinOp,
-    },
-
-    Bool {
-        op: MIRBoolBinOp,
     },
 
     Float {
@@ -325,14 +314,6 @@ pub enum MIRCoercion {
         to_type: CXFloatType,
     },
 
-    // Boolean (i1) to any integer type. This exists mostly for Cranelift, as internally a boolean
-    // is simply a byte, and doing an integral cast from Bool -> i8 would create a coercion instruction
-    // that Cranelift cannot handle. There could have been a filter for this, but that ended up causing
-    // proving more difficult than just having a dedicated coercion type for it.
-    BoolToInt {
-        to_type: CXIntegerType,
-    },
-
     // Any integer type to a floating point number, sizes of types need not match
     IntToFloat {
         to_type: CXFloatType,
@@ -355,9 +336,6 @@ pub enum MIRCoercion {
         sextend: bool
     },
 
-    // Any integer type to a boolean (i1)
-    IntToBool,
-    
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
@@ -392,7 +370,6 @@ impl MIRValue {
                 prototype: Box::new(prototype.clone()),
             })
             .pointer_to(),
-            MIRValue::BoolLiteral { .. } => MIRType::from(MIRTypeKind::Bool),
             MIRValue::Parameter { _type, .. }
             | MIRValue::GlobalValue { _type, .. }
             | MIRValue::Register { _type, .. } => _type.clone(),

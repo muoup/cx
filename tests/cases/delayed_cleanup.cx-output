@@ -1,0 +1,3 @@
+create_lifetime(Lifetime l)
+After create_lifetime
+~Lifetime(this)

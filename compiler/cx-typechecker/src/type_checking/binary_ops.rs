@@ -1,12 +1,12 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
-use crate::type_checking::casting::{coerce_value, implicit_cast};
+use crate::type_checking::casting::{coerce_condition, coerce_value, implicit_cast};
 use crate::type_checking::contract::contracted_function_call;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_typechecker_data::mir::expression::{
-    MIRBinOp, MIRBoolBinOp, MIRCoercion, MIRFloatBinOp, MIRInstruction, MIRIntegerBinOp,
+    MIRBinOp, MIRCoercion, MIRFloatBinOp, MIRInstruction, MIRIntegerBinOp,
     MIRPtrBinOp, MIRPtrDiffBinOp, MIRValue,
 };
 use cx_typechecker_data::mir::program::MIRBaseMappings;
@@ -329,19 +329,6 @@ pub(crate) fn typecheck_method_call(
                 // Already the correct type for varargs
             }
 
-            MIRTypeKind::Bool => {
-                *val = implicit_cast(
-                    env,
-                    expr,
-                    std::mem::take(val),
-                    &MIRTypeKind::Integer {
-                        _type: CXIntegerType::I64,
-                        signed: false,
-                    }
-                    .into(),
-                )?;
-            }
-
             _ => {
                 return log_typecheck_error!(
                     env,
@@ -486,7 +473,11 @@ pub(crate) fn typecheck_is(
 
     Ok(MIRValue::Register {
         register: comparison,
-        _type: MIRTypeKind::Bool.into(),
+        _type: MIRTypeKind::Integer {
+            _type: CXIntegerType::I1,
+            signed: false,
+        }
+        .into(),
     })
 }
 
@@ -570,49 +561,6 @@ pub(crate) fn typecheck_binop_mir_vals(
             typecheck_float_float_binop(env, op, mir_lhs, mir_rhs, expr)
         }
 
-        (MIRTypeKind::Bool, MIRTypeKind::Bool) => {
-            typecheck_bool_bool_binop(env, op, mir_lhs, mir_rhs, expr)
-        }
-
-        (MIRTypeKind::Bool, MIRTypeKind::Integer { _type, .. }) => {
-            let coerced_bool = env.builder.new_register();
-
-            env.builder.add_instruction(MIRInstruction::Coercion {
-                result: coerced_bool.clone(),
-                operand: mir_lhs.clone(),
-                cast_type: MIRCoercion::BoolToInt { to_type: *_type },
-            });
-
-            let lhs = MIRValue::Register {
-                register: coerced_bool,
-                _type: rhs_type.clone(),
-            };
-
-            typecheck_int_int_binop(env, op, lhs, mir_rhs, expr)
-        }
-
-        (MIRTypeKind::Integer { .. }, MIRTypeKind::Bool) => {
-            let coerced_bool = env.builder.new_register();
-
-            env.builder.add_instruction(MIRInstruction::Coercion {
-                result: coerced_bool.clone(),
-                operand: mir_rhs.clone(),
-                cast_type: MIRCoercion::BoolToInt {
-                    to_type: match &lhs_type.kind {
-                        MIRTypeKind::Integer { _type, .. } => *_type,
-                        _ => unreachable!(),
-                    },
-                },
-            });
-
-            let rhs = MIRValue::Register {
-                register: coerced_bool,
-                _type: lhs_type.clone(),
-            };
-
-            typecheck_int_int_binop(env, op, mir_lhs, rhs, expr)
-        }
-
         (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
             typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr)
         }
@@ -625,53 +573,6 @@ pub(crate) fn typecheck_binop_mir_vals(
                 rhs_type
             )
         }
-    }
-}
-
-pub(crate) fn typecheck_bool_bool_binop(
-    env: &mut TypeEnvironment,
-    op: CXBinOp,
-    lhs: MIRValue,
-    rhs: MIRValue,
-    expr: &CXExpr,
-) -> CXResult<MIRValue> {
-    let op = match op {
-        CXBinOp::Equal => MIRBoolBinOp::EQ,
-        CXBinOp::NotEqual => MIRBoolBinOp::NE,
-
-        CXBinOp::LAnd | CXBinOp::LOr => {
-            unreachable!("Short-circuiting logical operations should be handled separately");
-        }
-
-        _ => {
-            return log_typecheck_error!(
-                env,
-                expr,
-                " Invalid boolean binary operation {op} for types {} and {}",
-                lhs.get_type(),
-                rhs.get_type()
-            );
-        }
-    };
-
-    match op {
-        MIRBoolBinOp::EQ | MIRBoolBinOp::NE => {
-            let result = env.builder.new_register();
-
-            env.builder.add_instruction(MIRInstruction::BinOp {
-                op: MIRBinOp::Bool { op },
-                result: result.clone(),
-                lhs,
-                rhs,
-            });
-
-            Ok(MIRValue::Register {
-                register: result,
-                _type: MIRTypeKind::Bool.into(),
-            })
-        }
-
-        _ => unreachable!(),
     }
 }
 
@@ -709,12 +610,12 @@ pub(crate) fn typecheck_float_float_binop(
         CXBinOp::Multiply => (lhs_type.clone(), MIRFloatBinOp::FMUL),
         CXBinOp::Divide => (lhs_type.clone(), MIRFloatBinOp::FDIV),
 
-        CXBinOp::Equal => (MIRType::from(MIRTypeKind::Bool), MIRFloatBinOp::EQ),
-        CXBinOp::NotEqual => (MIRType::from(MIRTypeKind::Bool), MIRFloatBinOp::NEQ),
-        CXBinOp::Less => (MIRType::from(MIRTypeKind::Bool), MIRFloatBinOp::FLT),
-        CXBinOp::Greater => (MIRType::from(MIRTypeKind::Bool), MIRFloatBinOp::FGT),
-        CXBinOp::LessEqual => (MIRType::from(MIRTypeKind::Bool), MIRFloatBinOp::FLE),
-        CXBinOp::GreaterEqual => (MIRType::from(MIRTypeKind::Bool), MIRFloatBinOp::FGE),
+        CXBinOp::Equal => (MIRType::from(MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }), MIRFloatBinOp::EQ),
+        CXBinOp::NotEqual => (MIRType::from(MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }), MIRFloatBinOp::NEQ),
+        CXBinOp::Less => (MIRType::from(MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }), MIRFloatBinOp::FLT),
+        CXBinOp::Greater => (MIRType::from(MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }), MIRFloatBinOp::FGT),
+        CXBinOp::LessEqual => (MIRType::from(MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }), MIRFloatBinOp::FLE),
+        CXBinOp::GreaterEqual => (MIRType::from(MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }), MIRFloatBinOp::FGE),
 
         _ => {
             return log_typecheck_error!(
@@ -820,6 +721,10 @@ pub(crate) fn typecheck_int_int_binop(
             CXBinOp::GreaterEqual if *result_signed => MIRIntegerBinOp::IGE,
             CXBinOp::Equal => MIRIntegerBinOp::EQ,
             CXBinOp::NotEqual => MIRIntegerBinOp::NE,
+            
+            CXBinOp::BitAnd => MIRIntegerBinOp::AND,
+            CXBinOp::BitOr => MIRIntegerBinOp::OR,
+            CXBinOp::BitXor => MIRIntegerBinOp::XOR,
 
             _ => {
                 return log_typecheck_error!(
@@ -838,14 +743,17 @@ pub(crate) fn typecheck_int_int_binop(
         | CXBinOp::Subtract
         | CXBinOp::Multiply
         | CXBinOp::Divide
-        | CXBinOp::Modulus => result_type.clone(),
+        | CXBinOp::Modulus 
+        | CXBinOp::BitAnd
+        | CXBinOp::BitOr
+        | CXBinOp::BitXor => result_type.clone(),
 
         CXBinOp::Less
         | CXBinOp::Greater
         | CXBinOp::LessEqual
         | CXBinOp::GreaterEqual
         | CXBinOp::Equal
-        | CXBinOp::NotEqual => MIRTypeKind::Bool.into(),
+        | CXBinOp::NotEqual => MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }.into(),
 
         _ => {
             return log_typecheck_error!(
@@ -979,7 +887,7 @@ pub(crate) fn typecheck_ptr_int_binop(
 
             Ok(MIRValue::Register {
                 register: coerced_val,
-                _type: MIRTypeKind::Bool.into(),
+                _type: MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }.into(),
             })
         }
 
@@ -1021,7 +929,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
 
     Ok(MIRValue::Register {
         register: result,
-        _type: MIRTypeKind::Bool.into(),
+        _type: MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }.into(),
     })
 }
 
@@ -1033,25 +941,34 @@ fn typecheck_short_circuit(
     rhs: &CXExpr,
     _expr: &CXExpr,
 ) -> CXResult<MIRValue> {
+    let bool_type = MIRTypeKind::Integer { _type: CXIntegerType::I1, signed: false }.into();
+
     let lhs = typecheck_expr(env, base_data, lhs, None)
-        .and_then(|e| coerce_value(env, lhs, e))
-        .and_then(|v| implicit_cast(env, lhs, v, &MIRTypeKind::Bool.into()))?;
+        .and_then(|e| coerce_condition(env, lhs, e))
+        .and_then(|e| implicit_cast(env, lhs, e, &bool_type))?;
 
     let start_block = env.builder.current_block().id.clone();
     let continue_block = env.builder.new_block_id();
     let short_circuit_block = env.builder.new_block_id();
 
-    let literal = match op {
-        CXBinOp::LAnd => MIRValue::BoolLiteral { value: false },
-        CXBinOp::LOr => MIRValue::BoolLiteral { value: true },
+    let value_if_short_circuit = match op {
+        CXBinOp::LAnd => 0,
+        CXBinOp::LOr => 1,
 
         _ => unreachable!(),
+    };
+    
+    let literal = MIRValue::IntLiteral { 
+        value: value_if_short_circuit,
+        _type: CXIntegerType::I1, 
+        signed: false 
     };
 
     let first_comparison = env.builder.new_register();
     env.builder.add_instruction(MIRInstruction::BinOp {
-        op: MIRBinOp::Bool {
-            op: MIRBoolBinOp::EQ,
+        op: MIRBinOp::Integer {
+            itype: CXIntegerType::I1,
+            op: MIRIntegerBinOp::EQ,
         },
         result: first_comparison.clone(),
         lhs: lhs.clone(),
@@ -1061,7 +978,7 @@ fn typecheck_short_circuit(
     env.builder.add_instruction(MIRInstruction::Branch {
         condition: MIRValue::Register {
             register: first_comparison,
-            _type: MIRTypeKind::Bool.into(),
+            _type: bool_type.clone(),
         },
         true_block: short_circuit_block.clone(),
         false_block: continue_block.clone(),
@@ -1070,7 +987,7 @@ fn typecheck_short_circuit(
     env.builder.add_and_set_block(continue_block.clone());
     let rhs = typecheck_expr(env, base_data, rhs, None)
         .and_then(|e| coerce_value(env, rhs, e))
-        .and_then(|v| implicit_cast(env, rhs, v, &MIRTypeKind::Bool.into()))?;
+        .and_then(|v| implicit_cast(env, rhs, v, &bool_type))?;
 
     env.builder.add_instruction(MIRInstruction::Jump {
         target: short_circuit_block.clone(),
@@ -1086,7 +1003,7 @@ fn typecheck_short_circuit(
 
     Ok(MIRValue::Register {
         register: final_result,
-        _type: MIRTypeKind::Bool.into(),
+        _type: bool_type,
     })
 }
 
