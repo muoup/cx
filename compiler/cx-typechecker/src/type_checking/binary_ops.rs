@@ -1,10 +1,13 @@
 use crate::environment::TypeEnvironment;
+use crate::environment::function_query::query_static_member_function;
 use crate::log_typecheck_error;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::contract::contracted_function_call;
+use crate::type_checking::structured_initialization::{TypeConstructor, deconstruct_type_constructor};
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
+use cx_parsing_data::data::{CXNaiveType, CXNaiveTypeKind};
 use cx_typechecker_data::mir::expression::{
     MIRBinOp, MIRBoolBinOp, MIRCoercion, MIRFloatBinOp, MIRInstruction, MIRIntegerBinOp,
     MIRPtrBinOp, MIRPtrDiffBinOp, MIRValue,
@@ -12,6 +15,7 @@ use cx_typechecker_data::mir::expression::{
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
 use cx_util::CXResult;
+use cx_util::identifier::CXIdent;
 
 pub(crate) fn handle_assignment(
     env: &mut TypeEnvironment,
@@ -130,6 +134,15 @@ pub(crate) fn typecheck_access(
 
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
 
+            // Check if the function is actually a static member function
+            if prototype.name.as_string().starts_with("_S") {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "Static member functions cannot be invoked via standard member function access syntax"
+                );
+            }
+
             let lhs_val_as_pointer = env.builder.new_register();
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: lhs_val_as_pointer.clone(),
@@ -151,7 +164,17 @@ pub(crate) fn typecheck_access(
             template_input,
         } => {
             let input = complete_template_args(env, base_data, template_input)?;
-            let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, Some(&input))?;
+            let prototype =
+                env.get_member_function(base_data, expr, &lhs_inner, name, Some(&input))?;
+
+            // Check if the function is actually a static member function
+            if prototype.name.as_string().starts_with("_S") {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "Static member functions cannot be invoked via standard member function access syntax"
+                );
+            }
 
             let lhs_val_as_pointer = env.builder.new_register();
             env.builder.add_instruction(MIRInstruction::Coercion {
@@ -213,6 +236,16 @@ pub(crate) fn typecheck_method_call(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
+    // Check if this is a scoped call (Type::method(args)) pattern
+    if let CXExprKind::BinOp {
+        op: CXBinOp::ScopeRes,
+        lhs: type_expr,
+        rhs: method_expr,
+    } = &lhs.kind
+    {
+        return typecheck_scoped_call(env, base_data, type_expr, method_expr, rhs, expr);
+    }
+
     let lhs_val = typecheck_expr(env, base_data, lhs, None)?;
 
     let loaded_lhs = coerce_value(env, lhs, lhs_val.clone())?;
@@ -357,6 +390,158 @@ pub(crate) fn typecheck_method_call(
     contracted_function_call(env, base_data, prototype, lhs_val, &args)
 }
 
+fn typecheck_type_constructor(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    union_type: &MIRType,
+    name: &CXIdent,
+    inner: &CXExpr,
+) -> CXResult<MIRValue> {
+    let MIRTypeKind::TaggedUnion {
+        name: union_name,
+        variants,
+        ..
+    } = &union_type.kind
+    else {
+        unreachable!()
+    };
+
+    let Some((i, variant_type)) = variants
+        .iter()
+        .enumerate()
+        .find(|(_, (variant_name, _))| variant_name == name.as_str())
+        .map(|(i, (_, variant_type))| (i, variant_type.clone()))
+    else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Variant '{}' not found in tagged union type {}",
+            name,
+            union_name
+        );
+    };
+
+    let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
+        .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
+
+    let result_region = env.builder.new_register();
+    env.builder
+        .add_instruction(MIRInstruction::CreateStackRegion {
+            result: result_region.clone(),
+            _type: union_type.clone(),
+        });
+
+    let memory = MIRValue::Register {
+        register: result_region.clone(),
+        _type: union_type.clone(),
+    };
+
+    env.builder
+        .add_instruction(MIRInstruction::ConstructTaggedUnionInto {
+            memory: memory.clone(),
+            value: inner,
+            variant_index: i,
+            sum_type: union_type.clone(),
+        });
+
+    Ok(memory)
+}
+
+pub(crate) fn typecheck_scoped_call(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    type_expr: &CXExpr,
+    method_expr: &CXExpr,
+    args_expr: &CXExpr,
+    expr: &CXExpr,
+) -> CXResult<MIRValue> {
+    let mir_type = match &type_expr.kind {
+        CXExprKind::Identifier(name) => env.get_type(base_data, name.as_str())?,
+
+        CXExprKind::TemplatedIdentifier {
+            name,
+            template_input,
+        } => env.complete_type(
+            base_data,
+            &CXNaiveType {
+                kind: CXNaiveTypeKind::TemplatedIdentifier {
+                    name: name.clone(),
+                    input: template_input.clone(),
+                },
+                specifiers: 0,
+            },
+        )?,
+
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr,
+                " Expected type identifier before scope resolution operator, found {:?}",
+                type_expr
+            );
+        }
+    };
+
+    let CXExprKind::Identifier(method_name) = &method_expr.kind else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            "Expected identifier after scope resolution operator, found {:?}",
+            method_expr
+        );
+    };
+
+    if mir_type.is_tagged_union() {
+        return typecheck_type_constructor(env, base_data, expr, &mir_type, method_name, args_expr);
+    }
+
+    let prototype = query_static_member_function(env, base_data, expr, &mir_type, method_name)?;
+
+    let mut tc_args = comma_separated(env, base_data, args_expr)?;
+
+    if tc_args.len() != prototype.params.len() && !prototype.var_args {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Static method {} expects {} arguments, found {}",
+            prototype,
+            prototype.params.len(),
+            tc_args.len()
+        );
+    }
+
+    if tc_args.len() < prototype.params.len() {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Static method {} expects at least {} arguments, found {}",
+            prototype,
+            prototype.params.len(),
+            tc_args.len()
+        );
+    }
+
+    let canon_params = prototype.params.len();
+
+    for ((arg_expr, val), param) in tc_args.iter_mut().zip(prototype.params.iter()) {
+        *val = implicit_cast(env, arg_expr, std::mem::take(val), &param._type)?;
+    }
+
+    for (arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
+        *val = coerce_value(env, arg_expr, std::mem::take(val))?;
+    }
+
+    let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
+
+    let function_ref = MIRValue::FunctionReference {
+        prototype: prototype.clone(),
+        implicit_variables: vec![],
+    };
+
+    contracted_function_call(env, base_data, &prototype, function_ref, &args)
+}
+
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -382,21 +567,13 @@ pub(crate) fn typecheck_is(
         );
     };
 
-    let CXExprKind::TypeConstructor {
+    let TypeConstructor {
         union_name,
         variant_name,
         inner,
-    } = &rhs.kind
-    else {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " 'is' operator requires a type constructor on the right-hand side, found {:?}",
-            rhs
-        );
-    };
+    } = deconstruct_type_constructor(env, rhs)?;
 
-    if expected_union_name != union_name {
+    if *expected_union_name != union_name {
         return log_typecheck_error!(
             env,
             expr,
@@ -518,16 +695,16 @@ fn binop_coerce_value(
     val: MIRValue,
 ) -> CXResult<MIRValue> {
     let val_type = val.get_type();
- 
+
     let Some(inner) = val_type.mem_ref_inner() else {
         return Ok(val);
     };
-    
+
     match &inner.kind {
         MIRTypeKind::Array { inner_type, .. } => {
             implicit_cast(env, expr, val, &inner_type.clone().pointer_to())
-        },
-        
+        }
+
         _ => coerce_value(env, expr, val),
     }
 }
@@ -541,7 +718,7 @@ pub(crate) fn typecheck_binop_mir_vals(
 ) -> CXResult<MIRValue> {
     let mir_lhs = binop_coerce_value(env, expr, mir_lhs)?;
     let mir_rhs = binop_coerce_value(env, expr, mir_rhs)?;
-    
+
     let lhs_type = mir_lhs.get_type();
     let rhs_type = mir_rhs.get_type();
 
@@ -729,10 +906,7 @@ pub(crate) fn typecheck_float_float_binop(
 
     let result = env.builder.new_register();
     env.builder.add_instruction(MIRInstruction::BinOp {
-        op: MIRBinOp::Float {
-            ftype,
-            op: fp_op,
-        },
+        op: MIRBinOp::Float { ftype, op: fp_op },
         result: result.clone(),
         lhs,
         rhs,
@@ -943,7 +1117,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 lhs: pointer,
                 rhs: coerced_integer,
             });
-            
+
             Ok(MIRValue::Register {
                 register: result,
                 _type: return_type,
@@ -1099,7 +1273,7 @@ pub struct StructField {
 pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<StructField> {
     let mut field_index = 0;
     let mut field_offset = 0;
-    
+
     let struct_type = struct_type.memory_resident_type();
 
     let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {

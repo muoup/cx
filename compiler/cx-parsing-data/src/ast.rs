@@ -96,6 +96,7 @@ pub enum CXBinOp {
     Assign(Option<Box<CXBinOp>>),
 
     Access,
+    ScopeRes,
     MethodCall,
     ArrayIndex,
 

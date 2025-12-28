@@ -40,6 +40,7 @@ mod regression_tests {
         vector,
         templated_destructor,
         basic_global_variable,
+        static_member_function,
         global_in_template,
         sum_type,
         function_contract,

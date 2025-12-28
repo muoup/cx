@@ -316,8 +316,8 @@ pub(crate) fn parsetype_mods(
             let ParseParamsResult {
                 params,
                 var_args,
-                contains_this,
                 contract,
+                ..
             } = parse_params(data)?;
 
             let prototype = CXNaivePrototype {
@@ -325,7 +325,6 @@ pub(crate) fn parsetype_mods(
                 return_type: acc_type,
                 params,
                 var_args,
-                this_param: contains_this,
                 contract,
             };
 

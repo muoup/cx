@@ -304,6 +304,7 @@ impl Display for CXBinOp {
             CXBinOp::Greater => write!(f, ">"),
             CXBinOp::GreaterEqual => write!(f, ">="),
             CXBinOp::Access => write!(f, "."),
+            CXBinOp::ScopeRes => write!(f, "::"),
             CXBinOp::MethodCall => write!(f, "()"),
             CXBinOp::ArrayIndex => write!(f, "[]"),
             CXBinOp::Comma => write!(f, ","),
@@ -474,6 +475,9 @@ impl Display for CXFunctionKind {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
             CXFunctionKind::MemberFunction { member_type, name } => {
+                write!(f, "{member_type}::{name}")
+            }
+            CXFunctionKind::StaticMemberFunction { member_type, name } => {
                 write!(f, "{member_type}::{name}")
             }
             CXFunctionKind::Destructor(base) => {

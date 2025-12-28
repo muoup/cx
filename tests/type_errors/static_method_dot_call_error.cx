@@ -1,0 +1,15 @@
+public:
+
+struct Counter {
+    int count;
+}
+
+void Counter::create() {
+    Counter result = { .count = 0 };
+    return result;
+}
+
+int main() {
+    Counter c = c.create();
+    return 0;
+}

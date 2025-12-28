@@ -1,0 +1,18 @@
+public:
+
+struct Counter {
+    int count;
+}
+
+void Counter::increment(Counter* this) {
+    this->count = this->count + 1;
+}
+
+int main() {
+    Counter c = { .count = 0 };
+    Counter::increment(&c);
+
+    printf("Counter value: %d\n", c.count);
+
+    return 0;
+}

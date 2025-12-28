@@ -33,8 +33,6 @@ fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
         .to_type(),
         params: vec![],
         var_args: false,
-        this_param: true,
-
         contract: CXFunctionContract::default(),
     }
 }
@@ -91,7 +89,6 @@ pub fn try_function_parse(
                 kind: CXFunctionKind::Standard(name.clone()),
                 params: args.params,
                 var_args: args.var_args,
-                this_param: args.contains_this,
                 contract: args.contract,
             };
 
@@ -127,13 +124,8 @@ pub fn try_function_parse(
             .to_type();
 
             assert_token_matches!(data.tokens, identifier!(name));
-            let name = name.clone();
+            let method_name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens)?;
-
-            let name = CXFunctionKind::MemberFunction {
-                member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
-                name: CXIdent::new(name.as_str()),
-            };
 
             let Ok(params) = parse_params(data) else {
                 return log_parse_error!(
@@ -142,12 +134,23 @@ pub fn try_function_parse(
                 );
             };
 
+            let kind = if params.contains_this {
+                CXFunctionKind::MemberFunction {
+                    member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
+                    name: CXIdent::new(method_name.as_str()),
+                }
+            } else {
+                CXFunctionKind::StaticMemberFunction {
+                    member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
+                    name: CXIdent::new(method_name.as_str()),
+                }
+            };
+
             let prototype = CXNaivePrototype {
                 return_type,
-                kind: name,
+                kind,
                 params: params.params,
                 var_args: params.var_args,
-                this_param: params.contains_this,
                 contract: params.contract,
             };
 

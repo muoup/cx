@@ -21,6 +21,10 @@ pub enum CXFunctionKey {
         type_base_name: CXIdent,
         name: CXIdent,
     },
+    StaticMemberFunction {
+        type_base_name: CXIdent,
+        name: CXIdent,
+    },
     Destructor {
         type_base_name: CXIdent,
     },
@@ -30,6 +34,10 @@ pub enum CXFunctionKey {
 pub enum CXFunctionKind {
     Standard(CXIdent),
     MemberFunction {
+        member_type: CXFunctionTypeIdent,
+        name: CXIdent,
+    },
+    StaticMemberFunction {
         member_type: CXFunctionTypeIdent,
         name: CXIdent,
     },
@@ -74,8 +82,6 @@ pub struct CXNaivePrototype {
     pub params: Vec<CXNaiveParameter>,
     pub return_type: CXNaiveType,
     pub var_args: bool,
-    pub this_param: bool,
-    
     pub contract: CXFunctionContract,
 }
 
@@ -273,10 +279,10 @@ impl CXFunctionKind {
         match self {
             CXFunctionKind::MemberFunction { member_type, .. } => Some(member_type),
             CXFunctionKind::Destructor(name) => Some(name),
-            CXFunctionKind::Standard(_) => None,
+            CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => None,
         }
     }
-    
+
     pub fn into_key(&self) -> CXFunctionKey {
         match self {
             CXFunctionKind::Standard(name) => CXFunctionKey::Standard(name.clone()),
@@ -285,8 +291,19 @@ impl CXFunctionKind {
                     CXFunctionTypeIdent::Standard(n) => n.clone(),
                     CXFunctionTypeIdent::Templated(n, _) => n.clone(),
                 };
-                
+
                 CXFunctionKey::MemberFunction {
+                    type_base_name,
+                    name: name.clone(),
+                }
+            }
+            CXFunctionKind::StaticMemberFunction { member_type, name } => {
+                let type_base_name = match member_type {
+                    CXFunctionTypeIdent::Standard(n) => n.clone(),
+                    CXFunctionTypeIdent::Templated(n, _) => n.clone(),
+                };
+
+                CXFunctionKey::StaticMemberFunction {
                     type_base_name,
                     name: name.clone(),
                 }
@@ -296,7 +313,7 @@ impl CXFunctionKind {
                     CXFunctionTypeIdent::Standard(n) => n.clone(),
                     CXFunctionTypeIdent::Templated(n, _) => n.clone(),
                 };
-                
+
                 CXFunctionKey::Destructor {
                     type_base_name,
                 }
