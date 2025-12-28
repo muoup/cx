@@ -1,0 +1,15 @@
+#include <stdio.h>
+
+struct MyStruct {
+    int c;
+};
+
+MyStruct MyStruct::create_struct() {
+    return { .c = 42 };
+}
+
+int main() {
+    MyStruct s = MyStruct::create_struct();
+    printf("s.c = %d\n", s.c);
+    return 0;
+}

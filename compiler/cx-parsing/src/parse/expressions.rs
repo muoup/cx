@@ -1,7 +1,7 @@
 use crate::parse::ParserData;
 use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, specifier};
-use cx_parsing_data::ast::{CXExpr, CXExprKind, CXInitIndex};
+use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_parsing_data::data::CXNaiveTypeKind;
 use cx_parsing_data::{assert_token_matches, next_kind, try_next};
 use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
@@ -120,7 +120,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
             );
         } else {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
-            let name = parse_std_ident(&mut data.tokens)?;
+            let variant_name = parse_std_ident(&mut data.tokens)?;
 
             let CXNaiveTypeKind::Identifier {
                 name: type_name, ..
@@ -130,17 +130,25 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
             };
 
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
-            let expr = parse_expr(data)?;
+            let inner_expr = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
-            decls.push(
-                CXExprKind::TypeConstructor {
-                    union_name: type_name,
-                    variant_name: name,
-                    inner: Box::new(expr),
-                }
-                .into_expr(start_index, data.tokens.index),
-            );
+            let type_expr = CXExprKind::Identifier(type_name).into_expr(start_index, data.tokens.index);
+            let variant_expr = CXExprKind::Identifier(variant_name).into_expr(start_index, data.tokens.index);
+            
+            let scope_res_expr = CXExprKind::BinOp {
+                lhs: Box::new(type_expr),
+                rhs: Box::new(variant_expr),
+                op: CXBinOp::ScopeRes,
+            }.into_expr(start_index, data.tokens.index);
+            
+            let method_call_expr = CXExprKind::BinOp {
+                lhs: Box::new(scope_res_expr),
+                rhs: Box::new(inner_expr),
+                op: CXBinOp::MethodCall,
+            }.into_expr(start_index, data.tokens.index);
+
+            decls.push(method_call_expr);
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {

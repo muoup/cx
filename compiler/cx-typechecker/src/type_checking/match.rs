@@ -1,6 +1,9 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::casting::coerce_value;
+use crate::type_checking::structured_initialization::{
+    TypeConstructor, deconstruct_type_constructor,
+};
 use crate::type_checking::typechecker::{typecheck_expr, typecheck_expr_inner};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
 use cx_typechecker_data::mir::expression::{MIRInstruction, MIRValue};
@@ -18,7 +21,7 @@ pub fn typecheck_switch(
     default_case: Option<&usize>,
 ) -> CXResult<MIRValue> {
     env.push_scope(None, None);
-    
+
     let condition_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| coerce_value(env, condition, val))?;
 
@@ -59,14 +62,15 @@ pub fn typecheck_switch(
     let mut next_index = case_iter.next();
 
     env.push_scope(None, Some(merge_block.clone()));
-    
+
     for (i, expr) in block.iter().enumerate() {
         if let Some(ref mut inner) = next_index
-            && *inner == i {
-                let case_block = case_block_iter.next().unwrap();
-                *inner = case_iter.next().unwrap_or(usize::MAX);
-                env.builder.add_and_set_block(case_block.clone());
-            }
+            && *inner == i
+        {
+            let case_block = case_block_iter.next().unwrap();
+            *inner = case_iter.next().unwrap_or(usize::MAX);
+            env.builder.add_and_set_block(case_block.clone());
+        }
 
         if default_case == Some(&i) {
             env.builder.add_and_set_block(default_block.clone());
@@ -74,7 +78,7 @@ pub fn typecheck_switch(
 
         typecheck_expr(env, base_data, expr, None)?;
     }
-    
+
     env.pop_scope();
 
     env.builder.add_jump(merge_block.clone());
@@ -174,8 +178,7 @@ pub fn typecheck_match(
     let mut targets = Vec::new();
 
     if let Some(default) = default {
-        env.builder
-            .add_and_set_block(default_block.clone());
+        env.builder.add_and_set_block(default_block.clone());
         env.push_scope(None, Some(merge_block.clone()));
         typecheck_expr_inner(env, base_data, default, None)?;
         env.pop_scope();
@@ -224,19 +227,12 @@ pub fn typecheck_match(
             variants,
         } => {
             for (i, (pattern, _)) in arms.iter().enumerate() {
-                let CXExprKind::TypeConstructor {
+                let TypeConstructor {
                     union_name,
                     variant_name,
                     inner,
-                } = &pattern.kind
-                else {
-                    return log_typecheck_error!(
-                        env,
-                        pattern,
-                        "Match pattern must be a tagged union variant constructor"
-                    );
-                };
-                
+                } = deconstruct_type_constructor(env, pattern)?;
+
                 if union_name.as_str() != expected_union_name.as_str() {
                     return log_typecheck_error!(
                         env,
@@ -274,9 +270,8 @@ pub fn typecheck_match(
                     source: expr_value.clone(),
                     variant_type: variant_type.clone(),
                 });
-                
-                let CXExprKind::Identifier(name) = &inner.kind
-                else {
+
+                let CXExprKind::Identifier(name) = &inner.kind else {
                     return log_typecheck_error!(
                         env,
                         inner,
