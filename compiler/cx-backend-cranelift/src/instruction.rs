@@ -10,10 +10,10 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCTypeKind};
+use cx_bytecode_data::types::{BCFloatType, BCTypeKind};
 use cx_bytecode_data::{
-    BCBoolBinOp, BCBoolUnOp, BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction,
-    BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp,
+    BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction, BCInstructionKind, BCIntBinOp,
+    BCIntUnOp, BCPtrBinOp,
 };
 use std::ops::IndexMut;
 
@@ -164,7 +164,11 @@ pub(crate) fn codegen_instruction(
         }
 
         BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::IntToPtr { from: _type, sextend },
+            coercion_type:
+                BCCoercionType::IntToPtr {
+                    from: _type,
+                    sextend,
+                },
             value,
         } => {
             let val = context.get_value(value).unwrap();
@@ -187,7 +191,11 @@ pub(crate) fn codegen_instruction(
         }
 
         BCInstructionKind::PointerBinOp {
-            op, left, right, type_padded_size, ..
+            op,
+            left,
+            right,
+            type_padded_size,
+            ..
         } => {
             let left = context.get_value(left).unwrap().as_value();
             let right = context.get_value(right).unwrap().as_value();
@@ -196,18 +204,20 @@ pub(crate) fn codegen_instruction(
             let inst =
                 match op {
                     BCPtrBinOp::ADD => {
-                        let right_scaled = context.builder
+                        let right_scaled = context
+                            .builder
                             .ins()
                             .imul_imm(right, *type_padded_size as i64); // assuming type_padded_size is 1 for simplicity
-                        
+
                         context.builder.ins().iadd(left, right_scaled)
-                    },
-                    
+                    }
+
                     BCPtrBinOp::SUB => {
-                        let right_scaled = context.builder
+                        let right_scaled = context
+                            .builder
                             .ins()
                             .imul_imm(right, *type_padded_size as i64);
-                        
+
                         context.builder.ins().isub(left, right_scaled)
                     }
 
@@ -376,43 +386,6 @@ pub(crate) fn codegen_instruction(
             };
 
             Some(CodegenValue::Value(inst))
-        }
-
-        BCInstructionKind::BooleanBinOp { op, left, right } => {
-            let left = context.get_value(left).unwrap().as_value();
-            let right = context.get_value(right).unwrap().as_value();
-
-            let inst = match op {
-                BCBoolBinOp::LAND => context.builder.ins().band(left, right),
-                BCBoolBinOp::LOR => context.builder.ins().bor(left, right),
-
-                BCBoolBinOp::EQ => {
-                    context
-                        .builder
-                        .ins()
-                        .icmp(ir::condcodes::IntCC::Equal, left, right)
-                }
-                BCBoolBinOp::NE => {
-                    context
-                        .builder
-                        .ins()
-                        .icmp(ir::condcodes::IntCC::NotEqual, left, right)
-                }
-            };
-
-            Some(CodegenValue::Value(inst))
-        }
-
-        BCInstructionKind::BooleanUnOp { op, value } => {
-            let val = context.get_value(value).unwrap().as_value();
-
-            match op {
-                BCBoolUnOp::LNOT => Some(CodegenValue::Value(context.builder.ins().icmp_imm(
-                    ir::condcodes::IntCC::Equal,
-                    val,
-                    0,
-                ))),
-            }
         }
 
         BCInstructionKind::FloatUnOp { value, op } => {
@@ -648,29 +621,6 @@ pub(crate) fn codegen_instruction(
                 .expect("No block parameter found for Phi instruction");
 
             Some(CodegenValue::Value(val))
-        }
-
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::BoolExtend,
-            value,
-        } => {
-            let val = context.get_value(value).unwrap();
-
-            match instruction.value_type.kind {
-                BCTypeKind::Integer(BCIntegerType::I8) => Some(val),
-
-                _ => {
-                    let _type = &instruction.value_type;
-                    let cranelift_type = get_cranelift_type(_type);
-
-                    Some(CodegenValue::Value(
-                        context
-                            .builder
-                            .ins()
-                            .uextend(cranelift_type, val.as_value()),
-                    ))
-                }
-            }
         }
 
         BCInstructionKind::Coercion {

@@ -66,15 +66,6 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(param_val))
             }
 
-            BCValue::BoolImmediate(val) => {
-                let bool_type = self.context.bool_type();
-                let bool_val = bool_type
-                    .const_int(if *val { 1 } else { 0 }, false)
-                    .as_any_value_enum();
-
-                Some(CodegenValue::Value(bool_val))
-            }
-
             BCValue::IntImmediate { val, _type } => {
                 let as_type = BCType::from(BCTypeKind::Integer(*_type));
 

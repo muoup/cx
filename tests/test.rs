@@ -16,7 +16,6 @@ macro_rules! test_files {
     };
 }
 
-#[cfg(test)]
 mod regression_tests {
     use super::*;
 

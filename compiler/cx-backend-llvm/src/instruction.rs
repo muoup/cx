@@ -4,8 +4,7 @@ use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_bytecode_data::{
-    BCBoolBinOp, BCBoolUnOp, BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction,
-    BCInstructionKind, BCIntUnOp,
+    BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction, BCInstructionKind, BCIntUnOp,
 };
 use cx_util::log_error;
 use inkwell::AddressSpace;
@@ -335,38 +334,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        BCInstructionKind::BooleanBinOp { op, left, right } => {
-            let left = function_state.get_value(left)?.get_value().into_int_value();
-
-            let right = function_state
-                .get_value(right)?
-                .get_value()
-                .into_int_value();
-
-            CodegenValue::Value(match op {
-                BCBoolBinOp::LAND => function_state
-                    .builder
-                    .build_and(left, right, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-                BCBoolBinOp::LOR => function_state
-                    .builder
-                    .build_or(left, right, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-                BCBoolBinOp::EQ => function_state
-                    .builder
-                    .build_int_compare(inkwell::IntPredicate::EQ, left, right, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-                BCBoolBinOp::NE => function_state
-                    .builder
-                    .build_int_compare(inkwell::IntPredicate::NE, left, right, inst_num().as_str())
-                    .unwrap()
-                    .as_any_value_enum(),
-            })
-        }
-
         BCInstructionKind::IntegerBinOp { left, right, op } => {
             let left = function_state.get_value(left)?.get_value().into_int_value();
 
@@ -376,26 +343,6 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_int_value();
 
             generate_int_binop(global_state, function_state, left, right, *op)?
-        }
-
-        BCInstructionKind::BooleanUnOp { op, value } => {
-            let value = function_state
-                .get_value(value)?
-                .get_value()
-                .into_int_value();
-
-            CodegenValue::Value(match op {
-                BCBoolUnOp::LNOT => function_state
-                    .builder
-                    .build_int_compare(
-                        inkwell::IntPredicate::EQ,
-                        value,
-                        value.get_type().const_int(0, false),
-                        inst_num().as_str(),
-                    )
-                    .unwrap()
-                    .as_any_value_enum(),
-            })
         }
 
         BCInstructionKind::FloatUnOp { value, op } => {
@@ -544,7 +491,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .get_value()
                 .into_int_value();
             let value_type = value.get_type();
-            
+
             let targets = targets
                 .iter()
                 .map(|(value, block)| {
@@ -569,7 +516,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         BCInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::BoolExtend | BCCoercionType::ZExtend,
+            coercion_type: BCCoercionType::ZExtend,
         } => {
             let value = function_state
                 .get_value(value)?
@@ -632,12 +579,10 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }
-        
-        
 
         BCInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::Trunc
+            coercion_type: BCCoercionType::Trunc,
         } => {
             let value = function_state
                 .get_value(value)?

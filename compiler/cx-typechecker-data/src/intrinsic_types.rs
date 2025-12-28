@@ -15,7 +15,7 @@ pub const INTRINSIC_IMPORTS: &[&str] = &[
 
 pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
     ("void", MIRTypeKind::Unit),
-    ("bool", MIRTypeKind::Bool),
+    ("bool", MIRTypeKind::Integer { signed: false, _type: CXIntegerType::I1 }),
     (
         "i8",
         MIRTypeKind::Integer {

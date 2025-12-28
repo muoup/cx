@@ -84,16 +84,11 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             }
         }
         MIRTypeKind::Integer { _type, signed } => {
-            mangled.push('I');
-            mangled.push_str(&_type.bytes().to_string());
+            mangled.push_str(format!("{}", _type).as_str());
             mangled.push(if *signed { 's' } else { 'u' });
         }
         MIRTypeKind::Float { _type } => {
-            mangled.push('F');
-            mangled.push_str(&_type.bytes().to_string());
-        }
-        MIRTypeKind::Bool => {
-            mangled.push('B');
+            mangled.push_str(format!("{}", _type).as_str());
         }
         MIRTypeKind::Unit => {
             mangled.push('v');

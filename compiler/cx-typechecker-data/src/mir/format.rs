@@ -5,7 +5,7 @@ use crate::mir::program::{
     MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit,
 };
 use crate::mir::types::{
-    CXFloatType, MIRFunctionPrototype, CXIntegerType, MIRType, MIRTypeKind, MIRParameter,
+    CXFloatType, CXIntegerType, MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind,
 };
 use std::fmt::{Display, Formatter};
 
@@ -137,12 +137,24 @@ impl Display for MIRRegister {
 impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRInstruction::LifetimeStart { name, region, _type, .. } => {
+            MIRInstruction::LifetimeStart {
+                name,
+                region,
+                _type,
+                ..
+            } => {
                 write!(f, "lifetime_start {_type} {name} {region}")
             }
-            MIRInstruction::LifetimeEnd { name, region, _type, .. } => write!(f, "lifetime_end {_type} {name} {region}"),
-            MIRInstruction::LeakLifetime { region, _type } => write!(f, "leak_lifetime {_type} {region}"),
-            
+            MIRInstruction::LifetimeEnd {
+                name,
+                region,
+                _type,
+                ..
+            } => write!(f, "lifetime_end {_type} {name} {region}"),
+            MIRInstruction::LeakLifetime { region, _type } => {
+                write!(f, "leak_lifetime {_type} {region}")
+            }
+
             MIRInstruction::Alias { result, value } => write!(f, "{result} = alias {value}"),
             MIRInstruction::CreateStackRegion { result, _type } => {
                 write!(f, "{result} = create_region {_type}")
@@ -316,9 +328,6 @@ impl Display for MIRValue {
                 _type.bytes() * 8
             ),
             MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
-            MIRValue::BoolLiteral { value } => {
-                write!(f, "bool {}", if *value { "true" } else { "false" })
-            }
             MIRValue::FunctionReference { prototype, .. } => {
                 write!(f, "fn @{}", prototype.name)
             }
@@ -335,7 +344,6 @@ impl Display for MIRBinOp {
         match self {
             MIRBinOp::Float { ftype, op } => write!(f, "f{} {:?}", ftype.bytes() * 8, op),
             MIRBinOp::Integer { itype, op } => write!(f, "i{} {:?}", itype.bytes() * 8, op),
-            MIRBinOp::Bool { op } => write!(f, "bool {:?}", op),
             MIRBinOp::PtrDiff { ptr_inner, op } => write!(f, "ptrdiff<{}> {:?}", ptr_inner, op),
             MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
@@ -378,8 +386,6 @@ impl Display for MIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            MIRCoercion::IntToBool => write!(f, "int_to_bool"),
-            MIRCoercion::BoolToInt { to_type } => write!(f, "bool_to_int(to: {})", to_type),
             MIRCoercion::FloatToInt { sextend, to_type } => write!(
                 f,
                 "float_to_int({}, to: {})",
@@ -401,14 +407,10 @@ impl Display for MIRType {
 impl Display for MIRTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRTypeKind::Integer { _type, signed } => write!(
-                f,
-                "{}{}",
-                if *signed { 'i' } else { 'u' },
-                _type.bytes() * 8
-            ),
+            MIRTypeKind::Integer { _type, signed } => {
+                write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
+            }
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
-            MIRTypeKind::Bool => write!(f, "bool"),
             MIRTypeKind::Structured { name, .. } => {
                 write!(
                     f,
@@ -442,7 +444,14 @@ impl Display for MIRTypeKind {
 
 impl Display for CXIntegerType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i{}", self.bytes() * 8)
+        write!(f, "i{}", match self {
+            CXIntegerType::I1 => 1,
+            CXIntegerType::I8 => 8,
+            CXIntegerType::I16 => 16,
+            CXIntegerType::I32 => 32,
+            CXIntegerType::I64 => 64,
+            CXIntegerType::I128 => 128,
+        })
     }
 }
 

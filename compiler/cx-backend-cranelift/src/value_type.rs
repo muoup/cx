@@ -7,8 +7,7 @@ pub(crate) fn get_cranelift_abi_type(val_type: &BCType) -> ir::AbiParam {
 
 pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
     match &val_type.kind {
-        BCTypeKind::Bool => ir::types::I8,
-
+        BCTypeKind::Integer(BCIntegerType::I1) => ir::types::I8,
         BCTypeKind::Integer(BCIntegerType::I8) => ir::types::I8,
         BCTypeKind::Integer(BCIntegerType::I16) => ir::types::I16,
         BCTypeKind::Integer(BCIntegerType::I32) => ir::types::I32,
