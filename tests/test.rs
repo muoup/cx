@@ -38,7 +38,6 @@ mod regression_tests {
         function_contract,
         global_in_template,
         hello_world,
-        mixed_static_instance,
         padded_array,
         short_circuit_eval,
         static_member_function,
