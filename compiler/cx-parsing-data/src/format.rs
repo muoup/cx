@@ -4,8 +4,8 @@ use std::fmt::{Display, Formatter, Result};
 use crate::{
     ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
     data::{
-        CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXNaivePrototype, CXNaiveTemplateInput,
-        CXNaiveType, CXNaiveTypeKind, CXTemplate,
+        CXFunctionKey, CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXNaivePrototype,
+        CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTemplate,
     },
 };
 
@@ -482,6 +482,23 @@ impl Display for CXFunctionKind {
             }
             CXFunctionKind::Destructor(base) => {
                 write!(f, "~{base}")
+            }
+        }
+    }
+}
+
+impl Display for CXFunctionKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CXFunctionKey::Standard(name) => write!(f, "{name}"),
+            CXFunctionKey::MemberFunction { type_base_name, name } => {
+                write!(f, "(non-static) {type_base_name}::{name}")
+            }
+            CXFunctionKey::StaticMemberFunction { type_base_name, name } => {
+                write!(f, "(static) {type_base_name}::{name}")
+            }
+            CXFunctionKey::Destructor { type_base_name } => {
+                write!(f, "~{type_base_name}")
             }
         }
     }

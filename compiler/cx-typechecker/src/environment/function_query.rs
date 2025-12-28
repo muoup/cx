@@ -35,7 +35,7 @@ fn deduce_function(
     log_typecheck_error!(
         env,
         expr,
-        "Function with key {:?} not found in base mappings",
+        "Function with key {} not found in base mappings",
         key,
     )
 }
