@@ -2,9 +2,9 @@ public:
 
 struct Counter {
     int count;
-}
+};
 
-void Counter::create() {
+Counter Counter::create() {
     Counter result = { .count = 0 };
     return result;
 }

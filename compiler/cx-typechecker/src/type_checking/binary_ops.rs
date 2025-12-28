@@ -134,15 +134,6 @@ pub(crate) fn typecheck_access(
 
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
 
-            // Check if the function is actually a static member function
-            if prototype.name.as_string().starts_with("_S") {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    "Static member functions cannot be invoked via standard member function access syntax"
-                );
-            }
-
             let lhs_val_as_pointer = env.builder.new_register();
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: lhs_val_as_pointer.clone(),
@@ -166,15 +157,6 @@ pub(crate) fn typecheck_access(
             let input = complete_template_args(env, base_data, template_input)?;
             let prototype =
                 env.get_member_function(base_data, expr, &lhs_inner, name, Some(&input))?;
-
-            // Check if the function is actually a static member function
-            if prototype.name.as_string().starts_with("_S") {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    "Static member functions cannot be invoked via standard member function access syntax"
-                );
-            }
 
             let lhs_val_as_pointer = env.builder.new_register();
             env.builder.add_instruction(MIRInstruction::Coercion {
