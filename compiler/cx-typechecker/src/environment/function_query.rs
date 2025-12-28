@@ -81,7 +81,7 @@ pub fn query_static_member_function(
     member_type: &MIRType,
     name: &CXIdent,
 ) -> CXResult<MIRFunctionPrototype> {
-    let mangled_name = base_mangle_static_member(name.as_str(), &member_type);
+    let mangled_name = base_mangle_static_member(name.as_str(), member_type);
 
     if let Some(func_proto) = env.get_realized_func(&mangled_name) {
         return Ok(func_proto);

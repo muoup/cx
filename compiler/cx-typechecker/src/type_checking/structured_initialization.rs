@@ -68,11 +68,11 @@ pub fn deconstruct_type_constructor<'a>(
         );
     };
 
-    return Ok(TypeConstructor {
+    Ok(TypeConstructor {
         union_name: union_name.clone(),
         variant_name: variant_name.clone(),
         inner,
-    });
+    })
 }
 
 pub fn typecheck_initializer_list(
