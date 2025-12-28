@@ -137,12 +137,12 @@ pub fn try_function_parse(
             let kind = if params.contains_this {
                 CXFunctionKind::MemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
-                    name: CXIdent::new(method_name.as_str()),
+                    name: CXIdent::new(method_name),
                 }
             } else {
                 CXFunctionKind::StaticMemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
-                    name: CXIdent::new(method_name.as_str()),
+                    name: CXIdent::new(method_name),
                 }
             };
 

@@ -287,10 +287,7 @@ impl CXFunctionKind {
         match self {
             CXFunctionKind::Standard(name) => CXFunctionKey::Standard(name.clone()),
             CXFunctionKind::MemberFunction { member_type, name } => {
-                let type_base_name = match member_type {
-                    CXFunctionTypeIdent::Standard(n) => n.clone(),
-                    CXFunctionTypeIdent::Templated(n, _) => n.clone(),
-                };
+                let type_base_name = member_type.base_name().clone();
 
                 CXFunctionKey::MemberFunction {
                     type_base_name,
@@ -298,21 +295,15 @@ impl CXFunctionKind {
                 }
             }
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
-                let type_base_name = match member_type {
-                    CXFunctionTypeIdent::Standard(n) => n.clone(),
-                    CXFunctionTypeIdent::Templated(n, _) => n.clone(),
-                };
+                let type_base_name = member_type.base_name().clone();
 
                 CXFunctionKey::StaticMemberFunction {
                     type_base_name,
                     name: name.clone(),
                 }
             }
-            CXFunctionKind::Destructor(type_name) => {
-                let type_base_name = match type_name {
-                    CXFunctionTypeIdent::Standard(n) => n.clone(),
-                    CXFunctionTypeIdent::Templated(n, _) => n.clone(),
-                };
+            CXFunctionKind::Destructor(base_type) => {
+                let type_base_name = base_type.base_name().clone();
 
                 CXFunctionKey::Destructor {
                     type_base_name,
