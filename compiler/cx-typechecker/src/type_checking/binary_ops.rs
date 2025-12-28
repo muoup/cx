@@ -722,8 +722,8 @@ pub(crate) fn typecheck_int_int_binop(
             CXBinOp::Equal => MIRIntegerBinOp::EQ,
             CXBinOp::NotEqual => MIRIntegerBinOp::NE,
             
-            CXBinOp::BitAnd | CXBinOp::LAnd => MIRIntegerBinOp::AND,
-            CXBinOp::BitOr | CXBinOp::LOr => MIRIntegerBinOp::OR,
+            CXBinOp::BitAnd => MIRIntegerBinOp::AND,
+            CXBinOp::BitOr => MIRIntegerBinOp::OR,
             CXBinOp::BitXor => MIRIntegerBinOp::XOR,
 
             _ => {

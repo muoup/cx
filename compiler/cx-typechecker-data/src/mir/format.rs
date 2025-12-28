@@ -5,7 +5,7 @@ use crate::mir::program::{
     MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit,
 };
 use crate::mir::types::{
-    CXFloatType, MIRFunctionPrototype, CXIntegerType, MIRType, MIRTypeKind, MIRParameter,
+    CXFloatType, CXIntegerType, MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind,
 };
 use std::fmt::{Display, Formatter};
 
@@ -137,12 +137,24 @@ impl Display for MIRRegister {
 impl Display for MIRInstruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRInstruction::LifetimeStart { name, region, _type, .. } => {
+            MIRInstruction::LifetimeStart {
+                name,
+                region,
+                _type,
+                ..
+            } => {
                 write!(f, "lifetime_start {_type} {name} {region}")
             }
-            MIRInstruction::LifetimeEnd { name, region, _type, .. } => write!(f, "lifetime_end {_type} {name} {region}"),
-            MIRInstruction::LeakLifetime { region, _type } => write!(f, "leak_lifetime {_type} {region}"),
-            
+            MIRInstruction::LifetimeEnd {
+                name,
+                region,
+                _type,
+                ..
+            } => write!(f, "lifetime_end {_type} {name} {region}"),
+            MIRInstruction::LeakLifetime { region, _type } => {
+                write!(f, "leak_lifetime {_type} {region}")
+            }
+
             MIRInstruction::Alias { result, value } => write!(f, "{result} = alias {value}"),
             MIRInstruction::CreateStackRegion { result, _type } => {
                 write!(f, "{result} = create_region {_type}")
@@ -395,12 +407,9 @@ impl Display for MIRType {
 impl Display for MIRTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRTypeKind::Integer { _type, signed } => write!(
-                f,
-                "{}{}",
-                if *signed { 'i' } else { 'u' },
-                _type.bytes() * 8
-            ),
+            MIRTypeKind::Integer { _type, signed } => {
+                write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
+            }
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
             MIRTypeKind::Structured { name, .. } => {
                 write!(
@@ -435,7 +444,14 @@ impl Display for MIRTypeKind {
 
 impl Display for CXIntegerType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "i{}", self.bytes() * 8)
+        write!(f, "i{}", match self {
+            CXIntegerType::I1 => 1,
+            CXIntegerType::I8 => 8,
+            CXIntegerType::I16 => 16,
+            CXIntegerType::I32 => 32,
+            CXIntegerType::I64 => 64,
+            CXIntegerType::I128 => 128,
+        })
     }
 }
 

@@ -652,7 +652,7 @@ pub fn lower_instruction(
                 BCInstructionKind::Store {
                     memory: BCValue::Register {
                         register: liveness.clone(),
-                        _type: LIVENESS_TYPE.clone(),
+                        _type: BCType::default_pointer(),
                     },
                     value: BCValue::IntImmediate { _type: BCIntegerType::I8, val: 0 },
                     _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
