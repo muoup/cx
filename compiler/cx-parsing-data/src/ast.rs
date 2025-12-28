@@ -100,7 +100,6 @@ pub enum CXBinOp {
     ArrayIndex,
 
     Is,
-    ScopeRes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]

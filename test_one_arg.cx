@@ -1,0 +1,17 @@
+#include <stdio.h>
+
+struct MyStruct {
+    int x;
+    int y;
+};
+
+// Static member function with one argument
+MyStruct MyStruct::create_single(int x) {
+    return { .x = x, .y = 0 };
+}
+
+int main() {
+    // Try with one argument
+    MyStruct s = MyStruct::create_single(5);
+    return 0;
+}

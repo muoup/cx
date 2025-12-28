@@ -315,7 +315,6 @@ impl Display for CXBinOp {
                 }
             }
             CXBinOp::Is => write!(f, "is"),
-            CXBinOp::ScopeRes => write!(f, "::"),
 
             CXBinOp::LAnd => write!(f, "&&"),
             CXBinOp::LOr => write!(f, "||"),

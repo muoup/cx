@@ -1,0 +1,17 @@
+#include <stdio.h>
+
+struct MyStruct {
+    int x;
+    int y;
+};
+
+// Static member function with one argument
+void MyStruct::print_single(int x) {
+    printf("Value: %d\n", x);
+}
+
+int main() {
+    // Try without assignment
+    MyStruct::print_single(5);
+    return 0;
+}

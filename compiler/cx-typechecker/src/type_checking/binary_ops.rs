@@ -1,7 +1,6 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::casting::{coerce_condition, coerce_value, implicit_cast};
-use crate::type_checking::contract::contracted_function_call;
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
@@ -11,7 +10,60 @@ use cx_typechecker_data::mir::expression::{
 };
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
-use cx_util::CXResult;
+use cx_util::{CXResult, identifier::CXIdent};
+
+use crate::type_checking::contract::contracted_function_call;
+
+pub(crate) fn typecheck_static_member_access(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    type_name: &CXIdent,
+    rhs: &CXExpr,
+    expr: &CXExpr,
+) -> CXResult<MIRValue> {
+    // Resolve the type
+    let member_type = env.get_type(base_data, type_name.as_str())?;
+
+    match &rhs.kind {
+        CXExprKind::Identifier(function_name) => {
+            // Handle Type::function (without arguments)
+            // This could be a static member function reference
+            let prototype = env.get_static_member_function(base_data, expr, &member_type, function_name, None)?;
+            Ok(MIRValue::FunctionReference {
+                prototype,
+                implicit_variables: vec![],
+            })
+        }
+        CXExprKind::BinOp {
+            op: CXBinOp::MethodCall,
+            lhs: func_expr,
+            rhs: args_expr,
+        } => {
+            // Handle Type::function(args...)
+            if let CXExprKind::Identifier(function_name) = &func_expr.kind {
+                let prototype = env.get_static_member_function(base_data, expr, &member_type, function_name, None)?;
+                
+                // Typecheck the arguments (they should be comma-separated)
+                let args_with_exprs = comma_separated(env, base_data, args_expr)?;
+                let args = args_with_exprs.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
+
+                // Create a function reference value
+                let function_ref = MIRValue::FunctionReference {
+                    prototype: prototype.clone(),
+                    implicit_variables: vec![],
+                };
+
+                // Call the function using the same mechanism as regular function calls
+                contracted_function_call(env, base_data, &prototype, function_ref, &args)
+            } else {
+                log_typecheck_error!(env, expr, "Invalid static member function call")
+            }
+        }
+        _ => {
+            log_typecheck_error!(env, expr, "Invalid static member access")
+        }
+    }
+}
 
 pub(crate) fn handle_assignment(
     env: &mut TypeEnvironment,
@@ -42,6 +94,15 @@ pub(crate) fn typecheck_access(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<MIRValue> {
+    // Check if this is a static member function call (Type::function)
+    if let CXExprKind::Identifier(type_name) = &lhs.kind {
+        // Try to resolve the type name
+        if env.get_type(base_data, type_name.as_str()).is_ok() {
+            // This is a static member function call
+            return typecheck_static_member_access(env, base_data, type_name, rhs, expr);
+        }
+    }
+
     let mut lhs_val = typecheck_expr(env, base_data, lhs, None)?;
     let lhs_type = lhs_val.get_type();
 

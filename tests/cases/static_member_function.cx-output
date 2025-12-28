@@ -1,3 +1,3 @@
 Creating MyStruct with x=5, y=7
-Sum from static function: 12
+MyStruct: x=5, y=7
 MyStruct: x=10, y=20

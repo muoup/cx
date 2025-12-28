@@ -280,9 +280,9 @@ impl CXFunctionKind {
     pub fn implicit_member(&self) -> Option<&CXFunctionTypeIdent> {
         match self {
             CXFunctionKind::MemberFunction { member_type, .. } => Some(member_type),
-            CXFunctionKind::StaticMemberFunction { member_type, .. } => Some(member_type),
             CXFunctionKind::Destructor(name) => Some(name),
             CXFunctionKind::Standard(_) => None,
+            CXFunctionKind::StaticMemberFunction { .. } => None,
         }
     }
     

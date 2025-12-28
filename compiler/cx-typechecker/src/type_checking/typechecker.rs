@@ -755,12 +755,6 @@ pub fn typecheck_expr_inner(
         } => typecheck_access(env, base_data, lhs, rhs, expr)?,
 
         CXExprKind::BinOp {
-            op: CXBinOp::ScopeRes,
-            lhs,
-            rhs,
-        } => typecheck_access(env, base_data, lhs, rhs, expr)?,
-
-        CXExprKind::BinOp {
             op: CXBinOp::MethodCall,
             lhs,
             rhs,

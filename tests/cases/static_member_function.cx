@@ -10,22 +10,22 @@ void MyStruct::print(this) {
     printf("MyStruct: x=%d, y=%d\n", this->x, this->y);
 }
 
-// Static member function without 'this' parameter
-int MyStruct::create(int x, int y) {
+// Static member function without 'this' parameter - acts as a constructor
+MyStruct MyStruct::create(int x, int y) {
     printf("Creating MyStruct with x=%d, y=%d\n", x, y);
-    return x + y;
+    return { .x = x, .y = y };
 }
 
 int main() {
-    // Test regular member function
-    MyStruct s;
-    s.x = 10;
-    s.y = 20;
+    // Test static member function as constructor
+    MyStruct s = MyStruct::create(5, 7);
     s.print();
 
-    // Test static member function
-    int sum = MyStruct::create(5, 7);
-    printf("Sum from static function: %d\n", sum);
+    // Test regular member function
+    MyStruct t;
+    t.x = 10;
+    t.y = 20;
+    t.print();
     
     return 0;
 }
