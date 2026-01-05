@@ -1,7 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
+use cx_bytecode::generate_bytecode;
 use cx_lexer_data::TokenIter;
-use cx_mir::generate_bytecode;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
 use cx_parsing_data::ast::VisibilityMode;
@@ -12,10 +12,9 @@ use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
-use cx_typechecker::environment::TCEnvironment;
-use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
+use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
-use cx_typechecker_data::ast::TCAST;
+use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::format::dump_data;
 use fs2::FileExt;
@@ -133,7 +132,7 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_incomplete.get(&job.unit);
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
 
             let mut new_jobs = pp_data
                 .imports
@@ -147,24 +146,24 @@ pub(crate) fn handle_job(
                 })
                 .collect::<Vec<_>>();
 
-            job.step = CompilationStep::ImportCombine;
+            job.step = CompilationStep::ASTParse;
             new_jobs.push(job);
 
             Some(new_jobs.into())
         }
-        CompilationStep::ImportCombine => map_reqs_new_stage(job, CompilationStep::ASTParse),
         CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
-        CompilationStep::InterfaceCombine => {
-            map_reqs_new_stage(job, CompilationStep::Typechecking)
-        }
+        CompilationStep::InterfaceCombine => map_reqs_new_stage(job, CompilationStep::Typechecking),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::BytecodeGen),
         CompilationStep::BytecodeGen => map_reqs_new_stage(job, CompilationStep::Codegen),
         CompilationStep::Codegen => Some([].into()),
     }
 }
 
-fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationUnit) -> Option<()> {
-    fn retrieve_map_data<'a, T>(
+fn load_precompiled_data(
+    _context: &GlobalCompilationContext,
+    _unit: &CompilationUnit,
+) -> Option<()> {
+    fn _retrieve_map_data<'a, T>(
         context: &GlobalCompilationContext,
         map: &ModuleMap<T>,
         unit: &CompilationUnit,
@@ -184,8 +183,8 @@ fn load_precompiled_data(context: &GlobalCompilationContext, unit: &CompilationU
         }
     }
 
-    retrieve_map_data(context, &context.module_db.preparse_incomplete, unit)?;
-    retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
+    // retrieve_map_data(context, &context.module_db.preparse_incomplete, unit)?;
+    // retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
 
     Some(())
 }
@@ -220,14 +219,13 @@ pub(crate) fn perform_job(
 
             let tokens = cx_lexer::lex(file_contents.as_str())?;
 
-            let mut output = preparse(TokenIter::new(&tokens, file_path))
-                .unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("Pre-parsing failed for unit: {}", job.unit);
-                });
+            let mut output = preparse(TokenIter::new(&tokens, file_path)).unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("Pre-parsing failed for unit: {}", job.unit);
+            });
             output.module = job.unit.to_string();
-
-            if !job.unit.as_str().contains("std") {
+            
+            if !job.unit.as_str().contains("/std/") {
                 output
                     .imports
                     .extend(INTRINSIC_IMPORTS.iter().map(|s| s.to_string()));
@@ -239,7 +237,7 @@ pub(crate) fn perform_job(
                 .insert(job.unit.clone(), tokens);
             context
                 .module_db
-                .preparse_incomplete
+                .preparse_base
                 .insert(job.unit.clone(), output);
 
             return if identical_hash && object_exists {
@@ -249,13 +247,14 @@ pub(crate) fn perform_job(
             };
         }
 
-        CompilationStep::ImportCombine => {
-            let mut pp_data = context.module_db.preparse_incomplete.get_cloned(&job.unit);
+        CompilationStep::ASTParse => {
+            let mut pp_data = context.module_db.preparse_base.get_cloned(&job.unit);
+            let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
             for import in pp_data.imports.iter() {
                 let other_pp_data = context
                     .module_db
-                    .preparse_incomplete
+                    .preparse_base
                     .get(&CompilationUnit::from_str(import.as_str()));
                 let required_visiblity = VisibilityMode::Public;
 
@@ -268,20 +267,11 @@ pub(crate) fn perform_job(
                 }
             }
 
-            context
-                .module_db
-                .preparse_full
-                .insert(job.unit.clone(), pp_data);
-        }
-
-        CompilationStep::ASTParse => {
-            let preparse = context.module_db.preparse_full.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.with_extension("cx")),
-                preparse.as_ref(),
-            ).unwrap_or_else(|e| {
+                &pp_data,
+            )
+            .unwrap_or_else(|e| {
                 e.pretty_print();
                 panic!("AST parsing failed for unit: {}", job.unit);
             });
@@ -297,11 +287,10 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::InterfaceCombine => {
-            gather_interface(context, &job.unit)
-                .unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("Interface combining failed for unit: {}", job.unit);
-                });
+            gather_interface(context, &job.unit).unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("Interface combining failed for unit: {}", job.unit);
+            });
         }
 
         CompilationStep::Typechecking => {
@@ -309,66 +298,53 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
-            let mut env = TCEnvironment::new(
-                lexemes.as_ref(),
-                job.unit.clone(),
-                &context.module_db,
-            );
-            
-            complete_base_globals(&mut env, structure_data.as_ref())
-                .unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("Completing base globals failed");
-                });
-            complete_base_functions(&mut env, structure_data.as_ref())
-                .unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("Completing base functions failed");
-                });
-            typecheck(&mut env, structure_data.as_ref(), &self_ast)
-                .unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("Typechecking failed for unit: {}", job.unit);
-                });
-            realize_templates(&job.unit, &mut env)
-                .unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("Template realization failed for unit: {}", job.unit);
-                });
+            let mut env =
+                TypeEnvironment::new(lexemes.as_ref(), job.unit.clone(), &context.module_db);
 
-            let tc_ast = TCAST {
-                source_file: self_ast.file_path.clone(),
+            complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("Completing base globals failed");
+            });
+            complete_base_functions(&mut env, structure_data.as_ref()).unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("Completing base functions failed");
+            });
+            typecheck(&mut env, structure_data.as_ref(), &self_ast).unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("Typechecking failed for unit: {}", job.unit);
+            });
+            realize_templates(&job.unit, &mut env).unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("Template realization failed for unit: {}", job.unit);
+            });
 
-                type_map: env.realized_types,
-                fn_map: env.realized_fns,
-                global_variables: env.realized_globals.into_values().collect(),
-
-                function_defs: env.declared_functions,
-            };
+            let mir = env.finish_mir_unit().unwrap_or_else(|e| {
+                e.pretty_print();
+                panic!("MIR generation failed for unit: {}", job.unit);
+            });
 
             if !job.unit.is_std_lib() {
-                dump_data(&tc_ast);
+                dump_data(&mir);
             }
 
-            context
-                .module_db
-                .typechecked_ast
-                .insert(job.unit.clone(), tc_ast);
+            context.module_db.mir.insert(job.unit.clone(), mir);
         }
 
         CompilationStep::BytecodeGen => {
-            let tc_ast = context.module_db.typechecked_ast.take(&job.unit);
-
-            let bytecode = generate_bytecode(tc_ast).expect("Bytecode generation failed");
+            let mir = context.module_db.mir.take(&job.unit);
+            let bc = match generate_bytecode(&mir) {
+                Ok(bc) => bc,
+                Err(e) => {
+                    e.pretty_print();
+                    panic!("Bytecode generation failed for unit: {}", job.unit);
+                }
+            };
 
             if !job.unit.is_std_lib() {
-                dump_data(&bytecode);
+                dump_data(&bc);
             }
 
-            context
-                .module_db
-                .bytecode
-                .insert(job.unit.clone(), bytecode);
+            context.module_db.bytecode.insert(job.unit.clone(), bc);
         }
 
         CompilationStep::Codegen => {
@@ -383,7 +359,6 @@ pub(crate) fn perform_job(
                     context.config.optimization_level,
                 )
                 .expect("LLVM code generation failed"),
-
                 CompilerBackend::Cranelift => {
                     cranelift_compile(&bytecode, internal_directory.to_str()?)
                         .expect("Cranelift code generation failed")
@@ -392,11 +367,12 @@ pub(crate) fn perform_job(
 
             let mut file =
                 std::fs::File::create(&internal_directory).expect("Failed to create object file");
+
             file.lock_exclusive()
                 .expect("Failed to lock object file for writing");
-
             file.write_all(&buffer)
                 .expect("Failed to write object file");
+
             context
                 .linking_files
                 .lock()

@@ -1,7 +1,13 @@
-use std::fmt::{Display, Formatter, Result};
 use cx_util::identifier::CXIdent;
+use std::fmt::{Display, Formatter, Result};
 
-use crate::{ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST}, data::{CXLinkageMode, CXNaivePrototype, CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, FunctionTypeIdent, NaiveFnKind}};
+use crate::{
+    ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
+    data::{
+        CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXNaivePrototype, CXNaiveTemplateInput,
+        CXNaiveType, CXNaiveTypeKind, CXTemplate,
+    },
+};
 
 // Helper struct for indented formatting of CXExpr
 struct CXExprFormatter<'a> {
@@ -59,7 +65,7 @@ impl Display for CXGlobalVariable {
             }
 
             CXGlobalVariable::Standard {
-                type_,
+                _type,
                 is_mutable,
                 initializer,
             } => {
@@ -67,7 +73,7 @@ impl Display for CXGlobalVariable {
                     f,
                     "global variable {} {}",
                     if *is_mutable { "mut" } else { "const" },
-                    type_
+                    _type
                 )?;
 
                 if let Some(initializer) = initializer {
@@ -83,11 +89,11 @@ impl Display for CXGlobalVariable {
 impl Display for CXFunctionStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXFunctionStmt::TypeDecl { name, type_ } => {
+            CXFunctionStmt::TypeDecl { name, _type } => {
                 if let Some(name) = name {
-                    writeln!(f, "type {} = {}", name, type_)
+                    writeln!(f, "type {} = {}", name, _type)
                 } else {
-                    writeln!(f, "type {}", type_)
+                    writeln!(f, "type {}", _type)
                 }
             }
 
@@ -130,9 +136,7 @@ impl<'a> Display for CXExprFormatter<'a> {
                 self.indent(f)?;
                 writeln!(f, "}}")
             }
-
             CXExprKind::Identifier(ident) => writeln!(f, "Identifier {}", ident),
-
             CXExprKind::TemplatedIdentifier {
                 name: fn_name,
                 template_input,
@@ -146,17 +150,14 @@ impl<'a> Display for CXExprFormatter<'a> {
 
                 writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
             }
-
-            CXExprKind::VarDeclaration { name, type_ } => {
-                writeln!(f, "VarDeclaration {}: {}", name, type_)
+            CXExprKind::VarDeclaration { name, _type } => {
+                writeln!(f, "VarDeclaration {}: {}", name, _type)
             }
-
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
             CXExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),
             CXExprKind::StringLiteral { val, .. } => {
                 writeln!(f, "StringLiteral \"{}\"", val.escape_default())
             }
-
             CXExprKind::Return { value } => {
                 writeln!(f, "Return")?;
                 if let Some(value) = value {
@@ -164,19 +165,16 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-
             CXExprKind::BinOp { lhs, rhs, op } => {
                 writeln!(f, "BinOp {:?}", op)?;
                 CXExprFormatter::new(lhs, self.depth + 1).fmt(f)?;
                 CXExprFormatter::new(rhs, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-
             CXExprKind::Move { expr } => {
                 writeln!(f, "Move")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-
             CXExprKind::InitializerList { indices } => {
                 writeln!(f, "InitializerList")?;
                 for index in indices {
@@ -184,12 +182,10 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-
             CXExprKind::UnOp { operator, operand } => {
                 writeln!(f, "UnOp {:?}", operator)?;
                 CXExprFormatter::new(operand, self.depth + 1).fmt(f)
             }
-
             CXExprKind::If {
                 condition,
                 then_branch,
@@ -203,7 +199,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 }
                 Ok(())
             }
-
             CXExprKind::For {
                 init,
                 condition,
@@ -217,7 +212,6 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-
             CXExprKind::While {
                 condition, body, ..
             } => {
@@ -226,22 +220,71 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-
             CXExprKind::Defer { expr } => {
                 writeln!(f, "Defer")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-
             CXExprKind::New { _type } => {
                 writeln!(f, "New {}", _type)
             }
-
             CXExprKind::SizeOf { expr } => {
                 writeln!(f, "SizeOf")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-
-            _ => writeln!(f, "{:?}", self.expr.kind),
+            CXExprKind::Taken => writeln!(f, "Taken"),
+            CXExprKind::Unit => writeln!(f, "Unit"),
+            CXExprKind::Match {
+                condition,
+                arms,
+                default,
+            } => {
+                writeln!(f, "Match")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                for (pattern, arm_expr) in arms {
+                    self.indent(f)?;
+                    writeln!(f, "Pattern: {}", pattern)?;
+                    CXExprFormatter::new(arm_expr, self.depth + 1).fmt(f)?;
+                }
+                if let Some(default_expr) = default {
+                    self.indent(f)?;
+                    writeln!(f, "Default:")?;
+                    CXExprFormatter::new(default_expr, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            }
+            CXExprKind::Switch {
+                condition,
+                block,
+                cases,
+                default_case,
+            } => {
+                writeln!(f, "Switch")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                for (case_value, case_expr) in cases {
+                    self.indent(f)?;
+                    writeln!(f, "Case: {} -> ID: {}", case_value, case_expr)?;
+                }
+                if let Some(default_expr) = default_case {
+                    self.indent(f)?;
+                    writeln!(f, "Default -> ID: {}", default_expr)?;
+                }
+                for (i, stmt) in block.iter().enumerate() {
+                    self.indent(f)?;
+                    writeln!(f, "Stmt[{}]: ", i)?;
+                    CXExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            }
+            CXExprKind::TypeConstructor {
+                union_name,
+                variant_name,
+                inner,
+            } => {
+                writeln!(f, "TypeConstructor {}::{}", union_name, variant_name)?;
+                CXExprFormatter::new(inner, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Break => writeln!(f, "Break"),
+            CXExprKind::Continue => writeln!(f, "Continue"),
         }
     }
 }
@@ -328,29 +371,30 @@ impl Display for CXNaiveTypeKind {
             CXNaiveTypeKind::TemplatedIdentifier { name, input } => write!(f, "{name}{input}"),
             CXNaiveTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXNaiveTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
+            CXNaiveTypeKind::MemoryReference { inner_type } => {
+                write!(f, "&{}", inner_type)
+            }
             CXNaiveTypeKind::PointerTo { inner_type, weak } => {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }
-            CXNaiveTypeKind::StrongPointer { inner, is_array } => {
-                write!(f, "{inner} strong* [is_array={is_array}]")
-            }
-            CXNaiveTypeKind::Structured { name, fields } => {
+
+            CXNaiveTypeKind::Structured { name, fields, .. } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(
                     f,
                     "struct {} {{ {} }}",
-                    name.as_ref().map(|n| n.as_str()).unwrap_or(""),
+                    name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
                     fields_str
                 )
             }
             CXNaiveTypeKind::Union { name, fields } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(
@@ -383,13 +427,13 @@ impl Display for CXNaivePrototype {
             .map(|param| {
                 format!(
                     "{}: {}",
-                    param.name.as_ref().unwrap_or(&CXIdent::from("_")),
+                    param.name.as_ref().unwrap_or(&CXIdent::new("_")),
                     param._type
                 )
             })
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "{} {}({})", self.return_type, self.name, params_str)
+        write!(f, "{} {}({})", self.return_type, self.kind, params_str)
     }
 }
 
@@ -405,29 +449,35 @@ impl Display for CXNaiveTemplateInput {
     }
 }
 
-impl Display for NaiveFnKind {
+impl<Shell: Display> Display for CXTemplate<Shell> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.shell.fmt(f)?;
+
+        let params_str = self.prototype.types.join(", ");
+        write!(f, "<{params_str}>")
+    }
+}
+
+impl Display for CXFunctionTypeIdent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            NaiveFnKind::Standard(name) => write!(f, "{name}"),
-            NaiveFnKind::MemberFunction {
-                _type,
-                function_name,
-            } => {
-                write!(f, "_{_type}_{function_name}")
-            }
-            NaiveFnKind::Destructor(name) => {
-                write!(f, "~{name}")
+            CXFunctionTypeIdent::Standard(name) => write!(f, "{name}"),
+            CXFunctionTypeIdent::Templated(name, template_input) => {
+                write!(f, "{}{}", name, template_input)
             }
         }
     }
 }
 
-impl Display for FunctionTypeIdent {
+impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FunctionTypeIdent::Standard(name) => write!(f, "{name}"),
-            FunctionTypeIdent::Templated(name, args) => {
-                write!(f, "{name}<{args}>")
+            CXFunctionKind::Standard(name) => write!(f, "{name}"),
+            CXFunctionKind::MemberFunction { member_type, name } => {
+                write!(f, "{member_type}::{name}")
+            }
+            CXFunctionKind::Destructor(base) => {
+                write!(f, "~{base}")
             }
         }
     }

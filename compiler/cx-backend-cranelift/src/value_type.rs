@@ -1,31 +1,29 @@
 use cranelift::codegen::ir;
-use cx_mir_data::types::{MIRType, MIRTypeKind};
+use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 
-pub(crate) fn get_cranelift_abi_type(val_type: &MIRType) -> ir::AbiParam {
+pub(crate) fn get_cranelift_abi_type(val_type: &BCType) -> ir::AbiParam {
     ir::AbiParam::new(get_cranelift_type(val_type))
 }
 
-pub(crate) fn get_cranelift_type(val_type: &MIRType) -> ir::Type {
+pub(crate) fn get_cranelift_type(val_type: &BCType) -> ir::Type {
     match &val_type.kind {
-        MIRTypeKind::Signed { bytes } | MIRTypeKind::Unsigned { bytes } if *bytes == 0 => {
-            ir::Type::int(8).expect("PANIC: Invalid integer size: 0 bytes")
-        }
+        BCTypeKind::Bool => ir::types::I8,
 
-        MIRTypeKind::Bool => ir::types::I8,
+        BCTypeKind::Integer(BCIntegerType::I8) => ir::types::I8,
+        BCTypeKind::Integer(BCIntegerType::I16) => ir::types::I16,
+        BCTypeKind::Integer(BCIntegerType::I32) => ir::types::I32,
+        BCTypeKind::Integer(BCIntegerType::I64) => ir::types::I64,
+        BCTypeKind::Integer(BCIntegerType::I128) => ir::types::I128,
 
-        MIRTypeKind::Signed { bytes } | MIRTypeKind::Unsigned { bytes } => {
-            ir::Type::int(*bytes as u16 * 8)
-                .unwrap_or_else(|| panic!("PANIC: Invalid integer size: {} bytes", *bytes))
-        }
-
-        MIRTypeKind::Float { bytes: 2 } => ir::types::F16,
-        MIRTypeKind::Float { bytes: 4 } => ir::types::F32,
-        MIRTypeKind::Float { bytes: 8 } => ir::types::F64,
-        MIRTypeKind::Float { bytes: 16 } => ir::types::F128,
-
-        MIRTypeKind::Union { .. } | MIRTypeKind::Struct { .. } | MIRTypeKind::Pointer { .. } | MIRTypeKind::Array { .. } => {
-            ir::Type::int(64).unwrap()
-        }
+        // BCTypeKind::Float { bytes: 2 } => ir::types::F16,
+        BCTypeKind::Float(BCFloatType::F32) => ir::types::F32,
+        BCTypeKind::Float(BCFloatType::F64) => ir::types::F64,
+        // BCTypeKind::Float { bytes: 16 } => ir::types::F128,
+        // 
+        BCTypeKind::Union { .. }
+        | BCTypeKind::Struct { .. }
+        | BCTypeKind::Pointer { .. }
+        | BCTypeKind::Array { .. } => ir::Type::int(64).unwrap(),
 
         // Because of the way Cranelift codegen works, there is actually no need for
         // handling arrays, as anywhere where the type is used (i.e. in stack allocations)

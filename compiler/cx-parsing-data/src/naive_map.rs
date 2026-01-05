@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 
 use crate::data::{
-    CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXTypeTemplate, ModuleResource,
-    NaiveFnIdent, NaiveTypeIdent,
+    CXFunctionKey, CXFunctionTemplate, CXNaivePrototype, CXNaiveType, CXTypeKey, CXTypeTemplate,
+    ModuleResource,
 };
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -13,8 +13,8 @@ pub struct CXNaiveMap<Identifier: Eq + std::hash::Hash, Standard, Template> {
     templates: HashMap<Identifier, ModuleResource<Template>>,
 }
 
-pub type CXNaiveTypeMap = CXNaiveMap<NaiveTypeIdent, CXNaiveType, CXTypeTemplate>;
-pub type CXNaiveFnMap = CXNaiveMap<NaiveFnIdent, CXNaivePrototype, CXFunctionTemplate>;
+pub type CXNaiveTypeMap = CXNaiveMap<CXTypeKey, CXNaiveType, CXTypeTemplate>;
+pub type CXNaiveFnMap = CXNaiveMap<CXFunctionKey, CXNaivePrototype, CXFunctionTemplate>;
 
 impl<Identifier, Standard, Template> Default for CXNaiveMap<Identifier, Standard, Template>
 where

@@ -1,253 +1,339 @@
-use cx_parsing_data::ast::CXCastType;
-use cx_typechecker_data::ast::{TCExpr, TCExprKind};
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind, same_type};
-use cx_util::{CXError, CXResult, log_error};
+use cx_parsing_data::ast::CXExpr;
+use cx_typechecker_data::mir::{
+    expression::{MIRCoercion, MIRInstruction, MIRValue},
+    types::{CXIntegerType, MIRType, MIRTypeKind, same_type},
+};
+use cx_util::CXResult;
 
-use crate::type_checking::structured_initialization::coerce_initializer_list;
+use crate::{
+    environment::TypeEnvironment, log_typecheck_error, type_checking::binary_ops::handle_assignment,
+};
 
-pub(crate) fn coerce_value(expr: &mut TCExpr) -> CXResult<()> {
-    if let CXTypeKind::MemoryReference(inner) = &expr._type.kind {
-        let inner = *inner.clone();
-        implicit_cast(expr, &inner)?;
+pub(crate) fn coerce_value(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    value: MIRValue,
+) -> CXResult<MIRValue> {
+    let value_type = value.get_type();
+    let mem_ref_inner = value_type.mem_ref_inner();
+
+    if let Some(mem_ref_inner) = mem_ref_inner {
+        implicit_cast(env, expr, value, mem_ref_inner)
+    } else {
+        Ok(value)
     }
     
-    match &expr._type.kind {
-        CXTypeKind::Array { inner_type, .. } => {
-            let pointer_to = inner_type.clone().pointer_to();
+    // match &inner_type.kind {
+    //     // There are certain types where a memory reference to them is essentially equivalent to
+    //     // their plain type. If we for instance have an array type, in memory, that is a pointer to
+    //     // the base of the array, and if we have a memory reference to that, it is still just a pointer to the
+    //     // base of the array. And for most semantic purposes, if we actually want to use either a &int[4] or a int[4],
+    //     // it makes sense to treat them both as an int*
+    //     CXTypeKind::Array {
+    //         inner_type: element_type,
+    //         ..
+    //     } => {
+    //         let pointer_to = element_type.clone().pointer_to();
+    //         let new_register = env.builder.new_register();
 
-            *expr = TCExpr {
-                _type: pointer_to,
-                kind: TCExprKind::Coercion {
-                    operand: Box::new(std::mem::take(expr)),
-                    cast_type: CXCastType::Reinterpret,
-                },
-            };
+    //         env.builder.add_instruction(MIRInstruction::ArrayGet {
+    //             result: new_register.clone(),
+    //             source: value,
+    //             index: MIRValue::IntLiteral {
+    //                 value: 0,
+    //                 signed: false,
+    //                 _type: CXIntegerType::I64,
+    //             },
+    //             array_type: inner_type.clone(),
+    //             element_type: *element_type.clone(),
+    //         });
 
-            Ok(())
+    //         Ok(MIRValue::Register {
+    //             register: new_register,
+    //             _type: pointer_to,
+    //         })
+    //     }
+
+    //     CXTypeKind::Function { prototype, .. } => Ok(MIRValue::FunctionReference {
+    //         prototype: *prototype.clone(),
+    //         implicit_variables: vec![],
+    //     }),
+
+    //     _ => {
+    //         if let Some(inner) = mem_ref_inner {
+    //             implicit_cast(env, expr, value, &inner.clone())
+    //         } else {
+    //             Ok(value)
+    //         }
+    //     }
+    // }
+}
+
+pub(crate) fn coerce_condition(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    value: MIRValue,
+) -> CXResult<MIRValue> {
+    let value = coerce_value(env, expr, value)?;
+
+    if value.get_type().is_integer() {
+        return Ok(value);
+    }
+
+    implicit_cast(
+        env,
+        expr,
+        value,
+        &MIRTypeKind::Integer {
+            signed: false,
+            _type: CXIntegerType::I64,
         }
-
-        CXTypeKind::Function { .. } => {
-            let pointer_to = expr._type.clone().pointer_to();
-
-            *expr = TCExpr {
-                _type: pointer_to,
-                kind: TCExprKind::Coercion {
-                    operand: Box::new(std::mem::take(expr)),
-                    cast_type: CXCastType::FunctionToPointerDecay,
-                },
-            };
-
-            Ok(())
-        }
-
-        _ => Ok(()),
-    }
+        .into(),
+    )
 }
 
-pub(crate) fn coerce_condition(expr: &mut TCExpr) -> CXResult<()> {
-    coerce_value(expr)?;
-
-    if !expr._type.is_integer() {
-        try_implicit_cast(
-            expr,
-            &CXTypeKind::Integer {
-                signed: false,
-                bytes: 8,
-            }
-            .into(),
-        )?;
+pub(crate) fn explicit_cast(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    value: MIRValue,
+    to_type: &MIRType,
+) -> CXResult<MIRValue> {
+    if let Ok(val) = implicit_cast(env, expr, value.clone(), to_type) {
+        return Ok(val);
     }
 
-    Ok(())
-}
+    let from_type = value.get_type();
+    let coerce = |coercion_type: MIRCoercion| {
+        let result = env.builder.new_register();
+        env.builder.add_instruction(MIRInstruction::Coercion {
+            result: result.clone(),
+            operand: value,
+            cast_type: coercion_type,
+        });
 
-pub(crate) fn implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
-    let Some(_) = try_implicit_cast(expr, to_type)? else {
-        log_error!(
-            " Cannot implicitly cast value of type {} to type {}",
-            expr._type,
-            to_type
-        );
-    };
-
-    Ok(())
-}
-
-pub(crate) fn explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
-    let Some(_) = try_explicit_cast(expr, to_type)? else {
-        log_error!(
-            " Cannot explicitly cast value of type {} to type {}",
-            expr._type,
-            to_type
-        );
-    };
-
-    Ok(())
-}
-
-pub(crate) fn try_explicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<Option<()>> {
-    if try_implicit_cast(expr, to_type).is_ok() {
-        return Ok(Some(()));
-    }
-
-    let Some(cast_type) = valid_explicit_cast(&expr._type, to_type) else {
-        return Ok(None);
-    };
-
-    add_coercion(expr, to_type.clone(), cast_type);
-    Ok(Some(()))
-}
-
-pub fn add_coercion(expr: &mut TCExpr, to_type: CXType, cast_type: CXCastType) {
-    *expr = TCExpr {
-        _type: to_type,
-        kind: TCExprKind::Coercion {
-            operand: Box::new(std::mem::take(expr)),
-            cast_type,
-        },
-    }
-}
-
-pub fn try_implicit_cast(expr: &mut TCExpr, to_type: &CXType) -> CXResult<Option<()>> {
-    if matches!(expr.kind, TCExprKind::InitializerList { .. }) {
-        coerce_initializer_list(expr, to_type)?;
-        return Ok(Some(()));
-    }
-
-    if same_type(&expr._type, to_type) {
-        return Ok(Some(()));
-    }
-
-    let from_type = expr._type.clone();
-    let mut coerce = |coercion_type: CXCastType| {
-        add_coercion(expr, to_type.clone(), coercion_type);
+        Ok(MIRValue::Register {
+            register: result,
+            _type: to_type.clone(),
+        })
     };
 
     match (&from_type.kind, &to_type.kind) {
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => coerce(CXCastType::PtrToInt),
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
+            coerce(MIRCoercion::ReinterpretBits)
+        }
 
-        (CXTypeKind::Integer { bytes: b1, .. }, CXTypeKind::Integer { bytes: b2, .. }) => {
-            if b1 > b2 {
-                coerce(CXCastType::IntegralTrunc)
-            } else if b1 < b2 {
-                coerce(CXCastType::IntegralCast)
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. })
+            if (*_type == CXIntegerType::I64) =>
+        {
+            coerce(MIRCoercion::ReinterpretBits)
+        }
+
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
+            coerce(MIRCoercion::PtrToInt { to_type: *_type })
+        }
+
+        (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::PointerTo { .. }) => {
+            coerce(MIRCoercion::IntToPtr { sextend: *signed })
+        }
+
+        _ => {
+            log_typecheck_error!(
+                env,
+                expr,
+                "No explicit cast from {} to {}",
+                from_type,
+                to_type
+            )
+        }
+    }
+}
+
+pub fn implicit_cast(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    value: MIRValue,
+    to_type: &MIRType,
+) -> CXResult<MIRValue> {
+    let from_type = value.get_type();
+
+    if same_type(&from_type, to_type) {
+        return Ok(value);
+    }
+
+    let mut coerce = |coercion_type: MIRCoercion| {
+        let result = env.builder.new_register();
+        env.builder.add_instruction(MIRInstruction::Coercion {
+            result: result.clone(),
+            operand: value.clone(),
+            cast_type: coercion_type,
+        });
+
+        Ok(MIRValue::Register {
+            register: result,
+            _type: to_type.clone(),
+        })
+    };
+
+    match (&from_type.kind, &to_type.kind) {
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
+            coerce(MIRCoercion::PtrToInt { to_type: *_type })
+        }
+
+        (
+            MIRTypeKind::Integer { _type: t1, .. },
+            MIRTypeKind::Integer {
+                _type: t2,
+                signed: s2,
+                ..
+            },
+        ) => {
+            if t1.bytes() != t2.bytes() {
+                coerce(MIRCoercion::Integral {
+                    to_type: *t2,
+                    sextend: *s2,
+                })
             } else {
-                coerce(CXCastType::BitCast)
+                coerce(MIRCoercion::ReinterpretBits)
             }
         }
 
-        (CXTypeKind::Integer { .. }, CXTypeKind::Bool) => coerce(CXCastType::IntToBool),
-        (CXTypeKind::Bool, CXTypeKind::Integer { .. }) => coerce(CXCastType::IntegralCast),
-        (CXTypeKind::Float { .. }, CXTypeKind::Float { .. }) => coerce(CXCastType::FloatCast),
-        (CXTypeKind::Integer { .. }, CXTypeKind::Float { .. }) => coerce(CXCastType::IntToFloat),
-        (CXTypeKind::Float { .. }, CXTypeKind::Integer { .. }) => coerce(CXCastType::FloatToInt),
-
-        (CXTypeKind::StrongPointer { .. }, CXTypeKind::StrongPointer { .. })
-        | (CXTypeKind::StrongPointer { .. }, CXTypeKind::PointerTo { .. })
-        | (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => {
-            coerce(CXCastType::BitCast)
+        (MIRTypeKind::Integer { .. }, MIRTypeKind::Bool) => coerce(MIRCoercion::IntToBool),
+        (MIRTypeKind::Bool, MIRTypeKind::Integer { _type, .. }) => {
+            coerce(MIRCoercion::BoolToInt { to_type: *_type })
+        }
+        (MIRTypeKind::Float { .. }, MIRTypeKind::Float { _type: to_type }) => {
+            coerce(MIRCoercion::FloatCast { to_type: *to_type })
+        }
+        (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::Float { _type, .. }) => {
+            coerce(MIRCoercion::IntToFloat {
+                to_type: *_type,
+                sextend: *signed,
+            })
+        }
+        (MIRTypeKind::Float { .. }, MIRTypeKind::Integer { _type, signed, .. }) => {
+            coerce(MIRCoercion::FloatToInt {
+                to_type: *_type,
+                sextend: *signed,
+            })
         }
 
-        (CXTypeKind::MemoryReference(inner), _)
-            if same_type(inner.as_ref(), to_type) && to_type.has_move_semantics() =>
-        {
-            if !inner.copyable() {
-                log_error!(
-                    "Cannot implicitly move value of type {} to type {}",
+        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
+            coerce(MIRCoercion::ReinterpretBits)
+        }
+
+        (
+            MIRTypeKind::MemoryReference(inner1),
+            MIRTypeKind::PointerTo {
+                inner_type: inner2, ..
+            },
+        ) if same_type(inner1.as_ref(), inner2.as_ref()) => coerce(MIRCoercion::ReinterpretBits),
+
+        (
+            MIRTypeKind::MemoryReference(inner1),
+            MIRTypeKind::PointerTo { inner_type: inner2, .. }
+        ) if inner1.is_array() => {
+            let inner1_inner = inner1.array_inner().unwrap();
+            
+            if same_type(inner1_inner, inner2.as_ref()) {
+                coerce(MIRCoercion::ReinterpretBits)
+            } else {
+                log_typecheck_error!(
+                    env,
+                    expr,
+                    "No implicit cast from {} to {}",
+                    from_type,
+                    to_type
+                )
+            }
+        },
+        
+        (MIRTypeKind::MemoryReference(inner), _) => {
+            if !env.is_copyable(inner) {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "Cannot implicitly copy value of type {} to type {}",
                     from_type,
                     to_type
                 );
             }
 
-            *expr = TCExpr {
+            let result = env.builder.new_register();
+            let result_value = MIRValue::Register {
+                register: result.clone(),
                 _type: *inner.clone(),
-                kind: TCExprKind::Copy {
-                    expr: Box::new(std::mem::take(expr)),
-                },
-            };
-        }
-
-        (CXTypeKind::MemoryReference(inner), _)
-            if inner.is_structured() =>
-        {
-            expr._type = *inner.clone();
-            
-            implicit_cast(expr, to_type)?;
-        }
-
-        (CXTypeKind::MemoryReference(inner), _) => {
-            let mut loaded = TCExpr {
-                _type: *inner.clone(),
-                kind: TCExprKind::ImplicitLoad {
-                    operand: Box::new(std::mem::take(expr)),
-                },
             };
 
-            let Ok(_) = try_implicit_cast(&mut loaded, to_type) else {
-                let TCExprKind::ImplicitLoad { operand } = loaded.kind else {
-                    unreachable!();
-                };
+            if inner.is_memory_resident() {
+                env.builder
+                    .add_instruction(MIRInstruction::CreateStackRegion {
+                        result: result.clone(),
+                        _type: *inner.clone(),
+                    });
+                handle_assignment(env, &result_value, &value, inner)?;
+            } else {
+                env.builder.add_instruction(MIRInstruction::MemoryRead {
+                    result,
+                    source: value,
+                    _type: *inner.clone(),
+                })
+            }
 
-                *expr = *operand;
-                return CXError::create_result(format!(
-                    "No implicit cast from {} to {}",
-                    from_type, to_type
-                ));
-            };
-
-            *expr = loaded;
+            implicit_cast(env, expr, result_value, to_type)
         }
 
-        (_, CXTypeKind::MemoryReference(inner))
+        (_, MIRTypeKind::MemoryReference(inner))
         | (
             _,
-            CXTypeKind::PointerTo {
+            MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) && from_type.is_structured() => {
-            coerce(CXCastType::Reinterpret)
+        ) if same_type(inner.as_ref(), &from_type) && from_type.is_memory_resident() => {
+            coerce(MIRCoercion::ReinterpretBits)
         }
 
         (
-            CXTypeKind::Array {
+            MIRTypeKind::Array {
                 inner_type: _type, ..
             },
-            CXTypeKind::PointerTo {
+            MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(_type, inner) => coerce(CXCastType::NOOP),
+        ) if same_type(_type, inner) => {
+            let result = env.builder.new_register();
+            env.builder.add_instruction(MIRInstruction::ArrayGet {
+                result: result.clone(),
+                source: value,
+                index: MIRValue::IntLiteral {
+                    value: 0,
+                    signed: false,
+                    _type: CXIntegerType::I64,
+                },
+                array_type: from_type.clone(),
+                element_type: *inner.clone(),
+            });
+
+            Ok(MIRValue::Register {
+                register: result,
+                _type: to_type.clone(),
+            })
+        }
 
         (
-            CXTypeKind::Function { .. },
-            CXTypeKind::PointerTo {
+            MIRTypeKind::Function { .. },
+            MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) => coerce(CXCastType::FunctionToPointerDecay),
+        ) if same_type(inner.as_ref(), &from_type) => Ok(value),
 
-        _ => return CXError::create_result(format!("No implicit cast from {} to {}", from_type, to_type)),
-    }
-
-    Ok(Some(()))
-}
-
-pub fn valid_explicit_cast(from_type: &CXType, to_type: &CXType) -> Option<CXCastType> {
-    match (&from_type.kind, &to_type.kind) {
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::PointerTo { .. }) => Some(CXCastType::BitCast),
-
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { bytes, .. }) if *bytes == 8 => {
-            Some(CXCastType::BitCast)
+        _ => {
+            log_typecheck_error!(
+                env,
+                expr,
+                "No implicit cast from {} to {}",
+                from_type,
+                to_type
+            )
         }
-
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::Integer { .. }) => {
-            Some(CXCastType::IntegralTrunc)
-        }
-
-        (CXTypeKind::Integer { .. }, CXTypeKind::PointerTo { .. }) => Some(CXCastType::IntToPtr),
-
-        (CXTypeKind::PointerTo { .. }, CXTypeKind::StrongPointer { .. }) => {
-            Some(CXCastType::BitCast)
-        }
-
-        _ => None,
     }
 }

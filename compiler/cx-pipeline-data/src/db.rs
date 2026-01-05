@@ -3,8 +3,8 @@ use crate::{CompilationUnit, GlobalCompilationContext};
 use cx_parsing_data::ast::CXAST;
 use cx_parsing_data::PreparseContents;
 use cx_lexer_data::token::Token;
-use cx_mir_data::ProgramMIR;
-use cx_typechecker_data::ast::{TCAST, TCBaseMappings};
+use cx_bytecode_data::BCUnit;
+use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRUnit};
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -16,15 +16,13 @@ pub struct ModuleData {
     pub do_not_reexport: RwLock<HashSet<CompilationUnit>>,
 
     pub lex_tokens: ModuleMap<Vec<Token>>,
-    pub preparse_incomplete: ModuleMap<PreparseContents>,
-    pub preparse_full: ModuleMap<PreparseContents>,
+    pub preparse_base: ModuleMap<PreparseContents>,
 
     pub naive_ast: ModuleMap<CXAST>,
-    pub base_mappings: ModuleMap<TCBaseMappings>,
+    pub base_mappings: ModuleMap<MIRBaseMappings>,
     
-    pub typechecked_ast: ModuleMap<TCAST>,
-
-    pub bytecode: ModuleMap<ProgramMIR>,
+    pub mir: ModuleMap<MIRUnit>,
+    pub bytecode: ModuleMap<BCUnit>,
 }
 
 impl Default for ModuleData {
@@ -40,21 +38,19 @@ impl ModuleData {
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
 
-            preparse_incomplete: ModuleMap::new(".cx-preparse"),
-            preparse_full: ModuleMap::new(".cx-preparse-full"),
+            preparse_base: ModuleMap::new(".cx-preparse"),
 
             naive_ast: ModuleMap::new(".cx-naive-ast"),
 
             base_mappings: ModuleMap::new(".cx-structure-data"),
-            typechecked_ast: ModuleMap::new(".cx-typechecked-ast"),
+            mir: ModuleMap::new(".cx-typechecked-ast"),
 
             bytecode: ModuleMap::new(".cx-bytecode"),
         }
     }
 
     pub fn store_data(&self, context: &GlobalCompilationContext) {
-        self.preparse_incomplete.store_all_data(context);
-        self.preparse_full.store_all_data(context);
+        self.preparse_base.store_all_data(context);
     }
 
     pub fn no_reexport(&self, unit: &CompilationUnit) -> bool {

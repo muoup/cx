@@ -49,11 +49,11 @@ pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 2,
         CXUnOp::BNot => 2,
+        CXUnOp::Dereference => 2,
 
         CXUnOp::LNot => 3,
         CXUnOp::Negative => 3,
         CXUnOp::AddressOf => 3,
-        CXUnOp::Dereference => 3,
         CXUnOp::PreIncrement(_) => 3,
         CXUnOp::ExplicitCast(_) => 3,
     }
@@ -84,7 +84,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 return Ok(None);
             }
 
-            let Some((None, type_)) = parse_initializer(data).ok() else {
+            let Some((None, _type)) = parse_initializer(data).ok() else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };
@@ -94,7 +94,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
             );
 
-            Some(CXUnOp::ExplicitCast(type_))
+            Some(CXUnOp::ExplicitCast(_type))
         }
 
         _ => {

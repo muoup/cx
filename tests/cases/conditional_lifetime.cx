@@ -1,15 +1,23 @@
+import std::io;
+
+struct Lifetime {};
+
+~Lifetime(this) {
+    println("Lifetime destroyed");
+}
+
 int main() {
     int cond = 1;
 
     if (cond) {
         int x = 10;
     } else {
-        int strong* y = new int;
+        Lifetime lifetime;
     }
 
     if (cond) {
-        int strong[] y = new int[5];
+        Lifetime lifetime;
     } else {
-        int z = 10;
+        int y = 20;
     }
 }

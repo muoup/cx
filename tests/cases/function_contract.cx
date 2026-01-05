@@ -1,16 +1,24 @@
 import std::io;
 
+// Technically the conditions of the contract *should* be pure, to prevent metahacking like this
+// but for the sake of the test we allow side effects in pre/post conditions.
+
 int function(int input) where 
     pre: (printf("precondition checked\n")),
     post: (printf("postcondition checked\n")) 
 {
-
     printf("function body executed\n");
+    
+    // Postcondition checked here right before the function returns
     return input * 2;
 }
 
 int main() {
+    // Precondition checked here right before the function call
     int result = function(5);
+    // The compiler generates an assumption here that the postcondition holds, because the postcondition
+    // has a side effect, that means that the side effect will actually happen twice.
+    
     printf("result: %d\n", result);
     return 0;
 }

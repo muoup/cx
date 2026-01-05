@@ -1,13 +1,15 @@
 use crate::codegen::{codegen_fn_prototype, codegen_function};
 use crate::globals::generate_global;
 use crate::value_type::get_cranelift_type;
+use cranelift::codegen::ir::FuncRef;
 use cranelift::codegen::{ir, Context};
 use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_mir_data::types::MIRTypeKind;
-use cx_mir_data::{BlockID, MIRValue, ProgramMIR};
+use cx_bytecode_data::types::{BCFloatType, BCTypeKind};
+use cx_bytecode_data::{BCBlockID, BCRegister, BCUnit, BCValue};
+use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 use std::collections::HashMap;
 
@@ -34,7 +36,7 @@ impl CodegenValue {
     }
 }
 
-pub(crate) type VariableTable = HashMap<MIRValue, CodegenValue>;
+pub(crate) type VariableTable = HashMap<BCRegister, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -42,11 +44,9 @@ pub struct FunctionState<'a> {
 
     pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
 
-    pub(crate) block_map: Vec<Block>,
+    pub(crate) block_map: HashMap<CXIdent, Block>,
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) fn_params: Vec<Value>,
-
-    pub(crate) defer_offset: usize,
 
     pub(crate) variable_table: VariableTable,
     pub(crate) pointer_type: ir::Type,
@@ -62,63 +62,66 @@ pub(crate) struct GlobalState<'a> {
 }
 
 impl FunctionState<'_> {
-    pub(crate) fn get_block(&mut self, block_id: BlockID) -> Block {
-        let id = match block_id {
-            BlockID::Block(id) => id as usize,
-            BlockID::DeferredBlock(id) => (id as usize) + self.defer_offset,
-        };
+    pub(crate) fn get_function(&mut self, name: &str) -> Option<(FuncId, FuncRef)> {
+        let func_id = self.function_ids.get(name).cloned()?;
+        let func_ref = self
+            .object_module
+            .declare_func_in_func(func_id, self.builder.func);
 
-        self.block_map
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| panic!("Block with ID {id} not found in block map"))
+        Some((func_id, func_ref))
     }
 
-    pub(crate) fn get_value(&mut self, mir_value: &MIRValue) -> Option<CodegenValue> {
-        match mir_value {
-            MIRValue::NULL => Some(CodegenValue::NULL),
+    pub(crate) fn get_block(&mut self, id: &BCBlockID) -> Block {
+        self.block_map.get(id).cloned().unwrap()
+    }
 
-            MIRValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
+    pub(crate) fn get_value(&mut self, bc_value: &BCValue) -> Option<CodegenValue> {
+        match bc_value {
+            BCValue::NULL => Some(CodegenValue::NULL),
 
-            MIRValue::IntImmediate { val, type_ } => {
-                let int_type = get_cranelift_type(type_);
+            BCValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
+
+            BCValue::FunctionRef(name) => {
+                let (_func_id, func_ref) = self.get_function(name.as_str())?;
+                let as_value = self
+                    .builder
+                    .ins()
+                    .func_addr(self.pointer_type, func_ref);
+                
+                Some(CodegenValue::Value(as_value))
+            }
+
+            BCValue::IntImmediate { val, _type } => {
+                let int_type = get_cranelift_type(&BCTypeKind::Integer(*_type).into());
                 let value = self.builder.ins().iconst(int_type, *val);
                 Some(CodegenValue::Value(value))
             }
 
-            MIRValue::FloatImmediate { val, type_ } => {
-                let value = f64::from_bits(*val as u64);
-
-                match &type_.kind {
-                    MIRTypeKind::Float { bytes: 4 } => {
-                        let value = self.builder.ins().f32const(value as f32);
-                        Some(CodegenValue::Value(value))
-                    }
-                    MIRTypeKind::Float { bytes: 8 } => {
-                        let value = self.builder.ins().f64const(value);
-                        Some(CodegenValue::Value(value))
-                    }
-                    _ => log_error!("Unsupported float type in FloatLiteral: {:?}", type_),
-                }
+            BCValue::FloatImmediate {
+                val,
+                _type: BCFloatType::F32,
+            } => {
+                let as_f32: f32 = val.into();
+                let value = self.builder.ins().f32const(as_f32);
+                Some(CodegenValue::Value(value))
             }
 
-            MIRValue::LoadOf(_type, val) => {
-                let Some(addr) = self.get_value(val) else {
-                    log_error!("Failed to get address for LoadOf: {:?}", val);
-                };
-
-                let addr = addr.as_value();
-                let loaded = self.builder.ins().load(
-                    get_cranelift_type(_type),
-                    ir::MemFlags::new(),
-                    addr,
-                    0,
-                );
-
-                Some(CodegenValue::Value(loaded))
+            BCValue::FloatImmediate {
+                val,
+                _type: BCFloatType::F64,
+            } => {
+                let as_f64: f64 = val.into();
+                let value = self.builder.ins().f64const(as_f64);
+                Some(CodegenValue::Value(value))
+            }
+            
+            BCValue::BoolImmediate(val) => {
+                let bool_value = if *val { 1 } else { 0 };
+                let value = self.builder.ins().iconst(ir::types::I8, bool_value);
+                Some(CodegenValue::Value(value))
             }
 
-            MIRValue::Global(id) => {
+            BCValue::Global(id) => {
                 let global_ref = self
                     .object_module
                     .declare_data_in_func(DataId::from_u32(*id), self.builder.func);
@@ -131,9 +134,9 @@ impl FunctionState<'_> {
                 Some(CodegenValue::Value(gv))
             }
 
-            _ => {
-                let Some(var) = self.variable_table.get(mir_value).cloned() else {
-                    log_error!("Variable not found in variable table: {:?}", mir_value);
+            BCValue::Register { register, _type } => {
+                let Some(var) = self.variable_table.get(register).cloned() else {
+                    log_error!("Variable not found in variable table: {:?}", bc_value);
                 };
 
                 Some(var)
@@ -142,7 +145,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
+pub fn bytecode_aot_codegen(bc: &BCUnit, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
@@ -180,7 +183,7 @@ pub fn bytecode_aot_codegen(bc: &ProgramMIR, output: &str) -> Option<Vec<u8>> {
                 func.prototype.name
             );
         };
-        
+
         let func_sig = global_state
             .function_sigs
             .remove(&func.prototype.name)

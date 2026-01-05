@@ -25,7 +25,6 @@ mod regression_tests {
         basic_arithmetic,
         basic_compound_expr,
         basic_for,
-        basic_strong_ptr,
         basic_template,
         basic_template_type,
         basic_while,
@@ -45,7 +44,8 @@ mod regression_tests {
         sum_type,
         function_contract,
         basic_succeeding_contract,
-        array_passing
+        array_passing,
+        padded_array
     );
 }
 

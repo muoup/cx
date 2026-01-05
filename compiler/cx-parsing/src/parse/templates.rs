@@ -8,7 +8,7 @@ use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::parse::types::parse_initializer;
 
-pub(crate) fn note_templated_types(
+pub(crate) fn note_templatedtype_s(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
 ) {
@@ -18,7 +18,7 @@ pub(crate) fn note_templated_types(
         }
 
         let _nil_type: CXNaiveType = CXNaiveTypeKind::Identifier {
-            name: CXIdent::from("__undefined_template_type"),
+            name: CXIdent::new("__undefined_template_type"),
             predeclaration: PredeclarationType::None,
         }
         .to_type();
@@ -27,7 +27,7 @@ pub(crate) fn note_templated_types(
     }
 }
 
-pub(crate) fn unnote_templated_types(
+pub(crate) fn unnote_templatedtype_s(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
 ) {
@@ -84,7 +84,7 @@ pub(crate) fn convert_template_proto_to_args(
         .into_iter()
         .map(|name| {
             CXNaiveTypeKind::Identifier {
-                name: CXIdent::from(name),
+                name: CXIdent::new(name),
                 predeclaration: PredeclarationType::None,
             }
             .to_type()
@@ -97,14 +97,14 @@ pub(crate) fn convert_template_proto_to_args(
 pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXNaiveTemplateInput> {
     assert_token_matches!(data.tokens, operator!(Less));
 
-    let mut input_types = Vec::new();
+    let mut inputtype_s = Vec::new();
 
     loop {
         let (None, _type) = parse_initializer(data)? else {
             return log_parse_error!(data, "Expected type declaration in template arguments!");
         };
 
-        input_types.push(_type);
+        inputtype_s.push(_type);
 
         if !try_next!(data.tokens, operator!(Comma)) {
             break;
@@ -114,6 +114,6 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXNaiveTemp
     assert_token_matches!(data.tokens, operator!(Greater));
 
     Ok(CXNaiveTemplateInput {
-        params: input_types,
+        params: inputtype_s,
     })
 }

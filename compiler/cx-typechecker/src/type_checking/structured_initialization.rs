@@ -1,106 +1,225 @@
-use cx_typechecker_data::ast::{TCExpr, TCExprKind};
-use cx_typechecker_data::cx_types::{CXType, CXTypeKind};
-use cx_util::{CXResult, log_error};
+use cx_parsing_data::ast::{CXExpr, CXInitIndex};
+use cx_typechecker_data::mir::{
+    expression::{MIRInstruction, MIRValue},
+    program::MIRBaseMappings,
+    types::{CXIntegerType, MIRType, MIRTypeKind},
+};
+use cx_util::CXResult;
 
-use crate::type_checking::casting::implicit_cast;
+use crate::{
+    environment::TypeEnvironment,
+    log_typecheck_error,
+    type_checking::{
+        binary_ops::{handle_assignment, struct_field},
+        casting::implicit_cast,
+        typechecker::typecheck_expr,
+    },
+};
 
-pub fn coerce_initializer_list(initializer: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
+pub fn typecheck_initializer_list(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    indices: &[CXInitIndex],
+    to_type: Option<&MIRType>,
+) -> CXResult<MIRValue> {
+    let Some(to_type) = to_type else {
+        return log_typecheck_error!(env, expr, " Initializer lists must have an explicit type");
+    };
+
     let to_type = match &to_type.kind {
-        CXTypeKind::MemoryReference(inner) => inner.as_ref(),
+        MIRTypeKind::MemoryReference(inner) => inner.as_ref(),
         _ => to_type,
     };
 
     match &to_type.kind {
-        CXTypeKind::Array {
+        MIRTypeKind::Array {
             inner_type: _type,
             size,
-        } => organize_array_initializer(initializer, _type, Some(*size)),
+        } => typecheck_array_initializer(env, base_data, indices, _type, Some(*size), to_type),
 
-        CXTypeKind::PointerTo {
+        MIRTypeKind::PointerTo {
             inner_type: inner,
             sizeless_array: true,
             ..
-        } => organize_array_initializer(initializer, inner.as_ref(), None),
+        } => typecheck_array_initializer(env, base_data, indices, inner.as_ref(), None, to_type),
 
-        CXTypeKind::Structured { .. } => organize_structured_initializer(initializer, to_type),
+        MIRTypeKind::Structured { .. } => {
+            typecheck_structured_initializer(env, base_data, expr, indices, to_type)
+        }
 
-        _ => log_error!(" Cannot coerce initializer to type {to_type}"),
+        _ => log_typecheck_error!(env, expr, " Cannot coerce initializer to type {to_type}"),
     }
 }
 
-fn organize_array_initializer(
-    initializer: &mut TCExpr,
-    inner_type: &CXType,
+fn typecheck_array_initializer(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    indices: &[CXInitIndex],
+    inner_type: &MIRType,
     size: Option<usize>,
-) -> CXResult<()> {
-    let TCExprKind::InitializerList { indices } = &mut initializer.kind else {
-        unreachable!(
-            "PANIC: organize_array_initializer expected initialzer, found: {initializer:?}"
-        );
-    };
-
-    let mut counter = 0;
-
-    for (i, index) in indices.iter_mut().enumerate() {
-        if let Some(name) = index.name.as_ref() {
-            log_error!(" Array initializer cannot have named indices, found: {name}");
+    to_type: &MIRType,
+) -> CXResult<MIRValue> {
+    for index in indices {
+        if let Some(name) = &index.name {
+            return log_typecheck_error!(
+                env,
+                &CXExpr::default(),
+                "Array initializer cannot have named indices, found: {name}"
+            );
         }
-
-        index.index = counter;
-        implicit_cast(&mut index.value, inner_type)?;
-
-        if let Some(size) = size
-            && i < size {
-                counter += 1;
-            }
     }
 
-    let array_size = match size {
-        Some(size) => size,
-        None => indices.len(),
-    };
+    if let Some(size) = size
+        && indices.len() > size {
+            return log_typecheck_error!(
+                env,
+                &CXExpr::default(),
+                "Too many elements in array initializer (expected {}, found {})",
+                size,
+                indices.len()
+            );
+        }
 
-    let init_list_type = CXTypeKind::Array {
+    let array_size = size.unwrap_or(indices.len());
+    let array_type = MIRType::from(MIRTypeKind::Array {
         inner_type: Box::new(inner_type.clone()),
         size: array_size,
-    }
-    .into();
+    });
 
-    initializer._type = init_list_type;
-    Ok(())
+    let region = env.builder.new_register();
+    env.builder
+        .add_instruction(MIRInstruction::CreateStackRegion {
+            result: region.clone(),
+            _type: array_type.clone(),
+        });
+
+    let region_val = MIRValue::Register {
+        register: region,
+        _type: to_type.clone(),
+    };
+
+    for (i, index) in indices.iter().enumerate() {
+        let value = typecheck_expr(env, base_data, &index.value, Some(inner_type))?;
+
+        let element_ptr = env.builder.new_register();
+        env.builder.add_instruction(MIRInstruction::ArrayGet {
+            result: element_ptr.clone(),
+            source: region_val.clone(),
+            index: MIRValue::IntLiteral {
+                value: i as i64,
+                _type: CXIntegerType::I64,
+                signed: true,
+            },
+            element_type: inner_type.clone(),
+            array_type: array_type.clone(),
+        });
+
+        env.builder.add_instruction(MIRInstruction::MemoryWrite {
+            target: MIRValue::Register {
+                register: element_ptr,
+                _type: inner_type.clone().mem_ref_to(),
+            },
+            value,
+        });
+    }
+
+    Ok(region_val)
 }
 
-fn organize_structured_initializer(initializer: &mut TCExpr, to_type: &CXType) -> CXResult<()> {
-    let TCExprKind::InitializerList { indices } = &mut initializer.kind else {
-        unreachable!(
-            "PANIC: organize_structured_initializer expected initialzer, found: {initializer:?}"
+fn typecheck_structured_initializer(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    indices: &[CXInitIndex],
+    to_type: &MIRType,
+) -> CXResult<MIRValue> {
+    let MIRTypeKind::Structured { fields, .. } = &to_type.kind else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Expected structured type for initializer, found: {to_type}"
         );
     };
-    let CXTypeKind::Structured { fields, .. } = &to_type.kind else {
-        log_error!(" Expected structured type for initializer, found: {to_type}");
+
+    let region = env.builder.new_register();
+    env.builder
+        .add_instruction(MIRInstruction::CreateStackRegion {
+            result: region.clone(),
+            _type: to_type.clone(),
+        });
+
+    let region_val = MIRValue::Register {
+        register: region,
+        _type: to_type.clone(),
     };
 
     let mut counter = 0;
+    let mut initialized_fields = vec![false; fields.len()];
 
-    for index in indices.iter_mut() {
+    for index in indices.iter() {
         if let Some(name) = &index.name {
-            let Some(index) = fields.iter().position(|(field_name, _)| name == field_name) else {
-                log_error!(" Structured initializer has unexpected field: {name}");
+            let Some(found_index) = fields
+                .iter()
+                .position(|(field_name, _)| name.as_str() == field_name.as_str())
+            else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Structured initializer has unexpected field: {name}"
+                );
             };
-
-            counter = index;
+            counter = found_index;
         }
 
-        index.index = counter;
+        if counter >= fields.len() {
+            return log_typecheck_error!(env, expr, "Too many elements in struct initializer");
+        }
 
-        let field_type = &fields[counter].1;
-        implicit_cast(&mut index.value, field_type)?;
+        if initialized_fields[counter] {
+            return log_typecheck_error!(
+                env,
+                expr,
+                "Field '{}' initialized more than once",
+                fields[counter].0
+            );
+        }
 
-        if counter < fields.len() {
+        let (field_name, field_type) = &fields[counter];
+        let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
+            .and_then(|v| implicit_cast(env, &index.value, v, field_type))?;
+
+        let Some(struct_field) = struct_field(to_type, field_name.as_str()) else {
+            return log_typecheck_error!(
+                env,
+                expr,
+                " Could not find field '{}' in type {}",
+                field_name,
+                to_type
+            );
+        };
+
+        let element_ptr = env.builder.new_register();
+        env.builder.add_instruction(MIRInstruction::StructGet {
+            result: element_ptr.clone(),
+            source: region_val.clone(),
+            field_index: struct_field.index,
+            field_offset: struct_field.offset,
+            struct_type: to_type.clone(),
+        });
+
+        let element_ptr_val = MIRValue::Register {
+            register: element_ptr,
+            _type: field_type.clone().mem_ref_to(),
+        };
+
+        handle_assignment(env, &element_ptr_val, &value, field_type)?;
+        initialized_fields[counter] = true;
+
+        if index.name.is_none() {
             counter += 1;
         }
     }
 
-    initializer._type = to_type.clone();
-    Ok(())
+    Ok(region_val)
 }

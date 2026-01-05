@@ -1,0 +1,31 @@
+public:
+
+struct box<T> {
+    T* ptr;
+};
+
+box<T> box<T>::new<T>(T value) {
+    box<T> b = (box<T>) {
+        .ptr = malloc(sizeof(T)),
+    };
+ 
+    *(b.ptr) = move value;
+    return b;   
+}
+
+~box<T>(this) {
+    free(this.ptr);
+}
+
+T& box<T>::deref<T>(this) {
+    return *(this.ptr);
+}
+
+T* box<T>::leak<T>(move this) {
+    @nodrop this;
+    return this.ptr;
+}
+
+private:
+
+#include <stdlib.h>

@@ -1,14 +1,14 @@
 use cx_parsing_data::ast::VisibilityMode;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_typechecker_data::ast::TCBaseMappings;
+use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 
-mod log;
-
-pub mod type_checking;
-pub mod type_completion;
+pub(crate) mod log;
+pub(crate) mod builder;
 
 pub mod environment;
+pub mod type_checking;
+pub mod type_completion;
 
 pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
     let ast = context
@@ -68,7 +68,7 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
     context
         .module_db
         .base_mappings
-        .insert(unit.clone(), TCBaseMappings {
+        .insert(unit.clone(), MIRBaseMappings {
             unit: unit.as_str().to_owned(),
             type_data: base_type_map,
             fn_data: base_fn_map,

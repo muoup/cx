@@ -51,7 +51,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             };
 
             data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::from(ident.as_str()),
+                CXIdent::new(ident.as_str()),
                 data.visibility_mode,
                 CXLinkageMode::Standard,
             ));
@@ -67,7 +67,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             };
 
             data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::from(ident.as_str()),
+                CXIdent::new(ident.as_str()),
                 data.visibility_mode,
                 CXLinkageMode::Standard,
             ));
