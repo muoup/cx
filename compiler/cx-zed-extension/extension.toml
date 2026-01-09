@@ -1,0 +1,11 @@
+id = "cx-lsp"
+name = "CX Support"
+version = "0.0.1"
+schema_version = 1
+authors = ["Zachary Verlardi <zacharyverlardi@gmail.com>"]
+description = "Language Support for the CX Language"
+repository = "https://github.com/muoup/cx"
+
+[language_servers.cx-lsp]
+name = "CX Language Server"
+languages = ["CX"]

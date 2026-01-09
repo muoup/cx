@@ -1,0 +1,4 @@
+name = "CX"
+grammar = "cpp"
+path_suffixes = ["cx"]
+line_comments = ["//"]
