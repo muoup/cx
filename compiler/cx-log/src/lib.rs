@@ -11,7 +11,7 @@ fn line_as_spacing(line: &str) -> String {
         .collect()
 }
 
-fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
+pub fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
     let mut acc = index;
 
     for (line_num, line) in file_contents.lines().enumerate() {

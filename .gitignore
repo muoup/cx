@@ -1,8 +1,6 @@
-/target
-**/.internal/*
-.*
+**/target
+**/.*
 
 *.exe
 *.out
-
-GEMINI.md
+*.wasm

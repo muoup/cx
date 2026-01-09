@@ -10,3 +10,11 @@ dashmap = "5.5"
 
 cx-lexer = { path = "../cx-lexer" }
 cx-lexer-data = { path = "../cx-lexer-data" }
+cx-log = { path = "../cx-log" }
+cx-parsing = { path = "../cx-parsing" }
+cx-parsing-data = { path = "../cx-parsing-data" }
+cx-pipeline = { path = "../cx-pipeline" }
+cx-pipeline-data = { path = "../cx-pipeline-data" }
+cx-typechecker = { path = "../cx-typechecker" }
+cx-typechecker-data = { path = "../cx-typechecker-data" }
+cx-util = { path = "../cx-util" }

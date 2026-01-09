@@ -3,7 +3,7 @@ use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 
-pub(crate) mod log;
+pub mod log;
 pub(crate) mod builder;
 
 pub mod environment;

@@ -10,6 +10,32 @@ pub mod unsafe_float;
 
 pub trait CXErrorTrait {
     fn pretty_print(&self);
+
+    /// Attempt to downcast this error to a concrete type.
+    /// Returns Some if the error is of the given type, None otherwise.
+    fn as_any(&self) -> &dyn std::any::Any {
+        &()
+    }
+
+    /// Get the error as a string for LSP diagnostics
+    fn error_message(&self) -> String {
+        "".to_string()
+    }
+
+    /// Get the compilation unit for this error, if applicable
+    fn compilation_unit(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    /// Get the token start index for this error, if applicable
+    fn token_start(&self) -> Option<usize> {
+        None
+    }
+
+    /// Get the token end index for this error, if applicable
+    fn token_end(&self) -> Option<usize> {
+        None
+    }
 }
 
 pub struct CXError {
@@ -19,6 +45,10 @@ pub struct CXError {
 impl CXErrorTrait for CXError {
     fn pretty_print(&self) {
         println!("CXError: {}", self.message);
+    }
+
+    fn error_message(&self) -> String {
+        self.message.clone()
     }
 }
 
