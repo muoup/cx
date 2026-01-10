@@ -1,5 +1,5 @@
 [workspace]
 resolver = "2"
 members = [
-    "compiler/cx", "tests"
+    "compiler/cx", "compiler/cx-fmir-data", "tests"
 ]

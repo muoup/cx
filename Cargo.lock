@@ -285,6 +285,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-fmir-data"
+version = "0.1.0"
+dependencies = [
+ "cx-typechecker-data",
+]
+
+[[package]]
 name = "cx-lexer"
 version = "0.0.0"
 dependencies = [
@@ -366,6 +373,7 @@ dependencies = [
 name = "cx-typechecker"
 version = "0.0.0"
 dependencies = [
+ "cx-fmir-data",
  "cx-lexer-data",
  "cx-log",
  "cx-parsing-data",

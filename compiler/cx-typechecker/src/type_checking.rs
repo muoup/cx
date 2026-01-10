@@ -11,14 +11,12 @@ use cx_typechecker_data::mir::{
 use cx_util::{CXError, CXResult};
 
 use crate::{
-    environment::{TypeEnvironment, deconstruction::generate_deconstructor},
-    type_checking::{
+    environment::{TypeEnvironment, deconstruction::generate_deconstructor}, safe_lowering::lower_safe_fn, type_checking::{
         move_semantics::acknowledge_declared_object,
         typechecker::{global_expr, typecheck_expr},
-    },
-    type_completion::templates::{
+    }, type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
-    },
+    }
 };
 
 pub mod binary_ops;
@@ -30,12 +28,27 @@ pub(crate) mod move_semantics;
 pub(crate) mod structured_initialization;
 pub(crate) mod typechecker;
 
+fn generate_safe_function(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    prototype: MIRFunctionPrototype,
+    body: &CXExpr,
+) -> CXResult<()> {
+    lower_safe_fn(env, base_data, prototype, body)?;
+    
+    Ok(())
+}
+
 fn generate_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     prototype: MIRFunctionPrototype,
     body: &CXExpr,
 ) -> CXResult<()> {
+    if prototype.contract.safe {
+        return generate_safe_function(env, base_data, prototype, body);
+    }
+    
     env.push_scope(None, None);
     env.builder.start_function(prototype.clone());
     env.arg_vals.clear();
