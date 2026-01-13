@@ -1,5 +1,12 @@
 [workspace]
 resolver = "2"
+
 members = [
     "compiler/cx", "compiler/cx-fmir-data", "tests"
+]
+
+# For the time being, any optional packages (i.e. ones only compiled when passed a feature flag) should be included here
+# so that cargo won't still attempt to build them in their absence.
+exclude = [
+    "compiler/cx-backend-llvm"
 ]

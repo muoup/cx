@@ -7,7 +7,7 @@ use crate::type_checking::binary_ops::{
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::contract::contracted_function_return;
-use crate::type_checking::move_semantics::acknowledge_declared_object;
+use crate::type_checking::move_semantics::{acknowledge_declared_object, invoke_scope_destructors};
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
@@ -128,7 +128,8 @@ pub fn typecheck_expr_inner(
                 }
             );
 
-            let ack = acknowledge_declared_object(env, name.to_string(), _type.clone())?;
+            let mut ack = acknowledge_declared_object(env, name.to_string(), _type.clone())?;
+            ack.expression._type.remove_specifier(CX_CONST);
 
             TypecheckResult::new(allocation)
                 .chain(ack)
@@ -189,6 +190,21 @@ pub fn typecheck_expr_inner(
                 None
             };
 
+            // Scope for condition
+            env.push_scope(None, None);
+
+            let condition_value = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c))?;
+
+            env.builder.add_instruction(MIRInstruction::Branch {
+                condition: condition_value,
+                true_block: then_block.clone(),
+                false_block: else_block.clone(),
+            });
+
+            env.builder.add_and_set_block(then_block);
+            env.push_scope(Some(merge_block.clone()), None);
+            typecheck_expr(env, base_data, then_branch, None)?;
             env.pop_scope();
 
             TypecheckResult::new(MIRExpression {
@@ -266,7 +282,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            // TODO: Handle cleanup of deferred expressions here
+            invoke_scope_destructors(&mut env.builder);
             env.builder.add_jump(break_to);
             MIRValue::NULL
         }
@@ -285,6 +301,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
+            invoke_scope_destructors(&mut env.builder);
             env.builder.add_jump(continue_to);
             MIRValue::NULL
         }
@@ -474,13 +491,17 @@ pub fn typecheck_expr_inner(
 
                     MIRValue::Register {
                         register: result,
-                        _type: MIRTypeKind::Bool.into(),
+                        _type: MIRTypeKind::Integer {
+                            _type: CXIntegerType::I1,
+                            signed: false,
+                        }
+                        .into(),
                     }
                 }
 
                 CXUnOp::BNot => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let mut loaded_op_val = coerce_value(env, expr, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     if !loaded_op_type.is_integer() {
@@ -492,7 +513,26 @@ pub fn typecheck_expr_inner(
                         );
                     }
 
+                    // If the type is I1 (boolean), we must promote to I32 first
+                    if let MIRTypeKind::Integer {
+                        _type: CXIntegerType::I1,
+                        ..
+                    } = loaded_op_type.kind
+                    {
+                        loaded_op_val = implicit_cast(
+                            env,
+                            expr,
+                            loaded_op_val.clone(),
+                            &MIRType::from(MIRTypeKind::Integer {
+                                _type: CXIntegerType::I32,
+                                signed: true,
+                            }),
+                        )?;
+                    }
+
                     let result = env.builder.new_register();
+                    let result_type = loaded_op_val.get_type();
+
                     env.builder.add_instruction(MIRInstruction::UnOp {
                         result: result.clone(),
                         op: MIRUnOp::BNOT,
@@ -501,7 +541,7 @@ pub fn typecheck_expr_inner(
 
                     MIRValue::Register {
                         register: result,
-                        _type: loaded_op_type,
+                        _type: result_type,
                     }
                 }
 
@@ -628,12 +668,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            // TODO: This is probably better to do at the VarDeclaration-level, where its type
-            // returned in this function is non-const, but the variable-table reference type
-            // is, but for now this will do until we refactor that part.
-            if inner.get_specifier(CX_CONST)
-                && !matches!(lhs.kind, CXExprKind::VarDeclaration { .. })
-            {
+            if inner.get_specifier(CX_CONST) {
                 return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 

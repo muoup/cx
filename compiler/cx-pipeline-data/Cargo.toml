@@ -5,7 +5,6 @@ edition = "2024"
 
 [features]
 default = []
-backend-llvm = []
 test = []
 
 [dependencies]

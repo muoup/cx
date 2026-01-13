@@ -1,10 +1,10 @@
-use cx_parsing_data::ast::{CXExpr, CXInitIndex};
+use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_typechecker_data::mir::{
     expression::{MIRInstruction, MIRValue},
     program::MIRBaseMappings,
     types::{CXIntegerType, MIRType, MIRTypeKind},
 };
-use cx_util::CXResult;
+use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::{
     environment::TypeEnvironment,
@@ -15,6 +15,65 @@ use crate::{
         typechecker::typecheck_expr,
     },
 };
+
+pub struct TypeConstructor<'a> {
+    pub union_name: CXIdent,
+    pub variant_name: CXIdent,
+    pub inner: &'a CXExpr,
+}
+
+pub fn deconstruct_type_constructor<'a>(
+    env: &mut TypeEnvironment,
+    pattern: &'a CXExpr,
+) -> CXResult<TypeConstructor<'a>> {
+    let CXExprKind::BinOp {
+        op: CXBinOp::MethodCall,
+        lhs,
+        rhs: inner,
+    } = &pattern.kind
+    else {
+        return log_typecheck_error!(
+            env,
+            pattern,
+            "Expected type constructor"
+        );
+    };
+
+    let CXExprKind::BinOp {
+        op: CXBinOp::ScopeRes,
+        lhs,
+        rhs,
+    } = &lhs.kind
+    else {
+        return log_typecheck_error!(
+            env,
+            pattern,
+            "Expected type constructor"
+        );
+    };
+
+    let CXExprKind::Identifier(union_name) = &lhs.kind else {
+        return log_typecheck_error!(
+            env,
+            pattern,
+            "Expected type constructor"
+        );
+    };
+
+    let CXExprKind::Identifier(variant_name) = &rhs.kind else {
+        return log_typecheck_error!(
+            env,
+            pattern,
+            "Expected type constructor"
+        );
+    };
+
+    Ok(TypeConstructor {
+        union_name: union_name.clone(),
+        variant_name: variant_name.clone(),
+        inner,
+    })
+}
 
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,
@@ -71,15 +130,16 @@ fn typecheck_array_initializer(
     }
 
     if let Some(size) = size
-        && indices.len() > size {
-            return log_typecheck_error!(
-                env,
-                &CXExpr::default(),
-                "Too many elements in array initializer (expected {}, found {})",
-                size,
-                indices.len()
-            );
-        }
+        && indices.len() > size
+    {
+        return log_typecheck_error!(
+            env,
+            &CXExpr::default(),
+            "Too many elements in array initializer (expected {}, found {})",
+            size,
+            indices.len()
+        );
+    }
 
     let array_size = size.unwrap_or(indices.len());
     let array_type = MIRType::from(MIRTypeKind::Array {

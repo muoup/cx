@@ -8,6 +8,10 @@ pub fn base_mangle_member(name: &str, member_type: &MIRType) -> String {
     format!("_M{}_{}", member_type.mangle(), name)
 }
 
+pub fn base_mangle_static_member(name: &str, member_type: &MIRType) -> String {
+    format!("_S{}_{}", member_type.mangle(), name)
+}
+
 pub fn base_mangle_destructor(_type: &MIRType) -> String {
     format!("_D_{}", _type.mangle())
 }
@@ -80,16 +84,11 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             }
         }
         MIRTypeKind::Integer { _type, signed } => {
-            mangled.push('I');
-            mangled.push_str(&_type.bytes().to_string());
+            mangled.push_str(format!("{}", _type).as_str());
             mangled.push(if *signed { 's' } else { 'u' });
         }
         MIRTypeKind::Float { _type } => {
-            mangled.push('F');
-            mangled.push_str(&_type.bytes().to_string());
-        }
-        MIRTypeKind::Bool => {
-            mangled.push('B');
+            mangled.push_str(format!("{}", _type).as_str());
         }
         MIRTypeKind::Unit => {
             mangled.push('v');

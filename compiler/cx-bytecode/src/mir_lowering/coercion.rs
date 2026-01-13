@@ -1,5 +1,6 @@
 use cx_bytecode_data::{
-    BCCoercionType, BCInstructionKind, BCIntBinOp, BCValue, types::{BCType, BCTypeKind}
+    types::{BCType, BCTypeKind},
+    BCCoercionType, BCInstructionKind, BCValue,
 };
 use cx_typechecker_data::mir::expression::{MIRCoercion, MIRRegister, MIRValue};
 use cx_util::CXResult;
@@ -56,19 +57,6 @@ pub fn lower_coercion(
                     Some(result),
                 )
             }
-        }
-
-        MIRCoercion::BoolToInt { to_type } => {
-            let bc_itype = builder.convert_integer_type(&to_type);
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Coercion {
-                    coercion_type: BCCoercionType::BoolExtend,
-                    value: bc_value,
-                },
-                BCType::from(BCTypeKind::Integer(bc_itype)),
-                Some(result),
-            )
         }
 
         MIRCoercion::FloatCast { to_type } => {
@@ -139,25 +127,6 @@ pub fn lower_coercion(
                     value: bc_value,
                 },
                 BCType::default_pointer(),
-                Some(result),
-            )
-        }
-
-        MIRCoercion::IntToBool => {
-            let bool_type = BCType::from(BCTypeKind::Bool);
-
-            let from_type = builder.convert_cx_type(&value.get_type());
-            let BCTypeKind::Integer(from_itype) = &from_type.kind else {
-                unreachable!()
-            };
-
-            builder.add_instruction_translated(
-                BCInstructionKind::IntegerBinOp {
-                    op: BCIntBinOp::NE,
-                    left: bc_value,
-                    right: BCValue::IntImmediate { _type: *from_itype, val: 0 }
-                },
-                bool_type,
                 Some(result),
             )
         }

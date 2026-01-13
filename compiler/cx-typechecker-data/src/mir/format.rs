@@ -285,7 +285,6 @@ impl Display for MIRBinOp {
         match self {
             MIRBinOp::Float { ftype, op } => write!(f, "f{} {:?}", ftype.bytes() * 8, op),
             MIRBinOp::Integer { itype, op } => write!(f, "i{} {:?}", itype.bytes() * 8, op),
-            MIRBinOp::Bool { op } => write!(f, "bool {:?}", op),
             MIRBinOp::PtrDiff { ptr_inner, op } => write!(f, "ptrdiff<{}> {:?}", ptr_inner, op),
             MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
@@ -328,8 +327,6 @@ impl Display for MIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            MIRCoercion::IntToBool => write!(f, "int_to_bool"),
-            MIRCoercion::BoolToInt { to_type } => write!(f, "bool_to_int(to: {})", to_type),
             MIRCoercion::FloatToInt { sextend, to_type } => write!(
                 f,
                 "float_to_int({}, to: {})",
@@ -351,14 +348,10 @@ impl Display for MIRType {
 impl Display for MIRTypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRTypeKind::Integer { _type, signed } => write!(
-                f,
-                "{}{}",
-                if *signed { 'i' } else { 'u' },
-                _type.bytes() * 8
-            ),
+            MIRTypeKind::Integer { _type, signed } => {
+                write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
+            }
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
-            MIRTypeKind::Bool => write!(f, "bool"),
             MIRTypeKind::Structured { name, .. } => {
                 write!(
                     f,
@@ -402,6 +395,7 @@ impl Display for CXFloatType {
 impl Display for CXIntegerType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            CXIntegerType::I1 => write!(f, "i1"),
             CXIntegerType::I8 => write!(f, "i8"),
             CXIntegerType::I16 => write!(f, "i16"),
             CXIntegerType::I32 => write!(f, "i32"),

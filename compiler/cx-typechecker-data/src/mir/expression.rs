@@ -168,21 +168,17 @@ pub enum MIRIntegerBinOp {
     ILE,
     IGT,
     IGE,
+    
+    // Boolean/Bitwise Ops
+    AND,
+    OR,
+    XOR
 }
 
 #[derive(Clone, Debug)]
 pub enum MIRPtrDiffBinOp {
     ADD,
     SUB,
-}
-
-#[derive(Clone, Debug)]
-pub enum MIRBoolBinOp {
-    LAND,
-    LOR,
-
-    EQ,
-    NE,
 }
 
 #[derive(Clone, Debug)]
@@ -216,10 +212,6 @@ pub enum MIRBinOp {
     Integer {
         itype: CXIntegerType,
         op: MIRIntegerBinOp,
-    },
-
-    Bool {
-        op: MIRBoolBinOp,
     },
 
     Float {
@@ -262,14 +254,6 @@ pub enum MIRCoercion {
     // Any float to any float conversion
     FloatCast {
         to_type: CXFloatType,
-    },
-
-    // Boolean (i1) to any integer type. This exists mostly for Cranelift, as internally a boolean
-    // is simply a byte, and doing an integral cast from Bool -> i8 would create a coercion instruction
-    // that Cranelift cannot handle. There could have been a filter for this, but that ended up causing
-    // proving more difficult than just having a dedicated coercion type for it.
-    BoolToInt {
-        to_type: CXIntegerType,
     },
 
     // Any integer type to a floating point number, sizes of types need not match

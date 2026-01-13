@@ -3,7 +3,8 @@ use cx_lexer_data::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_parsing_data::ast::CXGlobalVariable;
 use cx_parsing_data::data::{
-    CX_CONST, CX_RESTRICT, CX_VOLATILE, CXFunctionKind, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, CXTypeSpecifier, PredeclarationType
+    CXFunctionKind, CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype,
+    CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
 use cx_parsing_data::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_util::identifier::CXIdent;
@@ -316,8 +317,8 @@ pub(crate) fn parsetype_mods(
             let ParseParamsResult {
                 params,
                 var_args,
-                contains_this,
                 contract,
+                ..
             } = parse_params(data)?;
 
             let prototype = CXNaivePrototype {
@@ -325,7 +326,6 @@ pub(crate) fn parsetype_mods(
                 return_type: acc_type,
                 params,
                 var_args,
-                this_param: contains_this,
                 contract,
             };
 
@@ -368,8 +368,12 @@ pub(crate) fn parse_suffixtype_mod(
                     CXNaiveTypeKind::ExplicitSizedArray(Box::new(acc_type), size).to_type()
                 }
 
-                // TODO: reimplement variable length arrays
-                _ => todo!("variable length arrays"),
+                _ => {
+                    return log_preparse_error!(
+                        tokens,
+                        "Expected array size (integer literal) or ']' for implicit sized array"
+                    )
+                }
             };
 
             assert_token_matches!(tokens, punctuator!(CloseBracket));

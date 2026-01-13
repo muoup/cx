@@ -57,7 +57,6 @@ pub enum BCValue {
         _type: BCFloatType,
         val: FloatWrapper,
     },
-    BoolImmediate(bool),
     Global(ElementID),
     FunctionRef(CXIdent),
 }
@@ -178,12 +177,6 @@ pub enum BCInstructionKind {
         left: BCValue,
         right: BCValue,
     },
-    
-    BooleanBinOp {
-        op: BCBoolBinOp,
-        left: BCValue,
-        right: BCValue,
-    },
 
     IntegerUnOp {
         op: BCIntUnOp,
@@ -198,11 +191,6 @@ pub enum BCInstructionKind {
 
     FloatUnOp {
         op: BCFloatUnOp,
-        value: BCValue,
-    },
-    
-    BooleanUnOp {
-        op: BCBoolUnOp,
         value: BCValue,
     },
 
@@ -305,15 +293,6 @@ pub enum BCIntBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BCBoolBinOp {
-    LAND,
-    LOR,
-    
-    EQ,
-    NE
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BCIntUnOp {
     BNOT,
     LNOT,
@@ -336,18 +315,12 @@ pub enum BCFloatBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BCBoolUnOp {
-    LNOT,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BCFloatUnOp {
     NEG,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BCCoercionType {
-    BoolExtend,
     ZExtend,
     SExtend,
     Trunc,

@@ -1,12 +1,11 @@
 use cx_bytecode_data::{
-    types::{BCType, BCTypeKind},
-    BCBoolBinOp, BCFloatBinOp, BCFunctionPrototype, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
+    types::BCType, BCFloatBinOp, BCFunctionPrototype, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
     BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{
-        MIRBinOp, MIRBoolBinOp, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
-        MIRRegister, MIRValue,
+        MIRBinOp, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRRegister,
+        MIRValue,
     },
     types::MIRType,
 };
@@ -23,7 +22,6 @@ pub(crate) fn lower_binop(
 ) -> CXResult<BCValue> {
     match op {
         MIRBinOp::Integer { itype: _, op } => lower_int_binop(builder, result, lhs, rhs, op),
-        MIRBinOp::Bool { op } => lower_bool_binop(builder, result, lhs, rhs, op),
         MIRBinOp::Float { ftype: _, op } => lower_float_binop(builder, result, lhs, rhs, op),
         MIRBinOp::PtrDiff { op, ptr_inner } => {
             lower_ptrdiff_binop(builder, result, lhs, rhs, op, ptr_inner)
@@ -66,11 +64,15 @@ fn lower_int_binop(
         MIRIntegerBinOp::ILE => (BCIntBinOp::ILE, OperationCategory::Comparison),
         MIRIntegerBinOp::IGT => (BCIntBinOp::IGT, OperationCategory::Comparison),
         MIRIntegerBinOp::IGE => (BCIntBinOp::IGE, OperationCategory::Comparison),
+
+        MIRIntegerBinOp::AND => (BCIntBinOp::BAND, OperationCategory::Arithmetic),
+        MIRIntegerBinOp::OR => (BCIntBinOp::BOR, OperationCategory::Arithmetic),
+        MIRIntegerBinOp::XOR => (BCIntBinOp::BXOR, OperationCategory::Arithmetic),
     };
 
     let result_type = match bc_op_category {
         OperationCategory::Arithmetic => builder.convert_cx_type(&lhs.get_type()),
-        OperationCategory::Comparison => BCType::from(BCTypeKind::Bool),
+        OperationCategory::Comparison => BCType::bool(),
     };
 
     builder.add_instruction_translated(
@@ -113,7 +115,7 @@ fn lower_float_binop(
             left: bc_lhs,
             right: bc_rhs,
         },
-        BCType::from(BCTypeKind::Bool),
+        BCType::bool(),
         Some(result.clone()),
     )
 }
@@ -175,36 +177,7 @@ fn lower_ptr_binop(
             left: bc_lhs,
             right: bc_rhs,
         },
-        BCType::from(BCTypeKind::Bool),
-        Some(result.clone()),
-    )
-}
-
-fn lower_bool_binop(
-    builder: &mut BCBuilder,
-    result: &MIRRegister,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
-    op: &MIRBoolBinOp,
-) -> CXResult<BCValue> {
-    let bc_lhs = lower_value(builder, lhs)?;
-    let bc_rhs = lower_value(builder, rhs)?;
-
-    let bc_op = match op {
-        MIRBoolBinOp::LAND => BCBoolBinOp::LAND,
-        MIRBoolBinOp::LOR => BCBoolBinOp::LOR,
-
-        MIRBoolBinOp::EQ => BCBoolBinOp::EQ,
-        MIRBoolBinOp::NE => BCBoolBinOp::NE,
-    };
-
-    builder.add_instruction_translated(
-        BCInstructionKind::BooleanBinOp {
-            op: bc_op,
-            left: bc_lhs,
-            right: bc_rhs,
-        },
-        BCType::from(BCTypeKind::Bool),
+        BCType::bool(),
         Some(result.clone()),
     )
 }

@@ -41,7 +41,7 @@ fn generate_safe_function(
     Ok(())
 }
 
-fn generate_function(
+fn typecheck_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     prototype: MIRFunctionPrototype,
@@ -74,7 +74,7 @@ fn generate_function(
                 name.as_string(),
                 MIRValue::Register {
                     register: alias.clone(),
-                    _type: _type.clone(),
+                    _type: _type.clone().mem_ref_to(),
                 },
             );
 
@@ -148,7 +148,7 @@ pub fn typecheck(
         match stmt {
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
                 let prototype = env.complete_prototype(base_data, None, prototype)?;
-                generate_function(env, base_data, prototype.clone(), body)?;
+                typecheck_function(env, base_data, prototype.clone(), body)?;
             }
 
             CXFunctionStmt::DestructorDefinition { _type, body } => {
@@ -158,7 +158,7 @@ pub fn typecheck(
                     unreachable!("Destructor prototype should not be missing: {}", _type);
                 };
 
-                generate_function(env, base_data, prototype.clone(), body)?;
+                typecheck_function(env, base_data, prototype.clone(), body)?;
             }
 
             _ => {}
@@ -208,7 +208,7 @@ pub fn realize_fn_implementation(
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
     env.in_external_templated_function = true;
-    generate_function(env, base_data.as_ref(), prototype.clone(), body)?;
+    typecheck_function(env, base_data.as_ref(), prototype.clone(), body)?;
     env.in_external_templated_function = false;
 
     restore_template_overwrites(env, overwrites);

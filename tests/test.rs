@@ -16,36 +16,37 @@ macro_rules! test_files {
     };
 }
 
-#[cfg(test)]
 mod regression_tests {
     use super::*;
 
     test_files!(
-        hello_world,
         basic_arithmetic,
         basic_compound_expr,
         basic_for,
         basic_template,
         basic_template_type,
         basic_while,
+        basic_global_variable,
+        basic_succeeding_contract,
         bool_tests,
+        box_static_factory,
         complex_expressions,
         conditional_lifetime,
         deferring,
         enum_type,
+        function_contract,
+        global_in_template,
+        hello_world,
+        padded_array,
         short_circuit_eval,
+        static_member_function,
         struct_and_pointers,
         struct_parameter,
-        template_include,
-        vector,
-        templated_destructor,
-        basic_global_variable,
-        global_in_template,
         sum_type,
-        function_contract,
-        basic_succeeding_contract,
         array_passing,
-        padded_array
+        template_include,
+        templated_destructor,
+        vector
     );
 }
 

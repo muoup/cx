@@ -100,8 +100,6 @@ pub fn process_new_type(
         return;
     }
  
-    println!("FN MAP: {}", env.realized_fns.keys().cloned().collect::<Vec<_>>().join(", "));
-
     match &_type.kind {
         MIRTypeKind::Structured { fields, .. } => {
             // Even if we do not have a destructor, if any of our fields have destructors,
