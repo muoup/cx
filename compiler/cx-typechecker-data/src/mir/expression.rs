@@ -209,6 +209,114 @@ pub enum MIRInstruction {
 }
 
 #[derive(Clone, Debug)]
+pub struct MIRExpression {
+    pub kind: MIRExpressionKind,
+    pub _type: MIRType,
+}
+
+#[derive(Clone, Debug)]
+pub enum MIRExpressionKind {
+    // Literals
+    BoolLiteral(bool),
+    IntLiteral(i64, CXIntegerType, bool),
+    FloatLiteral(FloatWrapper, CXFloatType),
+    Null,
+    Unit,
+
+    // Variables
+    Parameter(CXIdent),
+    GlobalVariable(CXIdent),
+    LocalVariable(CXIdent),
+    FunctionReference { prototype: MIRFunctionPrototype },
+
+    // Arithmetic & Logic
+    BinaryOperation {
+        lhs: Box<MIRExpression>,
+        rhs: Box<MIRExpression>,
+        op: MIRBinOp,
+    },
+    UnaryOperation {
+        operand: Box<MIRExpression>,
+        op: MIRUnOp,
+    },
+
+    // Memory Operations
+    MemoryRead { source: Box<MIRExpression>, _type: MIRType },
+    MemoryWrite { target: Box<MIRExpression>, value: Box<MIRExpression> },
+    StackAllocation { _type: MIRType },
+    CopyRegion { source: Box<MIRExpression>, _type: MIRType },
+
+    // Aggregate Access
+    StructFieldAccess {
+        base: Box<MIRExpression>,
+        field_index: usize,
+        field_offset: usize,
+        struct_type: MIRType,
+    },
+    ArrayAccess {
+        array: Box<MIRExpression>,
+        index: Box<MIRExpression>,
+        element_type: MIRType,
+    },
+
+    // Tagged Unions
+    TaggedUnionTag { value: Box<MIRExpression>, sum_type: MIRType },
+    TaggedUnionGet { value: Box<MIRExpression>, variant_type: MIRType },
+    ConstructTaggedUnion {
+        variant_index: usize,
+        value: Box<MIRExpression>,
+        sum_type: MIRType,
+    },
+
+    // Control Flow
+    If {
+        condition: Box<MIRExpression>,
+        then_branch: Box<MIRExpression>,
+        else_branch: Option<Box<MIRExpression>>,
+    },
+    While {
+        condition: Box<MIRExpression>,
+        body: Box<MIRExpression>,
+        pre_eval: bool,
+    },
+    For {
+        init: Box<MIRExpression>,
+        condition: Box<MIRExpression>,
+        increment: Box<MIRExpression>,
+        body: Box<MIRExpression>,
+    },
+    Match {
+        condition: Box<MIRExpression>,
+        arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
+        default: Option<Box<MIRExpression>>,
+    },
+    Return { value: Option<Box<MIRExpression>> },
+
+    // Sequential Statements
+    Block { statements: Vec<MIRExpression> },
+
+    // Function Calls
+    CallFunction {
+        function: Box<MIRExpression>,
+        arguments: Vec<MIRExpression>,
+    },
+
+    // Type Conversion
+    TypeConversion {
+        operand: Box<MIRExpression>,
+        conversion: MIRCoercion,
+    },
+
+    // Lifetime Management
+    LifetimeStart { variable: CXIdent, _type: MIRType },
+    LifetimeEnd { variable: CXIdent, _type: MIRType },
+    LeakLifetime { expression: Box<MIRExpression> },
+
+    // Defer (TODO: Refactor to proper scoped chains)
+    Defer { expression: Box<MIRExpression> },
+}
+
+#[derive(Clone, Debug)]
 pub enum MIRIntegerBinOp {
     ADD,
     SUB,

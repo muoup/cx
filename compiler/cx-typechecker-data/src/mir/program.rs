@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use cx_parsing_data::{ast::CXGlobalVariable, data::{CXLinkageMode, ModuleResource}, naive_map::{CXNaiveFnMap, CXNaiveTypeMap}};
 use cx_util::identifier::CXIdent;
 
-use crate::mir::{expression::MIRInstruction, types::{MIRFunctionPrototype, MIRType}};
+use crate::mir::{expression::{MIRInstruction, MIRExpressionKind}, types::{MIRFunctionPrototype, MIRType}};
 
 #[derive(Debug, Clone)]
 pub struct MIRUnit {
@@ -23,7 +23,9 @@ pub struct MIRBaseMappings {
 #[derive(Debug, Clone)]
 pub struct MIRFunction {
     pub prototype: MIRFunctionPrototype,
-    pub basic_blocks: Vec<MIRBasicBlock>,
+    pub body: MIRExpressionKind,
+    // TODO: Refactor defer feature to proper scoped chains
+    // Current implementation doesn't scope defer declarations correctly
 }
 
 #[derive(Debug, Clone)]

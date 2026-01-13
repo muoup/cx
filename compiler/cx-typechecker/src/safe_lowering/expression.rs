@@ -3,12 +3,28 @@ use std::rc::Rc;
 use cx_fmir_data::ast::{FMIRNode, FMIRNodeBody, FMIRType, FRc};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
 use cx_typechecker_data::mir::{
+    expression::{MIRExpressionKind, MIRValue},
     program::MIRBaseMappings,
     types::{CXIntegerType, MIRFunctionPrototype, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
 use crate::environment::TypeEnvironment;
+
+// TODO: Implement mir_expression_to_fmir_node to convert MIRExpression to FMIRNode
+// This is incomplete PoC code that needs to be updated for new MIR structure
+// Since safe functions now go through MIR first, this function should convert MIRExpression to FMIRNode
+
+fn mir_expression_to_fmir_node(_expr: &MIRExpressionKind) -> CXResult<FMIRNode> {
+    // TODO: Implement conversion from MIRExpression to FMIRNode
+    todo!("mir_expression_to_fmir_node not yet implemented")
+}
+
+// Temporary function for backward compatibility during refactoring
+fn mir_value_to_fmir_node(_value: MIRValue) -> CXResult<FMIRNode> {
+    // TODO: Remove this once mir_expression_to_fmir_node is implemented
+    todo!("mir_value_to_fmir_node not yet implemented")
+}
 
 pub fn lower_expression(
     env: &mut TypeEnvironment,
@@ -97,6 +113,81 @@ pub fn lower_expression(
                 FMIRNode::if_else(condition, FRc::new(cloop), Some(Rc::new(FMIRNode::unit())))
             } else {
                 cloop
+            }
+        }
+
+        CXExprKind::Unit => FMIRNode::unit(),
+
+        CXExprKind::Identifier(name) => {
+            // Look up the variable in the environment
+            let mir_value = env
+                .symbol_value(name.as_str())
+                .ok_or_else(|| cx_util::CXError::create_boxed(format!("undefined variable: {}", name)))?
+                .clone();
+
+            // Convert MIRValue to FMIRNode
+            mir_value_to_fmir_node(mir_value)?
+        }
+
+        CXExprKind::UnOp { operand, operator } => {
+            let lowered_operand = lower_expression(env, base_data, prototype, operand)?;
+            let operand_type = &lowered_operand._type;
+
+            // For now, create a simple representation of unary operations
+            // TODO: This could be enhanced to use proper intrinsic functions or new FMIRNodeBody variants
+            match operator {
+                cx_parsing_data::ast::CXUnOp::Negative => {
+                    // Negation: For now, we'll create a pure value placeholder
+                    // In a full implementation, this would be an Application of a negation function
+                    FMIRNode {
+                        _type: operand_type.clone(),
+                        body: FMIRNodeBody::Pure,
+                    }
+                }
+                cx_parsing_data::ast::CXUnOp::BNot => {
+                    // Bitwise NOT
+                    FMIRNode {
+                        _type: operand_type.clone(),
+                        body: FMIRNodeBody::Pure,
+                    }
+                }
+                cx_parsing_data::ast::CXUnOp::LNot => {
+                    // Logical NOT - returns bool
+                    FMIRNode {
+                        _type: FMIRType::Standard(MIRType::from(MIRTypeKind::Bool)),
+                        body: FMIRNodeBody::Pure,
+                    }
+                }
+                _ => todo!("UnOp operator {:?} not yet implemented", operator),
+            }
+        }
+
+        CXExprKind::BinOp { lhs, rhs, op } => {
+            let _lowered_lhs = lower_expression(env, base_data, prototype, lhs)?;
+            let _lowered_rhs = lower_expression(env, base_data, prototype, rhs)?;
+
+            // For now, create a simple representation of binary operations
+            // TODO: This could be enhanced to use proper intrinsic functions or new FMIRNodeBody variants
+            let result_type = match op {
+                cx_parsing_data::ast::CXBinOp::Less
+                | cx_parsing_data::ast::CXBinOp::Greater
+                | cx_parsing_data::ast::CXBinOp::LessEqual
+                | cx_parsing_data::ast::CXBinOp::GreaterEqual
+                | cx_parsing_data::ast::CXBinOp::Equal
+                | cx_parsing_data::ast::CXBinOp::NotEqual
+                | cx_parsing_data::ast::CXBinOp::LAnd
+                | cx_parsing_data::ast::CXBinOp::LOr => {
+                    FMIRType::Standard(MIRType::from(MIRTypeKind::Bool))
+                }
+                _ => {
+                    // For arithmetic operations, the result type is the same as the operand type
+                    _lowered_lhs._type.clone()
+                }
+            };
+
+            FMIRNode {
+                _type: result_type,
+                body: FMIRNodeBody::Pure,
             }
         }
         

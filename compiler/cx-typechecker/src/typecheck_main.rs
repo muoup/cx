@@ -19,15 +19,6 @@ use crate::{
     }
 };
 
-pub mod binary_ops;
-
-pub(crate) mod casting;
-pub(crate) mod contract;
-pub(crate) mod r#match;
-pub(crate) mod move_semantics;
-pub(crate) mod structured_initialization;
-pub(crate) mod typechecker;
-
 fn generate_safe_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,

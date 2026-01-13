@@ -14,8 +14,9 @@ use cx_pipeline_data::jobs::{
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
-use cx_typechecker::type_checking::{complete_base_functions, complete_base_globals, typecheck};
+use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
 use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_util::CXErrorTrait;
 use cx_util::format::dump_data;
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
@@ -301,15 +302,15 @@ pub(crate) fn perform_job(
             let mut env =
                 TypeEnvironment::new(lexemes.as_ref(), job.unit.clone(), &context.module_db);
 
-            complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(|e| {
+            complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(|e: Box<dyn CXErrorTrait>| {
                 e.pretty_print();
                 panic!("Completing base globals failed");
             });
-            complete_base_functions(&mut env, structure_data.as_ref()).unwrap_or_else(|e| {
+            complete_base_functions(&mut env, structure_data.as_ref()).unwrap_or_else(|e: Box<dyn CXErrorTrait>| {
                 e.pretty_print();
                 panic!("Completing base functions failed");
             });
-            typecheck(&mut env, structure_data.as_ref(), &self_ast).unwrap_or_else(|e| {
+            typecheck(&mut env, structure_data.as_ref(), &self_ast).unwrap_or_else(|e: Box<dyn CXErrorTrait>| {
                 e.pretty_print();
                 panic!("Typechecking failed for unit: {}", job.unit);
             });

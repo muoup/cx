@@ -1,7 +1,7 @@
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
-    type_checking::{realize_deconstructor, realize_fn_implementation},
+    realize_deconstructor, realize_fn_implementation,
 };
 use cx_util::CXResult;
 use std::collections::HashSet;

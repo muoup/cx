@@ -1,5 +1,5 @@
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRRegister, MIRValue},
+    expression::{MIRInstruction, MIRExpressionKind, MIRRegister, MIRValue},
     program::{MIRBasicBlock, MIRFunction},
     types::{MIRFunctionPrototype, MIRType},
 };
@@ -348,23 +348,31 @@ impl MIRBuilder {
             unreachable!()
         };
         
+        // TODO: Refactor defer feature to proper scoped chains
+        // Current implementation issues:
+        // - Defer blocks are flat, don't track scope nesting
+        // - Returns don't properly jump through defer chains
+        // - Break/continue don't execute deferred expressions
+        // - Single defer chain per function instead of scope-aware chains
         if !func_ctx.defer_blocks.is_empty() {
             let pointer = BlockPointer::Defer(self.get_defer_end());
             self.set_pointer(pointer);
             self.add_return(None);
         }
-        
+
         let Some(func_ctx) = self.function_context.take() else {
             unreachable!()
         };
-        
-        let full_blocks = func_ctx.standard_blocks.into_iter()
+
+        // TODO: Update to use MIRFunction.body expression instead of basic_blocks
+        // For now, keep basic_blocks to maintain existing functionality during refactoring
+        let _full_blocks: Vec<_> = func_ctx.standard_blocks.into_iter()
             .chain(func_ctx.defer_blocks)
             .collect();
 
         let mir_function = MIRFunction {
             prototype: func_ctx.current_prototype,
-            basic_blocks: full_blocks
+            body: MIRExpressionKind::Unit, // TODO: Replace with actual expression body
         };
 
         self.generated_functions.push(mir_function);
