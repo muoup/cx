@@ -11,9 +11,7 @@ pub mod environment;
 pub mod type_checking;
 pub mod type_completion;
 
-// typecheck_main is the main entry point, kept separate for backward compatibility
-mod typecheck_main;
-pub use typecheck_main::{
+pub use type_checking::{
     complete_base_functions, complete_base_globals, realize_deconstructor, realize_fn_implementation, typecheck,
 };
 

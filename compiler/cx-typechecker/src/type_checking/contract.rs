@@ -24,7 +24,7 @@ fn create_clause_scope(
             continue;
         };
 
-        env.insert_symbol(name.as_string(), parameters[i].clone());
+        env.insert_stack_symbol(name.as_string(), parameters[i].clone());
     }
 
     Ok(())
@@ -98,7 +98,7 @@ pub fn contracted_function_return(
                 );
             };
 
-            env.insert_symbol(result_reg.as_string(), return_value.clone());
+            env.insert_stack_symbol(result_reg.as_string(), return_value.clone());
         }
 
         // We know this is safe, arg_vals will always remain unmutated during typechecking,
@@ -164,7 +164,7 @@ pub fn contracted_function_call(
                 );
             };
 
-            env.insert_symbol(
+            env.insert_stack_symbol(
                 result_reg.as_string(),
                 MIRValue::Register {
                     register: result.clone(),

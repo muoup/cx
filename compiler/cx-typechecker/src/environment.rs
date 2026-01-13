@@ -6,20 +6,18 @@ use cx_pipeline_data::db::ModuleData;
 use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::function_map::CXFnMap;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
-use cx_typechecker_data::mir::expression::{MIRInstruction, MIRRegister, MIRValue};
-use cx_typechecker_data::mir::program::{
-    MIRBaseMappings, MIRBasicBlock, MIRGlobalVariable, MIRUnit,
-};
+use cx_typechecker_data::mir::expression::MIRExpression;
+use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVariable, MIRUnit};
 use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
-use crate::builder::{BlockPointer, MIRBuilder};
+use crate::builder::MIRBuilder;
 use crate::environment::deconstruction::process_new_type;
 use crate::environment::function_query::{
-    query_deconstructor, query_destructor, query_member_function, query_standard_function
+    query_deconstructor, query_destructor, query_member_function, query_standard_function,
 };
 use crate::type_completion::{complete_prototype_no_insert, complete_type};
 
@@ -60,9 +58,9 @@ pub struct TypeEnvironment<'a> {
 
     pub requests: Vec<MIRFunctionGenRequest>,
     pub current_function: Option<MIRFunctionPrototype>,
-    pub arg_vals: Vec<MIRValue>,
+    pub arg_vals: Vec<MIRExpression>,
 
-    pub symbol_table: ScopedMap<MIRValue>,
+    pub symbol_table: ScopedMap<MIRExpression>,
     pub scope_stack: Vec<Scope>,
 
     pub in_external_templated_function: bool,
@@ -116,8 +114,8 @@ impl TypeEnvironment<'_> {
         self.scope_stack.pop().unwrap();
         self.builder.pop_scope();
     }
-    
-    pub fn insert_symbol(&mut self, name: String, value: MIRValue) {
+
+    pub fn insert_symbol(&mut self, name: String, value: MIRExpression) {
         self.symbol_table.insert(name, value);
     }
 
@@ -128,14 +126,14 @@ impl TypeEnvironment<'_> {
         _type: MIRType,
     ) -> Option<MIRType> {
         let old = self.realized_types.remove(&name);
-        
+
         self.realized_types.insert(name.clone(), _type.clone());
         process_new_type(self, base_data, _type);
 
         old
     }
 
-    pub fn symbol_value(&self, name: &str) -> Option<&MIRValue> {
+    pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
         self.symbol_table.get(name)
     }
 
@@ -185,12 +183,14 @@ impl TypeEnvironment<'_> {
         external_module: Option<&String>,
         prototype: &CXNaivePrototype,
     ) -> CXResult<MIRFunctionPrototype> {
-        complete_prototype_no_insert(self, base_data, external_module, prototype)
-            .inspect(|prototype| {
-                self.realized_fns.insert(prototype.name.to_string(), prototype.clone());
-            })
+        complete_prototype_no_insert(self, base_data, external_module, prototype).inspect(
+            |prototype| {
+                self.realized_fns
+                    .insert(prototype.name.to_string(), prototype.clone());
+            },
+        )
     }
-    
+
     pub fn is_copyable(&mut self, ty: &MIRType) -> bool {
         self.get_deconstructor(ty).is_none()
     }
@@ -217,62 +217,14 @@ impl TypeEnvironment<'_> {
     }
 
     fn start_defer(&mut self) {
-        let Some(func_ctx) = &mut self.builder.function_context else {
-            unreachable!()
-        };
-
-        let mut instructions = Vec::new();
-
-        if !func_ctx.current_prototype.return_type.is_unit() {
-            let return_acc = MIRRegister {
-                name: CXIdent::new(DEFER_ACCUMULATION_REGISTER),
-            };
-
-            instructions.push(MIRInstruction::Phi {
-                result: return_acc,
-                predecessors: vec![],
-            })
-        }
-
-        func_ctx.defer_blocks.push(MIRBasicBlock {
-            id: CXIdent::new("defer_entry"),
-            instructions,
-        });
+        todo!()
     }
 
-    pub fn in_defer<F, T>(&mut self, f: F) -> CXResult<T>
+    pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>
     where
         F: FnOnce(&mut Self) -> CXResult<T>,
     {
-        if self.builder.in_defer() {
-            return CXError::create_result("Cannot nest defer blocks");
-        }
-
-        let Some(func_ctx) = &mut self.builder.function_context else {
-            unreachable!()
-        };
-        let previous_pointer = func_ctx.current_block.clone();
-
-        if func_ctx.defer_blocks.is_empty() {
-            self.start_defer();
-        }
-
-        self.builder
-            .set_pointer(BlockPointer::Defer(self.builder.get_defer_end()));
-
-        let result = f(self);
-
-        let Some(func_ctx) = &mut self.builder.function_context else {
-            unreachable!()
-        };
-        let BlockPointer::Defer(i) = func_ctx.current_block.clone() else {
-            unreachable!()
-        };
-
-        self.builder.set_defer_end(i);
-        self.builder.set_pointer(previous_pointer);
-
-        result
+        todo!()
     }
 
     pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {

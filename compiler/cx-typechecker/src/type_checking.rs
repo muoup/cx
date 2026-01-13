@@ -4,20 +4,31 @@ use cx_parsing_data::{
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRValue},
     program::MIRBaseMappings,
     types::{CXIntegerType, CXTemplateInput, MIRFunctionPrototype, MIRParameter, MIRType},
 };
 use cx_util::{CXError, CXResult};
 
 use crate::{
-    environment::{TypeEnvironment, deconstruction::generate_deconstructor}, safe_lowering::lower_safe_fn, type_checking::{
+    environment::{TypeEnvironment, deconstruction::generate_deconstructor},
+    safe_lowering::lower_safe_fn,
+    type_checking::{
         move_semantics::acknowledge_declared_object,
         typechecker::{global_expr, typecheck_expr},
-    }, type_completion::templates::{
+    },
+    type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
-    }
+    },
 };
+
+pub mod accumulation;
+pub mod binary_ops;
+pub mod casting;
+pub mod contract;
+pub mod r#match;
+pub mod move_semantics;
+pub mod structured_initialization;
+pub mod typechecker;
 
 fn generate_safe_function(
     env: &mut TypeEnvironment,
@@ -26,7 +37,7 @@ fn generate_safe_function(
     body: &CXExpr,
 ) -> CXResult<()> {
     lower_safe_fn(env, base_data, prototype, body)?;
-    
+
     Ok(())
 }
 
@@ -39,7 +50,7 @@ fn generate_function(
     if prototype.contract.safe {
         return generate_safe_function(env, base_data, prototype, body);
     }
-    
+
     env.push_scope(None, None);
     env.builder.start_function(prototype.clone());
     env.arg_vals.clear();
@@ -59,7 +70,7 @@ fn generate_function(
                 },
             });
 
-            env.insert_symbol(
+            env.insert_stack_symbol(
                 name.as_string(),
                 MIRValue::Register {
                     register: alias.clone(),
@@ -94,7 +105,7 @@ fn generate_function(
                 _type: _type.clone().mem_ref_to(),
             });
 
-            env.insert_symbol(
+            env.insert_stack_symbol(
                 name.as_string(),
                 MIRValue::Register {
                     register: region,

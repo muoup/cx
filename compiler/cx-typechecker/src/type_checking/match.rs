@@ -284,7 +284,7 @@ pub fn typecheck_match(
                     );
                 };
 
-                env.insert_symbol(
+                env.insert_stack_symbol(
                     name.as_string(),
                     MIRValue::Register {
                         register: variant_value,

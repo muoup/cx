@@ -1,37 +1,41 @@
 use crate::{
     builder::{Lifetime, MIRBuilder},
     environment::TypeEnvironment,
+    type_checking::accumulation::TypecheckResult,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRRegister},
+    expression::{MIRExpressionKind, MIRInstruction, MIRRegister},
     types::MIRType,
 };
+use cx_util::{CXResult, identifier::CXIdent};
 
 pub fn acknowledge_declared_object(
     env: &mut TypeEnvironment,
     name: String,
-    register: MIRRegister,
     _type: MIRType,
-) {
+) -> CXResult<TypecheckResult> {
     env.builder.add_lifetime(Lifetime {
         name: name.clone(),
-        region: register.clone(),
         _type: _type.clone(),
     });
 
-    env.builder.add_instruction(MIRInstruction::LifetimeStart {
-        name,
-        region: register,
-        _type,
-    });
+    Ok(TypecheckResult::standard_expr(
+        MIRType::unit(),
+        MIRExpressionKind::LifetimeStart {
+            variable: CXIdent::from(name),
+            _type,
+        },
+    ))
 }
 
-pub fn acknowledge_destructed_object(builder: &mut MIRBuilder, lifetime: Lifetime) {
-    builder.add_instruction(MIRInstruction::LifetimeEnd {
-        name: lifetime.name,
-        region: lifetime.region,
-        _type: lifetime._type,
-    });
+pub fn acknowledge_destructed_object(builder: &mut MIRBuilder, lifetime: Lifetime) -> CXResult<TypecheckResult> {
+    Ok(TypecheckResult::standard_expr(
+        MIRType::unit(),
+        MIRExpressionKind::LifetimeEnd {
+            variable: CXIdent::from(lifetime.name),
+            _type: lifetime._type,
+        },
+    ))
 }
 
 pub fn invoke_remaining_destructions(builder: &mut MIRBuilder) {

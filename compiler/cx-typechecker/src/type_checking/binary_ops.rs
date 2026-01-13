@@ -51,7 +51,10 @@ pub(crate) fn typecheck_access(
         // If we have a reference to a region containing a pointer, we need to
         // load the pointer and use that as our pointer
         Some(inner) if inner.is_pointer() => {
-            lhs_val = coerce_value(env, lhs, lhs_val)?;
+            let temp_val = lhs_val.into_mir_value();
+            lhs_val = crate::type_checking::accumulation::TypecheckResult::from_mir_value(
+                coerce_value(env, lhs, temp_val)?
+            );
             lhs_val.get_type()
         }
 
@@ -78,7 +81,7 @@ pub(crate) fn typecheck_access(
                     MIRTypeKind::Structured { .. } => {
                         env.builder.add_instruction(MIRInstruction::StructGet {
                             result: result.clone(),
-                            source: lhs_val,
+                            source: lhs_val.clone().into_mir_value(),
                             field_index: struct_field.index,
                             field_offset: struct_field.offset,
                             struct_type: lhs_inner.clone(),
@@ -88,7 +91,7 @@ pub(crate) fn typecheck_access(
                     MIRTypeKind::Union { .. } => {
                         env.builder.add_instruction(MIRInstruction::Alias {
                             result: result.clone(),
-                            value: lhs_val,
+                            value: lhs_val.clone().into_mir_value(),
                         })
                     }
 
@@ -105,21 +108,21 @@ pub(crate) fn typecheck_access(
                 let Some((_, field_type)) = variants
                     .iter()
                     .find(|(field_name, _)| field_name.as_str() == name.as_str())
-                else {
-                    return log_typecheck_error!(
-                        env,
-                        expr,
-                        " Union type {} has no field named {}",
-                        lhs_inner,
-                        name
-                    );
-                };
+                    else {
+                        return log_typecheck_error!(
+                            env,
+                            expr,
+                            " Union type {} has no field named {}",
+                            lhs_inner,
+                            name
+                        );
+                    };
 
                 let result = env.builder.new_register();
 
                 env.builder.add_instruction(MIRInstruction::Alias {
                     result: result.clone(),
-                    value: lhs_val,
+                    value: lhs_val.clone().into_mir_value(),
                 });
 
                 return Ok(MIRValue::Register {
@@ -133,7 +136,7 @@ pub(crate) fn typecheck_access(
             let lhs_val_as_pointer = env.builder.new_register();
             env.builder.add_instruction(MIRInstruction::Coercion {
                 result: lhs_val_as_pointer.clone(),
-                operand: lhs_val,
+                operand: lhs_val.clone().into_mir_value(),
                 cast_type: MIRCoercion::ReinterpretBits,
             });
 
@@ -196,11 +199,13 @@ pub(crate) fn comma_separated<'a>(
         op: CXBinOp::Comma,
     } = &expr_iter.kind
     {
-        exprs.push((rhs, typecheck_expr(env, base_data, rhs, None)?));
+        let tc_result = typecheck_expr(env, base_data, rhs, None)?;
+        exprs.push((rhs, tc_result.into_mir_value()));
         expr_iter = lhs;
     }
 
-    exprs.push((expr_iter, typecheck_expr(env, base_data, expr_iter, None)?));
+    let tc_result = typecheck_expr(env, base_data, expr_iter, None)?;
+    exprs.push((expr_iter, tc_result.into_mir_value()));
     exprs.reverse();
 
     Ok(exprs)
@@ -441,9 +446,10 @@ pub(crate) fn typecheck_is(
     };
 
     let get_tag = env.builder.new_register();
+    let tc_lhs_mir = tc_lhs.into_mir_value();
     env.builder.add_instruction(MIRInstruction::TaggedUnionTag {
         result: get_tag.clone(),
-        source: tc_lhs.clone(),
+        source: tc_lhs_mir.clone(),
         sum_type: union_type.clone(),
     });
 
@@ -472,11 +478,11 @@ pub(crate) fn typecheck_is(
     let result = env.builder.new_register();
     env.builder.add_instruction(MIRInstruction::TaggedUnionGet {
         result: result.clone(),
-        source: tc_lhs,
+        source: tc_lhs_mir,
         variant_type: variant_type.clone(),
     });
 
-    env.insert_symbol(
+    env.insert_stack_symbol(
         inner_var_name.as_string(),
         MIRValue::Register {
             register: result,

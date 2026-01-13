@@ -21,7 +21,6 @@ pub enum BlockPointer {
 #[derive(Clone, Debug)]
 pub(crate) struct Lifetime {
     pub name: String,
-    pub region: MIRRegister,
     pub _type: MIRType,
 }
 

@@ -21,7 +21,7 @@ pub(crate) fn generate_deconstructor(env: &mut TypeEnvironment, base_data: &MIRB
             _type: _type.clone().pointer_to(),
         };
 
-    env.insert_symbol("this".to_owned(), this.clone());
+    env.insert_stack_symbol("this".to_owned(), this.clone());
 
     match &_type.kind {
         MIRTypeKind::Structured { fields, .. } => {

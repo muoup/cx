@@ -1,10 +1,5 @@
-use crate::mir::expression::{
-    MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRInstruction, MIRRegister, MIRUnOp,
-    MIRValue,
-};
-use crate::mir::program::{
-    MIRBasicBlock, MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit,
-};
+use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
+use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
 use crate::mir::types::{
     CXFloatType, CXIntegerType, MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind,
 };
@@ -36,17 +31,7 @@ impl Display for MIRUnit {
 impl Display for MIRFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.prototype)?;
-        writeln!(f, "{}", self.body);
-        Ok(())
-    }
-}
-
-impl Display for MIRBasicBlock {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}:", self.id)?;
-        for instruction in &self.instructions {
-            writeln!(f, "\t{instruction}")?;
-        }
+        writeln!(f, "{}", self.body)?;
         Ok(())
     }
 }
@@ -134,7 +119,7 @@ impl Display for MIRExpressionKind {
             MIRExpressionKind::Parameter(name) => write!(f, "param {}", name),
             MIRExpressionKind::GlobalVariable(name) => write!(f, "global {}", name),
             MIRExpressionKind::LocalVariable(name) => write!(f, "var {}", name),
-            MIRExpressionKind::FunctionReference { prototype } => {
+            MIRExpressionKind::FunctionReference { prototype, .. } => {
                 write!(f, "fn {}", prototype.name)
             }
             MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
@@ -291,220 +276,6 @@ impl Display for MIRParameter {
             write!(f, "{name}: {}", self._type)
         } else {
             write!(f, "{}", self._type)
-        }
-    }
-}
-
-impl Display for MIRRegister {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "%{}", self.name)
-    }
-}
-
-impl Display for MIRInstruction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MIRInstruction::LifetimeStart {
-                name,
-                region,
-                _type,
-                ..
-            } => {
-                write!(f, "lifetime_start {_type} {name} {region}")
-            }
-            MIRInstruction::LifetimeEnd {
-                name,
-                region,
-                _type,
-                ..
-            } => write!(f, "lifetime_end {_type} {name} {region}"),
-            MIRInstruction::LeakLifetime { region, _type } => {
-                write!(f, "leak_lifetime {_type} {region}")
-            }
-
-            MIRInstruction::Alias { result, value } => write!(f, "{result} = alias {value}"),
-            MIRInstruction::CreateStackRegion { result, _type } => {
-                write!(f, "{result} = create_region {_type}")
-            }
-            MIRInstruction::CopyRegionInto {
-                destination,
-                source,
-                _type,
-            } => write!(f, "copy region ({_type}) {source} into {destination}"),
-            MIRInstruction::MemoryRead {
-                result,
-                source,
-                _type,
-            } => write!(f, "{result} = mem_read {source} as {_type}"),
-            MIRInstruction::MemoryWrite { target, value } => {
-                write!(f, "mem_write {target}, {value}")
-            }
-            MIRInstruction::StructGet {
-                result,
-                source,
-                field_index,
-                field_offset,
-                struct_type,
-                ..
-            } => write!(
-                f,
-                "{result} = struct_get {source}, index {field_index} of {struct_type} (offset: {field_offset})"
-            ),
-            MIRInstruction::TaggedUnionTag {
-                result,
-                source,
-                sum_type,
-            } => {
-                write!(f, "{result} = tagged_union_tag {source} of {sum_type}")
-            }
-            MIRInstruction::TaggedUnionGet {
-                result,
-                source,
-                variant_type,
-            } => write!(f, "{result} = tagged_union_get {source} as {variant_type}"),
-            MIRInstruction::ArrayGet {
-                result,
-                source,
-                index,
-                ..
-            } => write!(f, "{result} = array_get {source}[{index}]"),
-            MIRInstruction::CallFunction {
-                result,
-                function,
-                arguments,
-            } => {
-                if let Some(result) = result {
-                    write!(f, "{result} = ")?;
-                }
-                write!(f, "call {function}(")?;
-                for (i, arg) in arguments.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                write!(f, ")")
-            }
-            MIRInstruction::ConstructTaggedUnionInto {
-                variant_index,
-                memory,
-                value,
-                sum_type,
-            } => write!(
-                f,
-                "construct_sum {sum_type}::variant({variant_index}) with {value} into {memory}"
-            ),
-            MIRInstruction::LoopPreHeader {
-                loop_id,
-                condition_precheck,
-                condition_block,
-                body_block,
-            } => write!(
-                f,
-                "loop_preheader id {loop_id} condition: {condition_block} body: {body_block} precheck: {condition_precheck}"
-            ),
-            MIRInstruction::LoopConditionBranch {
-                loop_id,
-                condition,
-                body_block,
-                exit_block,
-            } => write!(
-                f,
-                "loop_branch id {loop_id} if {condition} -> {body_block} else -> {exit_block}"
-            ),
-            MIRInstruction::LoopContinue {
-                loop_id,
-                condition_block,
-            } => {
-                write!(f, "loop_continue id {loop_id} to {condition_block}")
-            }
-            MIRInstruction::Branch {
-                condition,
-                true_block,
-                false_block,
-            } => write!(f, "branch {condition} ? {true_block} : {false_block}"),
-            MIRInstruction::Phi {
-                result,
-                predecessors: incomings,
-            } => {
-                write!(f, "{result} = phi ")?;
-                for (i, (value, block)) in incomings.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{value} from {block}")?;
-                }
-                Ok(())
-            }
-            MIRInstruction::Jump { target } => write!(f, "jump {target}"),
-            MIRInstruction::JumpTable {
-                condition,
-                targets,
-                default,
-            } => {
-                write!(f, "jump_table {condition} -> [")?;
-                for (i, (val, target)) in targets.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{val} -> {target}")?;
-                }
-                write!(f, "], default {default}")
-            }
-            MIRInstruction::Return { value } => {
-                write!(f, "return")?;
-                if let Some(value) = value {
-                    write!(f, " {value}")?;
-                }
-                Ok(())
-            }
-            MIRInstruction::BinOp {
-                result,
-                lhs,
-                rhs,
-                op,
-            } => write!(f, "{result} = binop({op}) {lhs}, {rhs}"),
-            MIRInstruction::UnOp {
-                result,
-                operand,
-                op,
-            } => write!(f, "{result} = unop({op}) {operand}"),
-            MIRInstruction::Coercion {
-                result,
-                operand,
-                cast_type,
-            } => write!(f, "{result} = coercion({cast_type}) {operand}"),
-            MIRInstruction::Assert { value, message } => write!(f, "assert {value} \"{message}\""),
-            MIRInstruction::Assume { value } => write!(f, "assume {value}"),
-            MIRInstruction::Havoc { target } => write!(f, "havoc %{target}"),
-        }
-    }
-}
-
-impl Display for MIRValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MIRValue::IntLiteral {
-                value,
-                signed,
-                _type,
-            } => write!(
-                f,
-                "{}{} {value}",
-                if *signed { "i" } else { "u" },
-                _type.bytes() * 8
-            ),
-            MIRValue::FloatLiteral { value, _type } => write!(f, "{}{}", value, _type),
-            MIRValue::BoolLiteral { value } => {
-                write!(f, "bool {}", if *value { "true" } else { "false" })
-            }
-            MIRValue::FunctionReference { prototype, .. } => {
-                write!(f, "fn @{}", prototype.name)
-            }
-            MIRValue::GlobalValue { name, _type } => write!(f, "{_type} global {name}"),
-            MIRValue::Parameter { name, _type } => write!(f, "{_type} p@{name}"),
-            MIRValue::Register { register, _type } => write!(f, "{_type} {register}"),
-            MIRValue::NULL => write!(f, "null"),
         }
     }
 }
