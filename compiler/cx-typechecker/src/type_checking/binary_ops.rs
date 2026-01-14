@@ -2,7 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::environment::function_query::query_static_member_function;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
-use crate::type_checking::casting::{coerce_condition, coerce_value, implicit_cast};
+use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::contract::contracted_function_call;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
@@ -197,7 +197,7 @@ pub(crate) fn typecheck_method_call(
     lhs: &CXExpr,
     rhs: &CXExpr,
     expr: &CXExpr,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     // Check if this is a scoped call (Type::method(args)) pattern
     if let CXExprKind::BinOp {
         op: CXBinOp::ScopeRes,
@@ -342,7 +342,7 @@ fn typecheck_type_constructor(
     union_type: &MIRType,
     name: &CXIdent,
     inner: &CXExpr,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     let MIRTypeKind::TaggedUnion {
         name: union_name,
         variants,
@@ -370,16 +370,14 @@ fn typecheck_type_constructor(
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
         .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
-    let construction = MIRExpression {
-        kind: MIRExpressionKind::ConstructTaggedUnion {
+    Ok(TypecheckResult::standard_expr(
+        union_type.clone().mem_ref_to(),
+        MIRExpressionKind::ConstructTaggedUnion {
             value: Box::new(inner),
             variant_index: i,
             sum_type: union_type.clone(),
         },
-        _type: union_type.clone().mem_ref_to(),
-    };
-
-    Ok(construction)
+    ))
 }
 
 pub(crate) fn typecheck_scoped_call(
@@ -469,12 +467,18 @@ pub(crate) fn typecheck_scoped_call(
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
 
     Ok(TypecheckResult::standard_expr(
-        MIRTypeKind::Function {
-            prototype: Box::new(prototype.clone()),
-        }
-        .into(),
-        MIRExpressionKind::FunctionReference {
-            implicit_variables: vec![],
+        prototype.return_type.clone(),
+        MIRExpressionKind::CallFunction {
+            function: Box::new(MIRExpression {
+                kind: MIRExpressionKind::FunctionReference {
+                    implicit_variables: vec![],
+                },
+                _type: MIRTypeKind::Function {
+                    prototype: Box::new(prototype.clone()),
+                }
+                .into(),
+            }),
+            arguments: args.clone(),
         },
     ))
 }
@@ -507,7 +511,7 @@ pub(crate) fn typecheck_is(
     let TypeConstructor {
         union_name,
         variant_name,
-        inner,
+        ..
     } = deconstruct_type_constructor(env, rhs)?;
 
     if *expected_union_name != union_name {
@@ -520,15 +524,6 @@ pub(crate) fn typecheck_is(
         );
     }
 
-    let CXExprKind::Identifier(inner_var_name) = &inner.kind else {
-        return log_typecheck_error!(
-            env,
-            inner,
-            " 'is' operator requires a variant name identifier in the type constructor, found {:?}",
-            inner
-        );
-    };
-
     if union_type.get_name().map(|x| x.as_str()) != Some(union_name.as_str()) {
         return log_typecheck_error!(
             env,
@@ -539,7 +534,7 @@ pub(crate) fn typecheck_is(
         );
     }
 
-    let Some((tag_value_comparison, variant_type)) = variants
+    let Some((expected_tag, variant_type)) = variants
         .iter()
         .enumerate()
         .find(|(_, (name, _))| name == variant_name.as_str())
@@ -574,7 +569,7 @@ pub(crate) fn typecheck_is(
             },
             lhs: Box::new(tag),
             rhs: Box::new(MIRExpression::int_literal(
-                tag_value_comparison as i64,
+                expected_tag as i64,
                 CXIntegerType::I8,
                 false,
             )),
