@@ -2,17 +2,16 @@ use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::binary_ops::{
-    handle_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
+    generate_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
     typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
-use crate::type_checking::contract::contracted_function_return;
-use crate::type_checking::move_semantics::{acknowledge_declared_object, invoke_scope_destructors};
+use crate::type_checking::move_semantics::acknowledge_declared_object;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
 use cx_typechecker_data::mir::expression::{
-    MIRBinOp, MIRExpression, MIRExpressionKind, MIRInstruction, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRRegister, MIRUnOp, MIRValue
+    MIRBinOp, MIRExpression, MIRExpressionKind, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRUnOp,
 };
 use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRTypeKind};
@@ -50,8 +49,7 @@ pub fn typecheck_expr_inner(
         CXExprKind::Block { exprs } => {
             let block = exprs
                 .iter()
-                .map(|e| typecheck_expr(env, base_data, e, None)
-                    .map(|res| res.expression))
+                .map(|e| typecheck_expr(env, base_data, e, None).map(|res| res.expression))
                 .collect::<CXResult<Vec<_>>>()?;
 
             TypecheckResult::new(MIRExpression {
@@ -73,10 +71,7 @@ pub fn typecheck_expr_inner(
         }),
 
         CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::new(MIRExpression {
-            kind: MIRExpressionKind::FloatLiteral(
-                *val,
-                CXFloatType::from_bytes(*bytes).unwrap(),
-            ),
+            kind: MIRExpressionKind::FloatLiteral(*val, CXFloatType::from_bytes(*bytes).unwrap()),
             _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Float {
                 _type: CXFloatType::from_bytes(*bytes).unwrap(),
             }),
@@ -107,7 +102,7 @@ pub fn typecheck_expr_inner(
 
             TypecheckResult::new(MIRExpression {
                 kind: MIRExpressionKind::GlobalVariable(name_ident),
-                _type: char_type,
+                _type: *char_type,
             })
         }
 
@@ -124,15 +119,14 @@ pub fn typecheck_expr_inner(
                 name.as_string(),
                 MIRExpression {
                     kind: MIRExpressionKind::LocalVariable(name.clone()),
-                    _type: mem_type.mem_ref_to()
-                }
+                    _type: mem_type.mem_ref_to(),
+                },
             );
 
             let mut ack = acknowledge_declared_object(env, name.to_string(), _type.clone())?;
             ack.expression._type.remove_specifier(CX_CONST);
 
-            TypecheckResult::new(allocation)
-                .chain(ack)
+            TypecheckResult::new(allocation).chain(ack)
         }
 
         CXExprKind::Identifier(name) => {
@@ -142,7 +136,10 @@ pub fn typecheck_expr_inner(
             {
                 let return_type = function_type.return_type.pointer_to();
                 TypecheckResult::new(MIRExpression {
-                    kind: MIRExpressionKind::FunctionReference { prototype: function_type.clone(), implicit_variables: vec![] },
+                    kind: MIRExpressionKind::FunctionReference {
+                        prototype: function_type.clone(),
+                        implicit_variables: vec![],
+                    },
                     _type: return_type,
                 })
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
@@ -151,7 +148,14 @@ pub fn typecheck_expr_inner(
                         kind: MIRExpressionKind::GlobalVariable(name),
                         _type: _type,
                     }),
-                    _ => return log_typecheck_error!(env, expr, "Unexpected global value type for identifier '{}'", name),
+                    _ => {
+                        return log_typecheck_error!(
+                            env,
+                            expr,
+                            "Unexpected global value type for identifier '{}'",
+                            name
+                        );
+                    }
                 }
             } else {
                 return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
@@ -170,7 +174,10 @@ pub fn typecheck_expr_inner(
             let return_type = function.return_type.pointer_to();
 
             TypecheckResult::new(MIRExpression {
-                kind: MIRExpressionKind::FunctionReference { prototype: function.clone(), implicit_variables: vec![] },
+                kind: MIRExpressionKind::FunctionReference {
+                    prototype: function.clone(),
+                    implicit_variables: vec![],
+                },
                 _type: return_type,
             })
         }
@@ -673,7 +680,7 @@ pub fn typecheck_expr_inner(
             }
 
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
-            handle_assignment(env, &lhs_val, &coerced_rhs_val, inner)?;
+            generate_assignment(env, &lhs_val, &coerced_rhs_val, inner)?;
 
             if inner.is_memory_resident() {
                 // If the inner type is a memory-resident, we need to just return a pointer to

@@ -1,28 +1,31 @@
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::mir::types::{CXFloatType, CXIntegerType, MIRFunctionPrototype, MIRType};
+use crate::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum MIRExpressionKind {
     // Literals
     BoolLiteral(bool),
     IntLiteral(i64, CXIntegerType, bool),
     FloatLiteral(FloatWrapper, CXFloatType),
     Null,
+
+    #[default]
     Unit,
 
     // Variables
     Parameter(CXIdent),
     GlobalVariable(CXIdent),
     LocalVariable(CXIdent),
+
+    // The prototype is implicitly stored in the expression's type
     FunctionReference {
-        prototype: MIRFunctionPrototype,
         implicit_variables: Vec<MIRExpression>,
     },
 
@@ -43,7 +46,6 @@ pub enum MIRExpressionKind {
     },
     MemoryRead {
         source: Box<MIRExpression>,
-        _type: MIRType,
     },
     MemoryWrite {
         target: Box<MIRExpression>,
@@ -63,6 +65,11 @@ pub enum MIRExpressionKind {
         field_index: usize,
         field_offset: usize,
         struct_type: MIRType,
+    },
+    UnionAliasAccess {
+        base: Box<MIRExpression>,
+        variant_type: MIRType,
+        union_type: MIRType,
     },
     ArrayAccess {
         array: Box<MIRExpression>,
@@ -86,6 +93,12 @@ pub enum MIRExpressionKind {
     },
 
     // Control Flow
+    Break {
+        label: Option<CXIdent>,
+    },
+    Continue {
+        label: Option<CXIdent>,
+    },
     If {
         condition: Box<MIRExpression>,
         then_branch: Box<MIRExpression>,
@@ -168,11 +181,15 @@ pub enum MIRIntegerBinOp {
     ILE,
     IGT,
     IGE,
+
+    // Logical Ops
+    LAND,
+    LOR,
     
     // Boolean/Bitwise Ops
-    AND,
-    OR,
-    XOR
+    BAND,
+    BOR,
+    BXOR,
 }
 
 #[derive(Clone, Debug)]
@@ -284,4 +301,24 @@ pub enum MIRCoercion {
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
+}
+
+impl MIRExpression {
+    pub fn get_type(&self) -> MIRType {
+        self._type.clone()
+    }
+
+    pub fn int_literal(value: i64, itype: CXIntegerType, is_signed: bool) -> Self {
+        Self {
+            kind: MIRExpressionKind::IntLiteral(value, itype, is_signed),
+            _type: MIRType {
+                kind: MIRTypeKind::Integer {
+                    _type: itype,
+                    signed: is_signed,
+                },
+                visibility: Default::default(),
+                specifiers: 0,
+            },
+        }
+    }
 }

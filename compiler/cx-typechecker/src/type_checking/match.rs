@@ -6,7 +6,6 @@ use crate::type_checking::structured_initialization::{
 };
 use crate::type_checking::typechecker::{typecheck_expr, typecheck_expr_inner};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
-use cx_typechecker_data::mir::expression::{MIRInstruction, MIRValue};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXIntegerType, MIRType, MIRTypeKind};
 use cx_util::CXResult;

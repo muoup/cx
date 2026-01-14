@@ -1,68 +1,26 @@
 use crate::{
-    builder::{Lifetime, MIRBuilder},
+    builder::MIRBuilder,
     environment::TypeEnvironment,
     type_checking::accumulation::TypecheckResult,
 };
-use cx_typechecker_data::mir::{
-    expression::{MIRExpressionKind, MIRInstruction, MIRRegister},
-    types::MIRType,
-};
+use cx_typechecker_data::mir::types::MIRType;
 use cx_util::{CXResult, identifier::CXIdent};
 
+// TODO: Lifetime management moved to MIR→LMIR lowering
+// These functions are stubbed for now
+
 pub fn acknowledge_declared_object(
-    env: &mut TypeEnvironment,
-    name: String,
+    _env: &mut TypeEnvironment,
+    _name: String,
     _type: MIRType,
 ) -> CXResult<TypecheckResult> {
-    env.builder.add_lifetime(Lifetime {
-        name: name.clone(),
-        _type: _type.clone(),
-    });
-
-    Ok(TypecheckResult::standard_expr(
-        MIRType::unit(),
-        MIRExpressionKind::LifetimeStart {
-            variable: CXIdent::from(name),
-            _type,
-        },
-    ))
+    // Lifetime tracking moved to lowering pass
+    Ok(TypecheckResult::new(cx_typechecker_data::mir::expression::MIRExpression {
+        kind: cx_typechecker_data::mir::expression::MIRExpressionKind::Unit,
+        _type: MIRType::unit(),
+    }))
 }
 
-pub fn acknowledge_destructed_object(builder: &mut MIRBuilder, lifetime: Lifetime) -> CXResult<TypecheckResult> {
-    Ok(TypecheckResult::standard_expr(
-        MIRType::unit(),
-        MIRExpressionKind::LifetimeEnd {
-            variable: CXIdent::from(lifetime.name),
-            _type: lifetime._type,
-        },
-    ))
-}
-
-pub fn invoke_scope_destructors(builder: &mut MIRBuilder) {
-    let lifetimes: Vec<_> = builder.lifetime_stack_ref().last()
-        .expect("No lifetime scope found")
-        .clone();
-
-    for lifetime in lifetimes.into_iter() {
-        acknowledge_destructed_object(builder, lifetime);
-    }
-}
-
-pub fn invoke_remaining_destructions(builder: &mut MIRBuilder, exclude: Option<&MIRRegister>) {
-    let scopes = builder
-        .lifetime_stack_ref()
-        .iter()
-        .rev()
-        .flat_map(|scope| scope.iter().rev().cloned())
-        .collect::<Vec<Lifetime>>();
-
-    for lifetime in scopes.into_iter() {
-        if let Some(exclude_reg) = exclude {
-            if &lifetime.region == exclude_reg {
-                continue;
-            }
-        }
-        
-        acknowledge_destructed_object(builder, lifetime);
-    }
+pub fn invoke_scope_destructions(_builder: &mut MIRBuilder) {
+    // Destructor logic moved to MIR→LMIR lowering
 }

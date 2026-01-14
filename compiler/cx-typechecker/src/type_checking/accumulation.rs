@@ -1,5 +1,6 @@
-use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRValue};
-use cx_typechecker_data::mir::types::MIRType;
+use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRBinOp, MIRUnOp, MIRCoercion};
+use cx_typechecker_data::mir::types::{CXIntegerType, MIRType, MIRTypeKind};
+use cx_util::identifier::CXIdent;
 
 /// Result of typechecking an expression/statement
 #[derive(Debug, Clone)]
@@ -45,62 +46,6 @@ impl TypecheckResult {
         self.expression.kind
     }
 
-    /// Temporary bridge: Convert TypecheckResult to MIRValue for legacy code
-    /// TODO: Remove this after migration is complete
-    pub fn into_mir_value(self) -> MIRValue {
-        MIRValue::from_mir_expression(self.expression)
-    }
-
-    /// Temporary bridge: Create TypecheckResult from MIRValue for legacy code
-    /// TODO: Remove this after migration is complete
-    pub fn from_mir_value(value: MIRValue) -> Self {
-        // Convert MIRValue to appropriate MIRExpression
-        match value {
-            MIRValue::BoolLiteral { value } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::BoolLiteral(value),
-                _type: cx_typechecker_data::mir::types::MIRType::from(
-                    cx_typechecker_data::mir::types::MIRTypeKind::Bool,
-                ),
-            }),
-            MIRValue::IntLiteral {
-                value,
-                signed,
-                _type,
-            } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::IntLiteral(value, _type, signed),
-                _type: cx_typechecker_data::mir::types::MIRType::from(
-                    cx_typechecker_data::mir::types::MIRTypeKind::Integer { _type, signed },
-                ),
-            }),
-            MIRValue::FloatLiteral { value, _type } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::FloatLiteral(value, _type),
-                _type: cx_typechecker_data::mir::types::MIRType::from(
-                    cx_typechecker_data::mir::types::MIRTypeKind::Float { _type },
-                ),
-            }),
-            MIRValue::NULL => Self::new(MIRExpression {
-                kind: MIRExpressionKind::Null,
-                _type: cx_typechecker_data::mir::types::MIRType::unit(),
-            }),
-            MIRValue::Parameter { name, _type } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::Parameter(name),
-                _type: _type,
-            }),
-            MIRValue::GlobalValue { name, _type } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::GlobalVariable(name),
-                _type: _type,
-            }),
-            MIRValue::FunctionReference { prototype, .. } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::FunctionReference { prototype },
-                _type: prototype.return_type.pointer_to(),
-            }),
-            MIRValue::Register { register, _type } => Self::new(MIRExpression {
-                kind: MIRExpressionKind::LocalVariable(register.name),
-                _type: _type,
-            }),
-        }
-    }
-
     /// Map expression using a transformation function
     pub fn expression_map<F>(&self, f: F) -> TypecheckResult
     where
@@ -122,5 +67,173 @@ impl TypecheckResult {
                 _type: self.expression._type,
             },
         }
+    }
+
+    // Binary operations
+    pub fn binary_op(lhs: Self, rhs: Self, op: MIRBinOp, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::BinaryOperation {
+                lhs: Box::new(lhs.expression),
+                rhs: Box::new(rhs.expression),
+                op,
+            }
+        )
+    }
+
+    pub fn binary_op_raw(lhs: MIRExpression, rhs: MIRExpression, op: MIRBinOp, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::BinaryOperation {
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                op,
+            }
+        )
+    }
+
+    // Unary operations
+    pub fn unary_op(operand: Self, op: MIRUnOp, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::UnaryOperation {
+                operand: Box::new(operand.expression),
+                op,
+            }
+        )
+    }
+
+    // Type conversions
+    pub fn type_conversion(operand: Self, conversion: MIRCoercion, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::TypeConversion {
+                operand: Box::new(operand.expression),
+                conversion,
+            }
+        )
+    }
+
+    // Memory operations
+    pub fn memory_read(source: Self, _type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            _type.clone(),
+            MIRExpressionKind::MemoryRead {
+                source: Box::new(source.expression)
+            }
+        )
+    }
+
+    pub fn memory_write(target: Self, value: Self, _type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            _type.clone(),
+            MIRExpressionKind::MemoryWrite {
+                target: Box::new(target.expression),
+                value: Box::new(value.expression),
+            }
+        )
+    }
+
+    pub fn stack_allocation(_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            _type.clone(),
+            MIRExpressionKind::StackAllocation { _type }
+        )
+    }
+
+    pub fn copy_region(source: Self, _type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            _type.clone(),
+            MIRExpressionKind::CopyRegion {
+                source: Box::new(source.expression),
+                _type,
+            }
+        )
+    }
+
+    // Aggregate access
+    pub fn struct_field_access(base: Self, field_index: usize, field_offset: usize,
+                           struct_type: MIRType, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::StructFieldAccess {
+                base: Box::new(base.expression),
+                field_index,
+                field_offset,
+                struct_type,
+            }
+        )
+    }
+
+    pub fn array_access(array: Self, index: Self, element_type: MIRType, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::ArrayAccess {
+                array: Box::new(array.expression),
+                index: Box::new(index.expression),
+                element_type,
+            }
+        )
+    }
+
+    // Function calls
+    pub fn call_function(function: Self, arguments: Vec<Self>, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::CallFunction {
+                function: Box::new(function.expression),
+                arguments: arguments.into_iter().map(|a| a.expression).collect(),
+            }
+        )
+    }
+
+    // Tagged unions
+    pub fn tagged_union_tag(value: Self, sum_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            MIRTypeKind::Integer {
+                _type: CXIntegerType::I8,
+                signed: false,
+            }.into(),
+            MIRExpressionKind::TaggedUnionTag {
+                value: Box::new(value.expression),
+                sum_type,
+            }
+        )
+    }
+
+    pub fn tagged_union_get(value: Self, variant_type: MIRType, result_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            result_type,
+            MIRExpressionKind::TaggedUnionGet {
+                value: Box::new(value.expression),
+                variant_type,
+            }
+        )
+    }
+
+    pub fn construct_tagged_union(variant_index: usize, value: Self, sum_type: MIRType) -> Self {
+        TypecheckResult::standard_expr(
+            sum_type.clone(),
+            MIRExpressionKind::ConstructTaggedUnion {
+                variant_index,
+                value: Box::new(value.expression),
+                sum_type,
+            }
+        )
+    }
+
+    // Control flow
+    pub fn break_expr(label: Option<CXIdent>) -> Self {
+        TypecheckResult::standard_expr(
+            MIRType::unit(),
+            MIRExpressionKind::Break { label }
+        )
+    }
+
+    pub fn continue_expr(label: Option<CXIdent>) -> Self {
+        TypecheckResult::standard_expr(
+            MIRType::unit(),
+            MIRExpressionKind::Continue { label }
+        )
     }
 }

@@ -1,20 +1,20 @@
 use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
-    expression::{MIRBinOp, MIRCoercion, MIRInstruction, MIRIntegerBinOp, MIRValue},
+    expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRIntegerBinOp},
     types::{CXIntegerType, MIRType, MIRTypeKind, same_type},
 };
 use cx_util::CXResult;
 
 use crate::{
-    environment::TypeEnvironment, log_typecheck_error, type_checking::binary_ops::handle_assignment,
+    environment::TypeEnvironment, log_typecheck_error, type_checking::binary_ops::generate_assignment,
 };
 
 pub(crate) fn coerce_value(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
-    value: MIRValue,
-) -> CXResult<MIRValue> {
-    let value_type = value.get_type();
+    value: MIRExpression,
+) -> CXResult<MIRExpression> {
+    let value_type = &value._type;
     let mem_ref_inner = value_type.mem_ref_inner();
 
     if let Some(mem_ref_inner) = mem_ref_inner {
@@ -151,9 +151,9 @@ pub(crate) fn explicit_cast(
 pub fn implicit_cast(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
-    value: MIRValue,
+    value: MIRExpression,
     to_type: &MIRType,
-) -> CXResult<MIRValue> {
+) -> CXResult<MIRExpression> {
     let from_type = value.get_type();
 
     if same_type(&from_type, to_type) {
@@ -296,7 +296,7 @@ pub fn implicit_cast(
                         result: result.clone(),
                         _type: *inner.clone(),
                     });
-                handle_assignment(env, &result_value, &value, inner)?;
+                generate_assignment(env, &result_value, &value, inner)?;
             } else {
                 env.builder.add_instruction(MIRInstruction::MemoryRead {
                     result,

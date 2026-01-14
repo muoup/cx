@@ -1,6 +1,6 @@
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRValue},
+    expression::MIRExpression,
     program::MIRBaseMappings,
     types::{CXIntegerType, MIRType, MIRTypeKind},
 };
@@ -10,7 +10,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        binary_ops::{handle_assignment, struct_field},
+        binary_ops::{generate_assignment, struct_field},
         casting::implicit_cast,
         typechecker::typecheck_expr,
     },
@@ -273,7 +273,7 @@ fn typecheck_structured_initializer(
             _type: field_type.clone().mem_ref_to(),
         };
 
-        handle_assignment(env, &element_ptr_val, &value, field_type)?;
+        generate_assignment(env, &element_ptr_val, &value, field_type)?;
         initialized_fields[counter] = true;
 
         if index.name.is_none() {

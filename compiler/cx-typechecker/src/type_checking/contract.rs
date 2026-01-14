@@ -1,6 +1,6 @@
 use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRValue},
+    expression::MIRExpression,
     program::MIRBaseMappings,
     types::{MIRFunctionPrototype, MIRParameter, MIRType},
 };
@@ -9,7 +9,7 @@ use cx_util::CXResult;
 use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
-    type_checking::{casting::implicit_cast, typechecker::typecheck_expr},
+    type_checking::{accumulation::TypecheckResult, casting::implicit_cast, typechecker::typecheck_expr},
 };
 
 fn create_clause_scope(

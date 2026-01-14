@@ -100,9 +100,9 @@ impl Display for MIRGlobalVarKind {
     }
 }
 
-impl Display for MIRExpressionKind {
+impl Display for MIRExpression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
+        match &self.kind {
             MIRExpressionKind::BoolLiteral(value) => write!(f, "{}", value),
             MIRExpressionKind::IntLiteral(value, int_type, signed) => {
                 if *signed {
@@ -119,8 +119,8 @@ impl Display for MIRExpressionKind {
             MIRExpressionKind::Parameter(name) => write!(f, "param {}", name),
             MIRExpressionKind::GlobalVariable(name) => write!(f, "global {}", name),
             MIRExpressionKind::LocalVariable(name) => write!(f, "var {}", name),
-            MIRExpressionKind::FunctionReference { prototype, .. } => {
-                write!(f, "fn {}", prototype.name)
+            MIRExpressionKind::FunctionReference { .. } => {
+                write!(f, "fn {}", self._type)
             }
             MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
                 write!(f, "({} {} {})", lhs.as_ref(), op, **rhs)
@@ -128,8 +128,8 @@ impl Display for MIRExpressionKind {
             MIRExpressionKind::UnaryOperation { operand, op } => {
                 write!(f, "({}{})", op, operand.as_ref())
             }
-            MIRExpressionKind::MemoryRead { source, _type } => {
-                write!(f, "load[{}] {}", _type, source.as_ref())
+            MIRExpressionKind::MemoryRead { source } => {
+                write!(f, "load[{}] {}", self._type, source.as_ref())
             }
             MIRExpressionKind::MemoryWrite { target, value } => {
                 write!(f, "store {} <- {}", target.as_ref(), **value)
@@ -141,6 +141,17 @@ impl Display for MIRExpressionKind {
             MIRExpressionKind::StructFieldAccess {
                 base, field_index, ..
             } => write!(f, "getfield {} [{}]", base.as_ref(), field_index),
+            MIRExpressionKind::UnionAliasAccess {
+                base,
+                variant_type,
+                union_type,
+            } => write!(
+                f,
+                "aliasfield {} [{} as {}]",
+                base.as_ref(),
+                variant_type,
+                union_type
+            ),
             MIRExpressionKind::ArrayAccess { array, index, .. } => {
                 write!(f, "index {} [{}]", array.as_ref(), index)
             }
@@ -260,13 +271,28 @@ impl Display for MIRExpressionKind {
                 write!(f, "leak_lifetime {}", expression.as_ref())
             }
             MIRExpressionKind::Defer { expression } => write!(f, "defer {}", expression.as_ref()),
+            MIRExpressionKind::Move { source } => write!(f, "move {}", source.as_ref()),
+            MIRExpressionKind::Break { label } => {
+                write!(
+                    f,
+                    "break{}",
+                    match label {
+                        Some(l) => format!(" {}", l),
+                        None => String::new(),
+                    }
+                )
+            }
+            MIRExpressionKind::Continue { label } => {
+                write!(
+                    f,
+                    "continue{}",
+                    match label {
+                        Some(l) => format!(" {}", l),
+                        None => String::new(),
+                    }
+                )
+            }
         }
-    }
-}
-
-impl Display for MIRExpression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.kind, self._type)
     }
 }
 
@@ -333,6 +359,7 @@ impl Display for MIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
+            MIRCoercion::IntToBool => write!(f, "int_to_bool"),
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
         }
     }

@@ -65,9 +65,9 @@ fn lower_int_binop(
         MIRIntegerBinOp::IGT => (BCIntBinOp::IGT, OperationCategory::Comparison),
         MIRIntegerBinOp::IGE => (BCIntBinOp::IGE, OperationCategory::Comparison),
 
-        MIRIntegerBinOp::AND => (BCIntBinOp::BAND, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::OR => (BCIntBinOp::BOR, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::XOR => (BCIntBinOp::BXOR, OperationCategory::Arithmetic),
+        MIRIntegerBinOp::BAND => (BCIntBinOp::BAND, OperationCategory::Arithmetic),
+        MIRIntegerBinOp::BOR => (BCIntBinOp::BOR, OperationCategory::Arithmetic),
+        MIRIntegerBinOp::BXOR => (BCIntBinOp::BXOR, OperationCategory::Arithmetic),
     };
 
     let result_type = match bc_op_category {
