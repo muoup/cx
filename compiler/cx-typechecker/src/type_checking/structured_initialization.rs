@@ -33,11 +33,7 @@ pub fn deconstruct_type_constructor<'a>(
         rhs: inner,
     } = &pattern.kind
     else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     let CXExprKind::BinOp {
@@ -46,27 +42,15 @@ pub fn deconstruct_type_constructor<'a>(
         rhs,
     } = &lhs.kind
     else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     let CXExprKind::Identifier(union_name) = &lhs.kind else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     let CXExprKind::Identifier(variant_name) = &rhs.kind else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     Ok(TypeConstructor {
@@ -82,7 +66,7 @@ pub fn typecheck_initializer_list(
     expr: &CXExpr,
     indices: &[CXInitIndex],
     to_type: Option<&MIRType>,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
         return log_typecheck_error!(env, expr, " Initializer lists must have an explicit type");
     };
@@ -119,7 +103,7 @@ fn typecheck_array_initializer(
     inner_type: &MIRType,
     size: Option<usize>,
     to_type: &MIRType,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     for index in indices {
         if let Some(name) = &index.name {
             return log_typecheck_error!(
@@ -148,40 +132,20 @@ fn typecheck_array_initializer(
         size: array_size,
     });
 
-    // Build a block of expressions: allocate + writes
-    let mut statements = Vec::new();
+    let elements = indices.iter()
+        .map(|index| {
+            typecheck_expr(env, base_data, &index.value, Some(inner_type))
+                .and_then(|v| Ok(v.into_expression()))
+        })
+        .collect::<CXResult<_>>()?;
 
-    // Stack allocation for the array
-    let allocation = TypecheckResult::stack_allocation(array_type.clone());
-    statements.push(allocation.expression);
-
-    // Initialize each element
-    for (i, index) in indices.iter().enumerate() {
-        let value = typecheck_expr(env, base_data, &index.value, Some(inner_type))?;
-
-        // Get pointer to element i
-        let index_expr = MIRExpression::int_literal(i as i64, CXIntegerType::I64, true);
-        let element_ptr = TypecheckResult::array_access(
-            allocation.clone(),
-            TypecheckResult::new(index_expr),
-            inner_type.clone(),
-            inner_type.clone().mem_ref_to(),
-        );
-
-        // Write value to element
-        let write_result = generate_assignment(
-            env,
-            &element_ptr.into_expression(),
-            &value,
-            inner_type,
-        )?;
-        statements.push(write_result.into_expression());
-    }
-
-    Ok(MIRExpression {
-        kind: MIRExpressionKind::Block { statements },
-        _type: to_type.clone(),
-    })
+    Ok(TypecheckResult::standard_expr(
+        array_type,
+        MIRExpressionKind::ArrayInitializer { 
+            elements,
+            element_type: inner_type.clone(),
+        }
+    ))
 }
 
 fn typecheck_structured_initializer(
@@ -190,7 +154,7 @@ fn typecheck_structured_initializer(
     expr: &CXExpr,
     indices: &[CXInitIndex],
     to_type: &MIRType,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     let MIRTypeKind::Structured { fields, .. } = &to_type.kind else {
         return log_typecheck_error!(
             env,
@@ -199,12 +163,7 @@ fn typecheck_structured_initializer(
         );
     };
 
-    // Build a block of expressions: allocate + field writes
-    let mut statements = Vec::new();
-
-    // Stack allocation for the struct
-    let allocation = TypecheckResult::stack_allocation(to_type.clone());
-    statements.push(allocation.expression);
+    let mut initializations = Vec::new();
 
     let mut counter = 0;
     let mut initialized_fields = vec![false; fields.len()];
@@ -239,7 +198,7 @@ fn typecheck_structured_initializer(
 
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
-            .and_then(|v| implicit_cast(env, &index.value, v, field_type))?;
+            .and_then(|v| implicit_cast(env, &index.value, v.into_expression(), field_type))?;
 
         let Some(struct_field_info) = struct_field(to_type, field_name.as_str()) else {
             return log_typecheck_error!(
@@ -251,24 +210,7 @@ fn typecheck_structured_initializer(
             );
         };
 
-        // Get pointer to field
-        let element_ptr = TypecheckResult::struct_field_access(
-            allocation.clone(),
-            struct_field_info.index,
-            struct_field_info.offset,
-            to_type.clone(),
-            field_type.clone().mem_ref_to(),
-        );
-
-        // Write value to field
-        let write_result = generate_assignment(
-            env,
-            &element_ptr.into_expression(),
-            &value,
-            field_type,
-        )?;
-        statements.push(write_result.into_expression());
-
+        initializations.push((struct_field_info.index, value));
         initialized_fields[counter] = true;
 
         if index.name.is_none() {
@@ -276,8 +218,11 @@ fn typecheck_structured_initializer(
         }
     }
 
-    Ok(MIRExpression {
-        kind: MIRExpressionKind::Block { statements },
-        _type: to_type.clone(),
-    })
+    Ok(TypecheckResult::standard_expr(
+        to_type.clone(),
+        MIRExpressionKind::StructInitializer {
+            struct_type: to_type.clone(),
+            initializations,
+        },
+    ))
 }

@@ -31,8 +31,9 @@ fn typecheck_function(
     base_data: &MIRBaseMappings,
     prototype: MIRFunctionPrototype,
     body: &CXExpr,
-) -> CXResult<MIRFunction> {
+) -> CXResult<()> {
     env.push_scope(None, None);
+    env.current_function = Some(prototype.clone());
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
@@ -49,12 +50,18 @@ fn typecheck_function(
     }
 
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+    
+    env.current_function = None;
     env.pop_scope();
-
-    Ok(MIRFunction {
-        prototype,
-        body: body_expr,
-    })
+    
+    env.builder.generated_functions.push(
+        MIRFunction {
+            prototype,
+            body: body_expr.clone(),
+        },
+    );
+    
+    Ok(())
 }
 
 pub fn typecheck(

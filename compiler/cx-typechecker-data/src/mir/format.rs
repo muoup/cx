@@ -167,6 +167,20 @@ impl Display for MIRExpression {
                 value,
                 ..
             } => write!(f, "makevariant [{}] {}", variant_index, value.as_ref()),
+            MIRExpressionKind::StructInitializer { initializations, struct_type } => {
+                write!(f, "struct_init {} {{", struct_type)?;
+                for (field_index, field_value) in initializations {
+                    write!(f, " {}: {},", field_index, field_value)?;
+                }
+                write!(f, " }}")
+            }
+            MIRExpressionKind::ArrayInitializer { elements, element_type } => {
+                write!(f, "array_init {} [", element_type)?;
+                for element in elements {
+                    write!(f, " {},", element)?;
+                }
+                write!(f, " ]")
+            },
             MIRExpressionKind::If {
                 condition,
                 then_branch,
@@ -217,7 +231,6 @@ impl Display for MIRExpression {
             MIRExpressionKind::CSwitch {
                 condition,
                 cases,
-                body,
                 default,
             } => {
                 write!(f, "cswitch {} {{", condition.as_ref())?;
@@ -227,7 +240,6 @@ impl Display for MIRExpression {
                 if let Some(default) = default {
                     write!(f, " default: {}", default.as_ref())?;
                 }
-                write!(f, " body: {} ", body.as_ref())?;
                 write!(f, " }}")
             }
             MIRExpressionKind::Match {
@@ -252,11 +264,11 @@ impl Display for MIRExpression {
                 }
             }
             MIRExpressionKind::Block { statements } => {
-                write!(f, "{{")?;
                 for stmt in statements {
-                    write!(f, "    {};", stmt)?;
+                    writeln!(f, "    {};", stmt)?;
                 }
-                write!(f, " }}")
+                
+                Ok(())
             }
             MIRExpressionKind::CallFunction {
                 function,
@@ -288,24 +300,16 @@ impl Display for MIRExpression {
             }
             MIRExpressionKind::Defer { expression } => write!(f, "defer {}", expression.as_ref()),
             MIRExpressionKind::Move { source } => write!(f, "move {}", source.as_ref()),
-            MIRExpressionKind::Break { label } => {
+            MIRExpressionKind::Break => {
                 write!(
                     f,
-                    "break{}",
-                    match label {
-                        Some(l) => format!(" {}", l),
-                        None => String::new(),
-                    }
+                    "break",
                 )
             }
-            MIRExpressionKind::Continue { label } => {
+            MIRExpressionKind::Continue => {
                 write!(
                     f,
-                    "continue{}",
-                    match label {
-                        Some(l) => format!(" {}", l),
-                        None => String::new(),
-                    }
+                    "continue",
                 )
             }
         }

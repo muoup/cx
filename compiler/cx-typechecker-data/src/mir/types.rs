@@ -183,7 +183,7 @@ impl MIRType {
             kind: MIRTypeKind::Unit,
         }
     }
-    
+
     pub fn bool() -> Self {
         MIRType {
             specifiers: 0,
@@ -207,18 +207,16 @@ impl MIRType {
         self.visibility = visibility;
         self
     }
-    
-    pub fn add_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
+
+    pub fn add_specifier(mut self, specifier: CXTypeSpecifier) -> Self {
         self.specifiers |= specifier;
         self
     }
 
     pub fn with_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        let mut clone = self.clone();
-        clone.add_specifier(specifier);
-        clone
+        self.clone().add_specifier(specifier)
     }
-    
+
     pub fn remove_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
         self.specifiers &= !specifier;
         self
@@ -551,17 +549,22 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
 
         (
             MIRTypeKind::Structured {
-                name: n1, fields: t1_fields, ..
+                name: n1,
+                fields: t1_fields,
+                ..
             },
             MIRTypeKind::Structured {
-                name: n2, fields: t2_fields, ..
+                name: n2,
+                fields: t2_fields,
+                ..
             },
-        ) => 
-          n1 == n2 && 
-            t1_fields
-            .iter()
-            .zip(t2_fields.iter())
-            .all(|(f1, f2)| same_type(&f1.1, &f2.1)),
+        ) => {
+            n1 == n2
+                && t1_fields
+                    .iter()
+                    .zip(t2_fields.iter())
+                    .all(|(f1, f2)| same_type(&f1.1, &f2.1))
+        }
 
         (MIRTypeKind::Function { prototype: p1 }, MIRTypeKind::Function { prototype: p2 }) => {
             same_type(&p1.return_type, &p2.return_type)

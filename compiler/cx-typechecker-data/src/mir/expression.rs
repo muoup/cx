@@ -91,14 +91,19 @@ pub enum MIRExpressionKind {
         value: Box<MIRExpression>,
         sum_type: MIRType,
     },
+    
+    ArrayInitializer {
+        elements: Vec<MIRExpression>,
+        element_type: MIRType,
+    },
+    StructInitializer {
+        initializations: Vec<(usize, MIRExpression)>,
+        struct_type: MIRType,
+    },
 
     // Control Flow
-    Break {
-        label: Option<CXIdent>,
-    },
-    Continue {
-        label: Option<CXIdent>,
-    },
+    Break,
+    Continue,
     If {
         condition: Box<MIRExpression>,
         then_branch: Box<MIRExpression>,

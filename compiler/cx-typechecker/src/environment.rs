@@ -166,7 +166,7 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn current_function(&self) -> &MIRFunctionPrototype {
-        self.builder.current_prototype()
+        self.current_function.as_ref().unwrap()
     }
 
     pub fn complete_type(

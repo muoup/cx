@@ -3,7 +3,7 @@ use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
-use crate::type_checking::typechecker::{typecheck_expr, typecheck_expr_inner};
+use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
 use cx_typechecker_data::mir::{
@@ -21,7 +21,7 @@ pub fn typecheck_switch(
     block: &[CXExpr],
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     env.push_scope(None, None);
 
     let condition_value = typecheck_expr(env, base_data, condition, None)
@@ -70,14 +70,14 @@ pub fn typecheck_switch(
     };
 
     // Build the match expression
-    Ok(MIRExpression {
-        kind: MIRExpressionKind::CSwitch {
+    Ok(TypecheckResult::standard_expr(
+        MIRType::unit(),
+        MIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),
             cases: arms,
             default: default_body,
         },
-        _type: MIRType::unit(),
-    })
+    ))
 }
 
 enum MatchCondition<'a> {
@@ -148,7 +148,7 @@ pub fn typecheck_match(
     condition: &CXExpr,
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
-) -> CXResult<MIRExpression> {
+) -> CXResult<TypecheckResult> {
     env.push_scope(None, None);
 
     let expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
@@ -157,7 +157,7 @@ pub fn typecheck_match(
     let condition_tag = get_match_condition_value(env, expr, expr_value.clone(), &expr_type)?;
 
     let match_arms = match condition_tag {
-        MatchCondition::Integer(condition_value) => {
+        MatchCondition::Integer(_) => {
             // Integer matching: each arm has an integer literal pattern
             let mut result_arms = Vec::new();
 
@@ -195,10 +195,9 @@ pub fn typecheck_match(
         }
 
         MatchCondition::TaggedUnionTag {
-            tag_expr,
-            union_type,
             union_name: expected_union_name,
             variants,
+            ..
         } => {
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
@@ -264,7 +263,7 @@ pub fn typecheck_match(
 
                 // Typecheck the body with the variant value bound
                 env.push_scope(None, None);
-                env.insert_stack_symbol(name.as_string(), variant_value_expr);
+                env.insert_symbol(name.as_string(), variant_value_expr);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
                 env.pop_scope();
 
@@ -289,12 +288,12 @@ pub fn typecheck_match(
     env.pop_scope();
 
     // Build the match expression
-    Ok(MIRExpression {
-        kind: MIRExpressionKind::Match {
+    Ok(TypecheckResult::standard_expr(
+        MIRType::unit(),
+        MIRExpressionKind::Match {
             condition: Box::new(expr_value),
             arms: match_arms,
             default: default_body,
         },
-        _type: MIRType::unit(),
-    })
+    ))
 }

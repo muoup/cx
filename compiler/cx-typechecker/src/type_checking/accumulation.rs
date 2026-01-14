@@ -223,17 +223,17 @@ impl TypecheckResult {
     }
 
     // Control flow
-    pub fn break_expr(label: Option<CXIdent>) -> Self {
+    pub fn break_expr() -> Self {
         TypecheckResult::standard_expr(
             MIRType::unit(),
-            MIRExpressionKind::Break { label }
+            MIRExpressionKind::Break,
         )
     }
 
-    pub fn continue_expr(label: Option<CXIdent>) -> Self {
+    pub fn continue_expr() -> Self {
         TypecheckResult::standard_expr(
             MIRType::unit(),
-            MIRExpressionKind::Continue { label }
+            MIRExpressionKind::Continue,
         )
     }
 }

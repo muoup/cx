@@ -1,6 +1,6 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
-use cx_bytecode::generate_bytecode;
+// use cx_bytecode::generate_bytecode;
 use cx_lexer_data::TokenIter;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
@@ -332,20 +332,22 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::BytecodeGen => {
-            let mir = context.module_db.mir.take(&job.unit);
-            let bc = match generate_bytecode(&mir) {
-                Ok(bc) => bc,
-                Err(e) => {
-                    e.pretty_print();
-                    panic!("Bytecode generation failed for unit: {}", job.unit);
-                }
-            };
+            todo!()
+            
+            // let mir = context.module_db.mir.take(&job.unit);
+            // let bc = match generate_bytecode(&mir) {
+            //     Ok(bc) => bc,
+            //     Err(e) => {
+            //         e.pretty_print();
+            //         panic!("Bytecode generation failed for unit: {}", job.unit);
+            //     }
+            // };
 
-            if !job.unit.is_std_lib() {
-                dump_data(&bc);
-            }
+            // if !job.unit.is_std_lib() {
+            //     dump_data(&bc);
+            // }
 
-            context.module_db.bytecode.insert(job.unit.clone(), bc);
+            // context.module_db.bytecode.insert(job.unit.clone(), bc);
         }
 
         CompilationStep::Codegen => {
