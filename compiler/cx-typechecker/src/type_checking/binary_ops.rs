@@ -3,7 +3,6 @@ use crate::environment::function_query::query_static_member_function;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
-use crate::type_checking::contract::contracted_function_call;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
@@ -332,7 +331,24 @@ pub(crate) fn typecheck_method_call(
     }
 
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
-    contracted_function_call(env, base_data, prototype, lhs_val, &args)
+
+    Ok(
+        TypecheckResult::standard_expr(
+            prototype.return_type.clone(),
+            MIRExpressionKind::CallFunction {
+                function: Box::new(MIRExpression {
+                    kind: MIRExpressionKind::FunctionReference {
+                        implicit_variables: implicit_variables.clone(),
+                    },
+                    _type: MIRTypeKind::Function {
+                        prototype: prototype.clone(),
+                    }
+                    .into(),
+                }),
+                arguments: args.clone(),
+            },
+        )
+    )
 }
 
 fn typecheck_type_constructor(
@@ -1105,4 +1121,39 @@ pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<Struc
     }
 
     None
+}
+
+/// Generate an assignment expression that writes a value to a target memory location.
+/// This is the AST-style equivalent of the old SSA instruction emission.
+///
+/// Arguments:
+/// - `env`: The type environment
+/// - `target`: The target location (pointer/reference) to write to
+/// - `value`: The value to write
+/// - `value_type`: The type of the value being written
+///
+/// Returns a TypecheckResult containing a MemoryWrite expression
+pub fn generate_assignment(
+    env: &mut TypeEnvironment,
+    target: &MIRExpression,
+    value: &MIRExpression,
+    value_type: &MIRType,
+) -> CXResult<TypecheckResult> {
+    use crate::type_checking::accumulation::TypecheckResult;
+
+    // Check if the type is copyable
+    if !env.is_copyable(value_type) {
+        // We can't log an error without a proper expression reference
+        // For now, we'll just return an error without location info
+        return cx_util::CXError::create_result(format!(
+            "Cannot assign value of non-copyable type {}",
+            value_type
+        ));
+    }
+
+    Ok(TypecheckResult::memory_write(
+        TypecheckResult::new(target.clone()),
+        TypecheckResult::new(value.clone()),
+        value_type.clone(),
+    ))
 }

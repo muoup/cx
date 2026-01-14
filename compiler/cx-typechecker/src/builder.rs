@@ -3,7 +3,6 @@ use cx_typechecker_data::mir::{
     program::MIRFunction,
     types::MIRFunctionPrototype,
 };
-use cx_util::identifier::CXIdent;
 
 pub(crate) struct MIRBuilder {
     pub generated_functions: Vec<MIRFunction>,

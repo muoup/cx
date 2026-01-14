@@ -3,7 +3,7 @@ use std::rc::Rc;
 use cx_fmir_data::ast::{FMIRNode, FMIRNodeBody, FMIRType, FRc};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
 use cx_typechecker_data::mir::{
-    expression::{MIRExpressionKind, MIRValue},
+    expression::{MIRExpression, MIRExpressionKind},
     program::MIRBaseMappings,
     types::{CXIntegerType, MIRFunctionPrototype, MIRType, MIRTypeKind},
 };
@@ -15,15 +15,9 @@ use crate::environment::TypeEnvironment;
 // This is incomplete PoC code that needs to be updated for new MIR structure
 // Since safe functions now go through MIR first, this function should convert MIRExpression to FMIRNode
 
-fn mir_expression_to_fmir_node(_expr: &MIRExpressionKind) -> CXResult<FMIRNode> {
+fn mir_expression_to_fmir_node(_expr: &MIRExpression) -> CXResult<FMIRNode> {
     // TODO: Implement conversion from MIRExpression to FMIRNode
     todo!("mir_expression_to_fmir_node not yet implemented")
-}
-
-// Temporary function for backward compatibility during refactoring
-fn mir_value_to_fmir_node(_value: MIRValue) -> CXResult<FMIRNode> {
-    // TODO: Remove this once mir_expression_to_fmir_node is implemented
-    todo!("mir_value_to_fmir_node not yet implemented")
 }
 
 pub fn lower_expression(
@@ -120,13 +114,13 @@ pub fn lower_expression(
 
         CXExprKind::Identifier(name) => {
             // Look up the variable in the environment
-            let mir_value = env
+            let mir_expr = env
                 .symbol_value(name.as_str())
                 .ok_or_else(|| cx_util::CXError::create_boxed(format!("undefined variable: {}", name)))?
                 .clone();
 
-            // Convert MIRValue to FMIRNode
-            mir_value_to_fmir_node(mir_value)?
+            // Convert MIRExpression to FMIRNode
+            mir_expression_to_fmir_node(&mir_expr)?
         }
 
         CXExprKind::UnOp { operand, operator } => {
@@ -152,9 +146,12 @@ pub fn lower_expression(
                     }
                 }
                 cx_parsing_data::ast::CXUnOp::LNot => {
-                    // Logical NOT - returns bool
+                    // Logical NOT - returns bool (I1, unsigned)
                     FMIRNode {
-                        _type: FMIRType::Standard(MIRType::from(MIRTypeKind::Bool)),
+                        _type: FMIRType::Standard(MIRType::from(MIRTypeKind::Integer {
+                            _type: CXIntegerType::I1,
+                            signed: false,
+                        })),
                         body: FMIRNodeBody::Pure,
                     }
                 }
@@ -177,7 +174,10 @@ pub fn lower_expression(
                 | cx_parsing_data::ast::CXBinOp::NotEqual
                 | cx_parsing_data::ast::CXBinOp::LAnd
                 | cx_parsing_data::ast::CXBinOp::LOr => {
-                    FMIRType::Standard(MIRType::from(MIRTypeKind::Bool))
+                    FMIRType::Standard(MIRType::from(MIRTypeKind::Integer {
+                        _type: CXIntegerType::I1,
+                        signed: false,
+                    }))
                 }
                 _ => {
                     // For arithmetic operations, the result type is the same as the operand type

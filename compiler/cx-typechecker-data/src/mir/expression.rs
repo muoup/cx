@@ -115,11 +115,19 @@ pub enum MIRExpressionKind {
         increment: Box<MIRExpression>,
         body: Box<MIRExpression>,
     },
+    
+    CSwitch {
+        condition: Box<MIRExpression>,
+        cases: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
+        default: Option<Box<MIRExpression>>,
+    },
+    
     Match {
         condition: Box<MIRExpression>,
         arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
     },
+    
     Return {
         value: Option<Box<MIRExpression>>,
     },

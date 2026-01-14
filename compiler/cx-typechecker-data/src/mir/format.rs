@@ -214,6 +214,22 @@ impl Display for MIRExpression {
                     body.as_ref()
                 )
             }
+            MIRExpressionKind::CSwitch {
+                condition,
+                cases,
+                body,
+                default,
+            } => {
+                write!(f, "cswitch {} {{", condition.as_ref())?;
+                for (case_value, label) in cases {
+                    write!(f, " {} => {},", case_value.as_ref(), label)?;
+                }
+                if let Some(default) = default {
+                    write!(f, " default: {}", default.as_ref())?;
+                }
+                write!(f, " body: {} ", body.as_ref())?;
+                write!(f, " }}")
+            }
             MIRExpressionKind::Match {
                 condition,
                 arms,
