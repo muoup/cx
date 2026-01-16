@@ -4,7 +4,6 @@ use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{BCUnit, BytecodeResult};
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::*;
-use cx_typechecker_data::mir::expression::MIRRegister;
 use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
 use cx_typechecker_data::mir::program::MIRUnit;
 use cx_typechecker_data::mir::types::MIRType;
@@ -19,9 +18,9 @@ pub struct BCBuilder {
     global_variables: Vec<BCGlobalValue>,
 
     pub fn_map: BCFunctionMap,
-    
-    symbol_table: HashMap<MIRRegister, BCValue>,
-    liveness_table: HashMap<MIRRegister, BCRegister>,
+
+    symbol_table: HashMap<CXIdent, BCValue>,
+    liveness_table: HashMap<CXIdent, BCRegister>,
     
     function_context: Option<BytecodeFunctionContext>,
 }
@@ -104,7 +103,7 @@ impl BCBuilder {
         self.get_prototype(destructor_name.as_str())
     }
 
-    pub fn insert_symbol(&mut self, mir_value: MIRRegister, bc_value: BCValue) {
+    pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: BCValue) {
         self.symbol_table.insert(mir_value, bc_value);
     }
 
@@ -126,11 +125,11 @@ impl BCBuilder {
         None
     }
     
-    pub fn add_liveness_mapping(&mut self, mir_reg: MIRRegister, bc_reg: BCRegister) {
+    pub fn add_liveness_mapping(&mut self, mir_reg: CXIdent, bc_reg: BCRegister) {
         self.liveness_table.insert(mir_reg, bc_reg);
     }
     
-    pub fn get_liveness_mapping(&self, mir_reg: &MIRRegister) -> Option<&BCRegister> {
+    pub fn get_liveness_mapping(&self, mir_reg: &CXIdent) -> Option<&BCRegister> {
         self.liveness_table.get(mir_reg)
     }
 
@@ -142,7 +141,7 @@ impl BCBuilder {
         self.fn_map.get(name)
     }
 
-    pub fn get_symbol(&self, name: &MIRRegister) -> Option<BCValue> {
+    pub fn get_symbol(&self, name: &CXIdent) -> Option<BCValue> {
         self.symbol_table.get(name).cloned()
     }
 
@@ -213,7 +212,7 @@ impl BCBuilder {
         &mut self,
         instruction: BCInstructionKind,
         value_type: BCType,
-        result: Option<MIRRegister>,
+        result: Option<CXIdent>,
     ) -> CXResult<BCValue> {
         if self.current_block_closed() {
             return Ok(BCValue::NULL);
