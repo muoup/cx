@@ -1,0 +1,11 @@
+int sum(int a, int b) 
+where
+    post(result): (result >= a && result >= b)
+{
+    return a - b;
+}
+
+int main() {
+    int result = sum(3, 5);
+    return 0;
+}

@@ -1,11 +1,11 @@
+use speedy::{Context, Readable, Reader, Writable, Writer};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::sync::Arc;
-use speedy::{Context, Readable, Reader, Writable, Writer};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CXIdent {
-    data: Arc<str>
+    data: Arc<str>,
 }
 
 impl Hash for CXIdent {
@@ -41,18 +41,28 @@ impl CXIdent {
     pub fn as_string(&self) -> String {
         self.data.to_string()
     }
-    
+
     pub fn set_data<T: Into<Arc<str>>>(&mut self, data: T) {
         self.data = data.into();
     }
 
-    pub fn from<T: Into<Arc<str>>>(str: T) -> Self {
-        CXIdent {
-            data: str.into()
-        }
+    pub fn new<T: Into<Arc<str>>>(str: T) -> Self {
+        CXIdent { data: str.into() }
     }
-    
+
     pub fn map_data<F: FnOnce(&str) -> String>(&mut self, f: F) {
         self.data = f(self.data.as_ref()).into();
+    }
+}
+
+impl From<String> for CXIdent {
+    fn from(value: String) -> Self {
+        CXIdent { data: Arc::from(value) }
+    }
+}
+
+impl From<&str> for CXIdent {
+    fn from(value: &str) -> Self {
+        CXIdent { data: Arc::from(value) }
     }
 }

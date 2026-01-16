@@ -2,14 +2,11 @@
 macro_rules! log_error {
     ($($arg:tt)*) => {
         {
-            eprintln!($($arg)*);
+            use cx_util::CXError;
+            let msg = format!($($arg)*);
+            eprintln!("Error: {}", msg);
 
-            // If in debug mode, panic on error
-            if cfg!(debug_assertions) {
-                panic!()
-            }
-
-            return None;
+            panic!()
         }
     }
 }
@@ -30,23 +27,9 @@ macro_rules! expr_error_log {
 macro_rules! bytecode_error_log {
     ($builder:ident, $($arg:tt)*) => {
         {
-            use cx_data_ast::parse::macros::error_pointer;
             use cx_util::log_error;
-            
-            eprintln!("Error in method {}", $builder.current_function_name().unwrap_or("<unknown>"));
-            log_error!($($arg)*);
-        }
-    }
-}
 
-#[macro_export]
-macro_rules! point_log_error {
-    ($toks:expr, $($arg:tt)*) => {
-        {
-            use cx_data_ast::parse::macros::error_pointer;
-            use cx_util::log_error;
-            
-            eprintln!("{}", error_pointer(&$toks));
+            eprintln!("Error in method {}", $builder.current_function_name().unwrap_or("<unknown>"));
             log_error!($($arg)*);
         }
     }
@@ -63,5 +46,5 @@ macro_rules! try_routine {
             *$iter = iter_save;
             None
         }
-    }
+    };
 }

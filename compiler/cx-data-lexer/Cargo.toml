@@ -1,7 +1,0 @@
-[package]
-name = "cx-data-lexer"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-cx-util = { path = "../cx-util" }

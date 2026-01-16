@@ -11,3 +11,5 @@ void free(void* ptr);
 int atoi(const char *str);
 int rand();
 int srand(u32 seed);
+
+void exit(int status);

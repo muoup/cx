@@ -1,23 +1,21 @@
-mod scheduler;
-mod backends;
+// mod backends;
 mod linker;
+mod scheduler;
 mod template_realizing;
+mod backends;
 
 use crate::linker::link;
 use crate::scheduler::scheduling_loop;
-use cx_data_pipeline::db::ModuleData;
-use cx_data_pipeline::jobs::{CompilationJob, CompilationStep};
-use cx_data_pipeline::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
+use cx_pipeline_data::db::ModuleData;
+use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
+use cx_pipeline_data::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub fn standard_compilation(
-    config: CompilerConfig,
-    base_file: &Path
-) -> Option<()> {
+pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> Option<()> {
     let previous_dir = std::env::current_dir().ok()?;
-    
+
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
@@ -32,7 +30,7 @@ pub fn standard_compilation(
 
     scheduling_loop(&compiler_context, initial_job)?;
     link(&compiler_context)?;
-    
+
     std::env::set_current_dir(previous_dir).ok()?;
 
     Some(())

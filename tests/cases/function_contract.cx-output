@@ -1,0 +1,5 @@
+precondition checked
+function body executed
+postcondition checked
+postcondition checked
+result: 10

@@ -1,4 +1,3 @@
 public:
 
-template <T : type>
-typedef T TemplateType;
+typedef<T> T TemplateType;

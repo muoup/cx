@@ -1,9 +1,0 @@
-[package]
-name = "cx-data-bytecode"
-version = "0.0.0"
-edition = "2021"
-autotests = false
-
-[dependencies]
-cx-util = { path = "../cx-util" }
-speedy = "0.8.7"

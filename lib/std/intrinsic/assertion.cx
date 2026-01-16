@@ -1,0 +1,11 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+public:
+
+void __compiler_assert(bool condition, const char* message) {
+    if (!condition) {
+        printf("Assertion failed: %s\n", message);
+        exit(1);
+    } 
+}

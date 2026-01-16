@@ -4,7 +4,7 @@ private:
 
 public:
 
-void printf(const char* fmt, ...);
+int printf(const char* fmt, ...);
 
 void print(const char* str) {
     while (*str) putchar(*str++);

@@ -1,0 +1,10 @@
+[package]
+name = "cx-log"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+cx-util = { path = "../cx-util" }
+
+cx-lexer = { path = "../cx-lexer" }
+cx-lexer-data = { path = "../cx-lexer-data" }

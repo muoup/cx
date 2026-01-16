@@ -1,10 +1,8 @@
 import std::io;
 
-template <T : type>
-typedef T* Ptr;
+typedef<T> T* Ptr;
 
-template <T : type>
-struct Data {
+struct Data<T> {
     Ptr<T> ptr;
 };
 
@@ -14,7 +12,7 @@ void access(Data<int> *data) {
 
 int main() {
     int val;
-    Data<int> data = (Data<int>) {
+    Data<int> data = {
         .ptr = &val
     };
 

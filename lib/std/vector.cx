@@ -2,15 +2,17 @@
 
 public:
 
-template <T : type>
-struct vector {
+struct vector<T> {
     T* data;
     usize length;
     usize capacity;
 };
 
-template <T : type>
-vector<T> create_vector() {
+~vector<T>(this) {
+    free(this.data);
+}
+
+vector<T> create_vector<T>() {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),
         .length = 0,
@@ -18,8 +20,7 @@ vector<T> create_vector() {
     };
 }
 
-template <T : type>
-vector<T> create_vector_with_capacity(usize capacity) {
+vector<T> create_vector_with_capacity<T>(usize capacity) {
     return (vector<T>) {
         .data = malloc(capacity * sizeof(T)),
         .length = 0,
@@ -27,8 +28,7 @@ vector<T> create_vector_with_capacity(usize capacity) {
     };
 }
 
-template <T : type>
-void vector<T>::push(this, T object) {
+void vector<T>::push<T>(this, T object) {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
         this.data = realloc(this.data, this.capacity * sizeof(T));
@@ -38,8 +38,7 @@ void vector<T>::push(this, T object) {
     this.length++;
 }
 
-template <T : type>
-T* vector<T>::at(this, usize index) {
+T* vector<T>::at<T>(this, usize index) {
     if (index >= this.length) {
         return NULL;
     }
