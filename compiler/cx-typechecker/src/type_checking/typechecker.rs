@@ -332,7 +332,8 @@ pub fn typecheck_expr_inner(
             match operator {
                 CXUnOp::PreIncrement(increment_amount)
                 | CXUnOp::PostIncrement(increment_amount) => {
-                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let operand_val =
+                        typecheck_expr(env, base_data, operand, None)?.into_expression();
                     let operand_type = operand_val.get_type();
 
                     let Some(inner) = operand_type.mem_ref_inner() else {
@@ -344,69 +345,25 @@ pub fn typecheck_expr_inner(
                         );
                     };
 
-                    // Read current value
-                    let loaded = TypecheckResult::memory_read(operand_val.clone(), inner.clone());
-
                     match &inner.kind {
-                        MIRTypeKind::Integer { _type, signed, .. } => {
-                            // Create increment literal
-                            let increment_expr = MIRExpression::int_literal(
-                                *increment_amount as i64,
-                                *_type,
-                                *signed,
-                            );
-
-                            // Add increment to loaded value
-                            let incremented = TypecheckResult::binary_op(
-                                loaded,
-                                TypecheckResult::expr2(increment_expr),
-                                MIRBinOp::Integer {
-                                    itype: *_type,
-                                    op: MIRIntegerBinOp::ADD,
+                        MIRTypeKind::PointerTo { .. } |
+                        MIRTypeKind::Integer { .. } => match operator {
+                            CXUnOp::PreIncrement(_) => TypecheckResult::expr(
+                                operand_type.clone(),
+                                MIRExpressionKind::UnaryOperation {
+                                    op: MIRUnOp::PreIncrement(*increment_amount),
+                                    operand: Box::new(operand_val),
                                 },
+                            ),
+                            CXUnOp::PostIncrement(_) => TypecheckResult::expr(
                                 inner.clone(),
-                            );
-
-                            match operator {
-                                CXUnOp::PreIncrement(_) => incremented,
-                                CXUnOp::PostIncrement(_) => {
-                                    // Return the old value (before increment)
-                                    TypecheckResult::memory_read(operand_val, inner.clone())
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-
-                        MIRTypeKind::PointerTo { inner_type, .. } => {
-                            let element_stride = inner_type.type_size();
-
-                            // Create increment literal (stride * increment_amount)
-                            let stride_expr = MIRExpression::int_literal(
-                                (*increment_amount as i64) * (element_stride as i64),
-                                CXIntegerType::I64,
-                                true,
-                            );
-
-                            // Add increment to loaded value
-                            let incremented = TypecheckResult::binary_op(
-                                loaded,
-                                TypecheckResult::expr2(stride_expr),
-                                MIRBinOp::PtrDiff {
-                                    op: MIRPtrDiffBinOp::ADD,
-                                    ptr_inner: inner_type.clone(),
+                                MIRExpressionKind::UnaryOperation {
+                                    op: MIRUnOp::PostIncrement(*increment_amount),
+                                    operand: Box::new(operand_val),
                                 },
-                                inner.clone(),
-                            );
-
-                            match operator {
-                                CXUnOp::PreIncrement(_) => incremented,
-                                CXUnOp::PostIncrement(_) => {
-                                    // Return the old value (before increment)
-                                    TypecheckResult::memory_read(operand_val, inner.clone())
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
+                            ),
+                            _ => unreachable!(),
+                        },
 
                         _ => {
                             return log_typecheck_error!(

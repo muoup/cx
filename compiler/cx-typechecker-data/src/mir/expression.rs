@@ -279,6 +279,9 @@ pub enum MIRUnOp {
     FNEG,
     BNOT,
     LNOT,
+    
+    PreIncrement(i8),
+    PostIncrement(i8),
 }
 
 #[derive(Clone, Copy, Debug)]

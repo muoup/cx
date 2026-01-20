@@ -31,7 +31,7 @@ impl Display for MIRUnit {
 impl Display for MIRFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}:", self.prototype)?;
-        writeln!(f, "{}", self.body)?;
+        MIRExpressionFormatter::new(&self.body, 1).fmt(f)?;
         Ok(())
     }
 }
@@ -100,123 +100,219 @@ impl Display for MIRGlobalVarKind {
     }
 }
 
+struct MIRExpressionFormatter<'a> {
+    expr: &'a MIRExpression,
+    depth: usize,
+}
+
+impl<'a> MIRExpressionFormatter<'a> {
+    fn new(expr: &'a MIRExpression, depth: usize) -> Self {
+        Self { expr, depth }
+    }
+
+    fn indent(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for _ in 0..self.depth {
+            write!(f, "  ")?;
+        }
+        Ok(())
+    }
+}
+
 impl Display for MIRExpression {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            MIRExpressionKind::BoolLiteral(value) => write!(f, "{}", value),
+        MIRExpressionFormatter::new(self, 0).fmt(f)
+    }
+}
+
+impl<'a> Display for MIRExpressionFormatter<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.indent(f)?;
+        match &self.expr.kind {
+            MIRExpressionKind::BoolLiteral(value) => {
+                writeln!(f, "BoolLiteral {} <'{}>", value, self.expr._type)
+            }
             MIRExpressionKind::IntLiteral(value, int_type, signed) => {
-                if *signed {
-                    write!(f, "i{}:{}", int_type.bytes() * 8, value)
-                } else {
-                    write!(f, "u{}:{}", int_type.bytes() * 8, value)
-                }
+                let prefix = if *signed { "i" } else { "u" };
+                writeln!(
+                    f,
+                    "IntLiteral {}{}:{} <'{}>",
+                    prefix,
+                    int_type.bytes() * 8,
+                    value,
+                    self.expr._type
+                )
             }
             MIRExpressionKind::FloatLiteral(value, float_type) => {
-                write!(f, "f{}:{}", float_type.bytes() * 8, value)
+                writeln!(
+                    f,
+                    "FloatLiteral f{}:{} <'{}>",
+                    float_type.bytes() * 8,
+                    value,
+                    self.expr._type
+                )
             }
-            MIRExpressionKind::Null => write!(f, "null"),
-            MIRExpressionKind::Unit => write!(f, "()"),
-            MIRExpressionKind::Parameter(name) => write!(f, "param {}", name),
-            MIRExpressionKind::GlobalVariable(name) => write!(f, "global {}", name),
-            MIRExpressionKind::LocalVariable(name) => write!(f, "var {}", name),
-            MIRExpressionKind::FunctionReference { .. } => {
-                write!(f, "fn {}", self._type)
+            MIRExpressionKind::Null => {
+                writeln!(f, "Null <'{}>", self.expr._type)
+            }
+            MIRExpressionKind::Unit => {
+                writeln!(f, "Unit <'{}>", self.expr._type)
+            }
+            MIRExpressionKind::Parameter(name) => {
+                writeln!(f, "Parameter {} <'{}>", name, self.expr._type)
+            }
+            MIRExpressionKind::GlobalVariable(name) => {
+                writeln!(f, "GlobalVariable {} <'{}>", name, self.expr._type)
+            }
+            MIRExpressionKind::LocalVariable(name) => {
+                writeln!(f, "LocalVariable {} <'{}>", name, self.expr._type)
+            }
+            MIRExpressionKind::FunctionReference { implicit_variables } => {
+                writeln!(f, "FunctionReference <'{}>", self.expr._type)?;
+                for var in implicit_variables {
+                    MIRExpressionFormatter::new(var, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
             }
             MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
-                write!(f, "({} {} {})", lhs.as_ref(), op, **rhs)
+                writeln!(f, "BinaryOperation {} <'{}>", op, self.expr._type)?;
+                MIRExpressionFormatter::new(lhs, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(rhs, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::UnaryOperation { operand, op } => {
-                write!(f, "({}{})", op, operand.as_ref())
+                writeln!(f, "UnaryOperation {} <'{}>", op, self.expr._type)?;
+                MIRExpressionFormatter::new(operand, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::MemoryRead { source } => {
-                write!(f, "load[{}] {}", self._type, source.as_ref())
+                writeln!(f, "MemoryRead <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::MemoryWrite { target, value } => {
-                write!(f, "store {} <- {}", target.as_ref(), **value)
+                writeln!(f, "MemoryWrite <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(target, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)
             }
-            MIRExpressionKind::CreateStackVariable { name, _type } => write!(
-                f,
-                "create_stack_variable {}: {}",
-                name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)"),
-                _type
-            ),
+            MIRExpressionKind::CreateStackVariable { name, _type } => {
+                let name_str = name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)");
+                writeln!(
+                    f,
+                    "CreateStackVariable {}: {} <'{}>",
+                    name_str, _type, self.expr._type
+                )
+            }
             MIRExpressionKind::CopyRegion { source, _type } => {
-                write!(f, "memcpy {} [{}]", source.as_ref(), _type)
+                writeln!(f, "CopyRegion [{}] <'{}>", _type, self.expr._type)?;
+                MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::StructFieldAccess {
                 base, field_index, ..
-            } => write!(f, "getfield {} [{}]", base.as_ref(), field_index),
+            } => {
+                writeln!(
+                    f,
+                    "StructFieldAccess index {} <'{}>",
+                    field_index, self.expr._type
+                )?;
+                MIRExpressionFormatter::new(base, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::UnionAliasAccess {
                 base,
                 variant_type,
                 union_type,
-            } => write!(
-                f,
-                "aliasfield {} [{} as {}]",
-                base.as_ref(),
-                variant_type,
-                union_type
-            ),
+            } => {
+                writeln!(
+                    f,
+                    "UnionAliasAccess [{} as {}] <'{}>",
+                    variant_type, union_type, self.expr._type
+                )?;
+                MIRExpressionFormatter::new(base, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::ArrayAccess { array, index, .. } => {
-                write!(f, "index {} [{}]", array.as_ref(), index)
+                writeln!(f, "ArrayAccess <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(array, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(index, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::TaggedUnionTag { value, .. } => {
-                write!(f, "tagof {}", value.as_ref())
+                writeln!(f, "TaggedUnionTag <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::TaggedUnionGet {
                 value,
                 variant_type,
-            } => write!(f, "getvariant {} [{}]", value.as_ref(), variant_type),
+            } => {
+                writeln!(
+                    f,
+                    "TaggedUnionGet [{}] <'{}>",
+                    variant_type, self.expr._type
+                )?;
+                MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::TaggedUnionSet {
                 target,
                 variant_index,
                 inner_value,
                 ..
-            } => write!(
-                f,
-                "taggedunionset {} <- [{}] {}",
-                target.as_ref(),
-                variant_index,
-                inner_value.as_ref()
-            ),
+            } => {
+                writeln!(
+                    f,
+                    "TaggedUnionSet variant {} <'{}>",
+                    variant_index, self.expr._type
+                )?;
+                MIRExpressionFormatter::new(target, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(inner_value, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::ConstructTaggedUnion {
                 variant_index,
                 value,
                 ..
-            } => write!(f, "makevariant [{}] {}", variant_index, value.as_ref()),
+            } => {
+                writeln!(
+                    f,
+                    "ConstructTaggedUnion variant {} <'{}>",
+                    variant_index, self.expr._type
+                )?;
+                MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::StructInitializer {
                 initializations,
                 struct_type,
             } => {
-                write!(f, "struct_init {} {{", struct_type)?;
+                writeln!(
+                    f,
+                    "StructInitializer {} {{ <'{}>",
+                    struct_type, self.expr._type
+                )?;
                 for (field_index, field_value) in initializations {
-                    write!(f, " {}: {},", field_index, field_value)?;
+                    self.indent(f)?;
+                    writeln!(f, "  Field {}:", field_index)?;
+                    MIRExpressionFormatter::new(field_value, self.depth + 2).fmt(f)?;
                 }
-                write!(f, " }}")
+                self.indent(f)?;
+                writeln!(f, "}}")
             }
             MIRExpressionKind::ArrayInitializer {
                 elements,
                 element_type,
             } => {
-                write!(f, "array_init {} [", element_type)?;
+                writeln!(
+                    f,
+                    "ArrayInitializer {} [ <'{}>",
+                    element_type, self.expr._type
+                )?;
                 for element in elements {
-                    write!(f, " {},", element)?;
+                    MIRExpressionFormatter::new(element, self.depth + 1).fmt(f)?;
                 }
-                write!(f, " ]")
+                self.indent(f)?;
+                writeln!(f, "]")
             }
             MIRExpressionKind::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                write!(
-                    f,
-                    "if {} {{ {} }}",
-                    condition.as_ref(),
-                    then_branch.as_ref()
-                )?;
+                writeln!(f, "If <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(condition, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(then_branch, self.depth + 1).fmt(f)?;
                 if let Some(else_branch) = else_branch {
-                    write!(f, " else {{ {} }}", else_branch.as_ref())?;
+                    MIRExpressionFormatter::new(else_branch, self.depth + 1).fmt(f)?;
                 }
                 Ok(())
             }
@@ -225,16 +321,10 @@ impl Display for MIRExpression {
                 body,
                 pre_eval,
             } => {
-                if *pre_eval {
-                    write!(
-                        f,
-                        "while_eval {} {{ {} }}",
-                        condition.as_ref(),
-                        body.as_ref()
-                    )
-                } else {
-                    write!(f, "while {} {{ {} }}", condition.as_ref(), body.as_ref())
-                }
+                let name = if *pre_eval { "WhileEval" } else { "While" };
+                writeln!(f, "{} <'{}>", name, self.expr._type)?;
+                MIRExpressionFormatter::new(condition, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(body, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::For {
                 init,
@@ -242,92 +332,116 @@ impl Display for MIRExpression {
                 increment,
                 body,
             } => {
-                write!(
-                    f,
-                    "for ({}; {}; {}) {{ {} }}",
-                    init.as_ref(),
-                    condition.as_ref(),
-                    increment.as_ref(),
-                    body.as_ref()
-                )
+                writeln!(f, "For <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(init, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(condition, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(increment, self.depth + 1).fmt(f)?;
+                MIRExpressionFormatter::new(body, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::CSwitch {
                 condition,
                 cases,
                 default,
             } => {
-                write!(f, "cswitch {} {{", condition.as_ref())?;
+                writeln!(f, "CSwitch <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (case_value, label) in cases {
-                    write!(f, " {} => {},", case_value.as_ref(), label)?;
+                    self.indent(f)?;
+                    writeln!(f, "Case:")?;
+                    MIRExpressionFormatter::new(case_value, self.depth + 2).fmt(f)?;
+                    MIRExpressionFormatter::new(label, self.depth + 2).fmt(f)?;
                 }
                 if let Some(default) = default {
-                    write!(f, " default: {}", default.as_ref())?;
+                    self.indent(f)?;
+                    writeln!(f, "Default:")?;
+                    MIRExpressionFormatter::new(default, self.depth + 2).fmt(f)?;
                 }
-                write!(f, " }}")
+                Ok(())
             }
             MIRExpressionKind::Match {
                 condition,
                 arms,
                 default,
             } => {
-                write!(f, "match {} {{", condition.as_ref())?;
+                writeln!(f, "Match <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (pattern, arm_body) in arms {
-                    write!(f, " {} => {{ {} }}", pattern.as_ref(), **arm_body)?;
+                    self.indent(f)?;
+                    writeln!(f, "Arm:")?;
+                    MIRExpressionFormatter::new(pattern, self.depth + 2).fmt(f)?;
+                    MIRExpressionFormatter::new(arm_body, self.depth + 2).fmt(f)?;
                 }
                 if let Some(default) = default {
-                    write!(f, " _ => {{ {} }}", default.as_ref())?;
+                    self.indent(f)?;
+                    writeln!(f, "Default:")?;
+                    MIRExpressionFormatter::new(default, self.depth + 2).fmt(f)?;
                 }
-                write!(f, " }}")
+                Ok(())
             }
             MIRExpressionKind::Return { value } => {
+                writeln!(f, "Return <'{}>", self.expr._type)?;
                 if let Some(value) = value {
-                    write!(f, "return {}", value.as_ref())
-                } else {
-                    write!(f, "return")
+                    MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)?;
                 }
+                Ok(())
             }
             MIRExpressionKind::Block { statements } => {
+                writeln!(f, "Block {{ <'{}>", self.expr._type)?;
                 for stmt in statements {
-                    writeln!(f, "    {};", stmt)?;
+                    MIRExpressionFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
-
-                Ok(())
+                self.indent(f)?;
+                writeln!(f, "}}")
             }
             MIRExpressionKind::CallFunction {
                 function,
                 arguments,
             } => {
-                write!(f, "call {}(", function.as_ref())?;
-                for (i, arg) in arguments.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", arg)?;
+                writeln!(f, "CallFunction <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(function, self.depth + 1).fmt(f)?;
+                for arg in arguments {
+                    MIRExpressionFormatter::new(arg, self.depth + 1).fmt(f)?;
                 }
-                write!(f, ")")
+                Ok(())
             }
             MIRExpressionKind::TypeConversion {
                 operand,
                 conversion,
             } => {
-                write!(f, "cast({}) as {:?}", operand.as_ref(), conversion)
+                writeln!(f, "TypeConversion {:?} <'{}>", conversion, self.expr._type)?;
+                MIRExpressionFormatter::new(operand, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::LifetimeStart { variable, _type } => {
-                write!(f, "lifetime_start {} ({})", variable, _type)
+                writeln!(
+                    f,
+                    "LifetimeStart {} ({}) <'{}>",
+                    variable, _type, self.expr._type
+                )
             }
             MIRExpressionKind::LifetimeEnd { variable, _type } => {
-                write!(f, "lifetime_end {} ({})", variable, _type)
+                writeln!(
+                    f,
+                    "LifetimeEnd {} ({}) <'{}>",
+                    variable, _type, self.expr._type
+                )
             }
             MIRExpressionKind::LeakLifetime { expression } => {
-                write!(f, "leak_lifetime {}", expression.as_ref())
+                writeln!(f, "LeakLifetime <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
             }
-            MIRExpressionKind::Defer { expression } => write!(f, "defer {}", expression.as_ref()),
-            MIRExpressionKind::Move { source } => write!(f, "move {}", source.as_ref()),
+            MIRExpressionKind::Defer { expression } => {
+                writeln!(f, "Defer <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
+            }
+            MIRExpressionKind::Move { source } => {
+                writeln!(f, "Move <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::Break => {
-                write!(f, "break",)
+                writeln!(f, "Break <'{}>", self.expr._type)
             }
             MIRExpressionKind::Continue => {
-                write!(f, "continue",)
+                writeln!(f, "Continue <'{}>", self.expr._type)
             }
         }
     }
@@ -356,17 +470,16 @@ impl Display for MIRBinOp {
 
 impl Display for MIRUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                MIRUnOp::NEG => "neg",
-                MIRUnOp::INEG => "ineg",
-                MIRUnOp::FNEG => "fneg",
-                MIRUnOp::BNOT => "bnot",
-                MIRUnOp::LNOT => "lnot",
-            }
-        )
+        match self {
+            MIRUnOp::NEG => write!(f, "neg"),
+            MIRUnOp::INEG => write!(f, "ineg"),
+            MIRUnOp::FNEG => write!(f, "fneg"),
+            MIRUnOp::BNOT => write!(f, "bnot"),
+            MIRUnOp::LNOT => write!(f, "lnot"),
+
+            MIRUnOp::PreIncrement(amt) => write!(f, "pre_increment({})", amt),
+            MIRUnOp::PostIncrement(amt) => write!(f, "post_increment({})", amt),
+        }
     }
 }
 

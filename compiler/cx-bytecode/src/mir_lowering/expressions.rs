@@ -100,7 +100,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         // ===== Memory Operations =====
         MIRExpressionKind::MemoryRead { source } => {
             let bc_source = lower_expression(builder, source)?;
-            let bc_type = builder.convert_cx_type(&source.get_type());
+            let bc_type = builder.convert_cx_type(&expr._type);
 
             builder.add_new_instruction(
                 BCInstructionKind::Load {
@@ -420,6 +420,50 @@ fn lower_unary_op(
                 right: bc_operand,
             }
         }
+        
+        MIRUnOp::PostIncrement(amt) |
+        MIRUnOp::PreIncrement(amt) => {
+            let loaded_val = builder.add_new_instruction(
+                BCInstructionKind::Load {
+                    memory: bc_operand.clone(),
+                    _type: bc_result_type.clone(),
+                },
+                bc_result_type.clone(),
+                true,
+            )?;
+            
+            let result = builder.add_new_instruction(
+                BCInstructionKind::IntegerBinOp {
+                    op: cx_bytecode_data::BCIntBinOp::ADD,
+                    left: loaded_val.clone(),
+                    right: BCValue::IntImmediate {
+                        val: *amt as i64,
+                        _type: match &bc_result_type.kind {
+                            cx_bytecode_data::types::BCTypeKind::Integer(itype) => *itype,
+                            _ => panic!("PreIncrement requires integer type"),
+                        },
+                    },
+                },
+                bc_result_type.clone(),
+                true,
+            )?;
+            
+            builder.add_new_instruction(
+                BCInstructionKind::Store {
+                    memory: bc_operand,
+                    value: result.clone(),
+                    _type: bc_result_type.clone(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+            
+            return match op {
+                MIRUnOp::PreIncrement(_) => Ok(result),
+                MIRUnOp::PostIncrement(_) => Ok(loaded_val),
+                _ => unreachable!(),
+            };
+        },
     };
 
     builder.add_new_instruction(instruction_kind, bc_result_type, true)
