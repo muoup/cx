@@ -47,27 +47,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         MIRExpressionKind::Unit => Ok(BCValue::NULL),
         MIRExpressionKind::Null => Ok(BCValue::NULL),
 
-        // ===== Variables =====
-        MIRExpressionKind::Parameter(name) => {
-            let index = builder
-                .current_prototype()
-                .params
-                .iter()
-                .position(|param| {
-                    param
-                        .name
-                        .as_ref()
-                        .map(|p_name| p_name.as_str() == name.as_str())
-                        .unwrap_or(false)
-                })
-                .expect("Parameter not found in function prototype");
-
-            Ok(BCValue::ParameterRef(index as u32))
-        }
-
-        MIRExpressionKind::LocalVariable(name) | MIRExpressionKind::GlobalVariable(name) => {
-            // For local variables, look up in symbol table
-            // For global variables, look up in global symbol table
+        MIRExpressionKind::Variable(name) => {
             if let Some(local_value) = builder.get_symbol(name) {
                 return Ok(local_value);
             }
@@ -419,9 +399,8 @@ fn lower_unary_op(
                 right: bc_operand,
             }
         }
-        
-        MIRUnOp::PostIncrement(amt) |
-        MIRUnOp::PreIncrement(amt) => {
+
+        MIRUnOp::PostIncrement(amt) | MIRUnOp::PreIncrement(amt) => {
             let loaded_val = builder.add_new_instruction(
                 BCInstructionKind::Load {
                     memory: bc_operand.clone(),
@@ -430,7 +409,7 @@ fn lower_unary_op(
                 bc_result_type.clone(),
                 true,
             )?;
-            
+
             let result = builder.add_new_instruction(
                 BCInstructionKind::IntegerBinOp {
                     op: cx_bytecode_data::BCIntBinOp::ADD,
@@ -446,7 +425,7 @@ fn lower_unary_op(
                 bc_result_type.clone(),
                 true,
             )?;
-            
+
             builder.add_new_instruction(
                 BCInstructionKind::Store {
                     memory: bc_operand,
@@ -456,13 +435,13 @@ fn lower_unary_op(
                 BCType::unit(),
                 false,
             )?;
-            
+
             return match op {
                 MIRUnOp::PreIncrement(_) => Ok(result),
                 MIRUnOp::PostIncrement(_) => Ok(loaded_val),
                 _ => unreachable!(),
             };
-        },
+        }
     };
 
     builder.add_new_instruction(instruction_kind, bc_result_type, true)
@@ -474,17 +453,18 @@ fn lower_if(
     condition: &MIRExpression,
     then_branch: &MIRExpression,
     else_branch: Option<&MIRExpression>,
-    result_type: &MIRType,
+    _result_type: &MIRType,
 ) -> CXResult<BCValue> {
     let bc_condition = lower_expression(builder, condition)?;
-    let bc_result_type = builder.convert_cx_type(result_type);
 
-    // Create blocks
     let then_block_id = builder.create_block(Some("then"));
     let else_block_id = builder.create_block(Some("else"));
-    let merge_block_id = builder.create_block(Some("merge"));
+    let merge_block_id = if else_branch.is_some() {
+        builder.create_block(Some("if_merge"))
+    } else {
+        else_block_id.clone()
+    };
 
-    // Emit branch
     builder.add_new_instruction(
         BCInstructionKind::Branch {
             condition: bc_condition,
@@ -495,22 +475,9 @@ fn lower_if(
         false,
     )?;
 
-    // Lower then branch
     builder.set_current_block(then_block_id.clone());
-    let bc_then_value = lower_expression(builder, then_branch)?;
-    let result_reg_then = if !result_type.is_unit() {
-        // Store result in a temporary
-        let temp = builder.add_new_instruction(
-            BCInstructionKind::Alias {
-                value: bc_then_value,
-            },
-            bc_result_type.clone(),
-            true,
-        )?;
-        Some(temp)
-    } else {
-        None
-    };
+    lower_expression(builder, then_branch)?;
+
     builder.add_new_instruction(
         BCInstructionKind::Jump {
             target: merge_block_id.clone(),
@@ -519,40 +486,20 @@ fn lower_if(
         false,
     )?;
 
-    // Lower else branch
     builder.set_current_block(else_block_id.clone());
-    let bc_else_value = if let Some(else_branch) = else_branch {
-        lower_expression(builder, else_branch)?
-    } else {
-        BCValue::NULL
-    };
-    let _result_reg_else = if !result_type.is_unit() {
-        let temp = builder.add_new_instruction(
-            BCInstructionKind::Alias {
-                value: bc_else_value,
+    if let Some(else_expr) = else_branch {
+        lower_expression(builder, else_expr)?;
+        builder.add_new_instruction(
+            BCInstructionKind::Jump {
+                target: merge_block_id.clone(),
             },
-            bc_result_type.clone(),
-            true,
+            BCType::unit(),
+            false,
         )?;
-        Some(temp)
-    } else {
-        None
-    };
-    builder.add_new_instruction(
-        BCInstructionKind::Jump {
-            target: merge_block_id.clone(),
-        },
-        BCType::unit(),
-        false,
-    )?;
+    }
 
-    // Merge block
     builder.set_current_block(merge_block_id);
-
-    // If we have a result, we need to merge the two branches
-    // For now, just return NULL if unit, or the then value (simplified)
-    // TODO: Implement proper phi merging
-    Ok(result_reg_then.unwrap_or(BCValue::NULL))
+    Ok(BCValue::NULL)
 }
 
 /// Lower a while loop
@@ -814,17 +761,38 @@ fn convert_coercion(
 ///
 /// This is the main entry point for lowering a complete function from MIR to bytecode.
 pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
-    // Create the BCFunction
     let prototype = builder.convert_cx_prototype(&mir_fn.prototype);
     builder.new_function(prototype);
 
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
 
-    // Lower the function body (expression tree)
+    for (i, param) in mir_fn.prototype.params.iter().enumerate() {
+        if let Some(name) = &param.name {
+            let alloc = builder.add_new_instruction(
+                BCInstructionKind::Allocate {
+                    alignment: builder.convert_cx_type(&param._type).alignment(),
+                    _type: builder.convert_cx_type(&param._type),
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+            builder.add_new_instruction(
+                BCInstructionKind::Store {
+                    memory: alloc.clone(),
+                    value: BCValue::ParameterRef(i as u32),
+                    _type: builder.convert_cx_type(&param._type),
+                },
+                BCType::unit(),
+                false,
+            )?;
+            
+            builder.insert_symbol(name.clone(), alloc);
+        }
+    }
+
     let result = lower_expression(builder, &mir_fn.body)?;
 
-    // If return type is not Unit, ensure the function returns the value
     if !mir_fn.prototype.return_type.is_unit() {
         builder.add_new_instruction(
             BCInstructionKind::Return {
@@ -842,6 +810,5 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
     }
 
     builder.finish_function();
-
     Ok(())
 }

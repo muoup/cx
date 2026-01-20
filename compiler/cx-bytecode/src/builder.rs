@@ -9,6 +9,7 @@ use cx_typechecker_data::mir::program::MIRUnit;
 use cx_typechecker_data::mir::types::MIRType;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
+use cx_util::scoped_map::ScopedMap;
 use cx_util::unsafe_float::FloatWrapper;
 use cx_util::CXResult;
 
@@ -19,7 +20,7 @@ pub struct BCBuilder {
 
     pub fn_map: BCFunctionMap,
 
-    symbol_table: HashMap<CXIdent, BCValue>,
+    symbol_table: ScopedMap<BCValue>,
     liveness_table: HashMap<CXIdent, BCRegister>,
     
     function_context: Option<BytecodeFunctionContext>,
@@ -45,7 +46,7 @@ impl BCBuilder {
                 .iter()
                 .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
                 .collect(),
-            symbol_table: HashMap::new(),
+            symbol_table: ScopedMap::new(),
             liveness_table: HashMap::new(),
 
             function_context: None,
@@ -69,8 +70,7 @@ impl BCBuilder {
 
             blocks: Vec::new(),
         });
-
-        self.symbol_table.clear();
+        self.symbol_table.push_scope();
     }
 
     pub fn finish_function(&mut self) {
@@ -80,6 +80,7 @@ impl BCBuilder {
             prototype: context.prototype,
             blocks: context.blocks,
         });
+        self.symbol_table.pop_scope();
     }
 
     pub fn dump_current_fn(&self) {
@@ -104,25 +105,12 @@ impl BCBuilder {
     }
 
     pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: BCValue) {
-        self.symbol_table.insert(mir_value, bc_value);
+        self.symbol_table.insert(mir_value.to_string(), bc_value);
     }
 
     #[allow(dead_code)]
     pub fn dump_symbols(&self) {
-        println!("--- Symbol Table ---");
-        for (key, value) in self.symbol_table.iter() {
-            println!("{} => {}", key, value);
-        }
-    }
-
-    pub fn get_global_symbol(&self, name: &str) -> Option<BCValue> {
-        for (index, global_var) in self.global_variables.iter().enumerate() {
-            if global_var.name.as_str() == name {
-                return Some(BCValue::Global(index as u32));
-            }
-        }
-
-        None
+        todo!()
     }
     
     pub fn add_liveness_mapping(&mut self, mir_reg: CXIdent, bc_reg: BCRegister) {
@@ -142,7 +130,13 @@ impl BCBuilder {
     }
 
     pub fn get_symbol(&self, name: &CXIdent) -> Option<BCValue> {
-        self.symbol_table.get(name).cloned()
+        self.symbol_table.get(name.as_str()).cloned()
+    }
+    
+    pub fn get_global_symbol(&self, name: &str) -> Option<BCValue> {
+        self.global_variables.iter()
+            .position(|global| global.name.as_str() == name)
+            .map(|index| BCValue::Global(index as u32))
     }
 
     pub fn add_global_variable(&mut self, value: BCGlobalValue) -> u32 {

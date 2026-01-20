@@ -157,13 +157,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             MIRExpressionKind::Unit => {
                 writeln!(f, "Unit <'{}>", self.expr._type)
             }
-            MIRExpressionKind::Parameter(name) => {
-                writeln!(f, "Parameter {} <'{}>", name, self.expr._type)
-            }
-            MIRExpressionKind::GlobalVariable(name) => {
-                writeln!(f, "GlobalVariable {} <'{}>", name, self.expr._type)
-            }
-            MIRExpressionKind::LocalVariable(name) => {
+            MIRExpressionKind::Variable(name) => {
                 writeln!(f, "LocalVariable {} <'{}>", name, self.expr._type)
             }
             MIRExpressionKind::FunctionReference { implicit_variables } => {

@@ -66,6 +66,14 @@ impl<T> ScopedMap<T> {
             .expect("Uneven push/pop in ScopedMap")
             .push((name, replacing));
     }
+    
+    pub fn insert_at_level(&mut self, level: usize, name: String, value: T) {
+        let replacing = self.data.insert(name.clone(), value);
+        self.overwrites
+            .get_mut(level)
+            .expect("Invalid level in ScopedMap")
+            .push((name, replacing));
+    }
 
     pub fn get(&self, name: &str) -> Option<&T> {
         self.data.get(name)

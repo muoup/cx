@@ -20,9 +20,7 @@ pub enum MIRExpressionKind {
     Unit,
 
     // Variables
-    Parameter(CXIdent),
-    GlobalVariable(CXIdent),
-    LocalVariable(CXIdent),
+    Variable(CXIdent),
 
     // The prototype is implicitly stored in the expression's type
     FunctionReference {

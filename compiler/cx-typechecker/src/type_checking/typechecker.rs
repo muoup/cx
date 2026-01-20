@@ -98,7 +98,7 @@ pub fn typecheck_expr_inner(
                 .add_specifier(CX_CONST);
 
             TypecheckResult::expr2(MIRExpression {
-                kind: MIRExpressionKind::GlobalVariable(name_ident),
+                kind: MIRExpressionKind::Variable(name_ident),
                 _type: char_type,
             })
         }
@@ -118,7 +118,7 @@ pub fn typecheck_expr_inner(
             env.insert_symbol(
                 name.as_string(),
                 MIRExpression {
-                    kind: MIRExpressionKind::LocalVariable(name.clone()),
+                    kind: MIRExpressionKind::Variable(name.clone()),
                     _type: mem_type,
                 },
             );
@@ -140,7 +140,6 @@ pub fn typecheck_expr_inner(
                     }),
                 })
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
-                // global_expr now returns MIRExpression directly
                 TypecheckResult::expr2(global)
             } else {
                 return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
@@ -529,23 +528,8 @@ pub fn typecheck_expr_inner(
             lhs,
             rhs,
         } => {
-            let lhs_val = typecheck_expr(env, base_data, lhs, None)?;
+            let lhs_val = typecheck_expr(env, base_data, lhs, None)?.into_expression();
             let lhs_type = lhs_val.get_type();
-
-            let rhs_expected_type = if op.is_some() {
-                None
-            } else {
-                lhs_type.mem_ref_inner()
-            };
-
-            let mut rhs_val = typecheck_expr(env, base_data, rhs, rhs_expected_type)?;
-
-            if let Some(op) = op {
-                let loaded_lhs = coerce_value(env, expr, lhs_val.clone().into_expression())?;
-                let loaded_rhs = coerce_value(env, expr, rhs_val.into_expression())?;
-
-                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
-            }
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
                 return log_typecheck_error!(
@@ -556,17 +540,25 @@ pub fn typecheck_expr_inner(
                 );
             };
 
+            let mut rhs_val = typecheck_expr(env, base_data, rhs, Some(inner))?;
+
+            if let Some(op) = op {
+                let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
+                let loaded_rhs = coerce_value(env, expr, rhs_val.into_expression())?;
+
+                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
+            }
+
             if inner.get_specifier(CX_CONST) {
                 return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            let lhs_val_expr = lhs_val.clone().into_expression();
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), inner)?;
 
             TypecheckResult::expr(
-                lhs_val_expr.get_type(),
+                lhs_val.get_type(),
                 MIRExpressionKind::MemoryWrite {
-                    target: Box::new(lhs_val_expr),
+                    target: Box::new(lhs_val),
                     value: Box::new(coerced_rhs_val),
                 },
             )
@@ -613,7 +605,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
             };
 
-            if !matches!(inner_val.kind, MIRExpressionKind::LocalVariable(_)) {
+            if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
                 return log_typecheck_error!(
                     env,
                     expr,
@@ -812,7 +804,7 @@ pub(crate) fn global_expr(
 fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRExpression> {
     match &global.kind {
         MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRExpression {
-            kind: MIRExpressionKind::GlobalVariable(name.clone()),
+            kind: MIRExpressionKind::Variable(name.clone()),
             _type: _type.clone().mem_ref_to(),
         }),
 
