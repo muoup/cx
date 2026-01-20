@@ -22,7 +22,6 @@ pub mod accumulation;
 pub mod binary_ops;
 pub mod casting;
 pub mod r#match;
-pub mod move_semantics;
 pub mod structured_initialization;
 pub mod typechecker;
 
@@ -54,7 +53,7 @@ fn typecheck_function(
     env.current_function = None;
     env.pop_scope();
     
-    env.builder.generated_functions.push(
+    env.generated_functions.push(
         MIRFunction {
             prototype,
             body: body_expr.clone(),

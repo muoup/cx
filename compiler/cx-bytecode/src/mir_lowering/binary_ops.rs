@@ -1,17 +1,11 @@
-use cx_bytecode_data::{
-    types::BCType, BCFloatBinOp, BCFunctionPrototype, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
-    BCValue,
-};
+use cx_bytecode_data::{BCFunctionPrototype, BCValue};
 use cx_typechecker_data::mir::{
-    expression::{
-        MIRBinOp, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
-        MIRExpression,
-    },
+    expression::{MIRBinOp, MIRExpression},
     types::MIRType,
 };
 use cx_util::CXResult;
 
-use crate::{builder::BCBuilder, mir_lowering::instructions::lower_value};
+use crate::builder::BCBuilder;
 
 // DEPRECATED: Old value-based lowering - no longer needed for expression tree MIR
 // Use `lower_expression` from expressions.rs instead
@@ -21,8 +15,8 @@ pub(crate) fn lower_binop(
     builder: &mut BCBuilder,
     result: &(), // MIRRegister no longer exists
     op: &MIRBinOp,
-    lhs: &(),   // MIRValue no longer exists
-    rhs: &(),   // MIRValue no longer exists
+    lhs: &(), // MIRValue no longer exists
+    rhs: &(), // MIRValue no longer exists
 ) -> CXResult<BCValue> {
     let _ = builder;
     let _ = result;

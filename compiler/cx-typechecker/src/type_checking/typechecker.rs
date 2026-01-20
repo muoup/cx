@@ -2,11 +2,10 @@ use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::binary_ops::{
-    generate_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
+    typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
     typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
-use crate::type_checking::move_semantics::acknowledge_declared_object;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
@@ -52,13 +51,13 @@ pub fn typecheck_expr_inner(
                 .map(|e| typecheck_expr(env, base_data, e, None).map(|res| res.expression))
                 .collect::<CXResult<Vec<_>>>()?;
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::Block { statements: block },
                 _type: MIRType::unit(),
             })
         }
 
-        CXExprKind::IntLiteral { val, bytes } => TypecheckResult::new(MIRExpression {
+        CXExprKind::IntLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
             kind: MIRExpressionKind::IntLiteral(
                 *val,
                 CXIntegerType::from_bytes(*bytes).unwrap(),
@@ -70,7 +69,7 @@ pub fn typecheck_expr_inner(
             }),
         }),
 
-        CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::new(MIRExpression {
+        CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
             kind: MIRExpressionKind::FloatLiteral(*val, CXFloatType::from_bytes(*bytes).unwrap()),
             _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Float {
                 _type: CXFloatType::from_bytes(*bytes).unwrap(),
@@ -100,7 +99,7 @@ pub fn typecheck_expr_inner(
                 .pointer_to()
                 .add_specifier(CX_CONST);
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::GlobalVariable(name_ident),
                 _type: char_type,
             })
@@ -111,7 +110,8 @@ pub fn typecheck_expr_inner(
             let mem_type = _type.clone().mem_ref_to();
 
             let allocation = MIRExpression {
-                kind: MIRExpressionKind::StackAllocation {
+                kind: MIRExpressionKind::CreateStackVariable {
+                    name: Some(name.clone()),
                     _type: _type.clone(),
                 },
                 _type: mem_type.clone(),
@@ -125,18 +125,15 @@ pub fn typecheck_expr_inner(
                 },
             );
 
-            let mut ack = acknowledge_declared_object(env, name.to_string(), _type.clone())?;
-            ack.expression._type.remove_specifier(CX_CONST);
-
-            TypecheckResult::new(allocation).chain(ack)
+            TypecheckResult::expr2(allocation)
         }
 
         CXExprKind::Identifier(name) => {
             if let Some(symbol_val) = env.symbol_value(name.as_str()) {
-                TypecheckResult::new(symbol_val.clone())
+                TypecheckResult::expr2(symbol_val.clone())
             } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
             {
-                TypecheckResult::new(MIRExpression {
+                TypecheckResult::expr2(MIRExpression {
                     kind: MIRExpressionKind::FunctionReference {
                         implicit_variables: vec![],
                     },
@@ -146,7 +143,7 @@ pub fn typecheck_expr_inner(
                 })
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 // global_expr now returns MIRExpression directly
-                TypecheckResult::new(global)
+                TypecheckResult::expr2(global)
             } else {
                 return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
             }
@@ -162,7 +159,7 @@ pub fn typecheck_expr_inner(
             let input = complete_template_args(env, base_data, template_input)?;
             let function = env.get_standard_function(base_data, expr, name, Some(&input))?;
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::FunctionReference {
                     implicit_variables: vec![],
                 },
@@ -190,7 +187,7 @@ pub fn typecheck_expr_inner(
 
             env.pop_scope();
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result.into_expression()),
@@ -212,7 +209,7 @@ pub fn typecheck_expr_inner(
 
             env.pop_scope();
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::While {
                     condition: Box::new(condition_result.expression),
                     body: Box::new(body_result.expression),
@@ -237,7 +234,7 @@ pub fn typecheck_expr_inner(
 
             env.pop_scope();
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::For {
                     init: Box::new(init_result.expression),
                     condition: Box::new(condition_result.expression),
@@ -262,7 +259,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::Break,
                 _type: MIRType::unit(),
             })
@@ -284,19 +281,19 @@ pub fn typecheck_expr_inner(
 
             // TODO: Handle scope destructors
             // For now, continue is represented as a Unit expression
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::Continue,
                 _type: MIRType::unit(),
             })
         }
 
         CXExprKind::Return { value } => {
+            let return_type = env.current_function().return_type.clone();
+
             let value_tc = value
                 .as_ref()
-                .map(|v| typecheck_expr(env, base_data, v, None))
+                .map(|v| typecheck_expr(env, base_data, v, Some(&return_type)))
                 .transpose()?;
-
-            let return_type = env.current_function().return_type.clone();
 
             let value = match (&value_tc, &return_type) {
                 (Some(some_value), return_type) if !return_type.is_unit() => Some(Box::new(
@@ -324,7 +321,7 @@ pub fn typecheck_expr_inner(
                 }
             };
 
-            TypecheckResult::standard_expr(MIRType::unit(), MIRExpressionKind::Return { value })
+            TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Return { value })
         }
 
         CXExprKind::Defer { expr } => {
@@ -362,7 +359,7 @@ pub fn typecheck_expr_inner(
                             // Add increment to loaded value
                             let incremented = TypecheckResult::binary_op(
                                 loaded,
-                                TypecheckResult::new(increment_expr),
+                                TypecheckResult::expr2(increment_expr),
                                 MIRBinOp::Integer {
                                     itype: *_type,
                                     op: MIRIntegerBinOp::ADD,
@@ -393,7 +390,7 @@ pub fn typecheck_expr_inner(
                             // Add increment to loaded value
                             let incremented = TypecheckResult::binary_op(
                                 loaded,
-                                TypecheckResult::new(stride_expr),
+                                TypecheckResult::expr2(stride_expr),
                                 MIRBinOp::PtrDiff {
                                     op: MIRPtrDiffBinOp::ADD,
                                     ptr_inner: inner_type.clone(),
@@ -437,7 +434,7 @@ pub fn typecheck_expr_inner(
                     }
 
                     TypecheckResult::unary_op(
-                        TypecheckResult::new(loaded_operand),
+                        TypecheckResult::expr2(loaded_operand),
                         MIRUnOp::LNOT,
                         MIRTypeKind::Integer {
                             _type: CXIntegerType::I1,
@@ -481,7 +478,7 @@ pub fn typecheck_expr_inner(
                     let result_type = loaded_op_val.get_type();
 
                     TypecheckResult::unary_op(
-                        TypecheckResult::new(loaded_op_val),
+                        TypecheckResult::expr2(loaded_op_val),
                         MIRUnOp::BNOT,
                         result_type,
                     )
@@ -507,7 +504,7 @@ pub fn typecheck_expr_inner(
                     };
 
                     TypecheckResult::unary_op(
-                        TypecheckResult::new(loaded_op_val),
+                        TypecheckResult::expr2(loaded_op_val),
                         operator,
                         loaded_op_type,
                     )
@@ -525,7 +522,7 @@ pub fn typecheck_expr_inner(
                     };
 
                     // AddressOf just returns the operand (which is a reference) as a pointer
-                    TypecheckResult::new(MIRExpression {
+                    TypecheckResult::expr2(MIRExpression {
                         kind: operand_val.into_expression().kind,
                         _type: inner.clone().pointer_to(),
                     })
@@ -547,7 +544,7 @@ pub fn typecheck_expr_inner(
                     };
 
                     // Dereference returns a memory reference to the inner type
-                    TypecheckResult::new(MIRExpression {
+                    TypecheckResult::expr2(MIRExpression {
                         kind: MIRExpressionKind::MemoryRead {
                             source: Box::new(loaded_operand),
                         },
@@ -607,10 +604,16 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
+            let lhs_val_expr = lhs_val.clone().into_expression();
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), inner)?;
-            generate_assignment(env, &lhs_val.expression, &coerced_rhs_val, inner)?;
 
-            lhs_val
+            TypecheckResult::expr(
+                lhs_val_expr.get_type(),
+                MIRExpressionKind::MemoryWrite {
+                    target: Box::new(lhs_val_expr),
+                    value: Box::new(coerced_rhs_val),
+                },
+            )
         }
 
         CXExprKind::BinOp {
@@ -666,7 +669,7 @@ pub fn typecheck_expr_inner(
                 unreachable!()
             };
 
-            TypecheckResult::standard_expr(
+            TypecheckResult::expr(
                 inner_type,
                 MIRExpressionKind::Move {
                     source: Box::new(inner_val.clone()),
@@ -713,7 +716,13 @@ pub fn typecheck_expr_inner(
                 .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
             // Allocate stack region for the tagged union
-            let allocation = TypecheckResult::stack_allocation(union_type.clone());
+            let allocation = TypecheckResult::expr(
+                union_type.clone(),
+                MIRExpressionKind::CreateStackVariable {
+                    name: None,
+                    _type: union_type.clone(),
+                },
+            );
 
             // Construct the tagged union value
             // This involves writing the tag and the variant value
@@ -723,7 +732,7 @@ pub fn typecheck_expr_inner(
             allocation
         }
 
-        CXExprKind::Unit => TypecheckResult::new(MIRExpression {
+        CXExprKind::Unit => TypecheckResult::expr2(MIRExpression {
             kind: MIRExpressionKind::Unit,
             _type: cx_typechecker_data::mir::types::MIRType::unit(),
         }),
@@ -732,7 +741,7 @@ pub fn typecheck_expr_inner(
             let tc_expr = typecheck_expr(env, base_data, expr, None)?;
             let tc_type = tc_expr.get_type();
 
-            TypecheckResult::new(MIRExpression {
+            TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::IntLiteral(
                     tc_type.type_size() as i64,
                     CXIntegerType::I64,

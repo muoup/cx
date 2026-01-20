@@ -68,7 +68,7 @@ pub(crate) fn typecheck_access(
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
             if let Some(struct_field) = struct_field(&lhs_inner, name.as_str()) {
-                return Ok(TypecheckResult::standard_expr(
+                return Ok(TypecheckResult::expr(
                     struct_field.field_type.mem_ref_to(),
                     MIRExpressionKind::StructFieldAccess {
                         base: Box::new(lhs.clone()),
@@ -93,7 +93,7 @@ pub(crate) fn typecheck_access(
                     );
                 };
 
-                return Ok(TypecheckResult::standard_expr(
+                return Ok(TypecheckResult::expr(
                     field_type.clone().mem_ref_to(),
                     MIRExpressionKind::UnionAliasAccess {
                         base: Box::new(lhs.clone()),
@@ -113,7 +113,7 @@ pub(crate) fn typecheck_access(
                 _type: lhs_inner.clone().pointer_to(),
             };
 
-            Ok(TypecheckResult::standard_expr(
+            Ok(TypecheckResult::expr(
                 MIRTypeKind::Function {
                     prototype: Box::new(prototype),
                 }
@@ -140,7 +140,7 @@ pub(crate) fn typecheck_access(
                 _type: lhs_inner.clone().pointer_to(),
             };
 
-            Ok(TypecheckResult::standard_expr(
+            Ok(TypecheckResult::expr(
                 MIRTypeKind::Function {
                     prototype: Box::new(prototype),
                 }
@@ -333,7 +333,7 @@ pub(crate) fn typecheck_method_call(
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
 
     Ok(
-        TypecheckResult::standard_expr(
+        TypecheckResult::expr(
             prototype.return_type.clone(),
             MIRExpressionKind::CallFunction {
                 function: Box::new(MIRExpression {
@@ -386,7 +386,7 @@ fn typecheck_type_constructor(
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
         .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         union_type.clone().mem_ref_to(),
         MIRExpressionKind::ConstructTaggedUnion {
             value: Box::new(inner),
@@ -482,7 +482,7 @@ pub(crate) fn typecheck_scoped_call(
 
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         prototype.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(MIRExpression {
@@ -597,7 +597,7 @@ pub(crate) fn typecheck_is(
         .into(),
     };
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         variant_type.clone().mem_ref_to(),
         MIRExpressionKind::TaggedUnionGet {
             value: Box::new(comparison),
@@ -778,7 +778,7 @@ pub(crate) fn typecheck_float_float_binop(
         }
     };
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         result_type,
         MIRExpressionKind::BinaryOperation {
             op: MIRBinOp::Float { ftype, op: fp_op },
@@ -915,7 +915,7 @@ pub(crate) fn typecheck_int_int_binop(
         }
     };
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         result_type,
         MIRExpressionKind::BinaryOperation {
             op: operator,
@@ -989,7 +989,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 _ => pointer_inner.clone().pointer_to(),
             };
 
-            Ok(TypecheckResult::standard_expr(
+            Ok(TypecheckResult::expr(
                 return_type.clone(),
                 MIRExpressionKind::BinaryOperation {
                     op: operation,
@@ -1031,7 +1031,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 .into(),
             )?;
 
-            Ok(TypecheckResult::standard_expr(
+            Ok(TypecheckResult::expr(
                 MIRTypeKind::Integer {
                     _type: CXIntegerType::I1,
                     signed: false,
@@ -1073,7 +1073,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
         }
     };
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         MIRTypeKind::Integer {
             _type: CXIntegerType::I1,
             signed: false,
@@ -1121,39 +1121,4 @@ pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<Struc
     }
 
     None
-}
-
-/// Generate an assignment expression that writes a value to a target memory location.
-/// This is the AST-style equivalent of the old SSA instruction emission.
-///
-/// Arguments:
-/// - `env`: The type environment
-/// - `target`: The target location (pointer/reference) to write to
-/// - `value`: The value to write
-/// - `value_type`: The type of the value being written
-///
-/// Returns a TypecheckResult containing a MemoryWrite expression
-pub fn generate_assignment(
-    env: &mut TypeEnvironment,
-    target: &MIRExpression,
-    value: &MIRExpression,
-    value_type: &MIRType,
-) -> CXResult<TypecheckResult> {
-    use crate::type_checking::accumulation::TypecheckResult;
-
-    // Check if the type is copyable
-    if !env.is_copyable(value_type) {
-        // We can't log an error without a proper expression reference
-        // For now, we'll just return an error without location info
-        return cx_util::CXError::create_result(format!(
-            "Cannot assign value of non-copyable type {}",
-            value_type
-        ));
-    }
-
-    Ok(TypecheckResult::memory_write(
-        TypecheckResult::new(target.clone()),
-        TypecheckResult::new(value.clone()),
-        value_type.clone(),
-    ))
 }

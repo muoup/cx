@@ -1,8 +1,8 @@
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_typechecker_data::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::MIRExpressionKind,
     program::MIRBaseMappings,
-    types::{CXIntegerType, MIRType, MIRTypeKind},
+    types::{MIRType, MIRTypeKind},
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -10,9 +10,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        accumulation::TypecheckResult,
-        binary_ops::{generate_assignment, struct_field},
-        casting::implicit_cast,
+        accumulation::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
         typechecker::typecheck_expr,
     },
 };
@@ -132,19 +130,20 @@ fn typecheck_array_initializer(
         size: array_size,
     });
 
-    let elements = indices.iter()
+    let elements = indices
+        .iter()
         .map(|index| {
             typecheck_expr(env, base_data, &index.value, Some(inner_type))
                 .and_then(|v| Ok(v.into_expression()))
         })
         .collect::<CXResult<_>>()?;
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         array_type,
-        MIRExpressionKind::ArrayInitializer { 
+        MIRExpressionKind::ArrayInitializer {
             elements,
             element_type: inner_type.clone(),
-        }
+        },
     ))
 }
 
@@ -218,7 +217,7 @@ fn typecheck_structured_initializer(
         }
     }
 
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         to_type.clone(),
         MIRExpressionKind::StructInitializer {
             struct_type: to_type.clone(),

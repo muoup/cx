@@ -61,7 +61,7 @@ pub(crate) fn explicit_cast(
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
         Ok(TypecheckResult::type_conversion(
-            TypecheckResult::new(value.clone()),
+            TypecheckResult::expr2(value.clone()),
             coercion_type,
             to_type.clone(),
         )
@@ -113,7 +113,7 @@ pub fn implicit_cast(
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
         Ok(TypecheckResult::type_conversion(
-            TypecheckResult::new(value.clone()),
+            TypecheckResult::expr2(value.clone()),
             coercion_type,
             to_type.clone(),
         )
@@ -135,8 +135,8 @@ pub fn implicit_cast(
             // Convert integer to boolean by comparing with 0
             let zero = MIRExpression::int_literal(0, *_type, false);
             Ok(TypecheckResult::binary_op(
-                TypecheckResult::new(value),
-                TypecheckResult::new(zero),
+                TypecheckResult::expr2(value),
+                TypecheckResult::expr2(zero),
                 MIRBinOp::Integer {
                     itype: *_type,
                     op: MIRIntegerBinOp::NE,
@@ -225,7 +225,7 @@ pub fn implicit_cast(
 
             // Need to read from memory reference and then cast
             let loaded = TypecheckResult::memory_read(
-                TypecheckResult::new(value.clone()),
+                TypecheckResult::expr2(value.clone()),
                 (*inner.clone()).clone(),
             );
             implicit_cast(env, expr, loaded.into_expression(), to_type)
@@ -251,8 +251,8 @@ pub fn implicit_cast(
         ) if same_type(_type, inner) => {
             // Array to pointer decay: access element 0
             Ok(TypecheckResult::array_access(
-                TypecheckResult::new(value),
-                TypecheckResult::new(MIRExpression::int_literal(0, CXIntegerType::I64, false)),
+                TypecheckResult::expr2(value),
+                TypecheckResult::expr2(MIRExpression::int_literal(0, CXIntegerType::I64, false)),
                 (*inner.clone()).clone(),
                 to_type.clone(),
             )

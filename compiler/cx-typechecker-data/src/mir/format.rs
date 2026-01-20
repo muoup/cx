@@ -134,7 +134,12 @@ impl Display for MIRExpression {
             MIRExpressionKind::MemoryWrite { target, value } => {
                 write!(f, "store {} <- {}", target.as_ref(), **value)
             }
-            MIRExpressionKind::StackAllocation { _type } => write!(f, "alloca {}", _type),
+            MIRExpressionKind::CreateStackVariable { name, _type } => write!(
+                f,
+                "create_stack_variable {}: {}",
+                name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)"),
+                _type
+            ),
             MIRExpressionKind::CopyRegion { source, _type } => {
                 write!(f, "memcpy {} [{}]", source.as_ref(), _type)
             }
@@ -167,20 +172,26 @@ impl Display for MIRExpression {
                 value,
                 ..
             } => write!(f, "makevariant [{}] {}", variant_index, value.as_ref()),
-            MIRExpressionKind::StructInitializer { initializations, struct_type } => {
+            MIRExpressionKind::StructInitializer {
+                initializations,
+                struct_type,
+            } => {
                 write!(f, "struct_init {} {{", struct_type)?;
                 for (field_index, field_value) in initializations {
                     write!(f, " {}: {},", field_index, field_value)?;
                 }
                 write!(f, " }}")
             }
-            MIRExpressionKind::ArrayInitializer { elements, element_type } => {
+            MIRExpressionKind::ArrayInitializer {
+                elements,
+                element_type,
+            } => {
                 write!(f, "array_init {} [", element_type)?;
                 for element in elements {
                     write!(f, " {},", element)?;
                 }
                 write!(f, " ]")
-            },
+            }
             MIRExpressionKind::If {
                 condition,
                 then_branch,
@@ -267,7 +278,7 @@ impl Display for MIRExpression {
                 for stmt in statements {
                     writeln!(f, "    {};", stmt)?;
                 }
-                
+
                 Ok(())
             }
             MIRExpressionKind::CallFunction {
@@ -301,16 +312,10 @@ impl Display for MIRExpression {
             MIRExpressionKind::Defer { expression } => write!(f, "defer {}", expression.as_ref()),
             MIRExpressionKind::Move { source } => write!(f, "move {}", source.as_ref()),
             MIRExpressionKind::Break => {
-                write!(
-                    f,
-                    "break",
-                )
+                write!(f, "break",)
             }
             MIRExpressionKind::Continue => {
-                write!(
-                    f,
-                    "continue",
-                )
+                write!(f, "continue",)
             }
         }
     }
@@ -442,12 +447,12 @@ impl Display for CXFloatType {
 impl Display for CXIntegerType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CXIntegerType::I1 => write!(f, "i1"),
-            CXIntegerType::I8 => write!(f, "i8"),
-            CXIntegerType::I16 => write!(f, "i16"),
-            CXIntegerType::I32 => write!(f, "i32"),
-            CXIntegerType::I64 => write!(f, "i64"),
-            CXIntegerType::I128 => write!(f, "i128"),
+            CXIntegerType::I1 => write!(f, "1"),
+            CXIntegerType::I8 => write!(f, "8"),
+            CXIntegerType::I16 => write!(f, "16"),
+            CXIntegerType::I32 => write!(f, "32"),
+            CXIntegerType::I64 => write!(f, "64"),
+            CXIntegerType::I128 => write!(f, "128"),
         }
     }
 }

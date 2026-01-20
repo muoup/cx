@@ -70,7 +70,7 @@ pub fn typecheck_switch(
     };
 
     // Build the match expression
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         MIRType::unit(),
         MIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),
@@ -118,7 +118,7 @@ fn get_match_condition_value<'a>(
         ) => {
             // Extract the tag from the tagged union
             let tag_expr = TypecheckResult::tagged_union_tag(
-                TypecheckResult::new(expr_value.clone()),
+                TypecheckResult::expr2(expr_value.clone()),
                 expr_type.clone(),
             )
             .into_expression();
@@ -247,7 +247,7 @@ pub fn typecheck_match(
 
                 // Extract the variant value and bind it
                 let variant_value_expr = TypecheckResult::tagged_union_get(
-                    TypecheckResult::new(expr_value.clone()),
+                    TypecheckResult::expr2(expr_value.clone()),
                     variant_type.clone(),
                     variant_type.clone().mem_ref_to(),
                 )
@@ -288,7 +288,7 @@ pub fn typecheck_match(
     env.pop_scope();
 
     // Build the match expression
-    Ok(TypecheckResult::standard_expr(
+    Ok(TypecheckResult::expr(
         MIRType::unit(),
         MIRExpressionKind::Match {
             condition: Box::new(expr_value),

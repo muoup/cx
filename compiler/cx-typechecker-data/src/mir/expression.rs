@@ -51,7 +51,8 @@ pub enum MIRExpressionKind {
         target: Box<MIRExpression>,
         value: Box<MIRExpression>,
     },
-    StackAllocation {
+    CreateStackVariable {
+        name: Option<CXIdent>,
         _type: MIRType,
     },
     CopyRegion {

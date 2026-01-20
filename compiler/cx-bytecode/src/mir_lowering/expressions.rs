@@ -3,18 +3,14 @@
 //! This module handles lowering of MIRExpression (AST-style IR) to bytecode,
 //! replacing the old instruction-based lowering which worked with SSA-style MIR.
 
-use std::rc::Rc;
-
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType},
     BCInstructionKind, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{
-        MIRExpression, MIRExpressionKind, MIRUnOp, MIRCoercion, MIRBinOp,
-    },
+    expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
     program::MIRFunction,
-    types::MIRType,
+    types::{MIRType, MIRTypeKind},
 };
 use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
@@ -25,20 +21,13 @@ use crate::builder::BCBuilder;
 ///
 /// Lowers a MIRExpression tree to a bytecode value, generating SSA registers
 /// for intermediate results as needed.
-pub fn lower_expression(
-    builder: &mut BCBuilder,
-    expr: &MIRExpression,
-) -> CXResult<BCValue> {
-    let expr_type = builder.convert_cx_type(&expr._type);
-
+pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResult<BCValue> {
     match &expr.kind {
         // ===== Literals =====
-        MIRExpressionKind::BoolLiteral(value) => {
-            Ok(BCValue::IntImmediate {
-                val: if *value { 1 } else { 0 },
-                _type: BCIntegerType::I1,
-            })
-        }
+        MIRExpressionKind::BoolLiteral(value) => Ok(BCValue::IntImmediate {
+            val: if *value { 1 } else { 0 },
+            _type: BCIntegerType::I1,
+        }),
 
         MIRExpressionKind::IntLiteral(val, _type, _signed) => {
             let bc_type = builder.convert_integer_type(_type);
@@ -88,12 +77,15 @@ pub fn lower_expression(
                 return Ok(global_value);
             }
 
-            panic!("Variable '{}' not found in symbol table", name);
+            unreachable!("Variable '{}' not found in symbol table", name);
         }
 
         MIRExpressionKind::FunctionReference { .. } => {
-            // Function references are handled in CallFunction lowering
-            todo!("FunctionReference lowering - to be implemented")
+            let MIRTypeKind::Function { prototype } = &expr._type.kind else {
+                unreachable!("FunctionReference must have function type");
+            };
+
+            Ok(BCValue::FunctionRef(prototype.name.clone()))
         }
 
         // ===== Arithmetic & Logic =====
@@ -120,17 +112,23 @@ pub fn lower_expression(
             )
         }
 
-        MIRExpressionKind::StackAllocation { _type } => {
+        MIRExpressionKind::CreateStackVariable { name, _type } => {
             let bc_type = builder.convert_cx_type(_type);
 
-            builder.add_new_instruction(
+            let result = builder.add_new_instruction(
                 BCInstructionKind::Allocate {
                     alignment: bc_type.alignment(),
                     _type: bc_type,
                 },
                 BCType::default_pointer(),
                 true,
-            )
+            )?;
+
+            if let Some(name) = name {
+                builder.insert_symbol(name.clone(), result.clone());
+            }
+
+            Ok(result)
         }
 
         MIRExpressionKind::MemoryWrite { target, value } => {
@@ -165,7 +163,13 @@ pub fn lower_expression(
             condition,
             then_branch,
             else_branch,
-        } => lower_if(builder, condition, then_branch, else_branch.as_deref(), &expr._type),
+        } => lower_if(
+            builder,
+            condition,
+            then_branch,
+            else_branch.as_deref(),
+            &expr._type,
+        ),
 
         MIRExpressionKind::While {
             condition,
@@ -178,14 +182,51 @@ pub fn lower_expression(
         MIRExpressionKind::Block { statements } => lower_block(builder, statements),
 
         // ===== Function Calls =====
-        MIRExpressionKind::CallFunction { function, arguments } => {
-            lower_call_function(builder, function, arguments)
+        MIRExpressionKind::CallFunction {
+            function,
+            arguments,
+        } => {
+            let return_val = builder.convert_cx_type(&expr._type);
+
+            let fn_val = lower_expression(builder, function)?;
+            let args = arguments
+                .iter()
+                .map(|arg| lower_expression(builder, arg))
+                .collect::<CXResult<Vec<BCValue>>>()?;
+
+            let MIRTypeKind::Function { prototype } = &function._type.kind else {
+                unreachable!("CallFunction must have function type");
+            };
+
+            let bc_prototype = builder.convert_cx_prototype(prototype);
+
+            if let BCValue::FunctionRef(_) = &fn_val {
+                builder.add_new_instruction(
+                    BCInstructionKind::DirectCall {
+                        args,
+                        method_sig: bc_prototype,
+                    },
+                    return_val,
+                    true,
+                )
+            } else {
+                builder.add_new_instruction(
+                    BCInstructionKind::IndirectCall {
+                        method_sig: bc_prototype,
+                        func_ptr: fn_val,
+                        args,
+                    },
+                    return_val,
+                    true,
+                )
+            }
         }
 
         // ===== Type Conversion =====
-        MIRExpressionKind::TypeConversion { operand, conversion } => {
-            lower_type_conversion(builder, operand, *conversion, &expr._type)
-        }
+        MIRExpressionKind::TypeConversion {
+            operand,
+            conversion,
+        } => lower_type_conversion(builder, operand, *conversion, &expr._type),
 
         // ===== Lifetime Management =====
         // Stubbed for now - will be implemented later
@@ -400,7 +441,9 @@ fn lower_if(
     let result_reg_then = if !result_type.is_unit() {
         // Store result in a temporary
         let temp = builder.add_new_instruction(
-            BCInstructionKind::Alias { value: bc_then_value },
+            BCInstructionKind::Alias {
+                value: bc_then_value,
+            },
             bc_result_type.clone(),
             true,
         )?;
@@ -425,7 +468,9 @@ fn lower_if(
     };
     let result_reg_else = if !result_type.is_unit() {
         let temp = builder.add_new_instruction(
-            BCInstructionKind::Alias { value: bc_else_value },
+            BCInstructionKind::Alias {
+                value: bc_else_value,
+            },
             bc_result_type.clone(),
             true,
         )?;
@@ -516,10 +561,7 @@ fn lower_while(
 }
 
 /// Lower a return statement
-fn lower_return(
-    builder: &mut BCBuilder,
-    value: Option<&MIRExpression>,
-) -> CXResult<BCValue> {
+fn lower_return(builder: &mut BCBuilder, value: Option<&MIRExpression>) -> CXResult<BCValue> {
     let bc_value = match value {
         Some(v) => Some(lower_expression(builder, v)?),
         None => None,
@@ -533,10 +575,7 @@ fn lower_return(
 }
 
 /// Lower a block expression
-fn lower_block(
-    builder: &mut BCBuilder,
-    statements: &[MIRExpression],
-) -> CXResult<BCValue> {
+fn lower_block(builder: &mut BCBuilder, statements: &[MIRExpression]) -> CXResult<BCValue> {
     let mut last_value = BCValue::NULL;
 
     for stmt in statements {
@@ -544,32 +583,6 @@ fn lower_block(
     }
 
     Ok(last_value)
-}
-
-/// Lower a function call
-fn lower_call_function(
-    builder: &mut BCBuilder,
-    function: &MIRExpression,
-    arguments: &[MIRExpression],
-) -> CXResult<BCValue> {
-    // Lower arguments
-    let mut bc_args = Vec::new();
-    for arg in arguments {
-        bc_args.push(lower_expression(builder, arg)?);
-    }
-
-    // For now, assume direct function call
-    // TODO: Handle indirect calls through function expressions
-    match &function.kind {
-        MIRExpressionKind::FunctionReference { .. } => {
-            // This should have been resolved during typechecking
-            // For now, just return NULL
-            todo!("FunctionReference lowering in CallFunction")
-        }
-        _ => {
-            todo!("Indirect function calls - to be implemented")
-        }
-    }
 }
 
 /// Lower a type conversion
@@ -596,7 +609,7 @@ fn lower_type_conversion(
 
 // ===== Helper functions =====
 
-use cx_typechecker_data::mir::expression::{MIRIntegerBinOp, MIRFloatBinOp};
+use cx_typechecker_data::mir::expression::{MIRFloatBinOp, MIRIntegerBinOp};
 
 fn convert_int_binop(op: &MIRIntegerBinOp) -> cx_bytecode_data::BCIntBinOp {
     match op {
@@ -684,10 +697,7 @@ fn convert_coercion(
 /// Generate bytecode for a MIR function
 ///
 /// This is the main entry point for lowering a complete function from MIR to bytecode.
-pub fn lower_function(
-    builder: &mut BCBuilder,
-    mir_fn: &MIRFunction,
-) -> CXResult<()> {
+pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
     // Create the BCFunction
     let prototype = builder.convert_cx_prototype(&mir_fn.prototype);
     builder.new_function(prototype);
@@ -703,7 +713,9 @@ pub fn lower_function(
     // If return type is not Unit, ensure the function returns the value
     if !mir_fn.prototype.return_type.is_unit() {
         builder.add_new_instruction(
-            BCInstructionKind::Return { value: Some(result) },
+            BCInstructionKind::Return {
+                value: Some(result),
+            },
             BCType::unit(),
             false,
         )?;

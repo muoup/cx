@@ -7,14 +7,13 @@ use cx_typechecker_data::CXTypeMap;
 use cx_typechecker_data::function_map::CXFnMap;
 use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
 use cx_typechecker_data::mir::expression::MIRExpression;
-use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVariable, MIRUnit};
+use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
-use crate::builder::MIRBuilder;
 use crate::environment::deconstruction::process_new_type;
 use crate::environment::function_query::{
     query_deconstructor, query_destructor, query_member_function, query_standard_function,
@@ -54,8 +53,6 @@ pub struct TypeEnvironment<'a> {
     pub realized_fns: CXFnMap,
     pub realized_globals: HashMap<String, MIRGlobalVariable>,
 
-    pub(crate) builder: MIRBuilder,
-
     pub requests: Vec<MIRFunctionGenRequest>,
     pub current_function: Option<MIRFunctionPrototype>,
     pub arg_vals: Vec<MIRExpression>,
@@ -64,6 +61,8 @@ pub struct TypeEnvironment<'a> {
     pub scope_stack: Vec<Scope>,
 
     pub in_external_templated_function: bool,
+    
+    pub generated_functions: Vec<MIRFunction>,
 }
 
 impl TypeEnvironment<'_> {
@@ -82,7 +81,6 @@ impl TypeEnvironment<'_> {
             compilation_unit,
 
             module_data,
-            builder: MIRBuilder::new(),
 
             realized_types: intrinsic_types,
             realized_fns: HashMap::new(),
@@ -97,6 +95,7 @@ impl TypeEnvironment<'_> {
             arg_vals: Vec::new(),
 
             in_external_templated_function: false,
+            generated_functions: Vec::new(),
         }
     }
 
@@ -106,13 +105,11 @@ impl TypeEnvironment<'_> {
             break_to,
             continue_to,
         });
-        self.builder.push_scope();
     }
 
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
         self.scope_stack.pop().unwrap();
-        self.builder.pop_scope();
     }
 
     pub fn insert_symbol(&mut self, name: String, value: MIRExpression) {
@@ -229,7 +226,7 @@ impl TypeEnvironment<'_> {
 
     pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {
         Ok(MIRUnit {
-            functions: self.builder.generated_functions,
+            functions: self.generated_functions,
             prototypes: self.realized_fns.into_values().collect(),
             global_variables: self.realized_globals.into_values().collect(),
         })
