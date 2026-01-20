@@ -12,7 +12,6 @@ use cx_typechecker_data::mir::{
     program::MIRFunction,
     types::{MIRType, MIRTypeKind},
 };
-use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
 
 use crate::builder::BCBuilder;
@@ -527,7 +526,7 @@ fn lower_if(
     } else {
         BCValue::NULL
     };
-    let result_reg_else = if !result_type.is_unit() {
+    let _result_reg_else = if !result_type.is_unit() {
         let temp = builder.add_new_instruction(
             BCInstructionKind::Alias {
                 value: bc_else_value,

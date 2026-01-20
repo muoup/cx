@@ -170,7 +170,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
     let safe = try_next!(data.tokens, keyword!(Safe));
 
     let mut contract = CXFunctionContract {
-        safe: safe,
+        safe,
         precondition: None,
         postcondition: None,
     };

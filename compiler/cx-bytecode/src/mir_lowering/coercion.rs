@@ -1,11 +1,8 @@
-use cx_bytecode_data::{
-    types::{BCType, BCTypeKind},
-    BCCoercionType, BCInstructionKind, BCValue,
-};
+use cx_bytecode_data::BCValue;
 use cx_typechecker_data::mir::expression::{MIRCoercion, MIRExpression};
 use cx_util::CXResult;
 
-use crate::{builder::BCBuilder, mir_lowering::instructions::lower_value};
+use crate::builder::BCBuilder;
 
 // DEPRECATED: Old value-based lowering - no longer needed for expression tree MIR
 // Use `lower_expression` from expressions.rs instead
@@ -18,7 +15,7 @@ pub fn lower_coercion(
     coercion_type: MIRCoercion,
 ) -> CXResult<BCValue> {
     let _ = builder;
-    let _ = result;
+    result;
     let _ = value;
     let _ = coercion_type;
     todo!("lower_coercion is deprecated - use lower_expression from expressions.rs for expression tree lowering")

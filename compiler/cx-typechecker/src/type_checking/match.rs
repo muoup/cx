@@ -38,7 +38,7 @@ pub fn typecheck_switch(
         let case_expr = block
             .get(*case_index as usize)
             .cloned()
-            .unwrap_or_else(|| CXExpr::default());
+            .unwrap_or_else(CXExpr::default);
 
         // Typecheck the case body
         let case_body = typecheck_expr(env, base_data, &case_expr, None)?;

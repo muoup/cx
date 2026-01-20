@@ -137,8 +137,8 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::Standard(MIRType::unit()),
             body: FMIRNodeBody::If {
-                condition: condition,
-                then_branch: then_branch,
+                condition,
+                then_branch,
                 else_branch: else_branch.unwrap_or(Rc::new(FMIRNode::pure(FMIRNode::unit()))),
             },
         }

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use cx_fmir_data::ast::{FMIRNode, FMIRNodeBody, FMIRType, FRc};
 use cx_parsing_data::ast::{CXExpr, CXExprKind};
 use cx_typechecker_data::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::MIRExpression,
     program::MIRBaseMappings,
     types::{CXIntegerType, MIRFunctionPrototype, MIRType, MIRTypeKind},
 };

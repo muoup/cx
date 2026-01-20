@@ -100,7 +100,7 @@ fn typecheck_array_initializer(
     indices: &[CXInitIndex],
     inner_type: &MIRType,
     size: Option<usize>,
-    to_type: &MIRType,
+    _to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
         if let Some(name) = &index.name {
@@ -133,8 +133,7 @@ fn typecheck_array_initializer(
     let elements = indices
         .iter()
         .map(|index| {
-            typecheck_expr(env, base_data, &index.value, Some(inner_type))
-                .and_then(|v| Ok(v.into_expression()))
+            typecheck_expr(env, base_data, &index.value, Some(inner_type)).map(|v| v.into_expression())
         })
         .collect::<CXResult<_>>()?;
 

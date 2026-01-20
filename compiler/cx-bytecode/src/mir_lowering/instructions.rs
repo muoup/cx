@@ -1,6 +1,6 @@
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCGlobalType, BCGlobalValue, BCInstructionKind, BCPtrBinOp, BCValue,
+    BCGlobalType, BCGlobalValue, BCValue,
 };
 // NOTE: Old SSA-style MIR types no longer exist - MIR now uses expression trees (MIRExpression)
 // This file will be replaced with expression-based lowering in expressions.rs

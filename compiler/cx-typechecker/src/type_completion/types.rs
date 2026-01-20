@@ -54,11 +54,11 @@ pub(crate) fn _complete_type(
 ) -> CXResult<MIRType> {
     let mut recurse_ty = |ty: &CXNaiveType| _complete_type(env, base_data, ty);
     let construct_type = |kind: MIRTypeKind| -> CXResult<MIRType> {
-        return Ok(MIRType {
+        Ok(MIRType {
             specifiers: ty.specifiers,
             visibility: VisibilityMode::Private,
-            kind: kind,
-        });
+            kind,
+        })
     };
 
     match &ty.kind {

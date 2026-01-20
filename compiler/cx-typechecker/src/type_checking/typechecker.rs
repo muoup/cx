@@ -9,9 +9,7 @@ use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cas
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
-use cx_typechecker_data::mir::expression::{
-    MIRBinOp, MIRExpression, MIRExpressionKind, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRUnOp,
-};
+use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
 use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
@@ -324,7 +322,7 @@ pub fn typecheck_expr_inner(
             TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Return { value })
         }
 
-        CXExprKind::Defer { expr } => {
+        CXExprKind::Defer { expr: _ } => {
             todo!()
         }
 
@@ -346,24 +344,25 @@ pub fn typecheck_expr_inner(
                     };
 
                     match &inner.kind {
-                        MIRTypeKind::PointerTo { .. } |
-                        MIRTypeKind::Integer { .. } => match operator {
-                            CXUnOp::PreIncrement(_) => TypecheckResult::expr(
-                                operand_type.clone(),
-                                MIRExpressionKind::UnaryOperation {
-                                    op: MIRUnOp::PreIncrement(*increment_amount),
-                                    operand: Box::new(operand_val),
-                                },
-                            ),
-                            CXUnOp::PostIncrement(_) => TypecheckResult::expr(
-                                inner.clone(),
-                                MIRExpressionKind::UnaryOperation {
-                                    op: MIRUnOp::PostIncrement(*increment_amount),
-                                    operand: Box::new(operand_val),
-                                },
-                            ),
-                            _ => unreachable!(),
-                        },
+                        MIRTypeKind::PointerTo { .. } | MIRTypeKind::Integer { .. } => {
+                            match operator {
+                                CXUnOp::PreIncrement(_) => TypecheckResult::expr(
+                                    operand_type.clone(),
+                                    MIRExpressionKind::UnaryOperation {
+                                        op: MIRUnOp::PreIncrement(*increment_amount),
+                                        operand: Box::new(operand_val),
+                                    },
+                                ),
+                                CXUnOp::PostIncrement(_) => TypecheckResult::expr(
+                                    inner.clone(),
+                                    MIRExpressionKind::UnaryOperation {
+                                        op: MIRUnOp::PostIncrement(*increment_amount),
+                                        operand: Box::new(operand_val),
+                                    },
+                                ),
+                                _ => unreachable!(),
+                            }
+                        }
 
                         _ => {
                             return log_typecheck_error!(
