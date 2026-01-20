@@ -223,13 +223,21 @@ pub fn implicit_cast(
                     to_type
                 );
             }
-
-            // Need to read from memory reference and then cast
-            let loaded = TypecheckResult::memory_read(
-                TypecheckResult::expr2(value.clone()),
-                (*inner.clone()).clone(),
-            );
-            implicit_cast(env, expr, loaded.into_expression(), to_type)
+            
+            if inner.is_memory_resident() {
+                let copied = TypecheckResult::copy_region(
+                    TypecheckResult::expr2(value.clone()),
+                    (*inner.clone()).clone(),
+                );
+                implicit_cast(env, expr, copied.into_expression(), to_type) 
+            } else {
+                // Need to read from memory reference and then cast
+                let loaded = TypecheckResult::memory_read(
+                    TypecheckResult::expr2(value.clone()),
+                    (*inner.clone()).clone(),
+                );
+                implicit_cast(env, expr, loaded.into_expression(), to_type)
+            }
         }
 
         (_, MIRTypeKind::MemoryReference(inner))

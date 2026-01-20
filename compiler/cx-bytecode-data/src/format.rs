@@ -91,7 +91,7 @@ impl Display for BCValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             BCValue::NULL => write!(f, "null"),
-            BCValue::ParameterRef(index) => write!(f, "param @{index}"),
+            BCValue::ParameterRef(index) => write!(f, "@param.{index}"),
             BCValue::IntImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FloatImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FunctionRef(name) => write!(f, "{name}"),

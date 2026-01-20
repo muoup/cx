@@ -4,8 +4,8 @@
 //! replacing the old instruction-based lowering which worked with SSA-style MIR.
 
 use cx_bytecode_data::{
-    types::{BCIntegerType, BCType},
-    BCInstructionKind, BCValue,
+    types::{BCIntegerType, BCType, BCTypeKind},
+    BCInstructionKind, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
@@ -91,6 +91,8 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             )
         }
 
+        MIRExpressionKind::Typechange(inner) => lower_expression(builder, inner),
+
         MIRExpressionKind::CreateStackVariable { name, _type } => {
             let bc_type = builder.convert_cx_type(_type);
 
@@ -113,9 +115,10 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         MIRExpressionKind::MemoryWrite { target, value } => {
             let bc_target = lower_expression(builder, target)?;
             let bc_value = lower_expression(builder, value)?;
-            let bc_type = builder.get_value_type(&bc_value);
+            let mir_value_type = &value._type;
+            let bc_type = builder.convert_cx_type(mir_value_type);
 
-            if bc_type.is_structure() {
+            if mir_value_type.is_memory_resident() {
                 builder.add_new_instruction(
                     BCInstructionKind::Memcpy {
                         dest: bc_target,
@@ -148,9 +151,32 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         }
 
         MIRExpressionKind::CopyRegion { source, _type } => {
-            // For now, treat as memory read
-            // TODO: Implement proper memcpy for CopyRegion
-            lower_expression(builder, source)
+            let new_region = builder.add_new_instruction(
+                BCInstructionKind::Allocate {
+                    alignment: builder.convert_cx_type(_type).alignment(),
+                    _type: builder.convert_cx_type(_type),
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+            
+            let bc_source = lower_expression(builder, source)?;
+            
+            builder.add_new_instruction(
+                BCInstructionKind::Memcpy {
+                    dest: new_region.clone(),
+                    src: bc_source.clone(),
+                    size: BCValue::IntImmediate {
+                        val: builder.convert_cx_type(_type).size() as i64,
+                        _type: BCIntegerType::I64,
+                    },
+                    alignment: builder.convert_cx_type(_type).alignment(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+            
+            Ok(bc_source)
         }
 
         // ===== Control Flow =====
@@ -188,10 +214,10 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             function,
             arguments,
         } => {
-            let return_val = builder.convert_cx_type(&expr._type);
+            let return_type = builder.convert_cx_type(&expr._type);
 
             let fn_val = lower_expression(builder, function)?;
-            let args = arguments
+            let mut args = arguments
                 .iter()
                 .map(|arg| lower_expression(builder, arg))
                 .collect::<CXResult<Vec<BCValue>>>()?;
@@ -202,15 +228,34 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
 
             let bc_prototype = builder.convert_cx_prototype(prototype);
 
+            let return_buffer = if prototype.return_type.is_memory_resident() {
+                let buffer = builder.add_new_instruction(
+                    BCInstructionKind::Allocate {
+                        alignment: return_type.alignment(),
+                        _type: return_type.clone(),
+                    },
+                    BCType::default_pointer(),
+                    true,
+                )?;
+                args.insert(0, buffer.clone());
+                Some(buffer)
+            } else {
+                None
+            };
+
             if let BCValue::FunctionRef(_) = &fn_val {
                 builder.add_new_instruction(
                     BCInstructionKind::DirectCall {
                         args,
                         method_sig: bc_prototype,
                     },
-                    return_val,
+                    if return_buffer.is_some() {
+                        BCType::default_pointer()
+                    } else {
+                        return_type
+                    },
                     true,
-                )
+                )?;
             } else {
                 builder.add_new_instruction(
                     BCInstructionKind::IndirectCall {
@@ -218,9 +263,18 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                         func_ptr: fn_val,
                         args,
                     },
-                    return_val,
+                    if return_buffer.is_some() {
+                        BCType::default_pointer()
+                    } else {
+                        return_type
+                    },
                     true,
-                )
+                )?;
+            }
+
+            match return_buffer {
+                Some(buf) => Ok(buf),
+                None => Ok(BCValue::NULL),
             }
         }
 
@@ -249,41 +303,375 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             todo!("LeakLifetime lowering - to be implemented")
         }
 
-        // ===== Not yet implemented =====
-        MIRExpressionKind::StructFieldAccess { .. } => {
-            todo!("StructFieldAccess lowering - to be implemented")
+        // ===== Aggregate Access =====
+        MIRExpressionKind::StructFieldAccess {
+            base,
+            field_index,
+            field_offset,
+            struct_type,
+        } => {
+            let bc_base = lower_expression(builder, base)?;
+            let bc_struct_type = builder.convert_cx_type(struct_type);
+
+            builder.add_new_instruction(
+                BCInstructionKind::StructAccess {
+                    struct_: bc_base,
+                    struct_type: bc_struct_type,
+                    field_index: *field_index,
+                    field_offset: *field_offset,
+                },
+                BCType::default_pointer(),
+                true,
+            )
         }
 
-        MIRExpressionKind::UnionAliasAccess { .. } => {
-            todo!("UnionAliasAccess lowering - to be implemented")
+        MIRExpressionKind::UnionAliasAccess { base, .. } => lower_expression(builder, base),
+
+        MIRExpressionKind::ArrayAccess {
+            array,
+            index,
+            element_type,
+        } => {
+            let bc_array = lower_expression(builder, array)?;
+            let bc_index = lower_expression(builder, index)?;
+            let bc_element_type = builder.convert_cx_type(element_type);
+            let element_size = bc_element_type.size() as u64;
+
+            builder.add_new_instruction(
+                BCInstructionKind::PointerBinOp {
+                    op: BCPtrBinOp::ADD,
+                    ptr_type: bc_element_type,
+                    type_padded_size: element_size,
+                    left: bc_array,
+                    right: bc_index,
+                },
+                BCType::default_pointer(),
+                true,
+            )
         }
 
-        MIRExpressionKind::ArrayAccess { .. } => {
-            todo!("ArrayAccess lowering - to be implemented")
+        MIRExpressionKind::TaggedUnionTag { value, sum_type } => {
+            let bc_value = lower_expression(builder, value)?;
+            let bc_sum_type = builder.convert_cx_type(sum_type);
+
+            let BCTypeKind::Struct { fields, .. } = &bc_sum_type.kind else {
+                unreachable!("TaggedUnion must lower to struct type");
+            };
+
+            let tag_offset = fields[0].1.size();
+
+            builder.add_new_instruction(
+                BCInstructionKind::StructAccess {
+                    struct_: bc_value.clone(),
+                    struct_type: bc_sum_type,
+                    field_index: 1,
+                    field_offset: tag_offset,
+                },
+                BCType::default_pointer(),
+                true,
+            )
         }
 
-        MIRExpressionKind::TaggedUnionTag { .. } => {
-            todo!("TaggedUnionTag lowering - to be implemented")
+        MIRExpressionKind::TaggedUnionGet { value, .. } => {
+            let bc_value = lower_expression(builder, value)?;
+            Ok(bc_value)
         }
 
-        MIRExpressionKind::TaggedUnionGet { .. } => {
-            todo!("TaggedUnionGet lowering - to be implemented")
+        MIRExpressionKind::TaggedUnionSet {
+            target,
+            variant_index,
+            inner_value,
+            sum_type,
+        } => {
+            let bc_target = lower_expression(builder, target)?;
+            let bc_sum_type = builder.convert_cx_type(sum_type);
+
+            let BCTypeKind::Struct { fields, .. } = &bc_sum_type.kind else {
+                unreachable!("TaggedUnion must lower to struct type");
+            };
+
+            let tag_offset = fields[0].1.size();
+
+            let tag_addr = builder.add_new_instruction(
+                BCInstructionKind::StructAccess {
+                    struct_: bc_target.clone(),
+                    struct_type: bc_sum_type,
+                    field_index: 1,
+                    field_offset: tag_offset,
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+
+            builder.add_new_instruction(
+                BCInstructionKind::Store {
+                    memory: tag_addr,
+                    value: BCValue::IntImmediate {
+                        val: *variant_index as i64,
+                        _type: BCIntegerType::I8,
+                    },
+                    _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+                },
+                BCType::unit(),
+                false,
+            )?;
+
+            let bc_inner = lower_expression(builder, inner_value)?;
+            let inner_type = builder.get_value_type(&bc_inner);
+
+            if inner_type.is_structure() {
+                builder.add_new_instruction(
+                    BCInstructionKind::Memcpy {
+                        dest: bc_target.clone(),
+                        src: bc_inner,
+                        size: BCValue::IntImmediate {
+                            val: inner_type.size() as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                        alignment: inner_type.alignment(),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+            } else if !inner_type.is_void() {
+                builder.add_new_instruction(
+                    BCInstructionKind::Store {
+                        memory: bc_target.clone(),
+                        value: bc_inner,
+                        _type: inner_type,
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+            }
+
+            Ok(bc_target)
         }
 
-        MIRExpressionKind::TaggedUnionSet { .. } => {
-            todo!("TaggedUnionSet lowering - to be implemented")
+        MIRExpressionKind::ConstructTaggedUnion {
+            variant_index,
+            value,
+            sum_type,
+        } => {
+            let bc_sum_type = builder.convert_cx_type(sum_type);
+
+            let allocation = builder.add_new_instruction(
+                BCInstructionKind::Allocate {
+                    alignment: bc_sum_type.alignment(),
+                    _type: bc_sum_type.clone(),
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+
+            let BCTypeKind::Struct { fields, .. } = &bc_sum_type.kind else {
+                unreachable!("TaggedUnion must lower to struct type");
+            };
+
+            let tag_offset = fields[0].1.size();
+
+            let tag_addr = builder.add_new_instruction(
+                BCInstructionKind::StructAccess {
+                    struct_: allocation.clone(),
+                    struct_type: bc_sum_type,
+                    field_index: 1,
+                    field_offset: tag_offset,
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+
+            builder.add_new_instruction(
+                BCInstructionKind::Store {
+                    memory: tag_addr,
+                    value: BCValue::IntImmediate {
+                        val: *variant_index as i64,
+                        _type: BCIntegerType::I8,
+                    },
+                    _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+                },
+                BCType::unit(),
+                false,
+            )?;
+
+            let bc_inner = lower_expression(builder, value)?;
+            let inner_type = builder.get_value_type(&bc_inner);
+
+            if inner_type.is_structure() {
+                builder.add_new_instruction(
+                    BCInstructionKind::Memcpy {
+                        dest: allocation.clone(),
+                        src: bc_inner,
+                        size: BCValue::IntImmediate {
+                            val: inner_type.size() as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                        alignment: inner_type.alignment(),
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+            } else if !inner_type.is_void() {
+                builder.add_new_instruction(
+                    BCInstructionKind::Store {
+                        memory: allocation.clone(),
+                        value: bc_inner,
+                        _type: inner_type,
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+            }
+
+            Ok(allocation)
         }
 
-        MIRExpressionKind::ConstructTaggedUnion { .. } => {
-            todo!("ConstructTaggedUnion lowering - to be implemented")
+        MIRExpressionKind::ArrayInitializer {
+            elements,
+            element_type,
+        } => {
+            let bc_element_type = builder.convert_cx_type(element_type);
+            let element_size = bc_element_type.size() as u64;
+
+            let array_type = BCType::from(BCTypeKind::Array {
+                element: Box::new(bc_element_type.clone()),
+                size: elements.len(),
+            });
+
+            let allocation = builder.add_new_instruction(
+                BCInstructionKind::Allocate {
+                    alignment: array_type.alignment(),
+                    _type: array_type,
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+
+            for (i, elem) in elements.iter().enumerate() {
+                let bc_elem = lower_expression(builder, elem)?;
+                let elem_type = builder.get_value_type(&bc_elem);
+
+                let elem_addr = builder.add_new_instruction(
+                    BCInstructionKind::PointerBinOp {
+                        op: BCPtrBinOp::ADD,
+                        ptr_type: bc_element_type.clone(),
+                        type_padded_size: element_size,
+                        left: allocation.clone(),
+                        right: BCValue::IntImmediate {
+                            val: i as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                    },
+                    BCType::default_pointer(),
+                    true,
+                )?;
+
+                if elem_type.is_structure() {
+                    builder.add_new_instruction(
+                        BCInstructionKind::Memcpy {
+                            dest: elem_addr,
+                            src: bc_elem,
+                            size: BCValue::IntImmediate {
+                                val: elem_type.size() as i64,
+                                _type: BCIntegerType::I64,
+                            },
+                            alignment: elem_type.alignment(),
+                        },
+                        BCType::unit(),
+                        false,
+                    )?;
+                } else {
+                    builder.add_new_instruction(
+                        BCInstructionKind::Store {
+                            memory: elem_addr,
+                            value: bc_elem,
+                            _type: elem_type,
+                        },
+                        BCType::unit(),
+                        false,
+                    )?;
+                }
+            }
+
+            Ok(allocation)
         }
 
-        MIRExpressionKind::ArrayInitializer { .. } => {
-            todo!("ArrayInitializer lowering - to be implemented")
-        }
+        MIRExpressionKind::StructInitializer {
+            initializations,
+            struct_type,
+        } => {
+            let bc_struct_type = builder.convert_cx_type(struct_type);
 
-        MIRExpressionKind::StructInitializer { .. } => {
-            todo!("StructInitializer lowering - to be implemented")
+            let allocation = builder.add_new_instruction(
+                BCInstructionKind::Allocate {
+                    alignment: bc_struct_type.alignment(),
+                    _type: bc_struct_type.clone(),
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+
+            let BCTypeKind::Struct { fields, .. } = &bc_struct_type.kind else {
+                unreachable!("StructInitializer must have struct type");
+            };
+
+            let mut current_offset = 0usize;
+            let field_offsets: Vec<usize> = fields
+                .iter()
+                .map(|(_, field_type)| {
+                    let alignment = field_type.alignment() as usize;
+                    let padding = (alignment - (current_offset % alignment)) % alignment;
+                    current_offset += padding;
+                    let offset = current_offset;
+                    current_offset += field_type.size();
+                    offset
+                })
+                .collect();
+
+            for (field_index, init_expr) in initializations {
+                let bc_value = lower_expression(builder, init_expr)?;
+                let mir_field_type = &init_expr._type;
+                let bc_field_type = builder.convert_cx_type(mir_field_type);
+
+                let field_addr = builder.add_new_instruction(
+                    BCInstructionKind::StructAccess {
+                        struct_: allocation.clone(),
+                        struct_type: bc_struct_type.clone(),
+                        field_index: *field_index,
+                        field_offset: field_offsets[*field_index],
+                    },
+                    BCType::default_pointer(),
+                    true,
+                )?;
+
+                if mir_field_type.is_memory_resident() {
+                    builder.add_new_instruction(
+                        BCInstructionKind::Memcpy {
+                            dest: field_addr,
+                            src: bc_value,
+                            size: BCValue::IntImmediate {
+                                val: bc_field_type.size() as i64,
+                                _type: BCIntegerType::I64,
+                            },
+                            alignment: bc_field_type.alignment(),
+                        },
+                        BCType::unit(),
+                        false,
+                    )?;
+                } else {
+                    builder.add_new_instruction(
+                        BCInstructionKind::Store {
+                            memory: field_addr,
+                            value: bc_value,
+                            _type: bc_field_type,
+                        },
+                        BCType::unit(),
+                        false,
+                    )?;
+                }
+            }
+
+            Ok(allocation)
         }
 
         MIRExpressionKind::Break => {
@@ -625,16 +1013,47 @@ fn lower_for(
 
 /// Lower a return statement
 fn lower_return(builder: &mut BCBuilder, value: Option<&MIRExpression>) -> CXResult<BCValue> {
+    let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
+
     let bc_value = match value {
         Some(v) => Some(lower_expression(builder, v)?),
         None => None,
     };
 
-    builder.add_new_instruction(
-        BCInstructionKind::Return { value: bc_value },
-        BCType::unit(),
-        false,
-    )
+    if has_return_buffer {
+        let return_buffer = BCValue::ParameterRef(0);
+        let return_type = builder.current_prototype().temp_buffer.clone().unwrap();
+
+        if let Some(src) = bc_value {
+            builder.add_new_instruction(
+                BCInstructionKind::Memcpy {
+                    dest: return_buffer.clone(),
+                    src,
+                    size: BCValue::IntImmediate {
+                        val: return_type.size() as i64,
+                        _type: BCIntegerType::I64,
+                    },
+                    alignment: return_type.alignment(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+        }
+
+        builder.add_new_instruction(
+            BCInstructionKind::Return {
+                value: Some(return_buffer),
+            },
+            BCType::unit(),
+            false,
+        )
+    } else {
+        builder.add_new_instruction(
+            BCInstructionKind::Return { value: bc_value },
+            BCType::unit(),
+            false,
+        )
+    }
 }
 
 /// Lower a block expression
@@ -767,33 +1186,70 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
 
+    let has_return_buffer = mir_fn.prototype.return_type.is_memory_resident();
+    let param_offset = if has_return_buffer { 1 } else { 0 };
+
     for (i, param) in mir_fn.prototype.params.iter().enumerate() {
         if let Some(name) = &param.name {
-            let alloc = builder.add_new_instruction(
-                BCInstructionKind::Allocate {
-                    alignment: builder.convert_cx_type(&param._type).alignment(),
-                    _type: builder.convert_cx_type(&param._type),
-                },
-                BCType::default_pointer(),
-                true,
-            )?;
-            builder.add_new_instruction(
-                BCInstructionKind::Store {
-                    memory: alloc.clone(),
-                    value: BCValue::ParameterRef(i as u32),
-                    _type: builder.convert_cx_type(&param._type),
-                },
-                BCType::unit(),
-                false,
-            )?;
-            
-            builder.insert_symbol(name.clone(), alloc);
+            let bc_param_type = builder.convert_cx_type(&param._type);
+
+            if !param._type.is_memory_resident() {
+                let alloc = builder.add_new_instruction(
+                    BCInstructionKind::Allocate {
+                        alignment: bc_param_type.alignment(),
+                        _type: bc_param_type.clone(),
+                    },
+                    BCType::default_pointer(),
+                    true,
+                )?;
+                builder.add_new_instruction(
+                    BCInstructionKind::Store {
+                        memory: alloc.clone(),
+                        value: BCValue::ParameterRef((i + param_offset) as u32),
+                        _type: bc_param_type,
+                    },
+                    BCType::unit(),
+                    false,
+                )?;
+                builder.insert_symbol(name.clone(), alloc);
+            } else {
+                println!("{}: {} -> {}", name, param._type, bc_param_type);
+
+                builder.insert_symbol(
+                    name.clone(),
+                    BCValue::ParameterRef((i + param_offset) as u32),
+                );
+            }
         }
     }
 
     let result = lower_expression(builder, &mir_fn.body)?;
 
-    if !mir_fn.prototype.return_type.is_unit() {
+    if has_return_buffer {
+        let return_buffer = BCValue::ParameterRef(0);
+        let return_type = builder.convert_cx_type(&mir_fn.prototype.return_type);
+
+        builder.add_new_instruction(
+            BCInstructionKind::Memcpy {
+                dest: return_buffer.clone(),
+                src: result,
+                size: BCValue::IntImmediate {
+                    val: return_type.size() as i64,
+                    _type: BCIntegerType::I64,
+                },
+                alignment: return_type.alignment(),
+            },
+            BCType::unit(),
+            false,
+        )?;
+        builder.add_new_instruction(
+            BCInstructionKind::Return {
+                value: Some(return_buffer),
+            },
+            BCType::unit(),
+            false,
+        )?;
+    } else if !mir_fn.prototype.return_type.is_unit() {
         builder.add_new_instruction(
             BCInstructionKind::Return {
                 value: Some(result),

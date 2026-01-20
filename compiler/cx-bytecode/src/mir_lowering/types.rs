@@ -52,7 +52,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> BCFunctio
         .iter()
         .map(|param| BCParameter {
             name: param.name.as_ref().map(|name| name.as_string()),
-            _type: convert_argument_type(&param._type),
+            _type: convert_type(&param._type),
         })
         .collect::<Vec<_>>();
 
@@ -71,8 +71,6 @@ pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> BCFunctio
         return_type = BCType::default_pointer();
         buffer_type = Some(convert_type(&cx_proto.return_type));
     }
-
-    
 
     BCFunctionPrototype {
         name: cx_proto.name.to_string(),

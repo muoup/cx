@@ -185,6 +185,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 MIRExpressionFormatter::new(target, self.depth + 1).fmt(f)?;
                 MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)
             }
+            MIRExpressionKind::Typechange(expression) => {
+                writeln!(f, "Typechange <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::CreateStackVariable { name, _type } => {
                 let name_str = name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)");
                 writeln!(

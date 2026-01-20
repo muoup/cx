@@ -58,6 +58,9 @@ pub enum MIRExpressionKind {
         _type: MIRType,
     },
 
+    // Represents a no-op used to change the type of an expression with no added semantics
+    Typechange(Box<MIRExpression>),
+    
     // Aggregate Access
     StructFieldAccess {
         base: Box<MIRExpression>,

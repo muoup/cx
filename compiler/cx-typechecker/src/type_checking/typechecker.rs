@@ -500,9 +500,7 @@ pub fn typecheck_expr_inner(
 
                     // Dereference returns a memory reference to the inner type
                     TypecheckResult::expr2(MIRExpression {
-                        kind: MIRExpressionKind::MemoryRead {
-                            source: Box::new(loaded_operand),
-                        },
+                        kind: MIRExpressionKind::Typechange(Box::new(loaded_operand)),
                         _type: inner.mem_ref_to(),
                     })
                 }
