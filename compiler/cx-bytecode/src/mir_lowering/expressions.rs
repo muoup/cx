@@ -136,15 +136,31 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             let bc_value = lower_expression(builder, value)?;
             let bc_type = builder.get_value_type(&bc_value);
 
-            builder.add_new_instruction(
-                BCInstructionKind::Store {
-                    memory: bc_target,
-                    value: bc_value,
-                    _type: bc_type,
-                },
-                BCType::unit(),
-                false,
-            )
+            if bc_type.is_structure() {
+                builder.add_new_instruction(
+                    BCInstructionKind::Memcpy {
+                        dest: bc_target,
+                        src: bc_value,
+                        size: BCValue::IntImmediate {
+                            val: bc_type.size() as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                        alignment: bc_type.alignment(),
+                    },
+                    BCType::unit(),
+                    false,
+                )
+            } else {
+                builder.add_new_instruction(
+                    BCInstructionKind::Store {
+                        memory: bc_target,
+                        value: bc_value,
+                        _type: bc_type,
+                    },
+                    BCType::unit(),
+                    false,
+                )
+            }
         }
 
         MIRExpressionKind::Move { source } => {
@@ -176,6 +192,13 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             body,
             pre_eval,
         } => lower_while(builder, condition, body, *pre_eval),
+
+        MIRExpressionKind::For {
+            init,
+            condition,
+            increment,
+            body,
+        } => lower_for(builder, init, condition, increment, body),
 
         MIRExpressionKind::Return { value } => lower_return(builder, value.as_deref()),
 
@@ -268,6 +291,10 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             todo!("TaggedUnionGet lowering - to be implemented")
         }
 
+        MIRExpressionKind::TaggedUnionSet { .. } => {
+            todo!("TaggedUnionSet lowering - to be implemented")
+        }
+
         MIRExpressionKind::ConstructTaggedUnion { .. } => {
             todo!("ConstructTaggedUnion lowering - to be implemented")
         }
@@ -286,10 +313,6 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
 
         MIRExpressionKind::Continue => {
             todo!("Continue lowering - to be implemented")
-        }
-
-        MIRExpressionKind::For { .. } => {
-            todo!("For lowering - to be implemented")
         }
 
         MIRExpressionKind::CSwitch { .. } => {
@@ -411,18 +434,12 @@ fn lower_if(
     result_type: &MIRType,
 ) -> CXResult<BCValue> {
     let bc_condition = lower_expression(builder, condition)?;
-
-    // Create basic blocks
-    let then_block_id = CXIdent::from(format!("then_{}", builder.block_count()));
-    let else_block_id = CXIdent::from(format!("else_{}", builder.block_count()));
-    let merge_block_id = CXIdent::from(format!("merge_{}", builder.block_count()));
-
     let bc_result_type = builder.convert_cx_type(result_type);
 
     // Create blocks
-    builder.create_block(then_block_id.clone());
-    builder.create_block(else_block_id.clone());
-    builder.create_block(merge_block_id.clone());
+    let then_block_id = builder.create_block(Some("then"));
+    let else_block_id = builder.create_block(Some("else"));
+    let merge_block_id = builder.create_block(Some("merge"));
 
     // Emit branch
     builder.add_new_instruction(
@@ -502,14 +519,10 @@ fn lower_while(
     body: &MIRExpression,
     pre_eval: bool,
 ) -> CXResult<BCValue> {
-    let condition_block_id = CXIdent::from(format!("while_cond_{}", builder.block_count()));
-    let body_block_id = CXIdent::from(format!("while_body_{}", builder.block_count()));
-    let exit_block_id = CXIdent::from(format!("while_exit_{}", builder.block_count()));
-
     // Create blocks
-    builder.create_block(condition_block_id.clone());
-    builder.create_block(body_block_id.clone());
-    builder.create_block(exit_block_id.clone());
+    let condition_block_id = builder.create_block(Some("[while] condition"));
+    let body_block_id = builder.create_block(Some("[while] body"));
+    let exit_block_id = builder.create_block(Some("[while] exit"));
 
     // Jump to condition or body based on pre_eval
     if pre_eval {
@@ -557,6 +570,66 @@ fn lower_while(
     // Exit block
     builder.set_current_block(exit_block_id);
 
+    Ok(BCValue::NULL)
+}
+
+fn lower_for(
+    builder: &mut BCBuilder,
+    init: &MIRExpression,
+    condition: &MIRExpression,
+    increment: &MIRExpression,
+    body: &MIRExpression,
+) -> CXResult<BCValue> {
+    lower_expression(builder, init)?;
+
+    let condition_block_id = builder.create_block(Some("for_condition"));
+    let body_block_id = builder.create_block(Some("for_body"));
+    let increment_block_id = builder.create_block(Some("for_increment"));
+    let merge_block_id = builder.create_block(Some("for_merge"));
+
+    builder.add_new_instruction(
+        BCInstructionKind::Jump {
+            target: condition_block_id.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    builder.set_current_block(condition_block_id.clone());
+
+    let bc_condition = lower_expression(builder, condition)?;
+
+    builder.add_new_instruction(
+        BCInstructionKind::Branch {
+            condition: bc_condition,
+            true_block: body_block_id.clone(),
+            false_block: merge_block_id.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    builder.set_current_block(body_block_id.clone());
+    lower_expression(builder, body)?;
+    builder.add_new_instruction(
+        BCInstructionKind::Jump {
+            target: increment_block_id.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    builder.set_current_block(increment_block_id.clone());
+    lower_expression(builder, increment)?;
+    builder.add_new_instruction(
+        BCInstructionKind::Jump {
+            target: condition_block_id.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    builder.set_current_block(merge_block_id);
     Ok(BCValue::NULL)
 }
 
@@ -702,9 +775,7 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
     let prototype = builder.convert_cx_prototype(&mir_fn.prototype);
     builder.new_function(prototype);
 
-    // Create entry block
-    let entry_block = CXIdent::from("entry");
-    builder.create_block(entry_block.clone());
+    let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
 
     // Lower the function body (expression tree)

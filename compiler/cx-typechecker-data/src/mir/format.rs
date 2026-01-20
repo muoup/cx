@@ -167,6 +167,18 @@ impl Display for MIRExpression {
                 value,
                 variant_type,
             } => write!(f, "getvariant {} [{}]", value.as_ref(), variant_type),
+            MIRExpressionKind::TaggedUnionSet {
+                target,
+                variant_index,
+                inner_value,
+                ..
+            } => write!(
+                f,
+                "taggedunionset {} <- [{}] {}",
+                target.as_ref(),
+                variant_index,
+                inner_value.as_ref()
+            ),
             MIRExpressionKind::ConstructTaggedUnion {
                 variant_index,
                 value,

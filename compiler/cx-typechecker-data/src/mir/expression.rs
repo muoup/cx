@@ -87,6 +87,13 @@ pub enum MIRExpressionKind {
         value: Box<MIRExpression>,
         variant_type: MIRType,
     },
+    TaggedUnionSet {
+        target: Box<MIRExpression>,
+        variant_index: usize,
+        inner_value: Box<MIRExpression>,
+        sum_type: MIRType,
+    },
+    
     ConstructTaggedUnion {
         variant_index: usize,
         value: Box<MIRExpression>,

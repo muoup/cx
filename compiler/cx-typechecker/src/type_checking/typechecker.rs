@@ -715,7 +715,6 @@ pub fn typecheck_expr_inner(
             let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
                 .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
-            // Allocate stack region for the tagged union
             let allocation = TypecheckResult::expr(
                 union_type.clone(),
                 MIRExpressionKind::CreateStackVariable {
@@ -724,12 +723,15 @@ pub fn typecheck_expr_inner(
                 },
             );
 
-            // Construct the tagged union value
-            // This involves writing the tag and the variant value
-            // For now, we return the allocation as the result
-            // The actual construction will be handled during lowering
-
-            allocation
+            TypecheckResult::expr(
+                union_type.clone().mem_ref_to(),
+                MIRExpressionKind::TaggedUnionSet {
+                    target: Box::new(allocation.into_expression()),
+                    variant_index: i,
+                    inner_value: Box::new(inner),
+                    sum_type: union_type.clone(),
+                },
+            )
         }
 
         CXExprKind::Unit => TypecheckResult::expr2(MIRExpression {

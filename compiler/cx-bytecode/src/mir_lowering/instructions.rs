@@ -7,16 +7,9 @@ use cx_bytecode_data::{
 use cx_typechecker_data::mir::program::{MIRGlobalVarKind, MIRGlobalVariable};
 use cx_util::{identifier::CXIdent, CXResult};
 
-use crate::{
-    builder::BCBuilder,
-    mir_lowering::{
-        binary_ops::{lower_binop, lower_call_params},
-        coercion::lower_coercion,
-        tagged_union::tagged_union_tag_addr,
-    },
-};
+use crate::{ builder::BCBuilder};
 
-const LIVENESS_TYPE : BCType = BCType {
+const LIVENESS_TYPE: BCType = BCType {
     kind: BCTypeKind::Integer(BCIntegerType::I8),
 };
 
@@ -68,10 +61,7 @@ pub fn handle_lifetime_end(
 }
 
 #[allow(dead_code)]
-pub fn handle_leak_lifetime(
-    _builder: &mut BCBuilder,
-    _region: &CXIdent,
-) -> CXResult<BCValue> {
+pub fn handle_leak_lifetime(_builder: &mut BCBuilder, _region: &CXIdent) -> CXResult<BCValue> {
     // TODO: Implement leak lifetime for expression trees
     todo!("Lifetime handling not yet implemented for expression tree MIR")
 }

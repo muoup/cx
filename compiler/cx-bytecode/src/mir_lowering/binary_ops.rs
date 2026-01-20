@@ -7,38 +7,6 @@ use cx_util::CXResult;
 
 use crate::builder::BCBuilder;
 
-// DEPRECATED: Old value-based lowering - no longer needed for expression tree MIR
-// Use `lower_expression` from expressions.rs instead
-#[allow(dead_code)]
-#[deprecated(note = "Use lower_expression from expressions.rs instead")]
-pub(crate) fn lower_binop(
-    builder: &mut BCBuilder,
-    result: &(), // MIRRegister no longer exists
-    op: &MIRBinOp,
-    lhs: &(), // MIRValue no longer exists
-    rhs: &(), // MIRValue no longer exists
-) -> CXResult<BCValue> {
-    let _ = builder;
-    let _ = result;
-    let _ = op;
-    let _ = lhs;
-    let _ = rhs;
-    todo!("lower_binop is deprecated - use lower_expression from expressions.rs for expression tree lowering")
-}
-
-// DEPRECATED: Old value-based lowering - no longer needed for expression tree MIR
-#[allow(dead_code)]
-pub fn lower_call_params(
-    builder: &mut BCBuilder,
-    params: &[()], // MIRValue no longer exists
-    prototype: &BCFunctionPrototype,
-) -> CXResult<Vec<BCValue>> {
-    let _ = builder;
-    let _ = params;
-    let _ = prototype;
-    todo!("lower_call_params is deprecated - use lower_expression from expressions.rs for expression tree lowering")
-}
-
 // New expression-based lowering - to be implemented in expressions.rs
 #[allow(dead_code)]
 pub fn lower_expression_binop(

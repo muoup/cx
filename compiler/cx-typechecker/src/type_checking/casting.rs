@@ -1,6 +1,6 @@
 use cx_parsing_data::ast::CXExpr;
 use cx_typechecker_data::mir::{
-    expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRIntegerBinOp},
+    expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp},
     types::{CXIntegerType, MIRType, MIRTypeKind, same_type},
 };
 use cx_util::CXResult;
@@ -112,12 +112,13 @@ pub fn implicit_cast(
     }
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
-        Ok(TypecheckResult::type_conversion(
-            TypecheckResult::expr2(value.clone()),
-            coercion_type,
-            to_type.clone(),
-        )
-        .into_expression())
+        Ok(MIRExpression {
+            _type: to_type.clone(),
+            kind: MIRExpressionKind::TypeConversion {
+                operand: Box::new(value.clone()),
+                conversion: coercion_type,
+            },
+        })
     };
 
     match (&from_type.kind, &to_type.kind) {

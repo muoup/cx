@@ -13,6 +13,7 @@ pub mod expressions;
 pub mod instructions;
 pub mod tagged_union;
 pub mod types;
+pub mod control_flow;
 
 pub fn lower_mir(builder: &mut BCBuilder, mir: &MIRUnit) -> CXResult<()> {
     for global_var in mir.global_variables.iter() {

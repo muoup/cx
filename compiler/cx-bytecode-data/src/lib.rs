@@ -104,6 +104,7 @@ pub struct BCFunction {
 #[derive(Debug, Clone)]
 pub struct BCBasicBlock {
     pub id: BCBlockID,
+    pub debug_name: Option<String>,
     pub body: Vec<BCInstruction>,
 }
 

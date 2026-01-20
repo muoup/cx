@@ -317,14 +317,18 @@ impl BCBuilder {
             _type,
         }
     }
-
-    pub fn create_block(&mut self, id: BCBlockID) {
+    
+    pub fn create_block(&mut self, debug_name: Option<&str>) -> CXIdent {
         let context = self.fun_mut();
+        let name : CXIdent = format!("block_{}", context.blocks.len()).into();
 
         context.blocks.push(BCBasicBlock {
-            id,
+            id: name.clone(),
+            debug_name: debug_name.map(|s| s.to_string()),
             body: Vec::new(),
         });
+        
+        name
     }
 
     pub fn set_current_block(&mut self, block: BCBlockID) {
