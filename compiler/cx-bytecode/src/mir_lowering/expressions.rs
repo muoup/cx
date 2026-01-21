@@ -243,7 +243,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                 None
             };
 
-            if let BCValue::FunctionRef(_) = &fn_val {
+            let value = if let BCValue::FunctionRef(_) = &fn_val {
                 builder.add_new_instruction(
                     BCInstructionKind::DirectCall {
                         args,
@@ -255,7 +255,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                         return_type
                     },
                     true,
-                )?;
+                )?
             } else {
                 builder.add_new_instruction(
                     BCInstructionKind::IndirectCall {
@@ -269,13 +269,10 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                         return_type
                     },
                     true,
-                )?;
-            }
+                )?
+            };
 
-            match return_buffer {
-                Some(buf) => Ok(buf),
-                None => Ok(BCValue::NULL),
-            }
+            Ok(value)
         }
 
         // ===== Type Conversion =====
@@ -285,22 +282,17 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         } => lower_type_conversion(builder, operand, *conversion, &expr._type),
 
         // ===== Lifetime Management =====
-        // Stubbed for now - will be implemented later
-        MIRExpressionKind::LifetimeStart { variable, _type } => {
-            let _ = variable;
-            let _ = _type;
-            todo!("LifetimeStart lowering - to be implemented")
+        // These are optimization hints - currently treated as no-ops
+        MIRExpressionKind::LifetimeStart { variable: _, _type: _ } => {
+            Ok(BCValue::NULL)
         }
 
-        MIRExpressionKind::LifetimeEnd { variable, _type } => {
-            let _ = variable;
-            let _ = _type;
-            todo!("LifetimeEnd lowering - to be implemented")
+        MIRExpressionKind::LifetimeEnd { variable: _, _type: _ } => {
+            Ok(BCValue::NULL)
         }
 
         MIRExpressionKind::LeakLifetime { expression } => {
-            let _ = expression;
-            todo!("LeakLifetime lowering - to be implemented")
+            lower_expression(builder, expression)
         }
 
         // ===== Aggregate Access =====
@@ -698,13 +690,17 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             )
         }
 
-        MIRExpressionKind::CSwitch { .. } => {
-            todo!("CSwitch lowering - to be implemented")
-        }
+        MIRExpressionKind::CSwitch {
+            condition,
+            cases,
+            default,
+        } => lower_cswitch(builder, condition, cases, default.as_deref()),
 
-        MIRExpressionKind::Match { .. } => {
-            todo!("Match lowering - to be implemented")
-        }
+        MIRExpressionKind::Match {
+            condition,
+            arms,
+            default,
+        } => lower_match(builder, condition, arms, default.as_deref()),
 
         MIRExpressionKind::Defer { .. } => {
             todo!("Defer lowering - to be implemented")
@@ -812,9 +808,10 @@ fn lower_unary_op(
             }
         }
         MIRUnOp::FNEG => {
-            // Float negation - for now, use placeholder
-            // TODO: Implement proper float negation
-            todo!("Float negation (FNEG) - to be implemented")
+            BCInstructionKind::FloatUnOp {
+                op: cx_bytecode_data::BCFloatUnOp::NEG,
+                value: bc_operand,
+            }
         }
         MIRUnOp::INEG => {
             // Signed integer negation
@@ -948,6 +945,9 @@ fn lower_while(
     let body_block_id = builder.create_block(Some("[while] body"));
     let exit_block_id = builder.create_block(Some("[while] exit"));
 
+    // Push scope with continue -> condition, break -> exit
+    builder.push_scope(Some(condition_block_id.clone()), Some(exit_block_id.clone()));
+
     // Jump to condition or body based on pre_eval
     if pre_eval {
         builder.add_new_instruction(
@@ -993,6 +993,7 @@ fn lower_while(
 
     // Exit block
     builder.set_current_block(exit_block_id);
+    builder.pop_scope();
 
     Ok(BCValue::NULL)
 }
@@ -1010,6 +1011,9 @@ fn lower_for(
     let body_block_id = builder.create_block(Some("for_body"));
     let increment_block_id = builder.create_block(Some("for_increment"));
     let merge_block_id = builder.create_block(Some("for_merge"));
+
+    // Push scope with continue -> increment, break -> merge
+    builder.push_scope(Some(increment_block_id.clone()), Some(merge_block_id.clone()));
 
     builder.add_new_instruction(
         BCInstructionKind::Jump {
@@ -1054,6 +1058,173 @@ fn lower_for(
     )?;
 
     builder.set_current_block(merge_block_id);
+    builder.pop_scope();
+
+    Ok(BCValue::NULL)
+}
+
+/// Lower a C-style switch statement
+fn lower_cswitch(
+    builder: &mut BCBuilder,
+    condition: &MIRExpression,
+    cases: &[(Box<MIRExpression>, Box<MIRExpression>)],
+    default: Option<&MIRExpression>,
+) -> CXResult<BCValue> {
+    let bc_condition = lower_expression(builder, condition)?;
+
+    let exit_block_id = builder.create_block(Some("switch_exit"));
+    let default_block_id = if default.is_some() {
+        builder.create_block(Some("switch_default"))
+    } else {
+        exit_block_id.clone()
+    };
+
+    // Push scope with break -> exit (C switch allows break but not continue)
+    builder.push_scope(None, Some(exit_block_id.clone()));
+
+    // Build targets for jump table
+    let mut targets = Vec::new();
+    let mut case_blocks = Vec::new();
+
+    for (case_value, _) in cases {
+        let case_block_id = builder.create_block(Some("switch_case"));
+        case_blocks.push(case_block_id.clone());
+
+        // Extract integer value from case expression
+        if let MIRExpressionKind::IntLiteral(value, _, _) = &case_value.kind {
+            targets.push((*value as u64, case_block_id));
+        } else {
+            panic!("CSwitch case must be an integer literal");
+        }
+    }
+
+    // Emit jump table
+    builder.add_new_instruction(
+        BCInstructionKind::JumpTable {
+            value: bc_condition,
+            targets,
+            default: default_block_id.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    // C-style switch: cases fall through to next case unless there's a break
+    // Each case body is lowered, and control flows to the next case (not exit)
+    for (i, (_, case_body)) in cases.iter().enumerate() {
+        builder.set_current_block(case_blocks[i].clone());
+        lower_expression(builder, case_body)?;
+
+        // Fall through to next case or exit
+        let next_block = if i + 1 < case_blocks.len() {
+            case_blocks[i + 1].clone()
+        } else if default.is_some() {
+            default_block_id.clone()
+        } else {
+            exit_block_id.clone()
+        };
+
+        builder.add_new_instruction(
+            BCInstructionKind::Jump { target: next_block },
+            BCType::unit(),
+            false,
+        )?;
+    }
+
+    // Default block
+    if let Some(default_expr) = default {
+        builder.set_current_block(default_block_id);
+        lower_expression(builder, default_expr)?;
+        builder.add_new_instruction(
+            BCInstructionKind::Jump {
+                target: exit_block_id.clone(),
+            },
+            BCType::unit(),
+            false,
+        )?;
+    }
+
+    builder.set_current_block(exit_block_id);
+    builder.pop_scope();
+
+    Ok(BCValue::NULL)
+}
+
+/// Lower a match expression (non-fallthrough, like Rust match)
+fn lower_match(
+    builder: &mut BCBuilder,
+    condition: &MIRExpression,
+    arms: &[(Box<MIRExpression>, Box<MIRExpression>)],
+    default: Option<&MIRExpression>,
+) -> CXResult<BCValue> {
+    let bc_condition = lower_expression(builder, condition)?;
+
+    let exit_block_id = builder.create_block(Some("match_exit"));
+    let default_block_id = if default.is_some() {
+        builder.create_block(Some("match_default"))
+    } else {
+        exit_block_id.clone()
+    };
+
+    // Push scope with break -> exit
+    builder.push_scope(None, Some(exit_block_id.clone()));
+
+    // Build targets for jump table
+    let mut targets = Vec::new();
+    let mut arm_blocks = Vec::new();
+
+    for (pattern, _) in arms {
+        let arm_block_id = builder.create_block(Some("match_arm"));
+        arm_blocks.push(arm_block_id.clone());
+
+        // Extract integer value from pattern
+        if let MIRExpressionKind::IntLiteral(value, _, _) = &pattern.kind {
+            targets.push((*value as u64, arm_block_id));
+        } else {
+            panic!("Match pattern must be an integer literal");
+        }
+    }
+
+    // Emit jump table
+    builder.add_new_instruction(
+        BCInstructionKind::JumpTable {
+            value: bc_condition,
+            targets,
+            default: default_block_id.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    // Match arms do NOT fall through - each jumps to exit
+    for (i, (_, arm_body)) in arms.iter().enumerate() {
+        builder.set_current_block(arm_blocks[i].clone());
+        lower_expression(builder, arm_body)?;
+        builder.add_new_instruction(
+            BCInstructionKind::Jump {
+                target: exit_block_id.clone(),
+            },
+            BCType::unit(),
+            false,
+        )?;
+    }
+
+    // Default block
+    if let Some(default_expr) = default {
+        builder.set_current_block(default_block_id);
+        lower_expression(builder, default_expr)?;
+        builder.add_new_instruction(
+            BCInstructionKind::Jump {
+                target: exit_block_id.clone(),
+            },
+            BCType::unit(),
+            false,
+        )?;
+    }
+
+    builder.set_current_block(exit_block_id);
+    builder.pop_scope();
+
     Ok(BCValue::NULL)
 }
 
@@ -1104,11 +1275,15 @@ fn lower_return(builder: &mut BCBuilder, value: Option<&MIRExpression>) -> CXRes
 
 /// Lower a block expression
 fn lower_block(builder: &mut BCBuilder, statements: &[MIRExpression]) -> CXResult<BCValue> {
+    builder.push_scope(None, None);
+
     let mut last_value = BCValue::NULL;
 
     for stmt in statements {
         last_value = lower_expression(builder, stmt)?;
     }
+
+    builder.pop_scope();
 
     Ok(last_value)
 }
