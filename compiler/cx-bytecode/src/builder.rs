@@ -22,8 +22,15 @@ pub struct BCBuilder {
 
     symbol_table: ScopedMap<BCValue>,
     liveness_table: HashMap<CXIdent, BCRegister>,
-    
+    goto_stack: Vec<BCGotoContext>,
+
     function_context: Option<BytecodeFunctionContext>,
+}
+
+#[derive(Debug)]
+pub struct BCGotoContext {
+    pub break_block: Option<CXIdent>,
+    pub continue_block: Option<CXIdent>,
 }
 
 #[derive(Debug)]
@@ -48,6 +55,7 @@ impl BCBuilder {
                 .collect(),
             symbol_table: ScopedMap::new(),
             liveness_table: HashMap::new(),
+            goto_stack: Vec::new(),
 
             function_context: None,
         }
@@ -83,6 +91,19 @@ impl BCBuilder {
         self.symbol_table.pop_scope();
     }
 
+    pub fn push_scope(&mut self, continue_block: Option<CXIdent>, break_block: Option<CXIdent>) {
+        self.symbol_table.push_scope();
+        self.goto_stack.push(BCGotoContext {
+            continue_block,
+            break_block,
+        });
+    }
+    
+    pub fn pop_scope(&mut self) {
+        self.symbol_table.pop_scope();
+        self.goto_stack.pop();
+    }
+
     pub fn dump_current_fn(&self) {
         dump_all(self.fun().blocks.iter());
     }
@@ -98,7 +119,7 @@ impl BCBuilder {
             .as_ref()
             .expect("Attempted to access function context with no current function selected")
     }
-    
+
     pub fn get_deconstructor(&self, _type: &MIRType) -> Option<&BCFunctionPrototype> {
         let destructor_name = base_mangle_deconstructor(_type);
         self.get_prototype(destructor_name.as_str())
@@ -113,10 +134,24 @@ impl BCBuilder {
         todo!()
     }
     
+    pub fn get_continue_block(&self) -> Option<&CXIdent> {
+        self.goto_stack
+            .iter()
+            .rev()
+            .find_map(|ctx| ctx.continue_block.as_ref())
+    }
+    
+    pub fn get_break_target(&self) -> Option<&CXIdent> {
+        self.goto_stack
+            .iter()
+            .rev()
+            .find_map(|ctx| ctx.break_block.as_ref())
+    }
+
     pub fn add_liveness_mapping(&mut self, mir_reg: CXIdent, bc_reg: BCRegister) {
         self.liveness_table.insert(mir_reg, bc_reg);
     }
-    
+
     pub fn get_liveness_mapping(&self, mir_reg: &CXIdent) -> Option<&BCRegister> {
         self.liveness_table.get(mir_reg)
     }
@@ -124,7 +159,7 @@ impl BCBuilder {
     pub fn current_prototype(&self) -> &BCFunctionPrototype {
         &self.fun().prototype
     }
-    
+
     pub fn get_prototype(&self, name: &str) -> Option<&BCFunctionPrototype> {
         self.fn_map.get(name)
     }
@@ -132,9 +167,10 @@ impl BCBuilder {
     pub fn get_symbol(&self, name: &CXIdent) -> Option<BCValue> {
         self.symbol_table.get(name.as_str()).cloned()
     }
-    
+
     pub fn get_global_symbol(&self, name: &str) -> Option<BCValue> {
-        self.global_variables.iter()
+        self.global_variables
+            .iter()
             .position(|global| global.name.as_str() == name)
             .map(|index| BCValue::Global(index as u32))
     }
@@ -311,17 +347,17 @@ impl BCBuilder {
             _type,
         }
     }
-    
+
     pub fn create_block(&mut self, debug_name: Option<&str>) -> CXIdent {
         let context = self.fun_mut();
-        let name : CXIdent = format!("block_{}", context.blocks.len()).into();
+        let name: CXIdent = format!("block_{}", context.blocks.len()).into();
 
         context.blocks.push(BCBasicBlock {
             id: name.clone(),
             debug_name: debug_name.map(|s| s.to_string()),
             body: Vec::new(),
         });
-        
+
         name
     }
 
@@ -332,7 +368,7 @@ impl BCBuilder {
 
         self.fun_mut().current_block = block_id.expect("Block ID not found in function blocks");
     }
-    
+
     pub fn block_count(&self) -> usize {
         let fun = self.fun();
 

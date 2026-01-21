@@ -4,11 +4,11 @@
 //! replacing the old instruction-based lowering which worked with SSA-style MIR.
 
 use cx_bytecode_data::{
-    types::{BCIntegerType, BCType, BCTypeKind},
+    types::{BCFloatType, BCIntegerType, BCType, BCTypeKind},
     BCInstructionKind, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp},
+    expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp},
     program::MIRFunction,
     types::{MIRType, MIRTypeKind},
 };
@@ -675,11 +675,27 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         }
 
         MIRExpressionKind::Break => {
-            todo!("Break lowering - to be implemented")
+            let Some(to) = builder.get_break_target().cloned() else {
+                unreachable!("Break used outside of loop or switch context");
+            };
+            
+            builder.add_new_instruction(
+                BCInstructionKind::Jump { target: to },
+                BCType::unit(),
+                false,
+            )
         }
 
         MIRExpressionKind::Continue => {
-            todo!("Continue lowering - to be implemented")
+            let Some(to) = builder.get_continue_block().cloned() else {
+                unreachable!("Continue used outside of loop context");
+            };
+            
+            builder.add_new_instruction(
+                BCInstructionKind::Jump { target: to },
+                BCType::unit(),
+                false,
+            )
         }
 
         MIRExpressionKind::CSwitch { .. } => {
@@ -725,8 +741,36 @@ fn lower_binary_op(
                 right: bc_rhs,
             }
         }
-        MIRBinOp::PtrDiff { .. } | MIRBinOp::Pointer { .. } => {
-            todo!("Pointer binary operations - to be implemented")
+        MIRBinOp::PtrDiff { op, ptr_inner } => {
+            let bc_inner_type = builder.convert_cx_type(ptr_inner);
+            let ptr_op = match op {
+                MIRPtrDiffBinOp::ADD => BCPtrBinOp::ADD,
+                MIRPtrDiffBinOp::SUB => BCPtrBinOp::SUB,
+            };
+            BCInstructionKind::PointerBinOp {
+                op: ptr_op,
+                ptr_type: bc_inner_type.clone(),
+                type_padded_size: bc_inner_type.size() as u64,
+                left: bc_lhs,
+                right: bc_rhs,
+            }
+        }
+        MIRBinOp::Pointer { op } => {
+            let ptr_op = match op {
+                MIRPtrBinOp::EQ => BCPtrBinOp::EQ,
+                MIRPtrBinOp::NE => BCPtrBinOp::NE,
+                MIRPtrBinOp::LT => BCPtrBinOp::LT,
+                MIRPtrBinOp::GT => BCPtrBinOp::GT,
+                MIRPtrBinOp::LE => BCPtrBinOp::LE,
+                MIRPtrBinOp::GE => BCPtrBinOp::GE,
+            };
+            BCInstructionKind::PointerBinOp {
+                op: ptr_op,
+                ptr_type: BCType::default_pointer(),
+                type_padded_size: 1,
+                left: bc_lhs,
+                right: bc_rhs,
+            }
         }
     };
 
@@ -843,8 +887,10 @@ fn lower_if(
     else_branch: Option<&MIRExpression>,
     _result_type: &MIRType,
 ) -> CXResult<BCValue> {
+    builder.push_scope(None, None);
     let bc_condition = lower_expression(builder, condition)?;
-
+    builder.pop_scope();
+    
     let then_block_id = builder.create_block(Some("then"));
     let else_block_id = builder.create_block(Some("else"));
     let merge_block_id = if else_branch.is_some() {
@@ -1140,8 +1186,8 @@ use cx_bytecode_data::BCCoercionType;
 
 fn convert_coercion(
     coercion: &MIRCoercion,
-    _operand: &BCValue,
-    _builder: &BCBuilder,
+    operand: &BCValue,
+    builder: &BCBuilder,
 ) -> CXResult<BCCoercionType> {
     match coercion {
         MIRCoercion::ReinterpretBits => Ok(BCCoercionType::BitCast),
@@ -1159,19 +1205,70 @@ fn convert_coercion(
             }
         }
         MIRCoercion::FloatCast { .. } => {
-            // For float casts, we need more info
-            // TODO: Properly implement float casts
-            todo!("FloatCast coercion - to be implemented")
+            let from_type = match operand {
+                BCValue::FloatImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Float(ft) = _type.kind {
+                        ft
+                    } else {
+                        BCFloatType::F64
+                    }
+                }
+                _ => BCFloatType::F64,
+            };
+            Ok(BCCoercionType::FloatCast { from: from_type })
         }
-        MIRCoercion::IntToFloat { .. } => {
-            todo!("IntToFloat coercion - to be implemented")
+        MIRCoercion::IntToFloat { sextend, .. } => {
+            let from_type = match operand {
+                BCValue::IntImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Integer(it) = _type.kind {
+                        it
+                    } else {
+                        BCIntegerType::I64
+                    }
+                }
+                _ => BCIntegerType::I64,
+            };
+            Ok(BCCoercionType::IntToFloat {
+                from: from_type,
+                sextend: *sextend,
+            })
         }
         MIRCoercion::PtrToInt { .. } => Ok(BCCoercionType::PtrToInt),
-        MIRCoercion::IntToPtr { .. } => {
-            todo!("IntToPtr coercion - to be implemented")
+        MIRCoercion::IntToPtr { sextend } => {
+            let from_type = match operand {
+                BCValue::IntImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Integer(it) = _type.kind {
+                        it
+                    } else {
+                        BCIntegerType::I64
+                    }
+                }
+                _ => BCIntegerType::I64,
+            };
+            Ok(BCCoercionType::IntToPtr {
+                from: from_type,
+                sextend: *sextend,
+            })
         }
-        MIRCoercion::FloatToInt { .. } => {
-            todo!("FloatToInt coercion - to be implemented")
+        MIRCoercion::FloatToInt { sextend, .. } => {
+            let from_type = match operand {
+                BCValue::FloatImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Float(ft) = _type.kind {
+                        ft
+                    } else {
+                        BCFloatType::F64
+                    }
+                }
+                _ => BCFloatType::F64,
+            };
+            Ok(BCCoercionType::FloatToInt {
+                from: from_type,
+                sextend: *sextend,
+            })
         }
     }
 }
@@ -1250,9 +1347,17 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
             false,
         )?;
     } else if !mir_fn.prototype.return_type.is_unit() {
+        let return_value = if result == BCValue::NULL {
+            BCValue::IntImmediate {
+                val: 0,
+                _type: BCIntegerType::I32,
+            }
+        } else {
+            result
+        };
         builder.add_new_instruction(
             BCInstructionKind::Return {
-                value: Some(result),
+                value: Some(return_value),
             },
             BCType::unit(),
             false,
