@@ -854,16 +854,22 @@ pub(crate) fn typecheck_int_int_binop(
             CXBinOp::Multiply => MIRIntegerBinOp::MUL,
             CXBinOp::Divide => MIRIntegerBinOp::DIV,
             CXBinOp::Modulus => MIRIntegerBinOp::MOD,
+            
             CXBinOp::Less if !*result_signed => MIRIntegerBinOp::LT,
             CXBinOp::Less if *result_signed => MIRIntegerBinOp::ILT,
+            
             CXBinOp::Greater if !*result_signed => MIRIntegerBinOp::GT,
             CXBinOp::Greater if *result_signed => MIRIntegerBinOp::IGT,
+            
             CXBinOp::LessEqual if !*result_signed => MIRIntegerBinOp::LE,
             CXBinOp::LessEqual if *result_signed => MIRIntegerBinOp::ILE,
+            
             CXBinOp::GreaterEqual if !*result_signed => MIRIntegerBinOp::GE,
             CXBinOp::GreaterEqual if *result_signed => MIRIntegerBinOp::IGE,
+            
             CXBinOp::Equal => MIRIntegerBinOp::EQ,
             CXBinOp::NotEqual => MIRIntegerBinOp::NE,
+            
             CXBinOp::LOr => MIRIntegerBinOp::LOR,
             CXBinOp::LAnd => MIRIntegerBinOp::LAND,
 
@@ -903,6 +909,35 @@ pub(crate) fn typecheck_int_int_binop(
             signed: false,
         }
         .into(),
+         
+        CXBinOp::LAnd | CXBinOp::LOr => {
+            lhs = implicit_cast(
+                env,
+                expr,
+                lhs,
+                &MIRTypeKind::Integer {
+                    _type: CXIntegerType::I1,
+                    signed: false,
+                }
+                .into(),
+            )?;
+            
+            rhs = implicit_cast(
+                env,
+                expr,
+                rhs,
+                &MIRTypeKind::Integer {
+                    _type: CXIntegerType::I1,
+                    signed: false,
+                }
+                .into(),
+            )?;
+            
+            MIRTypeKind::Integer {
+                _type: CXIntegerType::I1,
+                signed: false,
+            }.into()
+        },
 
         _ => {
             return log_typecheck_error!(
