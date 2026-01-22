@@ -78,6 +78,13 @@ pub enum MIRExpressionKind {
         index: Box<MIRExpression>,
         element_type: MIRType,
     },
+    
+    PatternIs {
+        lhs: Box<MIRExpression>,
+        sum_type: MIRType,
+        variant_index: usize,
+        inner_name: CXIdent,
+    },
 
     // Tagged Unions
     TaggedUnionTag {

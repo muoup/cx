@@ -171,7 +171,7 @@ pub fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            env.push_scope(None, None);
+            env.push_scope(false, false);
 
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
@@ -199,7 +199,7 @@ pub fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            env.push_scope(None, None);
+            env.push_scope(true, true);
 
             let condition_result = typecheck_expr(env, base_data, condition, None)?;
             let body_result = typecheck_expr(env, base_data, body, None)?;
@@ -222,7 +222,7 @@ pub fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            env.push_scope(None, None);
+            env.push_scope(true, true);
 
             let init_result = typecheck_expr(env, base_data, init, None)?;
             let condition_result = typecheck_expr(env, base_data, condition, None)?;
@@ -243,12 +243,7 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Break => {
-            let Some(_break_to) = env
-                .scope_stack
-                .iter()
-                .rfind(|inner| inner.break_to.is_some())
-                .and_then(|s| s.break_to.clone())
-            else {
+            let Some(_) = env.scope_stack.iter().rfind(|inner| inner.has_break_merge) else {
                 return log_typecheck_error!(
                     env,
                     expr,
@@ -263,11 +258,10 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Continue => {
-            let Some(_continue_to) = env
+            let Some(_) = env
                 .scope_stack
                 .iter()
-                .rfind(|inner| inner.continue_to.is_some())
-                .and_then(|s| s.continue_to.clone())
+                .rfind(|inner| inner.has_continue_merge)
             else {
                 return log_typecheck_error!(
                     env,

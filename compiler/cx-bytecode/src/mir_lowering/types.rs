@@ -38,13 +38,23 @@ fn convert_type(cx_type: &MIRType) -> BCType {
     }
 }
 
+fn convert_parameter_type(param_type: &MIRType) -> BCType {
+    let bc_type = convert_type(param_type);
+    
+    if bc_type.is_structure() {
+        BCType::default_pointer()
+    } else {
+        bc_type
+    }
+}
+
 pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> BCFunctionPrototype {
     let mut params = cx_proto
         .params
         .iter()
         .map(|param| BCParameter {
             name: param.name.as_ref().map(|name| name.as_string()),
-            _type: convert_type(&param._type),
+            _type: convert_parameter_type(&param._type),
         })
         .collect::<Vec<_>>();
 

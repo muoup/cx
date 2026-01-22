@@ -4,7 +4,7 @@
 
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
-    BCInstructionKind, BCPtrBinOp, BCValue,
+    BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{MIRExpression, MIRExpressionKind},
@@ -17,8 +17,13 @@ use crate::builder::BCBuilder;
 
 use super::binary_ops::{lower_binary_op, lower_unary_op};
 use super::coercion::lower_type_conversion;
-use super::control_flow::{lower_block, lower_cswitch, lower_for, lower_if, lower_match, lower_return, lower_while};
-use super::tagged_union::{lower_construct_tagged_union, lower_tagged_union_get, lower_tagged_union_set, lower_tagged_union_tag};
+use super::control_flow::{
+    lower_block, lower_cswitch, lower_for, lower_if, lower_match, lower_return, lower_while,
+};
+use super::tagged_union::{
+    get_tagged_union_tag, lower_construct_tagged_union, lower_tagged_union_get,
+    lower_tagged_union_set,
+};
 
 /// Main entry point for expression lowering
 pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResult<BCValue> {
@@ -157,9 +162,9 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                 BCType::default_pointer(),
                 true,
             )?;
-            
+
             let bc_source = lower_expression(builder, source)?;
-            
+
             builder.add_new_instruction(
                 BCInstructionKind::Memcpy {
                     dest: new_region.clone(),
@@ -173,8 +178,8 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                 BCType::unit(),
                 false,
             )?;
-            
-            Ok(bc_source)
+
+            Ok(new_region)
         }
 
         // ===== Control Flow =====
@@ -203,7 +208,14 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             body,
         } => lower_for(builder, init, condition, increment, body),
 
-        MIRExpressionKind::Return { value } => lower_return(builder, value.as_deref()),
+        MIRExpressionKind::Return { value } => {
+            let val = value
+                .as_ref()
+                .map(|v| lower_expression(builder, v))
+                .transpose()?;
+            builder.add_return(val)?;
+            Ok(BCValue::NULL)
+        }
 
         MIRExpressionKind::Block { statements } => lower_block(builder, statements),
 
@@ -220,8 +232,14 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         } => lower_type_conversion(builder, operand, *conversion, &expr._type),
 
         // ===== Lifetime Management =====
-        MIRExpressionKind::LifetimeStart { variable: _, _type: _ } => Ok(BCValue::NULL),
-        MIRExpressionKind::LifetimeEnd { variable: _, _type: _ } => Ok(BCValue::NULL),
+        MIRExpressionKind::LifetimeStart {
+            variable: _,
+            _type: _,
+        } => Ok(BCValue::NULL),
+        MIRExpressionKind::LifetimeEnd {
+            variable: _,
+            _type: _,
+        } => Ok(BCValue::NULL),
         MIRExpressionKind::LeakLifetime { expression } => lower_expression(builder, expression),
 
         // ===== Aggregate Access =====
@@ -271,14 +289,56 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             )
         }
 
-        // ===== Tagged Unions =====
-        MIRExpressionKind::TaggedUnionTag { value, sum_type } => {
-            lower_tagged_union_tag(builder, value, sum_type)
+        MIRExpressionKind::PatternIs {
+            lhs,
+            sum_type,
+            variant_index,
+            inner_name,
+        } => {
+            let bc_lhs = lower_expression(builder, lhs)?;
+
+            let alias = builder.add_new_instruction(
+                BCInstructionKind::Alias {
+                    value: bc_lhs.clone(),
+                },
+                BCType::default_pointer(),
+                true,
+            )?;
+
+            builder.insert_symbol(inner_name.clone(), alias);
+            let tag_ptr = get_tagged_union_tag(builder, bc_lhs, sum_type)?;
+            let tag_value = builder.add_new_instruction(
+                BCInstructionKind::Load {
+                    memory: tag_ptr,
+                    _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+                },
+                BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+                true,
+            )?;
+
+            let comparison = builder.add_new_instruction(
+                BCInstructionKind::IntegerBinOp {
+                    op: BCIntBinOp::EQ,
+                    left: tag_value,
+                    right: BCValue::IntImmediate {
+                        val: *variant_index as i64,
+                        _type: BCIntegerType::I8,
+                    },
+                },
+                BCType::bool(),
+                true,
+            )?;
+
+            Ok(comparison)
         }
 
-        MIRExpressionKind::TaggedUnionGet { value, .. } => {
-            lower_tagged_union_get(builder, value)
+        // ===== Tagged Unions =====
+        MIRExpressionKind::TaggedUnionTag { value, sum_type } => {
+            let bc_value = lower_expression(builder, value)?;
+            get_tagged_union_tag(builder, bc_value, &sum_type)
         }
+
+        MIRExpressionKind::TaggedUnionGet { value, .. } => lower_tagged_union_get(builder, value),
 
         MIRExpressionKind::TaggedUnionSet {
             target,
@@ -309,7 +369,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             let Some(to) = builder.get_break_target().cloned() else {
                 unreachable!("Break used outside of loop or switch context");
             };
-            
+
             builder.add_new_instruction(
                 BCInstructionKind::Jump { target: to },
                 BCType::unit(),
@@ -321,7 +381,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             let Some(to) = builder.get_continue_block().cloned() else {
                 unreachable!("Continue used outside of loop context");
             };
-            
+
             builder.add_new_instruction(
                 BCInstructionKind::Jump { target: to },
                 BCType::unit(),
@@ -567,7 +627,13 @@ fn lower_struct_initializer(
 /// Generate bytecode for a MIR function
 pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
     let prototype = builder.convert_cx_prototype(&mir_fn.prototype);
-    builder.new_function(prototype);
+    let return_buffer_size = if mir_fn.prototype.return_type.is_memory_resident() {
+        Some(mir_fn.prototype.return_type.type_size())
+    } else {
+        None
+    };
+
+    builder.new_function(prototype, return_buffer_size);
 
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
@@ -599,8 +665,6 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
                 )?;
                 builder.insert_symbol(name.clone(), alloc);
             } else {
-                println!("{}: {} -> {}", name, param._type, bc_param_type);
-
                 builder.insert_symbol(
                     name.clone(),
                     BCValue::ParameterRef((i + param_offset) as u32),
@@ -609,54 +673,35 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
         }
     }
 
-    let result = lower_expression(builder, &mir_fn.body)?;
+    lower_expression(builder, &mir_fn.body)?;
 
-    if has_return_buffer {
-        let return_buffer = BCValue::ParameterRef(0);
-        let return_type = builder.convert_cx_type(&mir_fn.prototype.return_type);
-
-        builder.add_new_instruction(
-            BCInstructionKind::Memcpy {
-                dest: return_buffer.clone(),
-                src: result,
-                size: BCValue::IntImmediate {
-                    val: return_type.size() as i64,
-                    _type: BCIntegerType::I64,
+    if !matches!(
+        builder.current_block_last_inst().map(|i| &i.kind),
+        Some(BCInstructionKind::Return { .. })
+    ) {
+        if mir_fn.prototype.name.as_str() == "main" {
+            builder.add_new_instruction(
+                BCInstructionKind::Return {
+                    value: Some(BCValue::IntImmediate {
+                        val: 0,
+                        _type: BCIntegerType::I32,
+                    }),
                 },
-                alignment: return_type.alignment(),
-            },
-            BCType::unit(),
-            false,
-        )?;
-        builder.add_new_instruction(
-            BCInstructionKind::Return {
-                value: Some(return_buffer),
-            },
-            BCType::unit(),
-            false,
-        )?;
-    } else if !mir_fn.prototype.return_type.is_unit() {
-        let return_value = if result == BCValue::NULL {
-            BCValue::IntImmediate {
-                val: 0,
-                _type: BCIntegerType::I32,
-            }
+                BCType::unit(),
+                false,
+            )?;
+        } else if mir_fn.prototype.return_type.is_unit() {
+            builder.add_new_instruction(
+                BCInstructionKind::Return { value: None },
+                BCType::unit(),
+                false,
+            )?;
         } else {
-            result
-        };
-        builder.add_new_instruction(
-            BCInstructionKind::Return {
-                value: Some(return_value),
-            },
-            BCType::unit(),
-            false,
-        )?;
-    } else {
-        builder.add_new_instruction(
-            BCInstructionKind::Return { value: None },
-            BCType::unit(),
-            false,
-        )?;
+            unreachable!(
+                "Function '{}' missing return statement",
+                mir_fn.prototype.name
+            );
+        }
     }
 
     builder.finish_function();

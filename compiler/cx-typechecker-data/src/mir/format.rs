@@ -228,6 +228,19 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 MIRExpressionFormatter::new(array, self.depth + 1).fmt(f)?;
                 MIRExpressionFormatter::new(index, self.depth + 1).fmt(f)
             }
+            MIRExpressionKind::PatternIs {
+                lhs,
+                sum_type,
+                variant_index,
+                inner_name,
+            } => {
+                writeln!(
+                    f,
+                    "PatternIs variant {} of {} (create {}) <'{}>",
+                    variant_index, sum_type, self.expr._type, inner_name
+                )?;
+                MIRExpressionFormatter::new(lhs, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::TaggedUnionTag { value, .. } => {
                 writeln!(f, "TaggedUnionTag <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(value, self.depth + 1).fmt(f)

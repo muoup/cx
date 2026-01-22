@@ -37,8 +37,8 @@ pub enum MIRFunctionGenRequest {
 }
 
 pub struct Scope {
-    pub break_to: Option<CXIdent>,
-    pub continue_to: Option<CXIdent>,
+    pub has_break_merge: bool,
+    pub has_continue_merge: bool,
 }
 
 pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
@@ -61,7 +61,7 @@ pub struct TypeEnvironment<'a> {
     pub scope_stack: Vec<Scope>,
 
     pub in_external_templated_function: bool,
-    
+
     pub generated_functions: Vec<MIRFunction>,
 }
 
@@ -99,11 +99,11 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn push_scope(&mut self, continue_to: Option<CXIdent>, break_to: Option<CXIdent>) {
+    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
         self.symbol_table.push_scope();
         self.scope_stack.push(Scope {
-            break_to,
-            continue_to,
+            has_break_merge,
+            has_continue_merge,
         });
     }
 

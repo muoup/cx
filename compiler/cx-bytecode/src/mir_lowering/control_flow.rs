@@ -1,8 +1,7 @@
 //! Control flow lowering (if, while, for, switch, match, return, block)
 
 use cx_bytecode_data::{
-    types::{BCIntegerType, BCType},
-    BCInstructionKind, BCValue,
+    BCInstructionKind, BCValue, types::{BCIntegerType, BCType, BCTypeKind}
 };
 use cx_typechecker_data::mir::{
     expression::{MIRExpression, MIRExpressionKind},
@@ -10,7 +9,7 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::builder::BCBuilder;
+use crate::{builder::BCBuilder, mir_lowering::tagged_union::get_tagged_union_tag};
 use super::expressions::lower_expression;
 
 /// Lower an if expression
@@ -23,7 +22,6 @@ pub fn lower_if(
 ) -> CXResult<BCValue> {
     builder.push_scope(None, None);
     let bc_condition = lower_expression(builder, condition)?;
-    builder.pop_scope();
     
     let then_block_id = builder.create_block(Some("then"));
     let else_block_id = builder.create_block(Some("else"));
@@ -66,6 +64,7 @@ pub fn lower_if(
         )?;
     }
 
+    builder.pop_scope();
     builder.set_current_block(merge_block_id);
     Ok(BCValue::NULL)
 }
@@ -280,8 +279,23 @@ pub fn lower_match(
     arms: &[(Box<MIRExpression>, Box<MIRExpression>)],
     default: Option<&MIRExpression>,
 ) -> CXResult<BCValue> {
-    let bc_condition = lower_expression(builder, condition)?;
-
+    let mut bc_condition = lower_expression(builder, condition)?;
+    let inner = condition._type.mem_ref_inner()
+        .cloned()
+        .unwrap_or_else(|| condition._type.clone());
+    
+    if inner.is_tagged_union() {
+        let tag_ptr = get_tagged_union_tag(builder, bc_condition.clone(), &inner)?;
+        bc_condition = builder.add_new_instruction(
+            BCInstructionKind::Load {
+                memory: tag_ptr,
+                _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+            },
+            BCType::from(BCTypeKind::Integer(BCIntegerType::I8)),
+            true,
+        )?;
+    }
+    
     let exit_block_id = builder.create_block(Some("match_exit"));
     let default_block_id = if default.is_some() {
         builder.create_block(Some("match_default"))

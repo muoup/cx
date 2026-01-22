@@ -332,23 +332,21 @@ pub(crate) fn typecheck_method_call(
 
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
 
-    Ok(
-        TypecheckResult::expr(
-            prototype.return_type.clone(),
-            MIRExpressionKind::CallFunction {
-                function: Box::new(MIRExpression {
-                    kind: MIRExpressionKind::FunctionReference {
-                        implicit_variables: implicit_variables.clone(),
-                    },
-                    _type: MIRTypeKind::Function {
-                        prototype: prototype.clone(),
-                    }
-                    .into(),
-                }),
-                arguments: args.clone(),
-            },
-        )
-    )
+    Ok(TypecheckResult::expr(
+        prototype.return_type.clone(),
+        MIRExpressionKind::CallFunction {
+            function: Box::new(MIRExpression {
+                kind: MIRExpressionKind::FunctionReference {
+                    implicit_variables: implicit_variables.clone(),
+                },
+                _type: MIRTypeKind::Function {
+                    prototype: prototype.clone(),
+                }
+                .into(),
+            }),
+            arguments: args.clone(),
+        },
+    ))
 }
 
 fn typecheck_type_constructor(
@@ -527,7 +525,7 @@ pub(crate) fn typecheck_is(
     let TypeConstructor {
         union_name,
         variant_name,
-        ..
+        inner,
     } = deconstruct_type_constructor(env, rhs)?;
 
     if *expected_union_name != union_name {
@@ -565,43 +563,33 @@ pub(crate) fn typecheck_is(
         );
     };
 
-    let tag = MIRExpression {
-        kind: MIRExpressionKind::TaggedUnionTag {
-            value: Box::new(tc_lhs.into_expression()),
-            sum_type: union_type.clone(),
-        },
-        _type: MIRTypeKind::Integer {
-            _type: CXIntegerType::I8,
-            signed: false,
-        }
-        .into(),
-    };
-
-    let comparison = MIRExpression {
-        kind: MIRExpressionKind::BinaryOperation {
-            op: MIRBinOp::Integer {
-                itype: CXIntegerType::I8,
-                op: MIRIntegerBinOp::EQ,
+    let inner_name = if let CXExprKind::Identifier(name) = &inner.kind {
+        env.insert_symbol(
+            name.to_string(),
+            MIRExpression {
+                kind: MIRExpressionKind::Variable(name.clone()),
+                _type: variant_type.clone().mem_ref_to(),
             },
-            lhs: Box::new(tag),
-            rhs: Box::new(MIRExpression::int_literal(
-                expected_tag as i64,
-                CXIntegerType::I8,
-                false,
-            )),
-        },
-        _type: MIRTypeKind::Integer {
-            _type: CXIntegerType::I1,
-            signed: false,
-        }
-        .into(),
+        );
+        name.clone()
+    } else if matches!(inner.kind, CXExprKind::Unit) {
+        CXIdent::from("")
+    } else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            "unknown inner expression for 'is' operator: {:?}",
+            inner
+        );
     };
 
     Ok(TypecheckResult::expr(
-        variant_type.clone().mem_ref_to(),
-        MIRExpressionKind::TaggedUnionGet {
-            value: Box::new(comparison),
-            variant_type: variant_type.clone(),
+        MIRType::bool(),
+        MIRExpressionKind::PatternIs {
+            lhs: Box::new(tc_lhs.into_expression()),
+            sum_type: union_type.clone(),
+            variant_index: expected_tag,
+            inner_name,
         },
     ))
 }
@@ -854,22 +842,22 @@ pub(crate) fn typecheck_int_int_binop(
             CXBinOp::Multiply => MIRIntegerBinOp::MUL,
             CXBinOp::Divide => MIRIntegerBinOp::DIV,
             CXBinOp::Modulus => MIRIntegerBinOp::MOD,
-            
+
             CXBinOp::Less if !*result_signed => MIRIntegerBinOp::LT,
             CXBinOp::Less if *result_signed => MIRIntegerBinOp::ILT,
-            
+
             CXBinOp::Greater if !*result_signed => MIRIntegerBinOp::GT,
             CXBinOp::Greater if *result_signed => MIRIntegerBinOp::IGT,
-            
+
             CXBinOp::LessEqual if !*result_signed => MIRIntegerBinOp::LE,
             CXBinOp::LessEqual if *result_signed => MIRIntegerBinOp::ILE,
-            
+
             CXBinOp::GreaterEqual if !*result_signed => MIRIntegerBinOp::GE,
             CXBinOp::GreaterEqual if *result_signed => MIRIntegerBinOp::IGE,
-            
+
             CXBinOp::Equal => MIRIntegerBinOp::EQ,
             CXBinOp::NotEqual => MIRIntegerBinOp::NE,
-            
+
             CXBinOp::LOr => MIRIntegerBinOp::LOR,
             CXBinOp::LAnd => MIRIntegerBinOp::LAND,
 
@@ -909,7 +897,7 @@ pub(crate) fn typecheck_int_int_binop(
             signed: false,
         }
         .into(),
-         
+
         CXBinOp::LAnd | CXBinOp::LOr => {
             lhs = implicit_cast(
                 env,
@@ -921,7 +909,7 @@ pub(crate) fn typecheck_int_int_binop(
                 }
                 .into(),
             )?;
-            
+
             rhs = implicit_cast(
                 env,
                 expr,
@@ -932,12 +920,13 @@ pub(crate) fn typecheck_int_int_binop(
                 }
                 .into(),
             )?;
-            
+
             MIRTypeKind::Integer {
                 _type: CXIntegerType::I1,
                 signed: false,
-            }.into()
-        },
+            }
+            .into()
+        }
 
         _ => {
             return log_typecheck_error!(

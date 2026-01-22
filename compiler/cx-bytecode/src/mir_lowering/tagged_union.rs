@@ -1,5 +1,7 @@
 //! Tagged union (sum type) lowering
 
+use std::alloc::alloc;
+
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
     BCInstructionKind, BCValue,
@@ -14,12 +16,11 @@ use crate::builder::BCBuilder;
 use super::expressions::lower_expression;
 
 /// Lower getting the tag from a tagged union
-pub fn lower_tagged_union_tag(
+pub fn get_tagged_union_tag(
     builder: &mut BCBuilder,
-    value: &MIRExpression,
+    value: BCValue,
     sum_type: &MIRType,
 ) -> CXResult<BCValue> {
-    let bc_value = lower_expression(builder, value)?;
     let bc_sum_type = builder.convert_cx_type(sum_type);
 
     let BCTypeKind::Struct { fields, .. } = &bc_sum_type.kind else {
@@ -30,7 +31,7 @@ pub fn lower_tagged_union_tag(
 
     builder.add_new_instruction(
         BCInstructionKind::StructAccess {
-            struct_: bc_value,
+            struct_: value,
             struct_type: bc_sum_type,
             field_index: 1,
             field_offset: tag_offset,
@@ -63,19 +64,7 @@ pub fn lower_tagged_union_set(
         unreachable!("TaggedUnion must lower to struct type");
     };
 
-    let tag_offset = fields[0].1.size();
-
-    let tag_addr = builder.add_new_instruction(
-        BCInstructionKind::StructAccess {
-            struct_: bc_target.clone(),
-            struct_type: bc_sum_type,
-            field_index: 1,
-            field_offset: tag_offset,
-        },
-        BCType::default_pointer(),
-        true,
-    )?;
-
+    let tag_addr = get_tagged_union_tag(builder, bc_target.clone(), sum_type)?;
     builder.add_new_instruction(
         BCInstructionKind::Store {
             memory: tag_addr,
@@ -139,23 +128,7 @@ pub fn lower_construct_tagged_union(
         true,
     )?;
 
-    let BCTypeKind::Struct { fields, .. } = &bc_sum_type.kind else {
-        unreachable!("TaggedUnion must lower to struct type");
-    };
-
-    let tag_offset = fields[0].1.size();
-
-    let tag_addr = builder.add_new_instruction(
-        BCInstructionKind::StructAccess {
-            struct_: allocation.clone(),
-            struct_type: bc_sum_type,
-            field_index: 1,
-            field_offset: tag_offset,
-        },
-        BCType::default_pointer(),
-        true,
-    )?;
-
+    let tag_addr = get_tagged_union_tag(builder, allocation.clone(), sum_type)?;
     builder.add_new_instruction(
         BCInstructionKind::Store {
             memory: tag_addr,

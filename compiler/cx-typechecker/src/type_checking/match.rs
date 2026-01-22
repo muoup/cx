@@ -22,7 +22,7 @@ pub fn typecheck_switch(
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(None, None);
+    env.push_scope(false, false);
 
     let condition_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
@@ -41,8 +41,10 @@ pub fn typecheck_switch(
             .unwrap_or_else(CXExpr::default);
 
         // Typecheck the case body
+        env.push_scope(true, false);
         let case_body = typecheck_expr(env, base_data, &case_expr, None)?;
-
+        env.pop_scope();
+        
         // Create a pattern expression that matches the constant value
         let pattern_expr = MIRExpression {
             kind: MIRExpressionKind::IntLiteral(*case_value as i64, CXIntegerType::I64, true),
@@ -60,10 +62,12 @@ pub fn typecheck_switch(
 
     // Handle default case
     let default_expr = default_case.and_then(|&idx| block.get(idx).cloned());
-
     let default_body = match default_expr {
         Some(expr) => {
+            env.push_scope(true, false);
             let body = typecheck_expr(env, base_data, &expr, None)?;
+            env.pop_scope();
+            
             Some(Box::new(body.into_expression()))
         }
         None => None,
@@ -149,7 +153,7 @@ pub fn typecheck_match(
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(None, None);
+    env.push_scope(true, false);
 
     let expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
     let expr_type = expr_value.get_type();
@@ -184,7 +188,7 @@ pub fn typecheck_match(
                 };
 
                 // Typecheck the body
-                env.push_scope(None, None);
+                env.push_scope(true, false);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
                 env.pop_scope();
 
@@ -262,7 +266,7 @@ pub fn typecheck_match(
                 };
 
                 // Typecheck the body with the variant value bound
-                env.push_scope(None, None);
+                env.push_scope(false, false);
                 env.insert_symbol(name.as_string(), variant_value_expr);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
                 env.pop_scope();
@@ -277,7 +281,7 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            env.push_scope(None, None);
+            env.push_scope(false, false);
             let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression();
             env.pop_scope();
             Some(Box::new(body))

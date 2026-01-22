@@ -31,7 +31,7 @@ fn typecheck_function(
     prototype: MIRFunctionPrototype,
     body: &CXExpr,
 ) -> CXResult<()> {
-    env.push_scope(None, None);
+    env.push_scope(false, false);
     env.current_function = Some(prototype.clone());
 
     for MIRParameter { name, _type } in prototype.params.iter() {
