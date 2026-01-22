@@ -38,14 +38,6 @@ fn convert_type(cx_type: &MIRType) -> BCType {
     }
 }
 
-fn convert_argument_type(cx_type: &MIRType) -> BCType {
-    if cx_type.is_memory_resident() {
-        BCType::default_pointer()
-    } else {
-        convert_type(cx_type)
-    }
-}
-
 pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> BCFunctionPrototype {
     let mut params = cx_proto
         .params
