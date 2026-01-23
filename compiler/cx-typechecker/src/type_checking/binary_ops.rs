@@ -1117,32 +1117,46 @@ pub struct StructField {
     pub field_type: MIRType,
 }
 
-pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<StructField> {
-    let mut field_index = 0;
+pub fn struct_field_offset(struct_type: &MIRType, field_index: usize) -> Option<usize> {
+    let struct_type = struct_type.memory_resident_type();
+
+    let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
+        unreachable!("Invalid type for struct_field_offset: {}", struct_type);
+    };
+    
     let mut field_offset = 0;
 
+    for (i, (_, field_type)) in fields.iter().enumerate() {
+        let field_alignment = field_type.type_alignment();
+
+        field_offset = (field_offset + field_alignment - 1) / field_alignment * field_alignment;
+
+        if i == field_index {
+            return Some(field_offset);
+        }
+
+        field_offset += field_type.type_size();
+    }
+
+    None
+}
+
+pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<StructField> {
     let struct_type = struct_type.memory_resident_type();
 
     let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
         unreachable!("Invalid type for struct_field: {}", struct_type);
     };
-
-    for (field_name_i, field_type) in fields.iter() {
-        let field_alignment = field_type.type_alignment();
-
-        field_offset = (field_offset * field_alignment).div_ceil(field_alignment);
-
-        if field_name_i.as_str() == field_name {
-            return Some(StructField {
-                index: field_index,
-                offset: field_offset,
-                field_type: field_type.clone(),
-            });
-        }
-
-        field_offset += field_type.type_size();
-        field_index += 1;
-    }
-
-    None
+    
+    fields.iter()
+        .position(|(name, _)| name.as_str() == field_name)
+        .and_then(|index| {
+            let offset = struct_field_offset(struct_type, index)?;
+            
+            Some(StructField {
+                index,
+                offset,
+                field_type: fields[index].1.clone(),
+            })
+        })
 }

@@ -7,7 +7,7 @@ use cx_bytecode_data::{
     BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
+    expression::{MIRExpression, MIRExpressionKind, StructInitialization},
     program::MIRFunction,
     types::MIRTypeKind,
 };
@@ -18,7 +18,7 @@ use crate::builder::BCBuilder;
 use super::binary_ops::{lower_binary_op, lower_unary_op};
 use super::coercion::lower_type_conversion;
 use super::control_flow::{
-    lower_block, lower_cswitch, lower_for, lower_if, lower_match, lower_return, lower_while,
+    lower_cswitch, lower_for, lower_if, lower_match, lower_return, lower_while,
 };
 use super::tagged_union::{
     get_tagged_union_tag, lower_construct_tagged_union, lower_tagged_union_get,
@@ -213,11 +213,16 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                 .as_ref()
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
-            builder.add_return(val)?;
-            Ok(BCValue::NULL)
+            lower_return(builder, val)
         }
 
-        MIRExpressionKind::Block { statements } => lower_block(builder, statements),
+        MIRExpressionKind::Block { statements } => {
+            for statement in statements {
+                lower_expression(builder, statement)?;
+            }
+            
+            Ok(BCValue::NULL)
+        }
 
         // ===== Function Calls =====
         MIRExpressionKind::CallFunction {
@@ -547,7 +552,7 @@ fn lower_array_initializer(
 
 fn lower_struct_initializer(
     builder: &mut BCBuilder,
-    initializations: &[(usize, MIRExpression)],
+    initializations: &[StructInitialization],
     struct_type: &cx_typechecker_data::mir::types::MIRType,
 ) -> CXResult<BCValue> {
     let bc_struct_type = builder.convert_cx_type(struct_type);
@@ -561,34 +566,17 @@ fn lower_struct_initializer(
         true,
     )?;
 
-    let BCTypeKind::Struct { fields, .. } = &bc_struct_type.kind else {
-        unreachable!("StructInitializer must have struct type");
-    };
-
-    let mut current_offset = 0usize;
-    let field_offsets: Vec<usize> = fields
-        .iter()
-        .map(|(_, field_type)| {
-            let alignment = field_type.alignment() as usize;
-            let padding = (alignment - (current_offset % alignment)) % alignment;
-            current_offset += padding;
-            let offset = current_offset;
-            current_offset += field_type.size();
-            offset
-        })
-        .collect();
-
-    for (field_index, init_expr) in initializations {
-        let bc_value = lower_expression(builder, init_expr)?;
-        let mir_field_type = &init_expr._type;
+    for initialization in initializations {
+        let bc_value = lower_expression(builder, &initialization.value)?;
+        let mir_field_type = &initialization.value._type;
         let bc_field_type = builder.convert_cx_type(mir_field_type);
 
         let field_addr = builder.add_new_instruction(
             BCInstructionKind::StructAccess {
                 struct_: allocation.clone(),
                 struct_type: bc_struct_type.clone(),
-                field_index: *field_index,
-                field_offset: field_offsets[*field_index],
+                field_index: initialization.field_index,
+                field_offset: initialization.field_offset,
             },
             BCType::default_pointer(),
             true,

@@ -143,20 +143,6 @@ impl TypecheckResult {
         )
     }
 
-    // Aggregate access
-    pub fn struct_field_access(base: Self, field_index: usize, field_offset: usize,
-                           struct_type: MIRType, result_type: MIRType) -> Self {
-        TypecheckResult::expr(
-            result_type,
-            MIRExpressionKind::StructFieldAccess {
-                base: Box::new(base.expression),
-                field_index,
-                field_offset,
-                struct_type,
-            }
-        )
-    }
-
     pub fn array_access(array: Self, index: Self, element_type: MIRType, result_type: MIRType) -> Self {
         TypecheckResult::expr(
             result_type,

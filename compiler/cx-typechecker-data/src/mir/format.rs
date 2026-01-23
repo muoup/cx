@@ -202,12 +202,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::StructFieldAccess {
-                base, field_index, ..
+                base, field_index, field_offset, ..
             } => {
                 writeln!(
                     f,
-                    "StructFieldAccess index {} <'{}>",
-                    field_index, self.expr._type
+                    "StructFieldAccess index {} (+{}) <'{}>",
+                    field_index, field_offset, self.expr._type
                 )?;
                 MIRExpressionFormatter::new(base, self.depth + 1).fmt(f)
             }
@@ -291,10 +291,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     "StructInitializer {} {{ <'{}>",
                     struct_type, self.expr._type
                 )?;
-                for (field_index, field_value) in initializations {
+                for initializer in initializations {
                     self.indent(f)?;
-                    writeln!(f, "  Field {}:", field_index)?;
-                    MIRExpressionFormatter::new(field_value, self.depth + 2).fmt(f)?;
+                    writeln!(f, "  Field {} (+{}):", initializer.field_index, initializer.field_offset)?;
+                    MIRExpressionFormatter::new(&initializer.value, self.depth + 2).fmt(f)?;
                 }
                 self.indent(f)?;
                 writeln!(f, "}}")

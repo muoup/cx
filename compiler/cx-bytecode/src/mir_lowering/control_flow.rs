@@ -360,13 +360,8 @@ pub fn lower_match(
 }
 
 /// Lower a return statement
-pub fn lower_return(builder: &mut BCBuilder, value: Option<&MIRExpression>) -> CXResult<BCValue> {
+pub fn lower_return(builder: &mut BCBuilder, bc_value: Option<BCValue>) -> CXResult<BCValue> {
     let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
-
-    let bc_value = match value {
-        Some(v) => Some(lower_expression(builder, v)?),
-        None => None,
-    };
 
     if has_return_buffer {
         let return_buffer = BCValue::ParameterRef(0);
@@ -402,19 +397,4 @@ pub fn lower_return(builder: &mut BCBuilder, value: Option<&MIRExpression>) -> C
             false,
         )
     }
-}
-
-/// Lower a block expression
-pub fn lower_block(builder: &mut BCBuilder, statements: &[MIRExpression]) -> CXResult<BCValue> {
-    builder.push_scope(None, None);
-
-    let mut last_value = BCValue::NULL;
-
-    for stmt in statements {
-        last_value = lower_expression(builder, stmt)?;
-    }
-
-    builder.pop_scope();
-
-    Ok(last_value)
 }

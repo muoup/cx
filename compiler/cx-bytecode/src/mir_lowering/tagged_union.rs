@@ -143,7 +143,7 @@ pub fn lower_construct_tagged_union(
     )?;
 
     let bc_inner = lower_expression(builder, value)?;
-    let inner_type = builder.get_value_type(&bc_inner);
+    let inner_type = builder.convert_cx_type(&value._type);
 
     if inner_type.is_structure() {
         builder.add_new_instruction(

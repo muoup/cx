@@ -113,7 +113,7 @@ pub enum MIRExpressionKind {
         element_type: MIRType,
     },
     StructInitializer {
-        initializations: Vec<(usize, MIRExpression)>,
+        initializations: Vec<StructInitialization>,
         struct_type: MIRType,
     },
 
@@ -333,6 +333,13 @@ pub enum MIRCoercion {
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructInitialization {
+    pub field_index: usize,
+    pub field_offset: usize,
+    pub value: MIRExpression,
 }
 
 impl MIRExpression {

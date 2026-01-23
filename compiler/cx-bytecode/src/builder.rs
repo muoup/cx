@@ -287,46 +287,6 @@ impl BCBuilder {
         }
     }
 
-    pub fn add_return(&mut self, value: Option<BCValue>) -> CXResult<()> {
-        if let Some(return_buffer_size) = self.return_buffer_size() {
-            let Some(value) = value else {
-                unreachable!("Function with return buffer must return a value");
-            };
-            
-            let return_buffer = BCValue::ParameterRef(0);
-
-            self.add_new_instruction(
-                BCInstructionKind::Memcpy {
-                    dest: return_buffer.clone(),
-                    src: value,
-                    size: BCValue::IntImmediate {
-                        val: return_buffer_size as i64,
-                        _type: BCIntegerType::I64,
-                    },
-                    alignment: self.fun().prototype.return_type.alignment()
-                },
-                BCType::unit(),
-                false,
-            )?;
-
-            self.add_new_instruction(
-                BCInstructionKind::Return {
-                    value: Some(return_buffer),
-                },
-                BCType::unit(),
-                false,
-            )?;
-        } else {
-            self.add_new_instruction(
-                BCInstructionKind::Return { value },
-                BCType::unit(),
-                false,
-            )?;
-        }
-
-        Ok(())
-    }
-
     pub fn get_value_type(&self, value: &BCValue) -> BCType {
         match value {
             BCValue::NULL => BCType::unit(),
