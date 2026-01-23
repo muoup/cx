@@ -431,7 +431,7 @@ impl MIRType {
                 .max()
                 .unwrap_or(0),
 
-            MIRTypeKind::Array { size, inner_type } => size * inner_type.type_size(),
+            MIRTypeKind::Array { size, inner_type } => size * inner_type.padded_size(),
 
             MIRTypeKind::TaggedUnion { variants, .. } => {
                 variants
@@ -446,9 +446,9 @@ impl MIRType {
         }
     }
 
-    pub fn padded_size(&self) -> u64 {
-        let size = self.type_size() as u64;
-        let align = self.type_alignment() as u64;
+    pub fn padded_size(&self) -> usize {
+        let size = self.type_size();
+        let align = self.type_alignment();
         size.div_ceil(align) * align
     }
 

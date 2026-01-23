@@ -51,7 +51,7 @@ pub fn lower_binary_op(
             BCInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_padded_size: bc_inner_type.size() as u64,
+                type_padded_size: ptr_inner.padded_size() as u64,
                 left: bc_lhs,
                 right: bc_rhs,
             }
