@@ -7,7 +7,7 @@ use cx_bytecode_data::{
     BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRExpression, MIRExpressionKind, StructInitialization},
+    expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
     program::MIRFunction,
     types::MIRTypeKind,
 };
@@ -64,6 +64,35 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
 
             unreachable!("Variable '{}' not found in symbol table", name);
         }
+        
+        MIRExpressionKind::ContractVariable {
+            name,
+            parent_function,
+        } => {
+            // If we are currently in  the parent function, our contract variables are lvalues (the parameters)
+            // therefore we need to load them
+            if builder.current_function_name().unwrap() == parent_function.as_str() {
+                let Some(parameter_index) = builder.current_prototype()
+                    .params
+                    .iter()
+                    .position(|p| p.name.as_ref().map(|s| s.as_str()) == Some(name.as_str())) else {
+                        unreachable!(
+                            "Contract variable '{}' not found in parameters of function '{}'",
+                            name,
+                            parent_function
+                        );
+                    };
+                
+                Ok(BCValue::ParameterRef(parameter_index as u32))
+            } else {
+                let Some(local_value) = builder.get_symbol(name) else {
+                    unreachable!("Contract variable '{}' not found in symbol table", name);
+                };
+                
+                // Otherwise, they are rvalues (the arguments passed to the contract)
+                Ok(local_value)
+            }
+        },
 
         MIRExpressionKind::FunctionReference { .. } => {
             let MIRTypeKind::Function { prototype } = &expr._type.kind else {
@@ -220,7 +249,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             for statement in statements {
                 lower_expression(builder, statement)?;
             }
-            
+
             Ok(BCValue::NULL)
         }
 
@@ -431,6 +460,20 @@ fn lower_call(
     };
 
     let bc_prototype = builder.convert_cx_prototype(prototype);
+    
+    if let Some(precondition) = &prototype.contract.precondition {
+        builder.push_scope(None, None);
+
+        for (arg_expr, param) in args.iter().cloned().zip(prototype.params.iter()) {
+            if let Some(name) = &param.name {
+                builder.insert_symbol(name.clone(), arg_expr);
+            }
+        }
+
+        lower_contract_assertion(builder, precondition, "precondition violation")?;
+        
+        builder.pop_scope();
+    }
 
     let return_buffer = if prototype.return_type.is_memory_resident() {
         let buffer = builder.add_new_instruction(
@@ -445,6 +488,12 @@ fn lower_call(
         Some(buffer)
     } else {
         None
+    };
+
+    let args_cloned = if prototype.contract.postcondition.is_some() {
+        args.clone()
+    } else {
+        vec![]
     };
 
     let value = if let BCValue::FunctionRef(_) = &fn_val {
@@ -476,7 +525,56 @@ fn lower_call(
         )?
     };
 
+    if let Some((ret_name, postcondition)) = &prototype.contract.postcondition {
+        builder.push_scope(None, None);
+
+        for (arg_expr, param) in args_cloned.into_iter().zip(prototype.params.iter()) {
+            if let Some(name) = &param.name {
+                builder.insert_symbol(name.clone(), arg_expr);
+            }
+        }
+        
+        if let Some(ret_name) = ret_name {
+            builder.insert_symbol(ret_name.clone(), value.clone());
+        }
+
+        // TODO: Emit postcondition assumption after call (currently a no-op)
+        // In the future, this could be used for verification or optimization hints
+
+        // For now for the sake of testing, we will just generate the inner expression so that it
+        // is type-checked and any side-effects are captured
+        lower_expression(builder, postcondition)?;
+
+        builder.pop_scope();
+    }
+
     Ok(value)
+}
+
+pub(crate) fn lower_contract_assertion(
+    builder: &mut BCBuilder,
+    condition: &MIRExpression,
+    message: &str,
+) -> CXResult<()> {
+    let condition_val = lower_expression(builder, condition)?;
+    let message_global = builder.create_static_string(message.to_string());
+
+    let Some(assert_prototype) = builder.get_prototype("__compiler_assert").cloned() else {
+        return cx_util::CXError::create_result(
+            "Function contract used but __compiler_assert not found. Ensure std::intrinsic::assertion is imported.".to_string()
+        );
+    };
+
+    builder.add_new_instruction(
+        BCInstructionKind::DirectCall {
+            args: vec![condition_val, message_global],
+            method_sig: assert_prototype,
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    Ok(())
 }
 
 fn lower_array_initializer(
@@ -614,14 +712,13 @@ fn lower_struct_initializer(
 
 /// Generate bytecode for a MIR function
 pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
-    let prototype = builder.convert_cx_prototype(&mir_fn.prototype);
     let return_buffer_size = if mir_fn.prototype.return_type.is_memory_resident() {
         Some(mir_fn.prototype.return_type.type_size())
     } else {
         None
     };
 
-    builder.new_function(prototype, return_buffer_size);
+    builder.new_function(mir_fn.prototype.clone(), return_buffer_size);
 
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);

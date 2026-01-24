@@ -1,14 +1,21 @@
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
+use speedy::{Readable, Writable};
 
 use crate::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Readable, Writable)]
+pub struct MIRFunctionContract {
+    pub precondition: Option<Box<MIRExpression>>,
+    pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
+}
+
+#[derive(Clone, Debug, Default, Readable, Writable)]
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Readable, Writable)]
 pub enum MIRExpressionKind {
     // Literals
     BoolLiteral(bool),
@@ -21,6 +28,10 @@ pub enum MIRExpressionKind {
 
     // Variables
     Variable(CXIdent),
+    ContractVariable {
+        name: CXIdent,
+        parent_function: CXIdent,
+    },
 
     // The prototype is implicitly stored in the expression's type
     FunctionReference {
@@ -161,7 +172,7 @@ pub enum MIRExpressionKind {
     // Function Calls
     CallFunction {
         function: Box<MIRExpression>,
-        arguments: Vec<MIRExpression>,
+        arguments: Vec<MIRExpression>
     },
 
     // Type Conversion
@@ -189,7 +200,7 @@ pub enum MIRExpressionKind {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRIntegerBinOp {
     ADD,
     SUB,
@@ -221,13 +232,13 @@ pub enum MIRIntegerBinOp {
     BXOR,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRPtrDiffBinOp {
     ADD,
     SUB,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRPtrBinOp {
     EQ,
     NE,
@@ -237,7 +248,7 @@ pub enum MIRPtrBinOp {
     GE,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRFloatBinOp {
     FADD,
     FSUB,
@@ -253,7 +264,7 @@ pub enum MIRFloatBinOp {
     FGE,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRBinOp {
     Integer {
         itype: CXIntegerType,
@@ -280,7 +291,7 @@ pub enum MIRBinOp {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRUnOp {
     NEG,
     INEG,
@@ -292,7 +303,7 @@ pub enum MIRUnOp {
     PostIncrement(i8),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Readable, Writable)]
 pub enum MIRCoercion {
     // Any integer to any integer conversion
     Integral {
@@ -335,7 +346,7 @@ pub enum MIRCoercion {
     ReinterpretBits,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub struct StructInitialization {
     pub field_index: usize,
     pub field_offset: usize,

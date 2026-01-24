@@ -5,6 +5,7 @@ use cx_parsing_data::data::{CXFunctionContract, CXTypeSpecifier};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
+use crate::mir::expression::MIRFunctionContract;
 use crate::mir::name_mangling::type_mangle;
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -40,7 +41,7 @@ pub struct MIRFunctionPrototype {
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
-    pub contract: CXFunctionContract,
+    pub contract: MIRFunctionContract,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -499,7 +500,7 @@ impl MIRType {
                     return_type: MIRType::unit(),
                     params: vec![],
                     var_args: false,
-                    contract: CXFunctionContract::default(),
+                    contract: MIRFunctionContract::default(),
                 }),
             },
         )

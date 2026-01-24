@@ -1,7 +1,8 @@
 //! Control flow lowering (if, while, for, switch, match, return, block)
 
 use cx_bytecode_data::{
-    BCInstructionKind, BCValue, types::{BCIntegerType, BCType, BCTypeKind}
+    types::{BCIntegerType, BCType, BCTypeKind},
+    BCInstructionKind, BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{MIRExpression, MIRExpressionKind},
@@ -9,8 +10,11 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{builder::BCBuilder, mir_lowering::tagged_union::get_tagged_union_tag};
 use super::expressions::lower_expression;
+use crate::{
+    builder::BCBuilder,
+    mir_lowering::{expressions::lower_contract_assertion, tagged_union::get_tagged_union_tag},
+};
 
 /// Lower an if expression
 pub fn lower_if(
@@ -22,7 +26,7 @@ pub fn lower_if(
 ) -> CXResult<BCValue> {
     builder.push_scope(None, None);
     let bc_condition = lower_expression(builder, condition)?;
-    
+
     let then_block_id = builder.create_block(Some("then"));
     let else_block_id = builder.create_block(Some("else"));
     let merge_block_id = if else_branch.is_some() {
@@ -80,7 +84,10 @@ pub fn lower_while(
     let body_block_id = builder.create_block(Some("[while] body"));
     let exit_block_id = builder.create_block(Some("[while] exit"));
 
-    builder.push_scope(Some(condition_block_id.clone()), Some(exit_block_id.clone()));
+    builder.push_scope(
+        Some(condition_block_id.clone()),
+        Some(exit_block_id.clone()),
+    );
 
     if pre_eval {
         builder.add_new_instruction(
@@ -143,7 +150,10 @@ pub fn lower_for(
     let increment_block_id = builder.create_block(Some("for_increment"));
     let merge_block_id = builder.create_block(Some("for_merge"));
 
-    builder.push_scope(Some(increment_block_id.clone()), Some(merge_block_id.clone()));
+    builder.push_scope(
+        Some(increment_block_id.clone()),
+        Some(merge_block_id.clone()),
+    );
 
     builder.add_new_instruction(
         BCInstructionKind::Jump {
@@ -280,10 +290,12 @@ pub fn lower_match(
     default: Option<&MIRExpression>,
 ) -> CXResult<BCValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
-    let inner = condition._type.mem_ref_inner()
+    let inner = condition
+        ._type
+        .mem_ref_inner()
         .cloned()
         .unwrap_or_else(|| condition._type.clone());
-    
+
     if inner.is_tagged_union() {
         let tag_ptr = get_tagged_union_tag(builder, bc_condition.clone(), &inner)?;
         bc_condition = builder.add_new_instruction(
@@ -295,7 +307,7 @@ pub fn lower_match(
             true,
         )?;
     }
-    
+
     let exit_block_id = builder.create_block(Some("match_exit"));
     let default_block_id = if default.is_some() {
         builder.create_block(Some("match_default"))
@@ -361,6 +373,22 @@ pub fn lower_match(
 
 /// Lower a return statement
 pub fn lower_return(builder: &mut BCBuilder, bc_value: Option<BCValue>) -> CXResult<BCValue> {
+    if let Some(postcondition) = &builder.current_mir_prototype().contract.postcondition.clone() {
+        builder.push_scope(None, None);
+        
+        if let Some(ret_name) = &postcondition.0 {
+            let name = ret_name.clone();
+            let Some(returned_value) = bc_value.clone() else {
+                unreachable!("Return value is required for postcondition checking");
+            };
+
+            builder.insert_symbol(name, returned_value);
+        }
+
+        lower_contract_assertion(builder, &postcondition.1, "postcondition failed")?;
+        builder.pop_scope();
+    }
+
     let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
 
     if has_return_buffer {

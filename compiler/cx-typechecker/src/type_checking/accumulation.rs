@@ -1,4 +1,4 @@
-use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRBinOp, MIRUnOp, MIRCoercion};
+use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRBinOp, MIRUnOp, MIRCoercion, MIRFunctionContract};
 use cx_typechecker_data::mir::types::{CXIntegerType, MIRType, MIRTypeKind};
 
 /// Result of typechecking an expression/statement
@@ -155,7 +155,7 @@ impl TypecheckResult {
     }
 
     // Function calls
-    pub fn call_function(function: Self, arguments: Vec<Self>, result_type: MIRType) -> Self {
+    pub fn call_function(function: Self, arguments: Vec<Self>, result_type: MIRType, contract: MIRFunctionContract) -> Self {
         TypecheckResult::expr(
             result_type,
             MIRExpressionKind::CallFunction {

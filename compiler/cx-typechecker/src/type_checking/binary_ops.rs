@@ -9,10 +9,10 @@ use crate::type_checking::structured_initialization::{
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_parsing_data::data::{CXNaiveType, CXNaiveTypeKind};
+use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind};
 use cx_typechecker_data::mir::expression::{
-    MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
-    MIRPtrBinOp, MIRPtrDiffBinOp,
+    MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
+    MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
@@ -1123,7 +1123,7 @@ pub fn struct_field_offset(struct_type: &MIRType, field_index: usize) -> Option<
     let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
         unreachable!("Invalid type for struct_field_offset: {}", struct_type);
     };
-    
+
     let mut field_offset = 0;
 
     for (i, (_, field_type)) in fields.iter().enumerate() {
@@ -1147,16 +1147,80 @@ pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<Struc
     let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
         unreachable!("Invalid type for struct_field: {}", struct_type);
     };
-    
-    fields.iter()
+
+    fields
+        .iter()
         .position(|(name, _)| name.as_str() == field_name)
         .and_then(|index| {
             let offset = struct_field_offset(struct_type, index)?;
-            
+
             Some(StructField {
                 index,
                 offset,
                 field_type: fields[index].1.clone(),
             })
         })
+}
+
+pub(crate) fn typecheck_contract(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    function_name: &CXIdent,
+    prototype: &CXNaivePrototype,
+) -> CXResult<MIRFunctionContract> {
+    let naive_contract = &prototype.contract;
+
+    env.push_scope(false, false);
+
+    for param in prototype.params.iter() {
+        if let Some(name) = &param.name {
+            let mir_type = env.complete_type(base_data, &param._type)?;
+            env.insert_symbol(
+                name.to_string(),
+                MIRExpression {
+                    kind: MIRExpressionKind::ContractVariable {
+                        name: name.clone(),
+                        parent_function: function_name.clone(),
+                    },
+                    _type: mir_type,
+                },
+            );
+        }
+    }
+
+    let precondition = if let Some(pre_expr) = &naive_contract.precondition {
+        let tc_pre = typecheck_expr(env, base_data, pre_expr, Some(&MIRType::bool()))
+            .and_then(|v| coerce_value(env, pre_expr, v.into_expression()))
+            .and_then(|v| implicit_cast(env, pre_expr, v, &MIRType::bool()))?;
+        Some(Box::new(tc_pre))
+    } else {
+        None
+    };
+
+    let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
+        if let Some(ret_name) = ret_name {
+            let mir_type = env.complete_type(base_data, &prototype.return_type)?;
+            env.insert_symbol(
+                ret_name.to_string(),
+                MIRExpression {
+                    kind: MIRExpressionKind::Variable(ret_name.clone()),
+                    _type: mir_type,
+                },
+            );
+        }
+
+        let tc_post = typecheck_expr(env, base_data, post_expr, Some(&MIRType::bool()))
+            .and_then(|v| coerce_value(env, post_expr, v.into_expression()))
+            .and_then(|v| implicit_cast(env, post_expr, v, &MIRType::bool()))?;
+        Some((ret_name.clone(), Box::new(tc_post)))
+    } else {
+        None
+    };
+
+    env.pop_scope();
+
+    Ok(MIRFunctionContract {
+        precondition,
+        postcondition,
+    })
 }

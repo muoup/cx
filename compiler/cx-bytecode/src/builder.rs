@@ -6,7 +6,7 @@ use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::*;
 use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
 use cx_typechecker_data::mir::program::MIRUnit;
-use cx_typechecker_data::mir::types::MIRType;
+use cx_typechecker_data::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
@@ -36,6 +36,8 @@ pub struct BCGotoContext {
 #[derive(Debug)]
 pub struct BytecodeFunctionContext {
     prototype: BCFunctionPrototype,
+    mir_prototype: MIRFunctionPrototype,
+    
     current_block: usize,
     register_counter: u32,
     return_buffer_size: Option<usize>,
@@ -71,9 +73,12 @@ impl BCBuilder {
         BCRegister::new(format!("{}", reg_id))
     }
 
-    pub fn new_function(&mut self, fn_prototype: BCFunctionPrototype, return_buffer_size: Option<usize>) {
+    pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype, return_buffer_size: Option<usize>) {
+        let bc_prototype = convert_cx_prototype(&fn_prototype);
+        
         self.function_context = Some(BytecodeFunctionContext {
-            prototype: fn_prototype,
+            prototype: bc_prototype,
+            mir_prototype: fn_prototype,
             current_block: 0,
             register_counter: 0,
             return_buffer_size,
@@ -157,11 +162,15 @@ impl BCBuilder {
     pub fn get_liveness_mapping(&self, mir_reg: &CXIdent) -> Option<&BCRegister> {
         self.liveness_table.get(mir_reg)
     }
+    
+    pub fn current_mir_prototype(&self) -> &MIRFunctionPrototype {
+        &self.fun().mir_prototype
+    }
 
     pub fn current_prototype(&self) -> &BCFunctionPrototype {
         &self.fun().prototype
     }
-
+    
     pub fn get_prototype(&self, name: &str) -> Option<&BCFunctionPrototype> {
         self.fn_map.get(name)
     }

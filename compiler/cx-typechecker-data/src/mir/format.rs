@@ -30,7 +30,7 @@ impl Display for MIRUnit {
 
 impl Display for MIRFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}:", self.prototype)?;
+        writeln!(f, "{}\nBody:", self.prototype)?;
         MIRExpressionFormatter::new(&self.body, 1).fmt(f)?;
         Ok(())
     }
@@ -51,7 +51,19 @@ impl Display for MIRFunctionPrototype {
             }
             write!(f, "...")?;
         }
-        write!(f, ") -> {}", self.return_type)
+        write!(f, ") -> {}", self.return_type)?;
+        
+        if let Some(precondition) = &self.contract.precondition {
+            writeln!(f, "\nPrecondition:")?;
+            MIRExpressionFormatter::new(precondition, 2).fmt(f)?;
+        }
+        
+        if let Some((_, postcondition)) = &self.contract.postcondition {
+            writeln!(f, "\nPostcondition:")?;
+            MIRExpressionFormatter::new(postcondition, 2).fmt(f)?;
+        }
+        
+        Ok(())
     }
 }
 
@@ -105,15 +117,17 @@ struct MIRExpressionFormatter<'a> {
     depth: usize,
 }
 
+fn indentation(depth: usize) -> String {
+    "  ".repeat(depth)
+}
+
 impl<'a> MIRExpressionFormatter<'a> {
     fn new(expr: &'a MIRExpression, depth: usize) -> Self {
         Self { expr, depth }
     }
 
     fn indent(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for _ in 0..self.depth {
-            write!(f, "  ")?;
-        }
+        write!(f, "{}", indentation(self.depth))?;
         Ok(())
     }
 }
@@ -159,6 +173,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::Variable(name) => {
                 writeln!(f, "LocalVariable {} <'{}>", name, self.expr._type)
+            }
+            MIRExpressionKind::ContractVariable { name, parent_function } => {
+                writeln!(f, "ContractVariable \"{name}\" of {parent_function} <'{}>", self.expr._type)
             }
             MIRExpressionKind::FunctionReference { implicit_variables } => {
                 writeln!(f, "FunctionReference <'{}>", self.expr._type)?;
