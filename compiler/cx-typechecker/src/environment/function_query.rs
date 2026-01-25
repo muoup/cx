@@ -101,7 +101,7 @@ pub fn query_static_member_function(
         type_base_name: base_ident.clone(),
         name: name.clone(),
     };
-
+    
     let template_input = member_type.get_template_data()
         .map(|d| &d.template_input);
     deduce_function(env, base_data, expr, &key, template_input)
@@ -125,7 +125,7 @@ pub fn query_destructor(
     let key = CXFunctionKey::Destructor {
         type_base_name: base_name.clone(),
     };
-
+    
     let input = member_type.get_template_data()
         .map(|d| &d.template_input);
     deduce_function(env, base_data, &CXExpr::default(), &key, input).ok()

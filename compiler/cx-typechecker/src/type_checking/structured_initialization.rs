@@ -10,7 +10,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        accumulation::TypecheckResult, binary_ops::{struct_field, struct_field_offset}, casting::implicit_cast,
+        accumulation::TypecheckResult, binary_ops::{struct_field}, casting::implicit_cast,
         typechecker::typecheck_expr,
     },
 };

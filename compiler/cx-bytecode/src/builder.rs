@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use crate::mir_lowering::deconstructors::needs_deconstruction;
 use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{BCUnit, BytecodeResult};
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use cx_bytecode_data::*;
-use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
+use cx_typechecker_data::mir::name_mangling::{base_mangle_deconstructor, base_mangle_destructor};
 use cx_typechecker_data::mir::program::MIRUnit;
 use cx_typechecker_data::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::format::dump_all;
@@ -24,6 +25,7 @@ pub struct BCBuilder {
     liveness_table: HashMap<CXIdent, BCRegister>,
     goto_stack: Vec<BCGotoContext>,
 
+    deconstructors_needed: HashSet<MIRType>,
     function_context: Option<BytecodeFunctionContext>,
 }
 
@@ -59,6 +61,8 @@ impl BCBuilder {
             symbol_table: ScopedMap::new(),
             liveness_table: HashMap::new(),
             goto_stack: Vec::new(),
+            
+            deconstructors_needed: HashSet::new(),
 
             function_context: None,
         }
@@ -75,6 +79,10 @@ impl BCBuilder {
 
     pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype, return_buffer_size: Option<usize>) {
         let bc_prototype = convert_cx_prototype(&fn_prototype);
+        
+        if !self.fn_map.contains_key(bc_prototype.name.as_str()) {
+            self.insert_fn_prototype(bc_prototype.clone());
+        }
         
         self.function_context = Some(BytecodeFunctionContext {
             prototype: bc_prototype,
@@ -107,7 +115,6 @@ impl BCBuilder {
     }
 
     pub fn pop_scope(&mut self) {
-        self.symbol_table.pop_scope();
         self.goto_stack.pop();
     }
 
@@ -126,14 +133,40 @@ impl BCBuilder {
             .as_ref()
             .expect("Attempted to access function context with no current function selected")
     }
+    
+    pub fn add_deconstructor_request(&mut self, _type: MIRType) {
+        self.deconstructors_needed.insert(_type);
+    }
+    
+    pub fn is_deconstructor_pending(&self, _type: &MIRType) -> bool {
+        self.deconstructors_needed.contains(_type)
+    }
+    
+    pub fn pop_deconstructor_request(&mut self) -> Option<MIRType> {
+        if let Some(_type) = self.deconstructors_needed.iter().next().cloned() {
+            self.deconstructors_needed.remove(&_type);
+            Some(_type)
+        } else {
+            None
+        }
+    }
 
     pub fn get_deconstructor(&self, _type: &MIRType) -> Option<&BCFunctionPrototype> {
-        let destructor_name = base_mangle_deconstructor(_type);
+        let deconstructor_name = base_mangle_deconstructor(_type);
+        self.get_prototype(deconstructor_name.as_str())
+    }
+    
+    pub fn get_destructor(&self, _type: &MIRType) -> Option<&BCFunctionPrototype> {
+        let destructor_name = base_mangle_destructor(_type);
         self.get_prototype(destructor_name.as_str())
     }
 
     pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: BCValue) {
         self.symbol_table.insert(mir_value.to_string(), bc_value);
+    }
+    
+    pub fn insert_fn_prototype(&mut self, prototype: BCFunctionPrototype) {
+        self.fn_map.insert(prototype.name.clone(), prototype);
     }
 
     #[allow(dead_code)]

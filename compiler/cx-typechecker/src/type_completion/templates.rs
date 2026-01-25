@@ -1,3 +1,4 @@
+use crate::environment::function_query::query_destructor;
 use crate::environment::name_mangling::mangle_templated_fn_name;
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use crate::type_completion::complete_prototype_no_insert;
@@ -17,15 +18,12 @@ pub(crate) fn add_templated_types(
     args: &CXTemplatePrototype,
     input: &CXTemplateInput,
 ) -> Overwrites {
-    let mut overwrites = Vec::new();
-
-    for (ident, arg_type) in args.types.iter().zip(input.args.iter()) {
-        if let Some(existing) = env.realized_types.insert(ident.clone(), arg_type.clone()) {
-            overwrites.push((ident.clone(), existing));
-        }
-    }
-
-    overwrites
+    args.types.iter().zip(input.args.iter())
+        .filter_map(|(ident, arg_type)|
+            env.realized_types.insert(ident.clone(), arg_type.clone())
+                .map(|existing| (ident.clone(), existing))
+        )
+        .collect()
 }
 
 pub(crate) fn restore_template_overwrites(env: &mut TypeEnvironment, overwrites: Overwrites) {
@@ -77,13 +75,14 @@ pub(crate) fn instantiate_type_template(
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
     let mut cx_type = _complete_type(env, base_data, shell)?;
     restore_template_overwrites(env, overwrites);
-
+    
     cx_type.add_template_info(
         CXIdent::new(template_name.as_str()),
         completed_input.clone(),
     );
     
     env.add_type(base_data, template_name, cx_type.clone());
+    query_destructor(env, base_data, &cx_type);
     Ok(cx_type)
 }
 
@@ -128,7 +127,7 @@ pub(crate) fn instantiate_function_template(
     if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
         return Ok(generated);
     }
-
+    
     env.realized_fns
         .insert(instantiated.name.to_string(), instantiated.clone());
     env.requests.push(MIRFunctionGenRequest::Template {
@@ -136,7 +135,7 @@ pub(crate) fn instantiate_function_template(
         kind: template.resource.shell.kind.clone(),
         input: input.clone(),
     });
-
+    
     restore_template_overwrites(env, overwrites);
     Ok(instantiated)
 }

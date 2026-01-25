@@ -10,6 +10,7 @@ mod coercion;
 mod control_flow;
 mod tagged_union;
 
+pub mod deconstructors;
 pub mod expressions;
 pub mod instructions;
 pub mod types;
@@ -21,6 +22,10 @@ pub fn lower_mir(builder: &mut BCBuilder, mir: &MIRUnit) -> CXResult<()> {
 
     for function in mir.functions.iter() {
         generate_function(builder, function)?;
+    }
+    
+    while let Some(deconstructor_type) = builder.pop_deconstructor_request() {
+        deconstructors::generate_deconstructor(builder, &deconstructor_type)?;
     }
 
     Ok(())
