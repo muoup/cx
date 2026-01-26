@@ -243,7 +243,7 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Break => {
-            let Some(_) = env.scope_stack.iter().rfind(|inner| inner.has_break_merge) else {
+            let Some(scope_idx) = env.scope_stack.iter().rposition(|inner| inner.has_break_merge) else {
                 return log_typecheck_error!(
                     env,
                     expr,
@@ -252,16 +252,16 @@ pub fn typecheck_expr_inner(
             };
 
             TypecheckResult::expr2(MIRExpression {
-                kind: MIRExpressionKind::Break,
+                kind: MIRExpressionKind::Break { scope_depth: scope_idx },
                 _type: MIRType::unit(),
             })
         }
 
         CXExprKind::Continue => {
-            let Some(_) = env
+            let Some(scope_idx) = env
                 .scope_stack
                 .iter()
-                .rfind(|inner| inner.has_continue_merge)
+                .rposition(|inner| inner.has_continue_merge)
             else {
                 return log_typecheck_error!(
                     env,
@@ -270,10 +270,8 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            // TODO: Handle scope destructors
-            // For now, continue is represented as a Unit expression
             TypecheckResult::expr2(MIRExpression {
-                kind: MIRExpressionKind::Continue,
+                kind: MIRExpressionKind::Continue { scope_depth: scope_idx },
                 _type: MIRType::unit(),
             })
         }

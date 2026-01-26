@@ -1,7 +1,3 @@
-//! Tagged union (sum type) lowering
-
-use std::alloc::alloc;
-
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType, BCTypeKind},
     BCInstructionKind, BCValue,
@@ -58,11 +54,6 @@ pub fn lower_tagged_union_set(
     sum_type: &MIRType,
 ) -> CXResult<BCValue> {
     let bc_target = lower_expression(builder, target)?;
-    let bc_sum_type = builder.convert_cx_type(sum_type);
-
-    let BCTypeKind::Struct { fields, .. } = &bc_sum_type.kind else {
-        unreachable!("TaggedUnion must lower to struct type");
-    };
 
     let tag_addr = get_tagged_union_tag(builder, bc_target.clone(), sum_type)?;
     builder.add_new_instruction(

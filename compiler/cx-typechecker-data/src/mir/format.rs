@@ -465,11 +465,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, "Move <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
             }
-            MIRExpressionKind::Break => {
-                writeln!(f, "Break <'{}>", self.expr._type)
+            MIRExpressionKind::Break { scope_depth } => {
+                writeln!(f, "Break <scope_depth={}, type='{}'>", scope_depth, self.expr._type)
             }
-            MIRExpressionKind::Continue => {
-                writeln!(f, "Continue <'{}>", self.expr._type)
+            MIRExpressionKind::Continue { scope_depth } => {
+                writeln!(f, "Continue <scope_depth={}, type='{}'>", scope_depth, self.expr._type)
             }
         }
     }

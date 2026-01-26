@@ -201,17 +201,17 @@ impl TypecheckResult {
     }
 
     // Control flow
-    pub fn break_expr() -> Self {
+    pub fn break_expr(scope_depth: usize) -> Self {
         TypecheckResult::expr(
             MIRType::unit(),
-            MIRExpressionKind::Break,
+            MIRExpressionKind::Break { scope_depth },
         )
     }
 
-    pub fn continue_expr() -> Self {
+    pub fn continue_expr(scope_depth: usize) -> Self {
         TypecheckResult::expr(
             MIRType::unit(),
-            MIRExpressionKind::Continue,
+            MIRExpressionKind::Continue { scope_depth },
         )
     }
 }

@@ -1,6 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use crate::mir_lowering::deconstructors::needs_deconstruction;
+use crate::mir_lowering::deconstructors::{
+    create_deconstructor_prototype, invoke_conditional_deconstruction,
+};
 use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{BCUnit, BytecodeResult};
 use cx_bytecode_data::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
@@ -14,6 +16,14 @@ use cx_util::scoped_map::ScopedMap;
 use cx_util::unsafe_float::FloatWrapper;
 use cx_util::CXResult;
 
+#[derive(Debug, Clone)]
+pub struct LivenessEntry {
+    pub region_ptr: BCValue,
+    pub liveness_ptr: BCValue,
+    pub mir_type: MIRType,
+    pub scope_depth: usize,
+}
+
 #[derive(Debug)]
 pub struct BCBuilder {
     functions: Vec<BCFunction>,
@@ -22,7 +32,7 @@ pub struct BCBuilder {
     pub fn_map: BCFunctionMap,
 
     symbol_table: ScopedMap<BCValue>,
-    liveness_table: HashMap<CXIdent, BCRegister>,
+    liveness_table: ScopedMap<LivenessEntry>,
     goto_stack: Vec<BCGotoContext>,
 
     deconstructors_needed: HashSet<MIRType>,
@@ -39,7 +49,7 @@ pub struct BCGotoContext {
 pub struct BytecodeFunctionContext {
     prototype: BCFunctionPrototype,
     mir_prototype: MIRFunctionPrototype,
-    
+
     current_block: usize,
     register_counter: u32,
     return_buffer_size: Option<usize>,
@@ -58,10 +68,10 @@ impl BCBuilder {
                 .iter()
                 .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
                 .collect(),
-            symbol_table: ScopedMap::new(),
-            liveness_table: HashMap::new(),
+            symbol_table: ScopedMap::new_with_starting_scope(),
+            liveness_table: ScopedMap::new_with_starting_scope(),
             goto_stack: Vec::new(),
-            
+
             deconstructors_needed: HashSet::new(),
 
             function_context: None,
@@ -77,13 +87,22 @@ impl BCBuilder {
         BCRegister::new(format!("{}", reg_id))
     }
 
-    pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype, return_buffer_size: Option<usize>) {
+    pub fn new_function(
+        &mut self,
+        fn_prototype: MIRFunctionPrototype,
+        return_buffer_size: Option<usize>,
+    ) {
+        assert!(
+            self.function_context.is_none(),
+            "Attempted to start a new function while another function context is active"
+        );
+
         let bc_prototype = convert_cx_prototype(&fn_prototype);
-        
+
         if !self.fn_map.contains_key(bc_prototype.name.as_str()) {
             self.insert_fn_prototype(bc_prototype.clone());
         }
-        
+
         self.function_context = Some(BytecodeFunctionContext {
             prototype: bc_prototype,
             mir_prototype: fn_prototype,
@@ -93,29 +112,49 @@ impl BCBuilder {
 
             blocks: Vec::new(),
         });
-        self.symbol_table.push_scope();
+        self.push_scope(None, None);
     }
 
-    pub fn finish_function(&mut self) {
+    /// Take the current function context, leaving None in its place.
+    /// Used when generating nested functions (like deconstructors).
+    pub fn take_function_context(&mut self) -> Option<BytecodeFunctionContext> {
+        self.function_context.take()
+    }
+
+    /// Set the function context.
+    /// Used to restore a previously saved context.
+    pub fn set_function_context(&mut self, context: BytecodeFunctionContext) {
+        self.function_context = Some(context);
+    }
+
+    pub fn finish_function(&mut self) -> CXResult<()> {
+        self.pop_scope()?;
+
         let context = self.function_context.take().unwrap();
 
         self.functions.push(BCFunction {
             prototype: context.prototype,
             blocks: context.blocks,
         });
-        self.symbol_table.pop_scope();
+
+        Ok(())
     }
 
     pub fn push_scope(&mut self, continue_block: Option<CXIdent>, break_block: Option<CXIdent>) {
         self.symbol_table.push_scope();
+        self.liveness_table.push_scope();
         self.goto_stack.push(BCGotoContext {
             continue_block,
             break_block,
         });
     }
 
-    pub fn pop_scope(&mut self) {
+    pub fn pop_scope(&mut self) -> CXResult<()> {
+        self.deconstruct_at_current_depth()?;
+        self.liveness_table.pop_scope();
         self.goto_stack.pop();
+
+        Ok(())
     }
 
     pub fn dump_current_fn(&self) {
@@ -133,15 +172,19 @@ impl BCBuilder {
             .as_ref()
             .expect("Attempted to access function context with no current function selected")
     }
-    
+
     pub fn add_deconstructor_request(&mut self, _type: MIRType) {
+        let deconstructor_prototype =
+            self.convert_cx_prototype(&create_deconstructor_prototype(&_type));
+
+        self.insert_fn_prototype(deconstructor_prototype);
         self.deconstructors_needed.insert(_type);
     }
-    
+
     pub fn is_deconstructor_pending(&self, _type: &MIRType) -> bool {
         self.deconstructors_needed.contains(_type)
     }
-    
+
     pub fn pop_deconstructor_request(&mut self) -> Option<MIRType> {
         if let Some(_type) = self.deconstructors_needed.iter().next().cloned() {
             self.deconstructors_needed.remove(&_type);
@@ -150,12 +193,12 @@ impl BCBuilder {
             None
         }
     }
-
+    
     pub fn get_deconstructor(&self, _type: &MIRType) -> Option<&BCFunctionPrototype> {
         let deconstructor_name = base_mangle_deconstructor(_type);
         self.get_prototype(deconstructor_name.as_str())
     }
-    
+
     pub fn get_destructor(&self, _type: &MIRType) -> Option<&BCFunctionPrototype> {
         let destructor_name = base_mangle_destructor(_type);
         self.get_prototype(destructor_name.as_str())
@@ -164,9 +207,35 @@ impl BCBuilder {
     pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: BCValue) {
         self.symbol_table.insert(mir_value.to_string(), bc_value);
     }
-    
+
     pub fn insert_fn_prototype(&mut self, prototype: BCFunctionPrototype) {
         self.fn_map.insert(prototype.name.clone(), prototype);
+    }
+
+    pub fn deconstruct_at_depth(&mut self, depth: usize) -> CXResult<()> {
+        if self.current_block_closed() { return Ok(()); }
+        
+        let deconstructed = self
+            .liveness_table
+            .get_all_at_level(depth)
+            .map(|(_, e)| e.clone())
+            .collect::<Vec<_>>();
+
+        for entry in deconstructed {
+            invoke_conditional_deconstruction(
+                self,
+                &entry.region_ptr,
+                &entry.liveness_ptr,
+                &entry.mir_type,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn deconstruct_at_current_depth(&mut self) -> CXResult<()> {
+        let current_depth = self.scope_depth();
+        self.deconstruct_at_depth(current_depth)
     }
 
     #[allow(dead_code)]
@@ -187,15 +256,43 @@ impl BCBuilder {
             .rev()
             .find_map(|ctx| ctx.break_block.as_ref())
     }
+    
+    pub fn move_block_to_end(&mut self, block_id: &CXIdent) {
+        let context = self.fun_mut();
 
-    pub fn add_liveness_mapping(&mut self, mir_reg: CXIdent, bc_reg: BCRegister) {
-        self.liveness_table.insert(mir_reg, bc_reg);
+        if let Some(pos) = context.blocks.iter().position(|b| &b.id == block_id) {
+            let block = context.blocks.remove(pos);
+            context.blocks.push(block);
+            context.current_block = 0;
+        }
     }
 
-    pub fn get_liveness_mapping(&self, mir_reg: &CXIdent) -> Option<&BCRegister> {
+    pub fn add_liveness_mapping(
+        &mut self,
+        name: String,
+        region_ptr: BCValue,
+        liveness_ptr: BCValue,
+        mir_type: MIRType,
+    ) {
+        self.liveness_table.insert(
+            name,
+            LivenessEntry {
+                region_ptr,
+                liveness_ptr,
+                mir_type,
+                scope_depth: self.scope_depth(),
+            },
+        );
+    }
+
+    pub fn get_liveness_mapping(&self, mir_reg: &str) -> Option<&LivenessEntry> {
         self.liveness_table.get(mir_reg)
     }
-    
+
+    pub fn scope_depth(&self) -> usize {
+        self.liveness_table.scope_depth()
+    }
+
     pub fn current_mir_prototype(&self) -> &MIRFunctionPrototype {
         &self.fun().mir_prototype
     }
@@ -203,7 +300,7 @@ impl BCBuilder {
     pub fn current_prototype(&self) -> &BCFunctionPrototype {
         &self.fun().prototype
     }
-    
+
     pub fn get_prototype(&self, name: &str) -> Option<&BCFunctionPrototype> {
         self.fn_map.get(name)
     }

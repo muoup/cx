@@ -7,13 +7,13 @@ use cx_bytecode_data::{
     BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
+    expression::{MIRExpression, MIRExpressionKind, StructInitialization},
     program::MIRFunction,
     types::MIRTypeKind,
 };
 use cx_util::CXResult;
 
-use crate::builder::BCBuilder;
+use crate::{builder::BCBuilder, mir_lowering::deconstructors::{allocate_liveness_variable, needs_deconstruction}};
 
 use super::binary_ops::{lower_binary_op, lower_unary_op};
 use super::coercion::lower_type_conversion;
@@ -25,10 +25,8 @@ use super::tagged_union::{
     lower_tagged_union_set,
 };
 
-/// Main entry point for expression lowering
 pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResult<BCValue> {
     match &expr.kind {
-        // ===== Literals =====
         MIRExpressionKind::BoolLiteral(value) => Ok(BCValue::IntImmediate {
             val: if *value { 1 } else { 0 },
             _type: BCIntegerType::I1,
@@ -64,7 +62,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
 
             unreachable!("Variable '{}' not found in symbol table", name);
         }
-        
+
         MIRExpressionKind::ContractVariable {
             name,
             parent_function,
@@ -72,27 +70,28 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             // If we are currently in  the parent function, our contract variables are lvalues (the parameters)
             // therefore we need to load them
             if builder.current_function_name().unwrap() == parent_function.as_str() {
-                let Some(parameter_index) = builder.current_prototype()
+                let Some(parameter_index) = builder
+                    .current_prototype()
                     .params
                     .iter()
-                    .position(|p| p.name.as_ref().map(|s| s.as_str()) == Some(name.as_str())) else {
-                        unreachable!(
-                            "Contract variable '{}' not found in parameters of function '{}'",
-                            name,
-                            parent_function
-                        );
-                    };
-                
+                    .position(|p| p.name.as_ref().map(|s| s.as_str()) == Some(name.as_str()))
+                else {
+                    unreachable!(
+                        "Contract variable '{}' not found in parameters of function '{}'",
+                        name, parent_function
+                    );
+                };
+
                 Ok(BCValue::ParameterRef(parameter_index as u32))
             } else {
                 let Some(local_value) = builder.get_symbol(name) else {
                     unreachable!("Contract variable '{}' not found in symbol table", name);
                 };
-                
+
                 // Otherwise, they are rvalues (the arguments passed to the contract)
                 Ok(local_value)
             }
-        },
+        }
 
         MIRExpressionKind::FunctionReference { .. } => {
             let MIRTypeKind::Function { prototype } = &expr._type.kind else {
@@ -111,7 +110,6 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             lower_unary_op(builder, operand, op, &expr._type)
         }
 
-        // ===== Memory Operations =====
         MIRExpressionKind::MemoryRead { source } => {
             let bc_source = lower_expression(builder, source)?;
             let bc_type = builder.convert_cx_type(&expr._type);
@@ -142,6 +140,18 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
 
             if let Some(name) = name {
                 builder.insert_symbol(name.clone(), result.clone());
+                
+                if let BCValue::Register { register, .. } = &result {
+                    if needs_deconstruction(builder, _type) {
+                        let liveness = allocate_liveness_variable(builder)?;
+                        let ptr_val = BCValue::Register {
+                            register: register.clone(),
+                            _type: BCType::default_pointer(),
+                        };
+                        
+                        builder.add_liveness_mapping(name.to_string(), ptr_val, liveness, _type.clone());
+                    }
+                }
             }
 
             Ok(result)
@@ -211,7 +221,6 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             Ok(new_region)
         }
 
-        // ===== Control Flow =====
         MIRExpressionKind::If {
             condition,
             then_branch,
@@ -253,19 +262,16 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             Ok(BCValue::NULL)
         }
 
-        // ===== Function Calls =====
         MIRExpressionKind::CallFunction {
             function,
             arguments,
         } => lower_call(builder, function, arguments, &expr._type),
 
-        // ===== Type Conversion =====
         MIRExpressionKind::TypeConversion {
             operand,
             conversion,
         } => lower_type_conversion(builder, operand, *conversion, &expr._type),
 
-        // ===== Lifetime Management =====
         MIRExpressionKind::LifetimeStart {
             variable: _,
             _type: _,
@@ -276,7 +282,6 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
         } => Ok(BCValue::NULL),
         MIRExpressionKind::LeakLifetime { expression } => lower_expression(builder, expression),
 
-        // ===== Aggregate Access =====
         MIRExpressionKind::StructFieldAccess {
             base,
             field_index,
@@ -366,7 +371,6 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             Ok(comparison)
         }
 
-        // ===== Tagged Unions =====
         MIRExpressionKind::TaggedUnionTag { value, sum_type } => {
             let bc_value = lower_expression(builder, value)?;
             get_tagged_union_tag(builder, bc_value, &sum_type)
@@ -398,8 +402,12 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             struct_type,
         } => lower_struct_initializer(builder, initializations, struct_type),
 
-        // ===== Control Flow Jumps =====
-        MIRExpressionKind::Break => {
+        MIRExpressionKind::Break { scope_depth } => {
+            let current_depth = builder.scope_depth();
+            for i in ((scope_depth + 1)..=current_depth).rev() {
+                builder.deconstruct_at_depth(i)?;
+            }
+
             let Some(to) = builder.get_break_target().cloned() else {
                 unreachable!("Break used outside of loop or switch context");
             };
@@ -411,7 +419,11 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             )
         }
 
-        MIRExpressionKind::Continue => {
+        MIRExpressionKind::Continue { scope_depth } => {
+            for i in ((scope_depth + 1)..=builder.scope_depth()).rev() {
+                builder.deconstruct_at_depth(i)?;
+            }
+
             let Some(to) = builder.get_continue_block().cloned() else {
                 unreachable!("Continue used outside of loop context");
             };
@@ -460,7 +472,7 @@ fn lower_call(
     };
 
     let bc_prototype = builder.convert_cx_prototype(prototype);
-    
+
     if let Some(precondition) = &prototype.contract.precondition {
         builder.push_scope(None, None);
 
@@ -471,8 +483,8 @@ fn lower_call(
         }
 
         lower_contract_assertion(builder, precondition, "precondition violation")?;
-        
-        builder.pop_scope();
+
+        builder.pop_scope()?;
     }
 
     let return_buffer = if prototype.return_type.is_memory_resident() {
@@ -533,7 +545,7 @@ fn lower_call(
                 builder.insert_symbol(name.clone(), arg_expr);
             }
         }
-        
+
         if let Some(ret_name) = ret_name {
             builder.insert_symbol(ret_name.clone(), value.clone());
         }
@@ -545,7 +557,7 @@ fn lower_call(
         // is type-checked and any side-effects are captured
         lower_expression(builder, postcondition)?;
 
-        builder.pop_scope();
+        builder.pop_scope()?;
     }
 
     Ok(value)
@@ -710,7 +722,7 @@ fn lower_struct_initializer(
     Ok(allocation)
 }
 
-/// Generate bytecode for a MIR function
+/// Generate bytecode for an MIR function
 pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
     let return_buffer_size = if mir_fn.prototype.return_type.is_memory_resident() {
         Some(mir_fn.prototype.return_type.type_size())
@@ -719,6 +731,7 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
     };
 
     builder.new_function(mir_fn.prototype.clone(), return_buffer_size);
+    assert_eq!(builder.scope_depth(), 1);
 
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
@@ -757,29 +770,37 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
             }
         }
     }
+    
+    assert_eq!(
+        builder.scope_depth(),
+        1,
+        "Scope should be at function base after parameter insertion"
+    );
 
     lower_expression(builder, &mir_fn.body)?;
+
+    assert_eq!(
+        builder.scope_depth(),
+        1,
+        "Scope should be at function base before finishing function"
+    );
 
     if !matches!(
         builder.current_block_last_inst().map(|i| &i.kind),
         Some(BCInstructionKind::Return { .. })
     ) {
         if mir_fn.prototype.name.as_str() == "main" {
-            builder.add_new_instruction(
-                BCInstructionKind::Return {
-                    value: Some(BCValue::IntImmediate {
-                        val: 0,
-                        _type: BCIntegerType::I32,
-                    }),
-                },
-                BCType::unit(),
-                false,
+            lower_return(
+                builder,
+                Some(BCValue::IntImmediate {
+                    val: 0,
+                    _type: BCIntegerType::I32,
+                }),
             )?;
         } else if mir_fn.prototype.return_type.is_unit() {
-            builder.add_new_instruction(
-                BCInstructionKind::Return { value: None },
-                BCType::unit(),
-                false,
+            lower_return(
+                builder,
+                None,
             )?;
         } else {
             unreachable!(
@@ -789,6 +810,6 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
         }
     }
 
-    builder.finish_function();
+    builder.finish_function()?;
     Ok(())
 }

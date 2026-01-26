@@ -129,8 +129,8 @@ pub enum MIRExpressionKind {
     },
 
     // Control Flow
-    Break,
-    Continue,
+    Break { scope_depth: usize },
+    Continue { scope_depth: usize },
     If {
         condition: Box<MIRExpression>,
         then_branch: Box<MIRExpression>,

@@ -1,18 +1,13 @@
-use std::mem::needs_drop;
-
-use cx_bytecode_data::*;
 use cx_bytecode_data::types::{BCIntegerType, BCType, BCTypeKind};
+use cx_bytecode_data::*;
 use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
-use cx_typechecker_data::mir::types::{MIRType, MIRTypeKind, MIRFunctionPrototype, MIRParameter};
+use cx_typechecker_data::mir::types::{MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 
-use crate::builder::BCBuilder;
+use crate::builder::{BCBuilder, LivenessEntry};
 use crate::mir_lowering::tagged_union::get_tagged_union_tag;
 
-pub fn generate_deconstructor(
-    builder: &mut BCBuilder,
-    mir_type: &MIRType,
-) -> CXResult<()> {
+pub fn generate_deconstructor(builder: &mut BCBuilder, mir_type: &MIRType) -> CXResult<()> {
     let prototype = create_deconstructor_prototype(mir_type);
     builder.new_function(prototype.clone(), None);
 
@@ -29,7 +24,7 @@ pub fn generate_deconstructor(
         false,
     )?;
 
-    builder.finish_function();
+    builder.finish_function()?;
     Ok(())
 }
 
@@ -74,7 +69,7 @@ fn generate_deconstructor_body(
                 )?;
 
                 if needs_deconstruction(builder, field_type) {
-                    call_deconstructor(builder, &field_ptr, field_type)?;
+                    invoke_deconstruction(builder, &field_ptr, field_type)?;
                 }
             }
 
@@ -134,16 +129,18 @@ fn generate_deconstructor_body(
             )?;
 
             // Process each variant
-            for (i, (variant_name, variant_type)) in variants.iter().enumerate() {
+            for (i, (_, variant_type)) in variants.iter().enumerate() {
                 builder.set_current_block(variant_blocks[i].clone());
-                
+
                 if needs_deconstruction(builder, variant_type) {
                     // The variant is stored starting at byte 0 of the tagged union
-                    call_deconstructor(builder, &self_ptr, variant_type)?;
+                    invoke_deconstruction(builder, &self_ptr, variant_type)?;
                 }
-                
+
                 builder.add_new_instruction(
-                    BCInstructionKind::Jump { target: end_block.clone() },
+                    BCInstructionKind::Jump {
+                        target: end_block.clone(),
+                    },
                     BCType::unit(),
                     false,
                 )?;
@@ -175,7 +172,7 @@ fn generate_deconstructor_body(
                         true,
                     )?;
 
-                    call_deconstructor(builder, &element_ptr, inner_type)?;
+                    invoke_deconstruction(builder, &element_ptr, mir_type)?;
                 }
             }
         }
@@ -186,7 +183,6 @@ fn generate_deconstructor_body(
         MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference(_) => {}
         MIRTypeKind::Function { .. } => {}
 
-        // Untagged unions: cannot determine active variant
         MIRTypeKind::Union { .. } => {
             // Cannot deconstruct - no way to know which variant is active
         }
@@ -195,27 +191,72 @@ fn generate_deconstructor_body(
     Ok(())
 }
 
-fn call_deconstructor(
+pub fn invoke_conditional_deconstruction(
+    builder: &mut BCBuilder,
+    value: &BCValue,
+    liveness_value: &BCValue,
+    mir_type: &MIRType,
+) -> CXResult<BCValue> {
+    let liveness = builder.add_new_instruction(
+        BCInstructionKind::Load {
+            memory: liveness_value.clone(),
+            _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I1)),
+        },
+        BCType::from(BCTypeKind::Integer(BCIntegerType::I1)),
+        true,
+    )?;
+    let condition = builder.add_new_instruction(
+        BCInstructionKind::IntegerBinOp {
+            op: BCIntBinOp::NE,
+            left: liveness,
+            right: BCValue::IntImmediate {
+                val: 0,
+                _type: BCIntegerType::I1,
+            },
+        },
+        BCType::from(BCTypeKind::Integer(BCIntegerType::I1)),
+        true,
+    )?;
+    let deconstruct_block = builder.create_block(Some("deconstruct"));
+    let continue_block = builder.create_block(Some("continue"));
+
+    builder.add_new_instruction(
+        BCInstructionKind::Branch {
+            condition,
+            true_block: deconstruct_block.clone(),
+            false_block: continue_block.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+    
+    builder.set_current_block(deconstruct_block);
+    invoke_deconstruction(builder, value, mir_type)?;
+
+    builder.add_new_instruction(
+        BCInstructionKind::Jump {
+            target: continue_block.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    builder.set_current_block(continue_block);
+
+    Ok(BCValue::NULL)
+}
+
+pub fn invoke_deconstruction(
     builder: &mut BCBuilder,
     value: &BCValue,
     mir_type: &MIRType,
 ) -> CXResult<BCValue> {
-    let deconstructor_name = base_mangle_deconstructor(mir_type);
+    let proto = builder.get_deconstructor(mir_type).unwrap().clone();
 
-    // Get the deconstructor prototype, generate if not exists
-    let deconstructor_proto = if let Some(proto) = builder.get_prototype(&deconstructor_name) {
-        proto.clone()
-    } else {
-        // Generate the deconstructor
-        generate_deconstructor(builder, mir_type)?;
-        builder.get_prototype(&deconstructor_name).unwrap().clone()
-    };
-
-    // Call the deconstructor using DirectCall
     builder.add_new_instruction(
         BCInstructionKind::DirectCall {
             args: vec![value.clone()],
-            method_sig: deconstructor_proto,
+            method_sig: proto,
         },
         BCType::unit(),
         false,
@@ -224,7 +265,37 @@ fn call_deconstructor(
     Ok(BCValue::NULL)
 }
 
-fn calculate_field_offset(builder: &mut BCBuilder, struct_type: &MIRType, field_index: usize) -> usize {
+pub fn allocate_liveness_variable(builder: &mut BCBuilder) -> CXResult<BCValue> {
+    let alloca = builder.add_new_instruction(
+        BCInstructionKind::Allocate {
+            _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I1)),
+            alignment: 1,
+        },
+        BCType::default_pointer(),
+        true,
+    )?;
+
+    builder.add_new_instruction(
+        BCInstructionKind::Store {
+            memory: alloca.clone(),
+            value: BCValue::IntImmediate {
+                val: 1,
+                _type: BCIntegerType::I1,
+            },
+            _type: BCType::from(BCTypeKind::Integer(BCIntegerType::I1)),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    Ok(alloca)
+}
+
+fn calculate_field_offset(
+    builder: &mut BCBuilder,
+    struct_type: &MIRType,
+    field_index: usize,
+) -> usize {
     if let MIRTypeKind::Structured { fields, .. } = &struct_type.kind {
         let mut offset = 0;
         for i in 0..field_index {
@@ -234,7 +305,10 @@ fn calculate_field_offset(builder: &mut BCBuilder, struct_type: &MIRType, field_
         }
         // Align for the current field
         let (_, field_type) = &fields[field_index];
-        offset = align_up(offset, builder.convert_cx_type(field_type).alignment() as usize);
+        offset = align_up(
+            offset,
+            builder.convert_cx_type(field_type).alignment() as usize,
+        );
         return offset;
     }
     0
@@ -251,18 +325,21 @@ pub fn needs_deconstruction(builder: &mut BCBuilder, mir_type: &MIRType) -> bool
     if builder.get_deconstructor(mir_type).is_some() || builder.is_deconstructor_pending(mir_type) {
         return true;
     }
-    
+
     let add_to_list = |builder: &mut BCBuilder| {
         builder.add_deconstructor_request(mir_type.clone());
     };
-    
+
     if builder.get_destructor(mir_type).is_some() {
         add_to_list(builder);
         return true;
     }
 
     match &mir_type.kind {
-        MIRTypeKind::Structured { fields: inner, .. } | MIRTypeKind::TaggedUnion { variants: inner, .. } => {
+        MIRTypeKind::Structured { fields: inner, .. }
+        | MIRTypeKind::TaggedUnion {
+            variants: inner, ..
+        } => {
             for (_name, field_type) in inner.iter().cloned() {
                 if needs_deconstruction(builder, &field_type) {
                     add_to_list(builder);
@@ -270,9 +347,20 @@ pub fn needs_deconstruction(builder: &mut BCBuilder, mir_type: &MIRType) -> bool
                 }
             }
         }
-        
-        _ => {},
+
+        _ => {}
     }
-    
+
     false
+}
+
+pub fn deconstruct(
+    builder: &mut BCBuilder,
+    value: &BCValue,
+    mir_type: &MIRType,
+) -> CXResult<BCValue> {
+    if needs_deconstruction(builder, mir_type) {
+        invoke_deconstruction(builder, value, mir_type)?;
+    }
+    Ok(BCValue::NULL)
 }

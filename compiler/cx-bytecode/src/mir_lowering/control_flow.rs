@@ -45,9 +45,13 @@ pub fn lower_if(
         false,
     )?;
 
+    // Then branch
     builder.set_current_block(then_block_id.clone());
+    
+    builder.push_scope(None, None);
     lower_expression(builder, then_branch)?;
-
+    builder.pop_scope()?;
+    
     builder.add_new_instruction(
         BCInstructionKind::Jump {
             target: merge_block_id.clone(),
@@ -56,9 +60,12 @@ pub fn lower_if(
         false,
     )?;
 
+    // Else branch
     builder.set_current_block(else_block_id.clone());
     if let Some(else_expr) = else_branch {
+        builder.push_scope(None, None);
         lower_expression(builder, else_expr)?;
+        builder.pop_scope()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
                 target: merge_block_id.clone(),
@@ -68,7 +75,8 @@ pub fn lower_if(
         )?;
     }
 
-    builder.pop_scope();
+    builder.pop_scope()?;
+    builder.move_block_to_end(&merge_block_id);
     builder.set_current_block(merge_block_id);
     Ok(BCValue::NULL)
 }
@@ -130,7 +138,7 @@ pub fn lower_while(
     )?;
 
     builder.set_current_block(exit_block_id);
-    builder.pop_scope();
+    builder.pop_scope()?;
 
     Ok(BCValue::NULL)
 }
@@ -198,7 +206,7 @@ pub fn lower_for(
     )?;
 
     builder.set_current_block(merge_block_id);
-    builder.pop_scope();
+    builder.pop_scope()?;
 
     Ok(BCValue::NULL)
 }
@@ -257,6 +265,7 @@ pub fn lower_cswitch(
             exit_block_id.clone()
         };
 
+        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump { target: next_block },
             BCType::unit(),
@@ -267,6 +276,8 @@ pub fn lower_cswitch(
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
         lower_expression(builder, default_expr)?;
+
+        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -277,7 +288,7 @@ pub fn lower_cswitch(
     }
 
     builder.set_current_block(exit_block_id);
-    builder.pop_scope();
+    builder.pop_scope()?;
 
     Ok(BCValue::NULL)
 }
@@ -344,6 +355,8 @@ pub fn lower_match(
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
         lower_expression(builder, arm_body)?;
+
+        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -356,6 +369,8 @@ pub fn lower_match(
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
         lower_expression(builder, default_expr)?;
+
+        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -366,7 +381,7 @@ pub fn lower_match(
     }
 
     builder.set_current_block(exit_block_id);
-    builder.pop_scope();
+    builder.pop_scope()?;
 
     Ok(BCValue::NULL)
 }
@@ -375,7 +390,7 @@ pub fn lower_match(
 pub fn lower_return(builder: &mut BCBuilder, bc_value: Option<BCValue>) -> CXResult<BCValue> {
     if let Some(postcondition) = &builder.current_mir_prototype().contract.postcondition.clone() {
         builder.push_scope(None, None);
-        
+
         if let Some(ret_name) = &postcondition.0 {
             let name = ret_name.clone();
             let Some(returned_value) = bc_value.clone() else {
@@ -386,7 +401,11 @@ pub fn lower_return(builder: &mut BCBuilder, bc_value: Option<BCValue>) -> CXRes
         }
 
         lower_contract_assertion(builder, &postcondition.1, "postcondition failed")?;
-        builder.pop_scope();
+        builder.pop_scope()?;
+    }
+    
+    for i in (1 ..= builder.scope_depth()).rev() {
+        builder.deconstruct_at_depth(i)?;
     }
 
     let has_return_buffer = builder.current_prototype().temp_buffer.is_some();

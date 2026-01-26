@@ -29,8 +29,14 @@ impl<T> ScopedMap<T> {
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
-            overwrites: vec![vec![]],
+            overwrites: Vec::new()
         }
+    }
+    
+    pub fn new_with_starting_scope() -> Self {
+        let mut m = Self::new();
+        m.push_scope();
+        m
     }
 
     pub fn push_scope(&mut self) {
@@ -77,6 +83,18 @@ impl<T> ScopedMap<T> {
 
     pub fn get(&self, name: &str) -> Option<&T> {
         self.data.get(name)
+    }
+    
+    pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = (&String, &T)> {
+        self.overwrites
+            .get(level)
+            .expect("Invalid level in ScopedMap")
+            .iter()
+            .filter_map(move |(name, _)| self.data.get_key_value(name))
+    }
+    
+    pub fn scope_depth(&self) -> usize {
+        self.overwrites.len() - 1
     }
 }
 
