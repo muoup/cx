@@ -1,7 +1,7 @@
 //! Binary and unary operation lowering
 
 use cx_bytecode_data::{
-    types::BCType,
+    types::{BCIntegerType, BCType},
     BCInstructionKind, BCIntBinOp, BCFloatBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
@@ -21,6 +21,13 @@ pub fn lower_binary_op(
     op: &MIRBinOp,
     result_type: &MIRType,
 ) -> CXResult<BCValue> {
+    // Handle logical AND and OR with short-circuit evaluation
+    if let MIRBinOp::Integer { op, .. } = op {
+        if matches!(op, MIRIntegerBinOp::LAND | MIRIntegerBinOp::LOR) {
+            return lower_logical_op(builder, lhs, rhs, op, result_type);
+        }
+    }
+
     let bc_lhs = lower_expression(builder, lhs)?;
     let bc_rhs = lower_expression(builder, rhs)?;
     let bc_result_type = builder.convert_cx_type(result_type);
@@ -76,6 +83,115 @@ pub fn lower_binary_op(
     };
 
     builder.add_new_instruction(instruction_kind, bc_result_type, true)
+}
+
+/// Lower a logical operation (AND or OR) with short-circuit evaluation
+///
+/// For LOR (`a || b`):
+///   - If `a` is true, skip `b` and return true
+///   - If `a` is false, evaluate `b` and return its result
+///
+/// For LAND (`a && b`):
+///   - If `a` is false, skip `b` and return false
+///   - If `a` is true, evaluate `b` and return its result
+fn lower_logical_op(
+    builder: &mut BCBuilder,
+    lhs: &MIRExpression,
+    rhs: &MIRExpression,
+    op: &MIRIntegerBinOp,
+    result_type: &MIRType,
+) -> CXResult<BCValue> {
+    let bc_result_type = builder.convert_cx_type(result_type);
+
+    // Save the entry block (where we evaluate the LHS)
+    let entry_block = builder.current_block();
+
+    // Create the continue and merge blocks
+    let (continue_name, merge_name) = match op {
+        MIRIntegerBinOp::LOR => ("lor_continue", "lor_merge"),
+        MIRIntegerBinOp::LAND => ("land_continue", "land_merge"),
+        _ => unreachable!("lower_logical_op called with non-logical operation"),
+    };
+
+    let continue_block = builder.create_block(Some(continue_name));
+    let merge_block = builder.create_block(Some(merge_name));
+
+    // Evaluate LHS
+    let lhs_result = lower_expression(builder, lhs)?;
+
+    // Branch based on the operation type
+    match op {
+        MIRIntegerBinOp::LOR => {
+            // If LHS is true, go to merge (short-circuit)
+            // If LHS is false, go to continue (evaluate RHS)
+            builder.add_new_instruction(
+                BCInstructionKind::Branch {
+                    condition: lhs_result,
+                    true_block: merge_block.clone(),
+                    false_block: continue_block.clone(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+        }
+        MIRIntegerBinOp::LAND => {
+            // If LHS is false, go to merge (short-circuit)
+            // If LHS is true, go to continue (evaluate RHS)
+            builder.add_new_instruction(
+                BCInstructionKind::Branch {
+                    condition: lhs_result,
+                    true_block: continue_block.clone(),
+                    false_block: merge_block.clone(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+        }
+        _ => unreachable!("lower_logical_op called with non-logical operation"),
+    }
+
+    // Continue block: evaluate RHS and jump to merge
+    builder.set_current_block(continue_block.clone());
+    let rhs_result = lower_expression(builder, rhs)?;
+    builder.add_new_instruction(
+        BCInstructionKind::Jump {
+            target: merge_block.clone(),
+        },
+        BCType::unit(),
+        false,
+    )?;
+
+    // Move merge block to the end and set it as current
+    builder.move_block_to_end(&merge_block);
+    builder.set_current_block(merge_block.clone());
+
+    // Create phi node at merge block
+    // For LOR: from entry->true (1), from continue->rhs_result
+    // For LAND: from entry->false (0), from continue->rhs_result
+    let short_circuit_value = match op {
+        MIRIntegerBinOp::LOR => BCValue::IntImmediate {
+            val: 1,
+            _type: BCIntegerType::I1,
+        },
+        MIRIntegerBinOp::LAND => BCValue::IntImmediate {
+            val: 0,
+            _type: BCIntegerType::I1,
+        },
+        _ => unreachable!(),
+    };
+
+    let phi_result = builder.add_new_instruction(
+        BCInstructionKind::Phi {
+            predecessors: vec![
+                (short_circuit_value, entry_block),
+                (rhs_result, continue_block),
+            ],
+        },
+        bc_result_type,
+        true,
+    )?;
+
+    Ok(phi_result)
 }
 
 /// Lower a unary operation
@@ -199,11 +315,11 @@ fn convert_int_binop(op: &MIRIntegerBinOp) -> BCIntBinOp {
         MIRIntegerBinOp::ILE => BCIntBinOp::ILE,
         MIRIntegerBinOp::IGT => BCIntBinOp::IGT,
         MIRIntegerBinOp::IGE => BCIntBinOp::IGE,
-        MIRIntegerBinOp::LAND => BCIntBinOp::LAND,
-        MIRIntegerBinOp::LOR => BCIntBinOp::LOR,
+        // Note: LAND and LOR are now handled by lower_logical_op for short-circuit evaluation
         MIRIntegerBinOp::BAND => BCIntBinOp::BAND,
         MIRIntegerBinOp::BOR => BCIntBinOp::BOR,
         MIRIntegerBinOp::BXOR => BCIntBinOp::BXOR,
+        _ => panic!("Logical operators (LAND, LOR) should be handled by lower_logical_op"),
     }
 }
 
