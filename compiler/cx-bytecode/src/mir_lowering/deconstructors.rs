@@ -353,6 +353,13 @@ pub fn needs_deconstruction(builder: &mut BCBuilder, mir_type: &MIRType) -> bool
                 }
             }
         }
+        
+        MIRTypeKind::Array { size, inner_type } => {
+            if needs_deconstruction(builder, inner_type) {
+                add_to_list(builder);
+                return true;
+            }
+        },
 
         _ => {}
     }

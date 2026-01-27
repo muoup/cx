@@ -255,8 +255,11 @@ pub fn lower_cswitch(
 
     for (i, (_, case_body)) in cases.iter().enumerate() {
         builder.set_current_block(case_blocks[i].clone());
+        
+        builder.push_scope(None, None);
         lower_expression(builder, case_body)?;
-
+        builder.pop_scope()?;
+        
         builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump { target: exit_block_id.clone() },
@@ -267,8 +270,11 @@ pub fn lower_cswitch(
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
+        
+        builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
-
+        builder.pop_scope()?;
+        
         builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
@@ -346,8 +352,11 @@ pub fn lower_match(
 
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
+        
+        builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
-
+        builder.pop_scope()?;
+        
         builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
@@ -360,8 +369,11 @@ pub fn lower_match(
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
+        
+        builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
-
+        builder.pop_scope()?;
+        
         builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             BCInstructionKind::Jump {
