@@ -5,8 +5,7 @@ use cx_util::CXResult;
 use crate::{builder::BCBuilder, mir_lowering::lower_mir};
 
 pub mod builder;
-
-pub(crate) mod mir_lowering;
+pub mod mir_lowering;
 
 pub type BytecodeResult<T> = Option<T>;
 

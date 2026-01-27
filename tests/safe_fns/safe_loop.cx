@@ -1,0 +1,5 @@
+int test() safe {
+    while (1) {
+        return 10;
+    }
+}

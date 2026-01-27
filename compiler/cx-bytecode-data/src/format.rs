@@ -1,8 +1,8 @@
 use crate::types::{BCFloatType, BCIntegerType, BCType, BCTypeKind};
 use crate::{
-    BCBasicBlock, BCFloatBinOp, BCFloatUnOp, BCFunction,
-    BCFunctionPrototype, BCGlobalType, BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp,
-    BCPtrBinOp, BCRegister, BCUnit, BCValue,
+    BCBasicBlock, BCFloatBinOp, BCFloatUnOp, BCFunction, BCFunctionPrototype, BCGlobalType,
+    BCInstruction, BCInstructionKind, BCIntBinOp, BCIntUnOp, BCPtrBinOp, BCRegister, BCUnit,
+    BCValue,
 };
 use std::fmt::{Display, Formatter};
 
@@ -36,7 +36,12 @@ impl Display for BCFunction {
 
 impl Display for BCBasicBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, ".{}:", self.id)?;
+        writeln!(
+            f,
+            ".{}:   ({})",
+            self.id,
+            self.debug_name.as_ref().unwrap_or(&String::new())
+        )?;
 
         for instruction in self.body.iter() {
             writeln!(f, "\t{instruction}")?;
@@ -91,7 +96,7 @@ impl Display for BCValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             BCValue::NULL => write!(f, "null"),
-            BCValue::ParameterRef(index) => write!(f, "param @{index}"),
+            BCValue::ParameterRef(index) => write!(f, "@param.{index}"),
             BCValue::IntImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FloatImmediate { val, _type } => write!(f, "{_type} {val}"),
             BCValue::FunctionRef(name) => write!(f, "{name}"),
@@ -106,7 +111,7 @@ impl Display for BCInstruction {
         if let Some(result) = &self.result {
             write!(f, "{} = ", result)?;
         }
-        
+
         match &self.kind {
             BCInstructionKind::Alias { value } => {
                 write!(f, "{value}")

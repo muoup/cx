@@ -72,6 +72,8 @@ pub enum PredeclarationType {
 
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXFunctionContract {
+    pub safe: bool,
+    
     pub precondition: Option<CXExpr>,
     pub postcondition: Option<(Option<CXIdent>, CXExpr)>,
 }

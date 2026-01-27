@@ -32,7 +32,6 @@ mod regression_tests {
         box_static_factory,
         complex_expressions,
         conditional_lifetime,
-        deferring,
         enum_type,
         function_contract,
         global_in_template,

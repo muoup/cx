@@ -1,20 +1,17 @@
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
+use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::binary_ops::{
-    handle_assignment, typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
+    typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
     typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
-use crate::type_checking::contract::contracted_function_return;
-use crate::type_checking::move_semantics::{acknowledge_declared_object, invoke_scope_destructors};
 use crate::type_completion::prototypes::complete_template_args;
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
-use cx_typechecker_data::mir::expression::{
-    MIRBinOp, MIRInstruction, MIRIntegerBinOp, MIRPtrDiffBinOp, MIRUnOp, MIRValue,
-};
+use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
 use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_typechecker_data::mir::types::{CXIntegerType, MIRTypeKind};
+use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -35,7 +32,7 @@ pub fn typecheck_expr(
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     expected_type: Option<&MIRType>,
-) -> CXResult<MIRValue> {
+) -> CXResult<TypecheckResult> {
     typecheck_expr_inner(env, base_data, expr, expected_type)
 }
 
@@ -44,27 +41,38 @@ pub fn typecheck_expr_inner(
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     expected_type: Option<&MIRType>,
-) -> CXResult<MIRValue> {
+) -> CXResult<TypecheckResult> {
     Ok(match &expr.kind {
         CXExprKind::Block { exprs } => {
-            exprs
+            let block = exprs
                 .iter()
-                .map(|e| typecheck_expr(env, base_data, e, None))
+                .map(|e| typecheck_expr(env, base_data, e, None).map(|res| res.expression))
                 .collect::<CXResult<Vec<_>>>()?;
 
-            MIRValue::NULL
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::Block { statements: block },
+                _type: MIRType::unit(),
+            })
         }
 
-        CXExprKind::IntLiteral { val, bytes } => MIRValue::IntLiteral {
-            value: *val,
-            _type: CXIntegerType::from_bytes(*bytes).unwrap(),
-            signed: true,
-        },
+        CXExprKind::IntLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
+            kind: MIRExpressionKind::IntLiteral(
+                *val,
+                CXIntegerType::from_bytes(*bytes).unwrap(),
+                true,
+            ),
+            _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Integer {
+                _type: CXIntegerType::from_bytes(*bytes).unwrap(),
+                signed: true,
+            }),
+        }),
 
-        CXExprKind::FloatLiteral { val, bytes } => MIRValue::FloatLiteral {
-            value: *val,
-            _type: cx_typechecker_data::mir::types::CXFloatType::from_bytes(*bytes).unwrap(),
-        },
+        CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
+            kind: MIRExpressionKind::FloatLiteral(*val, CXFloatType::from_bytes(*bytes).unwrap()),
+            _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Float {
+                _type: CXFloatType::from_bytes(*bytes).unwrap(),
+            }),
+        }),
 
         CXExprKind::StringLiteral { val } => {
             let anonymous_name = anonymous_name_gen();
@@ -82,57 +90,57 @@ pub fn typecheck_expr_inner(
                 },
             );
 
-            MIRValue::GlobalValue {
-                name: CXIdent::new(anonymous_name),
-                _type: env
-                    .get_realized_type("char")
-                    .unwrap()
-                    .clone()
-                    .pointer_to()
-                    .with_specifier(CX_CONST),
-            }
+            let char_type = env
+                .get_realized_type("char")
+                .unwrap()
+                .clone()
+                .pointer_to()
+                .add_specifier(CX_CONST);
+
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::Variable(name_ident),
+                _type: char_type,
+            })
         }
 
         CXExprKind::VarDeclaration { _type, name } => {
-            let mut _type = env.complete_type(base_data, _type)?;
-            let result = env.builder.new_register();
+            let _type = env.complete_type(base_data, _type)?;
+            let mem_type = _type.clone().mem_ref_to();
 
-            env.builder
-                .add_instruction(MIRInstruction::CreateStackRegion {
-                    result: result.clone(),
+            let allocation = MIRExpression {
+                kind: MIRExpressionKind::CreateStackVariable {
+                    name: Some(name.clone()),
                     _type: _type.clone(),
-                });
+                },
+                _type: mem_type.clone(),
+            };
 
-            acknowledge_declared_object(env, name.to_string(), result.clone(), _type.clone());
             env.insert_symbol(
                 name.as_string(),
-                MIRValue::Register {
-                    register: result.clone(),
-                    _type: _type.clone().mem_ref_to(),
+                MIRExpression {
+                    kind: MIRExpressionKind::Variable(name.clone()),
+                    _type: mem_type,
                 },
             );
 
-            // If a variable declaration is const, any subsequent lookup should yield the const type,
-            // however the first declaration should be non-const, as we need to allow writing to it.
-            _type.remove_specifier(CX_CONST);
-
-            MIRValue::Register {
-                register: result,
-                _type: _type.mem_ref_to(),
-            }
+            TypecheckResult::expr2(allocation)
         }
 
         CXExprKind::Identifier(name) => {
             if let Some(symbol_val) = env.symbol_value(name.as_str()) {
-                symbol_val.clone()
+                TypecheckResult::expr2(symbol_val.clone())
             } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
             {
-                MIRValue::FunctionReference {
-                    prototype: function_type.clone(),
-                    implicit_variables: vec![],
-                }
+                TypecheckResult::expr2(MIRExpression {
+                    kind: MIRExpressionKind::FunctionReference {
+                        implicit_variables: vec![],
+                    },
+                    _type: MIRType::from(MIRTypeKind::Function {
+                        prototype: Box::new(function_type),
+                    }),
+                })
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
-                global
+                TypecheckResult::expr2(global)
             } else {
                 return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
             }
@@ -147,10 +155,15 @@ pub fn typecheck_expr_inner(
 
             let input = complete_template_args(env, base_data, template_input)?;
             let function = env.get_standard_function(base_data, expr, name, Some(&input))?;
-            MIRValue::FunctionReference {
-                prototype: function.clone(),
-                implicit_variables: vec![],
-            }
+
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::FunctionReference {
+                    implicit_variables: vec![],
+                },
+                _type: MIRType::from(MIRTypeKind::Function {
+                    prototype: Box::new(function),
+                }),
+            })
         }
 
         CXExprKind::If {
@@ -158,45 +171,27 @@ pub fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            let then_block = env.builder.new_block_id();
-            let (else_block, merge_block) = if else_branch.is_some() {
-                (env.builder.new_block_id(), env.builder.new_block_id())
+            env.push_scope(false, false);
+
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let then_result = typecheck_expr(env, base_data, then_branch, None)?.into_expression();
+            let else_result = if let Some(else_branch) = else_branch {
+                Some(typecheck_expr(env, base_data, else_branch, None)?.into_expression())
             } else {
-                let merge_block = env.builder.new_block_id();
-                (merge_block.clone(), merge_block.clone())
+                None
             };
 
-            // Scope for condition
-            env.push_scope(None, None);
-
-            let condition_value = typecheck_expr(env, base_data, condition, None)
-                .and_then(|c| coerce_condition(env, expr, c))?;
-
-            env.builder.add_instruction(MIRInstruction::Branch {
-                condition: condition_value,
-                true_block: then_block.clone(),
-                false_block: else_block.clone(),
-            });
-
-            env.builder.add_and_set_block(then_block);
-            env.push_scope(Some(merge_block.clone()), None);
-            typecheck_expr(env, base_data, then_branch, None)?;
             env.pop_scope();
 
-            env.builder.add_jump(merge_block.clone());
-
-            if let Some(else_branch) = else_branch {
-                env.builder.add_and_set_block(else_block);
-                env.push_scope(Some(merge_block.clone()), None);
-                typecheck_expr(env, base_data, else_branch, None)?;
-                env.pop_scope();
-                env.builder.add_jump(merge_block.clone());
-            }
-
-            env.builder.add_and_set_block(merge_block);
-            env.pop_scope();
-
-            MIRValue::NULL
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::If {
+                    condition: Box::new(condition_result),
+                    then_branch: Box::new(then_result),
+                    else_branch: else_result.map(|r| Box::new(r)),
+                },
+                _type: cx_typechecker_data::mir::types::MIRType::unit(),
+            })
         }
 
         CXExprKind::While {
@@ -204,43 +199,22 @@ pub fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            let condition_block = env.builder.new_block_id();
-            let body_block = env.builder.new_block_id();
-            let merge_block = env.builder.new_block_id();
+            env.push_scope(true, true);
 
-            env.builder.add_instruction(MIRInstruction::LoopPreHeader {
-                loop_id: condition_block.clone(),
-                condition_precheck: *pre_eval,
-                condition_block: condition_block.clone(),
-                body_block: body_block.clone(),
-            });
-
-            env.builder.add_and_set_block(condition_block.clone());
-
-            env.push_scope(None, None);
-            let condition_val = typecheck_expr(env, base_data, condition, None)
-                .and_then(|c| coerce_condition(env, expr, c))?;
-            env.builder
-                .add_instruction(MIRInstruction::LoopConditionBranch {
-                    loop_id: condition_block.clone(),
-                    condition: condition_val,
-                    body_block: body_block.clone(),
-                    exit_block: merge_block.clone(),
-                });
-
-            env.builder.add_and_set_block(body_block);
-            env.push_scope(Some(merge_block.clone()), Some(condition_block.clone()));
-            typecheck_expr(env, base_data, body, None)?;
-            env.pop_scope();
-            env.builder.add_instruction(MIRInstruction::LoopContinue {
-                loop_id: condition_block.clone(),
-                condition_block: condition_block.clone(),
-            });
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let body_result = typecheck_expr(env, base_data, body, None)?;
 
             env.pop_scope();
-            env.builder.add_and_set_block(merge_block);
 
-            MIRValue::NULL
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::While {
+                    condition: Box::new(condition_result),
+                    body: Box::new(body_result.expression),
+                    pre_eval: *pre_eval,
+                },
+                _type: cx_typechecker_data::mir::types::MIRType::unit(),
+            })
         }
 
         CXExprKind::For {
@@ -249,60 +223,33 @@ pub fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            let condition_block = env.builder.new_block_id();
-            let body_block = env.builder.new_block_id();
-            let increment_block = env.builder.new_block_id();
-            let merge_block = env.builder.new_block_id();
+            env.push_scope(true, true);
 
-            env.push_scope(None, None);
-            typecheck_expr(env, base_data, init, None)?;
-            env.builder.add_instruction(MIRInstruction::LoopPreHeader {
-                loop_id: condition_block.clone(),
-                condition_precheck: true,
-                condition_block: condition_block.clone(),
-                body_block: body_block.clone(),
-            });
-
-            env.builder.add_and_set_block(condition_block.clone());
-            let condition = typecheck_expr(env, base_data, condition, None)
-                .and_then(|c| coerce_condition(env, expr, c))?;
-            env.builder
-                .add_instruction(MIRInstruction::LoopConditionBranch {
-                    loop_id: condition_block.clone(),
-                    condition,
-                    body_block: body_block.clone(),
-                    exit_block: merge_block.clone(),
-                });
-
-            env.builder.add_and_set_block(body_block);
-
-            env.push_scope(Some(merge_block.clone()), Some(condition_block.clone()));
-            typecheck_expr(env, base_data, body, None)?;
-            env.pop_scope();
-
-            env.builder.add_jump(increment_block.clone());
-            env.builder.add_and_set_block(increment_block);
-
-            env.push_scope(None, None);
-            typecheck_expr(env, base_data, increment, None)?;
-            env.builder.add_jump(condition_block.clone());
-            env.pop_scope();
+            let init_result = typecheck_expr(env, base_data, init, None)?.into_expression();
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let increment_result =
+                typecheck_expr(env, base_data, increment, None)?.into_expression();
+            let body_result = typecheck_expr(env, base_data, body, None)?.into_expression();
 
             env.pop_scope();
-            env.builder.add_and_set_block(merge_block);
 
-            MIRValue::NULL
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::For {
+                    init: Box::new(init_result),
+                    condition: Box::new(condition_result),
+                    increment: Box::new(increment_result),
+                    body: Box::new(body_result),
+                },
+                _type: cx_typechecker_data::mir::types::MIRType::unit(),
+            })
         }
 
         CXExprKind::Break => {
-            // Q: What's the easiest way to convert from Option<&Option<T>> to Option<&T>?
-            // A: Using and_then twice.
-
-            let Some(break_to) = env
+            let Some(scope_idx) = env
                 .scope_stack
                 .iter()
-                .rfind(|inner| inner.break_to.is_some())
-                .and_then(|s| s.break_to.clone())
+                .rposition(|inner| inner.has_break_merge)
             else {
                 return log_typecheck_error!(
                     env,
@@ -311,17 +258,19 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            invoke_scope_destructors(&mut env.builder);
-            env.builder.add_jump(break_to);
-            MIRValue::NULL
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::Break {
+                    scope_depth: scope_idx,
+                },
+                _type: MIRType::unit(),
+            })
         }
 
         CXExprKind::Continue => {
-            let Some(continue_to) = env
+            let Some(scope_idx) = env
                 .scope_stack
                 .iter()
-                .rfind(|inner| inner.continue_to.is_some())
-                .and_then(|s| s.continue_to.clone())
+                .rposition(|inner| inner.has_continue_merge)
             else {
                 return log_typecheck_error!(
                     env,
@@ -330,48 +279,26 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            invoke_scope_destructors(&mut env.builder);
-            env.builder.add_jump(continue_to);
-            MIRValue::NULL
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::Continue {
+                    scope_depth: scope_idx,
+                },
+                _type: MIRType::unit(),
+            })
         }
 
         CXExprKind::Return { value } => {
-            let value_tc = if let Some(value) = value {
-                let return_type = &env.current_function().return_type.clone();
-                let val = typecheck_expr(env, base_data, value, Some(return_type))?;
-                let val_type = val.get_type();
+            let return_type = env.current_function().return_type.clone();
 
-                if let Some(inner) = val_type.mem_ref_inner() {
-                    if inner.is_memory_resident() {
-                        if let MIRValue::Register { register, .. } = &val {
-                            // If the inner type is memory-resident and we have the direct alias,
-                            // then we can just return the value as is and avoid the copy, given
-                            // that a pass-by-value struct return will do the implicit memcpy for us.
-                            Some(
-                                MIRValue::Register {
-                                    register: register.clone(),
-                                    _type: inner.clone(),
-                                },
-                            )
-                        } else {
-                            Some(coerce_value(env, expr, val)?)
-                        }
-                    } else {
-                        Some(coerce_value(env, expr, val)?)
-                    }
-                } else {
-                    Some(val)
-                }
-            } else {
-                None
-            };
-
-            let return_type = &env.current_function().return_type.clone();
+            let value_tc = value
+                .as_ref()
+                .map(|v| typecheck_expr(env, base_data, v, Some(&return_type)))
+                .transpose()?;
 
             let value = match (&value_tc, &return_type) {
-                (Some(some_value), return_type) if !return_type.is_unit() => {
-                    Some(implicit_cast(env, expr, some_value.clone(), return_type)?)
-                }
+                (Some(some_value), return_type) if !return_type.is_unit() => Some(Box::new(
+                    implicit_cast(env, expr, some_value.clone().into_expression(), return_type)?,
+                )),
 
                 (None, _) if return_type.is_unit() => None,
 
@@ -394,22 +321,19 @@ pub fn typecheck_expr_inner(
                 }
             };
 
-            contracted_function_return(env, base_data, value)?;
-
-            MIRValue::NULL
+            TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Return { value })
         }
 
-        CXExprKind::Defer { expr } => {
-            env.in_defer(|e| typecheck_expr(e, base_data, expr, None))?;
-
-            MIRValue::NULL
+        CXExprKind::Defer { expr: _ } => {
+            todo!()
         }
 
         CXExprKind::UnOp { operator, operand } => {
             match operator {
                 CXUnOp::PreIncrement(increment_amount)
                 | CXUnOp::PostIncrement(increment_amount) => {
-                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
+                    let operand_val =
+                        typecheck_expr(env, base_data, operand, None)?.into_expression();
                     let operand_type = operand_val.get_type();
 
                     let Some(inner) = operand_type.mem_ref_inner() else {
@@ -421,96 +345,23 @@ pub fn typecheck_expr_inner(
                         );
                     };
 
-                    let load = env.builder.new_register();
-                    let result = env.builder.new_register();
-                    env.builder.add_instruction(MIRInstruction::MemoryRead {
-                        result: load.clone(),
-                        source: operand_val.clone(),
-                        _type: inner.clone(),
-                    });
-
                     match &inner.kind {
-                        MIRTypeKind::Integer { _type, signed, .. } => {
-                            env.builder.add_instruction(MIRInstruction::BinOp {
-                                result: result.clone(),
-                                op: MIRBinOp::Integer {
-                                    itype: *_type,
-                                    op: MIRIntegerBinOp::ADD,
-                                },
-                                lhs: MIRValue::Register {
-                                    register: load.clone(),
-                                    _type: inner.clone(),
-                                },
-                                rhs: MIRValue::IntLiteral {
-                                    value: *increment_amount as i64,
-                                    _type: *_type,
-                                    signed: *signed,
-                                },
-                            });
-
-                            env.builder.add_instruction(MIRInstruction::MemoryWrite {
-                                target: operand_val,
-                                value: MIRValue::Register {
-                                    register: result.clone(),
-                                    _type: inner.clone(),
-                                },
-                            });
-
+                        MIRTypeKind::PointerTo { .. } | MIRTypeKind::Integer { .. } => {
                             match operator {
-                                CXUnOp::PreIncrement(_) => MIRValue::Register {
-                                    register: result.clone(),
-                                    _type: inner.clone(),
-                                },
-
-                                CXUnOp::PostIncrement(_) => MIRValue::Register {
-                                    register: load,
-                                    _type: inner.clone(),
-                                },
-
-                                _ => unreachable!(),
-                            }
-                        }
-
-                        MIRTypeKind::PointerTo { inner_type, .. } => {
-                            let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                            let element_stride = inner_type.type_size();
-
-                            env.builder.add_instruction(MIRInstruction::BinOp {
-                                result: result.clone(),
-                                op: MIRBinOp::PtrDiff {
-                                    op: MIRPtrDiffBinOp::ADD,
-                                    ptr_inner: inner_type.clone(),
-                                },
-                                lhs: MIRValue::Register {
-                                    register: load.clone(),
-                                    _type: inner.clone(),
-                                },
-                                rhs: MIRValue::IntLiteral {
-                                    value: (*increment_amount as i64) * (element_stride as i64),
-                                    _type: CXIntegerType::from_bytes(8).unwrap(),
-                                    signed: true,
-                                },
-                            });
-
-                            env.builder.add_instruction(MIRInstruction::MemoryWrite {
-                                target: operand_val,
-                                value: MIRValue::Register {
-                                    register: result.clone(),
-                                    _type: inner.clone(),
-                                },
-                            });
-
-                            match operator {
-                                CXUnOp::PreIncrement(_) => MIRValue::Register {
-                                    register: result.clone(),
-                                    _type: inner.clone(),
-                                },
-
-                                CXUnOp::PostIncrement(_) => MIRValue::Register {
-                                    register: load,
-                                    _type: inner.clone(),
-                                },
-
+                                CXUnOp::PreIncrement(_) => TypecheckResult::expr(
+                                    operand_type.clone(),
+                                    MIRExpressionKind::UnaryOperation {
+                                        op: MIRUnOp::PreIncrement(*increment_amount),
+                                        operand: Box::new(operand_val),
+                                    },
+                                ),
+                                CXUnOp::PostIncrement(_) => TypecheckResult::expr(
+                                    inner.clone(),
+                                    MIRExpressionKind::UnaryOperation {
+                                        op: MIRUnOp::PostIncrement(*increment_amount),
+                                        operand: Box::new(operand_val),
+                                    },
+                                ),
                                 _ => unreachable!(),
                             }
                         }
@@ -528,7 +379,7 @@ pub fn typecheck_expr_inner(
 
                 CXUnOp::LNot => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let loaded_operand = coerce_value(env, expr, operand_val)?;
+                    let loaded_operand = coerce_value(env, expr, operand_val.into_expression())?;
                     let loaded_operand_type = loaded_operand.get_type();
 
                     if !loaded_operand_type.is_integer() {
@@ -540,26 +391,20 @@ pub fn typecheck_expr_inner(
                         );
                     }
 
-                    let result = env.builder.new_register();
-                    env.builder.add_instruction(MIRInstruction::UnOp {
-                        result: result.clone(),
-                        op: MIRUnOp::LNOT,
-                        operand: loaded_operand,
-                    });
-
-                    MIRValue::Register {
-                        register: result,
-                        _type: MIRTypeKind::Integer {
+                    TypecheckResult::unary_op(
+                        TypecheckResult::expr2(loaded_operand),
+                        MIRUnOp::LNOT,
+                        MIRTypeKind::Integer {
                             _type: CXIntegerType::I1,
                             signed: false,
                         }
                         .into(),
-                    }
+                    )
                 }
 
                 CXUnOp::BNot => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let mut loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let mut loaded_op_val = coerce_value(env, expr, operand_val.into_expression())?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     if !loaded_op_type.is_integer() {
@@ -588,24 +433,18 @@ pub fn typecheck_expr_inner(
                         )?;
                     }
 
-                    let result = env.builder.new_register();
                     let result_type = loaded_op_val.get_type();
 
-                    env.builder.add_instruction(MIRInstruction::UnOp {
-                        result: result.clone(),
-                        op: MIRUnOp::BNOT,
-                        operand: loaded_op_val,
-                    });
-
-                    MIRValue::Register {
-                        register: result,
-                        _type: result_type,
-                    }
+                    TypecheckResult::unary_op(
+                        TypecheckResult::expr2(loaded_op_val),
+                        MIRUnOp::BNOT,
+                        result_type,
+                    )
                 }
 
                 CXUnOp::Negative => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let loaded_op_val = coerce_value(env, expr, operand_val)?;
+                    let loaded_op_val = coerce_value(env, expr, operand_val.into_expression())?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     let operator = match &loaded_op_type.kind {
@@ -622,17 +461,11 @@ pub fn typecheck_expr_inner(
                         }
                     };
 
-                    let result = env.builder.new_register();
-                    env.builder.add_instruction(MIRInstruction::UnOp {
-                        result: result.clone(),
-                        op: operator,
-                        operand: loaded_op_val,
-                    });
-
-                    MIRValue::Register {
-                        register: result,
-                        _type: loaded_op_type,
-                    }
+                    TypecheckResult::unary_op(
+                        TypecheckResult::expr2(loaded_op_val),
+                        operator,
+                        loaded_op_type,
+                    )
                 }
 
                 CXUnOp::AddressOf => {
@@ -646,22 +479,17 @@ pub fn typecheck_expr_inner(
                         );
                     };
 
-                    let register = env.builder.new_register();
-                    env.builder.add_instruction(MIRInstruction::Alias {
-                        result: register.clone(),
-                        value: operand_val,
-                    });
-
-                    MIRValue::Register {
-                        register,
+                    // AddressOf just returns the operand (which is a reference) as a pointer
+                    TypecheckResult::expr2(MIRExpression {
+                        kind: operand_val.into_expression().kind,
                         _type: inner.clone().pointer_to(),
-                    }
+                    })
                 }
 
                 CXUnOp::Dereference => {
                     // If the operand is a memory reference of a pointer type, we need to load the value first
                     let loaded_operand = typecheck_expr(env, base_data, operand, None)
-                        .and_then(|v| coerce_value(env, expr, v))?;
+                        .and_then(|v| coerce_value(env, expr, v.into_expression()))?;
                     let loaded_operand_type = loaded_operand.get_type();
 
                     let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
@@ -673,23 +501,25 @@ pub fn typecheck_expr_inner(
                         );
                     };
 
-                    let result = env.builder.new_register();
-                    env.builder.add_instruction(MIRInstruction::Alias {
-                        result: result.clone(),
-                        value: loaded_operand,
-                    });
-
-                    MIRValue::Register {
-                        register: result,
+                    // Dereference returns a memory reference to the inner type
+                    TypecheckResult::expr2(MIRExpression {
+                        kind: MIRExpressionKind::Typechange(Box::new(loaded_operand)),
                         _type: inner.mem_ref_to(),
-                    }
+                    })
                 }
 
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, to_type)?;
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
 
-                    explicit_cast(env, expr, operand_val, &to_type)?
+                    TypecheckResult {
+                        expression: explicit_cast(
+                            env,
+                            expr,
+                            operand_val.into_expression(),
+                            &to_type,
+                        )?,
+                    }
                 }
             }
         }
@@ -699,23 +529,8 @@ pub fn typecheck_expr_inner(
             lhs,
             rhs,
         } => {
-            let lhs_val = typecheck_expr(env, base_data, lhs, None)?;
+            let lhs_val = typecheck_expr(env, base_data, lhs, None)?.into_expression();
             let lhs_type = lhs_val.get_type();
-
-            let rhs_expected_type = if op.is_some() {
-                None
-            } else {
-                lhs_type.mem_ref_inner()
-            };
-
-            let mut rhs_val = typecheck_expr(env, base_data, rhs, rhs_expected_type)?;
-
-            if let Some(op) = op {
-                let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
-                let loaded_rhs = coerce_value(env, expr, rhs_val)?;
-
-                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
-            }
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
                 return log_typecheck_error!(
@@ -726,20 +541,28 @@ pub fn typecheck_expr_inner(
                 );
             };
 
+            let mut rhs_val = typecheck_expr(env, base_data, rhs, Some(inner))?;
+
+            if let Some(op) = op {
+                let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
+                let loaded_rhs = coerce_value(env, expr, rhs_val.into_expression())?;
+
+                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
+            }
+
             if inner.get_specifier(CX_CONST) {
                 return log_typecheck_error!(env, expr, " Cannot assign to a const type");
             }
 
-            let coerced_rhs_val = implicit_cast(env, expr, rhs_val, inner)?;
-            handle_assignment(env, &lhs_val, &coerced_rhs_val, inner)?;
+            let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), inner)?;
 
-            if inner.is_memory_resident() {
-                // If the inner type is a memory-resident, we need to just return a pointer to
-                // the location, rhs_val is a pointer to now-dead temporary memory.
-                lhs_val
-            } else {
-                coerced_rhs_val
-            }
+            TypecheckResult::expr(
+                lhs_val.get_type(),
+                MIRExpressionKind::MemoryWrite {
+                    target: Box::new(lhs_val),
+                    value: Box::new(coerced_rhs_val),
+                },
+            )
         }
 
         CXExprKind::BinOp {
@@ -752,7 +575,11 @@ pub fn typecheck_expr_inner(
             op: CXBinOp::Access,
             lhs,
             rhs,
-        } => typecheck_access(env, base_data, lhs, rhs, expr)?,
+        } => {
+            let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression();
+
+            typecheck_access(env, base_data, lhs, rhs, expr)?
+        }
 
         CXExprKind::BinOp {
             op: CXBinOp::MethodCall,
@@ -767,36 +594,36 @@ pub fn typecheck_expr_inner(
         CXExprKind::Move {
             expr: inner_expr, ..
         } => {
-            let val = typecheck_expr(env, base_data, inner_expr, None)?;
-            let val_type = val.get_type();
-
-            let Some(inner) = val_type.mem_ref_inner() else {
+            let CXExprKind::Identifier(ident) = &inner_expr.kind else {
                 return log_typecheck_error!(
                     env,
                     expr,
-                    " Cannot move from a non-reference type {}",
-                    val_type
+                    "Move expressions can currently only be applied to stack variable indentifiers"
                 );
             };
 
-            let MIRValue::Register { register, .. } = &val else {
+            let Some(inner_val) = env.symbol_table.get(ident.as_str()) else {
+                return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
+            };
+
+            if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
                 return log_typecheck_error!(
                     env,
                     expr,
-                    " Can only move from register-based values, found {}",
-                    val
+                    "Move expressions can currently only be applied to stack variable indentifiers"
                 );
+            }
+
+            let Some(inner_type) = inner_val._type.mem_ref_inner().cloned() else {
+                unreachable!()
             };
 
-            env.builder.add_instruction(MIRInstruction::LeakLifetime {
-                region: register.clone(),
-                _type: inner.clone(),
-            });
-
-            return Ok(MIRValue::Register {
-                register: register.clone(),
-                _type: inner.clone(),
-            });
+            TypecheckResult::expr(
+                inner_type,
+                MIRExpressionKind::Move {
+                    source: Box::new(inner_val.clone()),
+                },
+            )
         }
 
         CXExprKind::New { _type } => {
@@ -835,42 +662,47 @@ pub fn typecheck_expr_inner(
             };
 
             let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-                .and_then(|v| implicit_cast(env, expr, v, &variant_type))?;
+                .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
-            let result_region = env.builder.new_register();
-            env.builder
-                .add_instruction(MIRInstruction::CreateStackRegion {
-                    result: result_region.clone(),
+            let allocation = TypecheckResult::expr(
+                union_type.clone(),
+                MIRExpressionKind::CreateStackVariable {
+                    name: None,
                     _type: union_type.clone(),
-                });
+                },
+            );
 
-            let memory = MIRValue::Register {
-                register: result_region.clone(),
-                _type: union_type.clone(),
-            };
-
-            env.builder
-                .add_instruction(MIRInstruction::ConstructTaggedUnionInto {
-                    memory: memory.clone(),
-                    value: inner,
+            TypecheckResult::expr(
+                union_type.clone().mem_ref_to(),
+                MIRExpressionKind::TaggedUnionSet {
+                    target: Box::new(allocation.into_expression()),
                     variant_index: i,
+                    inner_value: Box::new(inner),
                     sum_type: union_type.clone(),
-                });
-
-            memory
+                },
+            )
         }
 
-        CXExprKind::Unit => MIRValue::NULL,
+        CXExprKind::Unit => TypecheckResult::expr2(MIRExpression {
+            kind: MIRExpressionKind::Unit,
+            _type: cx_typechecker_data::mir::types::MIRType::unit(),
+        }),
 
         CXExprKind::SizeOf { expr } => {
             let tc_expr = typecheck_expr(env, base_data, expr, None)?;
             let tc_type = tc_expr.get_type();
 
-            MIRValue::IntLiteral {
-                value: tc_type.type_size() as i64,
-                _type: CXIntegerType::I64,
-                signed: false,
-            }
+            TypecheckResult::expr2(MIRExpression {
+                kind: MIRExpressionKind::IntLiteral(
+                    tc_type.type_size() as i64,
+                    CXIntegerType::I64,
+                    false,
+                ),
+                _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Integer {
+                    _type: CXIntegerType::I64,
+                    signed: false,
+                }),
+            })
         }
 
         CXExprKind::Switch {
@@ -903,7 +735,7 @@ pub(crate) fn global_expr(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     ident: &str,
-) -> CXResult<MIRValue> {
+) -> CXResult<MIRExpression> {
     if let Some(global) = env.realized_globals.get(ident) {
         return tcglobal_expr(global);
     }
@@ -918,10 +750,16 @@ pub(crate) fn global_expr(
     };
 
     match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Ok(MIRValue::IntLiteral {
-            value: *val as i64,
-            _type: CXIntegerType::from_bytes(8).unwrap(),
-            signed: true,
+        CXGlobalVariable::EnumConstant(val) => Ok(MIRExpression {
+            kind: MIRExpressionKind::IntLiteral(
+                *val as i64,
+                CXIntegerType::from_bytes(8).unwrap(),
+                true,
+            ),
+            _type: MIRType::from(MIRTypeKind::Integer {
+                _type: CXIntegerType::from_bytes(8).unwrap(),
+                signed: true,
+            }),
         }),
 
         CXGlobalVariable::Standard {
@@ -930,7 +768,7 @@ pub(crate) fn global_expr(
             is_mutable,
         } => {
             let _type = env.complete_type(base_data, _type)?;
-            let initializer = match initializer.as_ref() {
+            let _initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
                         return log_typecheck_error!(
@@ -951,8 +789,8 @@ pub(crate) fn global_expr(
                 MIRGlobalVariable {
                     kind: MIRGlobalVarKind::Variable {
                         name: CXIdent::new(ident.to_string()),
+                        initializer: _initializer,
                         _type,
-                        initializer,
                     },
                     is_mutable: *is_mutable,
                     linkage: module_res.linkage,
@@ -964,10 +802,10 @@ pub(crate) fn global_expr(
     }
 }
 
-fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRValue> {
+fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRExpression> {
     match &global.kind {
-        MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRValue::GlobalValue {
-            name: name.clone(),
+        MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRExpression {
+            kind: MIRExpressionKind::Variable(name.clone()),
             _type: _type.clone().mem_ref_to(),
         }),
 

@@ -167,14 +167,17 @@ pub fn try_function_parse(
 }
 
 pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
-    if !try_next!(data.tokens, keyword!(Where)) {
-        return Ok(CXFunctionContract::default());
-    }
+    let safe = try_next!(data.tokens, keyword!(Safe));
 
     let mut contract = CXFunctionContract {
+        safe,
         precondition: None,
         postcondition: None,
     };
+    
+    if !try_next!(data.tokens, keyword!(Where)) {
+        return Ok(contract);
+    }
 
     while let Ok(next) = peek_next_kind!(data.tokens) {
         match next {

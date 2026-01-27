@@ -1,16 +1,18 @@
+//! MIR to Bytecode lowering
+
 use cx_typechecker_data::mir::program::{MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_util::CXResult;
 
-use crate::{
-    builder::BCBuilder,
-    mir_lowering::instructions::{lower_global_value, lower_instruction},
-};
+use crate::builder::BCBuilder;
 
-pub(crate) mod binary_ops;
-pub(crate) mod coercion;
+mod binary_ops;
+mod coercion;
+mod control_flow;
+mod tagged_union;
 
+pub mod deconstructors;
+pub mod expressions;
 pub mod instructions;
-pub mod tagged_union;
 pub mod types;
 
 pub fn lower_mir(builder: &mut BCBuilder, mir: &MIRUnit) -> CXResult<()> {
@@ -21,34 +23,23 @@ pub fn lower_mir(builder: &mut BCBuilder, mir: &MIRUnit) -> CXResult<()> {
     for function in mir.functions.iter() {
         generate_function(builder, function)?;
     }
+    
+    while let Some(deconstructor_type) = builder.pop_deconstructor_request() {
+        deconstructors::generate_deconstructor(builder, &deconstructor_type)?;
+    }
 
     Ok(())
 }
 
 pub fn generate_function(builder: &mut BCBuilder, function: &MIRFunction) -> CXResult<()> {
-    let bc_prototype = builder.convert_cx_prototype(&function.prototype);
-    builder.new_function(bc_prototype);
-
-    for block in function.basic_blocks.iter() {
-        builder.create_block(block.id.clone());
-        builder.set_current_block(block.id.clone());
-
-        for instruction in block.instructions.iter() {
-            lower_instruction(builder, instruction)?;
-        }
-    }
-
-    builder.finish_function();
-    Ok(())
+    expressions::lower_function(builder, function)
 }
 
 pub fn generate_global_value(
     builder: &mut BCBuilder,
     global: &MIRGlobalVariable,
 ) -> CXResult<()> {
-    let lowered = lower_global_value(builder, global)?;
-    
+    let lowered = instructions::lower_global_value(builder, global)?;
     builder.add_global_variable(lowered);
-    
     Ok(())
 }

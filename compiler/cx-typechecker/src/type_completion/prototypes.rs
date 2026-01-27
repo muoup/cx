@@ -1,5 +1,6 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::name_mangling::base_mangle_fn_name;
+use crate::type_checking::binary_ops::typecheck_contract;
 use cx_parsing_data::data::{CXNaiveParameter, CXNaivePrototype, CXNaiveTemplateInput};
 use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRParameter};
@@ -55,13 +56,14 @@ pub fn _complete_fn_prototype(
         })
         .collect::<CXResult<Vec<_>>>()?;
 
-    let name = base_mangle_fn_name(env, base_data, &prototype.kind)?;
-
+    let name = CXIdent::from(base_mangle_fn_name(env, base_data, &prototype.kind)?);
+    let contract = typecheck_contract(env, base_data, &name, &prototype)?;
+    
     let prototype = MIRFunctionPrototype {
-        name: name.clone().into(),
+        name: name,
         return_type,
         params: parameters,
-        contract: prototype.contract.clone(),
+        contract,
         var_args: prototype.var_args,
     };
 

@@ -1,10 +1,11 @@
 use std::hash::{Hash, Hasher};
 
 use cx_parsing_data::ast::VisibilityMode;
-use cx_parsing_data::data::{CXFunctionContract, CXTypeSpecifier};
+use cx_parsing_data::data::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
+use crate::mir::expression::MIRFunctionContract;
 use crate::mir::name_mangling::type_mangle;
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -40,7 +41,7 @@ pub struct MIRFunctionPrototype {
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
-    pub contract: CXFunctionContract,
+    pub contract: MIRFunctionContract,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -183,7 +184,7 @@ impl MIRType {
             kind: MIRTypeKind::Unit,
         }
     }
-    
+
     pub fn bool() -> Self {
         MIRType {
             specifiers: 0,
@@ -207,18 +208,16 @@ impl MIRType {
         self.visibility = visibility;
         self
     }
-    
-    pub fn add_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
+
+    pub fn add_specifier(mut self, specifier: CXTypeSpecifier) -> Self {
         self.specifiers |= specifier;
         self
     }
 
     pub fn with_specifier(&self, specifier: CXTypeSpecifier) -> Self {
-        let mut clone = self.clone();
-        clone.add_specifier(specifier);
-        clone
+        self.clone().add_specifier(specifier)
     }
-    
+
     pub fn remove_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
         self.specifiers &= !specifier;
         self
@@ -433,7 +432,7 @@ impl MIRType {
                 .max()
                 .unwrap_or(0),
 
-            MIRTypeKind::Array { size, inner_type } => size * inner_type.type_size(),
+            MIRTypeKind::Array { size, inner_type } => size * inner_type.padded_size(),
 
             MIRTypeKind::TaggedUnion { variants, .. } => {
                 variants
@@ -448,9 +447,9 @@ impl MIRType {
         }
     }
 
-    pub fn padded_size(&self) -> u64 {
-        let size = self.type_size() as u64;
-        let align = self.type_alignment() as u64;
+    pub fn padded_size(&self) -> usize {
+        let size = self.type_size();
+        let align = self.type_alignment();
         size.div_ceil(align) * align
     }
 
@@ -501,7 +500,7 @@ impl MIRType {
                     return_type: MIRType::unit(),
                     params: vec![],
                     var_args: false,
-                    contract: CXFunctionContract::default(),
+                    contract: MIRFunctionContract::default(),
                 }),
             },
         )
@@ -551,17 +550,22 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
 
         (
             MIRTypeKind::Structured {
-                name: n1, fields: t1_fields, ..
+                name: n1,
+                fields: t1_fields,
+                ..
             },
             MIRTypeKind::Structured {
-                name: n2, fields: t2_fields, ..
+                name: n2,
+                fields: t2_fields,
+                ..
             },
-        ) => 
-          n1 == n2 && 
-            t1_fields
-            .iter()
-            .zip(t2_fields.iter())
-            .all(|(f1, f2)| same_type(&f1.1, &f2.1)),
+        ) => {
+            n1 == n2
+                && t1_fields
+                    .iter()
+                    .zip(t2_fields.iter())
+                    .all(|(f1, f2)| same_type(&f1.1, &f2.1))
+        }
 
         (MIRTypeKind::Function { prototype: p1 }, MIRTypeKind::Function { prototype: p2 }) => {
             same_type(&p1.return_type, &p2.return_type)

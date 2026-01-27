@@ -1,157 +1,121 @@
+//! Type conversion and coercion lowering
+
 use cx_bytecode_data::{
-    types::{BCType, BCTypeKind},
+    types::{BCFloatType, BCIntegerType, BCTypeKind},
     BCCoercionType, BCInstructionKind, BCValue,
 };
-use cx_typechecker_data::mir::expression::{MIRCoercion, MIRRegister, MIRValue};
+use cx_typechecker_data::mir::{
+    expression::{MIRCoercion, MIRExpression},
+    types::MIRType,
+};
 use cx_util::CXResult;
 
-use crate::{builder::BCBuilder, mir_lowering::instructions::lower_value};
+use crate::builder::BCBuilder;
+use super::expressions::lower_expression;
 
-pub fn lower_coercion(
+/// Lower a type conversion expression
+pub fn lower_type_conversion(
     builder: &mut BCBuilder,
-    result: MIRRegister,
-    value: &MIRValue,
-    coercion_type: MIRCoercion,
+    operand: &MIRExpression,
+    conversion: MIRCoercion,
+    result_type: &MIRType,
 ) -> CXResult<BCValue> {
-    let bc_value = lower_value(builder, value)?;
+    let bc_operand = lower_expression(builder, operand)?;
+    let bc_result_type = builder.convert_cx_type(result_type);
 
-    match coercion_type {
-        MIRCoercion::ReinterpretBits => {
-            builder.insert_symbol(result, bc_value.clone());
+    let coercion_type = convert_coercion(&conversion, &bc_operand)?;
 
-            Ok(bc_value)
+    builder.add_new_instruction(
+        BCInstructionKind::Coercion {
+            coercion_type,
+            value: bc_operand,
+        },
+        bc_result_type,
+        true,
+    )
+}
+
+fn convert_coercion(
+    coercion: &MIRCoercion,
+    operand: &BCValue,
+) -> CXResult<BCCoercionType> {
+    match coercion {
+        MIRCoercion::ReinterpretBits => Ok(BCCoercionType::BitCast),
+        MIRCoercion::IntToBool => {
+            Ok(BCCoercionType::Trunc)
         }
-
-        MIRCoercion::Integral { sextend, to_type } => {
-            let bc_itype = builder.convert_integer_type(&to_type);
-            let from_type = builder.convert_cx_type(&value.get_type());
-
-            let from_bytes = from_type.size();
-            let to_bytes = to_type.bytes();
-
-            if from_bytes > to_bytes {
-                builder.add_instruction_translated(
-                    BCInstructionKind::Coercion {
-                        coercion_type: BCCoercionType::Trunc,
-                        value: bc_value,
-                    },
-                    BCType::from(BCTypeKind::Integer(bc_itype)),
-                    Some(result),
-                )
-            } else if sextend {
-                builder.add_instruction_translated(
-                    BCInstructionKind::Coercion {
-                        coercion_type: BCCoercionType::SExtend,
-                        value: bc_value,
-                    },
-                    BCType::from(BCTypeKind::Integer(bc_itype)),
-                    Some(result),
-                )
+        MIRCoercion::Integral { sextend, .. } => {
+            if *sextend {
+                Ok(BCCoercionType::SExtend)
             } else {
-                builder.add_instruction_translated(
-                    BCInstructionKind::Coercion {
-                        coercion_type: BCCoercionType::ZExtend,
-                        value: bc_value,
-                    },
-                    BCType::from(BCTypeKind::Integer(bc_itype)),
-                    Some(result),
-                )
+                Ok(BCCoercionType::ZExtend)
             }
         }
-
-        MIRCoercion::FloatCast { to_type } => {
-            let bc_itype = builder.convert_float_type(&to_type);
-
-            let BCTypeKind::Float(from) = builder.convert_cx_type(&value.get_type()).kind else {
-                unreachable!()
+        MIRCoercion::FloatCast { .. } => {
+            let from_type = match operand {
+                BCValue::FloatImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Float(ft) = _type.kind {
+                        ft
+                    } else {
+                        BCFloatType::F64
+                    }
+                }
+                _ => BCFloatType::F64,
             };
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Coercion {
-                    coercion_type: BCCoercionType::FloatCast { from },
-                    value: bc_value,
-                },
-                BCType::from(BCTypeKind::Float(bc_itype)),
-                Some(result),
-            )
+            Ok(BCCoercionType::FloatCast { from: from_type })
         }
-
-        MIRCoercion::IntToFloat { to_type, sextend } => {
-            let to_ftype = builder.convert_float_type(&to_type);
-            let to_type = BCType::from(BCTypeKind::Float(to_ftype));
-
-            let BCTypeKind::Integer(from_itype) = builder.convert_cx_type(&value.get_type()).kind
-            else {
-                unreachable!()
+        MIRCoercion::IntToFloat { sextend, .. } => {
+            let from_type = match operand {
+                BCValue::IntImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Integer(it) = _type.kind {
+                        it
+                    } else {
+                        BCIntegerType::I64
+                    }
+                }
+                _ => BCIntegerType::I64,
             };
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Coercion {
-                    coercion_type: BCCoercionType::IntToFloat {
-                        from: from_itype,
-                        sextend,
-                    },
-                    value: bc_value,
-                },
-                to_type,
-                Some(result),
-            )
+            Ok(BCCoercionType::IntToFloat {
+                from: from_type,
+                sextend: *sextend,
+            })
         }
-
-        MIRCoercion::PtrToInt { to_type } => {
-            let bc_itype = builder.convert_integer_type(&to_type);
-            let to_type = BCType::from(BCTypeKind::Integer(bc_itype));
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Coercion {
-                    coercion_type: BCCoercionType::PtrToInt,
-                    value: bc_value,
-                },
-                to_type,
-                Some(result),
-            )
-        }
-
+        MIRCoercion::PtrToInt { .. } => Ok(BCCoercionType::PtrToInt),
         MIRCoercion::IntToPtr { sextend } => {
-            let bc_type = builder.convert_cx_type(&value.get_type());
-            let BCTypeKind::Integer(bc_itype) = &bc_type.kind else {
-                unreachable!()
+            let from_type = match operand {
+                BCValue::IntImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Integer(it) = _type.kind {
+                        it
+                    } else {
+                        BCIntegerType::I64
+                    }
+                }
+                _ => BCIntegerType::I64,
             };
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Coercion {
-                    coercion_type: BCCoercionType::IntToPtr {
-                        from: *bc_itype,
-                        sextend,
-                    },
-                    value: bc_value,
-                },
-                BCType::default_pointer(),
-                Some(result),
-            )
+            Ok(BCCoercionType::IntToPtr {
+                from: from_type,
+                sextend: *sextend,
+            })
         }
-
-        MIRCoercion::FloatToInt { to_type, sextend } => {
-            let from_type = builder.convert_cx_type(&value.get_type());
-
-            let to_itype = builder.convert_integer_type(&to_type);
-            let int_type = BCType::from(BCTypeKind::Integer(to_itype));
-
-            let BCTypeKind::Float(from_ftype) = &from_type.kind else {
-                unreachable!()
+        MIRCoercion::FloatToInt { sextend, .. } => {
+            let from_type = match operand {
+                BCValue::FloatImmediate { _type, .. } => *_type,
+                BCValue::Register { _type, .. } => {
+                    if let BCTypeKind::Float(ft) = _type.kind {
+                        ft
+                    } else {
+                        BCFloatType::F64
+                    }
+                }
+                _ => BCFloatType::F64,
             };
-
-            builder.add_instruction_translated(
-                BCInstructionKind::Coercion {
-                    coercion_type: BCCoercionType::FloatToInt {
-                        from: *from_ftype,
-                        sextend,
-                    },
-                    value: bc_value,
-                },
-                int_type,
-                Some(result),
-            )
+            Ok(BCCoercionType::FloatToInt {
+                from: from_type,
+                sextend: *sextend,
+            })
         }
     }
 }

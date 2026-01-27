@@ -26,6 +26,13 @@ impl<'a> CXExprFormatter<'a> {
         }
         Ok(())
     }
+
+    fn indent_plus_one(&self, f: &mut Formatter<'_>) -> Result {
+        for _ in 0..(self.depth + 1) {
+            write!(f, "  ")?;
+        }
+        Ok(())
+    }
 }
 
 impl Display for CXAST {
@@ -241,12 +248,12 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "Match")?;
                 CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
                 for (pattern, arm_expr) in arms {
-                    self.indent(f)?;
+                    self.indent_plus_one(f)?;
                     writeln!(f, "Pattern: {}", pattern)?;
                     CXExprFormatter::new(arm_expr, self.depth + 1).fmt(f)?;
                 }
                 if let Some(default_expr) = default {
-                    self.indent(f)?;
+                    self.indent_plus_one(f)?;
                     writeln!(f, "Default:")?;
                     CXExprFormatter::new(default_expr, self.depth + 1).fmt(f)?;
                 }

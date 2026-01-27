@@ -600,10 +600,12 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
         }
 
         KeywordType::Defer => {
-            let body = parse_body(data)?;
-            Ok(CXExprKind::Defer {
-                expr: Box::new(body),
-            })
+            return log_parse_error!(data, "Defer expression support is not yet implemented");
+            
+            // let body = parse_body(data)?;
+            // Ok(CXExprKind::Defer {
+            //     expr: Box::new(body),
+            // })
         }
 
         _ => {

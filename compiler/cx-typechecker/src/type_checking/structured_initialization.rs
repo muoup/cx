@@ -1,8 +1,8 @@
 use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRValue},
+    expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
-    types::{CXIntegerType, MIRType, MIRTypeKind},
+    types::{MIRType, MIRTypeKind},
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -10,8 +10,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        binary_ops::{handle_assignment, struct_field},
-        casting::implicit_cast,
+        accumulation::TypecheckResult, binary_ops::{struct_field}, casting::implicit_cast,
         typechecker::typecheck_expr,
     },
 };
@@ -32,11 +31,7 @@ pub fn deconstruct_type_constructor<'a>(
         rhs: inner,
     } = &pattern.kind
     else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     let CXExprKind::BinOp {
@@ -45,27 +40,15 @@ pub fn deconstruct_type_constructor<'a>(
         rhs,
     } = &lhs.kind
     else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     let CXExprKind::Identifier(union_name) = &lhs.kind else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     let CXExprKind::Identifier(variant_name) = &rhs.kind else {
-        return log_typecheck_error!(
-            env,
-            pattern,
-            "Expected type constructor"
-        );
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
 
     Ok(TypeConstructor {
@@ -81,7 +64,7 @@ pub fn typecheck_initializer_list(
     expr: &CXExpr,
     indices: &[CXInitIndex],
     to_type: Option<&MIRType>,
-) -> CXResult<MIRValue> {
+) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
         return log_typecheck_error!(env, expr, " Initializer lists must have an explicit type");
     };
@@ -117,8 +100,8 @@ fn typecheck_array_initializer(
     indices: &[CXInitIndex],
     inner_type: &MIRType,
     size: Option<usize>,
-    to_type: &MIRType,
-) -> CXResult<MIRValue> {
+    _to_type: &MIRType,
+) -> CXResult<TypecheckResult> {
     for index in indices {
         if let Some(name) = &index.name {
             return log_typecheck_error!(
@@ -147,44 +130,20 @@ fn typecheck_array_initializer(
         size: array_size,
     });
 
-    let region = env.builder.new_register();
-    env.builder
-        .add_instruction(MIRInstruction::CreateStackRegion {
-            result: region.clone(),
-            _type: array_type.clone(),
-        });
+    let elements = indices
+        .iter()
+        .map(|index| {
+            typecheck_expr(env, base_data, &index.value, Some(inner_type)).map(|v| v.into_expression())
+        })
+        .collect::<CXResult<_>>()?;
 
-    let region_val = MIRValue::Register {
-        register: region,
-        _type: to_type.clone(),
-    };
-
-    for (i, index) in indices.iter().enumerate() {
-        let value = typecheck_expr(env, base_data, &index.value, Some(inner_type))?;
-
-        let element_ptr = env.builder.new_register();
-        env.builder.add_instruction(MIRInstruction::ArrayGet {
-            result: element_ptr.clone(),
-            source: region_val.clone(),
-            index: MIRValue::IntLiteral {
-                value: i as i64,
-                _type: CXIntegerType::I64,
-                signed: true,
-            },
+    Ok(TypecheckResult::expr(
+        array_type,
+        MIRExpressionKind::ArrayInitializer {
+            elements,
             element_type: inner_type.clone(),
-            array_type: array_type.clone(),
-        });
-
-        env.builder.add_instruction(MIRInstruction::MemoryWrite {
-            target: MIRValue::Register {
-                register: element_ptr,
-                _type: inner_type.clone().mem_ref_to(),
-            },
-            value,
-        });
-    }
-
-    Ok(region_val)
+        },
+    ))
 }
 
 fn typecheck_structured_initializer(
@@ -193,7 +152,7 @@ fn typecheck_structured_initializer(
     expr: &CXExpr,
     indices: &[CXInitIndex],
     to_type: &MIRType,
-) -> CXResult<MIRValue> {
+) -> CXResult<TypecheckResult> {
     let MIRTypeKind::Structured { fields, .. } = &to_type.kind else {
         return log_typecheck_error!(
             env,
@@ -202,17 +161,7 @@ fn typecheck_structured_initializer(
         );
     };
 
-    let region = env.builder.new_register();
-    env.builder
-        .add_instruction(MIRInstruction::CreateStackRegion {
-            result: region.clone(),
-            _type: to_type.clone(),
-        });
-
-    let region_val = MIRValue::Register {
-        register: region,
-        _type: to_type.clone(),
-    };
+    let mut initializations = Vec::new();
 
     let mut counter = 0;
     let mut initialized_fields = vec![false; fields.len()];
@@ -247,9 +196,9 @@ fn typecheck_structured_initializer(
 
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
-            .and_then(|v| implicit_cast(env, &index.value, v, field_type))?;
+            .and_then(|v| implicit_cast(env, &index.value, v.into_expression(), field_type))?;
 
-        let Some(struct_field) = struct_field(to_type, field_name.as_str()) else {
+        let Some(struct_field_info) = struct_field(to_type, field_name.as_str()) else {
             return log_typecheck_error!(
                 env,
                 expr,
@@ -259,21 +208,11 @@ fn typecheck_structured_initializer(
             );
         };
 
-        let element_ptr = env.builder.new_register();
-        env.builder.add_instruction(MIRInstruction::StructGet {
-            result: element_ptr.clone(),
-            source: region_val.clone(),
-            field_index: struct_field.index,
-            field_offset: struct_field.offset,
-            struct_type: to_type.clone(),
+        initializations.push(StructInitialization {
+            field_index: struct_field_info.index,
+            field_offset: struct_field_info.offset,
+            value,
         });
-
-        let element_ptr_val = MIRValue::Register {
-            register: element_ptr,
-            _type: field_type.clone().mem_ref_to(),
-        };
-
-        handle_assignment(env, &element_ptr_val, &value, field_type)?;
         initialized_fields[counter] = true;
 
         if index.name.is_none() {
@@ -281,5 +220,11 @@ fn typecheck_structured_initializer(
         }
     }
 
-    Ok(region_val)
+    Ok(TypecheckResult::expr(
+        to_type.clone(),
+        MIRExpressionKind::StructInitializer {
+            struct_type: to_type.clone(),
+            initializations,
+        },
+    ))
 }

@@ -185,6 +185,8 @@ pub enum KeywordType {
     Class,
     Match,
     Where,
+    Safe,
+    
     Precondition,
     Postcondition,
 }
@@ -276,6 +278,8 @@ impl TokenKind {
             "match" => TokenKind::Keyword(KeywordType::Match),
             "is" => TokenKind::Operator(OperatorType::Is),
 
+            "safe" => TokenKind::Keyword(KeywordType::Safe),
+            
             "where" => TokenKind::Keyword(KeywordType::Where),
             "pre" => TokenKind::Keyword(KeywordType::Precondition),
             "post" => TokenKind::Keyword(KeywordType::Postcondition),

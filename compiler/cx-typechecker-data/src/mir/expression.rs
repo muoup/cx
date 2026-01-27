@@ -1,211 +1,210 @@
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
+use speedy::{Readable, Writable};
 
-use crate::mir::types::{CXFloatType, MIRFunctionPrototype, CXIntegerType, MIRType, MIRTypeKind};
+use crate::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct MIRRegister {
-    pub name: CXIdent,
+#[derive(Clone, Debug, Default, Readable, Writable)]
+pub struct MIRFunctionContract {
+    pub precondition: Option<Box<MIRExpression>>,
+    pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
 }
 
-#[derive(Clone, Debug, Default)]
-pub enum MIRValue {
-    IntLiteral {
-        value: i64,
-        signed: bool,
-        _type: CXIntegerType,
-    },
-    FloatLiteral {
-        value: FloatWrapper,
-        _type: CXFloatType,
-    },
-    FunctionReference {
-        prototype: MIRFunctionPrototype,
-        implicit_variables: Vec<MIRValue>,
-    },
-    GlobalValue {
-        name: CXIdent,
-        _type: MIRType,
-    },
-    Parameter {
-        name: CXIdent,
-        _type: MIRType,
-    },
-    Register {
-        register: MIRRegister,
-        _type: MIRType,
-    },
+#[derive(Clone, Debug, Default, Readable, Writable)]
+pub struct MIRExpression {
+    pub kind: MIRExpressionKind,
+    pub _type: MIRType,
+}
+
+#[derive(Clone, Debug, Default, Readable, Writable)]
+pub enum MIRExpressionKind {
+    // Literals
+    BoolLiteral(bool),
+    IntLiteral(i64, CXIntegerType, bool),
+    FloatLiteral(FloatWrapper, CXFloatType),
+    Null,
 
     #[default]
-    NULL,
-}
+    Unit,
 
-#[derive(Clone, Debug)]
-pub enum MIRInstruction {
-    Alias {
-        result: MIRRegister,
-        value: MIRValue,
+    // Variables
+    Variable(CXIdent),
+    ContractVariable {
+        name: CXIdent,
+        parent_function: CXIdent,
     },
 
-    CreateStackRegion {
-        result: MIRRegister,
-        _type: MIRType,
+    // The prototype is implicitly stored in the expression's type
+    FunctionReference {
+        implicit_variables: Vec<MIRExpression>,
     },
 
-    CopyRegionInto {
-        destination: MIRValue,
-        source: MIRValue,
-        _type: MIRType,
+    // Arithmetic & Logic
+    BinaryOperation {
+        lhs: Box<MIRExpression>,
+        rhs: Box<MIRExpression>,
+        op: MIRBinOp,
+    },
+    UnaryOperation {
+        operand: Box<MIRExpression>,
+        op: MIRUnOp,
     },
 
-    ConstructTaggedUnionInto {
-        variant_index: usize,
-        memory: MIRValue,
-        value: MIRValue,
-        sum_type: MIRType,
+    // Memory Operations
+    Move {
+        source: Box<MIRExpression>,
     },
-
     MemoryRead {
-        result: MIRRegister,
-        source: MIRValue,
+        source: Box<MIRExpression>,
+    },
+    MemoryWrite {
+        target: Box<MIRExpression>,
+        value: Box<MIRExpression>,
+    },
+    CreateStackVariable {
+        name: Option<CXIdent>,
+        _type: MIRType,
+    },
+    CopyRegion {
+        source: Box<MIRExpression>,
         _type: MIRType,
     },
 
-    MemoryWrite {
-        target: MIRValue,
-        value: MIRValue,
-    },
+    // Represents a no-op used to change the type of an expression with no added semantics
+    Typechange(Box<MIRExpression>),
 
-    StructGet {
-        result: MIRRegister,
-        source: MIRValue,
+    // Aggregate Access
+    StructFieldAccess {
+        base: Box<MIRExpression>,
         field_index: usize,
         field_offset: usize,
         struct_type: MIRType,
     },
-    
-    TaggedUnionTag {
-        result: MIRRegister,
-        source: MIRValue,
-        sum_type: MIRType,
-    },
-
-    TaggedUnionGet {
-        result: MIRRegister,
-        source: MIRValue,
+    UnionAliasAccess {
+        base: Box<MIRExpression>,
         variant_type: MIRType,
+        union_type: MIRType,
     },
-    
-    ArrayGet {
-        result: MIRRegister,
-        source: MIRValue,
-        index: MIRValue,
-        array_type: MIRType,
+    ArrayAccess {
+        array: Box<MIRExpression>,
+        index: Box<MIRExpression>,
         element_type: MIRType,
     },
 
-    CallFunction {
-        result: Option<MIRRegister>,
-        function: MIRValue,
-        arguments: Vec<MIRValue>,
+    PatternIs {
+        lhs: Box<MIRExpression>,
+        sum_type: MIRType,
+        variant_index: usize,
+        inner_name: CXIdent,
     },
 
-    LoopPreHeader {
-        loop_id: CXIdent,
-        condition_precheck: bool,
-        condition_block: CXIdent,
-        body_block: CXIdent,
+    // Tagged Unions
+    TaggedUnionTag {
+        value: Box<MIRExpression>,
+        sum_type: MIRType,
+    },
+    TaggedUnionGet {
+        value: Box<MIRExpression>,
+        variant_type: MIRType,
+    },
+    TaggedUnionSet {
+        target: Box<MIRExpression>,
+        variant_index: usize,
+        inner_value: Box<MIRExpression>,
+        sum_type: MIRType,
     },
 
-    LoopConditionBranch {
-        loop_id: CXIdent,
-        condition: MIRValue,
-        body_block: CXIdent,
-        exit_block: CXIdent,
+    ConstructTaggedUnion {
+        variant_index: usize,
+        value: Box<MIRExpression>,
+        sum_type: MIRType,
     },
 
-    LoopContinue {
-        loop_id: CXIdent,
-        condition_block: CXIdent,
+    ArrayInitializer {
+        elements: Vec<MIRExpression>,
+        element_type: MIRType,
+    },
+    StructInitializer {
+        initializations: Vec<StructInitialization>,
+        struct_type: MIRType,
     },
 
-    Branch {
-        condition: MIRValue,
-        true_block: CXIdent,
-        false_block: CXIdent,
+    // Control Flow
+    Break {
+        scope_depth: usize,
+    },
+    Continue {
+        scope_depth: usize,
+    },
+    If {
+        condition: Box<MIRExpression>,
+        then_branch: Box<MIRExpression>,
+        else_branch: Option<Box<MIRExpression>>,
+    },
+    While {
+        condition: Box<MIRExpression>,
+        body: Box<MIRExpression>,
+        pre_eval: bool,
+    },
+    For {
+        init: Box<MIRExpression>,
+        condition: Box<MIRExpression>,
+        increment: Box<MIRExpression>,
+        body: Box<MIRExpression>,
     },
 
-    Jump {
-        target: CXIdent,
+    CSwitch {
+        condition: Box<MIRExpression>,
+        cases: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
+        default: Option<Box<MIRExpression>>,
     },
 
-    JumpTable {
-        condition: MIRValue,
-        targets: Vec<(u64, CXIdent)>,
-        default: CXIdent,
+    Match {
+        condition: Box<MIRExpression>,
+        arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
+        default: Option<Box<MIRExpression>>,
     },
 
     Return {
-        value: Option<MIRValue>,
+        value: Option<Box<MIRExpression>>,
     },
 
-    BinOp {
-        result: MIRRegister,
-        lhs: MIRValue,
-        rhs: MIRValue,
-        op: MIRBinOp,
+    // Sequential Statements
+    Block {
+        statements: Vec<MIRExpression>,
     },
 
-    UnOp {
-        result: MIRRegister,
-        operand: MIRValue,
-        op: MIRUnOp,
+    // Function Calls
+    CallFunction {
+        function: Box<MIRExpression>,
+        arguments: Vec<MIRExpression>,
     },
 
-    Coercion {
-        result: MIRRegister,
-        operand: MIRValue,
-        cast_type: MIRCoercion,
-    },
-    
-    Phi {
-        result: MIRRegister,
-        predecessors: Vec<(MIRValue, CXIdent)>,
+    // Type Conversion
+    TypeConversion {
+        operand: Box<MIRExpression>,
+        conversion: MIRCoercion,
     },
 
+    // Lifetime Management
     LifetimeStart {
-        name: String,
-        region: MIRRegister,
+        variable: CXIdent,
         _type: MIRType,
     },
-    
     LifetimeEnd {
-        name: String,
-        region: MIRRegister,
+        variable: CXIdent,
         _type: MIRType,
     },
-    
     LeakLifetime {
-        region: MIRRegister,
-        _type: MIRType,
-    },
-    
-    // ---- Verification Nodes ----
-    
-    Assert {
-        value: MIRValue,
-        message: String,
+        expression: Box<MIRExpression>,
     },
 
-    Assume {
-        value: MIRValue,
-    },
-
-    Havoc {
-        target: MIRRegister,
+    // Defer (TODO: Refactor to proper scoped chains)
+    Defer {
+        expression: Box<MIRExpression>,
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRIntegerBinOp {
     ADD,
     SUB,
@@ -226,20 +225,24 @@ pub enum MIRIntegerBinOp {
     ILE,
     IGT,
     IGE,
-    
+
+    // Logical Ops
+    LAND,
+    LOR,
+
     // Boolean/Bitwise Ops
-    AND,
-    OR,
-    XOR
+    BAND,
+    BOR,
+    BXOR,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRPtrDiffBinOp {
     ADD,
     SUB,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRPtrBinOp {
     EQ,
     NE,
@@ -249,7 +252,7 @@ pub enum MIRPtrBinOp {
     GE,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRFloatBinOp {
     FADD,
     FSUB,
@@ -265,7 +268,7 @@ pub enum MIRFloatBinOp {
     FGE,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRBinOp {
     Integer {
         itype: CXIntegerType,
@@ -292,16 +295,19 @@ pub enum MIRBinOp {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum MIRUnOp {
     NEG,
     INEG,
     FNEG,
     BNOT,
     LNOT,
+
+    PreIncrement(i8),
+    PostIncrement(i8),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Readable, Writable)]
 pub enum MIRCoercion {
     // Any integer to any integer conversion
     Integral {
@@ -333,59 +339,40 @@ pub enum MIRCoercion {
 
     // Any sized integer type to a pointer
     IntToPtr {
-        sextend: bool
+        sextend: bool,
     },
+
+    // Any integer type to a boolean (i1)
+    IntToBool,
 
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
 }
 
-impl MIRInstruction {
-    pub fn is_block_terminator(&self) -> bool {
-        matches!(
-            self,
-            MIRInstruction::Return { .. }
-                | MIRInstruction::Jump { .. }
-                | MIRInstruction::Branch { .. }
-                | MIRInstruction::LoopPreHeader { .. }
-                | MIRInstruction::LoopConditionBranch { .. }
-                | MIRInstruction::LoopContinue { .. }
-                | MIRInstruction::JumpTable { .. }
-        )
-    }
+#[derive(Clone, Debug, Readable, Writable)]
+pub struct StructInitialization {
+    pub field_index: usize,
+    pub field_offset: usize,
+    pub value: MIRExpression,
 }
 
-impl MIRValue {
+impl MIRExpression {
     pub fn get_type(&self) -> MIRType {
-        match self {
-            MIRValue::IntLiteral { _type, signed, .. } => MIRType::from(MIRTypeKind::Integer {
-                _type: *_type,
-                signed: *signed,
-            }),
-            MIRValue::FloatLiteral { _type, .. } => MIRType::from(MIRTypeKind::Float {
-                _type: *_type,
-            }),
-            MIRValue::FunctionReference { prototype, .. } => MIRType::from(MIRTypeKind::Function {
-                prototype: Box::new(prototype.clone()),
-            })
-            .pointer_to(),
-            MIRValue::Parameter { _type, .. }
-            | MIRValue::GlobalValue { _type, .. }
-            | MIRValue::Register { _type, .. } => _type.clone(),
-            MIRValue::NULL => MIRType::unit(),
+        self._type.clone()
+    }
+
+    pub fn int_literal(value: i64, itype: CXIntegerType, is_signed: bool) -> Self {
+        Self {
+            kind: MIRExpressionKind::IntLiteral(value, itype, is_signed),
+            _type: MIRType {
+                kind: MIRTypeKind::Integer {
+                    _type: itype,
+                    signed: is_signed,
+                },
+                visibility: Default::default(),
+                specifiers: 0,
+            },
         }
-    }
-}
-
-impl MIRRegister {
-    pub fn new<T: Into<CXIdent>>(name: T) -> Self {
-        MIRRegister { name: name.into() }
-    }
-}
-
-impl From<MIRRegister> for CXIdent {
-    fn from(val: MIRRegister) -> Self {
-        val.name
     }
 }

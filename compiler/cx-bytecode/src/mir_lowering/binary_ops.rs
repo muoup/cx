@@ -1,102 +1,341 @@
+//! Binary and unary operation lowering
+
 use cx_bytecode_data::{
-    types::BCType, BCFloatBinOp, BCFunctionPrototype, BCInstructionKind, BCIntBinOp, BCPtrBinOp,
-    BCValue,
+    types::{BCIntegerType, BCType},
+    BCFloatBinOp, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
     expression::{
-        MIRBinOp, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRRegister,
-        MIRValue,
+        MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
+        MIRUnOp,
     },
-    types::MIRType,
+    types::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
-use crate::{builder::BCBuilder, mir_lowering::instructions::lower_value};
+use super::expressions::lower_expression;
+use crate::builder::BCBuilder;
 
-pub(crate) fn lower_binop(
+/// Lower a binary operation
+pub fn lower_binary_op(
     builder: &mut BCBuilder,
-    result: &MIRRegister,
+    lhs: &MIRExpression,
+    rhs: &MIRExpression,
     op: &MIRBinOp,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
+    result_type: &MIRType,
 ) -> CXResult<BCValue> {
-    match op {
-        MIRBinOp::Integer { itype: _, op } => lower_int_binop(builder, result, lhs, rhs, op),
-        MIRBinOp::Float { ftype: _, op } => lower_float_binop(builder, result, lhs, rhs, op),
-        MIRBinOp::PtrDiff { op, ptr_inner } => {
-            lower_ptrdiff_binop(builder, result, lhs, rhs, op, ptr_inner)
+    // Handle logical AND and OR with short-circuit evaluation
+    if let MIRBinOp::Integer { op, .. } = op {
+        if matches!(op, MIRIntegerBinOp::LAND | MIRIntegerBinOp::LOR) {
+            return lower_logical_op(builder, lhs, rhs, op, result_type);
         }
-        MIRBinOp::Pointer { op } => lower_ptr_binop(builder, result, lhs, rhs, op),
     }
+
+    let bc_lhs = lower_expression(builder, lhs)?;
+    let bc_rhs = lower_expression(builder, rhs)?;
+    let bc_result_type = builder.convert_cx_type(result_type);
+
+    let instruction_kind = match op {
+        MIRBinOp::Integer { op, .. } => {
+            let bc_op = convert_int_binop(op);
+            BCInstructionKind::IntegerBinOp {
+                op: bc_op,
+                left: bc_lhs,
+                right: bc_rhs,
+            }
+        }
+        MIRBinOp::Float { op, .. } => {
+            let bc_op = convert_float_binop(op);
+            BCInstructionKind::FloatBinOp {
+                op: bc_op,
+                left: bc_lhs,
+                right: bc_rhs,
+            }
+        }
+        MIRBinOp::PtrDiff { op, ptr_inner } => {
+            let bc_inner_type = builder.convert_cx_type(ptr_inner);
+            let ptr_op = match op {
+                MIRPtrDiffBinOp::ADD => BCPtrBinOp::ADD,
+                MIRPtrDiffBinOp::SUB => BCPtrBinOp::SUB,
+            };
+            BCInstructionKind::PointerBinOp {
+                op: ptr_op,
+                ptr_type: bc_inner_type.clone(),
+                type_padded_size: ptr_inner.padded_size() as u64,
+                left: bc_lhs,
+                right: bc_rhs,
+            }
+        }
+        MIRBinOp::Pointer { op } => {
+            let ptr_op = match op {
+                MIRPtrBinOp::EQ => BCPtrBinOp::EQ,
+                MIRPtrBinOp::NE => BCPtrBinOp::NE,
+                MIRPtrBinOp::LT => BCPtrBinOp::LT,
+                MIRPtrBinOp::GT => BCPtrBinOp::GT,
+                MIRPtrBinOp::LE => BCPtrBinOp::LE,
+                MIRPtrBinOp::GE => BCPtrBinOp::GE,
+            };
+            BCInstructionKind::PointerBinOp {
+                op: ptr_op,
+                ptr_type: BCType::default_pointer(),
+                type_padded_size: 1,
+                left: bc_lhs,
+                right: bc_rhs,
+            }
+        }
+    };
+
+    builder.add_new_instruction(instruction_kind, bc_result_type, true)
 }
 
-fn lower_int_binop(
+fn lower_logical_op(
     builder: &mut BCBuilder,
-    result: &MIRRegister,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
+    lhs: &MIRExpression,
+    rhs: &MIRExpression,
     op: &MIRIntegerBinOp,
+    result_type: &MIRType,
 ) -> CXResult<BCValue> {
-    enum OperationCategory {
-        Arithmetic,
-        Comparison,
+    let bc_result_type = builder.convert_cx_type(result_type);
+
+    // Save the entry block (where we evaluate the LHS)
+    let entry_block = builder.current_block();
+
+    // Create the continue and merge blocks
+    let (continue_name, merge_name) = match op {
+        MIRIntegerBinOp::LOR => ("lor_continue", "lor_merge"),
+        MIRIntegerBinOp::LAND => ("land_continue", "land_merge"),
+        _ => unreachable!("lower_logical_op called with non-logical operation"),
+    };
+
+    let continue_block = builder.create_block(Some(continue_name));
+    let merge_block = builder.create_block(Some(merge_name));
+
+    // Evaluate LHS
+    let lhs_result = lower_expression(builder, lhs)?;
+
+    // Branch based on the operation type
+    match op {
+        MIRIntegerBinOp::LOR => {
+            // If LHS is true, go to merge (short-circuit)
+            // If LHS is false, go to continue (evaluate RHS)
+            builder.add_new_instruction(
+                BCInstructionKind::Branch {
+                    condition: lhs_result,
+                    true_block: merge_block.clone(),
+                    false_block: continue_block.clone(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+        }
+        MIRIntegerBinOp::LAND => {
+            // If LHS is false, go to merge (short-circuit)
+            // If LHS is true, go to continue (evaluate RHS)
+            builder.add_new_instruction(
+                BCInstructionKind::Branch {
+                    condition: lhs_result,
+                    true_block: continue_block.clone(),
+                    false_block: merge_block.clone(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+        }
+        _ => unreachable!("lower_logical_op called with non-logical operation"),
     }
 
-    let bc_lhs = lower_value(builder, lhs)?;
-    let bc_rhs = lower_value(builder, rhs)?;
-
-    let (bc_op, bc_op_category) = match op {
-        MIRIntegerBinOp::ADD => (BCIntBinOp::ADD, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::SUB => (BCIntBinOp::SUB, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::MUL => (BCIntBinOp::MUL, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::IMUL => (BCIntBinOp::IMUL, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::DIV => (BCIntBinOp::UDIV, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::IDIV => (BCIntBinOp::IDIV, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::MOD => (BCIntBinOp::UREM, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::IMOD => (BCIntBinOp::IREM, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::EQ => (BCIntBinOp::EQ, OperationCategory::Comparison),
-        MIRIntegerBinOp::NE => (BCIntBinOp::NE, OperationCategory::Comparison),
-        MIRIntegerBinOp::LT => (BCIntBinOp::ULT, OperationCategory::Comparison),
-        MIRIntegerBinOp::LE => (BCIntBinOp::ULE, OperationCategory::Comparison),
-        MIRIntegerBinOp::GT => (BCIntBinOp::UGT, OperationCategory::Comparison),
-        MIRIntegerBinOp::GE => (BCIntBinOp::UGE, OperationCategory::Comparison),
-        MIRIntegerBinOp::ILT => (BCIntBinOp::ILT, OperationCategory::Comparison),
-        MIRIntegerBinOp::ILE => (BCIntBinOp::ILE, OperationCategory::Comparison),
-        MIRIntegerBinOp::IGT => (BCIntBinOp::IGT, OperationCategory::Comparison),
-        MIRIntegerBinOp::IGE => (BCIntBinOp::IGE, OperationCategory::Comparison),
-
-        MIRIntegerBinOp::AND => (BCIntBinOp::BAND, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::OR => (BCIntBinOp::BOR, OperationCategory::Arithmetic),
-        MIRIntegerBinOp::XOR => (BCIntBinOp::BXOR, OperationCategory::Arithmetic),
-    };
-
-    let result_type = match bc_op_category {
-        OperationCategory::Arithmetic => builder.convert_cx_type(&lhs.get_type()),
-        OperationCategory::Comparison => BCType::bool(),
-    };
-
-    builder.add_instruction_translated(
-        BCInstructionKind::IntegerBinOp {
-            op: bc_op,
-            left: bc_lhs,
-            right: bc_rhs,
+    // Continue block: evaluate RHS and jump to merge
+    builder.set_current_block(continue_block.clone());
+    let rhs_result = lower_expression(builder, rhs)?;
+    builder.add_new_instruction(
+        BCInstructionKind::Jump {
+            target: merge_block.clone(),
         },
-        result_type,
-        Some(result.clone()),
-    )
+        BCType::unit(),
+        false,
+    )?;
+
+    // Move merge block to the end and set it as current
+    builder.move_block_to_end(&merge_block);
+    builder.set_current_block(merge_block.clone());
+
+    // Create phi node at merge block
+    // For LOR: from entry->true (1), from continue->rhs_result
+    // For LAND: from entry->false (0), from continue->rhs_result
+    let short_circuit_value = match op {
+        MIRIntegerBinOp::LOR => BCValue::IntImmediate {
+            val: 1,
+            _type: BCIntegerType::I1,
+        },
+        MIRIntegerBinOp::LAND => BCValue::IntImmediate {
+            val: 0,
+            _type: BCIntegerType::I1,
+        },
+        _ => unreachable!(),
+    };
+
+    let phi_result = builder.add_new_instruction(
+        BCInstructionKind::Phi {
+            predecessors: vec![
+                (short_circuit_value, entry_block),
+                (rhs_result, continue_block),
+            ],
+        },
+        bc_result_type,
+        true,
+    )?;
+
+    Ok(phi_result)
 }
 
-fn lower_float_binop(
+/// Lower a unary operation
+pub fn lower_unary_op(
     builder: &mut BCBuilder,
-    result: &MIRRegister,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
-    op: &MIRFloatBinOp,
+    operand: &MIRExpression,
+    op: &MIRUnOp,
+    result_type: &MIRType,
 ) -> CXResult<BCValue> {
-    let bc_lhs = lower_value(builder, lhs)?;
-    let bc_rhs = lower_value(builder, rhs)?;
+    let bc_operand = lower_expression(builder, operand)?;
+    let bc_result_type = builder.convert_cx_type(result_type);
 
-    let bc_op = match op {
+    let instruction_kind = match op {
+        MIRUnOp::LNOT => BCInstructionKind::IntegerUnOp {
+            value: bc_operand,
+            op: cx_bytecode_data::BCIntUnOp::LNOT,
+        },
+        MIRUnOp::BNOT => BCInstructionKind::IntegerUnOp {
+            value: bc_operand,
+            op: cx_bytecode_data::BCIntUnOp::BNOT,
+        },
+        MIRUnOp::NEG => {
+            let zero = BCValue::IntImmediate {
+                val: 0,
+                _type: match &bc_result_type.kind {
+                    cx_bytecode_data::types::BCTypeKind::Integer(itype) => *itype,
+                    _ => panic!("Integer negation requires integer type"),
+                },
+            };
+            BCInstructionKind::IntegerBinOp {
+                op: BCIntBinOp::SUB,
+                left: zero,
+                right: bc_operand,
+            }
+        }
+        MIRUnOp::FNEG => BCInstructionKind::FloatUnOp {
+            op: cx_bytecode_data::BCFloatUnOp::NEG,
+            value: bc_operand,
+        },
+        MIRUnOp::INEG => {
+            let zero = BCValue::IntImmediate {
+                val: 0,
+                _type: match &bc_result_type.kind {
+                    cx_bytecode_data::types::BCTypeKind::Integer(itype) => *itype,
+                    _ => panic!("Integer negation requires integer type"),
+                },
+            };
+            BCInstructionKind::IntegerBinOp {
+                op: BCIntBinOp::SUB,
+                left: zero,
+                right: bc_operand,
+            }
+        }
+
+        MIRUnOp::PostIncrement(amt) | MIRUnOp::PreIncrement(amt) => {
+            let pre_loaded_val = builder.add_new_instruction(
+                BCInstructionKind::Load {
+                    memory: bc_operand.clone(),
+                    _type: bc_result_type.clone(),
+                },
+                bc_result_type.clone(),
+                true,
+            )?;
+
+            let increment_instruction = match &result_type.kind {
+                MIRTypeKind::Integer { _type: itype, .. } => {
+                    let bc_itype = builder.convert_integer_type(itype);
+
+                    BCInstructionKind::IntegerBinOp {
+                        op: BCIntBinOp::ADD,
+                        left: pre_loaded_val.clone(),
+                        right: BCValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: bc_itype,
+                        },
+                    }
+                }
+
+                MIRTypeKind::PointerTo { inner_type, .. } => {
+                    let bc_inner_type = builder.convert_cx_type(inner_type);
+
+                    BCInstructionKind::PointerBinOp {
+                        op: BCPtrBinOp::ADD,
+                        ptr_type: bc_inner_type,
+                        type_padded_size: result_type.padded_size() as u64,
+                        left: pre_loaded_val.clone(),
+                        right: BCValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                    }
+                }
+
+                _ => unreachable!("Increment operation requires integer or pointer type"),
+            };
+
+            let result =
+                builder.add_new_instruction(increment_instruction, bc_result_type.clone(), true)?;
+
+            builder.add_new_instruction(
+                BCInstructionKind::Store {
+                    memory: bc_operand,
+                    value: result.clone(),
+                    _type: bc_result_type.clone(),
+                },
+                BCType::unit(),
+                false,
+            )?;
+
+            return match op {
+                MIRUnOp::PreIncrement(_) => Ok(result),
+                MIRUnOp::PostIncrement(_) => Ok(pre_loaded_val),
+                _ => unreachable!(),
+            };
+        }
+    };
+
+    builder.add_new_instruction(instruction_kind, bc_result_type, true)
+}
+
+fn convert_int_binop(op: &MIRIntegerBinOp) -> BCIntBinOp {
+    match op {
+        MIRIntegerBinOp::ADD => BCIntBinOp::ADD,
+        MIRIntegerBinOp::SUB => BCIntBinOp::SUB,
+        MIRIntegerBinOp::MUL => BCIntBinOp::MUL,
+        MIRIntegerBinOp::IMUL => BCIntBinOp::IMUL,
+        MIRIntegerBinOp::DIV => BCIntBinOp::UDIV,
+        MIRIntegerBinOp::IDIV => BCIntBinOp::IDIV,
+        MIRIntegerBinOp::MOD => BCIntBinOp::UREM,
+        MIRIntegerBinOp::IMOD => BCIntBinOp::IREM,
+        MIRIntegerBinOp::EQ => BCIntBinOp::EQ,
+        MIRIntegerBinOp::NE => BCIntBinOp::NE,
+        MIRIntegerBinOp::LT => BCIntBinOp::ULT,
+        MIRIntegerBinOp::LE => BCIntBinOp::ULE,
+        MIRIntegerBinOp::GT => BCIntBinOp::UGT,
+        MIRIntegerBinOp::GE => BCIntBinOp::UGE,
+        MIRIntegerBinOp::ILT => BCIntBinOp::ILT,
+        MIRIntegerBinOp::ILE => BCIntBinOp::ILE,
+        MIRIntegerBinOp::IGT => BCIntBinOp::IGT,
+        MIRIntegerBinOp::IGE => BCIntBinOp::IGE,
+        MIRIntegerBinOp::BAND => BCIntBinOp::BAND,
+        MIRIntegerBinOp::BOR => BCIntBinOp::BOR,
+        MIRIntegerBinOp::BXOR => BCIntBinOp::BXOR,
+
+        _ => unreachable!("Logical operators (LAND, LOR) should be handled by lower_logical_op"),
+    }
+}
+
+fn convert_float_binop(op: &MIRFloatBinOp) -> BCFloatBinOp {
+    match op {
         MIRFloatBinOp::FADD => BCFloatBinOp::ADD,
         MIRFloatBinOp::FSUB => BCFloatBinOp::SUB,
         MIRFloatBinOp::FMUL => BCFloatBinOp::FMUL,
@@ -107,105 +346,5 @@ fn lower_float_binop(
         MIRFloatBinOp::FLE => BCFloatBinOp::FLE,
         MIRFloatBinOp::FGT => BCFloatBinOp::FGT,
         MIRFloatBinOp::FGE => BCFloatBinOp::FGE,
-    };
-
-    builder.add_instruction_translated(
-        BCInstructionKind::FloatBinOp {
-            op: bc_op,
-            left: bc_lhs,
-            right: bc_rhs,
-        },
-        BCType::bool(),
-        Some(result.clone()),
-    )
-}
-
-fn lower_ptrdiff_binop(
-    builder: &mut BCBuilder,
-    result: &MIRRegister,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
-    op: &MIRPtrDiffBinOp,
-    ptr_inner: &MIRType,
-) -> CXResult<BCValue> {
-    let bc_lhs = lower_value(builder, lhs)?;
-    let bc_rhs = lower_value(builder, rhs)?;
-    let bc_element_type = builder.convert_cx_type(ptr_inner);
-
-    let bc_op = match op {
-        MIRPtrDiffBinOp::ADD => BCPtrBinOp::ADD,
-        MIRPtrDiffBinOp::SUB => BCPtrBinOp::SUB,
-    };
-
-    builder.add_instruction_translated(
-        BCInstructionKind::PointerBinOp {
-            op: bc_op,
-            ptr_type: bc_element_type,
-            type_padded_size: ptr_inner.padded_size(),
-            left: bc_lhs,
-            right: bc_rhs,
-        },
-        BCType::default_pointer(),
-        Some(result.clone()),
-    )
-}
-
-fn lower_ptr_binop(
-    builder: &mut BCBuilder,
-    result: &MIRRegister,
-    lhs: &MIRValue,
-    rhs: &MIRValue,
-    op: &MIRPtrBinOp,
-) -> CXResult<BCValue> {
-    let bc_lhs = lower_value(builder, lhs)?;
-    let bc_rhs = lower_value(builder, rhs)?;
-
-    let bc_op = match op {
-        MIRPtrBinOp::EQ => BCPtrBinOp::EQ,
-        MIRPtrBinOp::NE => BCPtrBinOp::NE,
-        MIRPtrBinOp::LT => BCPtrBinOp::LT,
-        MIRPtrBinOp::GT => BCPtrBinOp::GT,
-        MIRPtrBinOp::LE => BCPtrBinOp::LE,
-        MIRPtrBinOp::GE => BCPtrBinOp::GE,
-    };
-
-    builder.add_instruction_translated(
-        BCInstructionKind::PointerBinOp {
-            op: bc_op,
-            ptr_type: BCType::default_pointer(),
-            type_padded_size: 0,
-            left: bc_lhs,
-            right: bc_rhs,
-        },
-        BCType::bool(),
-        Some(result.clone()),
-    )
-}
-
-pub fn lower_call_params(
-    builder: &mut BCBuilder,
-    params: &[MIRValue],
-    prototype: &BCFunctionPrototype,
-) -> CXResult<Vec<BCValue>> {
-    let mut lowered_params = Vec::new();
-
-    if let Some(buffer_type) = prototype.temp_buffer.as_ref() {
-        let temp_buffer = builder.add_new_instruction(
-            BCInstructionKind::Allocate {
-                _type: buffer_type.clone(),
-                alignment: buffer_type.alignment(),
-            },
-            BCType::default_pointer(),
-            true,
-        )?;
-
-        lowered_params.push(temp_buffer);
     }
-
-    for param in params.iter() {
-        let bc_value = lower_value(builder, param)?;
-        lowered_params.push(bc_value);
-    }
-
-    Ok(lowered_params)
 }

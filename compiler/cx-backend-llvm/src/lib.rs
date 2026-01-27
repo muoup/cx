@@ -204,9 +204,9 @@ pub fn bytecode_aot_codegen(
 
     if !output_path.contains("std/") {
         dump_data(&format!(
-                "{}",
-                global_state.module.print_to_string().to_string_lossy()
-            ));   
+            "{}",
+            global_state.module.print_to_string().to_string_lossy()
+        ));
     }
 
     let buff = target_machine
@@ -306,12 +306,6 @@ fn cache_prototype<'a>(
         llvm_prototype,
         Some(convert_linkage(prototype.linkage)),
     );
-
-    // get_type_attributes(global_state.context, &prototype.return_type)
-    //     .into_iter()
-    //     .for_each(|attr| {
-    //         func.add_attribute(AttributeLoc::Return, attr);
-    //     });
 
     for (i, _type) in prototype.params.iter().enumerate() {
         get_type_attributes(global_state.context, &_type._type)

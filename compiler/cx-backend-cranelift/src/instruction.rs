@@ -285,12 +285,12 @@ pub(crate) fn codegen_instruction(
                     let left = context
                         .builder
                         .ins()
-                        .icmp_imm(ir::condcodes::IntCC::Equal, left, 0);
+                        .icmp_imm(ir::condcodes::IntCC::NotEqual, left, 0);
                     let right =
                         context
                             .builder
                             .ins()
-                            .icmp_imm(ir::condcodes::IntCC::Equal, right, 0);
+                            .icmp_imm(ir::condcodes::IntCC::NotEqual, right, 0);
 
                     context.builder.ins().band(left, right)
                 }
