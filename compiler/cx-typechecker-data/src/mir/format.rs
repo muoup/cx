@@ -52,17 +52,17 @@ impl Display for MIRFunctionPrototype {
             write!(f, "...")?;
         }
         write!(f, ") -> {}", self.return_type)?;
-        
+
         if let Some(precondition) = &self.contract.precondition {
             writeln!(f, "\nPrecondition:")?;
             MIRExpressionFormatter::new(precondition, 2).fmt(f)?;
         }
-        
+
         if let Some((_, postcondition)) = &self.contract.postcondition {
             writeln!(f, "\nPostcondition:")?;
             MIRExpressionFormatter::new(postcondition, 2).fmt(f)?;
         }
-        
+
         Ok(())
     }
 }
@@ -174,8 +174,15 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             MIRExpressionKind::Variable(name) => {
                 writeln!(f, "LocalVariable {} <'{}>", name, self.expr._type)
             }
-            MIRExpressionKind::ContractVariable { name, parent_function } => {
-                writeln!(f, "ContractVariable \"{name}\" of {parent_function} <'{}>", self.expr._type)
+            MIRExpressionKind::ContractVariable {
+                name,
+                parent_function,
+            } => {
+                writeln!(
+                    f,
+                    "ContractVariable \"{name}\" of {parent_function} <'{}>",
+                    self.expr._type
+                )
             }
             MIRExpressionKind::FunctionReference { implicit_variables } => {
                 writeln!(f, "FunctionReference <'{}>", self.expr._type)?;
@@ -219,12 +226,16 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::StructFieldAccess {
-                base, field_index, field_offset, ..
+                base,
+                field_index,
+                field_offset,
+                struct_type,
+                ..
             } => {
                 writeln!(
                     f,
-                    "StructFieldAccess index {} (+{}) <'{}>",
-                    field_index, field_offset, self.expr._type
+                    "StructFieldAccess [{struct_type}] index {field_index} (+{field_offset}) <'{}>",
+                    self.expr._type
                 )?;
                 MIRExpressionFormatter::new(base, self.depth + 1).fmt(f)
             }
@@ -310,7 +321,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 )?;
                 for initializer in initializations {
                     self.indent(f)?;
-                    writeln!(f, "  Field {} (+{}):", initializer.field_index, initializer.field_offset)?;
+                    writeln!(
+                        f,
+                        "  Field {} (+{}):",
+                        initializer.field_index, initializer.field_offset
+                    )?;
                     MIRExpressionFormatter::new(&initializer.value, self.depth + 2).fmt(f)?;
                 }
                 self.indent(f)?;
@@ -349,7 +364,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 body,
                 pre_eval,
             } => {
-                let name = if *pre_eval { "WhileEval" } else { "While" };
+                let name = if *pre_eval { "While" } else { "Do-While" };
                 writeln!(f, "{} <'{}>", name, self.expr._type)?;
                 MIRExpressionFormatter::new(condition, self.depth + 1).fmt(f)?;
                 MIRExpressionFormatter::new(body, self.depth + 1).fmt(f)
@@ -466,10 +481,18 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
             }
             MIRExpressionKind::Break { scope_depth } => {
-                writeln!(f, "Break <scope_depth={}, type='{}'>", scope_depth, self.expr._type)
+                writeln!(
+                    f,
+                    "Break <scope_depth={}, type='{}'>",
+                    scope_depth, self.expr._type
+                )
             }
             MIRExpressionKind::Continue { scope_depth } => {
-                writeln!(f, "Continue <scope_depth={}, type='{}'>", scope_depth, self.expr._type)
+                writeln!(
+                    f,
+                    "Continue <scope_depth={}, type='{}'>",
+                    scope_depth, self.expr._type
+                )
             }
         }
     }

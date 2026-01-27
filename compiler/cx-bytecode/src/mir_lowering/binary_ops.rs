@@ -2,16 +2,19 @@
 
 use cx_bytecode_data::{
     types::{BCIntegerType, BCType},
-    BCInstructionKind, BCIntBinOp, BCFloatBinOp, BCPtrBinOp, BCValue,
+    BCFloatBinOp, BCInstructionKind, BCIntBinOp, BCPtrBinOp, BCValue,
 };
 use cx_typechecker_data::mir::{
-    expression::{MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp},
-    types::MIRType,
+    expression::{
+        MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
+        MIRUnOp,
+    },
+    types::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
-use crate::builder::BCBuilder;
 use super::expressions::lower_expression;
+use crate::builder::BCBuilder;
 
 /// Lower a binary operation
 pub fn lower_binary_op(
@@ -85,15 +88,6 @@ pub fn lower_binary_op(
     builder.add_new_instruction(instruction_kind, bc_result_type, true)
 }
 
-/// Lower a logical operation (AND or OR) with short-circuit evaluation
-///
-/// For LOR (`a || b`):
-///   - If `a` is true, skip `b` and return true
-///   - If `a` is false, evaluate `b` and return its result
-///
-/// For LAND (`a && b`):
-///   - If `a` is false, skip `b` and return false
-///   - If `a` is true, evaluate `b` and return its result
 fn lower_logical_op(
     builder: &mut BCBuilder,
     lhs: &MIRExpression,
@@ -227,12 +221,10 @@ pub fn lower_unary_op(
                 right: bc_operand,
             }
         }
-        MIRUnOp::FNEG => {
-            BCInstructionKind::FloatUnOp {
-                op: cx_bytecode_data::BCFloatUnOp::NEG,
-                value: bc_operand,
-            }
-        }
+        MIRUnOp::FNEG => BCInstructionKind::FloatUnOp {
+            op: cx_bytecode_data::BCFloatUnOp::NEG,
+            value: bc_operand,
+        },
         MIRUnOp::INEG => {
             let zero = BCValue::IntImmediate {
                 val: 0,
@@ -249,7 +241,7 @@ pub fn lower_unary_op(
         }
 
         MIRUnOp::PostIncrement(amt) | MIRUnOp::PreIncrement(amt) => {
-            let loaded_val = builder.add_new_instruction(
+            let pre_loaded_val = builder.add_new_instruction(
                 BCInstructionKind::Load {
                     memory: bc_operand.clone(),
                     _type: bc_result_type.clone(),
@@ -258,21 +250,40 @@ pub fn lower_unary_op(
                 true,
             )?;
 
-            let result = builder.add_new_instruction(
-                BCInstructionKind::IntegerBinOp {
-                    op: BCIntBinOp::ADD,
-                    left: loaded_val.clone(),
-                    right: BCValue::IntImmediate {
-                        val: *amt as i64,
-                        _type: match &bc_result_type.kind {
-                            cx_bytecode_data::types::BCTypeKind::Integer(itype) => *itype,
-                            _ => panic!("PreIncrement requires integer type"),
+            let increment_instruction = match &result_type.kind {
+                MIRTypeKind::Integer { _type: itype, .. } => {
+                    let bc_itype = builder.convert_integer_type(itype);
+
+                    BCInstructionKind::IntegerBinOp {
+                        op: BCIntBinOp::ADD,
+                        left: pre_loaded_val.clone(),
+                        right: BCValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: bc_itype,
                         },
-                    },
-                },
-                bc_result_type.clone(),
-                true,
-            )?;
+                    }
+                }
+
+                MIRTypeKind::PointerTo { inner_type, .. } => {
+                    let bc_inner_type = builder.convert_cx_type(inner_type);
+
+                    BCInstructionKind::PointerBinOp {
+                        op: BCPtrBinOp::ADD,
+                        ptr_type: bc_inner_type,
+                        type_padded_size: result_type.padded_size() as u64,
+                        left: pre_loaded_val.clone(),
+                        right: BCValue::IntImmediate {
+                            val: *amt as i64,
+                            _type: BCIntegerType::I64,
+                        },
+                    }
+                }
+
+                _ => unreachable!("Increment operation requires integer or pointer type"),
+            };
+
+            let result =
+                builder.add_new_instruction(increment_instruction, bc_result_type.clone(), true)?;
 
             builder.add_new_instruction(
                 BCInstructionKind::Store {
@@ -286,7 +297,7 @@ pub fn lower_unary_op(
 
             return match op {
                 MIRUnOp::PreIncrement(_) => Ok(result),
-                MIRUnOp::PostIncrement(_) => Ok(loaded_val),
+                MIRUnOp::PostIncrement(_) => Ok(pre_loaded_val),
                 _ => unreachable!(),
             };
         }
@@ -315,11 +326,11 @@ fn convert_int_binop(op: &MIRIntegerBinOp) -> BCIntBinOp {
         MIRIntegerBinOp::ILE => BCIntBinOp::ILE,
         MIRIntegerBinOp::IGT => BCIntBinOp::IGT,
         MIRIntegerBinOp::IGE => BCIntBinOp::IGE,
-        // Note: LAND and LOR are now handled by lower_logical_op for short-circuit evaluation
         MIRIntegerBinOp::BAND => BCIntBinOp::BAND,
         MIRIntegerBinOp::BOR => BCIntBinOp::BOR,
         MIRIntegerBinOp::BXOR => BCIntBinOp::BXOR,
-        _ => panic!("Logical operators (LAND, LOR) should be handled by lower_logical_op"),
+
+        _ => unreachable!("Logical operators (LAND, LOR) should be handled by lower_logical_op"),
     }
 }
 

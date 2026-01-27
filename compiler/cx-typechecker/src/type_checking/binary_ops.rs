@@ -28,39 +28,51 @@ pub(crate) fn typecheck_access(
 ) -> CXResult<TypecheckResult> {
     // Here, out aim is to continue with lhs_val being one indirection from the memory,
     // i.e. we need a pointer to the region.
-    let (lhs, lhs_inner) = match lhs._type.mem_ref_inner() {
-        // If we have a reference to a region containing a pointer, we need to
-        // load the pointer and use that as our pointer
-        Some(inner) if inner.is_pointer() => {
-            let inner = inner.clone();
+    let lhs_type = lhs._type.clone();
+    let (lhs, lhs_inner) = match &lhs_type.kind {
+        MIRTypeKind::MemoryReference(mem_ref_inner) => match &mem_ref_inner.kind {
+            // If we have a reference to a region containing a pointer, we need to
+            // load one layer of indirection first.
+            MIRTypeKind::PointerTo { inner_type, .. } => {
+                let loaded = MIRExpression {
+                    kind: MIRExpressionKind::MemoryRead {
+                        source: Box::new(lhs),
+                    },
+                    _type: inner_type.clone().pointer_to(),
+                };
 
-            let loaded = MIRExpression {
-                kind: MIRExpressionKind::MemoryRead {
-                    source: Box::new(lhs),
-                },
-                _type: inner.clone(),
-            };
+                (loaded, inner_type.as_ref().clone())
+            }
 
-            (loaded, inner)
+            // We could have a memory reference to a structured type, in which cases
+            // we are only one indirection away already, so we can continue as normal.
+            _ => (lhs, mem_ref_inner.as_ref().clone()),
+        },
+        
+        // If we have only a pointer, the compiler is not responsible for any coercions here,
+        // e.g. a pointer-to-a-memory-reference is not automatically dereferenced. Therefore
+        // we can assert that the correct path here is that the pointer is one indirection away
+        MIRTypeKind::PointerTo { inner_type, .. } => {
+            (lhs, inner_type.as_ref().clone())
         }
 
-        // If we simply have a region reference, that is sufficient as a pointer,
-        Some(inner) => {
-            let inner = inner.clone();
-            (lhs, inner)
-        }
-
-        // Technically speaking, if we have a owned struct / naked struct type,
+        // We may also have a owned struct / naked struct type,
         // we can also treat that type as a pointer, as a struct must exist
         // in memory, and its alias is thus a pointer by definition.
-        //
-        // This may have to change when we introduce structs that fit in registers,
-        // but for now, this is acceptable.
         _ => {
             let lhs_type = lhs._type.clone();
             (lhs, lhs_type)
         }
     };
+    
+    if !lhs_inner.is_structure() {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Expected struct or union type for access expression LHS, found {}",
+            lhs_inner
+        );
+    }
 
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
@@ -68,7 +80,7 @@ pub(crate) fn typecheck_access(
                 return Ok(TypecheckResult::expr(
                     struct_field.field_type.mem_ref_to(),
                     MIRExpressionKind::StructFieldAccess {
-                        base: Box::new(lhs.clone()),
+                        base: Box::new(lhs),
                         field_index: struct_field.index,
                         field_offset: struct_field.offset,
                         struct_type: lhs_inner.clone(),
@@ -93,7 +105,7 @@ pub(crate) fn typecheck_access(
                 return Ok(TypecheckResult::expr(
                     field_type.clone().mem_ref_to(),
                     MIRExpressionKind::UnionAliasAccess {
-                        base: Box::new(lhs.clone()),
+                        base: Box::new(lhs),
                         variant_type: field_type.clone(),
                         union_type: lhs_inner.clone(),
                     },

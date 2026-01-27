@@ -175,9 +175,9 @@ pub fn typecheck_expr_inner(
 
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
-            let then_result = typecheck_expr(env, base_data, then_branch, None)?;
+            let then_result = typecheck_expr(env, base_data, then_branch, None)?.into_expression();
             let else_result = if let Some(else_branch) = else_branch {
-                Some(typecheck_expr(env, base_data, else_branch, None)?)
+                Some(typecheck_expr(env, base_data, else_branch, None)?.into_expression())
             } else {
                 None
             };
@@ -187,8 +187,8 @@ pub fn typecheck_expr_inner(
             TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
-                    then_branch: Box::new(then_result.into_expression()),
-                    else_branch: else_result.map(|r| Box::new(r.into_expression())),
+                    then_branch: Box::new(then_result),
+                    else_branch: else_result.map(|r| Box::new(r)),
                 },
                 _type: cx_typechecker_data::mir::types::MIRType::unit(),
             })
@@ -201,14 +201,15 @@ pub fn typecheck_expr_inner(
         } => {
             env.push_scope(true, true);
 
-            let condition_result = typecheck_expr(env, base_data, condition, None)?;
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
             let body_result = typecheck_expr(env, base_data, body, None)?;
 
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::While {
-                    condition: Box::new(condition_result.expression),
+                    condition: Box::new(condition_result),
                     body: Box::new(body_result.expression),
                     pre_eval: *pre_eval,
                 },
@@ -224,26 +225,32 @@ pub fn typecheck_expr_inner(
         } => {
             env.push_scope(true, true);
 
-            let init_result = typecheck_expr(env, base_data, init, None)?;
-            let condition_result = typecheck_expr(env, base_data, condition, None)?;
-            let increment_result = typecheck_expr(env, base_data, increment, None)?;
-            let body_result = typecheck_expr(env, base_data, body, None)?;
+            let init_result = typecheck_expr(env, base_data, init, None)?.into_expression();
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let increment_result =
+                typecheck_expr(env, base_data, increment, None)?.into_expression();
+            let body_result = typecheck_expr(env, base_data, body, None)?.into_expression();
 
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::For {
-                    init: Box::new(init_result.expression),
-                    condition: Box::new(condition_result.expression),
-                    increment: Box::new(increment_result.expression),
-                    body: Box::new(body_result.expression),
+                    init: Box::new(init_result),
+                    condition: Box::new(condition_result),
+                    increment: Box::new(increment_result),
+                    body: Box::new(body_result),
                 },
                 _type: cx_typechecker_data::mir::types::MIRType::unit(),
             })
         }
 
         CXExprKind::Break => {
-            let Some(scope_idx) = env.scope_stack.iter().rposition(|inner| inner.has_break_merge) else {
+            let Some(scope_idx) = env
+                .scope_stack
+                .iter()
+                .rposition(|inner| inner.has_break_merge)
+            else {
                 return log_typecheck_error!(
                     env,
                     expr,
@@ -252,7 +259,9 @@ pub fn typecheck_expr_inner(
             };
 
             TypecheckResult::expr2(MIRExpression {
-                kind: MIRExpressionKind::Break { scope_depth: scope_idx },
+                kind: MIRExpressionKind::Break {
+                    scope_depth: scope_idx,
+                },
                 _type: MIRType::unit(),
             })
         }
@@ -271,7 +280,9 @@ pub fn typecheck_expr_inner(
             };
 
             TypecheckResult::expr2(MIRExpression {
-                kind: MIRExpressionKind::Continue { scope_depth: scope_idx },
+                kind: MIRExpressionKind::Continue {
+                    scope_depth: scope_idx,
+                },
                 _type: MIRType::unit(),
             })
         }

@@ -1,7 +1,7 @@
 use cx_pipeline_data::CompilationUnit;
 use cx_typechecker::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
-    realize_deconstructor, realize_fn_implementation,
+    realize_fn_implementation,
 };
 use cx_util::CXResult;
 use std::collections::HashSet;
@@ -24,13 +24,9 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
                 if !requests_fulfilled.insert((kind.clone(), input.clone())) {
                     continue;
                 }
-                
+
                 realize_fn_implementation(env, &origin, &kind, &input)?;
-            },
-            
-            MIRFunctionGenRequest::Deconstruction { _type } => {
-                realize_deconstructor(env, job, _type)?;
-            },
+            }
         }
     }
 

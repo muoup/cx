@@ -41,7 +41,7 @@ pub(crate) fn coerce_condition(
         value,
         &MIRTypeKind::Integer {
             signed: false,
-            _type: CXIntegerType::I64,
+            _type: CXIntegerType::I1,
         }
         .into(),
     )

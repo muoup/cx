@@ -153,9 +153,9 @@ pub fn lower_for(
 ) -> CXResult<BCValue> {
     lower_expression(builder, init)?;
 
-    let condition_block_id = builder.create_block(Some("for_condition"));
-    let body_block_id = builder.create_block(Some("for_body"));
-    let increment_block_id = builder.create_block(Some("for_increment"));
+    let condition_block_id = builder.create_block(Some("[for] condition"));
+    let body_block_id = builder.create_block(Some("[for] body"));
+    let increment_block_id = builder.create_block(Some("[for] increment"));
     let merge_block_id = builder.create_block(Some("for_merge"));
 
     builder.push_scope(

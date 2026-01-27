@@ -81,7 +81,7 @@ pub(crate) fn instantiate_type_template(
         completed_input.clone(),
     );
     
-    env.add_type(base_data, template_name, cx_type.clone());
+    env.add_type(template_name, cx_type.clone());
     query_destructor(env, base_data, &cx_type);
     Ok(cx_type)
 }

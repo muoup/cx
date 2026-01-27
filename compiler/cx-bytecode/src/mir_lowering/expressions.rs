@@ -13,7 +13,10 @@ use cx_typechecker_data::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{builder::BCBuilder, mir_lowering::deconstructors::{allocate_liveness_variable, needs_deconstruction}};
+use crate::{
+    builder::BCBuilder,
+    mir_lowering::deconstructors::{allocate_liveness_variable, needs_deconstruction},
+};
 
 use super::binary_ops::{lower_binary_op, lower_unary_op};
 use super::coercion::lower_type_conversion;
@@ -140,7 +143,7 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
 
             if let Some(name) = name {
                 builder.insert_symbol(name.clone(), result.clone());
-                
+
                 if let BCValue::Register { register, .. } = &result {
                     if needs_deconstruction(builder, _type) {
                         let liveness = allocate_liveness_variable(builder)?;
@@ -148,8 +151,13 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
                             register: register.clone(),
                             _type: BCType::default_pointer(),
                         };
-                        
-                        builder.add_liveness_mapping(name.to_string(), ptr_val, liveness, _type.clone());
+
+                        builder.add_liveness_mapping(
+                            name.to_string(),
+                            ptr_val,
+                            liveness,
+                            _type.clone(),
+                        );
                     }
                 }
             }
@@ -288,6 +296,8 @@ pub fn lower_expression(builder: &mut BCBuilder, expr: &MIRExpression) -> CXResu
             field_offset,
             struct_type,
         } => {
+            assert!(struct_type.is_structure(), "StructFieldAccess struct_type must be a memory-resident struct");
+            
             let bc_base = lower_expression(builder, base)?;
             let bc_struct_type = builder.convert_cx_type(struct_type);
 
@@ -551,12 +561,14 @@ fn lower_call(
             builder.insert_symbol(ret_name.clone(), value.clone());
         }
 
-        // TODO: Emit postcondition assumption after call (currently a no-op)
-        // In the future, this could be used for verification or optimization hints
-
-        // For now for the sake of testing, we will just generate the inner expression so that it
-        // is type-checked and any side-effects are captured
-        lower_expression(builder, postcondition)?;
+        let assumption = lower_expression(builder, postcondition)?;
+        builder.add_new_instruction(
+            BCInstructionKind::CompilerAssumption {
+                condition: assumption,
+            },
+            BCType::unit(),
+            false,
+        )?;
 
         builder.pop_scope()?;
     }
@@ -774,7 +786,7 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
             }
         }
     }
-    
+
     assert_eq!(
         builder.scope_depth(),
         1,
@@ -802,10 +814,7 @@ pub fn lower_function(builder: &mut BCBuilder, mir_fn: &MIRFunction) -> CXResult
                 }),
             )?;
         } else if mir_fn.prototype.return_type.is_unit() {
-            lower_return(
-                builder,
-                None,
-            )?;
+            lower_return(builder, None)?;
         } else {
             unreachable!(
                 "Function '{}' missing return statement",

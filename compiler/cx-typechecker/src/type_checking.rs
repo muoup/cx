@@ -6,12 +6,12 @@ use cx_pipeline_data::CompilationUnit;
 use cx_typechecker_data::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRFunction},
-    types::{CXTemplateInput, MIRFunctionPrototype, MIRParameter, MIRType},
+    types::{CXTemplateInput, MIRFunctionPrototype, MIRParameter},
 };
 use cx_util::CXResult;
 
 use crate::{
-    environment::{TypeEnvironment, deconstruction::generate_deconstructor},
+    environment::TypeEnvironment,
     type_checking::typechecker::{global_expr, typecheck_expr},
     type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
@@ -49,17 +49,15 @@ fn typecheck_function(
     }
 
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-    
+
     env.current_function = None;
     env.pop_scope();
-    
-    env.generated_functions.push(
-        MIRFunction {
-            prototype,
-            body: body_expr.clone(),
-        },
-    );
-    
+
+    env.generated_functions.push(MIRFunction {
+        prototype,
+        body: body_expr.clone(),
+    });
+
     Ok(())
 }
 
@@ -90,16 +88,6 @@ pub fn typecheck(
     }
 
     Ok(())
-}
-
-pub fn realize_deconstructor(
-    env: &mut TypeEnvironment,
-    origin: &CompilationUnit,
-    _type: MIRType,
-) -> CXResult<()> {
-    let base_data = env.module_data.base_mappings.get(origin);
-
-    generate_deconstructor(env, base_data.as_ref(), _type)
 }
 
 pub fn realize_fn_implementation(

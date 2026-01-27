@@ -14,13 +14,11 @@ use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
-use crate::environment::deconstruction::process_new_type;
 use crate::environment::function_query::{
     query_deconstructor, query_destructor, query_member_function, query_standard_function,
 };
 use crate::type_completion::{complete_prototype_no_insert, complete_type};
 
-pub(crate) mod deconstruction;
 pub(crate) mod function_query;
 pub(crate) mod name_mangling;
 
@@ -29,10 +27,6 @@ pub enum MIRFunctionGenRequest {
         module_origin: Option<String>,
         kind: CXFunctionKind,
         input: CXTemplateInput,
-    },
-
-    Deconstruction {
-        _type: MIRType,
     },
 }
 
@@ -118,15 +112,11 @@ impl TypeEnvironment<'_> {
 
     pub fn add_type(
         &mut self,
-        base_data: &MIRBaseMappings,
         name: String,
         _type: MIRType,
     ) -> Option<MIRType> {
         let old = self.realized_types.remove(&name);
-
         self.realized_types.insert(name.clone(), _type.clone());
-        process_new_type(self, base_data, _type);
-
         old
     }
 
@@ -213,6 +203,7 @@ impl TypeEnvironment<'_> {
         query_member_function(self, base_data, expr, member_type, name, template_input)
     }
 
+    #[allow(dead_code)]
     fn start_defer(&mut self) {
         todo!()
     }

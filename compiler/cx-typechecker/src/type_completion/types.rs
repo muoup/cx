@@ -147,7 +147,7 @@ pub(crate) fn _complete_type(
             })?;
 
             if let Some(name) = name {
-                env.add_type(base_data, name.to_string(), ty.clone());
+                env.add_type(name.to_string(), ty.clone());
             }
 
             Ok(ty)

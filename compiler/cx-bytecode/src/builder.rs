@@ -266,8 +266,7 @@ impl BCBuilder {
             let new_end_index = context.blocks.len();
             context.blocks.push(block);
 
-            // Adjust current_block:
-            // - If the removed block was current, set to new end index
+            // Adjust current_block removed block was current, set to new end index
             // - If pos < current, decrement by 1 to account for left-shift
             // - Otherwise, keep current_block unchanged
             if pos == context.current_block {

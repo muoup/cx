@@ -12,7 +12,6 @@ use cx_typechecker_data::mir::{
     types::{CXIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
-use cx_util::identifier::CXIdent;
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
@@ -107,84 +106,34 @@ pub fn typecheck_switch(
     ))
 }
 
-enum MatchCondition<'a> {
-    Integer(MIRExpression),
-    TaggedUnionTag {
-        tag_expr: MIRExpression,
-        union_type: MIRType,
-        union_name: CXIdent,
-        variants: &'a [(String, MIRType)],
-    },
-}
-
-fn get_match_condition_value<'a>(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    expr_value: MIRExpression,
-    expr_type: &'a MIRType,
-) -> CXResult<MatchCondition<'a>> {
-    let (is_memory_ref, expr_type) = expr_type
-        .mem_ref_inner()
-        .map(|t| (true, t))
-        .unwrap_or_else(|| (false, expr_type));
-
-    Ok(match (is_memory_ref, &expr_type.kind) {
-        (true, MIRTypeKind::Integer { .. }) => {
-            let coerced_value = coerce_value(env, expr, expr_value)?;
-            MatchCondition::Integer(coerced_value)
-        }
-
-        (false, MIRTypeKind::Integer { .. }) => MatchCondition::Integer(expr_value),
-
-        (
-            _,
-            MIRTypeKind::TaggedUnion {
-                name: union_name,
-                variants,
-            },
-        ) => {
-            // Extract the tag from the tagged union
-            let tag_expr = TypecheckResult::tagged_union_tag(
-                TypecheckResult::expr2(expr_value.clone()),
-                expr_type.clone(),
-            )
-            .into_expression();
-
-            MatchCondition::TaggedUnionTag {
-                tag_expr,
-                union_type: expr_type.clone(),
-                union_name: union_name.clone(),
-                variants,
-            }
-        }
-
-        _ => {
-            return log_typecheck_error!(
-                env,
-                expr,
-                "Match condition must be of integer or tagged union type"
-            );
-        }
-    })
-}
-
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    _: &CXExpr,
     condition: &CXExpr,
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
 ) -> CXResult<TypecheckResult> {
     env.push_scope(true, false);
 
-    let expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
-    let expr_type = expr_value.get_type();
+    let mut expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
+    let mut expr_type = expr_value.get_type();
 
-    let condition_tag = get_match_condition_value(env, expr, expr_value.clone(), &expr_type)?;
+    if let Some(inner) = expr_type.mem_ref_inner() {
+        expr_type = inner.clone();
 
-    let match_arms = match condition_tag {
-        MatchCondition::Integer(_) => {
+        if !expr_type.is_memory_resident() {
+            expr_value = MIRExpression {
+                kind: MIRExpressionKind::MemoryRead {
+                    source: Box::new(expr_value),
+                },
+                _type: expr_type.clone(),
+            }
+        }
+    }
+
+    let match_arms = match &expr_type.kind {
+        MIRTypeKind::Integer { .. } => {
             // Integer matching: each arm has an integer literal pattern
             let mut result_arms = Vec::new();
 
@@ -231,10 +180,9 @@ pub fn typecheck_match(
             result_arms
         }
 
-        MatchCondition::TaggedUnionTag {
-            union_name: expected_union_name,
+        MIRTypeKind::TaggedUnion {
+            name: expected_union_name,
             variants,
-            ..
         } => {
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
@@ -308,7 +256,16 @@ pub fn typecheck_match(
             }
 
             result_arms
-        }
+        },
+        
+        _ => {
+            return log_typecheck_error!(
+                env,
+                condition,
+                "Match condition must be an integer or tagged union type, found {}",
+                expr_type
+            );
+        },
     };
 
     // Handle default case

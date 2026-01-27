@@ -10,7 +10,7 @@ pub mod type_checking;
 pub mod type_completion;
 
 pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_deconstructor, realize_fn_implementation, typecheck,
+    complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
 };
 
 pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {

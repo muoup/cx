@@ -71,7 +71,7 @@ pub enum MIRExpressionKind {
 
     // Represents a no-op used to change the type of an expression with no added semantics
     Typechange(Box<MIRExpression>),
-    
+
     // Aggregate Access
     StructFieldAccess {
         base: Box<MIRExpression>,
@@ -89,7 +89,7 @@ pub enum MIRExpressionKind {
         index: Box<MIRExpression>,
         element_type: MIRType,
     },
-    
+
     PatternIs {
         lhs: Box<MIRExpression>,
         sum_type: MIRType,
@@ -112,13 +112,13 @@ pub enum MIRExpressionKind {
         inner_value: Box<MIRExpression>,
         sum_type: MIRType,
     },
-    
+
     ConstructTaggedUnion {
         variant_index: usize,
         value: Box<MIRExpression>,
         sum_type: MIRType,
     },
-    
+
     ArrayInitializer {
         elements: Vec<MIRExpression>,
         element_type: MIRType,
@@ -129,8 +129,12 @@ pub enum MIRExpressionKind {
     },
 
     // Control Flow
-    Break { scope_depth: usize },
-    Continue { scope_depth: usize },
+    Break {
+        scope_depth: usize,
+    },
+    Continue {
+        scope_depth: usize,
+    },
     If {
         condition: Box<MIRExpression>,
         then_branch: Box<MIRExpression>,
@@ -147,19 +151,19 @@ pub enum MIRExpressionKind {
         increment: Box<MIRExpression>,
         body: Box<MIRExpression>,
     },
-    
+
     CSwitch {
         condition: Box<MIRExpression>,
         cases: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
     },
-    
+
     Match {
         condition: Box<MIRExpression>,
         arms: Vec<(Box<MIRExpression>, Box<MIRExpression>)>,
         default: Option<Box<MIRExpression>>,
     },
-    
+
     Return {
         value: Option<Box<MIRExpression>>,
     },
@@ -172,7 +176,7 @@ pub enum MIRExpressionKind {
     // Function Calls
     CallFunction {
         function: Box<MIRExpression>,
-        arguments: Vec<MIRExpression>
+        arguments: Vec<MIRExpression>,
     },
 
     // Type Conversion
@@ -225,7 +229,7 @@ pub enum MIRIntegerBinOp {
     // Logical Ops
     LAND,
     LOR,
-    
+
     // Boolean/Bitwise Ops
     BAND,
     BOR,
@@ -298,7 +302,7 @@ pub enum MIRUnOp {
     FNEG,
     BNOT,
     LNOT,
-    
+
     PreIncrement(i8),
     PostIncrement(i8),
 }

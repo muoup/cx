@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 use cx_parsing_data::ast::VisibilityMode;
-use cx_parsing_data::data::{CXFunctionContract, CXTypeSpecifier};
+use cx_parsing_data::data::CXTypeSpecifier;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
