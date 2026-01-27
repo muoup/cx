@@ -257,17 +257,9 @@ pub fn lower_cswitch(
         builder.set_current_block(case_blocks[i].clone());
         lower_expression(builder, case_body)?;
 
-        let next_block = if i + 1 < case_blocks.len() {
-            case_blocks[i + 1].clone()
-        } else if default.is_some() {
-            default_block_id.clone()
-        } else {
-            exit_block_id.clone()
-        };
-
         builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
-            BCInstructionKind::Jump { target: next_block },
+            BCInstructionKind::Jump { target: exit_block_id.clone() },
             BCType::unit(),
             false,
         )?;

@@ -4,7 +4,7 @@ use cx_typechecker_data::mir::name_mangling::base_mangle_deconstructor;
 use cx_typechecker_data::mir::types::{MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 
-use crate::builder::{BCBuilder, LivenessEntry};
+use crate::builder::BCBuilder;
 use crate::mir_lowering::tagged_union::get_tagged_union_tag;
 
 pub fn generate_deconstructor(builder: &mut BCBuilder, mir_type: &MIRType) -> CXResult<()> {
@@ -53,11 +53,12 @@ fn generate_deconstructor_body(
             for (i, (_field_name, field_type)) in fields.iter().enumerate() {
                 // Get field pointer
                 let field_offset = calculate_field_offset(builder, mir_type, i);
+                let field_type_size = builder.convert_cx_type(field_type).size();
                 let field_ptr = builder.add_new_instruction(
                     BCInstructionKind::PointerBinOp {
                         op: BCPtrBinOp::ADD,
                         ptr_type: BCType::default_pointer(),
-                        type_padded_size: field_offset as u64,
+                        type_padded_size: field_type_size as u64,
                         left: self_ptr.clone(),
                         right: BCValue::IntImmediate {
                             val: field_offset as i64,
@@ -161,7 +162,7 @@ fn generate_deconstructor_body(
                         BCInstructionKind::PointerBinOp {
                             op: BCPtrBinOp::ADD,
                             ptr_type: BCType::default_pointer(),
-                            type_padded_size: element_offset as u64,
+                            type_padded_size: element_size as u64,
                             left: self_ptr.clone(),
                             right: BCValue::IntImmediate {
                                 val: element_offset as i64,
@@ -172,7 +173,7 @@ fn generate_deconstructor_body(
                         true,
                     )?;
 
-                    invoke_deconstruction(builder, &element_ptr, mir_type)?;
+                    invoke_deconstruction(builder, &element_ptr, inner_type)?;
                 }
             }
         }
@@ -251,7 +252,12 @@ pub fn invoke_deconstruction(
     value: &BCValue,
     mir_type: &MIRType,
 ) -> CXResult<BCValue> {
-    let proto = builder.get_deconstructor(mir_type).unwrap().clone();
+    let Some(proto) = builder.get_deconstructor(mir_type).cloned() else {
+        return cx_util::CXError::create_result(format!(
+            "Missing deconstructor for type {}",
+            mir_type
+        ));
+    };
 
     builder.add_new_instruction(
         BCInstructionKind::DirectCall {

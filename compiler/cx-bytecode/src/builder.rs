@@ -151,6 +151,7 @@ impl BCBuilder {
 
     pub fn pop_scope(&mut self) -> CXResult<()> {
         self.deconstruct_at_current_depth()?;
+        self.symbol_table.pop_scope();
         self.liveness_table.pop_scope();
         self.goto_stack.pop();
 
@@ -262,8 +263,18 @@ impl BCBuilder {
 
         if let Some(pos) = context.blocks.iter().position(|b| &b.id == block_id) {
             let block = context.blocks.remove(pos);
+            let new_end_index = context.blocks.len();
             context.blocks.push(block);
-            context.current_block = 0;
+
+            // Adjust current_block:
+            // - If the removed block was current, set to new end index
+            // - If pos < current, decrement by 1 to account for left-shift
+            // - Otherwise, keep current_block unchanged
+            if pos == context.current_block {
+                context.current_block = new_end_index;
+            } else if pos < context.current_block {
+                context.current_block -= 1;
+            }
         }
     }
 

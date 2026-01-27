@@ -4,7 +4,7 @@ use cx_bytecode_data::{
 };
 use cx_typechecker_data::mir::{
     expression::MIRExpression,
-    types::MIRType,
+    types::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -70,28 +70,29 @@ pub fn lower_tagged_union_set(
     )?;
 
     let bc_inner = lower_expression(builder, inner_value)?;
-    let inner_type = builder.get_value_type(&bc_inner);
+    let mir_inner_type = &inner_value._type;
+    let inner_bc_type = builder.convert_cx_type(mir_inner_type);
 
-    if inner_type.is_structure() {
+    if mir_inner_type.is_structure() {
         builder.add_new_instruction(
             BCInstructionKind::Memcpy {
                 dest: bc_target.clone(),
                 src: bc_inner,
                 size: BCValue::IntImmediate {
-                    val: inner_type.size() as i64,
+                    val: inner_bc_type.size() as i64,
                     _type: BCIntegerType::I64,
                 },
-                alignment: inner_type.alignment(),
+                alignment: inner_bc_type.alignment(),
             },
             BCType::unit(),
             false,
         )?;
-    } else if !inner_type.is_void() {
+    } else if !matches!(mir_inner_type.kind, MIRTypeKind::Unit) {
         builder.add_new_instruction(
             BCInstructionKind::Store {
                 memory: bc_target.clone(),
                 value: bc_inner,
-                _type: inner_type,
+                _type: inner_bc_type,
             },
             BCType::unit(),
             false,

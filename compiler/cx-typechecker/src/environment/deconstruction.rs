@@ -12,7 +12,8 @@ pub(crate) fn generate_deconstructor(
     _type: MIRType,
 ) -> CXResult<()> {
     // Deconstructor generation moved to lowering pass
-    todo!("Deconstructor generation moved to MIR→LMIR lowering")
+    // This is now a no-op to defer deconstructor generation
+    Ok(())
 }
 
 fn push_deconstructor_request(_env: &mut TypeEnvironment, _type: MIRType) {

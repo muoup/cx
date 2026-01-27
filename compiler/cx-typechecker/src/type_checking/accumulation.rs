@@ -155,7 +155,7 @@ impl TypecheckResult {
     }
 
     // Function calls
-    pub fn call_function(function: Self, arguments: Vec<Self>, result_type: MIRType, contract: MIRFunctionContract) -> Self {
+    pub fn call_function(function: Self, arguments: Vec<Self>, result_type: MIRType, _contract: MIRFunctionContract) -> Self {
         TypecheckResult::expr(
             result_type,
             MIRExpressionKind::CallFunction {

@@ -487,6 +487,13 @@ fn lower_call(
         builder.pop_scope()?;
     }
 
+    // Capture args for postcondition binding before adding return buffer
+    let args_cloned = if prototype.contract.postcondition.is_some() {
+        args.clone()
+    } else {
+        vec![]
+    };
+
     let return_buffer = if prototype.return_type.is_memory_resident() {
         let buffer = builder.add_new_instruction(
             BCInstructionKind::Allocate {
@@ -500,12 +507,6 @@ fn lower_call(
         Some(buffer)
     } else {
         None
-    };
-
-    let args_cloned = if prototype.contract.postcondition.is_some() {
-        args.clone()
-    } else {
-        vec![]
     };
 
     let value = if let BCValue::FunctionRef(_) = &fn_val {
@@ -630,16 +631,19 @@ fn lower_array_initializer(
             true,
         )?;
 
-        if elem_type.is_structure() {
+        // Check if bc_elem is a pointer to an in-memory aggregate (struct/union/array)
+        // If so, we need to use Memcpy to copy the actual bytes, not Store the pointer
+        let bc_elem_type_for_memcpy = builder.convert_cx_type(element_type);
+        if element_type.is_memory_resident() {
             builder.add_new_instruction(
                 BCInstructionKind::Memcpy {
                     dest: elem_addr,
                     src: bc_elem,
                     size: BCValue::IntImmediate {
-                        val: elem_type.size() as i64,
+                        val: bc_elem_type_for_memcpy.size() as i64,
                         _type: BCIntegerType::I64,
                     },
-                    alignment: elem_type.alignment(),
+                    alignment: bc_elem_type_for_memcpy.alignment(),
                 },
                 BCType::unit(),
                 false,

@@ -32,16 +32,13 @@ pub(crate) fn typecheck_access(
         // If we have a reference to a region containing a pointer, we need to
         // load the pointer and use that as our pointer
         Some(inner) if inner.is_pointer() => {
-            let Some(ptr_inner) = inner.ptr_inner().cloned() else {
-                unreachable!()
-            };
             let inner = inner.clone();
 
             let loaded = MIRExpression {
                 kind: MIRExpressionKind::MemoryRead {
                     source: Box::new(lhs),
                 },
-                _type: ptr_inner,
+                _type: inner.clone(),
             };
 
             (loaded, inner)
@@ -1040,7 +1037,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 CXBinOp::Less => MIRPtrBinOp::LT,
                 CXBinOp::Greater => MIRPtrBinOp::GT,
                 CXBinOp::Equal => MIRPtrBinOp::EQ,
-
+                CXBinOp::NotEqual => MIRPtrBinOp::NE,
                 _ => unreachable!(),
             };
 

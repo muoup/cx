@@ -35,22 +35,37 @@ pub fn typecheck_switch(
 
     for (case_index, case_value) in cases {
         // Find the expression at this case index
-        let case_expr = block
-            .get(*case_index as usize)
-            .cloned()
-            .unwrap_or_else(CXExpr::default);
+        let Some(case_expr) = block.get(*case_index as usize) else {
+            return log_typecheck_error!(
+                env,
+                condition,
+                "Switch case index {} out of bounds (block has {} expressions)",
+                *case_index,
+                block.len()
+            );
+        };
 
         // Typecheck the case body
         env.push_scope(true, false);
-        let case_body = typecheck_expr(env, base_data, &case_expr, None)?;
+        let case_body = typecheck_expr(env, base_data, case_expr, None)?;
         env.pop_scope();
-        
+
         // Create a pattern expression that matches the constant value
+        // Use the condition's integer type for the pattern
+        let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
+            return log_typecheck_error!(
+                env,
+                condition,
+                "Switch condition must be an integer type, found {}",
+                condition_value.get_type()
+            );
+        };
+
         let pattern_expr = MIRExpression {
-            kind: MIRExpressionKind::IntLiteral(*case_value as i64, CXIntegerType::I64, true),
+            kind: MIRExpressionKind::IntLiteral(*case_value as i64, *_type, *signed),
             _type: MIRType::from(MIRTypeKind::Integer {
-                signed: true,
-                _type: CXIntegerType::I64,
+                signed: *signed,
+                _type: *_type,
             }),
         };
 
@@ -61,13 +76,21 @@ pub fn typecheck_switch(
     }
 
     // Handle default case
-    let default_expr = default_case.and_then(|&idx| block.get(idx).cloned());
-    let default_body = match default_expr {
-        Some(expr) => {
+    let default_body = match default_case {
+        Some(&idx) => {
+            let Some(expr) = block.get(idx) else {
+                return log_typecheck_error!(
+                    env,
+                    condition,
+                    "Switch default case index {} out of bounds (block has {} expressions)",
+                    idx,
+                    block.len()
+                );
+            };
             env.push_scope(true, false);
-            let body = typecheck_expr(env, base_data, &expr, None)?;
+            let body = typecheck_expr(env, base_data, expr, None)?;
             env.pop_scope();
-            
+
             Some(Box::new(body.into_expression()))
         }
         None => None,
@@ -165,6 +188,16 @@ pub fn typecheck_match(
             // Integer matching: each arm has an integer literal pattern
             let mut result_arms = Vec::new();
 
+            // Derive integer type from condition
+            let MIRTypeKind::Integer { _type, signed } = &expr_type.kind else {
+                return log_typecheck_error!(
+                    env,
+                    condition,
+                    "Match condition must be an integer type, found {}",
+                    expr_type
+                );
+            };
+
             for (pattern, body) in arms.iter() {
                 let CXExprKind::IntLiteral {
                     val: pattern_value, ..
@@ -178,12 +211,12 @@ pub fn typecheck_match(
                 };
 
                 // Create a pattern expression that matches this value
-                // For integer matching, we use a comparison expression as the pattern
+                // Use the condition's integer type for the pattern
                 let pattern_expr = MIRExpression {
-                    kind: MIRExpressionKind::IntLiteral(*pattern_value, CXIntegerType::I64, true),
+                    kind: MIRExpressionKind::IntLiteral(*pattern_value, *_type, *signed),
                     _type: MIRType::from(MIRTypeKind::Integer {
-                        signed: true,
-                        _type: CXIntegerType::I64,
+                        signed: *signed,
+                        _type: *_type,
                     }),
                 };
 
