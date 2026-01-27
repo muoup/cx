@@ -90,6 +90,31 @@ cx [-O0, -O1, etc.] [-o <output_file>] <file_name>
 ## Compiler Pipeline
 For a detailed overview of the compiler pipeline, see the [Pipeline Design](docs/pipeline_design.md) document.
 
+### Project Structure
+
+The compiler is organized into several crates following a modular design:
+
+**Data Crates** (define intermediate representations and data structures):
+- `cx-tokens` - Token definitions and lexer output
+- `cx-ast` - Abstract Syntax Tree structures
+- `cx-mir` - Middle-level IR (type system + MIR definitions)
+- `cx-lmir` - Lower-level MIR (flat SSA representation for backend codegen)
+
+**Implementation Crates** (implement compilation stages):
+- `cx-lexer` - Lexical analysis (text → tokens)
+- `cx-parsing` - Parsing and pre-parsing (tokens → AST)
+- `cx-typechecker` - Type checking and template realization (AST → MIR)
+- `cx-mir-lowering` - MIR to LMIR conversion (MIR → flat SSA)
+- `cx-pipeline` - Pipeline orchestration and module management
+
+**Backend Crates** (code generation):
+- `cx-backend-cranelift` - Cranelift backend integration
+- `cx-backend-llvm` - LLVM backend integration
+
+**Utilities**:
+- `cx-util` - Shared utilities and error types
+- `cx-log` - Logging infrastructure
+
 ## Backends
 
 CX supports the following backends for code generation:
