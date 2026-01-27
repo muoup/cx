@@ -1,7 +1,0 @@
-[package]
-name = "cx-fmir-data"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-cx-typechecker-data = { path = "../cx-typechecker-data" }

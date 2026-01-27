@@ -373,7 +373,6 @@ dependencies = [
 name = "cx-typechecker"
 version = "0.0.0"
 dependencies = [
- "cx-fmir-data",
  "cx-lexer-data",
  "cx-log",
  "cx-parsing-data",
