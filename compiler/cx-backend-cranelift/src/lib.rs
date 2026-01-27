@@ -7,8 +7,8 @@ use cranelift::prelude::isa::TargetFrontendConfig;
 use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use cx_bytecode_data::types::{BCFloatType, BCTypeKind};
-use cx_bytecode_data::{BCBlockID, BCRegister, BCUnit, BCValue};
+use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
+use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_util::identifier::CXIdent;
 use cx_util::log_error;
 use std::collections::HashMap;
@@ -36,7 +36,7 @@ impl CodegenValue {
     }
 }
 
-pub(crate) type VariableTable = HashMap<BCRegister, CodegenValue>;
+pub(crate) type VariableTable = HashMap<LMIRRegister, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
@@ -71,17 +71,17 @@ impl FunctionState<'_> {
         Some((func_id, func_ref))
     }
 
-    pub(crate) fn get_block(&mut self, id: &BCBlockID) -> Block {
+    pub(crate) fn get_block(&mut self, id: &LMIRBlockID) -> Block {
         self.block_map.get(id).cloned().unwrap()
     }
 
-    pub(crate) fn get_value(&mut self, bc_value: &BCValue) -> Option<CodegenValue> {
+    pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> Option<CodegenValue> {
         match bc_value {
-            BCValue::NULL => Some(CodegenValue::NULL),
+            LMIRValue::NULL => Some(CodegenValue::NULL),
 
-            BCValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
+            LMIRValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
 
-            BCValue::FunctionRef(name) => {
+            LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str())?;
                 let as_value = self
                     .builder
@@ -91,31 +91,31 @@ impl FunctionState<'_> {
                 Some(CodegenValue::Value(as_value))
             }
 
-            BCValue::IntImmediate { val, _type } => {
-                let int_type = get_cranelift_type(&BCTypeKind::Integer(*_type).into());
+            LMIRValue::IntImmediate { val, _type } => {
+                let int_type = get_cranelift_type(&LMIRTypeKind::Integer(*_type).into());
                 let value = self.builder.ins().iconst(int_type, *val);
                 Some(CodegenValue::Value(value))
             }
 
-            BCValue::FloatImmediate {
+            LMIRValue::FloatImmediate {
                 val,
-                _type: BCFloatType::F32,
+                _type: LMIRFloatType::F32,
             } => {
                 let as_f32: f32 = val.into();
                 let value = self.builder.ins().f32const(as_f32);
                 Some(CodegenValue::Value(value))
             }
 
-            BCValue::FloatImmediate {
+            LMIRValue::FloatImmediate {
                 val,
-                _type: BCFloatType::F64,
+                _type: LMIRFloatType::F64,
             } => {
                 let as_f64: f64 = val.into();
                 let value = self.builder.ins().f64const(as_f64);
                 Some(CodegenValue::Value(value))
             }
 
-            BCValue::Global(id) => {
+            LMIRValue::Global(id) => {
                 let global_ref = self
                     .object_module
                     .declare_data_in_func(DataId::from_u32(*id), self.builder.func);
@@ -128,7 +128,7 @@ impl FunctionState<'_> {
                 Some(CodegenValue::Value(gv))
             }
 
-            BCValue::Register { register, _type } => {
+            LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
                     log_error!("Variable not found in variable table: {:?}", bc_value);
                 };
@@ -139,7 +139,7 @@ impl FunctionState<'_> {
     }
 }
 
-pub fn bytecode_aot_codegen(bc: &BCUnit, output: &str) -> Option<Vec<u8>> {
+pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> Option<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 

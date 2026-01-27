@@ -1,13 +1,13 @@
-use cx_parsing_data::{
+use cx_ast::{
     ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
     data::{
-        CXFunctionTemplate, CXLinkageMode, CXNaivePrototype, CXNaiveType, CXTemplatePrototype,
+        CXFunctionTemplate, CXLinkageMode, CXPrototype, CXType, CXTemplatePrototype,
         CXTypeTemplate, ModuleResource,
     },
     PreparseContents,
 };
-use cx_lexer_data::TokenIter;
-use cx_parsing_data::ast::VisibilityMode;
+use cx_tokens::TokenIter;
+use cx_ast::ast::VisibilityMode;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -60,7 +60,7 @@ impl<'a> ParserData<'a> {
     pub fn add_type(
         &mut self,
         name: String,
-        _type: CXNaiveType,
+        _type: CXType,
         prototype: Option<CXTemplatePrototype>,
     ) {
         match prototype {
@@ -88,7 +88,7 @@ impl<'a> ParserData<'a> {
 
     pub fn add_function(
         &mut self,
-        function: CXNaivePrototype,
+        function: CXPrototype,
         prototype: Option<CXTemplatePrototype>,
     ) {
         match prototype {

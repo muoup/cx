@@ -1,13 +1,14 @@
-use cx_parsing_data::{
+use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
-    data::CXFunctionKind,
+    data::{CXFunctionKind, CXTemplateInput},
 };
 use cx_pipeline_data::CompilationUnit;
-use cx_typechecker_data::mir::{
+use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRFunction},
-    types::{CXTemplateInput, MIRFunctionPrototype, MIRParameter},
+    types::{MIRFunctionPrototype, MIRParameter},
 };
+use crate::type_completion::types::_complete_template_input;
 use cx_util::CXResult;
 
 use crate::{
@@ -116,7 +117,9 @@ pub fn realize_fn_implementation(
         })
         .expect("Function template body not found");
 
-    let overwrites = add_templated_types(env, &template.resource.prototype, input);
+    // Complete the template input from CX to MIR level
+    let completed_input = _complete_template_input(env, base_data.as_ref(), None, input)?;
+    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
     env.in_external_templated_function = true;

@@ -1,8 +1,8 @@
 use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
-use cx_bytecode_data::types::{BCType, BCTypeKind};
-use cx_bytecode_data::{
-    BCBasicBlock, BCBlockID, BCFunction, BCFunctionMap, BCFunctionPrototype, BCUnit, BCValue,
+use cx_lmir::types::{LMIRType, LMIRTypeKind};
+use cx_lmir::{
+    LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRUnit, LMIRValue,
     ElementID,
 };
 use inkwell::attributes::AttributeLoc;
@@ -35,7 +35,7 @@ pub(crate) struct GlobalState<'a> {
     globals: Vec<GlobalValue<'a>>,
 
     functions: HashMap<String, FunctionType<'a>>,
-    function_map: &'a BCFunctionMap,
+    function_map: &'a LMIRFunctionMap,
 }
 
 pub(crate) struct FunctionState<'a, 'b> {
@@ -45,13 +45,13 @@ pub(crate) struct FunctionState<'a, 'b> {
     current_function: String,
 
     builder: Builder<'a>,
-    value_map: HashMap<BCValue, CodegenValue<'a>>,
+    value_map: HashMap<LMIRValue, CodegenValue<'a>>,
 }
 
 impl<'a> FunctionState<'a, '_> {
-    pub(crate) fn get_value(&self, val: &BCValue) -> Option<CodegenValue<'a>> {
+    pub(crate) fn get_value(&self, val: &LMIRValue) -> Option<CodegenValue<'a>> {
         match val {
-            BCValue::ParameterRef(index) => {
+            LMIRValue::ParameterRef(index) => {
                 let param_val = self
                     .function_value
                     .get_nth_param(*index)
@@ -66,8 +66,8 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(param_val))
             }
 
-            BCValue::IntImmediate { val, _type } => {
-                let as_type = BCType::from(BCTypeKind::Integer(*_type));
+            LMIRValue::IntImmediate { val, _type } => {
+                let as_type = LMIRType::from(LMIRTypeKind::Integer(*_type));
 
                 let int_type = bc_llvm_type(self.context, &as_type)?;
                 let int_val = int_type
@@ -78,8 +78,8 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(int_val))
             }
 
-            BCValue::FloatImmediate { val, _type } => {
-                let as_type = BCType::from(BCTypeKind::Float(*_type));
+            LMIRValue::FloatImmediate { val, _type } => {
+                let as_type = LMIRType::from(LMIRTypeKind::Float(*_type));
 
                 let float_type = bc_llvm_type(self.context, &as_type)?;
                 let float_val = float_type
@@ -90,17 +90,17 @@ impl<'a> FunctionState<'a, '_> {
                 Some(CodegenValue::Value(float_val))
             }
 
-            BCValue::FunctionRef(_) => {
+            LMIRValue::FunctionRef(_) => {
                 panic!("Function references should be handled at a higher level")
             }
 
-            BCValue::Register { .. } | BCValue::Global(..) => self.value_map.get(val).cloned(),
+            LMIRValue::Register { .. } | LMIRValue::Global(..) => self.value_map.get(val).cloned(),
 
-            BCValue::NULL => Some(CodegenValue::NULL),
+            LMIRValue::NULL => Some(CodegenValue::NULL),
         }
     }
 
-    pub(crate) fn get_block(&self, block_id: &BCBlockID) -> Option<BasicBlock<'_>> {
+    pub(crate) fn get_block(&self, block_id: &LMIRBlockID) -> Option<BasicBlock<'_>> {
         self.function_value
             .get_basic_blocks()
             .iter()
@@ -125,8 +125,8 @@ impl<'a> CodegenValue<'a> {
     }
 }
 
-pub fn bytecode_aot_codegen(
-    bytecode: &BCUnit,
+pub fn lmir_aot_codegen(
+    bytecode: &LMIRUnit,
     output_path: &str,
     optimization_level: OptimizationLevel,
 ) -> Option<Vec<u8>> {
@@ -216,7 +216,7 @@ pub fn bytecode_aot_codegen(
     Some(buff.as_slice().to_vec())
 }
 
-fn fn_aot_codegen(bytecode: &BCFunction, global_state: &GlobalState) -> Option<()> {
+fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option<()> {
     reset_num();
 
     let func_val = global_state
@@ -242,7 +242,7 @@ fn fn_aot_codegen(bytecode: &BCFunction, global_state: &GlobalState) -> Option<(
 
     for (i, global) in global_state.globals.iter().enumerate() {
         function_state.value_map.insert(
-            BCValue::Global(i as ElementID),
+            LMIRValue::Global(i as ElementID),
             CodegenValue::Value(global.as_any_value_enum()),
         );
     }
@@ -263,8 +263,8 @@ fn fn_aot_codegen(bytecode: &BCFunction, global_state: &GlobalState) -> Option<(
 fn codegen_block<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &mut FunctionState<'a, 'b>,
-    block_id: &BCBlockID,
-    block: &BCBasicBlock,
+    block_id: &LMIRBlockID,
+    block: &LMIRBasicBlock,
 ) {
     let block_val = function_state
         .get_block(block_id)
@@ -281,7 +281,7 @@ fn codegen_block<'a, 'b>(
         };
 
         if let Some(result_reg) = &inst.result {
-            let bc_reg = BCValue::Register {
+            let bc_reg = LMIRValue::Register {
                 register: result_reg.clone(),
                 _type: inst.value_type.clone(),
             };
@@ -297,7 +297,7 @@ fn codegen_block<'a, 'b>(
 
 fn cache_prototype<'a>(
     global_state: &mut GlobalState<'a>,
-    prototype: &'a BCFunctionPrototype,
+    prototype: &'a LMIRFunctionPrototype,
 ) -> Option<()> {
     let llvm_prototype = bc_llvm_prototype(global_state, prototype).unwrap();
 

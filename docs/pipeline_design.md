@@ -78,24 +78,26 @@ be avoided when possible.
 - **Input**: AST from the parsing stage, type and function signature information.
 - **Output**: A modified AST containing additional implicit AST elements, type information for each node, and realized template functions and types.
 
-### Stage 6: MIR Generation
-In the code, MIR will often be referred to as `Bytecode` as was it's old moniker, however it is more
-accurately described as a flat SSA MIR for the frontend to use before handing off to the supported
-codegen backends, currently LLVM and Cranelift. This IR does not currently come with its own special
-optimizations, however it is slowly being redesigned for such. While backends typically do their own
-optimizations, as MIR is more high-level and aware of the semantics of the language, it has the ability
-to be aware of safe transformations at a higher level than the backends.
+### Stage 6: LMIR Generation
+This stage converts the type-checked AST into a Lower-level MIR (LMIR), which is a flat SSA (Static
+Single Assignment) intermediate representation. The LMIR serves as the final frontend IR before
+handing off to the supported codegen backends (currently LLVM and Cranelift). The LMIR is
+designed to be easily portable across different backends while maintaining language semantics.
+
+The compiler internally distinguishes between two MIR levels:
+- **MIR (Middle-level IR)**: Type-checked AST with semantic information, produced during type checking
+- **LMIR (Lower-level MIR)**: Flat SSA representation produced from MIR, optimized for backend codegen
 
 - **Prerequisites**: The type-checked and template-realized AST.
 - **Input**: Type-checked and template-realized AST. Type map, and function signature map.
-- **Output**: A flat SSA IR representation of the program, along with a converted type map and function signature to match the lower-level representation.
+- **Output**: A flat SSA IR representation of the program (LMIR), along with converted type and function signature maps to match the lower-level representation.
 
 ### Stage 7: Backend Code Generation
-This stage is responsible for converting the flat SSA IR to a target-specific representation. This is
-usually a fairly straightforward process, as the IR is designed to be easily ported to different backends.
+This stage is responsible for converting the LMIR to a target-specific representation. This is
+usually a fairly straightforward process, as the LMIR is designed to be easily ported to different backends.
 
-- **Prerequisites**: The bytecode of only the compilation unit, and the target architecture information.
-- **Input**: Flat SSA IR representation of the program.
+- **Prerequisites**: The LMIR of only the compilation unit, and the target architecture information.
+- **Input**: Flat SSA IR representation of the program (LMIR).
 - **Output**: Object code or assembly code for the target architecture.
 
 ### Stage 8: Linking

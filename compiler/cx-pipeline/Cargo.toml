@@ -14,13 +14,13 @@ fs2 = { version = "0.4.3" }
 cx-lexer = { path = "../cx-lexer" }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
-cx-bytecode = { path = "../cx-bytecode" }
+cx-mir-lowering = { path = "../cx-mir-lowering" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
 cx-pipeline-data = { path = "../cx-pipeline-data" }
-cx-lexer-data = { path = "../cx-lexer-data" }
-cx-parsing-data = { path = "../cx-parsing-data" }
-cx-typechecker-data = { path = "../cx-typechecker-data" }
-cx-bytecode-data = { path = "../cx-bytecode-data" }
+cx-tokens = { path = "../cx-tokens" }
+cx-ast = { path = "../cx-ast" }
+cx-mir = { path = "../cx-mir" }
+cx-lmir = { path = "../cx-lmir" }
 cx-util = { path = "../cx-util" }

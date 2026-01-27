@@ -1,5 +1,5 @@
-use cx_lexer_data::{identifier, keyword, operator, punctuator, specifier, TokenIter};
-use cx_parsing_data::{
+use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
+use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
     data::{CXLinkageMode, ModuleResource},

@@ -10,21 +10,21 @@ use cranelift::codegen::ir::InstructionData;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_bytecode_data::types::{BCFloatType, BCTypeKind};
-use cx_bytecode_data::{
-    BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction, BCInstructionKind, BCIntBinOp,
-    BCIntUnOp, BCPtrBinOp,
+use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
+use cx_lmir::{
+    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
+    LMIRIntUnOp, LMIRPtrBinOp,
 };
 use std::ops::IndexMut;
 
 pub(crate) fn codegen_instruction(
     context: &mut FunctionState,
-    instruction: &BCInstruction,
+    instruction: &LMIRInstruction,
 ) -> Option<CodegenValue> {
     match &instruction.kind {
-        BCInstructionKind::Alias { value } => context.get_value(value),
+        LMIRInstructionKind::Alias { value } => context.get_value(value),
 
-        BCInstructionKind::Allocate { _type, alignment } => {
+        LMIRInstructionKind::Allocate { _type, alignment } => {
             let slot = context.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 StackSize::from(_type.size() as u16),
@@ -38,7 +38,7 @@ pub(crate) fn codegen_instruction(
             )))
         }
 
-        BCInstructionKind::DirectCall {
+        LMIRInstructionKind::DirectCall {
             args, method_sig, ..
         } => {
             let Some(id) = get_function(context, method_sig) else {
@@ -64,7 +64,7 @@ pub(crate) fn codegen_instruction(
             get_method_return(context, inst)
         }
 
-        BCInstructionKind::IndirectCall {
+        LMIRInstructionKind::IndirectCall {
             func_ptr,
             args,
             method_sig,
@@ -103,7 +103,7 @@ pub(crate) fn codegen_instruction(
             get_method_return(context, inst)
         }
 
-        BCInstructionKind::Return { value } => {
+        LMIRInstructionKind::Return { value } => {
             match value {
                 Some(value) => {
                     let return_value = context.get_value(value).unwrap();
@@ -117,7 +117,7 @@ pub(crate) fn codegen_instruction(
             None
         }
 
-        BCInstructionKind::Load { memory, _type } => {
+        LMIRInstructionKind::Load { memory, _type } => {
             let target = context.get_value(memory).unwrap().as_value();
 
             Some(CodegenValue::Value(context.builder.ins().load(
@@ -128,7 +128,7 @@ pub(crate) fn codegen_instruction(
             )))
         }
 
-        BCInstructionKind::GetFunctionAddr { func } => {
+        LMIRInstructionKind::GetFunctionAddr { func } => {
             let Some(id) = context.function_ids.get(func.as_str()).cloned() else {
                 panic!("INTERNAL ERROR: Function not found in codegen for GetFunctionAddr: {func}");
             };
@@ -143,9 +143,9 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::PtrToInt,
+            coercion_type: LMIRCoercionType::PtrToInt,
         } => {
             let bytes = instruction.value_type.size();
             let val = context.get_value(value).unwrap();
@@ -163,9 +163,9 @@ pub(crate) fn codegen_instruction(
             Some(val)
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             coercion_type:
-                BCCoercionType::IntToPtr {
+                LMIRCoercionType::IntToPtr {
                     from: _type,
                     sextend,
                 },
@@ -190,7 +190,7 @@ pub(crate) fn codegen_instruction(
             Some(val)
         }
 
-        BCInstructionKind::PointerBinOp {
+        LMIRInstructionKind::PointerBinOp {
             op,
             left,
             right,
@@ -203,7 +203,7 @@ pub(crate) fn codegen_instruction(
 
             let inst =
                 match op {
-                    BCPtrBinOp::ADD => {
+                    LMIRPtrBinOp::ADD => {
                         let right_scaled = context
                             .builder
                             .ins()
@@ -212,7 +212,7 @@ pub(crate) fn codegen_instruction(
                         context.builder.ins().iadd(left, right_scaled)
                     }
 
-                    BCPtrBinOp::SUB => {
+                    LMIRPtrBinOp::SUB => {
                         let right_scaled = context
                             .builder
                             .ins()
@@ -221,35 +221,35 @@ pub(crate) fn codegen_instruction(
                         context.builder.ins().isub(left, right_scaled)
                     }
 
-                    BCPtrBinOp::EQ => {
+                    LMIRPtrBinOp::EQ => {
                         context
                             .builder
                             .ins()
                             .icmp(ir::condcodes::IntCC::Equal, left, right)
                     }
-                    BCPtrBinOp::NE => {
+                    LMIRPtrBinOp::NE => {
                         context
                             .builder
                             .ins()
                             .icmp(ir::condcodes::IntCC::NotEqual, left, right)
                     }
 
-                    BCPtrBinOp::LT => context.builder.ins().icmp(
+                    LMIRPtrBinOp::LT => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedLessThan,
                         left,
                         right,
                     ),
-                    BCPtrBinOp::GT => context.builder.ins().icmp(
+                    LMIRPtrBinOp::GT => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedGreaterThan,
                         left,
                         right,
                     ),
-                    BCPtrBinOp::LE => context.builder.ins().icmp(
+                    LMIRPtrBinOp::LE => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedLessThanOrEqual,
                         left,
                         right,
                     ),
-                    BCPtrBinOp::GE => context.builder.ins().icmp(
+                    LMIRPtrBinOp::GE => context.builder.ins().icmp(
                         ir::condcodes::IntCC::SignedGreaterThanOrEqual,
                         left,
                         right,
@@ -259,29 +259,29 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        BCInstructionKind::IntegerBinOp { op, left, right } => {
+        LMIRInstructionKind::IntegerBinOp { op, left, right } => {
             let left = context.get_value(left).unwrap().as_value();
             let right = context.get_value(right).unwrap().as_value();
 
             let inst = match op {
-                BCIntBinOp::ADD => context.builder.ins().iadd(left, right),
-                BCIntBinOp::SUB => context.builder.ins().isub(left, right),
-                BCIntBinOp::IMUL | BCIntBinOp::MUL => context.builder.ins().imul(left, right),
-                BCIntBinOp::IDIV => context.builder.ins().sdiv(left, right),
-                BCIntBinOp::IREM => context.builder.ins().srem(left, right),
+                LMIRIntBinOp::ADD => context.builder.ins().iadd(left, right),
+                LMIRIntBinOp::SUB => context.builder.ins().isub(left, right),
+                LMIRIntBinOp::IMUL | LMIRIntBinOp::MUL => context.builder.ins().imul(left, right),
+                LMIRIntBinOp::IDIV => context.builder.ins().sdiv(left, right),
+                LMIRIntBinOp::IREM => context.builder.ins().srem(left, right),
 
-                BCIntBinOp::UDIV => context.builder.ins().udiv(left, right),
-                BCIntBinOp::UREM => context.builder.ins().urem(left, right),
+                LMIRIntBinOp::UDIV => context.builder.ins().udiv(left, right),
+                LMIRIntBinOp::UREM => context.builder.ins().urem(left, right),
 
-                BCIntBinOp::SHL => context.builder.ins().ishl(left, right),
-                BCIntBinOp::ASHR => context.builder.ins().sshr(left, right),
-                BCIntBinOp::LSHR => context.builder.ins().ushr(left, right),
+                LMIRIntBinOp::SHL => context.builder.ins().ishl(left, right),
+                LMIRIntBinOp::ASHR => context.builder.ins().sshr(left, right),
+                LMIRIntBinOp::LSHR => context.builder.ins().ushr(left, right),
 
-                BCIntBinOp::BAND => context.builder.ins().band(left, right),
-                BCIntBinOp::BOR => context.builder.ins().bor(left, right),
-                BCIntBinOp::BXOR => context.builder.ins().bxor(left, right),
+                LMIRIntBinOp::BAND => context.builder.ins().band(left, right),
+                LMIRIntBinOp::BOR => context.builder.ins().bor(left, right),
+                LMIRIntBinOp::BXOR => context.builder.ins().bxor(left, right),
 
-                BCIntBinOp::LAND => {
+                LMIRIntBinOp::LAND => {
                     let left = context
                         .builder
                         .ins()
@@ -295,7 +295,7 @@ pub(crate) fn codegen_instruction(
                     context.builder.ins().band(left, right)
                 }
 
-                BCIntBinOp::LOR => {
+                LMIRIntBinOp::LOR => {
                     let left = context
                         .builder
                         .ins()
@@ -309,59 +309,59 @@ pub(crate) fn codegen_instruction(
                     context.builder.ins().bor(left, right)
                 }
 
-                BCIntBinOp::EQ => {
+                LMIRIntBinOp::EQ => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::Equal, left, right)
                 }
-                BCIntBinOp::NE => {
+                LMIRIntBinOp::NE => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::NotEqual, left, right)
                 }
 
-                BCIntBinOp::ILT => {
+                LMIRIntBinOp::ILT => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::SignedLessThan, left, right)
                 }
-                BCIntBinOp::IGT => {
+                LMIRIntBinOp::IGT => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::SignedGreaterThan, left, right)
                 }
-                BCIntBinOp::ILE => context.builder.ins().icmp(
+                LMIRIntBinOp::ILE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::SignedLessThanOrEqual,
                     left,
                     right,
                 ),
-                BCIntBinOp::IGE => context.builder.ins().icmp(
+                LMIRIntBinOp::IGE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::SignedGreaterThanOrEqual,
                     left,
                     right,
                 ),
 
-                BCIntBinOp::ULT => {
+                LMIRIntBinOp::ULT => {
                     context
                         .builder
                         .ins()
                         .icmp(ir::condcodes::IntCC::UnsignedLessThan, left, right)
                 }
-                BCIntBinOp::UGT => context.builder.ins().icmp(
+                LMIRIntBinOp::UGT => context.builder.ins().icmp(
                     ir::condcodes::IntCC::UnsignedGreaterThan,
                     left,
                     right,
                 ),
-                BCIntBinOp::ULE => context.builder.ins().icmp(
+                LMIRIntBinOp::ULE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::UnsignedLessThanOrEqual,
                     left,
                     right,
                 ),
-                BCIntBinOp::UGE => context.builder.ins().icmp(
+                LMIRIntBinOp::UGE => context.builder.ins().icmp(
                     ir::condcodes::IntCC::UnsignedGreaterThanOrEqual,
                     left,
                     right,
@@ -371,13 +371,13 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        BCInstructionKind::IntegerUnOp { op, value } => {
+        LMIRInstructionKind::IntegerUnOp { op, value } => {
             let val = context.get_value(value).unwrap();
 
             let inst = match op {
-                BCIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
-                BCIntUnOp::BNOT => context.builder.ins().bnot(val.as_value()),
-                BCIntUnOp::LNOT => {
+                LMIRIntUnOp::NEG => context.builder.ins().ineg(val.as_value()),
+                LMIRIntUnOp::BNOT => context.builder.ins().bnot(val.as_value()),
+                LMIRIntUnOp::LNOT => {
                     context
                         .builder
                         .ins()
@@ -388,58 +388,58 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(inst))
         }
 
-        BCInstructionKind::FloatUnOp { value, op } => {
+        LMIRInstructionKind::FloatUnOp { value, op } => {
             let val = context.get_value(value).unwrap();
             let _type = &instruction.value_type;
 
             match op {
-                BCFloatUnOp::NEG => Some(CodegenValue::Value(
+                LMIRFloatUnOp::NEG => Some(CodegenValue::Value(
                     context.builder.ins().fneg(val.as_value()),
                 )),
             }
         }
 
-        BCInstructionKind::FloatBinOp { left, right, op } => {
+        LMIRInstructionKind::FloatBinOp { left, right, op } => {
             let left = context.get_value(left).unwrap().as_value();
             let right = context.get_value(right).unwrap().as_value();
 
             Some(CodegenValue::Value(match op {
-                BCFloatBinOp::ADD => context.builder.ins().fadd(left, right),
-                BCFloatBinOp::SUB => context.builder.ins().fsub(left, right),
-                BCFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
-                BCFloatBinOp::FDIV => context.builder.ins().fdiv(left, right),
+                LMIRFloatBinOp::ADD => context.builder.ins().fadd(left, right),
+                LMIRFloatBinOp::SUB => context.builder.ins().fsub(left, right),
+                LMIRFloatBinOp::FMUL => context.builder.ins().fmul(left, right),
+                LMIRFloatBinOp::FDIV => context.builder.ins().fdiv(left, right),
 
-                BCFloatBinOp::EQ => {
+                LMIRFloatBinOp::EQ => {
                     context
                         .builder
                         .ins()
                         .fcmp(ir::condcodes::FloatCC::Equal, left, right)
                 }
-                BCFloatBinOp::NEQ => {
+                LMIRFloatBinOp::NEQ => {
                     context
                         .builder
                         .ins()
                         .fcmp(ir::condcodes::FloatCC::NotEqual, left, right)
                 }
-                BCFloatBinOp::FLT => {
+                LMIRFloatBinOp::FLT => {
                     context
                         .builder
                         .ins()
                         .fcmp(ir::condcodes::FloatCC::LessThan, left, right)
                 }
-                BCFloatBinOp::FLE => {
+                LMIRFloatBinOp::FLE => {
                     context
                         .builder
                         .ins()
                         .fcmp(ir::condcodes::FloatCC::LessThanOrEqual, left, right)
                 }
-                BCFloatBinOp::FGT => {
+                LMIRFloatBinOp::FGT => {
                     context
                         .builder
                         .ins()
                         .fcmp(ir::condcodes::FloatCC::GreaterThan, left, right)
                 }
-                BCFloatBinOp::FGE => context.builder.ins().fcmp(
+                LMIRFloatBinOp::FGE => context.builder.ins().fcmp(
                     ir::condcodes::FloatCC::GreaterThanOrEqual,
                     left,
                     right,
@@ -447,7 +447,7 @@ pub(crate) fn codegen_instruction(
             }))
         }
 
-        BCInstructionKind::Branch {
+        LMIRInstructionKind::Branch {
             condition,
             true_block,
             false_block,
@@ -464,7 +464,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        BCInstructionKind::Jump { target } => {
+        LMIRInstructionKind::Jump { target } => {
             let target = context.get_block(target);
 
             context.builder.ins().jump(target, &[]);
@@ -472,7 +472,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        BCInstructionKind::StructAccess {
+        LMIRInstructionKind::StructAccess {
             struct_,
             field_offset,
             ..
@@ -488,7 +488,7 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        BCInstructionKind::Store {
+        LMIRInstructionKind::Store {
             memory,
             value,
             _type,
@@ -504,7 +504,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        BCInstructionKind::Memcpy {
+        LMIRInstructionKind::Memcpy {
             dest,
             src,
             size,
@@ -521,7 +521,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        BCInstructionKind::ZeroMemory { memory, _type } => {
+        LMIRInstructionKind::ZeroMemory { memory, _type } => {
             let target = context.get_value(memory).unwrap().as_value();
             let size_literal = context
                 .builder
@@ -540,7 +540,7 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        BCInstructionKind::Phi { predecessors } => {
+        LMIRInstructionKind::Phi { predecessors } => {
             let current_block = context.builder.current_block()?;
             let current_block_len = context
                 .builder
@@ -623,8 +623,8 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(val))
         }
 
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::ZExtend,
+        LMIRInstructionKind::Coercion {
+            coercion_type: LMIRCoercionType::ZExtend,
             value,
         } => {
             let val = context.get_value(value).unwrap().as_value();
@@ -642,8 +642,8 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::SExtend,
+        LMIRInstructionKind::Coercion {
+            coercion_type: LMIRCoercionType::SExtend,
             value,
         } => {
             let val = context.get_value(value).unwrap().as_value();
@@ -662,8 +662,8 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::Trunc,
+        LMIRInstructionKind::Coercion {
+            coercion_type: LMIRCoercionType::Trunc,
             value,
         } => {
             let val = context.get_value(value).unwrap();
@@ -685,8 +685,8 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::BitCast,
+        LMIRInstructionKind::Coercion {
+            coercion_type: LMIRCoercionType::BitCast,
             value,
         } => {
             let Some(val) = context.get_value(value) else {
@@ -696,8 +696,8 @@ pub(crate) fn codegen_instruction(
             Some(val)
         }
 
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::FloatCast { from: _ },
+        LMIRInstructionKind::Coercion {
+            coercion_type: LMIRCoercionType::FloatCast { from: _ },
             value,
         } => {
             let val = context.get_value(value).unwrap();
@@ -705,13 +705,13 @@ pub(crate) fn codegen_instruction(
             let cranelift_type = get_cranelift_type(to_type);
 
             match &to_type.kind {
-                BCTypeKind::Float(BCFloatType::F32) => Some(CodegenValue::Value(
+                LMIRTypeKind::Float(LMIRFloatType::F32) => Some(CodegenValue::Value(
                     context
                         .builder
                         .ins()
                         .fdemote(cranelift_type, val.as_value()),
                 )),
-                BCTypeKind::Float(BCFloatType::F64) => Some(CodegenValue::Value(
+                LMIRTypeKind::Float(LMIRFloatType::F64) => Some(CodegenValue::Value(
                     context
                         .builder
                         .ins()
@@ -721,9 +721,9 @@ pub(crate) fn codegen_instruction(
             }
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             coercion_type:
-                BCCoercionType::FloatToInt {
+                LMIRCoercionType::FloatToInt {
                     from,
                     sextend: signed,
                 },
@@ -734,7 +734,7 @@ pub(crate) fn codegen_instruction(
 
             let to_cl_type = get_cranelift_type(_type);
 
-            let BCTypeKind::Integer(itype) = &_type.kind else {
+            let LMIRTypeKind::Integer(itype) = &_type.kind else {
                 panic!("Invalid type for float to int conversion")
             };
 
@@ -760,8 +760,8 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::Value(val))
         }
 
-        BCInstructionKind::Coercion {
-            coercion_type: BCCoercionType::IntToFloat { from: _, sextend },
+        LMIRInstructionKind::Coercion {
+            coercion_type: LMIRCoercionType::IntToFloat { from: _, sextend },
             value,
         } => {
             let val = context.get_value(value).unwrap().as_value();
@@ -776,7 +776,7 @@ pub(crate) fn codegen_instruction(
             }))
         }
 
-        BCInstructionKind::JumpTable {
+        LMIRInstructionKind::JumpTable {
             value,
             targets,
             default,
@@ -795,6 +795,6 @@ pub(crate) fn codegen_instruction(
             Some(CodegenValue::NULL)
         }
 
-        BCInstructionKind::CompilerAssumption { .. } => Some(CodegenValue::NULL),
+        LMIRInstructionKind::CompilerAssumption { .. } => Some(CodegenValue::NULL),
     }
 }

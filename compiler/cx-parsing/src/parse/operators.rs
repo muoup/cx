@@ -1,7 +1,7 @@
 use crate::parse::ParserData;
-use cx_lexer_data::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_parsing_data::ast::{CXBinOp, CXUnOp};
-use cx_parsing_data::{assert_token_matches, next_kind};
+use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
+use cx_ast::ast::{CXBinOp, CXUnOp};
+use cx_ast::{assert_token_matches, next_kind};
 use cx_util::CXResult;
 
 use crate::parse::expressions::is_type_decl;
