@@ -75,9 +75,10 @@ pub(crate) fn instantiate_type_template(
     let shell = &template.resource.shell;
 
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
-    let mut cx_type = _complete_type(env, base_data, shell)?;
+    let cx_type = _complete_type(env, base_data, shell);
     restore_template_overwrites(env, overwrites);
 
+    let mut cx_type = cx_type?;
     cx_type.add_template_info(
         CXIdent::new(template_name.as_str()),
         completed_input.clone(),
