@@ -7,15 +7,14 @@ use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::typecheck_expr;
-use crate::type_completion::prototypes::complete_template_args;
-use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_parsing_data::data::{CXNaivePrototype, CXNaiveType, CXNaiveTypeKind};
-use cx_typechecker_data::mir::expression::{
+use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
+use cx_ast::data::{CXPrototype, CXType, CXTypeKind};
+use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
-use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
@@ -137,9 +136,8 @@ pub(crate) fn typecheck_access(
             name,
             template_input,
         } => {
-            let input = complete_template_args(env, base_data, template_input)?;
             let prototype =
-                env.get_member_function(base_data, expr, &lhs_inner, name, Some(&input))?;
+                env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?;
 
             let lhs_val_as_pointer = MIRExpression {
                 kind: MIRExpressionKind::TypeConversion {
@@ -301,7 +299,7 @@ pub(crate) fn typecheck_method_call(
                     expr,
                     std::mem::take(val),
                     &MIRTypeKind::Integer {
-                        _type: CXIntegerType::I64,
+                        _type: MIRIntegerType::I64,
                         signed: *signed,
                     }
                     .into(),
@@ -309,21 +307,21 @@ pub(crate) fn typecheck_method_call(
             }
 
             MIRTypeKind::Float {
-                _type: CXFloatType::F32,
+                _type: MIRFloatType::F32,
             } => {
                 *val = implicit_cast(
                     env,
                     expr,
                     std::mem::take(val),
                     &MIRTypeKind::Float {
-                        _type: CXFloatType::F64,
+                        _type: MIRFloatType::F64,
                     }
                     .into(),
                 )?;
             }
 
             MIRTypeKind::Float {
-                _type: CXFloatType::F64,
+                _type: MIRFloatType::F64,
             } => {
                 // Already the correct type for varargs
             }
@@ -419,8 +417,8 @@ pub(crate) fn typecheck_scoped_call(
             template_input,
         } => env.complete_type(
             base_data,
-            &CXNaiveType {
-                kind: CXNaiveTypeKind::TemplatedIdentifier {
+            &CXType {
+                kind: CXTypeKind::TemplatedIdentifier {
                     name: name.clone(),
                     input: template_input.clone(),
                 },
@@ -723,42 +721,42 @@ pub(crate) fn typecheck_float_float_binop(
 
         CXBinOp::Equal => (
             MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }),
             MIRFloatBinOp::EQ,
         ),
         CXBinOp::NotEqual => (
             MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }),
             MIRFloatBinOp::NEQ,
         ),
         CXBinOp::Less => (
             MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }),
             MIRFloatBinOp::FLT,
         ),
         CXBinOp::Greater => (
             MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }),
             MIRFloatBinOp::FGT,
         ),
         CXBinOp::LessEqual => (
             MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }),
             MIRFloatBinOp::FLE,
         ),
         CXBinOp::GreaterEqual => (
             MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }),
             MIRFloatBinOp::FGE,
@@ -902,7 +900,7 @@ pub(crate) fn typecheck_int_int_binop(
         | CXBinOp::GreaterEqual
         | CXBinOp::Equal
         | CXBinOp::NotEqual => MIRTypeKind::Integer {
-            _type: CXIntegerType::I1,
+            _type: MIRIntegerType::I1,
             signed: false,
         }
         .into(),
@@ -913,7 +911,7 @@ pub(crate) fn typecheck_int_int_binop(
                 expr,
                 lhs,
                 &MIRTypeKind::Integer {
-                    _type: CXIntegerType::I1,
+                    _type: MIRIntegerType::I1,
                     signed: false,
                 }
                 .into(),
@@ -924,14 +922,14 @@ pub(crate) fn typecheck_int_int_binop(
                 expr,
                 rhs,
                 &MIRTypeKind::Integer {
-                    _type: CXIntegerType::I1,
+                    _type: MIRIntegerType::I1,
                     signed: false,
                 }
                 .into(),
             )?;
 
             MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 signed: false,
             }
             .into()
@@ -990,7 +988,7 @@ pub(crate) fn typecheck_ptr_int_binop(
         CXBinOp::Add | CXBinOp::Subtract | CXBinOp::ArrayIndex => {
             let rhs_type = integer.get_type();
             let int_sized_pointer = MIRTypeKind::Integer {
-                _type: CXIntegerType::I64,
+                _type: MIRIntegerType::I64,
                 signed: true,
             }
             .into();
@@ -1058,7 +1056,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 &CXExpr::default(),
                 integer,
                 &MIRTypeKind::Integer {
-                    _type: CXIntegerType::I64,
+                    _type: MIRIntegerType::I64,
                     signed,
                 }
                 .into(),
@@ -1066,7 +1064,7 @@ pub(crate) fn typecheck_ptr_int_binop(
 
             Ok(TypecheckResult::expr(
                 MIRTypeKind::Integer {
-                    _type: CXIntegerType::I1,
+                    _type: MIRIntegerType::I1,
                     signed: false,
                 }
                 .into(),
@@ -1108,7 +1106,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
 
     Ok(TypecheckResult::expr(
         MIRTypeKind::Integer {
-            _type: CXIntegerType::I1,
+            _type: MIRIntegerType::I1,
             signed: false,
         }
         .into(),
@@ -1175,7 +1173,7 @@ pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     function_name: &CXIdent,
-    prototype: &CXNaivePrototype,
+    prototype: &CXPrototype,
 ) -> CXResult<MIRFunctionContract> {
     let naive_contract = &prototype.contract;
 

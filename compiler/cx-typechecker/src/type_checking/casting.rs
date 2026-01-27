@@ -1,7 +1,7 @@
-use cx_parsing_data::ast::CXExpr;
-use cx_typechecker_data::mir::{
+use cx_ast::ast::CXExpr;
+use cx_mir::mir::{
     expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp},
-    types::{CXIntegerType, MIRType, MIRTypeKind, same_type},
+    types::{MIRIntegerType, MIRType, MIRTypeKind, same_type},
 };
 use cx_util::CXResult;
 
@@ -41,7 +41,7 @@ pub(crate) fn coerce_condition(
         value,
         &MIRTypeKind::Integer {
             signed: false,
-            _type: CXIntegerType::I1,
+            _type: MIRIntegerType::I1,
         }
         .into(),
     )
@@ -74,7 +74,7 @@ pub(crate) fn explicit_cast(
         }
 
         (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. })
-            if (*_type == CXIntegerType::I64) =>
+            if (*_type == MIRIntegerType::I64) =>
         {
             coerce(MIRCoercion::ReinterpretBits)
         }
@@ -129,7 +129,7 @@ pub fn implicit_cast(
         (
             MIRTypeKind::Integer { _type, .. },
             MIRTypeKind::Integer {
-                _type: CXIntegerType::I1,
+                _type: MIRIntegerType::I1,
                 ..
             },
         ) => {
@@ -261,7 +261,7 @@ pub fn implicit_cast(
             // Array to pointer decay: access element 0
             Ok(TypecheckResult::array_access(
                 TypecheckResult::expr2(value),
-                TypecheckResult::expr2(MIRExpression::int_literal(0, CXIntegerType::I64, false)),
+                TypecheckResult::expr2(MIRExpression::int_literal(0, MIRIntegerType::I64, false)),
                 (*inner.clone()).clone(),
                 to_type.clone(),
             )

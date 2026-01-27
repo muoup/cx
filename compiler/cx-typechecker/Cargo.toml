@@ -4,9 +4,9 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-cx-lexer-data = { path = "../cx-lexer-data" }
-cx-typechecker-data = { path = "../cx-typechecker-data" }
-cx-parsing-data = { path = "../cx-parsing-data" }
+cx-tokens = { path = "../cx-tokens" }
+cx-mir = { path = "../cx-mir" }
+cx-ast = { path = "../cx-ast" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 
 cx-util = { path = "../cx-util" }

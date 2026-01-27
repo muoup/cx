@@ -1,5 +1,5 @@
-use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRBinOp, MIRUnOp, MIRCoercion, MIRFunctionContract};
-use cx_typechecker_data::mir::types::{CXIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRBinOp, MIRUnOp, MIRCoercion, MIRFunctionContract};
+use cx_mir::mir::types::{MIRIntegerType, MIRType, MIRTypeKind};
 
 /// Result of typechecking an expression/statement
 #[derive(Debug, Clone)]
@@ -169,7 +169,7 @@ impl TypecheckResult {
     pub fn tagged_union_tag(value: Self, sum_type: MIRType) -> Self {
         TypecheckResult::expr(
             MIRTypeKind::Integer {
-                _type: CXIntegerType::I8,
+                _type: MIRIntegerType::I8,
                 signed: false,
             }.into(),
             MIRExpressionKind::TaggedUnionTag {

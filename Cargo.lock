@@ -244,6 +244,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-ast"
+version = "0.0.0"
+dependencies = [
+ "cx-tokens",
+ "cx-util",
+ "speedy",
+ "uuid",
+]
+
+[[package]]
 name = "cx-backend-cranelift"
 version = "0.0.0"
 dependencies = [
@@ -251,8 +261,8 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
- "cx-bytecode-data",
- "cx-parsing-data",
+ "cx-ast",
+ "cx-lmir",
  "cx-util",
 ]
 
@@ -260,41 +270,23 @@ dependencies = [
 name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
- "cx-bytecode-data",
+ "cx-lmir",
  "cx-pipeline-data",
  "cx-util",
  "inkwell",
 ]
 
 [[package]]
-name = "cx-bytecode"
-version = "0.0.0"
-dependencies = [
- "cx-bytecode-data",
- "cx-parsing",
- "cx-parsing-data",
- "cx-typechecker-data",
- "cx-util",
-]
-
-[[package]]
-name = "cx-bytecode-data"
-version = "0.0.0"
-dependencies = [
- "cx-util",
-]
-
-[[package]]
 name = "cx-lexer"
 version = "0.0.0"
 dependencies = [
- "cx-lexer-data",
  "cx-pipeline-data",
+ "cx-tokens",
  "cx-util",
 ]
 
 [[package]]
-name = "cx-lexer-data"
+name = "cx-lmir"
 version = "0.0.0"
 dependencies = [
  "cx-util",
@@ -305,7 +297,28 @@ name = "cx-log"
 version = "0.0.0"
 dependencies = [
  "cx-lexer",
- "cx-lexer-data",
+ "cx-tokens",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-mir"
+version = "0.0.0"
+dependencies = [
+ "cx-ast",
+ "cx-util",
+ "speedy",
+ "uuid",
+]
+
+[[package]]
+name = "cx-mir-lowering"
+version = "0.0.0"
+dependencies = [
+ "cx-ast",
+ "cx-lmir",
+ "cx-mir",
+ "cx-parsing",
  "cx-util",
 ]
 
@@ -313,39 +326,29 @@ dependencies = [
 name = "cx-parsing"
 version = "0.0.0"
 dependencies = [
- "cx-lexer-data",
+ "cx-ast",
  "cx-log",
- "cx-parsing-data",
+ "cx-mir",
  "cx-pipeline-data",
- "cx-typechecker-data",
+ "cx-tokens",
  "cx-util",
-]
-
-[[package]]
-name = "cx-parsing-data"
-version = "0.0.0"
-dependencies = [
- "cx-lexer-data",
- "cx-util",
- "speedy",
- "uuid",
 ]
 
 [[package]]
 name = "cx-pipeline"
 version = "0.0.0"
 dependencies = [
+ "cx-ast",
  "cx-backend-cranelift",
  "cx-backend-llvm",
- "cx-bytecode",
- "cx-bytecode-data",
  "cx-lexer",
- "cx-lexer-data",
+ "cx-lmir",
+ "cx-mir",
+ "cx-mir-lowering",
  "cx-parsing",
- "cx-parsing-data",
  "cx-pipeline-data",
+ "cx-tokens",
  "cx-typechecker",
- "cx-typechecker-data",
  "cx-util",
  "fs2",
  "speedy",
@@ -355,33 +358,30 @@ dependencies = [
 name = "cx-pipeline-data"
 version = "0.0.0"
 dependencies = [
- "cx-bytecode-data",
- "cx-lexer-data",
- "cx-parsing-data",
- "cx-typechecker-data",
+ "cx-ast",
+ "cx-lmir",
+ "cx-mir",
+ "cx-tokens",
  "speedy",
+]
+
+[[package]]
+name = "cx-tokens"
+version = "0.0.0"
+dependencies = [
+ "cx-util",
 ]
 
 [[package]]
 name = "cx-typechecker"
 version = "0.0.0"
 dependencies = [
- "cx-lexer-data",
+ "cx-ast",
  "cx-log",
- "cx-parsing-data",
+ "cx-mir",
  "cx-pipeline-data",
- "cx-typechecker-data",
+ "cx-tokens",
  "cx-util",
-]
-
-[[package]]
-name = "cx-typechecker-data"
-version = "0.0.0"
-dependencies = [
- "cx-parsing-data",
- "cx-util",
- "speedy",
- "uuid",
 ]
 
 [[package]]

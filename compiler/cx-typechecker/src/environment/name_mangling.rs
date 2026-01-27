@@ -1,5 +1,5 @@
-use cx_parsing_data::data::CXFunctionKind;
-use cx_typechecker_data::mir::{
+use cx_ast::data::CXFunctionKind;
+use cx_mir::mir::{
     name_mangling::{base_mangle_destructor, base_mangle_member, base_mangle_standard, base_mangle_static_member},
     program::MIRBaseMappings,
     types::MIRType,

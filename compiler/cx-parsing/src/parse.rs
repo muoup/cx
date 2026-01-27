@@ -1,13 +1,13 @@
-use cx_lexer_data::{
+use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_parsing_data::{
+use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
     ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
-    data::{CXNaivePrototype, CXTemplatePrototype},
+    data::{CXPrototype, CXTemplatePrototype},
     next_kind, peek_next_kind, try_next, PreparseContents,
 };
 use cx_util::{CXResult, identifier::CXIdent};
@@ -104,7 +104,7 @@ pub(crate) fn parsetype_def(data: &mut ParserData) -> CXResult<()> {
 
 fn parse_fn_merge(
     data: &mut ParserData,
-    prototype: CXNaivePrototype,
+    prototype: CXPrototype,
     template_prototype: Option<CXTemplatePrototype>,
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {

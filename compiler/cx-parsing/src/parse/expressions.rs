@@ -1,10 +1,10 @@
 use crate::parse::ParserData;
-use cx_lexer_data::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_lexer_data::{identifier, intrinsic, keyword, operator, punctuator, specifier};
-use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
-use cx_parsing_data::data::CXNaiveTypeKind;
-use cx_parsing_data::{assert_token_matches, next_kind, try_next};
-use cx_typechecker_data::intrinsic_types::is_intrinsic_type;
+use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
+use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
+use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
+use cx_ast::data::CXTypeKind;
+use cx_ast::{assert_token_matches, next_kind, try_next};
+use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
@@ -122,7 +122,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
             let variant_name = parse_std_ident(&mut data.tokens)?;
 
-            let CXNaiveTypeKind::Identifier {
+            let CXTypeKind::Identifier {
                 name: type_name, ..
             } = _type.kind
             else {

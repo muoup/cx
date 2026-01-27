@@ -1,5 +1,5 @@
-use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
-use cx_typechecker_data::mir::{
+use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
+use cx_mir::mir::{
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
     types::{MIRType, MIRTypeKind},

@@ -1,13 +1,15 @@
-use crate::environment::function_query::query_destructor;
+use crate::environment::function_query::deduce_function;
 use crate::environment::name_mangling::mangle_templated_fn_name;
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
+use cx_ast::ast::CXExpr;
+use cx_ast::data::CXFunctionKey;
 use crate::type_completion::complete_prototype_no_insert;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
-use cx_parsing_data::data::{
-    CXFunctionTemplate, CXNaiveTemplateInput, CXTemplatePrototype, ModuleResource,
+use cx_ast::data::{
+    CXFunctionTemplate, CXTemplateInput, CXTemplatePrototype, ModuleResource,
 };
-use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRType};
+use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::types::{MIRTemplateInput, MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
@@ -16,7 +18,7 @@ pub(crate) type Overwrites = Vec<(String, MIRType)>;
 pub(crate) fn add_templated_types(
     env: &mut TypeEnvironment,
     args: &CXTemplatePrototype,
-    input: &CXTemplateInput,
+    input: &MIRTemplateInput,
 ) -> Overwrites {
     args.types.iter().zip(input.args.iter())
         .filter_map(|(ident, arg_type)|
@@ -32,7 +34,7 @@ pub(crate) fn restore_template_overwrites(env: &mut TypeEnvironment, overwrites:
     }
 }
 
-pub fn mangle_template_name(name: &str, input: &CXTemplateInput) -> String {
+pub fn mangle_template_name(name: &str, input: &MIRTemplateInput) -> String {
     let mut mangled_name = String::from("_t");
 
     for arg in &input.args {
@@ -48,7 +50,7 @@ pub fn mangle_template_name(name: &str, input: &CXTemplateInput) -> String {
 pub(crate) fn instantiate_type_template(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    input: &CXNaiveTemplateInput,
+    input: &CXTemplateInput,
     name: &str,
 ) -> CXResult<MIRType> {
     let completed_input = _complete_template_input(env, base_data, None, input)?;
@@ -75,14 +77,24 @@ pub(crate) fn instantiate_type_template(
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
     let mut cx_type = _complete_type(env, base_data, shell)?;
     restore_template_overwrites(env, overwrites);
-    
+
     cx_type.add_template_info(
         CXIdent::new(template_name.as_str()),
         completed_input.clone(),
     );
-    
-    env.add_type(template_name, cx_type.clone());
-    query_destructor(env, base_data, &cx_type);
+
+    env.add_type(template_name.clone(), cx_type.clone());
+
+    // Realize the destructor for this templated type using the raw template input
+    let Some(base_name) = cx_type.get_base_identifier() else {
+        return Ok(cx_type);
+    };
+    let destructor_key = CXFunctionKey::Destructor {
+        type_base_name: base_name.clone(),
+    };
+    // Use the raw input (not completed) for deduce_function
+    let _ = deduce_function(env, base_data, &CXExpr::default(), &destructor_key, Some(input));
+
     Ok(cx_type)
 }
 
@@ -120,14 +132,16 @@ pub(crate) fn instantiate_function_template(
     let resource = &template.resource;
     let module_origin = &template.external_module;
     let template_prototype = &resource.prototype;
-    
-    let overwrites = add_templated_types(env, template_prototype, input);
+
+    // Complete the input
+    let completed_input = _complete_template_input(env, base_data, module_origin.as_ref(), input)?;
+    let overwrites = add_templated_types(env, template_prototype, &completed_input);
     let instantiated = complete_function_template(env, base_data, template)?;
-    
+
     if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
         return Ok(generated);
     }
-    
+
     env.realized_fns
         .insert(instantiated.name.to_string(), instantiated.clone());
     env.requests.push(MIRFunctionGenRequest::Template {
@@ -135,7 +149,7 @@ pub(crate) fn instantiate_function_template(
         kind: template.resource.shell.kind.clone(),
         input: input.clone(),
     });
-    
+
     restore_template_overwrites(env, overwrites);
     Ok(instantiated)
 }

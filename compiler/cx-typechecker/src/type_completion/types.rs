@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use cx_parsing_data::ast::VisibilityMode;
-use cx_parsing_data::data::{CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind};
+use cx_ast::ast::VisibilityMode;
+use cx_ast::data::{CXTemplateInput, CXType, CXTypeKind};
 use cx_pipeline_data::CompilationUnit;
-use cx_typechecker_data::mir::program::MIRBaseMappings;
-use cx_typechecker_data::mir::types::{CXTemplateInput, MIRType, MIRTypeKind};
+use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::types::{MIRTemplateInput, MIRType, MIRTypeKind};
 use cx_util::{CXResult, log_error};
 
 use crate::environment::TypeEnvironment;
@@ -36,23 +36,23 @@ pub(crate) fn _complete_template_input(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
-    input: &CXNaiveTemplateInput,
-) -> CXResult<CXTemplateInput> {
+    input: &CXTemplateInput,
+) -> CXResult<MIRTemplateInput> {
     let _ty = input
         .params
         .iter()
         .map(|param| complete_type(env, base_data, external_module, param))
         .collect::<CXResult<Vec<_>>>()?;
 
-    Ok(CXTemplateInput { args: _ty })
+    Ok(MIRTemplateInput { args: _ty })
 }
 
 pub(crate) fn _complete_type(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    ty: &CXNaiveType,
+    ty: &CXType,
 ) -> CXResult<MIRType> {
-    let mut recurse_ty = |ty: &CXNaiveType| _complete_type(env, base_data, ty);
+    let mut recurse_ty = |ty: &CXType| _complete_type(env, base_data, ty);
     let construct_type = |kind: MIRTypeKind| -> CXResult<MIRType> {
         Ok(MIRType {
             specifiers: ty.specifiers,
@@ -62,7 +62,7 @@ pub(crate) fn _complete_type(
     };
 
     match &ty.kind {
-        CXNaiveTypeKind::Identifier { name, .. } => {
+        CXTypeKind::Identifier { name, .. } => {
             if let Some(existing) = env.get_realized_type(&name.as_string()) {
                 return Ok(existing.clone().with_specifier(ty.specifiers));
             };
@@ -81,12 +81,12 @@ pub(crate) fn _complete_type(
             log_error!("Type not found: {name}");
         }
 
-        CXNaiveTypeKind::TemplatedIdentifier { name, input, .. } => {
+        CXTypeKind::TemplatedIdentifier { name, input, .. } => {
             Ok(instantiate_type_template(env, base_data, input, name.as_str())?
                 .with_specifier(ty.specifiers))
         }
 
-        CXNaiveTypeKind::ExplicitSizedArray(inner, size) => {
+        CXTypeKind::ExplicitSizedArray(inner, size) => {
             let inner_type = recurse_ty(inner)?;
 
             construct_type(MIRTypeKind::Array {
@@ -95,7 +95,7 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXNaiveTypeKind::ImplicitSizedArray(inner) => {
+        CXTypeKind::ImplicitSizedArray(inner) => {
             let inner_type = recurse_ty(inner)?;
 
             construct_type(MIRTypeKind::PointerTo {
@@ -106,13 +106,13 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXNaiveTypeKind::MemoryReference { inner_type } => {
+        CXTypeKind::MemoryReference { inner_type } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
             construct_type(MIRTypeKind::MemoryReference(Box::new(inner_type)))
         }
 
-        CXNaiveTypeKind::PointerTo { inner_type, weak } => {
+        CXTypeKind::PointerTo { inner_type, weak } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
             construct_type(MIRTypeKind::PointerTo {
@@ -123,7 +123,7 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXNaiveTypeKind::FunctionPointer { prototype } => {
+        CXTypeKind::FunctionPointer { prototype } => {
             let prototype = _complete_fn_prototype(env, base_data, prototype)?;
 
             construct_type(MIRTypeKind::Function {
@@ -131,7 +131,7 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXNaiveTypeKind::Structured { name, fields, .. } => {
+        CXTypeKind::Structured { name, fields, .. } => {
             let fields = fields
                 .iter()
                 .map(|(name, field_type)| {
@@ -153,7 +153,7 @@ pub(crate) fn _complete_type(
             Ok(ty)
         }
 
-        CXNaiveTypeKind::Union { name, fields, .. } => {
+        CXTypeKind::Union { name, fields, .. } => {
             let fields = fields
                 .iter()
                 .map(|(name, field_type)| {
@@ -168,7 +168,7 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXNaiveTypeKind::TaggedUnion { name, variants } => {
+        CXTypeKind::TaggedUnion { name, variants } => {
             let variants = variants
                 .iter()
                 .map(|(name, variant_type)| {

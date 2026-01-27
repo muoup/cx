@@ -5,11 +5,11 @@ use crate::type_checking::structured_initialization::{
 };
 use crate::type_checking::typechecker::typecheck_expr;
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
-use cx_parsing_data::ast::{CXExpr, CXExprKind};
-use cx_typechecker_data::mir::{
+use cx_ast::ast::{CXExpr, CXExprKind};
+use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::MIRBaseMappings,
-    types::{CXIntegerType, MIRType, MIRTypeKind},
+    types::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -221,12 +221,12 @@ pub fn typecheck_match(
                 let pattern_expr = MIRExpression {
                     kind: MIRExpressionKind::IntLiteral(
                         variant_id as i64,
-                        CXIntegerType::I8,
+                        MIRIntegerType::I8,
                         false,
                     ),
                     _type: MIRType::from(MIRTypeKind::Integer {
                         signed: false,
-                        _type: CXIntegerType::I8,
+                        _type: MIRIntegerType::I8,
                     }),
                 };
 

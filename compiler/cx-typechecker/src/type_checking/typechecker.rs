@@ -6,12 +6,11 @@ use crate::type_checking::binary_ops::{
     typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
-use crate::type_completion::prototypes::complete_template_args;
-use cx_parsing_data::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
-use cx_parsing_data::data::{CX_CONST, CXLinkageMode};
-use cx_typechecker_data::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
-use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_typechecker_data::mir::types::{CXFloatType, CXIntegerType, MIRTypeKind};
+use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
+use cx_ast::data::{CX_CONST, CXLinkageMode};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
+use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
+use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -25,7 +24,7 @@ fn anonymous_name_gen() -> String {
 
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
-use cx_typechecker_data::mir::types::MIRType;
+use cx_mir::mir::types::MIRType;
 
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
@@ -58,19 +57,19 @@ pub fn typecheck_expr_inner(
         CXExprKind::IntLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
             kind: MIRExpressionKind::IntLiteral(
                 *val,
-                CXIntegerType::from_bytes(*bytes).unwrap(),
+                MIRIntegerType::from_bytes(*bytes).unwrap(),
                 true,
             ),
-            _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::from_bytes(*bytes).unwrap(),
+            _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Integer {
+                _type: MIRIntegerType::from_bytes(*bytes).unwrap(),
                 signed: true,
             }),
         }),
 
         CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
-            kind: MIRExpressionKind::FloatLiteral(*val, CXFloatType::from_bytes(*bytes).unwrap()),
-            _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Float {
-                _type: CXFloatType::from_bytes(*bytes).unwrap(),
+            kind: MIRExpressionKind::FloatLiteral(*val, MIRFloatType::from_bytes(*bytes).unwrap()),
+            _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Float {
+                _type: MIRFloatType::from_bytes(*bytes).unwrap(),
             }),
         }),
 
@@ -151,10 +150,9 @@ pub fn typecheck_expr_inner(
             template_input,
         } => {
             // These [for now], are only for functions, as templated type identifiers can only appear
-            // in CXNaiveType contexts.
+            // in CXType contexts.
 
-            let input = complete_template_args(env, base_data, template_input)?;
-            let function = env.get_standard_function(base_data, expr, name, Some(&input))?;
+            let function = env.get_standard_function(base_data, expr, name, Some(template_input))?;
 
             TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::FunctionReference {
@@ -190,7 +188,7 @@ pub fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: else_result.map(|r| Box::new(r)),
                 },
-                _type: cx_typechecker_data::mir::types::MIRType::unit(),
+                _type: cx_mir::mir::types::MIRType::unit(),
             })
         }
 
@@ -213,7 +211,7 @@ pub fn typecheck_expr_inner(
                     body: Box::new(body_result.expression),
                     pre_eval: *pre_eval,
                 },
-                _type: cx_typechecker_data::mir::types::MIRType::unit(),
+                _type: cx_mir::mir::types::MIRType::unit(),
             })
         }
 
@@ -241,7 +239,7 @@ pub fn typecheck_expr_inner(
                     increment: Box::new(increment_result),
                     body: Box::new(body_result),
                 },
-                _type: cx_typechecker_data::mir::types::MIRType::unit(),
+                _type: cx_mir::mir::types::MIRType::unit(),
             })
         }
 
@@ -395,7 +393,7 @@ pub fn typecheck_expr_inner(
                         TypecheckResult::expr2(loaded_operand),
                         MIRUnOp::LNOT,
                         MIRTypeKind::Integer {
-                            _type: CXIntegerType::I1,
+                            _type: MIRIntegerType::I1,
                             signed: false,
                         }
                         .into(),
@@ -418,7 +416,7 @@ pub fn typecheck_expr_inner(
 
                     // If the type is I1 (boolean), we must promote to I32 first
                     if let MIRTypeKind::Integer {
-                        _type: CXIntegerType::I1,
+                        _type: MIRIntegerType::I1,
                         ..
                     } = loaded_op_type.kind
                     {
@@ -427,7 +425,7 @@ pub fn typecheck_expr_inner(
                             expr,
                             loaded_op_val.clone(),
                             &MIRType::from(MIRTypeKind::Integer {
-                                _type: CXIntegerType::I32,
+                                _type: MIRIntegerType::I32,
                                 signed: true,
                             }),
                         )?;
@@ -685,7 +683,7 @@ pub fn typecheck_expr_inner(
 
         CXExprKind::Unit => TypecheckResult::expr2(MIRExpression {
             kind: MIRExpressionKind::Unit,
-            _type: cx_typechecker_data::mir::types::MIRType::unit(),
+            _type: cx_mir::mir::types::MIRType::unit(),
         }),
 
         CXExprKind::SizeOf { expr } => {
@@ -695,11 +693,11 @@ pub fn typecheck_expr_inner(
             TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::IntLiteral(
                     tc_type.type_size() as i64,
-                    CXIntegerType::I64,
+                    MIRIntegerType::I64,
                     false,
                 ),
-                _type: cx_typechecker_data::mir::types::MIRType::from(MIRTypeKind::Integer {
-                    _type: CXIntegerType::I64,
+                _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Integer {
+                    _type: MIRIntegerType::I64,
                     signed: false,
                 }),
             })
@@ -753,11 +751,11 @@ pub(crate) fn global_expr(
         CXGlobalVariable::EnumConstant(val) => Ok(MIRExpression {
             kind: MIRExpressionKind::IntLiteral(
                 *val as i64,
-                CXIntegerType::from_bytes(8).unwrap(),
+                MIRIntegerType::from_bytes(8).unwrap(),
                 true,
             ),
             _type: MIRType::from(MIRTypeKind::Integer {
-                _type: CXIntegerType::from_bytes(8).unwrap(),
+                _type: MIRIntegerType::from_bytes(8).unwrap(),
                 signed: true,
             }),
         }),

@@ -1,6 +1,6 @@
-use cx_parsing_data::ast::VisibilityMode;
+use cx_ast::ast::VisibilityMode;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_typechecker_data::mir::program::MIRBaseMappings;
+use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 
 pub(crate) mod log;

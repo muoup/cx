@@ -1,10 +1,10 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
-use cx_bytecode::generate_bytecode;
-use cx_lexer_data::TokenIter;
+use cx_mir_lowering::generate_lmir;
+use cx_tokens::TokenIter;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
-use cx_parsing_data::ast::VisibilityMode;
+use cx_ast::ast::VisibilityMode;
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
@@ -15,7 +15,7 @@ use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContex
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
-use cx_typechecker_data::intrinsic_types::INTRINSIC_IMPORTS;
+use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::CXErrorTrait;
 use cx_util::format::dump_data;
 use fs2::FileExt;
@@ -154,8 +154,8 @@ pub(crate) fn handle_job(
         }
         CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
         CompilationStep::InterfaceCombine => map_reqs_new_stage(job, CompilationStep::Typechecking),
-        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::BytecodeGen),
-        CompilationStep::BytecodeGen => map_reqs_new_stage(job, CompilationStep::Codegen),
+        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen),
+        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen),
         CompilationStep::Codegen => Some([].into()),
     }
 }
@@ -331,13 +331,13 @@ pub(crate) fn perform_job(
             context.module_db.mir.insert(job.unit.clone(), mir);
         }
 
-        CompilationStep::BytecodeGen => {
+        CompilationStep::LMIRGen => {
             let mir = context.module_db.mir.take(&job.unit);
-            let bc = match generate_bytecode(&mir) {
+            let bc = match generate_lmir(&mir) {
                 Ok(bc) => bc,
                 Err(e) => {
                     e.pretty_print();
-                    panic!("Bytecode generation failed for unit: {}", job.unit);
+                    panic!("LMIR generation failed for unit: {}", job.unit);
                 }
             };
 
@@ -345,23 +345,23 @@ pub(crate) fn perform_job(
                 dump_data(&bc);
             }
 
-            context.module_db.bytecode.insert(job.unit.clone(), bc);
+            context.module_db.lmir.insert(job.unit.clone(), bc);
         }
 
         CompilationStep::Codegen => {
-            let bytecode = context.module_db.bytecode.take(&job.unit);
+            let lmir = context.module_db.lmir.take(&job.unit);
             let mut internal_directory = internal_directory(context, &job.unit);
             internal_directory.push(".o");
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
-                    &bytecode,
+                    &lmir,
                     internal_directory.to_str()?,
                     context.config.optimization_level,
                 )
                 .expect("LLVM code generation failed"),
                 CompilerBackend::Cranelift => {
-                    cranelift_compile(&bytecode, internal_directory.to_str()?)
+                    cranelift_compile(&lmir, internal_directory.to_str()?)
                         .expect("Cranelift code generation failed")
                 }
             };

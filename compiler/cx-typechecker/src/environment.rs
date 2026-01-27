@@ -1,14 +1,14 @@
-use cx_lexer_data::token::Token;
-use cx_parsing_data::ast::CXExpr;
-use cx_parsing_data::data::{CXFunctionKind, CXNaivePrototype, CXNaiveType};
+use cx_tokens::token::Token;
+use cx_ast::ast::CXExpr;
+use cx_ast::data::{CXTemplateInput, CXFunctionKind, CXPrototype, CXType};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
-use cx_typechecker_data::CXTypeMap;
-use cx_typechecker_data::function_map::CXFnMap;
-use cx_typechecker_data::intrinsic_types::INTRINSIC_TYPES;
-use cx_typechecker_data::mir::expression::MIRExpression;
-use cx_typechecker_data::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
-use cx_typechecker_data::mir::types::{CXTemplateInput, MIRFunctionPrototype, MIRType};
+use cx_mir::CXTypeMap;
+use cx_mir::function_map::CXFnMap;
+use cx_mir::intrinsic_types::INTRINSIC_TYPES;
+use cx_mir::mir::expression::MIRExpression;
+use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
+use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
@@ -159,7 +159,7 @@ impl TypeEnvironment<'_> {
     pub fn complete_type(
         &mut self,
         base_data: &MIRBaseMappings,
-        _type: &CXNaiveType,
+        _type: &CXType,
     ) -> CXResult<MIRType> {
         complete_type(self, base_data, None, _type)
     }
@@ -168,7 +168,7 @@ impl TypeEnvironment<'_> {
         &mut self,
         base_data: &MIRBaseMappings,
         external_module: Option<&String>,
-        prototype: &CXNaivePrototype,
+        prototype: &CXPrototype,
     ) -> CXResult<MIRFunctionPrototype> {
         complete_prototype_no_insert(self, base_data, external_module, prototype).inspect(
             |prototype| {
