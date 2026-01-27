@@ -4,7 +4,6 @@ use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 
 pub(crate) mod log;
-pub(crate) mod safe_lowering;
 
 pub mod environment;
 pub mod type_checking;
