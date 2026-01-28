@@ -368,6 +368,11 @@ dependencies = [
 [[package]]
 name = "cx-safe-analyzer"
 version = "0.1.0"
+dependencies = [
+ "cx-mir",
+ "cx-safe-ir",
+ "cx-util",
+]
 
 [[package]]
 name = "cx-safe-ir"
