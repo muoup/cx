@@ -14,6 +14,7 @@ fs2 = { version = "0.4.3" }
 cx-lexer = { path = "../cx-lexer" }
 cx-parsing = { path = "../cx-parsing" }
 cx-typechecker = { path = "../cx-typechecker" }
+cx-safe-analyzer = { path = "../cx-safe-analyzer" }
 cx-mir-lowering = { path = "../cx-mir-lowering" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
@@ -23,4 +24,5 @@ cx-tokens = { path = "../cx-tokens" }
 cx-ast = { path = "../cx-ast" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }
+cx-safe-ir = { path = "../cx-safe-ir" }
 cx-util = { path = "../cx-util" }

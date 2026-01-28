@@ -1,6 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
 use cx_mir_lowering::generate_lmir;
+use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
@@ -327,6 +328,8 @@ pub(crate) fn perform_job(
             if !job.unit.is_std_lib() {
                 dump_data(&mir);
             }
+            
+            let _ = FMIRContext::new_from(&mir);
 
             context.module_db.mir.insert(job.unit.clone(), mir);
         }

@@ -1227,6 +1227,7 @@ pub(crate) fn typecheck_contract(
     env.pop_scope();
 
     Ok(MIRFunctionContract {
+        safe: naive_contract.safe,
         precondition,
         postcondition,
     })

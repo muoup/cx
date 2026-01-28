@@ -347,6 +347,8 @@ dependencies = [
  "cx-mir-lowering",
  "cx-parsing",
  "cx-pipeline-data",
+ "cx-safe-analyzer",
+ "cx-safe-ir",
  "cx-tokens",
  "cx-typechecker",
  "cx-util",

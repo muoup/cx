@@ -2,6 +2,59 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::ast::*;
 
+impl Display for MemoryLocation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            MemoryLocation::Stack { name, depth } => {
+                write!(f, "stack({}@{})", name, depth)
+            }
+            MemoryLocation::Parameter(name) => {
+                write!(f, "param({})", name)
+            }
+            MemoryLocation::Global(name) => {
+                write!(f, "global({})", name)
+            }
+        }
+    }
+}
+
+impl Display for CVMOperation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            CVMOperation::Unsafe => {
+                write!(f, "Unsafe")
+            }
+            CVMOperation::Access { reads, writes } => {
+                write!(f, "Access{{")?;
+                if !reads.is_empty() {
+                    write!(f, " reads: [")?;
+                    for (i, r) in reads.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", r)?;
+                    }
+                    write!(f, "]")?;
+                }
+                if !writes.is_empty() {
+                    if !reads.is_empty() {
+                        write!(f, ",")?;
+                    }
+                    write!(f, " writes: [")?;
+                    for (i, w) in writes.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", w)?;
+                    }
+                    write!(f, "]")?;
+                }
+                write!(f, " }}")
+            }
+        }
+    }
+}
+
 struct Indent(usize);
 
 impl Indent {
@@ -21,8 +74,43 @@ impl Indent {
 impl Display for FMIRType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRType::CMonad { inner, .. } => {
-                write!(f, "CMonad {}", inner)
+            FMIRType::Pure { mir_type } => {
+                write!(f, "{}", mir_type)
+            }
+
+            FMIRType::CMonad { inner, effect } => {
+                match effect {
+                    CVMOperation::Unsafe => {
+                        write!(f, "Effect<Unsafe, {}>", inner)
+                    }
+                    CVMOperation::Access { reads, writes } => {
+                        write!(f, "Effect<Access{{")?;
+                        if !reads.is_empty() {
+                            write!(f, " reads: [")?;
+                            for (i, r) in reads.iter().enumerate() {
+                                if i > 0 {
+                                    write!(f, ", ")?;
+                                }
+                                write!(f, "{}", r)?;
+                            }
+                            write!(f, "]")?;
+                        }
+                        if !writes.is_empty() {
+                            if !reads.is_empty() {
+                                write!(f, ",")?;
+                            }
+                            write!(f, " writes: [")?;
+                            for (i, w) in writes.iter().enumerate() {
+                                if i > 0 {
+                                    write!(f, ", ")?;
+                                }
+                                write!(f, "{}", w)?;
+                            }
+                            write!(f, "]")?;
+                        }
+                        write!(f, " }}, {}>", inner)
+                    }
+                }
             }
 
             FMIRType::Mapping {
@@ -31,10 +119,6 @@ impl Display for FMIRType {
                 ..
             } => {
                 write!(f, "{} -> {}", parameter, return_type)
-            }
-
-            FMIRType::Standard(mir_type) => {
-                write!(f, "{}", mir_type)
             }
         }
     }
@@ -64,12 +148,44 @@ impl FMIRNodeBody {
                 }
             },
 
-            FMIRNodeBody::Read => {
-                write!(f, "_read")
+            FMIRNodeBody::UnsafeBlock => {
+                write!(f, "_unsafe_block")
             }
 
-            FMIRNodeBody::Write => {
-                write!(f, "_write")
+            FMIRNodeBody::DeclareAccess { reads, writes } => {
+                write!(f, "_declare_access{{")?;
+                if !reads.is_empty() {
+                    write!(f, " reads: [")?;
+                    for (i, r) in reads.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", r)?;
+                    }
+                    write!(f, "]")?;
+                }
+                if !writes.is_empty() {
+                    if !reads.is_empty() {
+                        write!(f, ",")?;
+                    }
+                    write!(f, " writes: [")?;
+                    for (i, w) in writes.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", w)?;
+                    }
+                    write!(f, "]")?;
+                }
+                write!(f, " }}")
+            }
+
+            FMIRNodeBody::Load => {
+                write!(f, "_load")
+            }
+
+            FMIRNodeBody::Store => {
+                write!(f, "_store")
             }
 
             FMIRNodeBody::Alloca => {
@@ -102,11 +218,9 @@ impl FMIRNodeBody {
 
             FMIRNodeBody::Then { first, second } => {
                 first.fmt_with_indent(f, indent)?;
-                write!(f, " >>")?;
-                let nested = indent.push();
                 writeln!(f)?;
-                nested.fmt(f)?;
-                second.fmt_with_indent(f, &nested)
+                write!(f, ">> ")?;
+                second.fmt_with_indent(f, indent)
             }
 
             FMIRNodeBody::If {
@@ -133,6 +247,10 @@ impl FMIRNodeBody {
 
             FMIRNodeBody::IntegerLiteral(n) => {
                 write!(f, "{}", n)
+            }
+
+            FMIRNodeBody::FloatLiteral(x) => {
+                write!(f, "{}", x)
             }
 
             FMIRNodeBody::BooleanLiteral(b) => {

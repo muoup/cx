@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_mir::mir::program::MIRFunction;
+use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_safe_ir::ast::FMIRFunction;
 use cx_util::CXResult;
 
@@ -20,7 +20,20 @@ impl FMIRContext {
             functions: HashMap::new(),
         }
     }
-
+    
+    pub fn new_from(mir: &MIRUnit) -> CXResult<Self> {
+        let mut context = FMIRContext::new();
+        for function in mir.functions.iter() {
+            if !function.prototype.contract.safe {
+                continue;
+            }
+            
+            context.consume_mir_function(function)?;
+        }
+        
+        todo!()
+    }
+    
     pub fn consume_mir_function(&mut self, mir_function: &MIRFunction) -> CXResult<()> {
         let fmir_function = convert_mir(mir_function);
         self.functions.insert(

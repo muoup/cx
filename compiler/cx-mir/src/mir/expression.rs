@@ -5,6 +5,7 @@ use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
 pub struct MIRFunctionContract {
+    pub safe: bool,
     pub precondition: Option<Box<MIRExpression>>,
     pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
 }
