@@ -180,12 +180,12 @@ impl FMIRNodeBody {
                 write!(f, " }}")
             }
 
-            FMIRNodeBody::Load => {
-                write!(f, "_load")
+            FMIRNodeBody::Load { pointer } => {
+                write!(f, "_load $ {pointer}")
             }
 
-            FMIRNodeBody::Store => {
-                write!(f, "_store")
+            FMIRNodeBody::Store { pointer, value }=> {
+                write!(f, "_store $ {pointer} $ {value}")
             }
 
             FMIRNodeBody::Alloca => {
@@ -195,6 +195,10 @@ impl FMIRNodeBody {
             FMIRNodeBody::Pure => {
                 write!(f, "_pure")
             }
+            
+            FMIRNodeBody::VariableAlias { name } => {
+                write!(f, "{}", name)
+            },
 
             FMIRNodeBody::CLoop { condition, body } => {
                 write!(f, "_cloop (")?;
@@ -207,9 +211,9 @@ impl FMIRNodeBody {
                 body.fmt_with_indent(f, &nested)
             }
 
-            FMIRNodeBody::Bind { monad, function } => {
+            FMIRNodeBody::Bind { monad, capture, function } => {
                 monad.fmt_with_indent(f, indent)?;
-                write!(f, " >>=")?;
+                write!(f, " >>= \\{capture} ->")?;
                 let nested = indent.push();
                 writeln!(f)?;
                 nested.fmt(f)?;

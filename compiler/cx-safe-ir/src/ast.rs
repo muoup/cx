@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+use cx_util::identifier::CXIdent;
 
 pub type FRc<T> = Rc<T>;
 
@@ -99,6 +100,7 @@ pub enum FMIRNodeBody {
     /// >>= :: Effect a -> (a -> Effect b) -> Effect b
     Bind {
         monad: FRc<FMIRNode>,
+        capture: CXIdent,
         function: FRc<FMIRNode>,
     },
 
@@ -116,12 +118,17 @@ pub enum FMIRNodeBody {
     /// _load :: Ptr a -> Effect a
     /// Load from pointer - returns unsafe effect (conservative)
     /// Library ref<T>::read() wraps this with DeclareAccess
-    Load,
+    Load {
+        pointer: FRc<FMIRNode>,
+    },
 
     /// _store :: Ptr a -> a -> Effect ()
     /// Store to pointer - returns unsafe effect (conservative)
     /// Library ref<T>::write() wraps this with DeclareAccess
-    Store,
+    Store {
+        pointer: FRc<FMIRNode>,
+        value: FRc<FMIRNode>,
+    },
 
     // ===== Control Flow =====
     /// if ... then ... else ...
@@ -146,6 +153,10 @@ pub enum FMIRNodeBody {
     /// context.
     CReturn {
         value: FRc<FMIRNode>,
+    },
+    
+    VariableAlias {
+        name: String,
     },
 
     // ===== Literals =====

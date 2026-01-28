@@ -381,6 +381,7 @@ name = "cx-safe-ir"
 version = "0.1.0"
 dependencies = [
  "cx-mir",
+ "cx-util",
 ]
 
 [[package]]
