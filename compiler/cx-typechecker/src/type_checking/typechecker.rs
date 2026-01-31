@@ -102,14 +102,29 @@ pub fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::VarDeclaration { _type, name } => {
+        CXExprKind::VarDeclaration {
+            _type,
+            name,
+            initial_value,
+        } => {
             let _type = env.complete_type(base_data, _type)?;
             let mem_type = _type.clone().mem_ref_to();
+
+            // Typecheck initial value if present
+            let mir_initial_value = match initial_value {
+                Some(init_expr) => {
+                    let init_tc = typecheck_expr(env, base_data, init_expr, Some(&_type))?;
+                    let init_tc = implicit_cast(env, expr, init_tc.into_expression(), &_type)?;
+                    Some(Box::new(init_tc))
+                }
+                None => None,
+            };
 
             let allocation = MIRExpression {
                 kind: MIRExpressionKind::CreateStackVariable {
                     name: Some(name.clone()),
                     _type: _type.clone(),
+                    initial_value: mir_initial_value,
                 },
                 _type: mem_type.clone(),
             };
@@ -152,7 +167,8 @@ pub fn typecheck_expr_inner(
             // These [for now], are only for functions, as templated type identifiers can only appear
             // in CXType contexts.
 
-            let function = env.get_standard_function(base_data, expr, name, Some(template_input))?;
+            let function =
+                env.get_standard_function(base_data, expr, name, Some(template_input))?;
 
             TypecheckResult::expr2(MIRExpression {
                 kind: MIRExpressionKind::FunctionReference {
@@ -293,10 +309,31 @@ pub fn typecheck_expr_inner(
                 .map(|v| typecheck_expr(env, base_data, v, Some(&return_type)))
                 .transpose()?;
 
-            let value = match (&value_tc, &return_type) {
-                (Some(some_value), return_type) if !return_type.is_unit() => Some(Box::new(
-                    implicit_cast(env, expr, some_value.clone().into_expression(), return_type)?,
-                )),
+            let value = match (value_tc, &return_type) {
+                (Some(mut some_value), return_type) if !return_type.is_unit() => {
+                    let mut _ty = some_value.expression._type.clone();
+
+                    // If we are returning a copyable struct T, and we are given a &T, we can inline a bit
+                    // of the implicit cast behavior here so instead of creating a temporary buffer to copy
+                    // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
+                    // so we will induce in effect just a direct memcpy from the source T to the return buffer.
+                    if let Some(inner) = _ty.mem_ref_inner()
+                        && env.is_copyable(inner)
+                        && return_type.is_memory_resident()
+                    {
+                        some_value = TypecheckResult::expr(
+                            inner.clone(),
+                            MIRExpressionKind::Typechange(Box::new(some_value.into_expression())),
+                        );
+                    }
+
+                    Some(Box::new(implicit_cast(
+                        env,
+                        expr,
+                        some_value.into_expression(),
+                        return_type,
+                    )?))
+                }
 
                 (None, _) if return_type.is_unit() => None,
 
@@ -667,6 +704,7 @@ pub fn typecheck_expr_inner(
                 MIRExpressionKind::CreateStackVariable {
                     name: None,
                     _type: union_type.clone(),
+                    initial_value: None,
                 },
             );
 

@@ -213,12 +213,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, "Typechange <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
             }
-            MIRExpressionKind::CreateStackVariable { name, _type } => {
+            MIRExpressionKind::CreateStackVariable {
+                name,
+                _type,
+                initial_value,
+            } => {
                 let name_str = name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)");
+                let init_str = if initial_value.is_some() { " = <init>" } else { "" };
                 writeln!(
                     f,
-                    "CreateStackVariable {}: {} <'{}>",
-                    name_str, _type, self.expr._type
+                    "CreateStackVariable {}: {}{} <'{}>",
+                    name_str, _type, init_str, self.expr._type
                 )
             }
             MIRExpressionKind::CopyRegion { source, _type } => {

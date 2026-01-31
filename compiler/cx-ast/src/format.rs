@@ -157,8 +157,13 @@ impl<'a> Display for CXExprFormatter<'a> {
 
                 writeln!(f, "TemplatedIdentifier {}<{}>", fn_name, arg_string)
             }
-            CXExprKind::VarDeclaration { name, _type } => {
-                writeln!(f, "VarDeclaration {}: {}", name, _type)
+            CXExprKind::VarDeclaration {
+                name,
+                _type,
+                initial_value,
+            } => {
+                let init_str = if initial_value.is_some() { " = <init>" } else { "" };
+                writeln!(f, "VarDeclaration {}: {}{}", name, _type, init_str)
             }
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
             CXExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),
