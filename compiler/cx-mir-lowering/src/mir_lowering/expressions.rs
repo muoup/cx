@@ -129,18 +129,76 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::Typechange(inner) => lower_expression(builder, inner),
 
-        MIRExpressionKind::CreateStackVariable { name, _type } => {
+        MIRExpressionKind::CreateStackVariable {
+            name,
+            _type,
+            initial_value,
+        } => {
             let bc_type = builder.convert_cx_type(_type);
 
-            let result = builder.add_new_instruction(
-                LMIRInstructionKind::Allocate {
-                    alignment: bc_type.alignment(),
-                    _type: bc_type,
-                },
-                LMIRType::default_pointer(),
-                true,
-            )?;
+            let result = if let Some(initial_value) = initial_value {
+                if _type.is_memory_resident() {
+                    // OPTIMIZATION: The initial value expression returns a pointer to its buffer.
+                    // Alias that buffer as the variable's buffer - no allocation or copy needed.
+                    let bc_iv = lower_expression(builder, initial_value)?;
 
+                    if let Some(name) = name {
+                        builder.insert_symbol(name.clone(), bc_iv.clone());
+
+                        if let LMIRValue::Register { register, .. } = &bc_iv {
+                            if needs_deconstruction(builder, _type) {
+                                let liveness = allocate_liveness_variable(builder)?;
+                                let ptr_val = LMIRValue::Register {
+                                    register: register.clone(),
+                                    _type: LMIRType::default_pointer(),
+                                };
+
+                                builder.add_liveness_mapping(
+                                    name.to_string(),
+                                    ptr_val,
+                                    liveness,
+                                    _type.clone(),
+                                );
+                            }
+                        }
+                    }
+
+                    return Ok(bc_iv);
+                } else {
+                    // Primitive type - allocate and store the value
+                    let alloc = builder.add_new_instruction(
+                        LMIRInstructionKind::Allocate {
+                            alignment: bc_type.alignment(),
+                            _type: bc_type.clone(),
+                        },
+                        LMIRType::default_pointer(),
+                        true,
+                    )?;
+                    let init_val = lower_expression(builder, initial_value)?;
+                    builder.add_new_instruction(
+                        LMIRInstructionKind::Store {
+                            memory: alloc.clone(),
+                            value: init_val,
+                            _type: bc_type.clone(),
+                        },
+                        LMIRType::unit(),
+                        false,
+                    )?;
+                    alloc
+                }
+            } else {
+                // No initialization - just allocate
+                builder.add_new_instruction(
+                    LMIRInstructionKind::Allocate {
+                        alignment: bc_type.alignment(),
+                        _type: bc_type,
+                    },
+                    LMIRType::default_pointer(),
+                    true,
+                )?
+            };
+
+            // Symbol table insertion (for non-memory-resident with init, or no init cases)
             if let Some(name) = name {
                 builder.insert_symbol(name.clone(), result.clone());
 

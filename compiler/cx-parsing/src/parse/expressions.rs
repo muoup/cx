@@ -114,8 +114,18 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
         };
 
         if let Some(name) = name {
+            // Check for initializer after variable name
+            let initial_value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
+                data.change_comma_mode(false);
+                let init_expr = parse_expr(data)?;
+                data.pop_comma_mode();
+                Some(Box::new(init_expr))
+            } else {
+                None
+            };
+
             decls.push(
-                CXExprKind::VarDeclaration { _type, name }
+                CXExprKind::VarDeclaration { _type, name, initial_value }
                     .into_expr(start_index, data.tokens.index),
             );
         } else {
@@ -350,6 +360,7 @@ pub(crate) fn parse_expr_val(
                         CXExprKind::VarDeclaration {
                             name: CXIdent::new("__internal_sizeof_dummy_decl"),
                             _type,
+                            initial_value: None,
                         }
                         .into_expr(start_index, data.tokens.index),
                     ),

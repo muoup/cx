@@ -213,6 +213,7 @@ pub enum CXExprKind {
     VarDeclaration {
         _type: CXType,
         name: CXIdent,
+        initial_value: Option<Box<CXExpr>>,
     },
     TypeConstructor {
         union_name: CXIdent,
