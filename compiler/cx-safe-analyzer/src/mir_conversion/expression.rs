@@ -65,7 +65,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 .unwrap()
         }
 
-        MIRExpressionKind::CreateStackVariable { name, _type } => {
+        MIRExpressionKind::CreateStackVariable { name, _type, initial_value } => {
             if let Some(name) = name {
                 env.insert_variable(
                     name.clone(),
@@ -76,12 +76,27 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             }
 
             // Stack allocation - initially unsafe (conservative)
-            FMIRNode {
+            let allocation = FMIRNode {
                 body: FMIRNodeBody::Alloca,
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(mir_expr._type.clone())),
                     effect: CVMOperation::Unsafe,
                 },
+            };
+            
+            if let Some(initial_value) = initial_value {
+                FMIRNode {
+                    body: FMIRNodeBody::Store {
+                        pointer: FRc::new(allocation),
+                        value: FRc::new(convert_expression(env, initial_value)),
+                    },
+                    _type: FMIRType::CMonad {
+                        inner: Box::new(FMIRType::pure(MIRType::unit())),
+                        effect: CVMOperation::Unsafe,
+                    },
+                }
+            } else {
+                allocation
             }
         }
 
