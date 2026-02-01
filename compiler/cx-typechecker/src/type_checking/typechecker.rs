@@ -850,3 +850,49 @@ fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRExpression> {
         }
     }
 }
+
+pub fn add_implicit_return(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<MIRExpression> {
+    if let MIRExpressionKind::Block { statements } = &expr.kind {
+        if let Some(MIRExpression {
+            kind: MIRExpressionKind::Return { .. },
+            ..
+        }) = statements.last()
+        {
+            return Ok(expr);
+        }
+    }
+    
+    let func = env.current_function().clone();
+
+    let implicit_value = if func.name.as_str() == "main" {
+        Some(Box::new(MIRExpression {
+            kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I32, true),
+            _type: MIRType::from(MIRTypeKind::Integer {
+                _type: MIRIntegerType::I32,
+                signed: true,
+            }),
+        }))
+    } else if !func.return_type.is_unit() {
+        None
+    } else {
+        return log_typecheck_error!(
+            env,
+            &CXExpr::default(),
+            "Function '{}' with non-void return type must have an explicit return statement",
+            func.name
+        );
+    };
+
+    Ok(MIRExpression {
+        kind: MIRExpressionKind::Block {
+            statements: vec![
+                expr,
+                MIRExpression {
+                    kind: MIRExpressionKind::Return { value: implicit_value },
+                    _type: MIRType::unit(),
+                },
+            ],
+        },
+        _type: MIRType::unit(),
+    })
+}

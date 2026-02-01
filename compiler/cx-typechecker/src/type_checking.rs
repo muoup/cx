@@ -8,7 +8,7 @@ use cx_mir::mir::{
     program::{MIRBaseMappings, MIRFunction},
     types::{MIRFunctionPrototype, MIRParameter},
 };
-use crate::type_completion::types::_complete_template_input;
+use crate::{type_checking::typechecker::add_implicit_return, type_completion::types::_complete_template_input};
 use cx_util::CXResult;
 
 use crate::{
@@ -50,13 +50,14 @@ fn typecheck_function(
     }
 
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+    let with_implicit_return = add_implicit_return(env, body_expr)?;
 
     env.current_function = None;
     env.pop_scope();
 
     env.generated_functions.push(MIRFunction {
         prototype,
-        body: body_expr.clone(),
+        body: with_implicit_return
     });
 
     Ok(())

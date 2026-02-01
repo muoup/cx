@@ -23,7 +23,7 @@ pub enum MonadicState {
     Operation(CVMOperation),
 }
 
-/// Memory effect - tracks what memory operations a computation performs
+/// Memory CMonad - tracks what memory operations a computation performs
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CVMOperation {
     /// Explicit unsafe block - black box to analysis
@@ -48,13 +48,13 @@ pub struct FMIRFunction {
 #[derive(Clone, Debug)]
 pub enum FMIRType {
     /// Leaf/primitive type - represents base types like i32, bool, ()
-    /// These are implicitly pure (Effect::Pure)
+    /// These are implicitly pure (CMonad::Pure)
     Pure { mir_type: MIRType },
 
-    /// All values are wrapped in Effect - Pure = non-effectful
+    /// All values are wrapped in CMonad - Pure = non-CMonadful
     CMonad {
         inner: Box<FMIRType>,
-        effect: CVMOperation,
+        operation: CVMOperation,
     },
 
     /// Function types - unchanged
@@ -78,13 +78,19 @@ pub enum FMIRNodeBody {
         argument: FRc<FMIRNode>,
     },
 
-    // ===== Effect Intrinsics =====
-    /// _unsafe_block :: Effect a -> Effect a
+    // ===== CMonad Intrinsics =====
+    /// _unsafe_block :: CMonad a -> CMonad a
     /// Mark a computation as unsafe - black box to analysis
     /// This is how raw C code enters the system
     UnsafeBlock,
+    
+    /// _compiler_assert :: CMonad ()
+    CompilerAssert {
+        condition: FRc<FMIRNode>,
+        message: String,
+    },
 
-    /// _declare_access :: Effect a
+    /// _declare_access :: CMonad a
     /// Intrinsics for library code to declare what it accesses
     /// Library-defined ref<T>::read() would lower to:
     ///   _declare_access [reads: [self]] [writes: []] >> load_operation
@@ -94,36 +100,36 @@ pub enum FMIRNodeBody {
     },
 
     // ===== Monadic Combinators =====
-    /// _pure :: a -> Effect a
+    /// _pure :: a -> CMonad a
     Pure,
 
-    /// >>= :: Effect a -> (a -> Effect b) -> Effect b
+    /// >>= :: CMonad a -> (a -> CMonad b) -> CMonad b
     Bind {
         monad: FRc<FMIRNode>,
         capture: CXIdent,
         function: FRc<FMIRNode>,
     },
 
-    /// >> :: Effect a -> Effect b -> Effect b
+    /// >> :: CMonad a -> CMonad b -> CMonad b
     Then {
         first: FRc<FMIRNode>,
         second: FRc<FMIRNode>,
     },
 
     // ===== Memory Operations =====
-    /// _alloca :: Effect (Ptr a)
-    /// Stack allocation - returns unsafe effect (conservative)
+    /// _alloca :: CMonad (Ptr a)
+    /// Stack allocation - returns unsafe CMonad (conservative)
     Alloca,
 
-    /// _load :: Ptr a -> Effect a
-    /// Load from pointer - returns unsafe effect (conservative)
+    /// _load :: Ptr a -> CMonad a
+    /// Load from pointer - returns unsafe CMonad (conservative)
     /// Library ref<T>::read() wraps this with DeclareAccess
     Load {
         pointer: FRc<FMIRNode>,
     },
 
-    /// _store :: Ptr a -> a -> Effect ()
-    /// Store to pointer - returns unsafe effect (conservative)
+    /// _store :: Ptr a -> a -> CMonad ()
+    /// Store to pointer - returns unsafe CMonad (conservative)
     /// Library ref<T>::write() wraps this with DeclareAccess
     Store {
         pointer: FRc<FMIRNode>,
@@ -138,18 +144,18 @@ pub enum FMIRNodeBody {
         else_branch: FRc<FMIRNode>,
     },
 
-    /// _cloop :: Effect bool -> Effect ()
+    /// _cloop :: CMonad bool -> CMonad ()
     CLoop {
         condition: FRc<FMIRNode>,
         body: FRc<FMIRNode>,
     },
-
-    /// _creturn :: a -> Effect a
+    
+    /// _creturn :: a -> CMonad a
     ///
     /// Early returns may seem counter to pure functional semantics, however you can think of them
-    /// as a mapping to an Effect in which all subsequent Effect actions are skipped. The value
+    /// as a mapping to an CMonad in which all subsequent CMonad actions are skipped. The value
     /// that is generated after is thus dead and optimized away, and when reaching the true end
-    /// of a function, an Effect wraps this current state to ensure that we escape the skip-all
+    /// of a function, an CMonad wraps this current state to ensure that we escape the skip-all
     /// context.
     CReturn {
         value: FRc<FMIRNode>,
@@ -172,15 +178,15 @@ impl FMIRType {
         FMIRType::Pure { mir_type }
     }
 
-    /// Create an unsafe effect (black box to analysis)
+    /// Create an unsafe CMonad (black box to analysis)
     pub fn unsafe_effect(inner: FMIRType) -> Self {
         FMIRType::CMonad {
             inner: Box::new(inner),
-            effect: CVMOperation::Unsafe,
+            operation: CVMOperation::Unsafe,
         }
     }
 
-    /// Create an access effect with known reads/writes
+    /// Create an access CMonad with known reads/writes
     pub fn access(
         inner: FMIRType,
         reads: Vec<MemoryLocation>,
@@ -188,11 +194,11 @@ impl FMIRType {
     ) -> Self {
         FMIRType::CMonad {
             inner: Box::new(inner),
-            effect: CVMOperation::Access { reads, writes },
+            operation: CVMOperation::Access { reads, writes },
         }
     }
 
-    /// Get the inner type, stripping the effect
+    /// Get the inner type, stripping the CMonad
     pub fn inner_type(&self) -> &FMIRType {
         match self {
             FMIRType::CMonad { inner, .. } => inner.as_ref(),
@@ -202,19 +208,19 @@ impl FMIRType {
 
     pub fn get_operation(&self) -> Option<&CVMOperation> {
         match self {
-            FMIRType::CMonad { effect, .. } => Some(effect),
+            FMIRType::CMonad { operation, .. } => Some(operation),
             FMIRType::Pure { .. } | FMIRType::Mapping { .. } => None,
         }
     }
     
     pub fn identity(&self) -> MonadicState {
         match self.get_operation() {
-            Some(effect) => MonadicState::Operation(effect.clone()),
+            Some(operation) => MonadicState::Operation(operation.clone()),
             None => MonadicState::Pure,
         }
     }
 
-    /// Union: combine two effects (for Then/Bind sequencing)
+    /// Union: combine two CMonads (for Then/Bind sequencing)
     /// The result is the least upper bound - must account for both
     pub fn union(&self, other: &Self) -> MonadicState {
         match (self.get_operation(), other.get_operation()) {
@@ -292,7 +298,7 @@ impl MonadicState {
     pub fn apply(self, _type: FMIRType) -> FMIRType {
         match self {
             MonadicState::Pure => _type,
-            MonadicState::Operation(effect) => FMIRType::CMonad { inner: Box::new(_type), effect },
+            MonadicState::Operation(operation) => FMIRType::CMonad { inner: Box::new(_type), operation },
         }
     }
     

@@ -1,3 +1,4 @@
+use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_safe_ir::ast::FMIRType;
 use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
 
@@ -14,14 +15,25 @@ pub struct VariableIdentifier {
 }
 
 pub(crate) struct FMIREnvironment {
+    current_mir_prototype: Option<MIRFunctionPrototype>,
     region_table: ScopedMap<VariableIdentifier>,
 }
 
 impl FMIREnvironment {
     pub fn new() -> Self {
         Self {
+            current_mir_prototype: None,
             region_table: ScopedMap::new_with_starting_scope(),
         }
+    }
+    
+    pub fn set_current_mir_prototype(&mut self, prototype: MIRFunctionPrototype) {
+        self.current_mir_prototype = Some(prototype);
+    }
+    
+    pub fn current_mir_prototype(&self) -> &MIRFunctionPrototype {
+        self.current_mir_prototype.as_ref()
+            .expect("Current MIR function prototype not set in FMIR environment")
     }
     
     pub fn push_scope(&mut self) {

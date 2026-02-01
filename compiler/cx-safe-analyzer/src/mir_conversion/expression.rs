@@ -80,7 +80,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 body: FMIRNodeBody::Alloca,
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(mir_expr._type.clone())),
-                    effect: CVMOperation::Unsafe,
+                    operation: CVMOperation::Unsafe,
                 },
             };
             
@@ -92,7 +92,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                     },
                     _type: FMIRType::CMonad {
                         inner: Box::new(FMIRType::pure(MIRType::unit())),
-                        effect: CVMOperation::Unsafe,
+                        operation: CVMOperation::Unsafe,
                     },
                 }
             } else {
@@ -197,15 +197,52 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 .as_ref()
                 .map(|expr| convert_expression(env, expr))
                 .unwrap_or(FMIRNode::unit());
-
-            FMIRNode {
+            
+            let ret = FMIRNode {
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(MIRType::unit())),
-                    effect: CVMOperation::Unsafe,
+                    operation: CVMOperation::Unsafe,
                 },
                 body: FMIRNodeBody::CReturn {
                     value: FRc::new(ret_node),
                 },
+            };
+            
+            if let Some((_, post)) = env.current_mir_prototype().contract.postcondition.as_ref() {
+                // SAFETY: The postcondition variable here is immutable during FMIR. For now we don't
+                // have a better way to handle lifetimes in this conversion process.
+                let unsafe_ref = unsafe { std::mem::transmute(post.as_ref()) };
+
+                let condition = convert_expression(env, unsafe_ref);
+                let contract = FMIRNode {
+                    _type: FMIRType::CMonad {
+                        inner: Box::new(FMIRType::pure(MIRType::unit())),
+                        operation: CVMOperation::Unsafe,
+                    },
+                    body: FMIRNodeBody::Then {
+                        first: FRc::new(condition),
+                        second: FRc::new(FMIRNode {
+                            _type: FMIRType::CMonad {
+                                inner: Box::new(FMIRType::pure(MIRType::unit())),
+                                operation: CVMOperation::Unsafe,
+                            },
+                            body: FMIRNodeBody::CReturn {
+                                value: FRc::new(FMIRNode::unit()),
+                            },
+                        }),
+                    },
+                };
+                
+                FMIRNode {
+                    _type: contract._type.union(&ret._type)
+                        .apply(FMIRType::pure(MIRType::unit())),
+                    body: FMIRNodeBody::Then {
+                        first: FRc::new(contract),
+                        second: FRc::new(ret),
+                    },
+                }
+            } else {
+                ret
             }
         }
 
@@ -223,7 +260,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             FMIRNode {
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(mir_expr._type.clone())),
-                    effect: CVMOperation::Unsafe,
+                    operation: CVMOperation::Unsafe,
                 },
                 body: FMIRNodeBody::Bind {
                     monad: FRc::new(source_node),
@@ -251,7 +288,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             FMIRNode {
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(MIRType::unit())),
-                    effect: CVMOperation::Unsafe,
+                    operation: CVMOperation::Unsafe,
                 },
                 body: FMIRNodeBody::Bind {
                     monad: FRc::new(target_node),
@@ -259,7 +296,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                     function: FRc::new(FMIRNode {
                         _type: FMIRType::CMonad {
                             inner: Box::new(FMIRType::pure(MIRType::unit())),
-                            effect: CVMOperation::Unsafe,
+                            operation: CVMOperation::Unsafe,
                         },
                         body: FMIRNodeBody::Store {
                             pointer: FRc::new(FMIRNode {

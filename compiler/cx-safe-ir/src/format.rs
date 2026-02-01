@@ -78,8 +78,8 @@ impl Display for FMIRType {
                 write!(f, "{}", mir_type)
             }
 
-            FMIRType::CMonad { inner, effect } => {
-                match effect {
+            FMIRType::CMonad { inner, operation } => {
+                match operation {
                     CVMOperation::Unsafe => {
                         write!(f, "Effect<Unsafe, {}>", inner)
                     }
@@ -151,6 +151,12 @@ impl FMIRNodeBody {
             FMIRNodeBody::UnsafeBlock => {
                 write!(f, "_unsafe_block")
             }
+            
+            FMIRNodeBody::CompilerAssert { condition, message } => {
+                write!(f, "_compiler_assert (")?;
+                condition.fmt_with_indent(f, indent)?;
+                write!(f, ") \"{}\"", message)
+            },
 
             FMIRNodeBody::DeclareAccess { reads, writes } => {
                 write!(f, "_declare_access{{")?;
