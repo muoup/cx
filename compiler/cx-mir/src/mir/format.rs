@@ -165,9 +165,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     self.expr._type
                 )
             }
-            MIRExpressionKind::Null => {
-                writeln!(f, "Null <'{}>", self.expr._type)
-            }
+
             MIRExpressionKind::Unit => {
                 writeln!(f, "Unit <'{}>", self.expr._type)
             }

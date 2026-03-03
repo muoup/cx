@@ -3,10 +3,13 @@ use cx_mir::mir::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
         MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
     },
-    types::{MIRType, MIRTypeKind},
+    types::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_safe_ir::ast::{
-    CVMOperation, FMIRNode, FMIRNodeBody, FMIRSourceRange, FMIRType, FRc, MemoryLocation,
+    CVMOperation, FMIRBinaryIntrinsic, FMIRCastIntrinsic, FMIRFloatBinaryIntrinsicOp,
+    FMIRIntegerBinaryIntrinsicOp, FMIRIntrinsicFunction, FMIRIntrinsicKind, FMIRNode,
+    FMIRNodeBody, FMIRPointerBinaryIntrinsicOp, FMIRPointerDiffBinaryIntrinsicOp, FMIRSourceRange,
+    FMIRType, FMIRUnaryIntrinsic, FRc, MemoryLocation,
 };
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
@@ -29,10 +32,10 @@ fn pointer_alias(name: &CXIdent, pointer_type: MIRType) -> FMIRNode {
     }
 }
 
-fn operator_alias(name: String) -> FMIRNode {
+fn intrinsic_alias(intrinsic: FMIRIntrinsicKind) -> FMIRNode {
     FMIRNode {
         source_range: None,
-        body: FMIRNodeBody::VariableAlias { name },
+        body: FMIRNodeBody::IntrinsicFunction(FMIRIntrinsicFunction { kind: intrinsic }),
         _type: FMIRType::pure(MIRType::internal_function()),
     }
 }
@@ -49,6 +52,19 @@ fn then_node(first: FMIRNode, second: FMIRNode) -> FMIRNode {
     }
 }
 
+fn bind_node(monad: FMIRNode, capture: CXIdent, function: FMIRNode) -> FMIRNode {
+    let combined = monad._type.union(&function._type);
+    FMIRNode {
+        source_range: None,
+        _type: combined.apply(function._type.inner_type().clone()),
+        body: FMIRNodeBody::Bind {
+            monad: FRc::new(monad),
+            capture,
+            function: FRc::new(function),
+        },
+    }
+}
+
 fn chain_statements(statements: Vec<FMIRNode>) -> FMIRNode {
     let mut iter = statements.into_iter();
     let Some(first) = iter.next() else {
@@ -58,145 +74,137 @@ fn chain_statements(statements: Vec<FMIRNode>) -> FMIRNode {
     iter.fold(first, then_node)
 }
 
-fn unary_op_name(op: &MIRUnOp) -> String {
+fn unary_op_intrinsic(op: &MIRUnOp) -> Option<FMIRUnaryIntrinsic> {
+    Some(match op {
+        MIRUnOp::NEG => FMIRUnaryIntrinsic::Neg,
+        MIRUnOp::INEG => FMIRUnaryIntrinsic::INeg,
+        MIRUnOp::FNEG => FMIRUnaryIntrinsic::FNeg,
+        MIRUnOp::BNOT => FMIRUnaryIntrinsic::BNot,
+        MIRUnOp::LNOT => FMIRUnaryIntrinsic::LNot,
+        MIRUnOp::PreIncrement(_) | MIRUnOp::PostIncrement(_) => return None,
+    })
+}
+
+fn int_binop_intrinsic(op: &MIRIntegerBinOp) -> FMIRIntegerBinaryIntrinsicOp {
     match op {
-        MIRUnOp::NEG => "__op_neg".to_string(),
-        MIRUnOp::INEG => "__op_ineg".to_string(),
-        MIRUnOp::FNEG => "__op_fneg".to_string(),
-        MIRUnOp::BNOT => "__op_bnot".to_string(),
-        MIRUnOp::LNOT => "__op_lnot".to_string(),
-        MIRUnOp::PreIncrement(amount) => format!("__op_preinc_{}", amount),
-        MIRUnOp::PostIncrement(amount) => format!("__op_postinc_{}", amount),
+        MIRIntegerBinOp::ADD => FMIRIntegerBinaryIntrinsicOp::Add,
+        MIRIntegerBinOp::SUB => FMIRIntegerBinaryIntrinsicOp::Sub,
+        MIRIntegerBinOp::MUL => FMIRIntegerBinaryIntrinsicOp::Mul,
+        MIRIntegerBinOp::DIV => FMIRIntegerBinaryIntrinsicOp::Div,
+        MIRIntegerBinOp::MOD => FMIRIntegerBinaryIntrinsicOp::Mod,
+        MIRIntegerBinOp::IMUL => FMIRIntegerBinaryIntrinsicOp::IMul,
+        MIRIntegerBinOp::IDIV => FMIRIntegerBinaryIntrinsicOp::IDiv,
+        MIRIntegerBinOp::IMOD => FMIRIntegerBinaryIntrinsicOp::IMod,
+        MIRIntegerBinOp::EQ => FMIRIntegerBinaryIntrinsicOp::Eq,
+        MIRIntegerBinOp::NE => FMIRIntegerBinaryIntrinsicOp::Ne,
+        MIRIntegerBinOp::LT => FMIRIntegerBinaryIntrinsicOp::Lt,
+        MIRIntegerBinOp::LE => FMIRIntegerBinaryIntrinsicOp::Le,
+        MIRIntegerBinOp::GT => FMIRIntegerBinaryIntrinsicOp::Gt,
+        MIRIntegerBinOp::GE => FMIRIntegerBinaryIntrinsicOp::Ge,
+        MIRIntegerBinOp::ILT => FMIRIntegerBinaryIntrinsicOp::ILt,
+        MIRIntegerBinOp::ILE => FMIRIntegerBinaryIntrinsicOp::ILe,
+        MIRIntegerBinOp::IGT => FMIRIntegerBinaryIntrinsicOp::IGt,
+        MIRIntegerBinOp::IGE => FMIRIntegerBinaryIntrinsicOp::IGe,
+        MIRIntegerBinOp::LAND => FMIRIntegerBinaryIntrinsicOp::LAnd,
+        MIRIntegerBinOp::LOR => FMIRIntegerBinaryIntrinsicOp::LOr,
+        MIRIntegerBinOp::BAND => FMIRIntegerBinaryIntrinsicOp::BAnd,
+        MIRIntegerBinOp::BOR => FMIRIntegerBinaryIntrinsicOp::BOr,
+        MIRIntegerBinOp::BXOR => FMIRIntegerBinaryIntrinsicOp::BXor,
     }
 }
 
-fn int_binop_name(op: &MIRIntegerBinOp) -> &'static str {
+fn float_binop_intrinsic(op: &MIRFloatBinOp) -> FMIRFloatBinaryIntrinsicOp {
     match op {
-        MIRIntegerBinOp::ADD => "add",
-        MIRIntegerBinOp::SUB => "sub",
-        MIRIntegerBinOp::MUL => "mul",
-        MIRIntegerBinOp::DIV => "div",
-        MIRIntegerBinOp::MOD => "mod",
-        MIRIntegerBinOp::IMUL => "imul",
-        MIRIntegerBinOp::IDIV => "idiv",
-        MIRIntegerBinOp::IMOD => "imod",
-        MIRIntegerBinOp::EQ => "eq",
-        MIRIntegerBinOp::NE => "ne",
-        MIRIntegerBinOp::LT => "lt",
-        MIRIntegerBinOp::LE => "le",
-        MIRIntegerBinOp::GT => "gt",
-        MIRIntegerBinOp::GE => "ge",
-        MIRIntegerBinOp::ILT => "ilt",
-        MIRIntegerBinOp::ILE => "ile",
-        MIRIntegerBinOp::IGT => "igt",
-        MIRIntegerBinOp::IGE => "ige",
-        MIRIntegerBinOp::LAND => "land",
-        MIRIntegerBinOp::LOR => "lor",
-        MIRIntegerBinOp::BAND => "band",
-        MIRIntegerBinOp::BOR => "bor",
-        MIRIntegerBinOp::BXOR => "bxor",
+        MIRFloatBinOp::FADD => FMIRFloatBinaryIntrinsicOp::Add,
+        MIRFloatBinOp::FSUB => FMIRFloatBinaryIntrinsicOp::Sub,
+        MIRFloatBinOp::FMUL => FMIRFloatBinaryIntrinsicOp::Mul,
+        MIRFloatBinOp::FDIV => FMIRFloatBinaryIntrinsicOp::Div,
+        MIRFloatBinOp::EQ => FMIRFloatBinaryIntrinsicOp::Eq,
+        MIRFloatBinOp::NEQ => FMIRFloatBinaryIntrinsicOp::Ne,
+        MIRFloatBinOp::FLT => FMIRFloatBinaryIntrinsicOp::Lt,
+        MIRFloatBinOp::FLE => FMIRFloatBinaryIntrinsicOp::Le,
+        MIRFloatBinOp::FGT => FMIRFloatBinaryIntrinsicOp::Gt,
+        MIRFloatBinOp::FGE => FMIRFloatBinaryIntrinsicOp::Ge,
     }
 }
 
-fn float_binop_name(op: &MIRFloatBinOp) -> &'static str {
+fn ptrdiff_binop_intrinsic(op: &MIRPtrDiffBinOp) -> FMIRPointerDiffBinaryIntrinsicOp {
     match op {
-        MIRFloatBinOp::FADD => "add",
-        MIRFloatBinOp::FSUB => "sub",
-        MIRFloatBinOp::FMUL => "mul",
-        MIRFloatBinOp::FDIV => "div",
-        MIRFloatBinOp::EQ => "eq",
-        MIRFloatBinOp::NEQ => "ne",
-        MIRFloatBinOp::FLT => "lt",
-        MIRFloatBinOp::FLE => "le",
-        MIRFloatBinOp::FGT => "gt",
-        MIRFloatBinOp::FGE => "ge",
+        MIRPtrDiffBinOp::ADD => FMIRPointerDiffBinaryIntrinsicOp::Add,
+        MIRPtrDiffBinOp::SUB => FMIRPointerDiffBinaryIntrinsicOp::Sub,
     }
 }
 
-fn ptrdiff_binop_name(op: &MIRPtrDiffBinOp) -> &'static str {
+fn ptr_binop_intrinsic(op: &MIRPtrBinOp) -> FMIRPointerBinaryIntrinsicOp {
     match op {
-        MIRPtrDiffBinOp::ADD => "add",
-        MIRPtrDiffBinOp::SUB => "sub",
+        MIRPtrBinOp::EQ => FMIRPointerBinaryIntrinsicOp::Eq,
+        MIRPtrBinOp::NE => FMIRPointerBinaryIntrinsicOp::Ne,
+        MIRPtrBinOp::LT => FMIRPointerBinaryIntrinsicOp::Lt,
+        MIRPtrBinOp::GT => FMIRPointerBinaryIntrinsicOp::Gt,
+        MIRPtrBinOp::LE => FMIRPointerBinaryIntrinsicOp::Le,
+        MIRPtrBinOp::GE => FMIRPointerBinaryIntrinsicOp::Ge,
     }
 }
 
-fn ptr_binop_name(op: &MIRPtrBinOp) -> &'static str {
+fn binary_op_intrinsic(op: &MIRBinOp) -> FMIRBinaryIntrinsic {
     match op {
-        MIRPtrBinOp::EQ => "eq",
-        MIRPtrBinOp::NE => "ne",
-        MIRPtrBinOp::LT => "lt",
-        MIRPtrBinOp::GT => "gt",
-        MIRPtrBinOp::LE => "le",
-        MIRPtrBinOp::GE => "ge",
+        MIRBinOp::Integer { itype, op } => FMIRBinaryIntrinsic::Integer {
+            bits: itype.bytes() * 8,
+            op: int_binop_intrinsic(op),
+        },
+        MIRBinOp::Float { ftype, op } => FMIRBinaryIntrinsic::Float {
+            bits: ftype.bytes() * 8,
+            op: float_binop_intrinsic(op),
+        },
+        MIRBinOp::PtrDiff { op, .. } => FMIRBinaryIntrinsic::PointerDiff {
+            op: ptrdiff_binop_intrinsic(op),
+        },
+        MIRBinOp::Pointer { op } => FMIRBinaryIntrinsic::Pointer {
+            op: ptr_binop_intrinsic(op),
+        },
     }
 }
 
-fn binary_op_name(op: &MIRBinOp) -> String {
-    match op {
-        MIRBinOp::Integer { itype, op } => {
-            format!("__op_i{}_{}", itype.bytes() * 8, int_binop_name(op))
-        }
-        MIRBinOp::Float { ftype, op } => {
-            format!("__op_f{}_{}", ftype.bytes() * 8, float_binop_name(op))
-        }
-        MIRBinOp::PtrDiff { op, .. } => {
-            format!("__op_ptrdiff_{}", ptrdiff_binop_name(op))
-        }
-        MIRBinOp::Pointer { op } => {
-            format!("__op_ptr_{}", ptr_binop_name(op))
-        }
-    }
-}
-
-fn coercion_name(coercion: &MIRCoercion) -> String {
+fn coercion_intrinsic(coercion: &MIRCoercion) -> FMIRCastIntrinsic {
     match coercion {
-        MIRCoercion::Integral { sextend, to_type } => {
-            format!(
-                "__cast_integral_i{}_sx{}",
-                to_type.bytes() * 8,
-                if *sextend { 1 } else { 0 }
-            )
-        }
-        MIRCoercion::FloatCast { to_type } => {
-            format!("__cast_float_f{}", to_type.bytes() * 8)
-        }
-        MIRCoercion::PtrToInt { to_type } => {
-            format!("__cast_ptr_to_i{}", to_type.bytes() * 8)
-        }
-        MIRCoercion::IntToPtr { sextend } => {
-            format!("__cast_i_to_ptr_sx{}", if *sextend { 1 } else { 0 })
-        }
-        MIRCoercion::IntToFloat { to_type, sextend } => {
-            format!(
-                "__cast_i_to_f{}_sx{}",
-                to_type.bytes() * 8,
-                if *sextend { 1 } else { 0 }
-            )
-        }
-        MIRCoercion::FloatToInt { to_type, sextend } => {
-            format!(
-                "__cast_f_to_i{}_sx{}",
-                to_type.bytes() * 8,
-                if *sextend { 1 } else { 0 }
-            )
-        }
-        MIRCoercion::IntToBool => "__cast_i_to_bool".to_string(),
-        MIRCoercion::ReinterpretBits => "__cast_reinterpret_bits".to_string(),
+        MIRCoercion::Integral { sextend, to_type } => FMIRCastIntrinsic::Integral {
+            sextend: *sextend,
+            to_bits: to_type.bytes() * 8,
+        },
+        MIRCoercion::FloatCast { to_type } => FMIRCastIntrinsic::FloatCast {
+            to_bits: to_type.bytes() * 8,
+        },
+        MIRCoercion::PtrToInt { to_type } => FMIRCastIntrinsic::PtrToInt {
+            to_bits: to_type.bytes() * 8,
+        },
+        MIRCoercion::IntToPtr { sextend } => FMIRCastIntrinsic::IntToPtr {
+            sextend: *sextend,
+        },
+        MIRCoercion::IntToFloat { to_type, sextend } => FMIRCastIntrinsic::IntToFloat {
+            to_bits: to_type.bytes() * 8,
+            sextend: *sextend,
+        },
+        MIRCoercion::FloatToInt { to_type, sextend } => FMIRCastIntrinsic::FloatToInt {
+            to_bits: to_type.bytes() * 8,
+            sextend: *sextend,
+        },
+        MIRCoercion::IntToBool => FMIRCastIntrinsic::IntToBool,
+        MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
     }
 }
 
-fn app1(op_name: String, arg: FMIRNode, output_type: &MIRType) -> FMIRNode {
+fn app1(intrinsic: FMIRIntrinsicKind, arg: FMIRNode, output_type: &MIRType) -> FMIRNode {
     FMIRNode {
         source_range: None,
         _type: FMIRType::pure(output_type.clone()),
         body: FMIRNodeBody::Application {
-            function: FRc::new(operator_alias(op_name)),
+            function: FRc::new(intrinsic_alias(intrinsic)),
             argument: FRc::new(arg),
         },
     }
 }
 
-fn app2(op_name: String, lhs: FMIRNode, rhs: FMIRNode, output_type: &MIRType) -> FMIRNode {
+fn app2(intrinsic: FMIRIntrinsicKind, lhs: FMIRNode, rhs: FMIRNode, output_type: &MIRType) -> FMIRNode {
     FMIRNode {
         source_range: None,
         _type: FMIRType::pure(output_type.clone()),
@@ -205,13 +213,180 @@ fn app2(op_name: String, lhs: FMIRNode, rhs: FMIRNode, output_type: &MIRType) ->
                 source_range: None,
                 _type: FMIRType::pure(MIRType::internal_function()),
                 body: FMIRNodeBody::Application {
-                    function: FRc::new(operator_alias(op_name)),
+                    function: FRc::new(intrinsic_alias(intrinsic)),
                     argument: FRc::new(lhs),
                 },
             }),
             argument: FRc::new(rhs),
         },
     }
+}
+
+fn source_variable_name(expr: &MIRExpression) -> Option<&CXIdent> {
+    match &expr.kind {
+        MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
+            Some(name)
+        }
+        _ => None,
+    }
+}
+
+fn read_operation_for_expr(env: &FMIREnvironment, source: &MIRExpression) -> CVMOperation {
+    source_variable_name(source)
+        .and_then(|name| env.query_memory_location(name))
+        .map(|location| CVMOperation::Access {
+            reads: vec![location],
+            writes: vec![],
+        })
+        .unwrap_or(CVMOperation::Unsafe)
+}
+
+fn write_operation_for_expr(env: &FMIREnvironment, target: &MIRExpression) -> CVMOperation {
+    source_variable_name(target)
+        .and_then(|name| env.query_memory_location(name))
+        .map(|location| CVMOperation::Access {
+            reads: vec![],
+            writes: vec![location],
+        })
+        .unwrap_or(CVMOperation::Unsafe)
+}
+
+fn invalidate_known_value_for_expr(env: &mut FMIREnvironment, target: &MIRExpression) {
+    if let Some(name) = source_variable_name(target) {
+        env.set_known_value(name, None);
+    }
+}
+
+fn load_node(pointer: FMIRNode, value_type: &MIRType, operation: CVMOperation) -> FMIRNode {
+    let read_effect = FMIRType::CMonad {
+        inner: Box::new(FMIRType::pure(value_type.clone())),
+        operation,
+    };
+    let combined = pointer
+        ._type
+        .union(&read_effect)
+        .apply(FMIRType::pure(value_type.clone()));
+
+    FMIRNode {
+        source_range: None,
+        _type: combined,
+        body: FMIRNodeBody::Load {
+            pointer: FRc::new(pointer),
+        },
+    }
+}
+
+fn store_node(pointer: FMIRNode, value: FMIRNode, operation: CVMOperation) -> FMIRNode {
+    let write_effect = monad_unit(operation);
+    let combined = pointer
+        ._type
+        .union(&value._type)
+        .union(&write_effect)
+        .apply(FMIRType::pure(MIRType::unit()));
+
+    FMIRNode {
+        source_range: None,
+        _type: combined,
+        body: FMIRNodeBody::Store {
+            pointer: FRc::new(pointer),
+            value: FRc::new(value),
+        },
+    }
+}
+
+fn increment_amount_node(value: i64, mir_type: &MIRType) -> CXResult<FMIRNode> {
+    let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
+        return CXError::create_result(format!(
+            "FMIR increment desugaring expected integer type, found '{}'",
+            mir_type
+        ));
+    };
+
+    Ok(FMIRNode {
+        source_range: None,
+        body: FMIRNodeBody::IntegerLiteral(value),
+        _type: FMIRType::pure(MIRType::from(MIRTypeKind::Integer {
+            _type: *_type,
+            signed: *signed,
+        })),
+    })
+}
+
+fn convert_increment(
+    env: &mut FMIREnvironment,
+    operand_expr: &MIRExpression,
+    amount: i8,
+    is_pre: bool,
+) -> CXResult<FMIRNode> {
+    let pointer_node = convert_expression(env, operand_expr)?;
+    let Some(value_type) = operand_expr._type.mem_ref_inner().cloned() else {
+        return CXError::create_result(format!(
+            "FMIR increment desugaring expected memory reference operand, found '{}'",
+            operand_expr._type
+        ));
+    };
+
+    let old_value_load = load_node(
+        pointer_node.clone(),
+        &value_type,
+        read_operation_for_expr(env, operand_expr),
+    );
+
+    let old_capture = CXIdent::from("__inc_old");
+    let old_alias = FMIRNode {
+        source_range: None,
+        body: FMIRNodeBody::VariableAlias {
+            name: old_capture.as_string(),
+        },
+        _type: FMIRType::pure(value_type.clone()),
+    };
+
+    let (add_intrinsic, delta_node) = match &value_type.kind {
+        MIRTypeKind::Integer { _type, .. } => (
+            FMIRIntrinsicKind::Binary(FMIRBinaryIntrinsic::Integer {
+                bits: _type.bytes() * 8,
+                op: FMIRIntegerBinaryIntrinsicOp::Add,
+            }),
+            increment_amount_node(i64::from(amount), &value_type)?,
+        ),
+        MIRTypeKind::PointerTo { .. } => {
+            let op = if amount < 0 {
+                FMIRPointerDiffBinaryIntrinsicOp::Sub
+            } else {
+                FMIRPointerDiffBinaryIntrinsicOp::Add
+            };
+            let delta_type = MIRType::from(MIRTypeKind::Integer {
+                _type: MIRIntegerType::I64,
+                signed: true,
+            });
+            (
+                FMIRIntrinsicKind::Binary(FMIRBinaryIntrinsic::PointerDiff { op }),
+                increment_amount_node(i64::from(amount).abs(), &delta_type)?,
+            )
+        }
+        _ => {
+            return CXError::create_result(format!(
+                "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
+                value_type
+            ));
+        }
+    };
+
+    let new_value = app2(add_intrinsic, old_alias.clone(), delta_node, &value_type);
+
+    invalidate_known_value_for_expr(env, operand_expr);
+    let store = store_node(
+        pointer_node,
+        new_value.clone(),
+        write_operation_for_expr(env, operand_expr),
+    );
+
+    let result_value = if is_pre { new_value } else { old_alias };
+    Ok(bind_node(
+        old_value_load,
+        old_capture,
+        then_node(store, result_value),
+    ))
 }
 
 fn unsupported_expression_error(env: &FMIREnvironment, expr: &MIRExpression) -> CXResult<FMIRNode> {
@@ -258,12 +433,6 @@ pub fn convert_expression(
             _type: FMIRType::Pure {
                 mir_type: MIRTypeKind::Float { _type: *ftype }.into(),
             },
-        }),
-
-        MIRExpressionKind::Null => Ok(FMIRNode {
-            source_range: None,
-            body: FMIRNodeBody::IntegerLiteral(0),
-            _type: FMIRType::pure(mir_expr._type.clone()),
         }),
         MIRExpressionKind::Unit => Ok(FMIRNode::unit()),
 
@@ -514,7 +683,7 @@ pub fn convert_expression(
             let lhs_node = convert_expression(env, lhs)?;
             let rhs_node = convert_expression(env, rhs)?;
             let result = app2(
-                binary_op_name(op),
+                FMIRIntrinsicKind::Binary(binary_op_intrinsic(op)),
                 lhs_node.clone(),
                 rhs_node.clone(),
                 &mir_expr._type,
@@ -529,8 +698,28 @@ pub fn convert_expression(
         }
 
         MIRExpressionKind::UnaryOperation { operand, op } => {
+            if let MIRUnOp::PreIncrement(amount) = op {
+                return Ok(with_expression_range(
+                    convert_increment(env, operand, *amount, true)?,
+                    mir_expr,
+                ));
+            }
+            if let MIRUnOp::PostIncrement(amount) = op {
+                return Ok(with_expression_range(
+                    convert_increment(env, operand, *amount, false)?,
+                    mir_expr,
+                ));
+            }
+
             let operand_node = convert_expression(env, operand)?;
-            let result = app1(unary_op_name(op), operand_node.clone(), &mir_expr._type);
+            let Some(intrinsic) = unary_op_intrinsic(op) else {
+                return unsupported_expression_error(env, mir_expr);
+            };
+            let result = app1(
+                FMIRIntrinsicKind::Unary(intrinsic),
+                operand_node.clone(),
+                &mir_expr._type,
+            );
             let effect = operand_node._type.identity();
 
             Ok(FMIRNode {
@@ -562,77 +751,29 @@ pub fn convert_expression(
             }
 
             let source_node = convert_expression(env, source)?;
-
-            let operation = if let MIRExpressionKind::Variable(name)
-            | MIRExpressionKind::ContractVariable { name, .. } = &source.kind
-            {
-                env.query_memory_location(name)
-                    .map(|location| CVMOperation::Access {
-                        reads: vec![location],
-                        writes: vec![],
-                    })
-                    .unwrap_or(CVMOperation::Unsafe)
-            } else {
-                CVMOperation::Unsafe
-            };
-
-            let read_effect = FMIRType::CMonad {
-                inner: Box::new(FMIRType::pure(mir_expr._type.clone())),
-                operation,
-            };
-            let combined = source_node
-                ._type
-                .union(&read_effect)
-                .apply(FMIRType::pure(mir_expr._type.clone()));
-
-            Ok(FMIRNode {
-                source_range: None,
-                _type: combined,
-                body: FMIRNodeBody::Load {
-                    pointer: FRc::new(source_node),
-                },
-            })
+            Ok(load_node(
+                source_node,
+                &mir_expr._type,
+                read_operation_for_expr(env, source),
+            ))
         }
 
         MIRExpressionKind::MemoryWrite { target, value } => {
             let target_node = convert_expression(env, target)?;
             let value_node = convert_expression(env, value)?;
-
-            let operation = if let MIRExpressionKind::Variable(name)
-            | MIRExpressionKind::ContractVariable { name, .. } = &target.kind
-            {
-                let location = env.query_memory_location(name);
+            if let Some(name) = source_variable_name(target) {
                 if value_node._type.get_operation().is_none() {
                     env.set_known_value(name, Some(value_node.clone()));
                 } else {
                     env.set_known_value(name, None);
                 }
+            }
 
-                location
-                    .map(|location| CVMOperation::Access {
-                        reads: vec![],
-                        writes: vec![location],
-                    })
-                    .unwrap_or(CVMOperation::Unsafe)
-            } else {
-                CVMOperation::Unsafe
-            };
-
-            let write_effect = monad_unit(operation);
-            let combined = target_node
-                ._type
-                .union(&value_node._type)
-                .union(&write_effect)
-                .apply(FMIRType::pure(MIRType::unit()));
-
-            Ok(FMIRNode {
-                source_range: None,
-                _type: combined,
-                body: FMIRNodeBody::Store {
-                    pointer: FRc::new(target_node),
-                    value: FRc::new(value_node),
-                },
-            })
+            Ok(store_node(
+                target_node,
+                value_node,
+                write_operation_for_expr(env, target),
+            ))
         }
 
         MIRExpressionKind::Typechange(inner) => convert_expression(env, inner),
@@ -679,7 +820,7 @@ pub fn convert_expression(
         } => {
             let operand_node = convert_expression(env, operand)?;
             let converted = app1(
-                coercion_name(conversion),
+                FMIRIntrinsicKind::Cast(coercion_intrinsic(conversion)),
                 operand_node.clone(),
                 &mir_expr._type,
             );

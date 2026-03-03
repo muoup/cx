@@ -29,7 +29,6 @@ pub enum MIRExpressionKind {
     BoolLiteral(bool),
     IntLiteral(i64, MIRIntegerType, bool),
     FloatLiteral(FloatWrapper, MIRFloatType),
-    Null,
 
     #[default]
     Unit,

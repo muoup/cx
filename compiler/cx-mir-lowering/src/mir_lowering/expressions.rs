@@ -52,7 +52,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::Unit => Ok(LMIRValue::NULL),
-        MIRExpressionKind::Null => Ok(LMIRValue::NULL),
 
         MIRExpressionKind::Variable(name) => {
             if let Some(local_value) = builder.get_symbol(name) {

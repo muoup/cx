@@ -136,6 +136,137 @@ impl FMIRNode {
     }
 }
 
+impl Display for FMIRIntrinsicFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for FMIRIntrinsicKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRIntrinsicKind::Unary(op) => write!(f, "intrinsic.unary.{op}"),
+            FMIRIntrinsicKind::Binary(op) => write!(f, "intrinsic.binary.{op}"),
+            FMIRIntrinsicKind::Cast(op) => write!(f, "intrinsic.cast.{op}"),
+        }
+    }
+}
+
+impl Display for FMIRUnaryIntrinsic {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRUnaryIntrinsic::Neg => write!(f, "neg"),
+            FMIRUnaryIntrinsic::INeg => write!(f, "ineg"),
+            FMIRUnaryIntrinsic::FNeg => write!(f, "fneg"),
+            FMIRUnaryIntrinsic::BNot => write!(f, "bnot"),
+            FMIRUnaryIntrinsic::LNot => write!(f, "lnot"),
+        }
+    }
+}
+
+impl Display for FMIRBinaryIntrinsic {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRBinaryIntrinsic::Integer { bits, op } => write!(f, "i{bits}.{op}"),
+            FMIRBinaryIntrinsic::Float { bits, op } => write!(f, "f{bits}.{op}"),
+            FMIRBinaryIntrinsic::Pointer { op } => write!(f, "ptr.{op}"),
+            FMIRBinaryIntrinsic::PointerDiff { op } => write!(f, "ptrdiff.{op}"),
+        }
+    }
+}
+
+impl Display for FMIRIntegerBinaryIntrinsicOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRIntegerBinaryIntrinsicOp::Add => write!(f, "add"),
+            FMIRIntegerBinaryIntrinsicOp::Sub => write!(f, "sub"),
+            FMIRIntegerBinaryIntrinsicOp::Mul => write!(f, "mul"),
+            FMIRIntegerBinaryIntrinsicOp::Div => write!(f, "div"),
+            FMIRIntegerBinaryIntrinsicOp::Mod => write!(f, "mod"),
+            FMIRIntegerBinaryIntrinsicOp::IMul => write!(f, "imul"),
+            FMIRIntegerBinaryIntrinsicOp::IDiv => write!(f, "idiv"),
+            FMIRIntegerBinaryIntrinsicOp::IMod => write!(f, "imod"),
+            FMIRIntegerBinaryIntrinsicOp::Eq => write!(f, "eq"),
+            FMIRIntegerBinaryIntrinsicOp::Ne => write!(f, "ne"),
+            FMIRIntegerBinaryIntrinsicOp::Lt => write!(f, "lt"),
+            FMIRIntegerBinaryIntrinsicOp::Le => write!(f, "le"),
+            FMIRIntegerBinaryIntrinsicOp::Gt => write!(f, "gt"),
+            FMIRIntegerBinaryIntrinsicOp::Ge => write!(f, "ge"),
+            FMIRIntegerBinaryIntrinsicOp::ILt => write!(f, "ilt"),
+            FMIRIntegerBinaryIntrinsicOp::ILe => write!(f, "ile"),
+            FMIRIntegerBinaryIntrinsicOp::IGt => write!(f, "igt"),
+            FMIRIntegerBinaryIntrinsicOp::IGe => write!(f, "ige"),
+            FMIRIntegerBinaryIntrinsicOp::LAnd => write!(f, "land"),
+            FMIRIntegerBinaryIntrinsicOp::LOr => write!(f, "lor"),
+            FMIRIntegerBinaryIntrinsicOp::BAnd => write!(f, "band"),
+            FMIRIntegerBinaryIntrinsicOp::BOr => write!(f, "bor"),
+            FMIRIntegerBinaryIntrinsicOp::BXor => write!(f, "bxor"),
+        }
+    }
+}
+
+impl Display for FMIRFloatBinaryIntrinsicOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRFloatBinaryIntrinsicOp::Add => write!(f, "add"),
+            FMIRFloatBinaryIntrinsicOp::Sub => write!(f, "sub"),
+            FMIRFloatBinaryIntrinsicOp::Mul => write!(f, "mul"),
+            FMIRFloatBinaryIntrinsicOp::Div => write!(f, "div"),
+            FMIRFloatBinaryIntrinsicOp::Eq => write!(f, "eq"),
+            FMIRFloatBinaryIntrinsicOp::Ne => write!(f, "ne"),
+            FMIRFloatBinaryIntrinsicOp::Lt => write!(f, "lt"),
+            FMIRFloatBinaryIntrinsicOp::Le => write!(f, "le"),
+            FMIRFloatBinaryIntrinsicOp::Gt => write!(f, "gt"),
+            FMIRFloatBinaryIntrinsicOp::Ge => write!(f, "ge"),
+        }
+    }
+}
+
+impl Display for FMIRPointerBinaryIntrinsicOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRPointerBinaryIntrinsicOp::Eq => write!(f, "eq"),
+            FMIRPointerBinaryIntrinsicOp::Ne => write!(f, "ne"),
+            FMIRPointerBinaryIntrinsicOp::Lt => write!(f, "lt"),
+            FMIRPointerBinaryIntrinsicOp::Gt => write!(f, "gt"),
+            FMIRPointerBinaryIntrinsicOp::Le => write!(f, "le"),
+            FMIRPointerBinaryIntrinsicOp::Ge => write!(f, "ge"),
+        }
+    }
+}
+
+impl Display for FMIRPointerDiffBinaryIntrinsicOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRPointerDiffBinaryIntrinsicOp::Add => write!(f, "add"),
+            FMIRPointerDiffBinaryIntrinsicOp::Sub => write!(f, "sub"),
+        }
+    }
+}
+
+impl Display for FMIRCastIntrinsic {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FMIRCastIntrinsic::Integral { sextend, to_bits } => {
+                write!(f, "integral.to_i{to_bits}.sx{}", if *sextend { 1 } else { 0 })
+            }
+            FMIRCastIntrinsic::FloatCast { to_bits } => write!(f, "float.to_f{to_bits}"),
+            FMIRCastIntrinsic::PtrToInt { to_bits } => write!(f, "ptr.to_i{to_bits}"),
+            FMIRCastIntrinsic::IntToPtr { sextend } => {
+                write!(f, "int.to_ptr.sx{}", if *sextend { 1 } else { 0 })
+            }
+            FMIRCastIntrinsic::IntToFloat { to_bits, sextend } => {
+                write!(f, "int.to_f{to_bits}.sx{}", if *sextend { 1 } else { 0 })
+            }
+            FMIRCastIntrinsic::FloatToInt { to_bits, sextend } => {
+                write!(f, "float.to_i{to_bits}.sx{}", if *sextend { 1 } else { 0 })
+            }
+            FMIRCastIntrinsic::IntToBool => write!(f, "int.to_bool"),
+            FMIRCastIntrinsic::ReinterpretBits => write!(f, "reinterpret_bits"),
+        }
+    }
+}
+
 impl FMIRNodeBody {
     fn fmt_with_indent(&self, f: &mut Formatter<'_>, indent: &Indent) -> Result {
         match self {
@@ -147,6 +278,10 @@ impl FMIRNodeBody {
                     write!(f, "{} {}", function, argument)
                 }
             },
+
+            FMIRNodeBody::IntrinsicFunction(intrinsic) => {
+                write!(f, "{}", intrinsic)
+            }
 
             FMIRNodeBody::UnsafeBlock => {
                 write!(f, "_unsafe_block")
