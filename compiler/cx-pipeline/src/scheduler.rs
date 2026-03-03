@@ -329,7 +329,20 @@ pub(crate) fn perform_job(
                 dump_data(&mir);
             }
             
-            let _ = FMIRContext::new_from(&mir);
+            if context.config.analysis {
+                let mut fmir_context = FMIRContext::new_from(&mir).unwrap_or_else(|e| {
+                    e.pretty_print();
+                    panic!("FMIR generation failed for unit: {}", job.unit);
+                });
+                fmir_context.apply_standard_analysis_passes().unwrap_or_else(|e| {
+                    e.pretty_print();
+                    panic!("FMIR analysis failed for unit: {}", job.unit);
+                });
+
+                if !job.unit.is_std_lib() {
+                    dump_data(&fmir_context);
+                }
+            }
 
             context.module_db.mir.insert(job.unit.clone(), mir);
         }

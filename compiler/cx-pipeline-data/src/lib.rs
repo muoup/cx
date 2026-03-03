@@ -50,6 +50,7 @@ pub struct CompilerConfig {
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub output: PathBuf,
+    pub analysis: bool,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]

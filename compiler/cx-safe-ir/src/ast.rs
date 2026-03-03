@@ -37,7 +37,38 @@ pub enum CVMOperation {
     },
 }
 
-impl CVMOperation {}
+impl CVMOperation {
+    fn dedup_locations(locations: &mut Vec<MemoryLocation>) {
+        locations.sort();
+        locations.dedup();
+    }
+
+    pub fn union(&self, other: &Self) -> Self {
+        match (self, other) {
+            (CVMOperation::Unsafe, _) | (_, CVMOperation::Unsafe) => CVMOperation::Unsafe,
+            (
+                CVMOperation::Access {
+                    reads: left_reads,
+                    writes: left_writes,
+                },
+                CVMOperation::Access {
+                    reads: right_reads,
+                    writes: right_writes,
+                },
+            ) => {
+                let mut reads = left_reads.clone();
+                reads.extend(right_reads.iter().cloned());
+                Self::dedup_locations(&mut reads);
+
+                let mut writes = left_writes.clone();
+                writes.extend(right_writes.iter().cloned());
+                Self::dedup_locations(&mut writes);
+
+                CVMOperation::Access { reads, writes }
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct FMIRFunction {
@@ -151,7 +182,7 @@ pub enum FMIRNodeBody {
     },
     
     /// _creturn :: a -> CMonad a
-    ///
+    // /
     /// Early returns may seem counter to pure functional semantics, however you can think of them
     /// as a mapping to an CMonad in which all subsequent CMonad actions are skipped. The value
     /// that is generated after is thus dead and optimized away, and when reaching the true end
@@ -224,38 +255,10 @@ impl FMIRType {
     /// The result is the least upper bound - must account for both
     pub fn union(&self, other: &Self) -> MonadicState {
         match (self.get_operation(), other.get_operation()) {
-            (Some(CVMOperation::Unsafe), _) | (_, Some(CVMOperation::Unsafe)) => {
-                MonadicState::Operation(CVMOperation::Unsafe)
-            }
-
-            (
-                Some(CVMOperation::Access {
-                    reads: r1,
-                    writes: w1,
-                }),
-                Some(CVMOperation::Access {
-                    reads: r2,
-                    writes: w2,
-                }),
-            ) => {
-                // Merge the access lists, de-duplicating
-                let mut reads = r1.clone();
-                reads.extend(r2.iter().cloned());
-                reads.sort();
-                reads.dedup();
-
-                let mut writes = w1.clone();
-                writes.extend(w2.iter().cloned());
-                writes.sort();
-                writes.dedup();
-
-                MonadicState::Operation(CVMOperation::Access { reads, writes })
-            },
-            
+            (Some(left), Some(right)) => MonadicState::Operation(left.union(right)),
             (None, None) => MonadicState::Pure,
             
-            (Some(other), None) |
-            (None, Some(other)) => MonadicState::Operation(other.clone()), 
+            (Some(other), None) | (None, Some(other)) => MonadicState::Operation(other.clone()),
         }
     }
 }
@@ -307,29 +310,9 @@ impl MonadicState {
             (MonadicState::Pure, MonadicState::Pure) => MonadicState::Pure,
             (MonadicState::Operation(e), MonadicState::Pure) |
             (MonadicState::Pure, MonadicState::Operation(e)) => MonadicState::Operation(e),
-            (MonadicState::Operation(e1), MonadicState::Operation(e2)) => {
-                match (e1, e2) {
-                    (CVMOperation::Unsafe, _) | (_, CVMOperation::Unsafe) => {
-                        MonadicState::Operation(CVMOperation::Unsafe)
-                    }
-                    (
-                        CVMOperation::Access { reads: r1, writes: w1 },
-                        CVMOperation::Access { reads: r2, writes: w2 },
-                    ) => {
-                        let mut reads = r1;
-                        reads.extend(r2);
-                        reads.sort();
-                        reads.dedup();
-
-                        let mut writes = w1;
-                        writes.extend(w2);
-                        writes.sort();
-                        writes.dedup();
-
-                        MonadicState::Operation(CVMOperation::Access { reads, writes })
-                    }
-                }
-            }
+            (MonadicState::Operation(left), MonadicState::Operation(right)) => {
+                MonadicState::Operation(left.union(&right))
+            },
         }
     }
 }

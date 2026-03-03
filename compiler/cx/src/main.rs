@@ -32,6 +32,7 @@ fn main() {
         backend: args.backend,
         optimization_level: args.optimization_level,
         output: PathBuf::from(&args.output_file),
+        analysis: args.analysis,
     };
 
     standard_compilation(compiler_config, PathBuf::from(file_name).as_path())

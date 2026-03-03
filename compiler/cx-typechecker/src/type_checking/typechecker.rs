@@ -872,7 +872,7 @@ pub fn add_implicit_return(env: &mut TypeEnvironment, expr: MIRExpression) -> CX
                 signed: true,
             }),
         }))
-    } else if !func.return_type.is_unit() {
+    } else if func.return_type.is_unit() {
         None
     } else {
         return log_typecheck_error!(

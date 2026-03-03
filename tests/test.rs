@@ -81,11 +81,13 @@ fn execute_test(input: &Path) {
         backend: CompilerBackend::Cranelift,
         optimization_level: OptimizationLevel::O0,
         output: (&obj_output).into(),
+        analysis: false,
     };
     let llvm_config = CompilerConfig {
         backend: CompilerBackend::LLVM,
         optimization_level: OptimizationLevel::O1,
         output: (&obj_output).into(),
+        analysis: false,
     };
 
     let Some(expected_output) = std::fs::read_to_string(&expected_output).ok() else {
