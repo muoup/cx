@@ -113,6 +113,7 @@ pub fn implicit_cast(
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
         Ok(MIRExpression {
+            source_range: None,
             _type: to_type.clone(),
             kind: MIRExpressionKind::TypeConversion {
                 operand: Box::new(value.clone()),
@@ -223,13 +224,13 @@ pub fn implicit_cast(
                     to_type
                 );
             }
-            
+
             if inner.is_memory_resident() {
                 let copied = TypecheckResult::copy_region(
                     TypecheckResult::expr2(value.clone()),
                     (*inner.clone()).clone(),
                 );
-                implicit_cast(env, expr, copied.into_expression(), to_type) 
+                implicit_cast(env, expr, copied.into_expression(), to_type)
             } else {
                 // Need to read from memory reference and then cast
                 let loaded = TypecheckResult::memory_read(

@@ -34,6 +34,7 @@ pub(crate) fn typecheck_access(
             // load one layer of indirection first.
             MIRTypeKind::PointerTo { inner_type, .. } => {
                 let loaded = MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::MemoryRead {
                         source: Box::new(lhs),
                     },
@@ -47,13 +48,11 @@ pub(crate) fn typecheck_access(
             // we are only one indirection away already, so we can continue as normal.
             _ => (lhs, mem_ref_inner.as_ref().clone()),
         },
-        
+
         // If we have only a pointer, the compiler is not responsible for any coercions here,
         // e.g. a pointer-to-a-memory-reference is not automatically dereferenced. Therefore
         // we can assert that the correct path here is that the pointer is one indirection away
-        MIRTypeKind::PointerTo { inner_type, .. } => {
-            (lhs, inner_type.as_ref().clone())
-        }
+        MIRTypeKind::PointerTo { inner_type, .. } => (lhs, inner_type.as_ref().clone()),
 
         // We may also have a owned struct / naked struct type,
         // we can also treat that type as a pointer, as a struct must exist
@@ -63,7 +62,7 @@ pub(crate) fn typecheck_access(
             (lhs, lhs_type)
         }
     };
-    
+
     if !lhs_inner.is_structure() {
         return log_typecheck_error!(
             env,
@@ -114,6 +113,7 @@ pub(crate) fn typecheck_access(
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
 
             let lhs_val_as_pointer = MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::TypeConversion {
                     operand: Box::new(lhs),
                     conversion: MIRCoercion::ReinterpretBits,
@@ -140,6 +140,7 @@ pub(crate) fn typecheck_access(
                 env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?;
 
             let lhs_val_as_pointer = MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::TypeConversion {
                     operand: Box::new(lhs),
                     conversion: MIRCoercion::ReinterpretBits,
@@ -343,6 +344,7 @@ pub(crate) fn typecheck_method_call(
         prototype.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::FunctionReference {
                     implicit_variables: implicit_variables.clone(),
                 },
@@ -491,6 +493,7 @@ pub(crate) fn typecheck_scoped_call(
         prototype.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::FunctionReference {
                     implicit_variables: vec![],
                 },
@@ -574,6 +577,7 @@ pub(crate) fn typecheck_is(
         env.insert_symbol(
             name.to_string(),
             MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: variant_type.clone().mem_ref_to(),
             },
@@ -1185,6 +1189,7 @@ pub(crate) fn typecheck_contract(
             env.insert_symbol(
                 name.to_string(),
                 MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         parent_function: function_name.clone(),
@@ -1210,6 +1215,7 @@ pub(crate) fn typecheck_contract(
             env.insert_symbol(
                 ret_name.to_string(),
                 MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::Variable(ret_name.clone()),
                     _type: mir_type,
                 },

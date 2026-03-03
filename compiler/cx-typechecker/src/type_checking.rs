@@ -1,14 +1,17 @@
+use crate::{
+    type_checking::typechecker::add_implicit_return,
+    type_completion::types::_complete_template_input,
+};
 use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
     data::{CXFunctionKind, CXTemplateInput},
 };
-use cx_pipeline_data::CompilationUnit;
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRFunction},
     types::{MIRFunctionPrototype, MIRParameter},
 };
-use crate::{type_checking::typechecker::add_implicit_return, type_completion::types::_complete_template_input};
+use cx_pipeline_data::CompilationUnit;
 use cx_util::CXResult;
 
 use crate::{
@@ -43,6 +46,7 @@ fn typecheck_function(
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: _type.clone().mem_ref_to(),
             },
@@ -57,7 +61,7 @@ fn typecheck_function(
 
     env.generated_functions.push(MIRFunction {
         prototype,
-        body: with_implicit_return
+        body: with_implicit_return,
     });
 
     Ok(())

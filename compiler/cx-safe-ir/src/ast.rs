@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use cx_mir::mir::expression::MIRSourceRange;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 
@@ -100,6 +101,22 @@ pub enum FMIRType {
 pub struct FMIRNode {
     pub _type: FMIRType,
     pub body: FMIRNodeBody,
+    pub source_range: Option<FMIRSourceRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FMIRSourceRange {
+    pub start_token: usize,
+    pub end_token: usize,
+}
+
+impl From<&MIRSourceRange> for FMIRSourceRange {
+    fn from(value: &MIRSourceRange) -> Self {
+        Self {
+            start_token: value.start_token,
+            end_token: value.end_token,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -114,7 +131,7 @@ pub enum FMIRNodeBody {
     /// Mark a computation as unsafe - black box to analysis
     /// This is how raw C code enters the system
     UnsafeBlock,
-    
+
     /// _compiler_assert :: CMonad ()
     CompilerAssert {
         condition: FRc<FMIRNode>,
@@ -180,7 +197,7 @@ pub enum FMIRNodeBody {
         condition: FRc<FMIRNode>,
         body: FRc<FMIRNode>,
     },
-    
+
     /// _creturn :: a -> CMonad a
     // /
     /// Early returns may seem counter to pure functional semantics, however you can think of them
@@ -191,7 +208,7 @@ pub enum FMIRNodeBody {
     CReturn {
         value: FRc<FMIRNode>,
     },
-    
+
     VariableAlias {
         name: String,
     },
@@ -243,7 +260,7 @@ impl FMIRType {
             FMIRType::Pure { .. } | FMIRType::Mapping { .. } => None,
         }
     }
-    
+
     pub fn identity(&self) -> MonadicState {
         match self.get_operation() {
             Some(operation) => MonadicState::Operation(operation.clone()),
@@ -257,7 +274,7 @@ impl FMIRType {
         match (self.get_operation(), other.get_operation()) {
             (Some(left), Some(right)) => MonadicState::Operation(left.union(right)),
             (None, None) => MonadicState::Pure,
-            
+
             (Some(other), None) | (None, Some(other)) => MonadicState::Operation(other.clone()),
         }
     }
@@ -269,6 +286,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::pure(MIRType::unit()),
             body: FMIRNodeBody::Unit,
+            source_range: None,
         }
     }
 
@@ -277,6 +295,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
             body: FMIRNodeBody::CLoop { condition, body },
+            source_range: None,
         }
     }
 
@@ -293,6 +312,7 @@ impl FMIRNode {
                 then_branch,
                 else_branch: else_branch.unwrap_or(Rc::new(FMIRNode::unit())),
             },
+            source_range: None,
         }
     }
 }
@@ -301,18 +321,21 @@ impl MonadicState {
     pub fn apply(self, _type: FMIRType) -> FMIRType {
         match self {
             MonadicState::Pure => _type,
-            MonadicState::Operation(operation) => FMIRType::CMonad { inner: Box::new(_type), operation },
+            MonadicState::Operation(operation) => FMIRType::CMonad {
+                inner: Box::new(_type),
+                operation,
+            },
         }
     }
-    
+
     pub fn union(self, other: &FMIRType) -> MonadicState {
         match (self, other.identity()) {
             (MonadicState::Pure, MonadicState::Pure) => MonadicState::Pure,
-            (MonadicState::Operation(e), MonadicState::Pure) |
-            (MonadicState::Pure, MonadicState::Operation(e)) => MonadicState::Operation(e),
+            (MonadicState::Operation(e), MonadicState::Pure)
+            | (MonadicState::Pure, MonadicState::Operation(e)) => MonadicState::Operation(e),
             (MonadicState::Operation(left), MonadicState::Operation(right)) => {
                 MonadicState::Operation(left.union(&right))
-            },
+            }
         }
     }
 }

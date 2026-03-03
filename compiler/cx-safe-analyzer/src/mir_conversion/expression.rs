@@ -5,8 +5,10 @@ use cx_mir::mir::{
     },
     types::{MIRType, MIRTypeKind},
 };
-use cx_safe_ir::ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRType, FRc, MemoryLocation};
-use cx_util::{identifier::CXIdent, CXError, CXResult};
+use cx_safe_ir::ast::{
+    CVMOperation, FMIRNode, FMIRNodeBody, FMIRSourceRange, FMIRType, FRc, MemoryLocation,
+};
+use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use crate::mir_conversion::environment::FMIREnvironment;
 
@@ -19,6 +21,7 @@ fn monad_unit(operation: CVMOperation) -> FMIRType {
 
 fn pointer_alias(name: &CXIdent, pointer_type: MIRType) -> FMIRNode {
     FMIRNode {
+        source_range: None,
         body: FMIRNodeBody::VariableAlias {
             name: name.as_string(),
         },
@@ -28,6 +31,7 @@ fn pointer_alias(name: &CXIdent, pointer_type: MIRType) -> FMIRNode {
 
 fn operator_alias(name: String) -> FMIRNode {
     FMIRNode {
+        source_range: None,
         body: FMIRNodeBody::VariableAlias { name },
         _type: FMIRType::pure(MIRType::internal_function()),
     }
@@ -36,6 +40,7 @@ fn operator_alias(name: String) -> FMIRNode {
 fn then_node(first: FMIRNode, second: FMIRNode) -> FMIRNode {
     let combined = first._type.union(&second._type);
     FMIRNode {
+        source_range: None,
         _type: combined.apply(second._type.inner_type().clone()),
         body: FMIRNodeBody::Then {
             first: FRc::new(first),
@@ -182,6 +187,7 @@ fn coercion_name(coercion: &MIRCoercion) -> String {
 
 fn app1(op_name: String, arg: FMIRNode, output_type: &MIRType) -> FMIRNode {
     FMIRNode {
+        source_range: None,
         _type: FMIRType::pure(output_type.clone()),
         body: FMIRNodeBody::Application {
             function: FRc::new(operator_alias(op_name)),
@@ -192,9 +198,11 @@ fn app1(op_name: String, arg: FMIRNode, output_type: &MIRType) -> FMIRNode {
 
 fn app2(op_name: String, lhs: FMIRNode, rhs: FMIRNode, output_type: &MIRType) -> FMIRNode {
     FMIRNode {
+        source_range: None,
         _type: FMIRType::pure(output_type.clone()),
         body: FMIRNodeBody::Application {
             function: FRc::new(FMIRNode {
+                source_range: None,
                 _type: FMIRType::pure(MIRType::internal_function()),
                 body: FMIRNodeBody::Application {
                     function: FRc::new(operator_alias(op_name)),
@@ -214,14 +222,27 @@ fn unsupported_expression_error(env: &FMIREnvironment, expr: &MIRExpression) -> 
     ))
 }
 
-pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -> CXResult<FMIRNode> {
-    match &mir_expr.kind {
+fn with_expression_range(mut node: FMIRNode, mir_expr: &MIRExpression) -> FMIRNode {
+    if node.source_range.is_none() {
+        node.source_range = mir_expr.source_range.as_ref().map(FMIRSourceRange::from);
+    }
+
+    node
+}
+
+pub fn convert_expression(
+    env: &mut FMIREnvironment,
+    mir_expr: &MIRExpression,
+) -> CXResult<FMIRNode> {
+    let node = match &mir_expr.kind {
         MIRExpressionKind::BoolLiteral(value) => Ok(FMIRNode {
+            source_range: None,
             body: FMIRNodeBody::BooleanLiteral(*value),
             _type: FMIRType::pure(MIRType::bool()),
         }),
 
         MIRExpressionKind::IntLiteral(value, itype, signed) => Ok(FMIRNode {
+            source_range: None,
             body: FMIRNodeBody::IntegerLiteral(*value),
             _type: FMIRType::Pure {
                 mir_type: MIRType::from(MIRTypeKind::Integer {
@@ -232,6 +253,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
         }),
 
         MIRExpressionKind::FloatLiteral(value, ftype) => Ok(FMIRNode {
+            source_range: None,
             body: FMIRNodeBody::FloatLiteral(value.into()),
             _type: FMIRType::Pure {
                 mir_type: MIRTypeKind::Float { _type: *ftype }.into(),
@@ -239,6 +261,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
         }),
 
         MIRExpressionKind::Null => Ok(FMIRNode {
+            source_range: None,
             body: FMIRNodeBody::IntegerLiteral(0),
             _type: FMIRType::pure(mir_expr._type.clone()),
         }),
@@ -293,6 +316,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             }
 
             let allocation = FMIRNode {
+                source_range: None,
                 body: FMIRNodeBody::Alloca,
                 _type: FMIRType::CMonad {
                     inner: Box::new(FMIRType::pure(mir_expr._type.clone())),
@@ -311,6 +335,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             };
 
             let store = FMIRNode {
+                source_range: None,
                 body: FMIRNodeBody::Store {
                     pointer: FRc::new(pointer),
                     value: FRc::new(initial_value.clone()),
@@ -340,6 +365,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 .union(&else_node_value._type);
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: effect.apply(then_node_value._type.inner_type().clone()),
                 body: FMIRNodeBody::If {
                     condition: FRc::new(condition_node),
@@ -359,6 +385,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
 
             let loop_effect = condition_node._type.union(&body_node._type);
             let loop_node = FMIRNode {
+                source_range: None,
                 _type: loop_effect.clone().apply(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CLoop {
                     condition: FRc::new(condition_node.clone()),
@@ -386,6 +413,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
 
             let loop_body = then_node(body_node, increment_node);
             let loop_node = FMIRNode {
+                source_range: None,
                 _type: condition_node
                     ._type
                     .union(&loop_body._type)
@@ -407,6 +435,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 .unwrap_or_else(FMIRNode::unit);
 
             let return_node = FMIRNode {
+                source_range: None,
                 _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CReturn {
                     value: FRc::new(return_value.clone()),
@@ -428,6 +457,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                     depth: 0,
                 },
                 Some(FMIRNode {
+                    source_range: None,
                     _type: return_value._type.inner_type().clone(),
                     body: return_value.body.clone(),
                 }),
@@ -436,10 +466,11 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             env.pop_scope();
 
             let assert_node = FMIRNode {
+                source_range: mir_expr.source_range.as_ref().map(FMIRSourceRange::from),
                 _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CompilerAssert {
                     condition: FRc::new(postcondition_node),
-                    message: "postcondition failed".to_string(),
+                    message: format!("postcondition failed:{}", ret_binding),
                 },
             };
 
@@ -454,6 +485,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             }
 
             Ok(FMIRNode {
+                source_range: None,
                 body: FMIRNodeBody::VariableAlias {
                     name: name.as_string(),
                 },
@@ -470,6 +502,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             };
 
             Ok(FMIRNode {
+                source_range: None,
                 body: FMIRNodeBody::VariableAlias {
                     name: function_name.as_string(),
                 },
@@ -480,10 +513,16 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
         MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             let lhs_node = convert_expression(env, lhs)?;
             let rhs_node = convert_expression(env, rhs)?;
-            let result = app2(binary_op_name(op), lhs_node.clone(), rhs_node.clone(), &mir_expr._type);
+            let result = app2(
+                binary_op_name(op),
+                lhs_node.clone(),
+                rhs_node.clone(),
+                &mir_expr._type,
+            );
             let effect = lhs_node._type.union(&rhs_node._type);
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
                 body: result.body,
             })
@@ -495,6 +534,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             let effect = operand_node._type.identity();
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
                 body: result.body,
             })
@@ -511,7 +551,10 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                             vec![location],
                             vec![],
                         );
-                        known._type = known._type.union(&access).apply(known._type.inner_type().clone());
+                        known._type = known
+                            ._type
+                            .union(&access)
+                            .apply(known._type.inner_type().clone());
                     }
 
                     return Ok(known);
@@ -543,6 +586,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 .apply(FMIRType::pure(mir_expr._type.clone()));
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: combined,
                 body: FMIRNodeBody::Load {
                     pointer: FRc::new(source_node),
@@ -582,6 +626,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 .apply(FMIRType::pure(MIRType::unit()));
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: combined,
                 body: FMIRNodeBody::Store {
                     pointer: FRc::new(target_node),
@@ -608,6 +653,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             for argument in argument_nodes {
                 effect = effect.union(&argument._type);
                 application = FMIRNode {
+                    source_range: None,
                     _type: FMIRType::pure(MIRType::internal_function()),
                     body: FMIRNodeBody::Application {
                         function: FRc::new(application),
@@ -616,9 +662,12 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
                 };
             }
 
-            effect = effect.union(&FMIRType::unsafe_effect(FMIRType::pure(mir_expr._type.clone())));
+            effect = effect.union(&FMIRType::unsafe_effect(FMIRType::pure(
+                mir_expr._type.clone(),
+            )));
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
                 body: application.body,
             })
@@ -629,10 +678,15 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
             conversion,
         } => {
             let operand_node = convert_expression(env, operand)?;
-            let converted = app1(coercion_name(conversion), operand_node.clone(), &mir_expr._type);
+            let converted = app1(
+                coercion_name(conversion),
+                operand_node.clone(),
+                &mir_expr._type,
+            );
             let effect = operand_node._type.identity();
 
             Ok(FMIRNode {
+                source_range: None,
                 _type: effect.apply(FMIRType::pure(mir_expr._type.clone())),
                 body: converted.body,
             })
@@ -643,5 +697,7 @@ pub fn convert_expression(env: &mut FMIREnvironment, mir_expr: &MIRExpression) -
         }
 
         _ => unsupported_expression_error(env, mir_expr),
-    }
+    }?;
+
+    Ok(with_expression_range(node, mir_expr))
 }

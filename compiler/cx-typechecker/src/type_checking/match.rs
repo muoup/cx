@@ -61,6 +61,7 @@ pub fn typecheck_switch(
         };
 
         let pattern_expr = MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::IntLiteral(*case_value as i64, *_type, *signed),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
@@ -124,6 +125,7 @@ pub fn typecheck_match(
 
         if !expr_type.is_memory_resident() {
             expr_value = MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::MemoryRead {
                     source: Box::new(expr_value),
                 },
@@ -162,6 +164,7 @@ pub fn typecheck_match(
                 // Create a pattern expression that matches this value
                 // Use the condition's integer type for the pattern
                 let pattern_expr = MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::IntLiteral(*pattern_value, *_type, *signed),
                     _type: MIRType::from(MIRTypeKind::Integer {
                         signed: *signed,
@@ -219,6 +222,7 @@ pub fn typecheck_match(
 
                 // Create a pattern that matches the tag value
                 let pattern_expr = MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::IntLiteral(
                         variant_id as i64,
                         MIRIntegerType::I8,
@@ -256,8 +260,8 @@ pub fn typecheck_match(
             }
 
             result_arms
-        },
-        
+        }
+
         _ => {
             return log_typecheck_error!(
                 env,
@@ -265,7 +269,7 @@ pub fn typecheck_match(
                 "Match condition must be an integer or tagged union type, found {}",
                 expr_type
             );
-        },
+        }
     };
 
     // Handle default case

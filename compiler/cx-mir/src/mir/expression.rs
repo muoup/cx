@@ -14,6 +14,13 @@ pub struct MIRFunctionContract {
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
+    pub source_range: Option<MIRSourceRange>,
+}
+
+#[derive(Clone, Debug, Default, Readable, Writable)]
+pub struct MIRSourceRange {
+    pub start_token: usize,
+    pub end_token: usize,
 }
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -375,6 +382,7 @@ impl MIRExpression {
                 visibility: Default::default(),
                 specifiers: 0,
             },
+            source_range: None,
         }
     }
 }

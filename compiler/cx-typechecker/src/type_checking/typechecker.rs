@@ -8,7 +8,7 @@ use crate::type_checking::binary_ops::{
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_ast::data::{CX_CONST, CXLinkageMode};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRSourceRange, MIRUnOp};
 use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
 use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
@@ -41,7 +41,7 @@ pub fn typecheck_expr_inner(
     expr: &CXExpr,
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
-    Ok(match &expr.kind {
+    let mut result = match &expr.kind {
         CXExprKind::Block { exprs } => {
             let block = exprs
                 .iter()
@@ -49,12 +49,14 @@ pub fn typecheck_expr_inner(
                 .collect::<CXResult<Vec<_>>>()?;
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Block { statements: block },
                 _type: MIRType::unit(),
             })
         }
 
         CXExprKind::IntLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::IntLiteral(
                 *val,
                 MIRIntegerType::from_bytes(*bytes).unwrap(),
@@ -67,6 +69,7 @@ pub fn typecheck_expr_inner(
         }),
 
         CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::FloatLiteral(*val, MIRFloatType::from_bytes(*bytes).unwrap()),
             _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Float {
                 _type: MIRFloatType::from_bytes(*bytes).unwrap(),
@@ -97,6 +100,7 @@ pub fn typecheck_expr_inner(
                 .add_specifier(CX_CONST);
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Variable(name_ident),
                 _type: char_type,
             })
@@ -121,6 +125,7 @@ pub fn typecheck_expr_inner(
             };
 
             let allocation = MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::CreateStackVariable {
                     name: Some(name.clone()),
                     _type: _type.clone(),
@@ -132,6 +137,7 @@ pub fn typecheck_expr_inner(
             env.insert_symbol(
                 name.as_string(),
                 MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::Variable(name.clone()),
                     _type: mem_type,
                 },
@@ -146,6 +152,7 @@ pub fn typecheck_expr_inner(
             } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
             {
                 TypecheckResult::expr2(MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::FunctionReference {
                         implicit_variables: vec![],
                     },
@@ -171,6 +178,7 @@ pub fn typecheck_expr_inner(
                 env.get_standard_function(base_data, expr, name, Some(template_input))?;
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::FunctionReference {
                     implicit_variables: vec![],
                 },
@@ -199,6 +207,7 @@ pub fn typecheck_expr_inner(
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result),
@@ -222,6 +231,7 @@ pub fn typecheck_expr_inner(
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::While {
                     condition: Box::new(condition_result),
                     body: Box::new(body_result.expression),
@@ -249,6 +259,7 @@ pub fn typecheck_expr_inner(
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::For {
                     init: Box::new(init_result),
                     condition: Box::new(condition_result),
@@ -273,6 +284,7 @@ pub fn typecheck_expr_inner(
             };
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Break {
                     scope_depth: scope_idx,
                 },
@@ -294,6 +306,7 @@ pub fn typecheck_expr_inner(
             };
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Continue {
                     scope_depth: scope_idx,
                 },
@@ -516,6 +529,7 @@ pub fn typecheck_expr_inner(
 
                     // AddressOf just returns the operand (which is a reference) as a pointer
                     TypecheckResult::expr2(MIRExpression {
+                        source_range: None,
                         kind: operand_val.into_expression().kind,
                         _type: inner.clone().pointer_to(),
                     })
@@ -538,6 +552,7 @@ pub fn typecheck_expr_inner(
 
                     // Dereference returns a memory reference to the inner type
                     TypecheckResult::expr2(MIRExpression {
+                        source_range: None,
                         kind: MIRExpressionKind::Typechange(Box::new(loaded_operand)),
                         _type: inner.mem_ref_to(),
                     })
@@ -720,6 +735,7 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Unit => TypecheckResult::expr2(MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::Unit,
             _type: cx_mir::mir::types::MIRType::unit(),
         }),
@@ -729,6 +745,7 @@ pub fn typecheck_expr_inner(
             let tc_type = tc_expr.get_type();
 
             TypecheckResult::expr2(MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::IntLiteral(
                     tc_type.type_size() as i64,
                     MIRIntegerType::I64,
@@ -764,7 +781,16 @@ pub fn typecheck_expr_inner(
         CXExprKind::Taken => {
             unreachable!("Taken expressions should not be present in the typechecker")
         }
-    })
+    };
+
+    if result.expression.source_range.is_none() {
+        result.expression.source_range = Some(MIRSourceRange {
+            start_token: expr.start_index,
+            end_token: expr.end_index,
+        });
+    }
+
+    Ok(result)
 }
 
 pub(crate) fn global_expr(
@@ -787,6 +813,7 @@ pub(crate) fn global_expr(
 
     match &module_res.resource {
         CXGlobalVariable::EnumConstant(val) => Ok(MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::IntLiteral(
                 *val as i64,
                 MIRIntegerType::from_bytes(8).unwrap(),
@@ -841,6 +868,7 @@ pub(crate) fn global_expr(
 fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRExpression> {
     match &global.kind {
         MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::Variable(name.clone()),
             _type: _type.clone().mem_ref_to(),
         }),
@@ -851,7 +879,10 @@ fn tcglobal_expr(global: &MIRGlobalVariable) -> CXResult<MIRExpression> {
     }
 }
 
-pub fn add_implicit_return(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<MIRExpression> {
+pub fn add_implicit_return(
+    env: &mut TypeEnvironment,
+    expr: MIRExpression,
+) -> CXResult<MIRExpression> {
     if let MIRExpressionKind::Block { statements } = &expr.kind {
         if let Some(MIRExpression {
             kind: MIRExpressionKind::Return { .. },
@@ -861,11 +892,12 @@ pub fn add_implicit_return(env: &mut TypeEnvironment, expr: MIRExpression) -> CX
             return Ok(expr);
         }
     }
-    
+
     let func = env.current_function().clone();
 
     let implicit_value = if func.name.as_str() == "main" {
         Some(Box::new(MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I32, true),
             _type: MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I32,
@@ -884,11 +916,15 @@ pub fn add_implicit_return(env: &mut TypeEnvironment, expr: MIRExpression) -> CX
     };
 
     Ok(MIRExpression {
+        source_range: None,
         kind: MIRExpressionKind::Block {
             statements: vec![
                 expr,
                 MIRExpression {
-                    kind: MIRExpressionKind::Return { value: implicit_value },
+                    source_range: None,
+                    kind: MIRExpressionKind::Return {
+                        value: implicit_value,
+                    },
                     _type: MIRType::unit(),
                 },
             ],

@@ -1,4 +1,6 @@
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRBinOp, MIRUnOp, MIRCoercion, MIRFunctionContract};
+use cx_mir::mir::expression::{
+    MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRUnOp,
+};
 use cx_mir::mir::types::{MIRIntegerType, MIRType, MIRTypeKind};
 
 /// Result of typechecking an expression/statement
@@ -15,19 +17,22 @@ impl TypecheckResult {
 
     pub fn expr(_type: MIRType, kind: MIRExpressionKind) -> Self {
         Self {
-            expression: MIRExpression { kind, _type },
+            expression: MIRExpression {
+                source_range: None,
+                kind,
+                _type,
+            },
         }
     }
 
     pub fn chain(self, other: TypecheckResult) -> TypecheckResult {
-        TypecheckResult::expr2(
-            MIRExpression {
-                kind: MIRExpressionKind::Block {
-                    statements: vec![self.expression, other.expression],
-                },
-                _type: MIRType::unit()
+        TypecheckResult::expr2(MIRExpression {
+            source_range: None,
+            kind: MIRExpressionKind::Block {
+                statements: vec![self.expression, other.expression],
             },
-        )
+            _type: MIRType::unit(),
+        })
     }
 
     /// Get the type of this typecheck result's expression
@@ -62,6 +67,7 @@ impl TypecheckResult {
     {
         TypecheckResult {
             expression: MIRExpression {
+                source_range: None,
                 kind: f(self.expression.kind),
                 _type: self.expression._type,
             },
@@ -76,18 +82,23 @@ impl TypecheckResult {
                 lhs: Box::new(lhs.expression),
                 rhs: Box::new(rhs.expression),
                 op,
-            }
+            },
         )
     }
 
-    pub fn binary_op_raw(lhs: MIRExpression, rhs: MIRExpression, op: MIRBinOp, result_type: MIRType) -> Self {
+    pub fn binary_op_raw(
+        lhs: MIRExpression,
+        rhs: MIRExpression,
+        op: MIRBinOp,
+        result_type: MIRType,
+    ) -> Self {
         TypecheckResult::expr(
             result_type,
             MIRExpressionKind::BinaryOperation {
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
                 op,
-            }
+            },
         )
     }
 
@@ -98,7 +109,7 @@ impl TypecheckResult {
             MIRExpressionKind::UnaryOperation {
                 operand: Box::new(operand.expression),
                 op,
-            }
+            },
         )
     }
 
@@ -109,7 +120,7 @@ impl TypecheckResult {
             MIRExpressionKind::TypeConversion {
                 operand: Box::new(operand.expression),
                 conversion,
-            }
+            },
         )
     }
 
@@ -118,8 +129,8 @@ impl TypecheckResult {
         TypecheckResult::expr(
             _type.clone(),
             MIRExpressionKind::MemoryRead {
-                source: Box::new(source.expression)
-            }
+                source: Box::new(source.expression),
+            },
         )
     }
 
@@ -129,7 +140,7 @@ impl TypecheckResult {
             MIRExpressionKind::MemoryWrite {
                 target: Box::new(target.expression),
                 value: Box::new(value.expression),
-            }
+            },
         )
     }
 
@@ -139,29 +150,39 @@ impl TypecheckResult {
             MIRExpressionKind::CopyRegion {
                 source: Box::new(source.expression),
                 _type,
-            }
+            },
         )
     }
 
-    pub fn array_access(array: Self, index: Self, element_type: MIRType, result_type: MIRType) -> Self {
+    pub fn array_access(
+        array: Self,
+        index: Self,
+        element_type: MIRType,
+        result_type: MIRType,
+    ) -> Self {
         TypecheckResult::expr(
             result_type,
             MIRExpressionKind::ArrayAccess {
                 array: Box::new(array.expression),
                 index: Box::new(index.expression),
                 element_type,
-            }
+            },
         )
     }
 
     // Function calls
-    pub fn call_function(function: Self, arguments: Vec<Self>, result_type: MIRType, _contract: MIRFunctionContract) -> Self {
+    pub fn call_function(
+        function: Self,
+        arguments: Vec<Self>,
+        result_type: MIRType,
+        _contract: MIRFunctionContract,
+    ) -> Self {
         TypecheckResult::expr(
             result_type,
             MIRExpressionKind::CallFunction {
                 function: Box::new(function.expression),
                 arguments: arguments.into_iter().map(|a| a.expression).collect(),
-            }
+            },
         )
     }
 
@@ -171,11 +192,12 @@ impl TypecheckResult {
             MIRTypeKind::Integer {
                 _type: MIRIntegerType::I8,
                 signed: false,
-            }.into(),
+            }
+            .into(),
             MIRExpressionKind::TaggedUnionTag {
                 value: Box::new(value.expression),
                 sum_type,
-            }
+            },
         )
     }
 
@@ -185,7 +207,7 @@ impl TypecheckResult {
             MIRExpressionKind::TaggedUnionGet {
                 value: Box::new(value.expression),
                 variant_type,
-            }
+            },
         )
     }
 
@@ -196,22 +218,16 @@ impl TypecheckResult {
                 variant_index,
                 value: Box::new(value.expression),
                 sum_type,
-            }
+            },
         )
     }
 
     // Control flow
     pub fn break_expr(scope_depth: usize) -> Self {
-        TypecheckResult::expr(
-            MIRType::unit(),
-            MIRExpressionKind::Break { scope_depth },
-        )
+        TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Break { scope_depth })
     }
 
     pub fn continue_expr(scope_depth: usize) -> Self {
-        TypecheckResult::expr(
-            MIRType::unit(),
-            MIRExpressionKind::Continue { scope_depth },
-        )
+        TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Continue { scope_depth })
     }
 }

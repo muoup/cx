@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
-use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRNodeBody};
-use cx_util::{CXError, CXResult};
+use cx_mir::mir::types::{MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
+use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRNodeBody, FMIRSourceRange};
+use cx_util::{CXError, CXErrorTrait, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
 
@@ -14,6 +16,24 @@ pub type FMIRAnalysisPass<'a> = &'a dyn Fn(&FMIRContext, FMIRFunction) -> CXResu
 pub struct FMIRContext {
     env: FMIREnvironment,
     functions: HashMap<String, FMIRFunction>,
+}
+
+struct FMIRAnalysisError {
+    message: String,
+    compilation_unit: PathBuf,
+    token_start: usize,
+    token_end: usize,
+}
+
+impl CXErrorTrait for FMIRAnalysisError {
+    fn pretty_print(&self) {
+        cx_log::pretty_underline_error(
+            &self.message,
+            &self.compilation_unit,
+            self.token_start,
+            self.token_end,
+        );
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -64,9 +84,9 @@ impl FMIRContext {
         Ok(())
     }
 
-    pub fn apply_standard_analysis_passes(&mut self) -> CXResult<()> {
-        for (name, function) in self.functions.iter() {
-            assert_proven_conditions(name, &function.body)?;
+    pub fn apply_standard_analysis_passes(&mut self, compilation_unit: &Path) -> CXResult<()> {
+        for function in self.functions.values() {
+            assert_proven_conditions(&function.prototype, &function.body, compilation_unit)?;
         }
 
         Ok(())
@@ -158,7 +178,9 @@ fn eval_float_binary_operator(suffix: &str, left: f64, right: f64) -> Option<Con
 }
 
 fn eval_binary_operator(name: &str, left: ConstValue, right: ConstValue) -> Option<ConstValue> {
-    if let Some(suffix) = name.strip_prefix("__op_i").and_then(|s| s.split_once('_').map(|v| v.1))
+    if let Some(suffix) = name
+        .strip_prefix("__op_i")
+        .and_then(|s| s.split_once('_').map(|v| v.1))
     {
         let left = match left {
             ConstValue::Int(value) => value,
@@ -173,7 +195,9 @@ fn eval_binary_operator(name: &str, left: ConstValue, right: ConstValue) -> Opti
         return eval_int_binary_operator(suffix, left, right);
     }
 
-    if let Some(suffix) = name.strip_prefix("__op_f").and_then(|s| s.split_once('_').map(|v| v.1))
+    if let Some(suffix) = name
+        .strip_prefix("__op_f")
+        .and_then(|s| s.split_once('_').map(|v| v.1))
     {
         let left = match left {
             ConstValue::Float(value) => value,
@@ -274,20 +298,147 @@ fn evaluate_const(
     }
 }
 
-fn assert_proven_conditions(function_name: &str, node: &FMIRNode) -> CXResult<()> {
+fn assert_proven_conditions(
+    function_prototype: &MIRFunctionPrototype,
+    node: &FMIRNode,
+    compilation_unit: &Path,
+) -> CXResult<()> {
+    let file_contents = std::fs::read_to_string(compilation_unit).ok();
+    let file_tokens = file_contents.as_deref().and_then(cx_lexer::lex);
+
+    let source_text_for_range = |range: &FMIRSourceRange| -> Option<String> {
+        let file_contents = file_contents.as_ref()?;
+        let tokens = file_tokens.as_ref()?;
+
+        let start_token = tokens.get(range.start_token)?;
+        let end_token = tokens.get(range.end_token.saturating_sub(1))?;
+        if start_token.file_origin != end_token.file_origin {
+            return None;
+        }
+
+        let source_slice = file_contents
+            .get(start_token.start_index..end_token.end_index)?
+            .trim();
+        Some(source_slice.to_string())
+    };
+
+    let format_human_readable_type = |mir_type: &MIRType| -> String {
+        match &mir_type.kind {
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I1,
+                signed: false,
+            } => "bool".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I8,
+                signed: true,
+            } => "char".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I8,
+                signed: false,
+            } => "unsigned char".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I16,
+                signed: true,
+            } => "short".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I16,
+                signed: false,
+            } => "unsigned short".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I32,
+                signed: true,
+            } => "int".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I32,
+                signed: false,
+            } => "unsigned int".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I64,
+                signed: true,
+            } => "long".to_string(),
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I64,
+                signed: false,
+            } => "unsigned long".to_string(),
+            _ => format!("{mir_type}"),
+        }
+    };
+
+    let format_function_signature = |prototype: &MIRFunctionPrototype| {
+        let mut signature = format!(
+            "{} {}(",
+            format_human_readable_type(&prototype.return_type),
+            prototype.name
+        );
+
+        for (index, param) in prototype.params.iter().enumerate() {
+            if index > 0 {
+                signature.push_str(", ");
+            }
+
+            if let Some(name) = &param.name {
+                signature.push_str(format!("{} {}", format_human_readable_type(&param._type), name).as_str());
+            } else {
+                signature.push_str(format_human_readable_type(&param._type).as_str());
+            }
+        }
+
+        if prototype.var_args {
+            if !prototype.params.is_empty() {
+                signature.push_str(", ");
+            }
+            signature.push_str("...");
+        }
+
+        signature.push(')');
+        signature
+    };
+
+    let fail_proven_false = |message: &str, condition: &FMIRNode| {
+        let resolved_message = if let Some(ret_name) = message.strip_prefix("postcondition failed:")
+        {
+            let post_condition_expr = condition
+                .source_range
+                .as_ref()
+                .and_then(source_text_for_range)
+                .unwrap_or_else(|| "<unknown post-condition expression>".to_string());
+            format!(
+                "In function `{}`, contract condition\n   post({}): ({})\n\nwill never be true at return site",
+                format_function_signature(function_prototype),
+                ret_name,
+                post_condition_expr
+            )
+        } else {
+            format!(
+                "FMIR analysis error in safe function '{}': {} (condition proven false)",
+                function_prototype.name, message
+            )
+        };
+
+        if let Some(range) = node
+            .source_range
+            .as_ref()
+            .or(condition.source_range.as_ref())
+            .cloned()
+        {
+            return Err(Box::new(FMIRAnalysisError {
+                message: resolved_message,
+                compilation_unit: compilation_unit.to_path_buf(),
+                token_start: range.start_token,
+                token_end: range.end_token,
+            }) as Box<dyn CXErrorTrait>);
+        }
+
+        CXError::create_result(resolved_message)
+    };
+
     if let FMIRNodeBody::CompilerAssert { condition, message } = &node.body {
         match evaluate_const(condition, &HashMap::new()) {
             Some(ConstValue::Bool(false)) => {
-                return CXError::create_result(format!(
-                    "FMIR analysis error in safe function '{}': {} (condition proven false)",
-                    function_name, message
-                ));
+                return fail_proven_false(message, condition);
             }
             Some(ConstValue::Int(0)) => {
-                return CXError::create_result(format!(
-                    "FMIR analysis error in safe function '{}': {} (condition proven false)",
-                    function_name, message
-                ));
+                return fail_proven_false(message, condition);
             }
             _ => {}
         }
@@ -295,44 +446,44 @@ fn assert_proven_conditions(function_name: &str, node: &FMIRNode) -> CXResult<()
 
     match &node.body {
         FMIRNodeBody::Application { function, argument } => {
-            assert_proven_conditions(function_name, function)?;
-            assert_proven_conditions(function_name, argument)?;
+            assert_proven_conditions(function_prototype, function, compilation_unit)?;
+            assert_proven_conditions(function_prototype, argument, compilation_unit)?;
         }
         FMIRNodeBody::CompilerAssert { condition, .. } => {
-            assert_proven_conditions(function_name, condition)?;
+            assert_proven_conditions(function_prototype, condition, compilation_unit)?;
         }
         FMIRNodeBody::Bind {
             monad, function, ..
         } => {
-            assert_proven_conditions(function_name, monad)?;
-            assert_proven_conditions(function_name, function)?;
+            assert_proven_conditions(function_prototype, monad, compilation_unit)?;
+            assert_proven_conditions(function_prototype, function, compilation_unit)?;
         }
         FMIRNodeBody::Then { first, second } => {
-            assert_proven_conditions(function_name, first)?;
-            assert_proven_conditions(function_name, second)?;
+            assert_proven_conditions(function_prototype, first, compilation_unit)?;
+            assert_proven_conditions(function_prototype, second, compilation_unit)?;
         }
         FMIRNodeBody::Load { pointer } => {
-            assert_proven_conditions(function_name, pointer)?;
+            assert_proven_conditions(function_prototype, pointer, compilation_unit)?;
         }
         FMIRNodeBody::Store { pointer, value } => {
-            assert_proven_conditions(function_name, pointer)?;
-            assert_proven_conditions(function_name, value)?;
+            assert_proven_conditions(function_prototype, pointer, compilation_unit)?;
+            assert_proven_conditions(function_prototype, value, compilation_unit)?;
         }
         FMIRNodeBody::If {
             condition,
             then_branch,
             else_branch,
         } => {
-            assert_proven_conditions(function_name, condition)?;
-            assert_proven_conditions(function_name, then_branch)?;
-            assert_proven_conditions(function_name, else_branch)?;
+            assert_proven_conditions(function_prototype, condition, compilation_unit)?;
+            assert_proven_conditions(function_prototype, then_branch, compilation_unit)?;
+            assert_proven_conditions(function_prototype, else_branch, compilation_unit)?;
         }
         FMIRNodeBody::CLoop { condition, body } => {
-            assert_proven_conditions(function_name, condition)?;
-            assert_proven_conditions(function_name, body)?;
+            assert_proven_conditions(function_prototype, condition, compilation_unit)?;
+            assert_proven_conditions(function_prototype, body, compilation_unit)?;
         }
         FMIRNodeBody::CReturn { value } => {
-            assert_proven_conditions(function_name, value)?;
+            assert_proven_conditions(function_prototype, value, compilation_unit)?;
         }
         FMIRNodeBody::DeclareAccess { .. }
         | FMIRNodeBody::Pure
