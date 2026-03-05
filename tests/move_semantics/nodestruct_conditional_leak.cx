@@ -1,4 +1,4 @@
-struct Resource nodestruct {
+struct Resource nodrop {
     int data;
 };
 

@@ -597,8 +597,8 @@ impl Display for MIRTypeKind {
                         .map(|n| n.to_string())
                         .unwrap_or_else(|| "".to_string()),
                     if attributes.nocopy { " nocopy" } else { "" },
-                    if attributes.nodestruct {
-                        " nodestruct"
+                    if attributes.nodrop {
+                        " nodrop"
                     } else {
                         ""
                     }

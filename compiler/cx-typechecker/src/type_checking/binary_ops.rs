@@ -1237,7 +1237,7 @@ pub(crate) fn typecheck_contract(
         None
     };
 
-    env.pop_scope();
+    env.pop_scope()?;
     env.safe_mode = previous_safe_mode;
     env.contract_pure_mode = previous_contract_pure_mode;
     env.unsafe_depth = previous_unsafe_depth;

@@ -6,7 +6,7 @@ struct opt_ref<T> nocopy {
     T* data;
 };
 
-struct resource nodestruct {
+struct resource nodrop {
     int value;
 };
 

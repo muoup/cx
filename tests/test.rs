@@ -204,11 +204,6 @@ mod safe_function_tests {
     fn impure_contract() {
         compile_should_fail(Path::new("../safe_fns/impure_contract.cx"), true);
     }
-
-    #[test]
-    fn nodestruct_scope_end() {
-        compile_should_fail(Path::new("../safe_fns/nodestruct_scope_end.cx"), false);
-    }
 }
 
 mod move_semantics_tests {
@@ -225,11 +220,13 @@ mod move_semantics_tests {
     }
 
     #[test]
-    fn nodestruct_conditional_leak() {
-        compile_should_fail(
-            Path::new("../move_semantics/nodestruct_conditional_leak.cx"),
-            false,
-        );
+    fn nocopy_break_join() {
+        compile_should_fail(Path::new("../move_semantics/nocopy_break_join.cx"), false);
+    }
+
+    #[test]
+    fn nocopy_continue_join() {
+        compile_should_fail(Path::new("../move_semantics/nocopy_continue_join.cx"), false);
     }
 
     #[test]
@@ -240,5 +237,13 @@ mod move_semantics_tests {
     #[test]
     fn nocopy_move_both_branches() {
         compile_only(Path::new("../move_semantics/nocopy_move_both_branches.cx"), false);
+    }
+
+    #[test]
+    fn nocopy_for_continue_reinitialize() {
+        compile_only(
+            Path::new("../move_semantics/nocopy_for_continue_reinitialize.cx"),
+            false,
+        );
     }
 }

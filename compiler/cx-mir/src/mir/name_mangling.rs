@@ -66,7 +66,7 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             }
 
             mangled.push(if attributes.nocopy { 'C' } else { 'c' });
-            mangled.push(if attributes.nodestruct { 'D' } else { 'd' });
+            mangled.push(if attributes.nodrop { 'D' } else { 'd' });
 
             mangled.push('f');
             mangled.push_str(&fields.len().to_string());

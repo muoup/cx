@@ -73,7 +73,7 @@ pub enum PredeclarationType {
 #[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXStructAttributes {
     pub nocopy: bool,
-    pub nodestruct: bool,
+    pub nodrop: bool,
 }
 
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, Readable, Writable)]

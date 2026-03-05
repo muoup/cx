@@ -1,4 +1,6 @@
-use crate::environment::{BindingMoveState, TrackedBindingState, TypeEnvironment};
+use crate::environment::{
+    BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
+};
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::binary_ops::{
@@ -13,7 +15,6 @@ use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable}
 use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
-use cx_util::scoped_map::ScopedMap;
 
 fn anonymous_name_gen() -> String {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,27 +27,6 @@ fn anonymous_name_gen() -> String {
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
-
-#[derive(Clone)]
-pub(crate) struct ControlFlowSnapshot {
-    pub(crate) symbol_table: ScopedMap<MIRExpression>,
-    pub(crate) tracked_bindings: ScopedMap<TrackedBindingState>,
-}
-
-pub(crate) fn control_flow_snapshot(env: &TypeEnvironment) -> ControlFlowSnapshot {
-    ControlFlowSnapshot {
-        symbol_table: env.symbol_table.clone(),
-        tracked_bindings: env.tracked_bindings.clone(),
-    }
-}
-
-pub(crate) fn restore_control_flow_snapshot(
-    env: &mut TypeEnvironment,
-    snapshot: &ControlFlowSnapshot,
-) {
-    env.symbol_table = snapshot.symbol_table.clone();
-    env.tracked_bindings = snapshot.tracked_bindings.clone();
-}
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
@@ -84,65 +64,6 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     }
 }
 
-pub(crate) fn join_tracked_bindings(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    base_snapshot: &ControlFlowSnapshot,
-    exit_snapshots: &[ControlFlowSnapshot],
-    join_name: &str,
-) -> CXResult<()> {
-    if exit_snapshots.is_empty() {
-        restore_control_flow_snapshot(env, base_snapshot);
-        return Ok(());
-    }
-
-    restore_control_flow_snapshot(env, base_snapshot);
-
-    let mut inconsistent = Vec::new();
-    for (name, base_binding) in base_snapshot.tracked_bindings.iter() {
-        let mut merged_state = None;
-
-        for snapshot in exit_snapshots {
-            let Some(binding) = snapshot.tracked_bindings.get(name) else {
-                continue;
-            };
-
-            if let Some(existing) = merged_state {
-                if existing != binding.state {
-                    inconsistent.push(name.clone());
-                    merged_state = Some(BindingMoveState::ConditionallyMoved);
-                    break;
-                }
-            } else {
-                merged_state = Some(binding.state);
-            }
-        }
-
-        let Some(merged_state) = merged_state else {
-            continue;
-        };
-
-        env.tracked_bindings.insert(
-            name.clone(),
-            TrackedBindingState {
-                state: merged_state,
-                ..base_binding.clone()
-            },
-        );
-    }
-
-    if inconsistent.is_empty() {
-        return Ok(());
-    }
-
-    log_typecheck_error!(
-        env,
-        expr,
-        " nocopy binding(s) have inconsistent move state at {}: {}",
-        join_name,
-        inconsistent.join(", ")
-    )
-}
 
 fn ensure_binding_available(
     env: &mut TypeEnvironment,
@@ -168,6 +89,86 @@ fn ensure_binding_available(
             name
         ),
     }
+}
+
+fn enqueue_jump_arrow(
+    env: &mut TypeEnvironment,
+    target: &ScopeExitTarget,
+) {
+    let snapshot = env.current_snapshot();
+    env.enqueue_scope_arrow(target, snapshot);
+
+    if env.current_scope_index() == target.target_scope_idx {
+        env.mark_current_scope_unreachable();
+    } else {
+        env.mark_jump_unreachable(target.target_scope_idx);
+    }
+}
+
+pub(crate) fn typecheck_fallthrough_scope(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    target_scope_idx: usize,
+    sink: ScopeArrowSink,
+    label: &str,
+) -> CXResult<MIRExpression> {
+    env.push_scope(false, false);
+    env.set_scope_anchor(expr);
+    env.set_scope_fallthrough_target(ScopeExitTarget {
+        target_scope_idx,
+        sink,
+        label: label.to_string(),
+    });
+    let result = typecheck_expr(env, base_data, expr, None)?.into_expression();
+    env.pop_scope()?;
+    Ok(result)
+}
+
+fn process_for_increment_arrows(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    loop_scope_idx: usize,
+    increment: &CXExpr,
+) -> CXResult<()> {
+    let pending_arrows = env.take_pending_increment_arrows(loop_scope_idx);
+    if pending_arrows.is_empty() {
+        return Ok(());
+    }
+
+    let loop_entry_snapshot = env.loop_entry_snapshot(loop_scope_idx);
+
+    for arrow in pending_arrows {
+        env.restore_snapshot(&arrow.snapshot);
+        if let Some(scope) = env.scope_stack.get_mut(loop_scope_idx) {
+            scope.reachable = true;
+        }
+
+        let _ = typecheck_expr(env, base_data, increment, None)?;
+
+        if env
+            .scope_stack
+            .get(loop_scope_idx)
+            .map(|scope| scope.reachable)
+            .unwrap_or(false)
+        {
+            env.enqueue_scope_arrow(
+                &ScopeExitTarget {
+                    target_scope_idx: loop_scope_idx,
+                    sink: ScopeArrowSink::LoopContinue,
+                    label: arrow.label,
+                },
+                env.current_snapshot(),
+            );
+        }
+    }
+
+    env.restore_snapshot(&loop_entry_snapshot);
+    if let Some(scope) = env.scope_stack.get_mut(loop_scope_idx) {
+        scope.reachable = true;
+    }
+
+    Ok(())
 }
 
 fn type_is_safe_signature(ty: &MIRType) -> bool {
@@ -239,45 +240,6 @@ pub(crate) fn validate_safe_function_signature(
     }
 
     Ok(())
-}
-
-pub(crate) fn assert_scope_nodestruct_discharged(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-) -> CXResult<()> {
-    let live = env
-        .current_scope_nodestruct_bindings()
-        .into_iter()
-        .filter(|(_, binding)| binding.state != BindingMoveState::Moved)
-        .map(|(name, _)| name)
-        .collect::<Vec<_>>();
-    if live.is_empty() {
-        return Ok(());
-    }
-
-    log_typecheck_error!(
-        env,
-        expr,
-        " nodestruct local(s) reach scope end without move or @leak: {}",
-        live.join(", ")
-    )
-}
-
-fn assert_return_nodestruct_discharged(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-) -> CXResult<()> {
-    let live = env.nodestruct_bindings_in_nonfinal_state();
-    if live.is_empty() {
-        return Ok(());
-    }
-
-    log_typecheck_error!(
-        env,
-        expr,
-        " nodestruct binding(s) must be moved or @leak'ed before return: {}",
-        live.join(", ")
-    )
 }
 
 fn validate_safe_contract_expression(
@@ -564,38 +526,41 @@ pub fn typecheck_expr_inner(
         } => {
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
-            let base_snapshot = control_flow_snapshot(env);
+            env.push_scope(false, false);
+            env.configure_merge_scope(expr, "if join", None, false);
+            let join_scope_idx = env.current_scope_index();
 
-            let then_result = typecheck_expr(env, base_data, then_branch, None)?.into_expression();
-            let then_snapshot = control_flow_snapshot(env);
-            let then_reaches_end = expr_may_fall_through(&then_result);
-
-            restore_control_flow_snapshot(env, &base_snapshot);
+            let then_result = typecheck_fallthrough_scope(
+                env,
+                base_data,
+                then_branch,
+                join_scope_idx,
+                ScopeArrowSink::Merge,
+                "then",
+            )?;
 
             let else_result = if let Some(else_branch) = else_branch {
-                let else_result = typecheck_expr(env, base_data, else_branch, None)?.into_expression();
-                let else_snapshot = control_flow_snapshot(env);
-                let else_reaches_end = expr_may_fall_through(&else_result);
-
-                let mut exit_snapshots = Vec::new();
-                if then_reaches_end {
-                    exit_snapshots.push(then_snapshot.clone());
-                }
-                if else_reaches_end {
-                    exit_snapshots.push(else_snapshot);
-                }
-
-                join_tracked_bindings(env, expr, &base_snapshot, &exit_snapshots, "if join")?;
-                Some(else_result)
+                Some(typecheck_fallthrough_scope(
+                    env,
+                    base_data,
+                    else_branch,
+                    join_scope_idx,
+                    ScopeArrowSink::Merge,
+                    "else",
+                )?)
             } else {
-                let mut exit_snapshots = vec![base_snapshot.clone()];
-                if then_reaches_end {
-                    exit_snapshots.push(then_snapshot);
-                }
-
-                join_tracked_bindings(env, expr, &base_snapshot, &exit_snapshots, "if join")?;
+                env.enqueue_scope_arrow(
+                    &ScopeExitTarget {
+                        target_scope_idx: join_scope_idx,
+                        sink: ScopeArrowSink::Merge,
+                        label: "else".to_string(),
+                    },
+                    env.current_snapshot(),
+                );
                 None
             };
+
+            env.pop_scope()?;
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -613,42 +578,36 @@ pub fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            let outer_snapshot = control_flow_snapshot(env);
             env.push_scope(true, true);
+            env.set_scope_anchor(expr);
+            env.configure_loop_scope(expr, LoopScopeKind::While);
+            let loop_scope_idx = env.current_scope_index();
+            env.enqueue_scope_arrow(
+                &ScopeExitTarget {
+                    target_scope_idx: loop_scope_idx,
+                    sink: ScopeArrowSink::LoopExit,
+                    label: "zero iterations".to_string(),
+                },
+                env.current_snapshot(),
+            );
 
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
-            let loop_snapshot = control_flow_snapshot(env);
-            let body_result = typecheck_expr(env, base_data, body, None)?;
-            let body_snapshot = control_flow_snapshot(env);
-            let mut exit_snapshots = vec![loop_snapshot.clone()];
-
-            if expr_may_fall_through(&body_result.expression) {
-                exit_snapshots.push(body_snapshot);
-            }
-
-            join_tracked_bindings(
+            let body_result = typecheck_fallthrough_scope(
                 env,
-                expr,
-                &loop_snapshot,
-                &exit_snapshots,
-                "loop join",
+                base_data,
+                body,
+                loop_scope_idx,
+                ScopeArrowSink::LoopContinue,
+                "loop fallthrough",
             )?;
-            let merged_loop_snapshot = control_flow_snapshot(env);
-            env.pop_scope();
-            restore_control_flow_snapshot(env, &outer_snapshot);
-
-            for (name, _) in outer_snapshot.tracked_bindings.iter() {
-                if let Some(binding) = merged_loop_snapshot.tracked_bindings.get(name) {
-                    env.tracked_bindings.insert(name.clone(), binding.clone());
-                }
-            }
+            env.pop_scope()?;
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
                 kind: MIRExpressionKind::While {
                     condition: Box::new(condition_result),
-                    body: Box::new(body_result.expression),
+                    body: Box::new(body_result),
                     pre_eval: *pre_eval,
                 },
                 _type: cx_mir::mir::types::MIRType::unit(),
@@ -661,39 +620,37 @@ pub fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            let outer_snapshot = control_flow_snapshot(env);
             env.push_scope(true, true);
-
+            env.set_scope_anchor(expr);
             let init_result = typecheck_expr(env, base_data, init, None)?.into_expression();
+            env.configure_loop_scope(expr, LoopScopeKind::For);
+            let loop_scope_idx = env.current_scope_index();
+            env.enqueue_scope_arrow(
+                &ScopeExitTarget {
+                    target_scope_idx: loop_scope_idx,
+                    sink: ScopeArrowSink::LoopExit,
+                    label: "zero iterations".to_string(),
+                },
+                env.current_snapshot(),
+            );
+
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
-            let loop_snapshot = control_flow_snapshot(env);
-            let body_result = typecheck_expr(env, base_data, body, None)?.into_expression();
-            let increment_result =
-                typecheck_expr(env, base_data, increment, None)?.into_expression();
-            let loop_exit_snapshot = control_flow_snapshot(env);
-            let mut exit_snapshots = vec![loop_snapshot.clone()];
-
-            if expr_may_fall_through(&body_result) && expr_may_fall_through(&increment_result) {
-                exit_snapshots.push(loop_exit_snapshot);
-            }
-
-            join_tracked_bindings(
+            let body_result = typecheck_fallthrough_scope(
                 env,
-                expr,
-                &loop_snapshot,
-                &exit_snapshots,
-                "loop join",
+                base_data,
+                body,
+                loop_scope_idx,
+                ScopeArrowSink::LoopPendingIncrement,
+                "loop fallthrough",
             )?;
-            let merged_loop_snapshot = control_flow_snapshot(env);
-            env.pop_scope();
-            restore_control_flow_snapshot(env, &outer_snapshot);
-
-            for (name, _) in outer_snapshot.tracked_bindings.iter() {
-                if let Some(binding) = merged_loop_snapshot.tracked_bindings.get(name) {
-                    env.tracked_bindings.insert(name.clone(), binding.clone());
-                }
+            process_for_increment_arrows(env, base_data, loop_scope_idx, increment)?;
+            let increment_result = typecheck_expr(env, base_data, increment, None)?.into_expression();
+            env.restore_snapshot(&env.loop_entry_snapshot(loop_scope_idx));
+            if let Some(scope) = env.scope_stack.get_mut(loop_scope_idx) {
+                scope.reachable = true;
             }
+            env.pop_scope()?;
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -708,17 +665,21 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Break => {
-            let Some(scope_idx) = env
-                .scope_stack
-                .iter()
-                .rposition(|inner| inner.has_break_merge)
-            else {
+            let Some(scope_idx) = env.nearest_break_scope() else {
                 return log_typecheck_error!(
                     env,
                     expr,
                     " 'break' used outside of a loop or switch context"
                 );
             };
+            enqueue_jump_arrow(
+                env,
+                &ScopeExitTarget {
+                    target_scope_idx: scope_idx,
+                    sink: env.break_arrow_sink(scope_idx),
+                    label: "break".to_string(),
+                },
+            );
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -730,17 +691,21 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Continue => {
-            let Some(scope_idx) = env
-                .scope_stack
-                .iter()
-                .rposition(|inner| inner.has_continue_merge)
-            else {
+            let Some(scope_idx) = env.nearest_continue_scope() else {
                 return log_typecheck_error!(
                     env,
                     expr,
                     " 'continue' used outside of a loop context"
                 );
             };
+            enqueue_jump_arrow(
+                env,
+                &ScopeExitTarget {
+                    target_scope_idx: scope_idx,
+                    sink: env.continue_arrow_sink(scope_idx),
+                    label: "continue".to_string(),
+                },
+            );
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -806,7 +771,14 @@ pub fn typecheck_expr_inner(
                 }
             };
 
-            assert_return_nodestruct_discharged(env, expr)?;
+            enqueue_jump_arrow(
+                env,
+                &ScopeExitTarget {
+                    target_scope_idx: 0,
+                    sink: ScopeArrowSink::Merge,
+                    label: "return".to_string(),
+                },
+            );
             TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Return { value })
         }
 
@@ -850,11 +822,11 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            if !env.is_nodestruct(inner_type) {
+            if !env.is_nodrop(inner_type) {
                 return log_typecheck_error!(
                     env,
                     expr,
-                    " @leak is only valid for nodestruct locals"
+                    " @leak is only valid for nodrop locals"
                 );
             }
 

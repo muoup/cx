@@ -68,13 +68,13 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
     loop {
         match peek_next_kind!(data.tokens) {
-            Ok(keyword!(Nocopy)) => {
+            Ok(keyword!(NoCopy)) => {
                 data.tokens.next();
                 attributes.nocopy = true;
             }
-            Ok(keyword!(Nodestruct)) => {
+            Ok(keyword!(NoDrop)) => {
                 data.tokens.next();
-                attributes.nodestruct = true;
+                attributes.nodrop = true;
             }
             _ => break,
         }

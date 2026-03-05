@@ -148,8 +148,8 @@ pub(crate) fn _complete_type(
                 name: name.clone(),
                 template_info: None,
                 attributes: MIRStructAttributes {
-                    nocopy: attributes.nocopy || attributes.nodestruct,
-                    nodestruct: attributes.nodestruct,
+                    nocopy: attributes.nocopy || attributes.nodrop,
+                    nodrop: attributes.nodrop,
                 },
                 fields,
             })?;

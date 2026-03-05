@@ -413,8 +413,8 @@ impl Display for CXTypeKind {
                 if attributes.nocopy {
                     attr_str.push_str(" nocopy");
                 }
-                if attributes.nodestruct {
-                    attr_str.push_str(" nodestruct");
+                if attributes.nodrop {
+                    attr_str.push_str(" nodrop");
                 }
                 write!(
                     f,

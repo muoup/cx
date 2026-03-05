@@ -1,11 +1,11 @@
 use crate::environment::TypeEnvironment;
+use crate::environment::ScopeExitTarget;
 use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{
-    control_flow_snapshot, expr_may_fall_through, join_tracked_bindings,
-    restore_control_flow_snapshot, typecheck_expr, ControlFlowSnapshot,
+    expr_may_fall_through, typecheck_expr,
 };
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
@@ -24,16 +24,17 @@ pub fn typecheck_switch(
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    let outer_snapshot = control_flow_snapshot(env);
     env.push_scope(true, false);
+    env.set_scope_anchor(condition);
+    env.configure_merge_scope(condition, "switch join", None, false);
+    let join_scope_idx = env.current_scope_index();
     let condition_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
-    let base_snapshot = control_flow_snapshot(env);
+    let base_snapshot = env.current_snapshot();
 
     // Build match arms from the cases
     // Each case maps a constant value to a range of expressions in the block
     let mut arms = Vec::new();
-    let mut exit_snapshots = Vec::new();
 
     for (case_index, case_value) in cases {
         // Find the expression at this case index
@@ -47,13 +48,18 @@ pub fn typecheck_switch(
             );
         };
 
-        // Typecheck the case body
-        let case_body = typecheck_expr(env, base_data, case_expr, None)?;
-        let case_body_expr = case_body.into_expression();
+        let case_body_expr = typecheck_expr(env, base_data, case_expr, None)?.into_expression();
         if expr_may_fall_through(&case_body_expr) {
-            exit_snapshots.push(control_flow_snapshot(env));
+            env.enqueue_scope_arrow(
+                &ScopeExitTarget {
+                    target_scope_idx: join_scope_idx,
+                    sink: crate::environment::ScopeArrowSink::Merge,
+                    label: format!("case {}", case_value),
+                },
+                env.current_snapshot(),
+            );
         }
-        restore_control_flow_snapshot(env, &base_snapshot);
+        env.restore_snapshot(&base_snapshot);
 
         // Create a pattern expression that matches the constant value
         // Use the condition's integer type for the pattern
@@ -93,31 +99,35 @@ pub fn typecheck_switch(
                     block.len()
                 );
             };
-            let body = typecheck_expr(env, base_data, expr, None)?;
-            let body_expr = body.into_expression();
+            let body_expr = typecheck_expr(env, base_data, expr, None)?.into_expression();
             if expr_may_fall_through(&body_expr) {
-                exit_snapshots.push(control_flow_snapshot(env));
+                env.enqueue_scope_arrow(
+                    &ScopeExitTarget {
+                        target_scope_idx: join_scope_idx,
+                        sink: crate::environment::ScopeArrowSink::Merge,
+                        label: "default".to_string(),
+                    },
+                    env.current_snapshot(),
+                );
             }
-            restore_control_flow_snapshot(env, &base_snapshot);
-
+            env.restore_snapshot(&base_snapshot);
             Some(Box::new(body_expr))
         }
         None => None,
     };
 
     if default_case.is_none() {
-        exit_snapshots.push(base_snapshot.clone());
+        env.enqueue_scope_arrow(
+            &ScopeExitTarget {
+                target_scope_idx: join_scope_idx,
+                sink: crate::environment::ScopeArrowSink::Merge,
+                label: "no case matched".to_string(),
+            },
+            env.current_snapshot(),
+        );
     }
 
-    join_tracked_bindings(env, condition, &base_snapshot, &exit_snapshots, "switch join")?;
-    let merged_snapshot = control_flow_snapshot(env);
-    env.pop_scope();
-    restore_control_flow_snapshot(env, &outer_snapshot);
-    for (name, _) in outer_snapshot.tracked_bindings.iter() {
-        if let Some(binding) = merged_snapshot.tracked_bindings.get(name) {
-            env.tracked_bindings.insert(name.clone(), binding.clone());
-        }
-    }
+    env.pop_scope()?;
 
     // Build the match expression
     Ok(TypecheckResult::expr(
@@ -140,8 +150,11 @@ pub fn typecheck_match(
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
     let mut expr_type = expr_value.get_type();
-    let base_snapshot = control_flow_snapshot(env);
-    let mut exit_snapshots: Vec<ControlFlowSnapshot> = Vec::new();
+    env.push_scope(false, false);
+    env.set_scope_anchor(condition);
+    env.configure_merge_scope(condition, "match join", None, false);
+    let join_scope_idx = env.current_scope_index();
+    let base_snapshot = env.current_snapshot();
 
     if let Some(inner) = expr_type.mem_ref_inner() {
         expr_type = inner.clone();
@@ -195,12 +208,18 @@ pub fn typecheck_match(
                     }),
                 };
 
-                // Typecheck the body
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
                 if expr_may_fall_through(&body_expr) {
-                    exit_snapshots.push(control_flow_snapshot(env));
+                    env.enqueue_scope_arrow(
+                        &ScopeExitTarget {
+                            target_scope_idx: join_scope_idx,
+                            sink: crate::environment::ScopeArrowSink::Merge,
+                            label: "arm".to_string(),
+                        },
+                        env.current_snapshot(),
+                    );
                 }
-                restore_control_flow_snapshot(env, &base_snapshot);
+                env.restore_snapshot(&base_snapshot);
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
@@ -275,13 +294,20 @@ pub fn typecheck_match(
                     );
                 };
 
-                // Typecheck the body with the variant value bound
+                // Typecheck the body with the variant value bound.
                 env.insert_symbol(name.as_string(), variant_value_expr);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
                 if expr_may_fall_through(&body_expr) {
-                    exit_snapshots.push(control_flow_snapshot(env));
+                    env.enqueue_scope_arrow(
+                        &ScopeExitTarget {
+                            target_scope_idx: join_scope_idx,
+                            sink: crate::environment::ScopeArrowSink::Merge,
+                            label: "arm".to_string(),
+                        },
+                        env.current_snapshot(),
+                    );
                 }
-                restore_control_flow_snapshot(env, &base_snapshot);
+                env.restore_snapshot(&base_snapshot);
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
@@ -304,19 +330,33 @@ pub fn typecheck_match(
         Some(default_expr) => {
             let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression();
             if expr_may_fall_through(&body) {
-                exit_snapshots.push(control_flow_snapshot(env));
+                env.enqueue_scope_arrow(
+                    &ScopeExitTarget {
+                        target_scope_idx: join_scope_idx,
+                        sink: crate::environment::ScopeArrowSink::Merge,
+                        label: "default".to_string(),
+                    },
+                    env.current_snapshot(),
+                );
             }
-            restore_control_flow_snapshot(env, &base_snapshot);
+            env.restore_snapshot(&base_snapshot);
             Some(Box::new(body))
         }
         None => None,
     };
 
     if default.is_none() {
-        exit_snapshots.push(base_snapshot.clone());
+        env.enqueue_scope_arrow(
+            &ScopeExitTarget {
+                target_scope_idx: join_scope_idx,
+                sink: crate::environment::ScopeArrowSink::Merge,
+                label: "default".to_string(),
+            },
+            env.current_snapshot(),
+        );
     }
 
-    join_tracked_bindings(env, condition, &base_snapshot, &exit_snapshots, "match join")?;
+    env.pop_scope()?;
 
     // Build the match expression
     Ok(TypecheckResult::expr(

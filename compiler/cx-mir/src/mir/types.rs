@@ -76,7 +76,7 @@ pub struct TemplateInstantiationInformation {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct MIRStructAttributes {
     pub nocopy: bool,
-    pub nodestruct: bool,
+    pub nodrop: bool,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

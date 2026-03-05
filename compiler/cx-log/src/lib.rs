@@ -45,6 +45,16 @@ pub fn pretty_underline_error(
     start_index: usize,
     end_index: usize,
 ) {
+    pretty_underline_error_with_notes(message, &[], file_path, start_index, end_index);
+}
+
+pub fn pretty_underline_error_with_notes(
+    message: &str,
+    notes: &[String],
+    file_path: &Path,
+    start_index: usize,
+    end_index: usize,
+) {
     let tokens = cx_lexer::lex(
         &std::fs::read_to_string(file_path)
             .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()))
@@ -84,6 +94,9 @@ pub fn pretty_underline_error(
         error_padding + 1
     );
     println!("{message} \n\t--> {link}");
+    for note in notes {
+        println!("note: {note}");
+    }
 
     let mut iter = file_contents[error_line_start..].lines().peekable();
 
