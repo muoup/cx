@@ -1,249 +1,260 @@
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
-use std::path::Path;
+use std::any::Any;
 use std::panic::AssertUnwindSafe;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-macro_rules! test_files {
-    ($($name:ident),*) => {
-        $(
-            #[test]
-            fn $name() {
-                let path = format!("{}.cx", stringify!($name));
+static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
-                execute_test(&Path::new(&path));
-            }
-        )*
-    };
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FailureStage {
+    Parse,
+    Typecheck,
+    Analysis,
 }
 
-mod regression_tests {
-    use super::*;
+struct TestTempDir {
+    path: PathBuf,
+}
 
-    test_files!(
-        basic_arithmetic,
-        basic_compound_expr,
-        basic_for,
-        basic_template,
-        basic_template_type,
-        basic_while,
-        basic_global_variable,
-        basic_succeeding_contract,
-        bool_tests,
-        box_static_factory,
-        complex_expressions,
-        conditional_lifetime,
-        enum_type,
-        function_contract,
-        global_in_template,
-        hello_world,
-        padded_array,
-        short_circuit_eval,
-        static_member_function,
-        struct_and_pointers,
-        struct_parameter,
-        sum_type,
-        array_passing,
-        template_include,
-        templated_destructor,
-        vector
+impl TestTempDir {
+    fn new(test_name: &str) -> Self {
+        let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir()
+            .join("cx-e2e-tests")
+            .join(format!("{}-{}-{}", sanitize_name(test_name), std::process::id(), unique_id));
+
+        std::fs::create_dir_all(&path).expect("Failed to create temp test directory");
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TestTempDir {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.path).ok();
+    }
+}
+
+fn sanitize_name(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+fn base_file_name(input: &Path) -> &Path {
+    Path::new(
+        input.file_name()
+            .expect("Missing file name for test case")
+            .to_str()
+            .expect("Failed to convert test file name to string"),
+    )
+}
+
+fn compiler_config(
+    backend: CompilerBackend,
+    output: PathBuf,
+    working_directory: &Path,
+    internal_directory: &Path,
+    analysis: bool,
+) -> CompilerConfig {
+    CompilerConfig {
+        backend,
+        optimization_level: match backend {
+            CompilerBackend::Cranelift => OptimizationLevel::O0,
+            CompilerBackend::LLVM => OptimizationLevel::O1,
+        },
+        output,
+        analysis,
+        working_directory: working_directory.to_path_buf(),
+        internal_directory: internal_directory.to_path_buf(),
+    }
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_string(),
+            Err(_) => "<non-string panic payload>".to_string(),
+        },
+    }
+}
+
+fn classify_failure_stage(message: &str) -> Option<FailureStage> {
+    if message.contains("Pre-parsing failed for unit:")
+        || message.contains("AST parsing failed for unit:")
+    {
+        Some(FailureStage::Parse)
+    } else if message.contains("Typechecking failed for unit:")
+        || message.contains("Completing base globals failed")
+        || message.contains("Completing base functions failed")
+    {
+        Some(FailureStage::Typecheck)
+    } else if message.contains("FMIR analysis failed for unit:") {
+        Some(FailureStage::Analysis)
+    } else {
+        None
+    }
+}
+
+fn expect_compile_success(input: &Path, analysis: bool) {
+    let test_label = input
+        .strip_prefix(test_root())
+        .unwrap_or(input)
+        .display()
+        .to_string();
+    let working_directory = input
+        .parent()
+        .expect("Test case should have a parent directory");
+    let temp_dir = TestTempDir::new(&test_label);
+    let internal_directory = temp_dir.path().join("internal");
+    std::fs::create_dir_all(&internal_directory).expect("Failed to create internal directory");
+
+    let config = compiler_config(
+        CompilerBackend::Cranelift,
+        temp_dir.path().join("case.out"),
+        working_directory,
+        &internal_directory,
+        analysis,
+    );
+
+    standard_compilation(config, base_file_name(input)).expect("Compilation failed");
+}
+
+fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
+    let test_label = input
+        .strip_prefix(test_root())
+        .unwrap_or(input)
+        .display()
+        .to_string();
+    let working_directory = input
+        .parent()
+        .expect("Test case should have a parent directory");
+    let temp_dir = TestTempDir::new(&test_label);
+    let internal_directory = temp_dir.path().join("internal");
+    std::fs::create_dir_all(&internal_directory).expect("Failed to create internal directory");
+
+    let config = compiler_config(
+        CompilerBackend::Cranelift,
+        temp_dir.path().join("case.out"),
+        working_directory,
+        &internal_directory,
+        analysis,
+    );
+
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        standard_compilation(config, base_file_name(input));
+    }));
+
+    let panic = result.expect_err("Expected compilation failure, but compilation succeeded");
+    let message = panic_message(panic);
+    let actual_stage = classify_failure_stage(&message);
+
+    assert_eq!(
+        actual_stage,
+        Some(expected_stage),
+        "Expected {:?} failure for {}, got {:?} with panic message:\n{}",
+        expected_stage,
+        input.display(),
+        actual_stage,
+        message
     );
 }
 
-#[ctor::ctor]
-fn init() {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let full_path = format!("{root}/cases");
-    std::env::set_current_dir(&full_path).unwrap();
-
-    std::fs::remove_dir_all(".internal").unwrap_or(());
+fn run_binary(path: &Path) -> String {
+    let output = Command::new(path)
+        .output()
+        .unwrap_or_else(|_| panic!("Failed to run output binary: {}", path.display()));
+    String::from_utf8(output.stdout).expect("Executable output was not valid UTF-8")
 }
 
-fn get_output(path: &str) -> String {
-    let mut cmd = Command::new(format!("./{path}"));
-    let output = cmd.output().unwrap();
-    String::from_utf8(output.stdout).unwrap()
+fn test_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn execute_test(input: &Path) {
-    if !input.exists() {
-        panic!("[{}] Test file does not exist", input.display());
-    }
-
+fn run_e2e_test(input: &Path) {
     let expected_output = input.with_extension("cx-output");
+    assert!(
+        expected_output.exists(),
+        "[{}] Missing expected output file",
+        expected_output.display()
+    );
 
-    if !expected_output.exists() {
-        panic!("[{}] No expected output file found", input.display());
-    }
+    let expected_output =
+        std::fs::read_to_string(&expected_output).expect("Failed to read expected output");
+    let working_directory = input
+        .parent()
+        .expect("Test case should have a parent directory");
+    let test_label = input
+        .strip_prefix(test_root())
+        .unwrap_or(input)
+        .display()
+        .to_string();
 
-    let obj_output = format!("{}.out", input.file_stem().unwrap().to_str().unwrap());
+    let cranelift_temp = TestTempDir::new(&format!("{test_label}-cranelift"));
+    let cranelift_internal = cranelift_temp.path().join("internal");
+    std::fs::create_dir_all(&cranelift_internal).expect("Failed to create internal directory");
+    let cranelift_output = cranelift_temp.path().join("case.out");
+    let cranelift_config = compiler_config(
+        CompilerBackend::Cranelift,
+        cranelift_output.clone(),
+        working_directory,
+        &cranelift_internal,
+        false,
+    );
 
-    let cranelift_config = CompilerConfig {
-        backend: CompilerBackend::Cranelift,
-        optimization_level: OptimizationLevel::O0,
-        output: (&obj_output).into(),
-        analysis: false,
-    };
-    let llvm_config = CompilerConfig {
-        backend: CompilerBackend::LLVM,
-        optimization_level: OptimizationLevel::O1,
-        output: (&obj_output).into(),
-        analysis: false,
-    };
-
-    let Some(expected_output) = std::fs::read_to_string(&expected_output).ok() else {
-        eprintln!(
-            "[{}] No expected output file found, skipping...",
-            input.display()
-        );
-        return;
-    };
-
-    println!("[{}] Compiling...", input.display());
-
-    standard_compilation(cranelift_config.clone(), input).expect("Cranelift compilation failed");
+    standard_compilation(cranelift_config, base_file_name(input))
+        .expect("Cranelift compilation failed");
     assert_eq!(
         expected_output,
-        get_output(&obj_output),
-        "Cranelift output does not match expected output for {}",
-        input.display()
-    );
-    println!(
-        "[{}] Cranelift output matches expected output.",
+        run_binary(&cranelift_output),
+        "Cranelift output mismatch for {}",
         input.display()
     );
 
     if cfg!(feature = "backend-llvm") {
-        standard_compilation(llvm_config.clone(), input).expect("LLVM compilation failed");
-        assert_eq!(
-            expected_output,
-            get_output(&obj_output),
-            "LLVM output does not match expected output for {}",
-            input.display()
-        );
-        println!("[{}] LLVM output matches expected output.", input.display());
-    }
-
-    std::fs::remove_file(&obj_output).unwrap_or_else(|_| {
-        panic!("Could not remove output file: {obj_output}");
-    });
-}
-
-fn compile_only(input: &Path, analysis: bool) {
-    if !input.exists() {
-        panic!("[{}] Test file does not exist", input.display());
-    }
-
-    let obj_output = format!("{}.out", input.file_stem().unwrap().to_str().unwrap());
-    let config = CompilerConfig {
-        backend: CompilerBackend::Cranelift,
-        optimization_level: OptimizationLevel::O0,
-        output: (&obj_output).into(),
-        analysis,
-    };
-
-    standard_compilation(config, input).expect("Compilation failed");
-    std::fs::remove_file(&obj_output).unwrap_or(());
-}
-
-fn compile_should_fail(input: &Path, analysis: bool) {
-    if !input.exists() {
-        panic!("[{}] Test file does not exist", input.display());
-    }
-
-    let obj_output = format!("{}.out", input.file_stem().unwrap().to_str().unwrap());
-    let config = CompilerConfig {
-        backend: CompilerBackend::Cranelift,
-        optimization_level: OptimizationLevel::O0,
-        output: (&obj_output).into(),
-        analysis,
-    };
-
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        standard_compilation(config, input);
-    }));
-
-    assert!(
-        result.is_err(),
-        "[{}] Expected compilation failure, but compilation succeeded",
-        input.display()
-    );
-
-    std::fs::remove_file(&obj_output).unwrap_or(());
-}
-
-mod safe_function_tests {
-    use super::*;
-
-    #[test]
-    fn basic_null_checking() {
-        compile_only(Path::new("../safe_fns/basic_null_checking.cx"), true);
-    }
-
-    #[test]
-    fn basic_safe() {
-        compile_should_fail(Path::new("../safe_fns/basic_safe.cx"), true);
-    }
-
-    #[test]
-    fn raw_pointer_param() {
-        compile_should_fail(Path::new("../safe_fns/raw_pointer_param.cx"), true);
-    }
-
-    #[test]
-    fn raw_pointer_local() {
-        compile_should_fail(Path::new("../safe_fns/raw_pointer_local.cx"), true);
-    }
-
-    #[test]
-    fn non_safe_call() {
-        compile_should_fail(Path::new("../safe_fns/non_safe_call.cx"), true);
-    }
-
-    #[test]
-    fn impure_contract() {
-        compile_should_fail(Path::new("../safe_fns/impure_contract.cx"), true);
-    }
-}
-
-mod move_semantics_tests {
-    use super::*;
-
-    #[test]
-    fn nocopy_if_join() {
-        compile_should_fail(Path::new("../move_semantics/nocopy_if_join.cx"), false);
-    }
-
-    #[test]
-    fn nocopy_loop_join() {
-        compile_should_fail(Path::new("../move_semantics/nocopy_loop_join.cx"), false);
-    }
-
-    #[test]
-    fn nocopy_break_join() {
-        compile_should_fail(Path::new("../move_semantics/nocopy_break_join.cx"), false);
-    }
-
-    #[test]
-    fn nocopy_continue_join() {
-        compile_should_fail(Path::new("../move_semantics/nocopy_continue_join.cx"), false);
-    }
-
-    #[test]
-    fn nocopy_reinitialize() {
-        compile_only(Path::new("../move_semantics/nocopy_reinitialize.cx"), false);
-    }
-
-    #[test]
-    fn nocopy_move_both_branches() {
-        compile_only(Path::new("../move_semantics/nocopy_move_both_branches.cx"), false);
-    }
-
-    #[test]
-    fn nocopy_for_continue_reinitialize() {
-        compile_only(
-            Path::new("../move_semantics/nocopy_for_continue_reinitialize.cx"),
+        let llvm_temp = TestTempDir::new(&format!("{test_label}-llvm"));
+        let llvm_internal = llvm_temp.path().join("internal");
+        std::fs::create_dir_all(&llvm_internal).expect("Failed to create internal directory");
+        let llvm_output = llvm_temp.path().join("case.out");
+        let llvm_config = compiler_config(
+            CompilerBackend::LLVM,
+            llvm_output.clone(),
+            working_directory,
+            &llvm_internal,
             false,
         );
+
+        standard_compilation(llvm_config, base_file_name(input)).expect("LLVM compilation failed");
+        assert_eq!(
+            expected_output,
+            run_binary(&llvm_output),
+            "LLVM output mismatch for {}",
+            input.display()
+        );
     }
 }
+
+fn run_compile_only_test(input: &Path, analysis: bool) {
+    expect_compile_success(input, analysis);
+}
+
+fn run_parse_error_test(input: &Path) {
+    expect_failure(input, false, FailureStage::Parse);
+}
+
+fn run_type_error_test(input: &Path) {
+    expect_failure(input, false, FailureStage::Typecheck);
+}
+
+fn run_verifier_error_test(input: &Path) {
+    expect_failure(input, true, FailureStage::Analysis);
+}
+
+include!(concat!(env!("OUT_DIR"), "/generated_tests.rs"));

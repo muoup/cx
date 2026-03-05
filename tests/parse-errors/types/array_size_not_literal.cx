@@ -1,0 +1,5 @@
+int main() {
+    int size = 3;
+    int arr[size];
+    return 0;
+}

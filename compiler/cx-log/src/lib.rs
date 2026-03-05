@@ -25,15 +25,10 @@ fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
     panic!("Index out of bounds");
 }
 
-fn error_exit() -> ! {
-    if cfg!(debug_assertions) {
-        panic!();
-    } else {
-        std::process::exit(1);
-    }
+fn error_exit() {
 }
 
-fn annotation_failure(message: &str) -> ! {
+fn annotation_failure(message: &str) {
     println!("{message}");
     println!("Annotation Failure!");
     error_exit();
@@ -60,20 +55,23 @@ pub fn pretty_underline_error_with_notes(
             .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()))
     );
     
-    let Some(tokens) = tokens else { 
+    let Some(tokens) = tokens else {
         panic!("No tokens provided for error reporting");
     };
 
     let Some(start_token) = tokens.get(start_index) else {
         annotation_failure(message);
+        return;
     };
-    
+
     let Some(end_token) = tokens.get(end_index.saturating_sub(1)) else {
         annotation_failure(message);
+        return;
     };
-    
+
     if start_token.file_origin != end_token.file_origin {
         annotation_failure(message);
+        return;
     }
     
     let start_index = start_token.start_index;

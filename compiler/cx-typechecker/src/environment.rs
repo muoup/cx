@@ -13,6 +13,7 @@ use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::log::TypeError;
 use crate::environment::function_query::{
@@ -28,6 +29,7 @@ pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 pub struct TypeEnvironment<'a> {
     pub tokens: &'a [Token],
     pub compilation_unit: CompilationUnit,
+    pub working_directory: PathBuf,
 
     pub module_data: &'a ModuleData,
 
@@ -152,6 +154,7 @@ impl TypeEnvironment<'_> {
     pub fn new<'a>(
         tokens: &'a [Token],
         compilation_unit: CompilationUnit,
+        working_directory: PathBuf,
         module_data: &'a ModuleData,
     ) -> TypeEnvironment<'a> {
         let intrinsic_types = INTRINSIC_TYPES
@@ -162,6 +165,7 @@ impl TypeEnvironment<'_> {
         TypeEnvironment {
             tokens,
             compilation_unit,
+            working_directory,
 
             module_data,
 
@@ -184,6 +188,10 @@ impl TypeEnvironment<'_> {
             contract_pure_mode: false,
             unsafe_depth: 0,
         }
+    }
+
+    pub fn resolve_compilation_unit(&self, module: &str) -> CompilationUnit {
+        CompilationUnit::from_rooted(module, &self.working_directory)
     }
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {

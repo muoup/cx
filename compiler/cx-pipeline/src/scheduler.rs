@@ -143,7 +143,10 @@ pub(crate) fn handle_job(
                     CompilationJob::new(
                         vec![],
                         CompilationStep::PreParse,
-                        CompilationUnit::from_str(import.as_str()),
+                        CompilationUnit::from_rooted(
+                            import.as_str(),
+                            &context.config.working_directory,
+                        ),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -257,7 +260,10 @@ pub(crate) fn perform_job(
                 let other_pp_data = context
                     .module_db
                     .preparse_base
-                    .get(&CompilationUnit::from_str(import.as_str()));
+                    .get(&CompilationUnit::from_rooted(
+                        import.as_str(),
+                        &context.config.working_directory,
+                    ));
                 let required_visiblity = VisibilityMode::Public;
 
                 for resource in other_pp_data.type_idents.iter() {
@@ -300,8 +306,12 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
-            let mut env =
-                TypeEnvironment::new(lexemes.as_ref(), job.unit.clone(), &context.module_db);
+                let mut env = TypeEnvironment::new(
+                    lexemes.as_ref(),
+                    job.unit.clone(),
+                    context.config.working_directory.clone(),
+                    &context.module_db,
+                );
 
             complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(
                 |e: Box<dyn CXErrorTrait>| {

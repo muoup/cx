@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use cx_ast::ast::VisibilityMode;
 use cx_ast::data::{CXTemplateInput, CXType, CXTypeKind};
-use cx_pipeline_data::CompilationUnit;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRStructAttributes, MIRTemplateInput, MIRType, MIRTypeKind};
 use cx_util::{CXResult, log_error};
@@ -22,7 +21,7 @@ pub(crate) fn base_data_from_module<'a>(
             let arc = env
                 .module_data
                 .base_mappings
-                .get(&CompilationUnit::from_str(module));
+                .get(&env.resolve_compilation_unit(module));
 
             (Some(arc.clone()), unsafe {
                 std::mem::transmute(arc.as_ref())
