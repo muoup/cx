@@ -21,7 +21,7 @@ fn parse_at_intrinsic_expr(
     start_index: usize,
 ) -> CXResult<CXExpr> {
     match ident {
-        "@unsafe" => {
+        "unsafe" => {
             let expr = if try_next!(data.tokens, punctuator!(OpenBrace)) {
                 data.tokens.back();
                 parse_body(data)?
@@ -38,7 +38,7 @@ fn parse_at_intrinsic_expr(
             .into_expr(start_index, data.tokens.index))
         }
 
-        "@leak" => {
+        "leak" => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
             let expr = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
@@ -322,7 +322,7 @@ pub(crate) fn parse_expr_val(
         TokenKind::Intrinsic(_) => {
             CXExprKind::Identifier(parse_intrinsic(&mut data.back().tokens)?)
         }
-        TokenKind::Identifier(ident) if ident.starts_with('@') => {
+        TokenKind::CompilerIdentifier(ident) => {
             let ident = ident.clone();
             data.back();
             expr_stack.push(parse_at_intrinsic_expr(data, ident.as_str(), start_index)?);

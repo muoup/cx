@@ -87,6 +87,7 @@ pub enum TokenKind {
     Punctuator(PunctuatorType),
 
     Identifier(String),
+    CompilerIdentifier(String),
     StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
@@ -288,6 +289,9 @@ impl TokenKind {
             "pre" => TokenKind::Keyword(KeywordType::Precondition),
             "post" => TokenKind::Keyword(KeywordType::Postcondition),
 
+            _ if str.starts_with('@') => {
+                TokenKind::CompilerIdentifier(str.trim_start_matches('@').to_string())
+            }
             _ => TokenKind::Identifier(str),
         }
     }
