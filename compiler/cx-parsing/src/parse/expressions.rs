@@ -20,6 +20,8 @@ fn parse_at_intrinsic_expr(
     ident: &str,
     start_index: usize,
 ) -> CXResult<CXExpr> {
+    assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(_));
+
     match ident {
         "unsafe" => {
             let expr = if try_next!(data.tokens, punctuator!(OpenBrace)) {

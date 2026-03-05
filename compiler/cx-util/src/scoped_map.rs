@@ -84,6 +84,10 @@ impl<T> ScopedMap<T> {
     pub fn get(&self, name: &str) -> Option<&T> {
         self.data.get(name)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.data.iter()
+    }
     
     pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = (&String, &T)> {
         self.overwrites

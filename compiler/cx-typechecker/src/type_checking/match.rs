@@ -3,7 +3,10 @@ use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
-use crate::type_checking::typechecker::typecheck_expr;
+use crate::type_checking::typechecker::{
+    control_flow_snapshot, expr_may_fall_through, join_tracked_bindings,
+    restore_control_flow_snapshot, typecheck_expr, ControlFlowSnapshot,
+};
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
@@ -21,16 +24,16 @@ pub fn typecheck_switch(
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(false, false);
-
+    let outer_snapshot = control_flow_snapshot(env);
+    env.push_scope(true, false);
     let condition_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
-
-    env.pop_scope();
+    let base_snapshot = control_flow_snapshot(env);
 
     // Build match arms from the cases
     // Each case maps a constant value to a range of expressions in the block
     let mut arms = Vec::new();
+    let mut exit_snapshots = Vec::new();
 
     for (case_index, case_value) in cases {
         // Find the expression at this case index
@@ -45,9 +48,12 @@ pub fn typecheck_switch(
         };
 
         // Typecheck the case body
-        env.push_scope(true, false);
         let case_body = typecheck_expr(env, base_data, case_expr, None)?;
-        env.pop_scope();
+        let case_body_expr = case_body.into_expression();
+        if expr_may_fall_through(&case_body_expr) {
+            exit_snapshots.push(control_flow_snapshot(env));
+        }
+        restore_control_flow_snapshot(env, &base_snapshot);
 
         // Create a pattern expression that matches the constant value
         // Use the condition's integer type for the pattern
@@ -71,7 +77,7 @@ pub fn typecheck_switch(
 
         arms.push((
             Box::new(pattern_expr),
-            Box::new(case_body.into_expression()),
+            Box::new(case_body_expr),
         ));
     }
 
@@ -87,14 +93,31 @@ pub fn typecheck_switch(
                     block.len()
                 );
             };
-            env.push_scope(true, false);
             let body = typecheck_expr(env, base_data, expr, None)?;
-            env.pop_scope();
+            let body_expr = body.into_expression();
+            if expr_may_fall_through(&body_expr) {
+                exit_snapshots.push(control_flow_snapshot(env));
+            }
+            restore_control_flow_snapshot(env, &base_snapshot);
 
-            Some(Box::new(body.into_expression()))
+            Some(Box::new(body_expr))
         }
         None => None,
     };
+
+    if default_case.is_none() {
+        exit_snapshots.push(base_snapshot.clone());
+    }
+
+    join_tracked_bindings(env, condition, &base_snapshot, &exit_snapshots, "switch join")?;
+    let merged_snapshot = control_flow_snapshot(env);
+    env.pop_scope();
+    restore_control_flow_snapshot(env, &outer_snapshot);
+    for (name, _) in outer_snapshot.tracked_bindings.iter() {
+        if let Some(binding) = merged_snapshot.tracked_bindings.get(name) {
+            env.tracked_bindings.insert(name.clone(), binding.clone());
+        }
+    }
 
     // Build the match expression
     Ok(TypecheckResult::expr(
@@ -115,10 +138,10 @@ pub fn typecheck_match(
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(true, false);
-
     let mut expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
     let mut expr_type = expr_value.get_type();
+    let base_snapshot = control_flow_snapshot(env);
+    let mut exit_snapshots: Vec<ControlFlowSnapshot> = Vec::new();
 
     if let Some(inner) = expr_type.mem_ref_inner() {
         expr_type = inner.clone();
@@ -173,9 +196,11 @@ pub fn typecheck_match(
                 };
 
                 // Typecheck the body
-                env.push_scope(true, false);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                env.pop_scope();
+                if expr_may_fall_through(&body_expr) {
+                    exit_snapshots.push(control_flow_snapshot(env));
+                }
+                restore_control_flow_snapshot(env, &base_snapshot);
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
@@ -251,10 +276,12 @@ pub fn typecheck_match(
                 };
 
                 // Typecheck the body with the variant value bound
-                env.push_scope(false, false);
                 env.insert_symbol(name.as_string(), variant_value_expr);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                env.pop_scope();
+                if expr_may_fall_through(&body_expr) {
+                    exit_snapshots.push(control_flow_snapshot(env));
+                }
+                restore_control_flow_snapshot(env, &base_snapshot);
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
@@ -275,15 +302,21 @@ pub fn typecheck_match(
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            env.push_scope(false, false);
             let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression();
-            env.pop_scope();
+            if expr_may_fall_through(&body) {
+                exit_snapshots.push(control_flow_snapshot(env));
+            }
+            restore_control_flow_snapshot(env, &base_snapshot);
             Some(Box::new(body))
         }
         None => None,
     };
 
-    env.pop_scope();
+    if default.is_none() {
+        exit_snapshots.push(base_snapshot.clone());
+    }
+
+    join_tracked_bindings(env, condition, &base_snapshot, &exit_snapshots, "match join")?;
 
     // Build the match expression
     Ok(TypecheckResult::expr(

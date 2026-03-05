@@ -1,4 +1,4 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{BindingMoveState, TrackedBindingState, TypeEnvironment};
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::binary_ops::{
@@ -13,6 +13,7 @@ use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable}
 use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
+use cx_util::scoped_map::ScopedMap;
 
 fn anonymous_name_gen() -> String {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -25,6 +26,149 @@ fn anonymous_name_gen() -> String {
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+
+#[derive(Clone)]
+pub(crate) struct ControlFlowSnapshot {
+    pub(crate) symbol_table: ScopedMap<MIRExpression>,
+    pub(crate) tracked_bindings: ScopedMap<TrackedBindingState>,
+}
+
+pub(crate) fn control_flow_snapshot(env: &TypeEnvironment) -> ControlFlowSnapshot {
+    ControlFlowSnapshot {
+        symbol_table: env.symbol_table.clone(),
+        tracked_bindings: env.tracked_bindings.clone(),
+    }
+}
+
+pub(crate) fn restore_control_flow_snapshot(
+    env: &mut TypeEnvironment,
+    snapshot: &ControlFlowSnapshot,
+) {
+    env.symbol_table = snapshot.symbol_table.clone();
+    env.tracked_bindings = snapshot.tracked_bindings.clone();
+}
+
+pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
+    match &expr.kind {
+        MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Break { .. }
+        | MIRExpressionKind::Continue { .. } => false,
+        MIRExpressionKind::Block { statements } => statements
+            .last()
+            .map(expr_may_fall_through)
+            .unwrap_or(true),
+        MIRExpressionKind::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_may_fall_through(then_branch)
+                || else_branch
+                    .as_ref()
+                    .map(|branch| expr_may_fall_through(branch))
+                    .unwrap_or(true)
+        }
+        MIRExpressionKind::CSwitch { cases, default, .. }
+        | MIRExpressionKind::Match {
+            arms: cases,
+            default,
+            ..
+        } => {
+            cases.iter().any(|(_, branch)| expr_may_fall_through(branch))
+                || default
+                    .as_ref()
+                    .map(|branch| expr_may_fall_through(branch))
+                    .unwrap_or(true)
+        }
+        _ => true,
+    }
+}
+
+pub(crate) fn join_tracked_bindings(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    base_snapshot: &ControlFlowSnapshot,
+    exit_snapshots: &[ControlFlowSnapshot],
+    join_name: &str,
+) -> CXResult<()> {
+    if exit_snapshots.is_empty() {
+        restore_control_flow_snapshot(env, base_snapshot);
+        return Ok(());
+    }
+
+    restore_control_flow_snapshot(env, base_snapshot);
+
+    let mut inconsistent = Vec::new();
+    for (name, base_binding) in base_snapshot.tracked_bindings.iter() {
+        let mut merged_state = None;
+
+        for snapshot in exit_snapshots {
+            let Some(binding) = snapshot.tracked_bindings.get(name) else {
+                continue;
+            };
+
+            if let Some(existing) = merged_state {
+                if existing != binding.state {
+                    inconsistent.push(name.clone());
+                    merged_state = Some(BindingMoveState::ConditionallyMoved);
+                    break;
+                }
+            } else {
+                merged_state = Some(binding.state);
+            }
+        }
+
+        let Some(merged_state) = merged_state else {
+            continue;
+        };
+
+        env.tracked_bindings.insert(
+            name.clone(),
+            TrackedBindingState {
+                state: merged_state,
+                ..base_binding.clone()
+            },
+        );
+    }
+
+    if inconsistent.is_empty() {
+        return Ok(());
+    }
+
+    log_typecheck_error!(
+        env,
+        expr,
+        " nocopy binding(s) have inconsistent move state at {}: {}",
+        join_name,
+        inconsistent.join(", ")
+    )
+}
+
+fn ensure_binding_available(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    name: &CXIdent,
+) -> CXResult<()> {
+    let Some(binding) = env.tracked_binding(name.as_str()) else {
+        return Ok(());
+    };
+
+    match binding.state {
+        BindingMoveState::Available => Ok(()),
+        BindingMoveState::Moved => log_typecheck_error!(
+            env,
+            expr,
+            " Identifier '{}' has been moved",
+            name
+        ),
+        BindingMoveState::ConditionallyMoved => log_typecheck_error!(
+            env,
+            expr,
+            " Identifier '{}' was conditionally moved across a control-flow join",
+            name
+        ),
+    }
+}
 
 fn type_is_safe_signature(ty: &MIRType) -> bool {
     match &ty.kind {
@@ -101,7 +245,12 @@ pub(crate) fn assert_scope_nodestruct_discharged(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
 ) -> CXResult<()> {
-    let live = env.current_scope_live_nodestruct_locals();
+    let live = env
+        .current_scope_nodestruct_bindings()
+        .into_iter()
+        .filter(|(_, binding)| binding.state != BindingMoveState::Moved)
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
     if live.is_empty() {
         return Ok(());
     }
@@ -110,6 +259,23 @@ pub(crate) fn assert_scope_nodestruct_discharged(
         env,
         expr,
         " nodestruct local(s) reach scope end without move or @leak: {}",
+        live.join(", ")
+    )
+}
+
+fn assert_return_nodestruct_discharged(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+) -> CXResult<()> {
+    let live = env.nodestruct_bindings_in_nonfinal_state();
+    if live.is_empty() {
+        return Ok(());
+    }
+
+    log_typecheck_error!(
+        env,
+        expr,
+        " nodestruct binding(s) must be moved or @leak'ed before return: {}",
         live.join(", ")
     )
 }
@@ -334,16 +500,16 @@ pub fn typecheck_expr_inner(
                 },
             );
 
-            if env.is_nodestruct(&_type) {
-                env.live_nodestruct_locals.insert(name.as_string());
-            }
+            env.track_binding(name.as_string(), &_type);
 
             TypecheckResult::expr2(allocation)
         }
 
         CXExprKind::Identifier(name) => {
             if let Some(symbol_val) = env.symbol_value(name.as_str()) {
-                TypecheckResult::expr2(symbol_val.clone())
+                let symbol_val = symbol_val.clone();
+                ensure_binding_available(env, expr, name)?;
+                TypecheckResult::expr2(symbol_val)
             } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
             {
                 TypecheckResult::expr2(MIRExpression {
@@ -396,19 +562,40 @@ pub fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            env.push_scope(false, false);
-
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let base_snapshot = control_flow_snapshot(env);
+
             let then_result = typecheck_expr(env, base_data, then_branch, None)?.into_expression();
+            let then_snapshot = control_flow_snapshot(env);
+            let then_reaches_end = expr_may_fall_through(&then_result);
+
+            restore_control_flow_snapshot(env, &base_snapshot);
+
             let else_result = if let Some(else_branch) = else_branch {
-                Some(typecheck_expr(env, base_data, else_branch, None)?.into_expression())
+                let else_result = typecheck_expr(env, base_data, else_branch, None)?.into_expression();
+                let else_snapshot = control_flow_snapshot(env);
+                let else_reaches_end = expr_may_fall_through(&else_result);
+
+                let mut exit_snapshots = Vec::new();
+                if then_reaches_end {
+                    exit_snapshots.push(then_snapshot.clone());
+                }
+                if else_reaches_end {
+                    exit_snapshots.push(else_snapshot);
+                }
+
+                join_tracked_bindings(env, expr, &base_snapshot, &exit_snapshots, "if join")?;
+                Some(else_result)
             } else {
+                let mut exit_snapshots = vec![base_snapshot.clone()];
+                if then_reaches_end {
+                    exit_snapshots.push(then_snapshot);
+                }
+
+                join_tracked_bindings(env, expr, &base_snapshot, &exit_snapshots, "if join")?;
                 None
             };
-
-            assert_scope_nodestruct_discharged(env, then_branch)?;
-            env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -426,14 +613,36 @@ pub fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
+            let outer_snapshot = control_flow_snapshot(env);
             env.push_scope(true, true);
 
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let loop_snapshot = control_flow_snapshot(env);
             let body_result = typecheck_expr(env, base_data, body, None)?;
+            let body_snapshot = control_flow_snapshot(env);
+            let mut exit_snapshots = vec![loop_snapshot.clone()];
 
-            assert_scope_nodestruct_discharged(env, body)?;
+            if expr_may_fall_through(&body_result.expression) {
+                exit_snapshots.push(body_snapshot);
+            }
+
+            join_tracked_bindings(
+                env,
+                expr,
+                &loop_snapshot,
+                &exit_snapshots,
+                "loop join",
+            )?;
+            let merged_loop_snapshot = control_flow_snapshot(env);
             env.pop_scope();
+            restore_control_flow_snapshot(env, &outer_snapshot);
+
+            for (name, _) in outer_snapshot.tracked_bindings.iter() {
+                if let Some(binding) = merged_loop_snapshot.tracked_bindings.get(name) {
+                    env.tracked_bindings.insert(name.clone(), binding.clone());
+                }
+            }
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -452,17 +661,39 @@ pub fn typecheck_expr_inner(
             increment,
             body,
         } => {
+            let outer_snapshot = control_flow_snapshot(env);
             env.push_scope(true, true);
 
             let init_result = typecheck_expr(env, base_data, init, None)?.into_expression();
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let loop_snapshot = control_flow_snapshot(env);
+            let body_result = typecheck_expr(env, base_data, body, None)?.into_expression();
             let increment_result =
                 typecheck_expr(env, base_data, increment, None)?.into_expression();
-            let body_result = typecheck_expr(env, base_data, body, None)?.into_expression();
+            let loop_exit_snapshot = control_flow_snapshot(env);
+            let mut exit_snapshots = vec![loop_snapshot.clone()];
 
-            assert_scope_nodestruct_discharged(env, body)?;
+            if expr_may_fall_through(&body_result) && expr_may_fall_through(&increment_result) {
+                exit_snapshots.push(loop_exit_snapshot);
+            }
+
+            join_tracked_bindings(
+                env,
+                expr,
+                &loop_snapshot,
+                &exit_snapshots,
+                "loop join",
+            )?;
+            let merged_loop_snapshot = control_flow_snapshot(env);
             env.pop_scope();
+            restore_control_flow_snapshot(env, &outer_snapshot);
+
+            for (name, _) in outer_snapshot.tracked_bindings.iter() {
+                if let Some(binding) = merged_loop_snapshot.tracked_bindings.get(name) {
+                    env.tracked_bindings.insert(name.clone(), binding.clone());
+                }
+            }
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -575,6 +806,7 @@ pub fn typecheck_expr_inner(
                 }
             };
 
+            assert_return_nodestruct_discharged(env, expr)?;
             TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::Return { value })
         }
 
@@ -608,6 +840,7 @@ pub fn typecheck_expr_inner(
             let Some(value) = env.symbol_value(ident.as_str()) else {
                 return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
             };
+            let value = value.clone();
 
             let Some(inner_type) = value._type.mem_ref_inner() else {
                 return log_typecheck_error!(
@@ -625,8 +858,9 @@ pub fn typecheck_expr_inner(
                 );
             }
 
-            env.live_nodestruct_locals.remove(&ident.as_string());
-            let leaked = typecheck_expr(env, base_data, inner, None)?.into_expression();
+            ensure_binding_available(env, inner, ident)?;
+            let leaked = value.clone();
+            env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
 
             TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::LeakLifetime {
                 expression: Box::new(leaked),
@@ -836,7 +1070,19 @@ pub fn typecheck_expr_inner(
             lhs,
             rhs,
         } => {
-            let lhs_val = typecheck_expr(env, base_data, lhs, None)?.into_expression();
+            let lhs_val = if op.is_none() {
+                if let CXExprKind::Identifier(name) = &lhs.kind {
+                    if let Some(symbol_val) = env.symbol_value(name.as_str()) {
+                        symbol_val.clone()
+                    } else {
+                        typecheck_expr(env, base_data, lhs, None)?.into_expression()
+                    }
+                } else {
+                    typecheck_expr(env, base_data, lhs, None)?.into_expression()
+                }
+            } else {
+                typecheck_expr(env, base_data, lhs, None)?.into_expression()
+            };
             let lhs_type = lhs_val.get_type();
 
             let Some(inner) = lhs_type.mem_ref_inner() else {
@@ -862,6 +1108,12 @@ pub fn typecheck_expr_inner(
             }
 
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), inner)?;
+
+            if op.is_none()
+                && let CXExprKind::Identifier(name) = &lhs.kind
+            {
+                env.set_tracked_binding_state(name.as_str(), BindingMoveState::Available);
+            }
 
             TypecheckResult::expr(
                 lhs_val.get_type(),
@@ -912,6 +1164,7 @@ pub fn typecheck_expr_inner(
             let Some(inner_val) = env.symbol_table.get(ident.as_str()) else {
                 return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
             };
+            let inner_val = inner_val.clone();
 
             if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
                 return log_typecheck_error!(
@@ -925,14 +1178,15 @@ pub fn typecheck_expr_inner(
                 unreachable!()
             };
 
-            if env.is_nodestruct(&inner_type) {
-                env.live_nodestruct_locals.remove(&ident.as_string());
+            if env.is_nocopy(&inner_type) {
+                ensure_binding_available(env, inner_expr, ident)?;
+                env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
             }
 
             TypecheckResult::expr(
                 inner_type,
                 MIRExpressionKind::Move {
-                    source: Box::new(inner_val.clone()),
+                    source: Box::new(inner_val),
                 },
             )
         }

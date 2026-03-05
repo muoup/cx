@@ -10,7 +10,7 @@ use cx_mir::mir::expression::MIRExpression;
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
-use cx_util::scoped_map::{ScopedMap, ScopedSet};
+use cx_util::scoped_map::ScopedMap;
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
@@ -35,6 +35,19 @@ pub struct Scope {
     pub has_continue_merge: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingMoveState {
+    Available,
+    Moved,
+    ConditionallyMoved,
+}
+
+#[derive(Clone, Debug)]
+pub struct TrackedBindingState {
+    pub state: BindingMoveState,
+    pub nodestruct: bool,
+}
+
 pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
 
 pub struct TypeEnvironment<'a> {
@@ -52,7 +65,7 @@ pub struct TypeEnvironment<'a> {
     pub arg_vals: Vec<MIRExpression>,
 
     pub symbol_table: ScopedMap<MIRExpression>,
-    pub live_nodestruct_locals: ScopedSet<String>,
+    pub tracked_bindings: ScopedMap<TrackedBindingState>,
     pub scope_stack: Vec<Scope>,
     pub safe_mode: bool,
     pub contract_pure_mode: bool,
@@ -89,7 +102,7 @@ impl TypeEnvironment<'_> {
             scope_stack: Vec::new(),
             requests: Vec::new(),
             symbol_table: ScopedMap::new(),
-            live_nodestruct_locals: ScopedSet::new(),
+            tracked_bindings: ScopedMap::new(),
 
             arg_vals: Vec::new(),
 
@@ -103,7 +116,7 @@ impl TypeEnvironment<'_> {
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
         self.symbol_table.push_scope();
-        self.live_nodestruct_locals.push_scope();
+        self.tracked_bindings.push_scope();
         self.scope_stack.push(Scope {
             has_break_merge,
             has_continue_merge,
@@ -112,7 +125,7 @@ impl TypeEnvironment<'_> {
 
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
-        self.live_nodestruct_locals.pop_scope();
+        self.tracked_bindings.pop_scope();
         self.scope_stack.pop().unwrap();
     }
 
@@ -189,13 +202,17 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn is_copyable(&mut self, ty: &MIRType) -> bool {
-        if let Some(attributes) = ty.struct_attributes() {
-            if attributes.nocopy || attributes.nodestruct {
-                return false;
-            }
+        if self.is_nocopy(ty) {
+            return false;
         }
 
         self.get_deconstructor(ty).is_none()
+    }
+
+    pub fn is_nocopy(&self, ty: &MIRType) -> bool {
+        ty.struct_attributes()
+            .map(|attributes| attributes.nocopy || attributes.nodestruct)
+            .unwrap_or(false)
     }
 
     pub fn is_nodestruct(&self, ty: &MIRType) -> bool {
@@ -208,14 +225,59 @@ impl TypeEnvironment<'_> {
         self.safe_mode && self.unsafe_depth == 0
     }
 
-    pub fn current_scope_live_nodestruct_locals(&self) -> Vec<String> {
+    pub fn track_binding(&mut self, name: String, ty: &MIRType) {
+        if !self.is_nocopy(ty) {
+            return;
+        }
+
+        self.tracked_bindings.insert(
+            name,
+            TrackedBindingState {
+                state: BindingMoveState::Available,
+                nodestruct: self.is_nodestruct(ty),
+            },
+        );
+    }
+
+    pub fn tracked_binding(&self, name: &str) -> Option<&TrackedBindingState> {
+        self.tracked_bindings.get(name)
+    }
+
+    pub fn set_tracked_binding_state(&mut self, name: &str, state: BindingMoveState) {
+        let Some(binding) = self.tracked_bindings.get(name).cloned() else {
+            return;
+        };
+
+        self.tracked_bindings.insert(
+            name.to_string(),
+            TrackedBindingState { state, ..binding },
+        );
+    }
+
+    pub fn current_scope_nodestruct_bindings(&self) -> Vec<(String, TrackedBindingState)> {
         if self.scope_stack.is_empty() {
             return Vec::new();
         }
 
-        self.live_nodestruct_locals
-            .get_all_at_level(self.live_nodestruct_locals.scope_depth())
-            .cloned()
+        self.tracked_bindings
+            .get_all_at_level(self.tracked_bindings.scope_depth())
+            .filter(|(_, binding)| binding.nodestruct)
+            .map(|(name, binding)| (name.clone(), binding.clone()))
+            .collect()
+    }
+
+    pub fn tracked_bindings_snapshot(&self) -> HashMap<String, TrackedBindingState> {
+        self.tracked_bindings
+            .iter()
+            .map(|(name, binding)| (name.clone(), binding.clone()))
+            .collect()
+    }
+
+    pub fn nodestruct_bindings_in_nonfinal_state(&self) -> Vec<String> {
+        self.tracked_bindings
+            .iter()
+            .filter(|(_, binding)| binding.nodestruct && binding.state != BindingMoveState::Moved)
+            .map(|(name, _)| name.clone())
             .collect()
     }
 

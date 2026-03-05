@@ -210,3 +210,35 @@ mod safe_function_tests {
         compile_should_fail(Path::new("../safe_fns/nodestruct_scope_end.cx"), false);
     }
 }
+
+mod move_semantics_tests {
+    use super::*;
+
+    #[test]
+    fn nocopy_if_join() {
+        compile_should_fail(Path::new("../move_semantics/nocopy_if_join.cx"), false);
+    }
+
+    #[test]
+    fn nocopy_loop_join() {
+        compile_should_fail(Path::new("../move_semantics/nocopy_loop_join.cx"), false);
+    }
+
+    #[test]
+    fn nodestruct_conditional_leak() {
+        compile_should_fail(
+            Path::new("../move_semantics/nodestruct_conditional_leak.cx"),
+            false,
+        );
+    }
+
+    #[test]
+    fn nocopy_reinitialize() {
+        compile_only(Path::new("../move_semantics/nocopy_reinitialize.cx"), false);
+    }
+
+    #[test]
+    fn nocopy_move_both_branches() {
+        compile_only(Path::new("../move_semantics/nocopy_move_both_branches.cx"), false);
+    }
+}

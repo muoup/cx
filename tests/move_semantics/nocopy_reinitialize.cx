@@ -1,0 +1,23 @@
+struct Data nocopy {
+    int data;
+};
+
+void consume(Data data) {}
+
+int good() {
+    Data data = (Data) {
+        .data = 1
+    };
+
+    consume(move data);
+    data = (Data) {
+        .data = 2
+    };
+    consume(move data);
+
+    return 0;
+}
+
+int main() {
+    return good();
+}

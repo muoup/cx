@@ -1,0 +1,16 @@
+struct Resource nodestruct {
+    int data;
+};
+
+int bad() {
+    int cond = 0;
+    Resource value = (Resource) {
+        .data = 1
+    };
+
+    if (cond) {
+        @leak(value);
+    }
+
+    return 0;
+}

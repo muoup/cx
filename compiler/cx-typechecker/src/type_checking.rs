@@ -60,6 +60,7 @@ fn typecheck_function(
                 _type: _type.clone().mem_ref_to(),
             },
         );
+        env.track_binding(name.as_string(), _type);
     }
 
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
