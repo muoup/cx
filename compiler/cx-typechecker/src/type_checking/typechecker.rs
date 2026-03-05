@@ -24,7 +24,198 @@ fn anonymous_name_gen() -> String {
 
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
-use cx_mir::mir::types::MIRType;
+use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+
+fn type_is_safe_signature(ty: &MIRType) -> bool {
+    match &ty.kind {
+        MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. } | MIRTypeKind::Unit => true,
+        MIRTypeKind::Structured { fields, .. } => {
+            fields.iter().all(|(_, field_type)| type_is_safe_signature(field_type))
+        }
+        _ => false,
+    }
+}
+
+fn prototype_is_safe_callable(prototype: &MIRFunctionPrototype) -> bool {
+    prototype.contract.safe
+        && !prototype.var_args
+        && type_is_safe_signature(&prototype.return_type)
+        && prototype
+            .params
+            .iter()
+            .all(|param| type_is_safe_signature(&param._type))
+}
+
+fn type_is_safe_expression(ty: &MIRType) -> bool {
+    match &ty.kind {
+        MIRTypeKind::MemoryReference(inner) => type_is_safe_expression(inner),
+        MIRTypeKind::Function { prototype } => prototype_is_safe_callable(prototype),
+        _ => type_is_safe_signature(ty),
+    }
+}
+
+pub(crate) fn validate_safe_function_signature(
+    env: &mut TypeEnvironment,
+    prototype: &MIRFunctionPrototype,
+    expr: &CXExpr,
+) -> CXResult<()> {
+    if !prototype.contract.safe {
+        return Ok(());
+    }
+
+    if prototype.var_args {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Safe function '{}' may not use varargs",
+            prototype.name
+        );
+    }
+
+    if !type_is_safe_signature(&prototype.return_type) {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Safe function '{}' has unsupported return type {}",
+            prototype.name,
+            prototype.return_type
+        );
+    }
+
+    for param in &prototype.params {
+        if !type_is_safe_signature(&param._type) {
+            return log_typecheck_error!(
+                env,
+                expr,
+                " Safe function '{}' has unsupported parameter type {}",
+                prototype.name,
+                param._type
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn assert_scope_nodestruct_discharged(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+) -> CXResult<()> {
+    let live = env.current_scope_live_nodestruct_locals();
+    if live.is_empty() {
+        return Ok(());
+    }
+
+    log_typecheck_error!(
+        env,
+        expr,
+        " nodestruct local(s) reach scope end without move or @leak: {}",
+        live.join(", ")
+    )
+}
+
+fn validate_safe_contract_expression(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    mir_expr: &MIRExpression,
+) -> CXResult<()> {
+    if !env.contract_pure_mode {
+        return Ok(());
+    }
+
+    if !type_is_safe_expression(&mir_expr._type) {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Safe contract expression uses unsupported type {}",
+            mir_expr._type
+        );
+    }
+
+    match &mir_expr.kind {
+        MIRExpressionKind::BoolLiteral(_)
+        | MIRExpressionKind::IntLiteral(..)
+        | MIRExpressionKind::FloatLiteral(..)
+        | MIRExpressionKind::Unit
+        | MIRExpressionKind::Variable(_)
+        | MIRExpressionKind::ContractVariable { .. }
+        | MIRExpressionKind::BinaryOperation { .. }
+        | MIRExpressionKind::UnaryOperation { .. }
+        | MIRExpressionKind::TypeConversion { .. }
+        | MIRExpressionKind::Typechange(_) => Ok(()),
+        _ => log_typecheck_error!(
+            env,
+            expr,
+            " Safe contract conditions must be pure expressions"
+        ),
+    }
+}
+
+fn validate_safe_expression(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    mir_expr: &MIRExpression,
+) -> CXResult<()> {
+    if !env.in_safe_context() {
+        return Ok(());
+    }
+
+    if !type_is_safe_expression(&mir_expr._type) {
+        return log_typecheck_error!(
+            env,
+            expr,
+            " Safe function expression uses unsupported type {}",
+            mir_expr._type
+        );
+    }
+
+    match &mir_expr.kind {
+        MIRExpressionKind::BoolLiteral(_)
+        | MIRExpressionKind::IntLiteral(..)
+        | MIRExpressionKind::FloatLiteral(..)
+        | MIRExpressionKind::Unit
+        | MIRExpressionKind::Variable(_)
+        | MIRExpressionKind::ContractVariable { .. }
+        | MIRExpressionKind::BinaryOperation { .. }
+        | MIRExpressionKind::UnaryOperation { .. }
+        | MIRExpressionKind::MemoryRead { .. }
+        | MIRExpressionKind::MemoryWrite { .. }
+        | MIRExpressionKind::CreateStackVariable { .. }
+        | MIRExpressionKind::Typechange(_)
+        | MIRExpressionKind::If { .. }
+        | MIRExpressionKind::While { .. }
+        | MIRExpressionKind::For { .. }
+        | MIRExpressionKind::Return { .. }
+        | MIRExpressionKind::Block { .. }
+        | MIRExpressionKind::TypeConversion { .. }
+        | MIRExpressionKind::LeakLifetime { .. }
+        | MIRExpressionKind::Unsafe { .. } => Ok(()),
+        MIRExpressionKind::FunctionReference { .. } | MIRExpressionKind::CallFunction { .. } => {
+            let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Safe function call target must have a safe function type"
+                );
+            };
+
+            if prototype_is_safe_callable(prototype) {
+                Ok(())
+            } else {
+                log_typecheck_error!(
+                    env,
+                    expr,
+                    " Safe code may only call other safe functions"
+                )
+            }
+        }
+        _ => log_typecheck_error!(
+            env,
+            expr,
+            " Expression kind is not yet allowed in safe functions"
+        ),
+    }
+}
 
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
@@ -143,6 +334,10 @@ pub fn typecheck_expr_inner(
                 },
             );
 
+            if env.is_nodestruct(&_type) {
+                env.live_nodestruct_locals.insert(name.as_string());
+            }
+
             TypecheckResult::expr2(allocation)
         }
 
@@ -160,6 +355,14 @@ pub fn typecheck_expr_inner(
                         prototype: Box::new(function_type),
                     }),
                 })
+            } else if env.in_safe_context()
+                && base_data.global_variables.contains_key(name.as_str())
+            {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Safe functions may not access global variables"
+                );
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 TypecheckResult::expr2(global)
             } else {
@@ -204,6 +407,7 @@ pub fn typecheck_expr_inner(
                 None
             };
 
+            assert_scope_nodestruct_discharged(env, then_branch)?;
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
@@ -228,6 +432,7 @@ pub fn typecheck_expr_inner(
                 .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
             let body_result = typecheck_expr(env, base_data, body, None)?;
 
+            assert_scope_nodestruct_discharged(env, body)?;
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
@@ -256,6 +461,7 @@ pub fn typecheck_expr_inner(
                 typecheck_expr(env, base_data, increment, None)?.into_expression();
             let body_result = typecheck_expr(env, base_data, body, None)?.into_expression();
 
+            assert_scope_nodestruct_discharged(env, body)?;
             env.pop_scope();
 
             TypecheckResult::expr2(MIRExpression {
@@ -374,6 +580,57 @@ pub fn typecheck_expr_inner(
 
         CXExprKind::Defer { expr: _ } => {
             todo!()
+        }
+
+        CXExprKind::Unsafe { expr: inner } => {
+            env.unsafe_depth += 1;
+            let inner_result = typecheck_expr(env, base_data, inner, expected_type)?;
+            env.unsafe_depth -= 1;
+
+            TypecheckResult::expr2(MIRExpression {
+                source_range: None,
+                _type: inner_result.get_type(),
+                kind: MIRExpressionKind::Unsafe {
+                    expression: Box::new(inner_result.into_expression()),
+                },
+            })
+        }
+
+        CXExprKind::Leak { expr: inner } => {
+            let CXExprKind::Identifier(ident) = &inner.kind else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " @leak currently requires a local identifier"
+                );
+            };
+
+            let Some(value) = env.symbol_value(ident.as_str()) else {
+                return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
+            };
+
+            let Some(inner_type) = value._type.mem_ref_inner() else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " @leak requires a stack local value"
+                );
+            };
+
+            if !env.is_nodestruct(inner_type) {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " @leak is only valid for nodestruct locals"
+                );
+            }
+
+            env.live_nodestruct_locals.remove(&ident.as_string());
+            let leaked = typecheck_expr(env, base_data, inner, None)?.into_expression();
+
+            TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::LeakLifetime {
+                expression: Box::new(leaked),
+            })
         }
 
         CXExprKind::UnOp { operator, operand } => {
@@ -668,6 +925,10 @@ pub fn typecheck_expr_inner(
                 unreachable!()
             };
 
+            if env.is_nodestruct(&inner_type) {
+                env.live_nodestruct_locals.remove(&ident.as_string());
+            }
+
             TypecheckResult::expr(
                 inner_type,
                 MIRExpressionKind::Move {
@@ -789,6 +1050,9 @@ pub fn typecheck_expr_inner(
             end_token: expr.end_index,
         });
     }
+
+    validate_safe_contract_expression(env, expr, &result.expression)?;
+    validate_safe_expression(env, expr, &result.expression)?;
 
     Ok(result)
 }

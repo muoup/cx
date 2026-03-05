@@ -1,0 +1,8 @@
+struct resource nodestruct {
+    int value;
+};
+
+int bad() {
+    resource value;
+    return 0;
+}

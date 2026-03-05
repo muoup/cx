@@ -50,7 +50,12 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             }
             mangled.push(prototype.var_args as u8 as char);
         }
-        MIRTypeKind::Structured { name, fields, .. } => {
+        MIRTypeKind::Structured {
+            name,
+            attributes,
+            fields,
+            ..
+        } => {
             mangled.push('S');
 
             if let Some(n) = name {
@@ -59,6 +64,9 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
                 mangled.push('_');
                 mangled.push_str(n.as_str());
             }
+
+            mangled.push(if attributes.nocopy { 'C' } else { 'c' });
+            mangled.push(if attributes.nodestruct { 'D' } else { 'd' });
 
             mangled.push('f');
             mangled.push_str(&fields.len().to_string());

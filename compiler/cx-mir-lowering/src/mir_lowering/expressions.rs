@@ -346,6 +346,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             _type: _,
         } => Ok(LMIRValue::NULL),
         MIRExpressionKind::LeakLifetime { expression } => lower_expression(builder, expression),
+        MIRExpressionKind::Unsafe { expression } => lower_expression(builder, expression),
 
         MIRExpressionKind::StructFieldAccess {
             base,

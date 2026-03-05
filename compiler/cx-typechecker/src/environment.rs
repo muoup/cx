@@ -10,7 +10,7 @@ use cx_mir::mir::expression::MIRExpression;
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
-use cx_util::scoped_map::ScopedMap;
+use cx_util::scoped_map::{ScopedMap, ScopedSet};
 use cx_util::{CXError, CXResult};
 use std::collections::HashMap;
 
@@ -52,7 +52,11 @@ pub struct TypeEnvironment<'a> {
     pub arg_vals: Vec<MIRExpression>,
 
     pub symbol_table: ScopedMap<MIRExpression>,
+    pub live_nodestruct_locals: ScopedSet<String>,
     pub scope_stack: Vec<Scope>,
+    pub safe_mode: bool,
+    pub contract_pure_mode: bool,
+    pub unsafe_depth: usize,
 
     pub in_external_templated_function: bool,
 
@@ -85,16 +89,21 @@ impl TypeEnvironment<'_> {
             scope_stack: Vec::new(),
             requests: Vec::new(),
             symbol_table: ScopedMap::new(),
+            live_nodestruct_locals: ScopedSet::new(),
 
             arg_vals: Vec::new(),
 
             in_external_templated_function: false,
             generated_functions: Vec::new(),
+            safe_mode: false,
+            contract_pure_mode: false,
+            unsafe_depth: 0,
         }
     }
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
         self.symbol_table.push_scope();
+        self.live_nodestruct_locals.push_scope();
         self.scope_stack.push(Scope {
             has_break_merge,
             has_continue_merge,
@@ -103,6 +112,7 @@ impl TypeEnvironment<'_> {
 
     pub fn pop_scope(&mut self) {
         self.symbol_table.pop_scope();
+        self.live_nodestruct_locals.pop_scope();
         self.scope_stack.pop().unwrap();
     }
 
@@ -179,7 +189,34 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn is_copyable(&mut self, ty: &MIRType) -> bool {
+        if let Some(attributes) = ty.struct_attributes() {
+            if attributes.nocopy || attributes.nodestruct {
+                return false;
+            }
+        }
+
         self.get_deconstructor(ty).is_none()
+    }
+
+    pub fn is_nodestruct(&self, ty: &MIRType) -> bool {
+        ty.struct_attributes()
+            .map(|attributes| attributes.nodestruct)
+            .unwrap_or(false)
+    }
+
+    pub fn in_safe_context(&self) -> bool {
+        self.safe_mode && self.unsafe_depth == 0
+    }
+
+    pub fn current_scope_live_nodestruct_locals(&self) -> Vec<String> {
+        if self.scope_stack.is_empty() {
+            return Vec::new();
+        }
+
+        self.live_nodestruct_locals
+            .get_all_at_level(self.live_nodestruct_locals.scope_depth())
+            .cloned()
+            .collect()
     }
 
     pub fn get_standard_function(

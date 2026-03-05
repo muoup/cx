@@ -186,6 +186,8 @@ pub enum KeywordType {
     Match,
     Where,
     Safe,
+    Nocopy,
+    Nodestruct,
     
     Precondition,
     Postcondition,
@@ -279,6 +281,8 @@ impl TokenKind {
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),
+            "nocopy" => TokenKind::Keyword(KeywordType::Nocopy),
+            "nodestruct" => TokenKind::Keyword(KeywordType::Nodestruct),
             
             "where" => TokenKind::Keyword(KeywordType::Where),
             "pre" => TokenKind::Keyword(KeywordType::Precondition),

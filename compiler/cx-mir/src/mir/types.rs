@@ -73,6 +73,12 @@ pub struct TemplateInstantiationInformation {
     pub template_input: MIRTemplateInput,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct MIRStructAttributes {
+    pub nocopy: bool,
+    pub nodestruct: bool,
+}
+
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum MIRTypeKind {
     Integer {
@@ -86,6 +92,7 @@ pub enum MIRTypeKind {
         name: Option<CXIdent>,
         // Boxed for size reasons
         template_info: Option<Box<TemplateInstantiationInformation>>,
+        attributes: MIRStructAttributes,
         fields: Vec<(String, MIRType)>,
     },
     Union {
@@ -332,6 +339,13 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::Structured { .. })
     }
 
+    pub fn struct_attributes(&self) -> Option<MIRStructAttributes> {
+        match &self.kind {
+            MIRTypeKind::Structured { attributes, .. } => Some(*attributes),
+            _ => None,
+        }
+    }
+
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, MIRTypeKind::MemoryReference(_))
     }
@@ -551,16 +565,19 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
         (
             MIRTypeKind::Structured {
                 name: n1,
+                attributes: a1,
                 fields: t1_fields,
                 ..
             },
             MIRTypeKind::Structured {
                 name: n2,
+                attributes: a2,
                 fields: t2_fields,
                 ..
             },
         ) => {
             n1 == n2
+                && a1 == a2
                 && t1_fields
                     .iter()
                     .zip(t2_fields.iter())

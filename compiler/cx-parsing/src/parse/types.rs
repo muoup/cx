@@ -3,15 +3,18 @@ use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
-    CXFunctionKind, CXPrototype, CXType, CXTypeKind, CXTemplatePrototype,
-    CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
+    CXFunctionKind, CXPrototype, CXStructAttributes, CXType, CXTypeKind,
+    CXTemplatePrototype, CXTypeSpecifier, PredeclarationType, CX_CONST,
+    CX_RESTRICT, CX_VOLATILE,
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
-use crate::parse::templates::{parse_template_args, try_parse_template};
+use crate::parse::templates::{
+    note_templatedtype_s, parse_template_args, try_parse_template, unnote_templatedtype_s,
+};
 use crate::parse::{parse_intrinsic, parse_std_ident};
 
 fn predeclaration_type(
@@ -61,9 +64,28 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
     let name = parse_std_ident(&mut data.tokens).ok();
     let template_prototype = try_parse_template(&mut data.tokens)?;
+    let mut attributes = CXStructAttributes::default();
+
+    loop {
+        match peek_next_kind!(data.tokens) {
+            Ok(keyword!(Nocopy)) => {
+                data.tokens.next();
+                attributes.nocopy = true;
+            }
+            Ok(keyword!(Nodestruct)) => {
+                data.tokens.next();
+                attributes.nodestruct = true;
+            }
+            _ => break,
+        }
+    }
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Struct);
+    }
+
+    if let Some(template_prototype) = &template_prototype {
+        note_templatedtype_s(data, template_prototype);
     }
 
     let mut fields = Vec::new();
@@ -85,10 +107,19 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
         assert_token_matches!(data.tokens, punctuator!(Semicolon));
     }
 
+    if let Some(template_prototype) = &template_prototype {
+        unnote_templatedtype_s(data, template_prototype);
+    }
+
     defined_type(
         data,
         name.clone(),
-        CXTypeKind::Structured { name, fields }.to_type(),
+        CXTypeKind::Structured {
+            name,
+            attributes,
+            fields,
+        }
+        .to_type(),
         template_prototype,
         PredeclarationType::Struct,
     )
@@ -245,7 +276,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
     defined_type(
         data,
         name.clone(),
-        CXTypeKind::Structured { name, fields }.to_type(),
+        CXTypeKind::Union { name, fields }.to_type(),
         template_prototype,
         PredeclarationType::Union,
     )

@@ -236,6 +236,14 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "Defer")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            CXExprKind::Unsafe { expr } => {
+                writeln!(f, "Unsafe")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Leak { expr } => {
+                writeln!(f, "Leak")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
             CXExprKind::New { _type } => {
                 writeln!(f, "New {}", _type)
             }
@@ -391,16 +399,28 @@ impl Display for CXTypeKind {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }
 
-            CXTypeKind::Structured { name, fields, .. } => {
+            CXTypeKind::Structured {
+                name,
+                attributes,
+                fields,
+            } => {
                 let fields_str = fields
                     .iter()
                     .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
+                let mut attr_str = String::new();
+                if attributes.nocopy {
+                    attr_str.push_str(" nocopy");
+                }
+                if attributes.nodestruct {
+                    attr_str.push_str(" nodestruct");
+                }
                 write!(
                     f,
-                    "struct {} {{ {} }}",
+                    "struct {}{} {{ {} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
+                    attr_str,
                     fields_str
                 )
             }

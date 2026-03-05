@@ -479,6 +479,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, "Defer <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
             }
+            MIRExpressionKind::Unsafe { expression } => {
+                writeln!(f, "Unsafe <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::Move { source } => {
                 writeln!(f, "Move <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
@@ -583,13 +587,21 @@ impl Display for MIRTypeKind {
                 write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
             }
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
-            MIRTypeKind::Structured { name, .. } => {
+            MIRTypeKind::Structured {
+                name, attributes, ..
+            } => {
                 write!(
                     f,
-                    "struct {}",
+                    "struct {}{}{}",
                     name.as_ref()
                         .map(|n| n.to_string())
-                        .unwrap_or_else(|| "".to_string())
+                        .unwrap_or_else(|| "".to_string()),
+                    if attributes.nocopy { " nocopy" } else { "" },
+                    if attributes.nodestruct {
+                        " nodestruct"
+                    } else {
+                        ""
+                    }
                 )
             }
             MIRTypeKind::Union { name, .. } => {

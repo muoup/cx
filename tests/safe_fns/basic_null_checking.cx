@@ -1,0 +1,15 @@
+struct ref<T> nocopy {
+    T* data;
+};
+
+struct opt_ref<T> nocopy {
+    T* data;
+};
+
+struct resource nodestruct {
+    int value;
+};
+
+int main() {
+    return 0;
+}

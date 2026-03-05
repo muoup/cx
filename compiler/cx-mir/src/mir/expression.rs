@@ -210,6 +210,9 @@ pub enum MIRExpressionKind {
     Defer {
         expression: Box<MIRExpression>,
     },
+    Unsafe {
+        expression: Box<MIRExpression>,
+    },
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

@@ -16,7 +16,11 @@ use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
-    type_checking::typechecker::{global_expr, typecheck_expr},
+    log_typecheck_error,
+    type_checking::typechecker::{
+        assert_scope_nodestruct_discharged, global_expr, typecheck_expr,
+        validate_safe_function_signature,
+    },
     type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
     },
@@ -37,6 +41,11 @@ fn typecheck_function(
 ) -> CXResult<()> {
     env.push_scope(false, false);
     env.current_function = Some(prototype.clone());
+    env.safe_mode = prototype.contract.safe;
+    env.contract_pure_mode = false;
+    env.unsafe_depth = 0;
+
+    validate_safe_function_signature(env, &prototype, body)?;
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
@@ -57,7 +66,11 @@ fn typecheck_function(
     let with_implicit_return = add_implicit_return(env, body_expr)?;
 
     env.current_function = None;
+    assert_scope_nodestruct_discharged(env, body)?;
     env.pop_scope();
+    env.safe_mode = false;
+    env.contract_pure_mode = false;
+    env.unsafe_depth = 0;
 
     env.generated_functions.push(MIRFunction {
         prototype,
@@ -81,6 +94,14 @@ pub fn typecheck(
 
             CXFunctionStmt::DestructorDefinition { _type, body } => {
                 let cx_type = env.complete_type(base_data, _type)?;
+
+                if env.is_nodestruct(&cx_type) {
+                    return log_typecheck_error!(
+                        env,
+                        body,
+                        " nodestruct types may not define destructors"
+                    );
+                }
 
                 let Some(prototype) = env.get_destructor(base_data, &cx_type) else {
                     unreachable!("Destructor prototype should not be missing: {}", _type);

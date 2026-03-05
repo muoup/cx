@@ -837,6 +837,18 @@ pub fn convert_expression(
             unsupported_expression_error(env, mir_expr)
         }
 
+        MIRExpressionKind::LeakLifetime { .. } => Ok(FMIRNode {
+            source_range: mir_expr.source_range.as_ref().map(FMIRSourceRange::from),
+            _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
+            body: FMIRNodeBody::UnsafeBlock,
+        }),
+
+        MIRExpressionKind::Unsafe { .. } => Ok(FMIRNode {
+            source_range: mir_expr.source_range.as_ref().map(FMIRSourceRange::from),
+            _type: FMIRType::unsafe_effect(FMIRType::pure(mir_expr._type.clone())),
+            body: FMIRNodeBody::UnsafeBlock,
+        }),
+
         _ => unsupported_expression_error(env, mir_expr),
     }?;
 

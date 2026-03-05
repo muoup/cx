@@ -15,6 +15,44 @@ use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::parse::{parse_body, parse_intrinsic, parse_std_ident};
 
+fn parse_at_intrinsic_expr(
+    data: &mut ParserData,
+    ident: &str,
+    start_index: usize,
+) -> CXResult<CXExpr> {
+    match ident {
+        "@unsafe" => {
+            let expr = if try_next!(data.tokens, punctuator!(OpenBrace)) {
+                data.tokens.back();
+                parse_body(data)?
+            } else {
+                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                let expr = parse_expr(data)?;
+                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                expr
+            };
+
+            Ok(CXExprKind::Unsafe {
+                expr: Box::new(expr),
+            }
+            .into_expr(start_index, data.tokens.index))
+        }
+
+        "@leak" => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+
+            Ok(CXExprKind::Leak {
+                expr: Box::new(expr),
+            }
+            .into_expr(start_index, data.tokens.index))
+        }
+
+        _ => log_parse_error!(data, "Unknown intrinsic expression '{}'", ident),
+    }
+}
+
 pub fn is_type_decl(data: &mut ParserData) -> bool {
     let tok = data.tokens.peek();
 
@@ -283,6 +321,12 @@ pub(crate) fn parse_expr_val(
 
         TokenKind::Intrinsic(_) => {
             CXExprKind::Identifier(parse_intrinsic(&mut data.back().tokens)?)
+        }
+        TokenKind::Identifier(ident) if ident.starts_with('@') => {
+            let ident = ident.clone();
+            data.back();
+            expr_stack.push(parse_at_intrinsic_expr(data, ident.as_str(), start_index)?);
+            return Ok(());
         }
         TokenKind::Identifier(_) => {
             data.back();

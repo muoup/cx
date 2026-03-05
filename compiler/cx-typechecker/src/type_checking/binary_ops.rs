@@ -1180,6 +1180,13 @@ pub(crate) fn typecheck_contract(
     prototype: &CXPrototype,
 ) -> CXResult<MIRFunctionContract> {
     let naive_contract = &prototype.contract;
+    let previous_safe_mode = env.safe_mode;
+    let previous_contract_pure_mode = env.contract_pure_mode;
+    let previous_unsafe_depth = env.unsafe_depth;
+
+    env.safe_mode = naive_contract.safe;
+    env.contract_pure_mode = naive_contract.safe;
+    env.unsafe_depth = 0;
 
     env.push_scope(false, false);
 
@@ -1231,6 +1238,9 @@ pub(crate) fn typecheck_contract(
     };
 
     env.pop_scope();
+    env.safe_mode = previous_safe_mode;
+    env.contract_pure_mode = previous_contract_pure_mode;
+    env.unsafe_depth = previous_unsafe_depth;
 
     Ok(MIRFunctionContract {
         safe: naive_contract.safe,

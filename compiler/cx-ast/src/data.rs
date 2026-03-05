@@ -70,6 +70,12 @@ pub enum PredeclarationType {
     Enum,
 }
 
+#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct CXStructAttributes {
+    pub nocopy: bool,
+    pub nodestruct: bool,
+}
+
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXFunctionContract {
     pub safe: bool,
@@ -151,6 +157,7 @@ pub enum CXTypeKind {
 
     Structured {
         name: Option<CXIdent>,
+        attributes: CXStructAttributes,
         fields: Vec<(String, CXType)>,
     },
     Union {

@@ -244,6 +244,12 @@ pub enum CXExprKind {
     Defer {
         expr: Box<CXExpr>,
     },
+    Unsafe {
+        expr: Box<CXExpr>,
+    },
+    Leak {
+        expr: Box<CXExpr>,
+    },
 
     New {
         _type: CXType,

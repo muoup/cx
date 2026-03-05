@@ -1,6 +1,7 @@
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
 use std::path::Path;
+use std::panic::AssertUnwindSafe;
 use std::process::Command;
 
 macro_rules! test_files {
@@ -126,4 +127,86 @@ fn execute_test(input: &Path) {
     std::fs::remove_file(&obj_output).unwrap_or_else(|_| {
         panic!("Could not remove output file: {obj_output}");
     });
+}
+
+fn compile_only(input: &Path, analysis: bool) {
+    if !input.exists() {
+        panic!("[{}] Test file does not exist", input.display());
+    }
+
+    let obj_output = format!("{}.out", input.file_stem().unwrap().to_str().unwrap());
+    let config = CompilerConfig {
+        backend: CompilerBackend::Cranelift,
+        optimization_level: OptimizationLevel::O0,
+        output: (&obj_output).into(),
+        analysis,
+    };
+
+    standard_compilation(config, input).expect("Compilation failed");
+    std::fs::remove_file(&obj_output).unwrap_or(());
+}
+
+fn compile_should_fail(input: &Path, analysis: bool) {
+    if !input.exists() {
+        panic!("[{}] Test file does not exist", input.display());
+    }
+
+    let obj_output = format!("{}.out", input.file_stem().unwrap().to_str().unwrap());
+    let config = CompilerConfig {
+        backend: CompilerBackend::Cranelift,
+        optimization_level: OptimizationLevel::O0,
+        output: (&obj_output).into(),
+        analysis,
+    };
+
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        standard_compilation(config, input);
+    }));
+
+    assert!(
+        result.is_err(),
+        "[{}] Expected compilation failure, but compilation succeeded",
+        input.display()
+    );
+
+    std::fs::remove_file(&obj_output).unwrap_or(());
+}
+
+mod safe_function_tests {
+    use super::*;
+
+    #[test]
+    fn basic_null_checking() {
+        compile_only(Path::new("../safe_fns/basic_null_checking.cx"), true);
+    }
+
+    #[test]
+    fn basic_safe() {
+        compile_should_fail(Path::new("../safe_fns/basic_safe.cx"), true);
+    }
+
+    #[test]
+    fn raw_pointer_param() {
+        compile_should_fail(Path::new("../safe_fns/raw_pointer_param.cx"), true);
+    }
+
+    #[test]
+    fn raw_pointer_local() {
+        compile_should_fail(Path::new("../safe_fns/raw_pointer_local.cx"), true);
+    }
+
+    #[test]
+    fn non_safe_call() {
+        compile_should_fail(Path::new("../safe_fns/non_safe_call.cx"), true);
+    }
+
+    #[test]
+    fn impure_contract() {
+        compile_should_fail(Path::new("../safe_fns/impure_contract.cx"), true);
+    }
+
+    #[test]
+    fn nodestruct_scope_end() {
+        compile_should_fail(Path::new("../safe_fns/nodestruct_scope_end.cx"), false);
+    }
 }

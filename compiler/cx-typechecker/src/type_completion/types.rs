@@ -4,7 +4,7 @@ use cx_ast::ast::VisibilityMode;
 use cx_ast::data::{CXTemplateInput, CXType, CXTypeKind};
 use cx_pipeline_data::CompilationUnit;
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::types::{MIRTemplateInput, MIRType, MIRTypeKind};
+use cx_mir::mir::types::{MIRStructAttributes, MIRTemplateInput, MIRType, MIRTypeKind};
 use cx_util::{CXResult, log_error};
 
 use crate::environment::TypeEnvironment;
@@ -131,7 +131,11 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXTypeKind::Structured { name, fields, .. } => {
+        CXTypeKind::Structured {
+            name,
+            attributes,
+            fields,
+        } => {
             let fields = fields
                 .iter()
                 .map(|(name, field_type)| {
@@ -143,6 +147,10 @@ pub(crate) fn _complete_type(
             let ty = construct_type(MIRTypeKind::Structured {
                 name: name.clone(),
                 template_info: None,
+                attributes: MIRStructAttributes {
+                    nocopy: attributes.nocopy,
+                    nodestruct: attributes.nodestruct,
+                },
                 fields,
             })?;
 
