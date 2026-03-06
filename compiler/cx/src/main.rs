@@ -14,37 +14,24 @@ fn main() {
     };
 
     let path = Path::new(&args.input_file);
-    let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
-    let working_directory = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .map(|parent| invocation_directory.join(parent))
-        .unwrap_or_else(|| invocation_directory.clone());
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::env::set_current_dir(parent).expect("Failed to set current directory");
+        }
+    }
     let file_name = path
         .file_name()
         .expect("Failed to get file name from path")
         .to_str()
         .expect("Failed to convert file name to string");
 
-    let internal_directory = working_directory.join(".internal");
-    std::fs::create_dir_all(&internal_directory).expect("Failed to create internal directory");
-    std::fs::write(internal_directory.join("compiler-dump.data"), "")
-        .expect("Failed to clear dump file");
-
-    let output_file = PathBuf::from(&args.output_file);
-    let output = if output_file.is_absolute() {
-        output_file
-    } else {
-        working_directory.join(output_file)
-    };
+    std::fs::create_dir_all(".internal").expect("Failed to create internal directory");
+    std::fs::write(".internal/compiler-dump.data", "").expect("Failed to clear dump file");
 
     let compiler_config = CompilerConfig {
         backend: args.backend,
         optimization_level: args.optimization_level,
-        output,
-        analysis: args.analysis,
-        working_directory,
-        internal_directory,
+        output: PathBuf::from(&args.output_file),
     };
 
     standard_compilation(compiler_config, PathBuf::from(file_name).as_path())

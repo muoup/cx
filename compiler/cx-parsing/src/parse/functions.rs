@@ -1,10 +1,9 @@
-use cx_tokens::{identifier, keyword, operator, punctuator};
-use cx_ast::{
+use cx_lexer_data::{identifier, keyword, operator, punctuator};
+use cx_parsing_data::{
     assert_token_matches,
     data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXParameter, CXFunctionPrototype,
-        CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
-        PredeclarationType,
+        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXNaiveParameter,
+        CXNaivePrototype, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, PredeclarationType,
     },
     peek_next_kind, try_next,
 };
@@ -12,19 +11,67 @@ use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
     expressions::parse_expr,
+    parse_std_ident,
     parser::ParserData,
     templates::{convert_template_proto_to_args, try_parse_template},
-    types::{parse_initializer, parse_specifier},
+    types::parse_initializer,
 };
 
 pub struct FunctionDeclaration {
-    pub prototype: CXFunctionPrototype,
+    pub prototype: CXNaivePrototype,
     pub template_prototype: Option<CXTemplatePrototype>,
+}
+
+fn destructor_prototype(_type: CXNaiveType) -> CXNaivePrototype {
+    CXNaivePrototype {
+        kind: CXFunctionKind::Destructor(CXFunctionTypeIdent::from_type(&_type).unwrap()),
+
+        return_type: CXNaiveTypeKind::Identifier {
+            name: CXIdent::new("void"),
+            predeclaration: PredeclarationType::None,
+        }
+        .to_type(),
+        params: vec![],
+        var_args: false,
+        contract: CXFunctionContract::default(),
+    }
+}
+
+pub fn parse_destructor_prototype(data: &mut ParserData) -> CXResult<FunctionDeclaration> {
+    assert_token_matches!(data.tokens, operator!(Tilda));
+
+    let name = parse_std_ident(&mut data.tokens)?;
+    let template_prototype = try_parse_template(&mut data.tokens)?;
+
+    assert_token_matches!(data.tokens, punctuator!(OpenParen));
+    assert_token_matches!(data.tokens, identifier!(this));
+    if this.as_str() != "this" {
+        return log_preparse_error!(data.tokens, "Destructor can only have 'this' as parameter.");
+    }
+    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+
+    let _type = match &template_prototype {
+        Some(prototype) => CXNaiveTypeKind::TemplatedIdentifier {
+            name: name.clone(),
+            input: convert_template_proto_to_args(prototype.clone()),
+        },
+        None => CXNaiveTypeKind::Identifier {
+            name: name.clone(),
+            predeclaration: PredeclarationType::None,
+        },
+    };
+
+    let prototype = destructor_prototype(_type.to_type());
+
+    Ok(FunctionDeclaration {
+        prototype,
+        template_prototype,
+    })
 }
 
 pub fn try_function_parse(
     data: &mut ParserData,
-    return_type: CXType,
+    return_type: CXNaiveType,
     name: CXIdent,
 ) -> CXResult<Option<FunctionDeclaration>> {
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -37,20 +84,13 @@ pub fn try_function_parse(
         //                        ^
         punctuator!(OpenParen) => {
             let args = parse_params(data)?;
-            let prototype = CXFunctionPrototype {
+            let prototype = CXNaivePrototype {
                 return_type,
                 kind: CXFunctionKind::Standard(name.clone()),
                 params: args.params,
                 var_args: args.var_args,
                 contract: args.contract,
             };
-
-            if args.receiver.is_some() {
-                return log_parse_error!(
-                    data,
-                    "Only member functions may declare a 'this' receiver"
-                );
-            }
 
             data.add_function(prototype.clone(), template_prototype.clone());
             Ok(Some(FunctionDeclaration {
@@ -71,12 +111,12 @@ pub fn try_function_parse(
                 //                 ^
                 // We have parsed the `<int>` part as a template prototype rather than
                 // a template argument list, so we need to convert it here.
-                Some(prototype) => CXTypeKind::TemplatedIdentifier {
+                Some(prototype) => CXNaiveTypeKind::TemplatedIdentifier {
                     name,
                     input: convert_template_proto_to_args(prototype),
                 },
 
-                None => CXTypeKind::Identifier {
+                None => CXNaiveTypeKind::Identifier {
                     name,
                     predeclaration: PredeclarationType::None,
                 },
@@ -94,11 +134,10 @@ pub fn try_function_parse(
                 );
             };
 
-            let kind = if let Some(receiver) = params.receiver {
+            let kind = if params.contains_this {
                 CXFunctionKind::MemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
                     name: CXIdent::new(method_name),
-                    receiver,
                 }
             } else {
                 CXFunctionKind::StaticMemberFunction {
@@ -107,7 +146,7 @@ pub fn try_function_parse(
                 }
             };
 
-            let prototype = CXFunctionPrototype {
+            let prototype = CXNaivePrototype {
                 return_type,
                 kind,
                 params: params.params,
@@ -128,17 +167,14 @@ pub fn try_function_parse(
 }
 
 pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
-    let safe = try_next!(data.tokens, keyword!(Safe));
+    if !try_next!(data.tokens, keyword!(Where)) {
+        return Ok(CXFunctionContract::default());
+    }
 
     let mut contract = CXFunctionContract {
-        safe,
         precondition: None,
         postcondition: None,
     };
-    
-    if !try_next!(data.tokens, keyword!(Where)) {
-        return Ok(contract);
-    }
 
     while let Ok(next) = peek_next_kind!(data.tokens) {
         match next {
@@ -197,9 +233,9 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
 }
 
 pub(crate) struct ParseParamsResult {
-    pub(crate) params: Vec<CXParameter>,
+    pub(crate) params: Vec<CXNaiveParameter>,
     pub(crate) var_args: bool,
-    pub(crate) receiver: Option<CXReceiverData>,
+    pub(crate) contains_this: bool,
     pub(crate) contract: CXFunctionContract,
 }
 
@@ -207,43 +243,24 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     assert_token_matches!(data.tokens, punctuator!(OpenParen));
 
     let mut params = Vec::new();
-    let mut receiver = None;
-
-    let receiver_start = data.tokens.index;
-    let parsed_receiver_specifiers = parse_specifier(&mut data.tokens);
+    let mut contains_this = false;
 
     if matches!(peek_next_kind!(data.tokens), Ok(identifier!(this)) if this.as_str() == "this") {
         data.tokens.next();
-        receiver = Some(CXReceiverData {
-            mode: CXReceiverMode::ByRef,
-            specifiers: parsed_receiver_specifiers,
-        });
-    } else if try_next!(data.tokens, operator!(Asterisk)) {
-        assert_token_matches!(data.tokens, identifier!(this));
-        if this.as_str() != "this" {
-            return log_parse_error!(data, "Expected '*this' receiver parameter");
-        }
-        receiver = Some(CXReceiverData {
-            mode: CXReceiverMode::ByMove,
-            specifiers: parsed_receiver_specifiers,
-        });
-    } else {
-        data.tokens.index = receiver_start;
-    }
+        contains_this = true;
 
-    if receiver.is_some()
-
-        && !try_next!(data.tokens, operator!(Comma)) {
+        if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
             let contract = parse_function_contract(data)?;
 
             return Ok(ParseParamsResult {
                 params,
                 var_args: false,
-                receiver,
+                contains_this,
                 contract,
             });
         }
+    };
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
@@ -253,7 +270,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             return Ok(ParseParamsResult {
                 params,
                 var_args: true,
-                receiver,
+                contains_this,
                 contract,
             });
         }
@@ -261,7 +278,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
         if let Ok((name, _type)) = parse_initializer(data) {
             let name = name;
 
-            params.push(CXParameter { name, _type });
+            params.push(CXNaiveParameter { name, _type });
         } else {
             return log_parse_error!(data, "Failed to parse parameter in function call");
         }
@@ -277,7 +294,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     Ok(ParseParamsResult {
         params,
         var_args: false,
-        receiver,
+        contains_this,
         contract,
     })
 }

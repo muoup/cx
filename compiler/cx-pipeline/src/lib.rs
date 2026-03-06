@@ -6,7 +6,6 @@ mod backends;
 
 use crate::linker::link;
 use crate::scheduler::scheduling_loop;
-use cx_util::format::with_dump_directory;
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
@@ -15,6 +14,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> Option<()> {
+    let previous_dir = std::env::current_dir().ok()?;
+
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
@@ -24,13 +25,13 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> Option<
     let initial_job = CompilationJob::new(
         vec![],
         CompilationStep::PreParse,
-        CompilationUnit::from_rooted(base_file.to_str()?, &compiler_context.config.working_directory),
+        CompilationUnit::from_str(base_file.to_str()?),
     );
 
-    with_dump_directory(compiler_context.config.internal_directory.clone(), || {
-        scheduling_loop(&compiler_context, initial_job)?;
-        link(&compiler_context)
-    })?;
+    scheduling_loop(&compiler_context, initial_job)?;
+    link(&compiler_context)?;
+
+    std::env::set_current_dir(previous_dir).ok()?;
 
     Some(())
 }

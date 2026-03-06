@@ -1,0 +1,11 @@
+struct Lifetime {};
+
+~Lifetime(this) {}
+
+void take_lifetime(Lifetime lifetime) {}
+
+int main() {
+    Lifetime lifetime;
+    
+    take_lifetime(lifetime);
+}

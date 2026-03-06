@@ -1,7 +1,0 @@
-enum union Result {
-    ok :: int value
-};
-
-int main() {
-    return 0;
-}

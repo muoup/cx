@@ -226,21 +226,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d2301688392eb071b0bf1a37be05c469d3cc4dbbd95df672fe28ab021e6a096"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "cx"
 version = "0.0.0"
 dependencies = [
  "cx-pipeline",
  "cx-pipeline-data",
-]
-
-[[package]]
-name = "cx-ast"
-version = "0.0.0"
-dependencies = [
- "cx-tokens",
- "cx-util",
- "speedy",
- "uuid",
 ]
 
 [[package]]
@@ -251,8 +251,8 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
- "cx-ast",
- "cx-lmir",
+ "cx-bytecode-data",
+ "cx-parsing-data",
  "cx-util",
 ]
 
@@ -260,23 +260,41 @@ dependencies = [
 name = "cx-backend-llvm"
 version = "0.0.0"
 dependencies = [
- "cx-lmir",
+ "cx-bytecode-data",
  "cx-pipeline-data",
  "cx-util",
  "inkwell",
 ]
 
 [[package]]
-name = "cx-lexer"
+name = "cx-bytecode"
 version = "0.0.0"
 dependencies = [
- "cx-pipeline-data",
- "cx-tokens",
+ "cx-bytecode-data",
+ "cx-parsing",
+ "cx-parsing-data",
+ "cx-typechecker-data",
  "cx-util",
 ]
 
 [[package]]
-name = "cx-lmir"
+name = "cx-bytecode-data"
+version = "0.0.0"
+dependencies = [
+ "cx-util",
+]
+
+[[package]]
+name = "cx-lexer"
+version = "0.0.0"
+dependencies = [
+ "cx-lexer-data",
+ "cx-pipeline-data",
+ "cx-util",
+]
+
+[[package]]
+name = "cx-lexer-data"
 version = "0.0.0"
 dependencies = [
  "cx-util",
@@ -287,28 +305,7 @@ name = "cx-log"
 version = "0.0.0"
 dependencies = [
  "cx-lexer",
- "cx-tokens",
- "cx-util",
-]
-
-[[package]]
-name = "cx-mir"
-version = "0.0.0"
-dependencies = [
- "cx-ast",
- "cx-util",
- "speedy",
- "uuid",
-]
-
-[[package]]
-name = "cx-mir-lowering"
-version = "0.0.0"
-dependencies = [
- "cx-ast",
- "cx-lmir",
- "cx-mir",
- "cx-parsing",
+ "cx-lexer-data",
  "cx-util",
 ]
 
@@ -316,31 +313,39 @@ dependencies = [
 name = "cx-parsing"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-lexer-data",
  "cx-log",
- "cx-mir",
+ "cx-parsing-data",
  "cx-pipeline-data",
- "cx-tokens",
+ "cx-typechecker-data",
  "cx-util",
+]
+
+[[package]]
+name = "cx-parsing-data"
+version = "0.0.0"
+dependencies = [
+ "cx-lexer-data",
+ "cx-util",
+ "speedy",
+ "uuid",
 ]
 
 [[package]]
 name = "cx-pipeline"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
  "cx-backend-cranelift",
  "cx-backend-llvm",
+ "cx-bytecode",
+ "cx-bytecode-data",
  "cx-lexer",
- "cx-lmir",
- "cx-mir",
- "cx-mir-lowering",
+ "cx-lexer-data",
  "cx-parsing",
+ "cx-parsing-data",
  "cx-pipeline-data",
- "cx-safe-analyzer",
- "cx-safe-ir",
- "cx-tokens",
  "cx-typechecker",
+ "cx-typechecker-data",
  "cx-util",
  "fs2",
  "speedy",
@@ -350,49 +355,33 @@ dependencies = [
 name = "cx-pipeline-data"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
- "cx-lmir",
- "cx-mir",
- "cx-tokens",
+ "cx-bytecode-data",
+ "cx-lexer-data",
+ "cx-parsing-data",
+ "cx-typechecker-data",
  "speedy",
-]
-
-[[package]]
-name = "cx-safe-analyzer"
-version = "0.1.0"
-dependencies = [
- "cx-lexer",
- "cx-log",
- "cx-mir",
- "cx-safe-ir",
- "cx-util",
-]
-
-[[package]]
-name = "cx-safe-ir"
-version = "0.1.0"
-dependencies = [
- "cx-mir",
- "cx-util",
-]
-
-[[package]]
-name = "cx-tokens"
-version = "0.0.0"
-dependencies = [
- "cx-util",
 ]
 
 [[package]]
 name = "cx-typechecker"
 version = "0.0.0"
 dependencies = [
- "cx-ast",
+ "cx-lexer-data",
  "cx-log",
- "cx-mir",
+ "cx-parsing-data",
  "cx-pipeline-data",
- "cx-tokens",
+ "cx-typechecker-data",
  "cx-util",
+]
+
+[[package]]
+name = "cx-typechecker-data"
+version = "0.0.0"
+dependencies = [
+ "cx-parsing-data",
+ "cx-util",
+ "speedy",
+ "uuid",
 ]
 
 [[package]]
@@ -505,13 +494,14 @@ checksum = "ad9a7dd586b00f2b20e0b9ae3c6faa351fbfd56d15d63bbce35b13bece682eda"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.111",
 ]
 
 [[package]]
 name = "integration-tests"
 version = "0.0.0"
 dependencies = [
+ "ctor",
  "cx-pipeline",
  "cx-pipeline-data",
 ]
@@ -679,7 +669,7 @@ checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -712,7 +702,7 @@ checksum = "658f2ca5276b92c3dfd65fa88316b4e032ace68f88d7570b43967784c0bac5ac"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -720,6 +710,17 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "syn"
+version = "1.0.109"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
 
 [[package]]
 name = "syn"
@@ -755,7 +756,7 @@ checksum = "3ff15c8ecd7de3849db632e14d18d2571fa09dfc5ed93479bc4485c7a517c913"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -816,7 +817,7 @@ dependencies = [
  "bumpalo",
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.111",
  "wasm-bindgen-shared",
 ]
 

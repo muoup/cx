@@ -1,0 +1,16 @@
+#include <stdio.h>
+
+int get_result() {
+    defer printf("Deferred execution\n");
+
+    printf("Regular execution\n");
+
+    return 10;
+}
+
+int main() {
+    int result = get_result();
+    printf("Result: %d\n", result);
+    
+    return 0;
+}

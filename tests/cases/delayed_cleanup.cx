@@ -1,0 +1,22 @@
+import std::io;
+
+struct Lifetime {};
+
+~Lifetime(this) {
+    println("~Lifetime(this)");
+}
+
+Lifetime create_lifetime(Lifetime l) {
+    // Destructor should NOT be called here
+    println("create_lifetime(Lifetime l)");
+    return l;
+}
+
+int main() {
+    Lifetime l;
+    Lifetime l2 = create_lifetime(move l);
+    println("After create_lifetime");
+    
+    // Only one destructor call should happen here
+    return 0;
+}

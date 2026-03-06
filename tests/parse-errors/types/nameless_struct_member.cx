@@ -1,7 +1,0 @@
-struct Data {
-    int;
-};
-
-int main() {
-    return 0;
-}
