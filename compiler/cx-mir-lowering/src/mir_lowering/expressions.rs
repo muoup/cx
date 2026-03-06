@@ -828,10 +828,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
         } else if mir_fn.prototype.return_type.is_unit() {
             lower_return(builder, None)?;
         } else {
-            unreachable!(
-                "Function '{}' missing return statement",
-                mir_fn.prototype.name
-            );
+            // Possible and fine, means that the end of the function is unreachable (e.g. diverging function or infinite loop)
         }
     }
 

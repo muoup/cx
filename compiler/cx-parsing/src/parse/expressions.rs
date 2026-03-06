@@ -105,9 +105,15 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
-    let Ok(_) = parse_expr_val(data, &mut expr_stack, &mut op_stack) else {
-        return Ok(CXExprKind::Unit.into_expr(0, 0));
-    };
+    let start_index = data.tokens.index;
+
+    if let Err(err) = parse_expr_val(data, &mut expr_stack, &mut op_stack) {
+        if data.tokens.index == start_index {
+            return Ok(CXExprKind::Unit.into_expr(0, 0));
+        }
+
+        return Err(err);
+    }
 
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 

@@ -33,6 +33,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
         MIRExpressionKind::Return { .. }
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
+        MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
         MIRExpressionKind::Block { statements } => statements
             .last()
             .map(expr_may_fall_through)
@@ -388,10 +389,20 @@ pub fn typecheck_expr_inner(
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
         CXExprKind::Block { exprs } => {
-            let block = exprs
-                .iter()
-                .map(|e| typecheck_expr(env, base_data, e, None).map(|res| res.expression))
-                .collect::<CXResult<Vec<_>>>()?;
+            let mut block = Vec::new();
+
+            for statement in exprs {
+                block.push(typecheck_expr(env, base_data, statement, None)?.expression);
+
+                if !env
+                    .scope_stack
+                    .last()
+                    .map(|scope| scope.reachable)
+                    .unwrap_or(true)
+                {
+                    break;
+                }
+            }
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -1407,14 +1418,8 @@ pub fn add_implicit_return(
     env: &mut TypeEnvironment,
     expr: MIRExpression,
 ) -> CXResult<MIRExpression> {
-    if let MIRExpressionKind::Block { statements } = &expr.kind {
-        if let Some(MIRExpression {
-            kind: MIRExpressionKind::Return { .. },
-            ..
-        }) = statements.last()
-        {
-            return Ok(expr);
-        }
+    if !expr_may_fall_through(&expr) {
+        return Ok(expr);
     }
 
     let func = env.current_function().clone();

@@ -5,14 +5,13 @@ struct box<T> : @nodrop {
 };
 
 box<T> box<T>::new<T>(T value) safe {
-    box<T> b;
-    
     @unsafe {
-        b.ptr = malloc(sizeof(T));
+        box<T> b = (box<T>) {
+            .ptr = malloc(sizeof(T))
+        };
         *(b.ptr) = move value;
+        return (move b);
     };
-    
-    return (move b);   
 }
 
 void box<T>::drop<T>(*this) safe {
