@@ -1,5 +1,5 @@
 use cx_lexer::lex;
-use cx_lexer_data::token::TokenKind;
+use cx_tokens::token::TokenKind;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -277,7 +277,7 @@ impl Backend {
         // Create fresh compilation context for each typecheck
         let context = cx_pipeline_data::GlobalCompilationContext {
             config: cx_pipeline_data::CompilerConfig {
-                backend: cx_pipeline_data::CompilerBackend::default(),
+                backend: cx_pipeline_data::CompilerBackend::Cranelift,
                 optimization_level: cx_pipeline_data::OptimizationLevel::O0,
                 output: project_root.join("dummy_output"),
             },

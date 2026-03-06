@@ -1,4 +1,4 @@
-use cx_lexer_data::token::Token;
+use cx_tokens::token::Token;
 use std::path::Path;
 
 fn leading_whitespace_count(s: &str) -> usize {

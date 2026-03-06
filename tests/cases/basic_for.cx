@@ -1,5 +1,7 @@
 import std::io;
 
+#include <stdio.h>
+
 int for_loop(int n) {
     // Test Comment
     for (int i = n; i > 0; i--) {

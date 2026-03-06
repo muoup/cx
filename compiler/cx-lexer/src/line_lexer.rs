@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use cx_lexer_data::punctuator;
-use cx_lexer_data::token::{OperatorType, PunctuatorType, Token, TokenKind};
+use cx_tokens::punctuator;
+use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::char_iter::CharIter;
 
 pub(crate) struct LineLexer<'a> {

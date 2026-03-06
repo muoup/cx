@@ -35,7 +35,16 @@ pub fn parse_args() -> Result<AppArgs, String> {
     let args = std::env::args().collect::<Vec<String>>();
     let mut input_file = None;
     let mut output_file = "a.out".to_string(); // Default output file
-    let mut backend = Default::default();
+    let mut backend = {
+        #[cfg(feature = "backend-llvm")]
+        {
+            CompilerBackend::LLVM
+        }
+        #[cfg(not(feature = "backend-llvm"))]
+        {
+            CompilerBackend::Cranelift
+        }
+    };
     let mut optimization_level = Default::default();
 
     let mut args_iter = args.iter().skip(1);

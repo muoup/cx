@@ -1,7 +1,7 @@
 use crate::parse::ParserData;
-use cx_lexer_data::token::{OperatorType, PunctuatorType, TokenKind};
-use cx_parsing_data::ast::{CXBinOp, CXUnOp};
-use cx_parsing_data::{assert_token_matches, next_kind};
+use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
+use cx_ast::ast::{CXBinOp, CXUnOp};
+use cx_ast::{assert_token_matches, next_kind};
 use cx_util::CXResult;
 
 use crate::parse::expressions::is_type_decl;
@@ -24,7 +24,7 @@ impl PrecOperator {
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access | CXBinOp::MethodCall | CXBinOp::ArrayIndex | CXBinOp::Is => 1,
+        CXBinOp::Access | CXBinOp::ScopeRes | CXBinOp::MethodCall | CXBinOp::ArrayIndex | CXBinOp::Is => 1,
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -47,14 +47,15 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
-        CXUnOp::PostIncrement(_) => 2,
+        CXUnOp::PostIncrement(_) => 1,
+        
+        CXUnOp::PreIncrement(_) => 2,
         CXUnOp::BNot => 2,
+        CXUnOp::LNot => 2,
+        CXUnOp::Negative => 2,
         CXUnOp::Dereference => 2,
-
-        CXUnOp::LNot => 3,
-        CXUnOp::Negative => 3,
-        CXUnOp::AddressOf => 3,
-        CXUnOp::PreIncrement(_) => 3,
+        CXUnOp::AddressOf => 2,
+       
         CXUnOp::ExplicitCast(_) => 3,
     }
 }
@@ -132,6 +133,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::Percent => CXBinOp::Modulus,
 
         OperatorType::Access => CXBinOp::Access,
+        OperatorType::ScopeRes => CXBinOp::ScopeRes,
         OperatorType::Comma => CXBinOp::Comma,
 
         OperatorType::Equal => CXBinOp::Equal,

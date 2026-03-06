@@ -7,4 +7,4 @@ edition = "2024"
 cx-util = { path = "../cx-util" }
 
 cx-lexer = { path = "../cx-lexer" }
-cx-lexer-data = { path = "../cx-lexer-data" }
+cx-tokens = { path = "../cx-tokens" }

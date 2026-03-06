@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_lexer_data::token::Token;
+use cx_tokens::token::Token;
 use cx_util::CXErrorTrait;
 
 pub struct ParseErrorLog {

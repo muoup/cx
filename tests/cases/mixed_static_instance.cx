@@ -1,0 +1,15 @@
+#include <stdio.h>
+
+struct Counter {
+    int c;
+};
+
+Counter Counter::factory() {
+    return { .c = 42 };
+}
+
+int main() {
+    Counter s = Counter::factory();
+    printf("s.c = %d\n", s.c);
+    return 0;
+}

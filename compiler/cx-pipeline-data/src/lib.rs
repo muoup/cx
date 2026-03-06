@@ -63,18 +63,8 @@ pub enum OptimizationLevel {
     Ofast,
 }
 
-#[cfg(feature = "backend-llvm")]
-#[derive(Default, Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash)]
 pub enum CompilerBackend {
-    #[default]
-    LLVM,
-    Cranelift,
-}
-
-#[cfg(not(feature = "backend-llvm"))]
-#[derive(Default, Debug, Clone, Copy, Hash)]
-pub enum CompilerBackend {
-    #[default]
     Cranelift,
     LLVM,
 }
