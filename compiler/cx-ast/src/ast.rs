@@ -5,7 +5,7 @@ use speedy::{Readable, Writable};
 use uuid::Uuid;
 
 use crate::{
-    data::{CXPrototype, CXTemplateInput, CXType, ModuleResource}, type_map::{CXFnMap, CXTypeMap}
+    data::{CXFunctionPrototype, CXTemplateInput, CXType, ModuleResource}, type_map::{CXFnMap, CXTypeMap}
 };
 
 #[derive(Debug, Default)]
@@ -32,12 +32,12 @@ pub enum CXFunctionStmt {
     },
 
     FunctionDefinition {
-        prototype: CXPrototype,
+        prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
     },
 
     TemplatedFunction {
-        prototype: CXPrototype,
+        prototype: CXFunctionPrototype,
         body: Box<CXExpr>,
     },
 }

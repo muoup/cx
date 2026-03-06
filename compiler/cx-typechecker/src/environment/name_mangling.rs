@@ -28,7 +28,9 @@ pub fn base_mangle_fn_name(
     Ok(match &kind {
         CXFunctionKind::Standard(name) => base_mangle_standard(name.as_str()),
 
-        CXFunctionKind::MemberFunction { name, member_type } => {
+        CXFunctionKind::MemberFunction {
+            name, member_type, ..
+        } => {
             let member_type = env.complete_type(base_data, &member_type.as_type())?;
             base_mangle_member(name.as_str(), &member_type)
         }

@@ -33,6 +33,7 @@ pub enum CXFunctionKind {
     MemberFunction {
         member_type: CXFunctionTypeIdent,
         name: CXIdent,
+        receiver: CXReceiverData,
     },
     StaticMemberFunction {
         member_type: CXFunctionTypeIdent,
@@ -46,6 +47,12 @@ pub enum CXReceiverMode {
     None,
     ByRef,
     ByMove,
+}
+
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct CXReceiverData {
+    pub mode: CXReceiverMode,
+    pub specifiers: CXTypeSpecifier,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
@@ -89,10 +96,8 @@ pub struct CXFunctionContract {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
-pub struct CXPrototype {
+pub struct CXFunctionPrototype {
     pub kind: CXFunctionKind,
-    pub receiver_mode: CXReceiverMode,
-    pub receiver_specifiers: CXTypeSpecifier,
     pub params: Vec<CXParameter>,
     pub return_type: CXType,
     pub var_args: bool,
@@ -117,7 +122,7 @@ pub struct CXTemplate<Shell> {
 }
 
 pub type CXTypeTemplate = CXTemplate<CXType>;
-pub type CXFunctionTemplate = CXTemplate<CXPrototype>;
+pub type CXFunctionTemplate = CXTemplate<CXFunctionPrototype>;
 pub type CXTypeSpecifier = u8;
 
 pub const CX_CONST: CXTypeSpecifier = 1 << 0;
@@ -173,7 +178,7 @@ pub enum CXTypeKind {
     },
 
     FunctionPointer {
-        prototype: Box<CXPrototype>,
+        prototype: Box<CXFunctionPrototype>,
     },
 }
 
@@ -294,10 +299,19 @@ impl CXFunctionKind {
         }
     }
 
+    pub fn receiver(&self) -> Option<&CXReceiverData> {
+        match self {
+            CXFunctionKind::MemberFunction { receiver, .. } => Some(receiver),
+            CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => None,
+        }
+    }
+
     pub fn into_key(&self) -> CXFunctionKey {
         match self {
             CXFunctionKind::Standard(name) => CXFunctionKey::Standard(name.clone()),
-            CXFunctionKind::MemberFunction { member_type, name } => {
+            CXFunctionKind::MemberFunction {
+                member_type, name, ..
+            } => {
                 let type_base_name = member_type.base_name().clone();
 
                 CXFunctionKey::MemberFunction {

@@ -1,6 +1,6 @@
 use cx_tokens::token::Token;
 use cx_ast::ast::CXExpr;
-use cx_ast::data::{CXTemplateInput, CXFunctionKind, CXPrototype, CXType};
+use cx_ast::data::{CXTemplateInput, CXFunctionKind, CXFunctionPrototype, CXType};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_mir::CXTypeMap;
@@ -473,7 +473,7 @@ impl TypeEnvironment<'_> {
         &mut self,
         base_data: &MIRBaseMappings,
         external_module: Option<&String>,
-        prototype: &CXPrototype,
+        prototype: &CXFunctionPrototype,
     ) -> CXResult<MIRFunctionPrototype> {
         complete_prototype_no_insert(self, base_data, external_module, prototype).inspect(
             |prototype| {

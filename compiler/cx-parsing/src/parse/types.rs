@@ -3,7 +3,7 @@ use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
-    CXFunctionKind, CXPrototype, CXReceiverMode, CXStructAttributes, CXTemplatePrototype, CXType,
+    CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
     CXTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
@@ -372,22 +372,20 @@ pub(crate) fn parsetype_mods(
             let ParseParamsResult {
                 params,
                 var_args,
-                receiver_mode,
                 contract,
+                receiver,
                 ..
             } = parse_params(data)?;
 
-            if receiver_mode != CXReceiverMode::None {
+            if receiver.is_some() {
                 return log_parse_error!(
                     data,
                     "Function pointer types may not declare a 'this' receiver"
                 );
             }
 
-            let prototype = CXPrototype {
+            let prototype = CXFunctionPrototype {
                 kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
-                receiver_mode: CXReceiverMode::None,
-                receiver_specifiers: 0,
                 return_type: acc_type,
                 params,
                 var_args,

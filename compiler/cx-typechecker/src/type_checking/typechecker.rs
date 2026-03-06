@@ -197,7 +197,11 @@ fn parameter_is_safe_signature(
     param: &cx_mir::mir::types::MIRParameter,
 ) -> bool {
     if index == 0
-        && prototype.receiver_mode == cx_mir::mir::types::MIRReceiverMode::ByRef
+        && prototype
+            .source_prototype
+            .kind
+            .receiver()
+            .is_some_and(|receiver| receiver.mode == cx_ast::data::CXReceiverMode::ByRef)
         && matches!(param.name.as_ref().map(|name| name.as_str()), Some("this"))
     {
         return receiver_type_is_safe_signature(&param._type);

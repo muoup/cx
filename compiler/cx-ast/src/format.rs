@@ -2,10 +2,9 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::{
-    ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
+    ast::{CXAST, CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex},
     data::{
-        CXFunctionKey, CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXPrototype,
-        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
+        CX_CONST, CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind
     },
 };
 
@@ -465,29 +464,9 @@ impl Display for CXTypeKind {
     }
 }
 
-impl Display for CXPrototype {
+impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut params = Vec::new();
-
-        match self.receiver_mode {
-            CXReceiverMode::None => {}
-            CXReceiverMode::ByRef => params.push(format!(
-                "{}this",
-                if self.receiver_specifiers & CX_CONST != 0 {
-                    "const "
-                } else {
-                    ""
-                }
-            )),
-            CXReceiverMode::ByMove => params.push(format!(
-                "{}*this",
-                if self.receiver_specifiers & CX_CONST != 0 {
-                    "const "
-                } else {
-                    ""
-                }
-            )),
-        }
 
         params.extend(self.params
             .iter()
@@ -540,8 +519,22 @@ impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
-            CXFunctionKind::MemberFunction { member_type, name } => {
-                write!(f, "{member_type}::{name}")
+            CXFunctionKind::MemberFunction { member_type, name, receiver } => {
+                write!(f, "{member_type}::{name}")?;
+                
+                match receiver.mode {
+                    CXReceiverMode::ByRef => {
+                        let is_const = (receiver.specifiers & CX_CONST) != 0;
+                        
+                        write!(f, " (receiver: {}this)", if is_const { "const " } else { "" })
+                    }
+                    CXReceiverMode::ByMove => {
+                        let is_const = (receiver.specifiers & CX_CONST) != 0;
+                        
+                        write!(f, " (receiver: {}*this)", if is_const { "const " } else { "" })
+                    }
+                    CXReceiverMode::None => Ok(())
+                }
             }
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
                 write!(f, "{member_type}::{name}")

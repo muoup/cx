@@ -2,7 +2,7 @@ use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
     ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
-    data::{CXPrototype, CXTemplatePrototype},
+    data::{CXFunctionPrototype, CXTemplatePrototype},
     next_kind, peek_next_kind, try_next, PreparseContents,
 };
 use cx_tokens::{
@@ -98,7 +98,7 @@ pub(crate) fn parsetype_def(data: &mut ParserData) -> CXResult<()> {
 
 fn parse_fn_merge(
     data: &mut ParserData,
-    prototype: CXPrototype,
+    prototype: CXFunctionPrototype,
     template_prototype: Option<CXTemplatePrototype>,
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {

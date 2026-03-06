@@ -2,8 +2,8 @@ use cx_tokens::{identifier, keyword, operator, punctuator};
 use cx_ast::{
     assert_token_matches,
     data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXParameter, CXPrototype,
-        CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind, CXTypeSpecifier,
+        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXParameter, CXFunctionPrototype,
+        CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
         PredeclarationType,
     },
     peek_next_kind, try_next,
@@ -18,7 +18,7 @@ use crate::parse::{
 };
 
 pub struct FunctionDeclaration {
-    pub prototype: CXPrototype,
+    pub prototype: CXFunctionPrototype,
     pub template_prototype: Option<CXTemplatePrototype>,
 }
 
@@ -37,17 +37,15 @@ pub fn try_function_parse(
         //                        ^
         punctuator!(OpenParen) => {
             let args = parse_params(data)?;
-            let prototype = CXPrototype {
+            let prototype = CXFunctionPrototype {
                 return_type,
                 kind: CXFunctionKind::Standard(name.clone()),
-                receiver_mode: args.receiver_mode,
-                receiver_specifiers: args.receiver_specifiers,
                 params: args.params,
                 var_args: args.var_args,
                 contract: args.contract,
             };
 
-            if prototype.receiver_mode != CXReceiverMode::None {
+            if args.receiver.is_some() {
                 return log_parse_error!(
                     data,
                     "Only member functions may declare a 'this' receiver"
@@ -96,10 +94,11 @@ pub fn try_function_parse(
                 );
             };
 
-            let kind = if params.receiver_mode != CXReceiverMode::None {
+            let kind = if let Some(receiver) = params.receiver {
                 CXFunctionKind::MemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
                     name: CXIdent::new(method_name),
+                    receiver,
                 }
             } else {
                 CXFunctionKind::StaticMemberFunction {
@@ -108,11 +107,9 @@ pub fn try_function_parse(
                 }
             };
 
-            let prototype = CXPrototype {
+            let prototype = CXFunctionPrototype {
                 return_type,
                 kind,
-                receiver_mode: params.receiver_mode,
-                receiver_specifiers: params.receiver_specifiers,
                 params: params.params,
                 var_args: params.var_args,
                 contract: params.contract,
@@ -202,8 +199,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
 pub(crate) struct ParseParamsResult {
     pub(crate) params: Vec<CXParameter>,
     pub(crate) var_args: bool,
-    pub(crate) receiver_mode: CXReceiverMode,
-    pub(crate) receiver_specifiers: CXTypeSpecifier,
+    pub(crate) receiver: Option<CXReceiverData>,
     pub(crate) contract: CXFunctionContract,
 }
 
@@ -211,28 +207,31 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     assert_token_matches!(data.tokens, punctuator!(OpenParen));
 
     let mut params = Vec::new();
-    let mut receiver_mode = CXReceiverMode::None;
-    let mut receiver_specifiers = 0;
+    let mut receiver = None;
 
     let receiver_start = data.tokens.index;
     let parsed_receiver_specifiers = parse_specifier(&mut data.tokens);
 
     if matches!(peek_next_kind!(data.tokens), Ok(identifier!(this)) if this.as_str() == "this") {
         data.tokens.next();
-        receiver_mode = CXReceiverMode::ByRef;
-        receiver_specifiers = parsed_receiver_specifiers;
+        receiver = Some(CXReceiverData {
+            mode: CXReceiverMode::ByRef,
+            specifiers: parsed_receiver_specifiers,
+        });
     } else if try_next!(data.tokens, operator!(Asterisk)) {
         assert_token_matches!(data.tokens, identifier!(this));
         if this.as_str() != "this" {
             return log_parse_error!(data, "Expected '*this' receiver parameter");
         }
-        receiver_mode = CXReceiverMode::ByMove;
-        receiver_specifiers = parsed_receiver_specifiers;
+        receiver = Some(CXReceiverData {
+            mode: CXReceiverMode::ByMove,
+            specifiers: parsed_receiver_specifiers,
+        });
     } else {
         data.tokens.index = receiver_start;
     }
 
-    if receiver_mode != CXReceiverMode::None {
+    if receiver.is_some() {
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
@@ -241,8 +240,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             return Ok(ParseParamsResult {
                 params,
                 var_args: false,
-                receiver_mode,
-                receiver_specifiers,
+                receiver,
                 contract,
             });
         }
@@ -256,8 +254,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             return Ok(ParseParamsResult {
                 params,
                 var_args: true,
-                receiver_mode,
-                receiver_specifiers,
+                receiver,
                 contract,
             });
         }
@@ -281,8 +278,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     Ok(ParseParamsResult {
         params,
         var_args: false,
-        receiver_mode,
-        receiver_specifiers,
+        receiver,
         contract,
     })
 }

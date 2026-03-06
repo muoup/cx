@@ -1,7 +1,9 @@
 use std::hash::{Hash, Hasher};
 
 use cx_ast::ast::VisibilityMode;
-use cx_ast::data::{CXTypeSpecifier, CX_CONST};
+use cx_ast::data::{
+    CX_CONST, CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXTypeKind, CXTypeSpecifier, PredeclarationType
+};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -35,18 +37,10 @@ pub struct MIRParameter {
     pub _type: MIRType,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
-pub enum MIRReceiverMode {
-    #[default]
-    None,
-    ByRef,
-    ByMove,
-}
-
-#[derive(Debug, Clone, Default, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRFunctionPrototype {
     pub name: CXIdent,
-    pub receiver_mode: MIRReceiverMode,
+    pub source_prototype: CXFunctionPrototype,
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
@@ -532,7 +526,17 @@ impl MIRType {
             MIRTypeKind::Function {
                 prototype: Box::new(MIRFunctionPrototype {
                     name: CXIdent::from("__internal_function"),
-                    receiver_mode: MIRReceiverMode::None,
+                    source_prototype: CXFunctionPrototype {
+                        kind: CXFunctionKind::Standard(CXIdent::from("__internal_function")),
+                        params: vec![],
+                        return_type: CXTypeKind::Identifier {
+                            name: CXIdent::from("void"),
+                            predeclaration: PredeclarationType::None,
+                        }
+                        .to_type(),
+                        var_args: false,
+                        contract: CXFunctionContract::default(),
+                    },
                     return_type: MIRType::unit(),
                     params: vec![],
                     var_args: false,

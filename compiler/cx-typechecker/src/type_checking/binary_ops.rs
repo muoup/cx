@@ -9,13 +9,14 @@ use crate::type_checking::structured_initialization::{
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_ast::data::{CXPrototype, CXType, CXTypeKind, CX_CONST};
+use cx_ast::data::{CXFunctionPrototype, CXType, CXTypeKind, CX_CONST};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRReceiverMode, MIRType, MIRTypeKind};
+use cx_ast::data::CXReceiverMode;
+use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
@@ -193,9 +194,16 @@ fn build_member_receiver_argument(
     lhs_inner: &MIRType,
     prototype: &cx_mir::mir::types::MIRFunctionPrototype,
 ) -> CXResult<MIRExpression> {
-    match prototype.receiver_mode {
-        MIRReceiverMode::None => unreachable!("member function reference missing receiver mode"),
-        MIRReceiverMode::ByRef => Ok(MIRExpression {
+    match prototype
+        .source_prototype
+        .kind
+        .receiver()
+        .map(|receiver| receiver.mode)
+    {
+        None | Some(CXReceiverMode::None) => {
+            unreachable!("member function reference missing receiver mode")
+        }
+        Some(CXReceiverMode::ByRef) => Ok(MIRExpression {
             source_range: None,
             kind: MIRExpressionKind::TypeConversion {
                 operand: Box::new(lhs),
@@ -203,7 +211,7 @@ fn build_member_receiver_argument(
             },
             _type: lhs_inner.clone().mem_ref_to(),
         }),
-        MIRReceiverMode::ByMove => {
+        Some(CXReceiverMode::ByMove) => {
             if let Some(inner_type) = lhs_source._type.mem_ref_inner().cloned() {
                 let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
                     return log_typecheck_error!(
@@ -1263,7 +1271,7 @@ pub(crate) fn typecheck_contract(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     function_name: &CXIdent,
-    prototype: &CXPrototype,
+    prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionContract> {
     let naive_contract = &prototype.contract;
     let previous_safe_mode = env.safe_mode;

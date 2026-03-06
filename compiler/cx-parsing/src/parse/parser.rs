@@ -1,7 +1,7 @@
 use cx_ast::{
     ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
     data::{
-        CXFunctionTemplate, CXLinkageMode, CXPrototype, CXType, CXTemplatePrototype,
+        CXFunctionTemplate, CXLinkageMode, CXFunctionPrototype, CXType, CXTemplatePrototype,
         CXTypeTemplate, ModuleResource,
     },
     PreparseContents,
@@ -88,7 +88,7 @@ impl<'a> ParserData<'a> {
 
     pub fn add_function(
         &mut self,
-        function: CXPrototype,
+        function: CXFunctionPrototype,
         prototype: Option<CXTemplatePrototype>,
     ) {
         match prototype {
