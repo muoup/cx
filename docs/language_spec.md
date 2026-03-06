@@ -1,266 +1,274 @@
 # CX Language Specification
 
-> This specification reflects the current state of the CX language and may evolve as the language matures.
+> This document describes the current implemented surface, not the full intended design space.
 
 ## Overview
 
-CX is a safe-by-default systems programming language designed as a superset of C99. It extends C with modern type system features — linear types, contracts, and compile-time formal verification — while maintaining full C ABI compatibility and predictable memory layout. CX aims to bring the rigor of modern type theory to systems-level programming without sacrificing the simplicity and transparency that make C effective.
+CX is an experimental C-like systems language with opt-in ownership and verification features. It preserves explicit control flow and predictable data layout while adding:
+
+- templates
+- member and static member functions
+- contracts
+- ownership attributes via `@nocopy` and `@nodrop`
+- tagged unions with `match` and `is`
+- `safe` functions with an explicitly restricted sublanguage allowing formal verification via the `--analysis` flag
 
 ## 1. Base Syntax
 
-CX is a superset of C99 (see the [C99 Standard](https://www.dii.uchile.cl/~daespino/files/Iso_C_1999_definition.pdf)). Any valid C99 program should be valid CX with identical semantics, with the sole exception of additional reserved keywords listed in [§2.2](#22-keywords).
-
-A significant divergence from C/C++ is that CX is **not order-dependent**. Types and functions can be declared in any order; the compiler resolves all declarations within a module before compilation begins. Forward declarations are never required.
+CX remains intentionally close to C syntax. It is also not order-dependent: types and functions may be declared in any order within a module. Forward declarations are generally unnecessary.
 
 ## 2. Lexical Conventions
 
-### 2.1: Identifiers
+### 2.1 Identifiers
 
-As in standard C, names beginning with `_` are reserved for the implementation and should be avoided in user code.
+Names beginning with `_` are reserved for the implementation.
 
-### 2.2: Keywords
+### 2.2 Additional Keywords
 
-CX reserves the following keywords in addition to those defined by C99. Programs using these as identifiers will require modification:
+In addition to C keywords, CX reserves:
 
-*   `import`, `defer`, `strong`, `weak`, `new`, `template`, `type`, `match`, `is`, `private`, `public`, `class`, `safe`, `where`, `move`.
+- `import`
+- `defer`
+- `strong`
+- `weak`
+- `new`
+- `template`
+- `type`
+- `match`
+- `is`
+- `class`
+- `safe`
+- `where`
+- `move`
 
-#### Compiler Attributes
+### 2.3 `@`-Prefixed Compiler Identifiers
 
-CX also defines `@`-prefixed compiler attributes, which are not identifiers and cannot collide with user code:
+CX also uses `@`-prefixed compiler identifiers. These are not ordinary user identifiers.
 
-*   `@nocopy` — marks a struct as not trivially copyable. Values of this type must either be initialized with an rvalue, or by an lvalue explicitly
-                moved via the `move` keyword. Assignment without `move` is a compile error.
-*   `@nodrop` — marks a struct as unable to be implicitly dropped. Every `@nodrop` value is implicitly `@nocopy`, and can never fall out of scope
-                without being explicitly consumed via a move or leaked via `@leak`.
-*   `@leak(variable)` — 'moves' a '@nodrop' variable without transferring ownership. Used as the escape hatch destructor for linear types. This
-                operation is inherently unsafe and requires the programmer to ensure that the contents of the variable are adequately cleaned up
-                manually beforehand.
+- `@nocopy`
+- `@nodrop`
+- `@unsafe`
+- `@leak`
 
-## 3. Additional Type Semantics
+## 3. Aggregate Types
 
-### 3.1: Structs
+### 3.1 Structs
 
-Structs in CX share the same guarantees for padding and alignment as C. You may also use attributes as mentioned in [Compiler Attributes](#compiler-attributes) to enforce ownership semantics for complex non-POD types.
+Structs follow C's layout rules for padding and alignment.
 
-#### Instance Methods
+Ownership attributes are attached after the name with `:`.
 
-CX allows declaring member functions for structured types. These do not enable polymorphism, but provide a more ergonomic calling convention for functions that operate on a struct. An instance method declares an explicit `this` parameter, and is called via dot notation on an instance.
-
-```c++
-struct MyStruct {
-    int x;
+```c
+struct Data : @nocopy {
+    int value;
 };
-
-// An instance method: note the explicit `this` parameter.
-void MyStruct::print(this) {
-    printf("x = %d\n", this->x);
-}
-
-void func() {
-    MyStruct s { .x = 10 };
-    s.print(); // Calls the instance method.
-}
 ```
 
-#### Static Member Functions
+Multiple attributes are comma-separated:
 
-A member function declared *without* a `this` parameter is a **static member function**. It belongs to the type's namespace but does not operate on an instance.
-
-*   **Syntax:** `ReturnType TypeName::function_name(params) { ... }` — no `this` parameter.
-*   **Invocation:** Called via `TypeName::function_name(args)`, never via dot notation on an instance.
-
-Static member functions are commonly used for factory patterns:
-
-```c++
-struct MyStruct {
-    int c;
+```c
+struct Resource : @nocopy, @nodrop {
+    int value;
 };
-
-// A static member function — no `this` parameter.
-MyStruct MyStruct::create_struct() {
-    return { .c = 42 };
-}
-
-int main() {
-    MyStruct s = MyStruct::create_struct();
-    printf("s.c = %d\n", s.c);
-    return 0;
-}
 ```
 
-#### Destructors
+Since `@nodrop` implies `@nocopy`, the idiomatic form is to leave out the latter:
 
-Structs may define destructors, which the compiler calls when an instance goes out of scope. When a struct contains a destructable object (e.g., a strong pointer or another struct with destruction logic), the compiler inserts implicit destruction calls as needed. A pointer to a destructable type carries no special semantics — the compiler cannot deduce ownership through a raw pointer.
-
-```c++
-~MyStruct(this) {
-    printf("MyStruct destructor\n");
-}
+```c
+struct Resource : @nodrop {
+    int value;
+};
 ```
 
-### 3.2: Tagged Unions
+### 3.2 Tagged Unions
 
-CX provides tagged unions (sum types / variants) declared with the `enum union` keywords. Each member is a variant with a distinct name and type, defined using the `::` separator.
+Tagged unions are declared with `enum union`.
 
-```c++
+```c
 enum union Output {
     integer :: int,
     fp      :: double,
     string  :: const char*,
-    data    :: struct { int a; double b; char c; }
+    error   :: void
 };
 ```
 
-Instances are constructed via the `::` operator:
+They also support the same ownership attributes:
+
+```c
+enum union Result : @nodrop {
+    ok  :: int,
+    err :: Resource
+};
+```
+
+Variant construction uses `::`:
 
 ```c
 Output o1 = Output::integer(42);
 Output o2 = Output::fp(3.14);
-Output o3 = Output::string("Hello, World!");
 ```
 
-## 4. Templates
+### 3.3 Aggregate Attribute Hierarchy
 
-CX supports templates for writing generic functions and types. Template parameters are declared using angle brackets (`<>`). For functions, the template declaration comes after the function name; for types, after the type name.
+The attribute hierarchy is:
 
-For information regarding templated symbols, see the [name mangling documentation](name_mangling.md).
+- trivially copyable; C-style POD semantics
+- `@nocopy`
+- `@nodrop`
 
-**Function Syntax Example:**
+Containment must respect this order.
+
+- A copyable aggregate may not contain a `@nocopy` or `@nodrop` member.
+- A `@nocopy` aggregate may not contain a `@nodrop` member.
+- A `@nodrop` aggregate may contain either.
+
+This rule applies to:
+
+- struct fields
+- all tagged-union variants
+
+The check is transitive over realized member types.
+
+## 4. Member Functions
+
+CX supports namespaced member syntax without dynamic dispatch.
+
+### 4.1 Borrowed Receiver
+
+An instance method declares `this` as its receiver.
+
+```c
+struct Counter {
+    int value;
+};
+
+void Counter::print(this) {
+    printf("%d\n", this->value);
+}
+```
+
+Call syntax:
+
+```c
+Counter c;
+c.print();
+```
+
+### 4.2 Consuming Receiver
+
+A method may consume its receiver with `*this`.
+
+```c
+void Box<T>::drop(*this) safe {
+    @unsafe {
+        @leak(this);
+    };
+}
+```
+
+Current behavior:
+
+- `x.drop()` consumes `x` when `x` is a whole binding
+- owned aggregate rvalues may also call consuming receivers
+- non-binding places such as `obj.field.drop()` are currently rejected
+
+### 4.3 Static Member Functions
+
+A member declaration with no receiver is a static member function.
+
+```c
+struct MyStruct {
+    int value;
+};
+
+MyStruct MyStruct::create() {
+    return { .value = 42 };
+}
+```
+
+Call syntax:
+
+```c
+MyStruct s = MyStruct::create();
+```
+
+### 4.4 Destructors
+
+Ordinary structs may define destructors:
+
+```c
+~MyStruct(this) {
+    printf("destroy\n");
+}
+```
+
+Current constraints:
+
+- destructors use `this`, not `*this`
+- `@nodrop` types may not define destructors
+- for `@nodrop` types, cleanup must be explicit via move or `@leak`
+
+## 5. Templates
+
+CX supports templated functions and aggregate types.
+
+Function example:
+
 ```c
 T add<T>(T a, T b) {
     return a + b;
 }
-
-int main() {
-    int int_result = add<int>(5, 10);       // 15
-    float float_result = add<float>(5.5, 10.5); // 16.0
-}
 ```
 
-**Type Syntax Example:**
-```c
-typedef<T> T* Ptr;
+Type example:
 
-struct Data<T> {
-    Ptr<T> ptr;
+```c
+struct Box<T> {
+    T value;
 };
+```
 
-int main() {
-    int val = 0;
-    Data<int> data;
-    data.ptr = &val;
-    *data.ptr = 42; // val is now 42
+Current limitations:
+
+- template argument inference is not implemented
+- specialization is effectively one definition per function identifier / realized member slot
+
+## 6. Control Flow
+
+### 6.1 `match`
+
+`match` provides tagged-union pattern dispatch without fallthrough.
+
+```c
+match (out) {
+    Output::integer(i) => printf("%d\n", i);
+    Output::fp(d) => printf("%f\n", d);
+    default => printf("unknown\n");
 }
 ```
 
-### 4.1. Current Limitations
+### 6.2 `is`
 
-**Type Inference:** Template arguments must be explicitly specified at instantiation sites (e.g., `add<int>(...)`). Inference is not yet supported.
-
-**Specialization:** Only one definition is allowed per function identifier. For member functions on templated types, the restriction is one definition per type parameterization + function name combination.
+`is` checks a tagged-union variant and introduces the payload binding on the success path.
 
 ```c
-struct Vec<T> { /* ... */ };
-
-// If this is declared:
-void Vec<int>::some_function() { /* ... */ }
-// This will produce an error:
-void Vec<float>::some_function() { /* ... */ }
-```
-
-## 5. Control Flow
-
-### 5.1. Match Expressions
-
-CX provides a `match` expression as a safer alternative to the C `switch` statement.
-
-*   **No Fallthrough:** Each arm is an independent, scoped block.
-*   **Tagged Union Support:** Arms can deconstruct tagged union variants.
-
-```c
-void print_output(Output out) {
-    match (out) {
-        Output::integer(i) => printf("Integer: %d\n", i);
-        Output::fp(d) => printf("Float: %f\n", d);
-        Output::string(s) => printf("String: %s\n", s);
-        default => printf("Unknown type\n");
-    }
-}
-```
-
-### 5.2. The `is` Operator
-
-The `is` operator checks whether a tagged union instance matches a specific variant at runtime, returning a boolean. When the check succeeds, the variant's inner value is extracted into a new variable available within the conditional's scope.
-
-```c
-Output out = generate_output(2);
-
 if (out is Output::string(s)) {
-    printf("The output is a string: %s\n", s);
-} else {
-    printf("The output is not a string.\n");
+    printf("%s\n", s);
 }
 ```
 
-**Warning:** The `is` operator performs an **unchecked coercion**. If used outside of a conditional check, accessing the extracted variable when the union is not of the expected variant results in **undefined behavior**. Tagged union variants are not yet safely deconstructed; destruction logic for contained variants is not automatically invoked.
+## 7. Modules and Visibility
 
-## 6. Modules and Visibility
+`import` brings public declarations from another module into scope. Imported declarations are not implicitly re-exported.
 
-### 6.1. Importing Modules
+Visibility is controlled by `public:` and `private:` section headers. Declarations are private by default.
 
-The `import` keyword brings all public declarations from another module into the current file's scope. Imported declarations are implicitly private — they are not re-exported to modules that import the current one.
+## 8. Contracts
 
-### 6.2. Visibility Control
-
-Declaration visibility is controlled by `public:` and `private:` headers.
-
-*   `public:` — declarations following this header are visible to importing modules.
-*   `private:` — declarations following this header are local to the current module.
-
-These headers can appear multiple times to toggle visibility. Declarations are `private` by default.
-
-```
-// my_library.cx
-public:
-
-struct PublicType {
-    int value;
-};
-
-void public_function() { /* ... */ }
-
-private:
-
-void internal_helper() { /* ... */ }
-```
-
-## 7. Contracts — Pre/Post-Conditions
-
-CX supports function contracts via `where` clauses on function declarations. Contracts specify preconditions and postconditions that constrain function behavior.
-
-### Syntax
-
-```
-return_type function_name(params)
-where
-    pre: (expr),
-    post(result_name): (expr)
-{ ... }
-```
-
-*   **`pre: (expr)`** — a precondition evaluated before each call site. The expression must hold true for all callers.
-*   **`post(result_name): (expr)`** — a postcondition evaluated after the function body. `result_name` binds the return value for use in the expression.
-*   Multiple clauses are separated by commas.
-
-### Runtime Behavior
-
-In **debug builds**, precondition and postcondition violations abort execution at runtime. In **release builds**, the compiler treats contract expressions as optimization assumptions.
-
-### Example
+Contracts are attached with `where` clauses.
 
 ```c
-#include <stdio.h>
-
 int contract(int a, int b)
 where
     pre: (a > 0 && b > 0),
@@ -268,170 +276,147 @@ where
 {
     return a + b;
 }
-
-int main() {
-    int z = contract(5, 10);
-    printf("Result: %d\n", z);
-    return z;
-}
 ```
 
-## 8. Linear Types — `@nocopy` and `@nodrop`
+Semantics:
 
-CX supports linear type attributes on structs to enforce ownership discipline at compile time.
+- `pre: (expr)` constrains callers
+- `post(name): (expr)` constrains the returned value
+- multiple clauses are comma-separated
 
-### `@nocopy`
+Current runtime behavior:
 
-A struct marked `@nocopy` cannot be implicitly copied. Values must be explicitly transferred via the `move` keyword. Assignment without `move` is a compile error.
+- in non-analysis builds, contracts remain runtime-relevant
+- in `safe` functions, contract expressions are additionally subject to the safe subset
+
+## 9. Ownership Attributes
+
+### 9.1 `@nocopy`
+
+`@nocopy` disables implicit copying.
 
 ```c
 struct Data : @nocopy {
-    int data;
+    int value;
 };
 
 void consume(Data data) {}
 
 int good() {
-    Data data = (Data) { .data = 1 };
+    Data data = (Data) { .value = 1 };
     consume(move data);
 
-    // After moving, `data` can be reinitialized:
-    data = (Data) { .data = 2 };
+    data = (Data) { .value = 2 };
     consume(move data);
     return 0;
 }
 ```
 
-### `@nodrop`
+### 9.2 `@nodrop`
 
-A struct marked `@nodrop` is a **linear type** — it implies `@nocopy` and additionally cannot silently fall out of scope. Every value of a `@nodrop` type must be explicitly consumed via a destructive move or leaked via `@leak(variable)`. `@nodestruct` is accepted as an alias for `@nodrop`.
+`@nodrop` implies `@nocopy` and additionally forbids silent scope exit.
 
 ```c
 struct Resource : @nodrop {
-    int data;
+    int value;
 };
 ```
 
-If a `@nodrop` value reaches the end of its scope without being consumed, the compiler emits an error:
+A reachable scope exit with an undisposed `@nodrop` binding is a type error.
 
-```c
-int bad() {
-    Resource value;
-    return 0; // ERROR: linear type `Resource` not consumed before scope exit.
-}
-```
+### 9.3 `@leak`
 
-### `@leak(variable)`
+`@leak(x)` marks a local `@nodrop` binding as discharged without transferring ownership.
 
-The `@leak` attribute explicitly suppresses the `@nodrop` obligation, marking the binding as consumed without transferring ownership.
+Current restrictions:
 
-### Control-Flow Awareness
+- the operand must be a local identifier
+- the binding must be a stack local
+- the binding must have `@nodrop`
+- conditional `@leak` does not satisfy ownership discharge
 
-The compiler tracks moves across all control-flow paths — branches, loops, `break`, and `continue` — to ensure linearity is satisfied on every possible execution path.
+### 9.4 Control-Flow Merge Rules
 
-**Valid: consumed in both branches.**
-```c
-int good() {
-    int cond = 0;
-    Data data = (Data) { .data = 1 };
+Move state is tracked across:
 
-    if (cond) {
-        consume(move data);
-    } else {
-        consume(move data);
-    }
-    return 0;
-}
-```
+- `if`
+- `match`
+- `switch`
+- loops
+- `break`
+- `continue`
+- `return`
 
-**Invalid: consumed in only one branch.**
-```c
-int bad() {
-    int cond = 0;
-    Data data = (Data) { .data = 1 };
+An inconsistent move state at a reachable join is a type error. Later uses of such a binding are also rejected.
 
-    if (cond) {
-        consume(move data);
-    }
-    // ERROR: `data` may not be consumed on the else path.
-    return 0;
-}
-```
+## 10. Safe Functions
 
-**Invalid: conditional `@leak` does not satisfy linearity.**
-```c
-int bad() {
-    int cond = 0;
-    Resource value = (Resource) { .data = 1 };
-
-    if (cond) {
-        @leak(value);
-    }
-    // ERROR: `value` may not be consumed on the else path.
-    return 0;
-}
-```
-
-## 9. Safe Functions and Formal Verification
-
-CX provides a `safe` keyword for function declarations that enables compile-time formal verification.
-
-### Syntax
+`safe` marks a function body for safe-subset checking.
 
 ```c
 int fn() safe
 where
     post(ret): (ret == 1)
 {
-    int x = 1;
-    return x;
+    return 1;
 }
 ```
 
-### Restrictions
+`safe` currently means:
 
-Safe functions enforce the following constraints:
+- safe signatures only
+- safe expressions only, except inside `@unsafe`
+- pure contract expressions
+- optional FMIR verification when compilation is run with `--analysis`
 
-1.  **No raw pointers.** Parameters and local variables cannot have pointer types.
+### 10.1 Core Restrictions
 
-    ```c
-    // ERROR: raw pointer parameter in safe function.
-    int bad(int* ptr) safe { return 0; }
+Current enforced restrictions include:
 
-    // ERROR: raw pointer local in safe function.
-    int bad() safe {
-        int value = 1;
-        int* ptr = &value;
-        return value;
-    }
-    ```
+- raw pointers are rejected in safe signatures and safe expressions
+- safe code may call only other `safe` functions
+- contracts in safe functions must be pure
+- `@leak` is unsafe-only in safe code
 
-2.  **Safe-only calls.** A safe function can only call other functions marked `safe`.
+Note however that safe functions may use unsafe features, however they must be enclosed in `@unsafe` blocks or expressions. The safe-subset checks are suppressed for the enclosed subtree only.
 
-    ```c
-    int helper() { return 1; }
+Examples:
 
-    // ERROR: safe function calls non-safe function `helper`.
-    int bad() safe { return helper(); }
-    ```
+```c
+int bad(int* ptr) safe { return 0; }
+```
 
-3.  **Pure contracts.** Contract expressions in safe functions must be pure — they cannot contain function calls or side effects.
+```c
+int helper() { return 1; }
+int bad() safe { return helper(); }
+```
 
-    ```c
-    int helper() { return 1; }
+```c
+int helper() { return 1; }
+int bad() safe
+where
+    post(ret): (helper() == ret)
+{
+    return 1;
+}
+```
 
-    // ERROR: impure expression in contract of safe function.
-    int bad() safe
-    where
-        post(ret): (helper() == ret)
-    { return 1; }
-    ```
+### 10.2 `@unsafe`
 
-### Formal Verification via FMIR
+`@unsafe` is the explicit escape hatch inside safe code.
 
-The compiler lowers safe functions to **FMIR (Functional MIR)**, a pure functional intermediate representation that models C memory operations as monadic state transformations. This enables compile-time formal verification of contracts.
+Supported forms:
 
-When a contract is **tautologically violated** — the postcondition is provably false given the function body — the compiler emits an error at compile time rather than deferring to runtime:
+- `@unsafe(expr)`
+- `@unsafe { ... }`
+
+The unsafe island suppresses safe-subset checks for its enclosed subtree only.
+
+### 10.3 FMIR Verification
+
+When the compiler is invoked with `--analysis`, `safe` functions are lowered to FMIR and analyzed before normal MIR-to-LMIR lowering continues.
+
+Example:
 
 ```c
 int fn() safe
@@ -439,6 +424,15 @@ where
     post(ret): (ret == 1)
 {
     int x = 0;
-    return x; // ERROR: postcondition `ret == 1` is provably violated.
+    return x;
 }
 ```
+
+Under `--analysis`, this is a compile-time verification error.
+
+## 11. Current Limitations
+
+- consuming receiver calls currently require a whole binding or an owned aggregate rvalue
+- aggregate hierarchy diagnostics are not yet field-precise
+- FMIR verification is opt-in via `--analysis`
+- template argument inference is not implemented

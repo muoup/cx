@@ -1,143 +1,133 @@
 # CX Compiler
-CX is a statically typed C-superset programming language intended to be a modern
-toy-like experimentation with both opt-in complexity and ease of use. The compiler
-is currently written in Rust and uses a multi-stage module-based compilation pipeline
-to transform CX code into machine code.
+CX is an experimental C-like systems language with opt-in type-system and verification features. The compiler is written in Rust and uses a staged pipeline from source text to machine code.
 
 ## Language Philosophy
-CX was originally designed under the philosophy of creating a language built off of C with enough
-modern features for me to self-host its compiler. The goal is to achieve this by around the end of the year 2026,
-however for now this language serves as a playground for applying modern type theory ideas to systems
-level programming.
+CX is a research vehicle for extending a largely C-shaped language with explicit ownership, contracts, and selective static verification without making those mechanisms implicit or ambient. The current design centers on:
 
-Beyond basic modern amenities like templates and destructors, idiomatic CX encourages safe and transparent
-code through **linear types** (`@nocopy`, `@nodrop`), **function contracts** (`where` clauses with
-pre/post-conditions), and **compile-time formal verification** of `safe` functions via a pure functional
-IR (FMIR). These features work to provide safety guarantees while allowing a paradigm with strong low-level
-control and a lack of implicit hidden behavior for a more C-like experience. 
+- explicit ownership attributes via `@nocopy` and `@nodrop`
+- function contracts via `where` clauses
+- tagged unions, `match`, and `is`
+- member and static member functions
+- opt-in `safe` functions
+- optional FMIR-based verification under `--analysis`
 
 ## Getting Started
 
 ### Prerequisites
 
-*   [Rust](https://www.rust-lang.org/tools/install) - for building the compiler.
-*   [GCC](https://gcc.gnu.org/install/) - currently the only supported linker for building executables.
+- [Rust](https://www.rust-lang.org/tools/install)
+- [GCC](https://gcc.gnu.org/install/) for linking executables
 
 #### Optional Prerequisite: LLVM
 
-LLVM is used as a backend for code generation (i.e. generating pseudo-assembly which can then be optimized and assembled into machine code).
-LLVM is currently not required by default, instead opting for the Cranelift backend due to its more lightweight nature and better compatibility
-with Rust. Generating code with LLVM currently uses Inkwell, a set of bindings for LLVM in Rust, which only supports up to LLVM version 18.1.X,
-leading even more to the decision to not include LLVM by default. If you do want better optimized output with LLVM, the steps to install the 
-dependency are as so:
+LLVM is an optional backend. Cranelift is the default backend unless the project is built with the LLVM feature and explicitly configured otherwise.
 
 ##### On Ubuntu/Debian
-The [Github releases page for LLVM](https://github.com/llvm/llvm-project/releases) has prebuilt binaries for Linux 
-systems on a variety of architectures. Having worked on this project both on Windows and Linux, I can confirm that
-this option is much preferable to building LLVM from source. The process that worked for me is as follows:
+The [LLVM releases page](https://github.com/llvm/llvm-project/releases) provides prebuilt binaries for common Linux targets.
 
-1. Download the prebuilt binary tarball for your architecture and extract it somewhere, for example `/usr/opt/llvm-18.1.X'
-2. Add a symbolic link to the 'llvm-config' binary to somewhere in your PATH, for example:
+1. Download and extract the release, for example to `/usr/opt/llvm-18.1.X`.
+2. Add `llvm-config` to `PATH`, for example:
    ```bash
    sudo ln -s /usr/opt/llvm-18.1.X/bin/llvm-config /usr/bin/llvm-config
    ```
-3. Verify the installation by running:
+3. Verify the installation:
    ```bash
    llvm-config --version
    ```
-4. Hopefully, you should now be able to build the project with the LLVM backend enabled.
 
-##### Windows and Otherwise - Building LLVM from Source
-See the [official LLVM documentation](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm) for more information on building LLVM from source.
-Good luck :)
+##### Other Platforms
+See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted.html#getting-the-source-code-and-building-llvm).
 
 ### Installation
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-username/cx.git
-    ```
-2.  Build the project:
-    ```bash
-    cargo build --release [--features llvm-backend]
-    ```
-    
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/cx.git
+   ```
+2. Build the compiler:
+   ```bash
+   cargo build --release [--features llvm-backend]
+   ```
+
 ## Usage
 
-For information regarding the CX language syntax, see the [Language Specification](docs/language_spec.md) document.
+For language syntax and semantics, see [docs/language_spec.md](docs/language_spec.md).
 
-To compile a file in your IDE during development, use the following command:
+Basic invocation:
 
 ```bash
-cargo run --release -- [-O0, -O1, -O2, -O3, -Ofast, -Osize] [-o <output_file>] <file_name>
+cargo run --release -- <file.cx> [options]
 ```
 
-For convenience, you may find it useful to create a link to the 'cx' executable reachable by your OS's path to allow easier compilation after building the project.
+Example symlink on Ubuntu/Debian:
 
-e.g. for Ubuntu/Debian, while in the base of the project directory:
 ```bash
-# Create a symbolic link to the debug build of the project, if desired, the release build will be located in target/release/cx 
 ln -s target/debug/cx /usr/bin/cx
-
-# Compile using the symbol link you created, this link only needs to be created once assuming your project's directory does not change 
-cx [-O0, -O1, etc.] [-o <output_file>] <file_name>
+cx <file.cx> [options]
 ```
 
 ### Options
 
-*   `-O(0-3)`: Set the optimization level (0-3).
-*   `-o <output_file>`: Specify the output file name.
-*   `<file_name>`: The name of the CX file to compile.
+- `--backend-cranelift`: use the Cranelift backend
+- `--backend-llvm`: use the LLVM backend when compiled with LLVM support
+- `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: optimization level
+- `-o <output_file>`: output path
+- `--analysis`: run FMIR generation and verification for `safe` functions before continuing to LMIR
 
 ## Compiler Pipeline
-For a detailed overview of the compiler pipeline, see the [Pipeline Design](docs/pipeline_design.md) document.
+
+See [docs/pipeline_design.md](docs/pipeline_design.md) for the full pipeline description.
 
 ### Project Structure
 
-The compiler is organized into several crates following a modular design:
+**IR and data crates**
+- `cx-tokens`: token definitions
+- `cx-ast`: parsed AST
+- `cx-mir`: typed MIR and type-system data
+- `cx-lmir`: low-level SSA IR
+- `cx-safe-ir`: FMIR for optional safe-function analysis
 
-**Data Crates** (define intermediate representations and data structures):
-- `cx-tokens` - Token definitions and lexer output
-- `cx-ast` - Abstract Syntax Tree structures
-- `cx-mir` - Middle-level IR (type system + MIR definitions)
-- `cx-lmir` - Lower-level MIR (flat SSA representation for backend codegen)
-- `cx-safe-ir` - Functional MIR (FMIR) for safe function analysis
+**Frontend and analysis crates**
+- `cx-lexer`: lexing
+- `cx-parsing`: preparse + parse
+- `cx-typechecker`: type completion, template realization, MIR construction
+- `cx-safe-analyzer`: FMIR generation and verification
+- `cx-mir-lowering`: MIR to LMIR lowering
+- `cx-pipeline`: compilation orchestration
 
-**Implementation Crates** (implement compilation stages):
-- `cx-lexer` - Lexical analysis (text → tokens)
-- `cx-parsing` - Parsing and pre-parsing (tokens → AST)
-- `cx-typechecker` - Type checking and template realization (AST → MIR)
-- `cx-mir-lowering` - MIR to LMIR conversion (MIR → flat SSA)
-- `cx-safe-analyzer` - Compile-time formal verification of safe functions
-- `cx-pipeline` - Pipeline orchestration and module management
+**Backend crates**
+- `cx-backend-cranelift`: Cranelift code generation
+- `cx-backend-llvm`: LLVM code generation
 
-**Backend Crates** (code generation):
-- `cx-backend-cranelift` - Cranelift backend integration
-- `cx-backend-llvm` - LLVM backend integration
-
-**Utilities**:
-- `cx-util` - Shared utilities and error types
-- `cx-log` - Logging infrastructure
+**Utility crates**
+- `cx-util`
+- `cx-log`
 
 ## Backends
 
-CX supports the following backends for code generation:
-
-*   **Cranelift:** A fast and lightweight backend that is ideal for development and debugging.
-*   **LLVM:** A powerful and optimizing backend that is ideal for production builds.
+- **Cranelift**: default development backend
+- **LLVM**: optional optimizing backend
 
 ## Testing
 
-To run the test suite, use the following command. The tests must be ran single-threaded as the compiler currently cannot ensure correctness with overlapping parallel compilation requests.
+Run the test suite with:
 
 ```bash
-cargo test -- --test-threads = 1
+cargo test
 ```
+
+The integration suite is autogenerated from the `tests/` tree. The current top-level categories are:
+
+- `tests/e2e`: compile and run, with expected stdout
+- `tests/compile-only`: compile-success cases
+- `tests/parse-errors`: expected parse failures
+- `tests/type-errors`: expected typecheck failures
+- `tests/verifier-errors`: expected FMIR analysis failures under `--analysis`
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a pull request or open an issue.
+Contributions are welcome. Keep changes local, explicit, and mechanically justified where possible.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
