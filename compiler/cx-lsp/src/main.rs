@@ -78,7 +78,33 @@ const LEGEND_TYPE: &[SemanticTokenType] = &[
 struct Backend {
     client: Client,
     document_map: DashMap<Url, String>,
+    published_diagnostic_files: Mutex<HashSet<Url>>,
     project_root: Arc<Mutex<PathBuf>>,
+}
+
+fn byte_index_to_lsp_position(text: &str, index: usize) -> Position {
+    let mut remaining = index.min(text.len());
+
+    for (line_num, line) in text.lines().enumerate() {
+        let line_len = line.len();
+        if remaining <= line_len {
+            return Position {
+                line: line_num as u32,
+                character: line[..remaining].chars().count() as u32,
+            };
+        }
+
+        remaining = remaining.saturating_sub(line_len + 1);
+    }
+
+    Position {
+        line: text.lines().count().saturating_sub(1) as u32,
+        character: text
+            .lines()
+            .last()
+            .map(|line| line.chars().count() as u32)
+            .unwrap_or(0),
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -194,11 +220,31 @@ impl LanguageServer for Backend {
                 .await;
         }
 
-        // Clear diagnostics for the saved file if no errors were reported for it
-        if !diagnostics_by_file.contains_key(&uri) {
+        let current_files = diagnostics_by_file
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let stale_files = {
+            let mut published = self
+                .published_diagnostic_files
+                .lock()
+                .expect("published diagnostics mutex poisoned");
+            let stale = published
+                .difference(&current_files)
+                .cloned()
+                .collect::<Vec<_>>();
+            *published = current_files;
+            stale
+        };
+
+        for stale_uri in stale_files {
             self.client
-                .publish_diagnostics(uri, vec![], None)
+                .publish_diagnostics(stale_uri, vec![], None)
                 .await;
+        }
+
+        if !diagnostics_by_file.contains_key(&uri) {
+            self.client.publish_diagnostics(uri, vec![], None).await;
         }
     }
 
@@ -231,27 +277,32 @@ impl LanguageServer for Backend {
                 _ => continue,
             };
 
-            let line = token.line - 1; // LSP lines are 0-based
-            let start = token.start_index as u32;
-            let length = (token.end_index - token.start_index) as u32;
+            let start = byte_index_to_lsp_position(&text, token.start_index);
+            let end = byte_index_to_lsp_position(&text, token.end_index);
+            let line = start.line;
+            let length = if end.line == start.line {
+                end.character.saturating_sub(start.character)
+            } else {
+                text[token.start_index..token.end_index].chars().count() as u32
+            };
 
             let delta_line = line - last_line;
             let delta_start = if delta_line == 0 {
-                start - last_start
+                start.character.saturating_sub(last_start)
             } else {
-                start
+                start.character
             };
 
             semantic_tokens.push(SemanticToken {
                 delta_line,
                 delta_start,
-                length,
+                length: length.max(1),
                 token_type,
                 token_modifiers_bitset: 0,
             });
 
             last_line = line;
-            last_start = start;
+            last_start = start.character;
         }
 
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
@@ -272,14 +323,18 @@ impl Backend {
             .unwrap_or(file_path.to_string_lossy().as_ref())
             .to_string();
 
-        let unit = cx_pipeline_data::CompilationUnit::from_str(&path_str);
+        let unit = cx_pipeline_data::CompilationUnit::from_rooted(&path_str, project_root);
+        let internal_directory = project_root.join(".internal").join("zed-lsp");
 
         // Create fresh compilation context for each typecheck
         let context = cx_pipeline_data::GlobalCompilationContext {
             config: cx_pipeline_data::CompilerConfig {
                 backend: cx_pipeline_data::CompilerBackend::Cranelift,
                 optimization_level: cx_pipeline_data::OptimizationLevel::O0,
-                output: project_root.join("dummy_output"),
+                output: project_root.join("zed-lsp-output"),
+                analysis: false,
+                working_directory: project_root.to_path_buf(),
+                internal_directory,
             },
             module_db: cx_pipeline_data::db::ModuleData::new(),
             linking_files: Mutex::new(HashSet::new()),
@@ -303,6 +358,7 @@ async fn main() {
     let (service, socket) = LspService::new(|client| Backend {
         client,
         document_map: DashMap::new(),
+        published_diagnostic_files: Mutex::new(HashSet::new()),
         project_root,
     });
     Server::new(stdin, stdout, socket).serve(service).await;

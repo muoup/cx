@@ -37,10 +37,11 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     identifier_string.push_str(".cx");
     complete_path.push(identifier_string);
 
-    std::fs::create_dir_all(&complete_path).unwrap_or_else(|_| {
+    let parent = complete_path.parent().unwrap_or(&complete_path);
+    std::fs::create_dir_all(parent).unwrap_or_else(|_| {
         panic!(
             "Failed to create internal directory: {}",
-            complete_path.display()
+            parent.display()
         )
     });
 

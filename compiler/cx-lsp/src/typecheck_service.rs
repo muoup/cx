@@ -5,35 +5,113 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range, Url};
+use cx_tokens::token::Token;
+use tower_lsp::lsp_types::{
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Position, Range, Url,
+};
 use cx_pipeline::LSPErrors;
 use cx_typechecker::log::TypeError;
 
-/// Convert a TypeError to an LSP Diagnostic
-///
-/// This function reads the file contents to convert token indices
-/// (character offsets) to line/column positions expected by LSP.
+fn byte_index_to_position(file_contents: &str, index: usize) -> Position {
+    let mut remaining = index.min(file_contents.len());
+
+    for (line_num, line) in file_contents.lines().enumerate() {
+        let line_len = line.len();
+        if remaining <= line_len {
+            return Position {
+                line: line_num as u32,
+                character: line[..remaining].chars().count() as u32,
+            };
+        }
+
+        remaining = remaining.saturating_sub(line_len + 1);
+    }
+
+    Position {
+        line: file_contents.lines().count().saturating_sub(1) as u32,
+        character: file_contents
+            .lines()
+            .last()
+            .map(|line| line.chars().count() as u32)
+            .unwrap_or(0),
+    }
+}
+
+fn token_range(file_contents: &str, tokens: &[Token], token_start: usize, token_end: usize) -> Range {
+    let start_token_index = token_start.min(tokens.len().saturating_sub(1));
+    let end_token_index = token_end
+        .saturating_sub(1)
+        .min(tokens.len().saturating_sub(1));
+
+    let start = tokens
+        .get(start_token_index)
+        .map(|token| byte_index_to_position(file_contents, token.start_index))
+        .unwrap_or_default();
+    let end = tokens
+        .get(end_token_index)
+        .map(|token| byte_index_to_position(file_contents, token.end_index))
+        .unwrap_or(start);
+
+    Range { start, end }
+}
+
+fn fallback_range(file_contents: &str, line: Option<usize>) -> Range {
+    let target_line = line.unwrap_or(1).saturating_sub(1) as u32;
+    let last_line = file_contents.lines().count().saturating_sub(1) as u32;
+    let line_index = target_line.min(last_line);
+    let line_len = file_contents
+        .lines()
+        .nth(line_index as usize)
+        .map(|content| content.chars().count() as u32)
+        .unwrap_or(0);
+
+    Range {
+        start: Position {
+            line: line_index,
+            character: 0,
+        },
+        end: Position {
+            line: line_index,
+            character: line_len.max(1),
+        },
+    }
+}
+
+fn related_information(uri: &Url, range: Range, notes: &[String]) -> Option<Vec<DiagnosticRelatedInformation>> {
+    if notes.is_empty() {
+        return None;
+    }
+
+    Some(
+        notes
+            .iter()
+            .map(|note| DiagnosticRelatedInformation {
+                location: Location {
+                    uri: uri.clone(),
+                    range,
+                },
+                message: note.clone(),
+            })
+            .collect(),
+    )
+}
+
 pub fn type_error_to_diagnostic(error: &TypeError) -> Diagnostic {
     let file_path = &error.compilation_unit;
     let file_contents = std::fs::read_to_string(file_path).unwrap_or_default();
-
-    // Convert character offsets to line/column (1-based)
-    let (start_line, start_col) = cx_log::get_error_loc(&file_contents, error.token_start);
-    let (end_line, end_col) = cx_log::get_error_loc(&file_contents, error.token_end);
+    let uri = Url::from_file_path(file_path).ok();
+    let range = cx_lexer::lex(&file_contents)
+        .map(|tokens| token_range(&file_contents, &tokens, error.token_start, error.token_end))
+        .unwrap_or_else(|| fallback_range(&file_contents, None));
+    let related_information = uri
+        .as_ref()
+        .and_then(|uri| related_information(uri, range, &error.notes));
 
     Diagnostic {
-        range: Range {
-            start: Position {
-                line: (start_line - 1) as u32,  // LSP uses 0-based line numbers
-                character: (start_col - 1) as u32, // LSP uses 0-based columns
-            },
-            end: Position {
-                line: (end_line - 1) as u32,
-                character: (end_col - 1) as u32,
-            },
-        },
+        range,
         severity: Some(DiagnosticSeverity::ERROR),
         message: error.message.clone(),
+        related_information,
         source: Some("cx".to_string()),
         ..Default::default()
     }
@@ -48,21 +126,8 @@ pub fn lsp_error_to_diagnostic(error: &LSPErrors) -> Diagnostic {
         LSPErrors::FatalError { compilation_unit, message, line } => {
             let file_contents = std::fs::read_to_string(compilation_unit).unwrap_or_default();
 
-            // For fatal errors, we may have limited line information
-            let line_num = line.unwrap_or(1) as u32;
-            let line_count = file_contents.lines().count() as u32;
-
             Diagnostic {
-                range: Range {
-                    start: Position {
-                        line: line_num.saturating_sub(1),
-                        character: 0,
-                    },
-                    end: Position {
-                        line: line_num.min(line_count),
-                        character: 1000, // Arbitrary large number to span the line
-                    },
-                },
+                range: fallback_range(&file_contents, *line),
                 severity: Some(DiagnosticSeverity::ERROR),
                 message: message.clone(),
                 source: Some("cx".to_string()),

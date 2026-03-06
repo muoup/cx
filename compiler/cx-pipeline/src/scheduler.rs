@@ -385,8 +385,7 @@ pub(crate) fn perform_job(
 
         CompilationStep::Codegen => {
             let lmir = context.module_db.lmir.take(&job.unit);
-            let mut internal_directory = internal_directory(context, &job.unit);
-            internal_directory.push(".o");
+            let internal_directory = internal_directory(context, &job.unit).with_extension("o");
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
@@ -689,8 +688,12 @@ fn perform_job_collect_errors(
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
-            let mut env =
-                TypeEnvironment::new(lexemes.as_ref(), job.unit.clone(), &context.module_db);
+            let mut env = TypeEnvironment::new(
+                lexemes.as_ref(),
+                job.unit.clone(),
+                context.config.working_directory.clone(),
+                &context.module_db,
+            );
 
             // Collect errors from each typecheck stage
             match complete_base_globals(&mut env, structure_data.as_ref()) {
@@ -707,6 +710,7 @@ fn perform_job_collect_errors(
                             token_start: ts,
                             token_end: te,
                             message: e.error_message(),
+                            notes: Vec::new(),
                         };
                         error_collector.push(LSPErrors::TypeError(type_err.clone()));
                         return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
@@ -732,6 +736,7 @@ fn perform_job_collect_errors(
                             token_start: ts,
                             token_end: te,
                             message: e.error_message(),
+                            notes: Vec::new(),
                         };
                         error_collector.push(LSPErrors::TypeError(type_err.clone()));
                         return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
@@ -757,6 +762,7 @@ fn perform_job_collect_errors(
                             token_start: ts,
                             token_end: te,
                             message: e.error_message(),
+                            notes: Vec::new(),
                         };
                         error_collector.push(LSPErrors::TypeError(type_err.clone()));
                         return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
@@ -782,6 +788,7 @@ fn perform_job_collect_errors(
                             token_start: ts,
                             token_end: te,
                             message: e.error_message(),
+                            notes: Vec::new(),
                         };
                         error_collector.push(LSPErrors::TypeError(type_err.clone()));
                         return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
