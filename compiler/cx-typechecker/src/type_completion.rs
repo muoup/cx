@@ -1,4 +1,4 @@
-use cx_ast::data::{CXPrototype, CXType};
+use cx_ast::data::{CXFunctionPrototype, CXType};
 use cx_mir::mir::{program::MIRBaseMappings, types::{MIRFunctionPrototype, MIRType}};
 use cx_util::CXResult;
 
@@ -14,7 +14,7 @@ pub fn complete_prototype_no_insert(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
-    prototype: &CXPrototype,
+    prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
     let (_, base_data) = base_data_from_module(env, base_data, external_module);
     

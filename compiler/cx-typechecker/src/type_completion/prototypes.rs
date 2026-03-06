@@ -1,19 +1,33 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::name_mangling::base_mangle_fn_name;
 use crate::type_checking::binary_ops::typecheck_contract;
-use cx_ast::data::{CXTemplateInput, CXParameter, CXPrototype};
+use cx_ast::data::{CXReceiverMode, CXTemplateInput, CXParameter, CXFunctionPrototype, CXTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput};
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
-pub(crate) fn apply_implicit_fn_attr(mut proto: CXPrototype) -> CXPrototype {
+pub(crate) fn apply_implicit_fn_attr(mut proto: CXFunctionPrototype) -> CXFunctionPrototype {
     if let Some(implicit_member) = proto.kind.implicit_member() {
+        let receiver = proto.kind.receiver().copied().unwrap_or_default();
+        let receiver_base_type = implicit_member
+            .as_type()
+            .add_specifier(receiver.specifiers);
+
+        let receiver_type = match receiver.mode {
+            CXReceiverMode::ByRef => CXTypeKind::MemoryReference {
+                inner_type: Box::new(receiver_base_type),
+            }
+            .to_type(),
+            CXReceiverMode::ByMove => receiver_base_type,
+            CXReceiverMode::None => return proto,
+        };
+
         proto.params.insert(
             0,
             CXParameter {
                 name: Some(CXIdent::new("this")),
-                _type: implicit_member.as_type().pointer_to(true, 0),
+                _type: receiver_type,
             },
         );
     }
@@ -38,12 +52,13 @@ pub fn complete_template_args(
 pub fn _complete_fn_prototype(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    prototype: &CXPrototype,
+    prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
-    let prototype = apply_implicit_fn_attr(prototype.clone());
-    let return_type = env.complete_type(base_data, &prototype.return_type)?;
+    let source_prototype = prototype.clone();
+    let normalized_prototype = apply_implicit_fn_attr(source_prototype.clone());
+    let return_type = env.complete_type(base_data, &normalized_prototype.return_type)?;
 
-    let parameters = prototype
+    let parameters = normalized_prototype
         .params
         .iter()
         .map(|CXParameter { name, _type }| {
@@ -56,15 +71,16 @@ pub fn _complete_fn_prototype(
         })
         .collect::<CXResult<Vec<_>>>()?;
 
-    let name = CXIdent::from(base_mangle_fn_name(env, base_data, &prototype.kind)?);
-    let contract = typecheck_contract(env, base_data, &name, &prototype)?;
+    let name = CXIdent::from(base_mangle_fn_name(env, base_data, &source_prototype.kind)?);
+    let contract = typecheck_contract(env, base_data, &name, &normalized_prototype)?;
     
     let prototype = MIRFunctionPrototype {
-        name: name,
+        name,
+        source_prototype,
         return_type,
         params: parameters,
         contract,
-        var_args: prototype.var_args,
+        var_args: normalized_prototype.var_args,
     };
 
     Ok(prototype)

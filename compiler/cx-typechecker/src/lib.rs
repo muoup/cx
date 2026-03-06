@@ -23,7 +23,7 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
     let mut base_globals = ast.global_variables.clone();
 
     for import in ast.imports.iter() {
-        let unit = CompilationUnit::from_str(import.as_str());
+        let unit = CompilationUnit::from_rooted(import.as_str(), &context.config.working_directory);
         let ast = context.module_db.naive_ast.get(&unit);
 
         for (type_name, cx_type) in ast.type_data.standard_iter() {

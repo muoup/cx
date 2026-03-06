@@ -1,28 +1,14 @@
-use std::collections::HashSet;
-
-use crate::mir_lowering::deconstructors::{
-    create_deconstructor_prototype, invoke_conditional_deconstruction,
-};
 use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRUnit, LMIRResult};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
-use cx_mir::mir::name_mangling::{base_mangle_deconstructor, base_mangle_destructor};
 use cx_mir::mir::program::MIRUnit;
-use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::unsafe_float::FloatWrapper;
 use cx_util::CXResult;
-
-#[derive(Debug, Clone)]
-pub struct LivenessEntry {
-    pub region_ptr: LMIRValue,
-    pub liveness_ptr: LMIRValue,
-    pub mir_type: MIRType,
-    pub scope_depth: usize,
-}
 
 #[derive(Debug)]
 pub struct LMIRBuilder {
@@ -32,10 +18,7 @@ pub struct LMIRBuilder {
     pub fn_map: LMIRFunctionMap,
 
     symbol_table: ScopedMap<LMIRValue>,
-    liveness_table: ScopedMap<LivenessEntry>,
     goto_stack: Vec<LMIRGotoContext>,
-
-    deconstructors_needed: HashSet<MIRType>,
     function_context: Option<LMIRFunctionContext>,
 }
 
@@ -69,11 +52,7 @@ impl LMIRBuilder {
                 .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
                 .collect(),
             symbol_table: ScopedMap::new_with_starting_scope(),
-            liveness_table: ScopedMap::new_with_starting_scope(),
             goto_stack: Vec::new(),
-
-            deconstructors_needed: HashSet::new(),
-
             function_context: None,
         }
     }
@@ -116,7 +95,7 @@ impl LMIRBuilder {
     }
 
     /// Take the current function context, leaving None in its place.
-    /// Used when generating nested functions (like deconstructors).
+    /// Used when generating nested helper functions.
     pub fn take_function_context(&mut self) -> Option<LMIRFunctionContext> {
         self.function_context.take()
     }
@@ -142,7 +121,6 @@ impl LMIRBuilder {
 
     pub fn push_scope(&mut self, continue_block: Option<CXIdent>, break_block: Option<CXIdent>) {
         self.symbol_table.push_scope();
-        self.liveness_table.push_scope();
         self.goto_stack.push(LMIRGotoContext {
             continue_block,
             break_block,
@@ -150,9 +128,7 @@ impl LMIRBuilder {
     }
 
     pub fn pop_scope(&mut self) -> CXResult<()> {
-        self.deconstruct_at_current_depth()?;
         self.symbol_table.pop_scope();
-        self.liveness_table.pop_scope();
         self.goto_stack.pop();
 
         Ok(())
@@ -174,69 +150,12 @@ impl LMIRBuilder {
             .expect("Attempted to access function context with no current function selected")
     }
 
-    pub fn add_deconstructor_request(&mut self, _type: MIRType) {
-        let deconstructor_prototype =
-            self.convert_cx_prototype(&create_deconstructor_prototype(&_type));
-
-        self.insert_fn_prototype(deconstructor_prototype);
-        self.deconstructors_needed.insert(_type);
-    }
-
-    pub fn is_deconstructor_pending(&self, _type: &MIRType) -> bool {
-        self.deconstructors_needed.contains(_type)
-    }
-
-    pub fn pop_deconstructor_request(&mut self) -> Option<MIRType> {
-        if let Some(_type) = self.deconstructors_needed.iter().next().cloned() {
-            self.deconstructors_needed.remove(&_type);
-            Some(_type)
-        } else {
-            None
-        }
-    }
-    
-    pub fn get_deconstructor(&self, _type: &MIRType) -> Option<&LMIRFunctionPrototype> {
-        let deconstructor_name = base_mangle_deconstructor(_type);
-        self.get_prototype(deconstructor_name.as_str())
-    }
-
-    pub fn get_destructor(&self, _type: &MIRType) -> Option<&LMIRFunctionPrototype> {
-        let destructor_name = base_mangle_destructor(_type);
-        self.get_prototype(destructor_name.as_str())
-    }
-
     pub fn insert_symbol(&mut self, mir_value: CXIdent, bc_value: LMIRValue) {
         self.symbol_table.insert(mir_value.to_string(), bc_value);
     }
 
     pub fn insert_fn_prototype(&mut self, prototype: LMIRFunctionPrototype) {
         self.fn_map.insert(prototype.name.clone(), prototype);
-    }
-
-    pub fn deconstruct_at_depth(&mut self, depth: usize) -> CXResult<()> {
-        if self.current_block_closed() { return Ok(()); }
-        
-        let deconstructed = self
-            .liveness_table
-            .get_all_at_level(depth)
-            .map(|(_, e)| e.clone())
-            .collect::<Vec<_>>();
-
-        for entry in deconstructed {
-            invoke_conditional_deconstruction(
-                self,
-                &entry.region_ptr,
-                &entry.liveness_ptr,
-                &entry.mir_type,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    pub fn deconstruct_at_current_depth(&mut self) -> CXResult<()> {
-        let current_depth = self.scope_depth();
-        self.deconstruct_at_depth(current_depth)
     }
 
     #[allow(dead_code)]
@@ -277,30 +196,8 @@ impl LMIRBuilder {
         }
     }
 
-    pub fn add_liveness_mapping(
-        &mut self,
-        name: String,
-        region_ptr: LMIRValue,
-        liveness_ptr: LMIRValue,
-        mir_type: MIRType,
-    ) {
-        self.liveness_table.insert(
-            name,
-            LivenessEntry {
-                region_ptr,
-                liveness_ptr,
-                mir_type,
-                scope_depth: self.scope_depth(),
-            },
-        );
-    }
-
-    pub fn get_liveness_mapping(&self, mir_reg: &str) -> Option<&LivenessEntry> {
-        self.liveness_table.get(mir_reg)
-    }
-
     pub fn scope_depth(&self) -> usize {
-        self.liveness_table.scope_depth()
+        self.symbol_table.scope_depth()
     }
 
     pub fn current_mir_prototype(&self) -> &MIRFunctionPrototype {

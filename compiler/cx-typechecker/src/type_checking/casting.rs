@@ -1,4 +1,5 @@
 use cx_ast::ast::CXExpr;
+use cx_ast::data::CX_CONST;
 use cx_mir::mir::{
     expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp},
     types::{MIRIntegerType, MIRType, MIRTypeKind, same_type},
@@ -113,6 +114,7 @@ pub fn implicit_cast(
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
         Ok(MIRExpression {
+            source_range: None,
             _type: to_type.clone(),
             kind: MIRExpressionKind::TypeConversion {
                 operand: Box::new(value.clone()),
@@ -186,14 +188,43 @@ pub fn implicit_cast(
         }
 
         (
-            MIRTypeKind::MemoryReference(inner1),
+            MIRTypeKind::MemoryReference {
+                inner_type: from_inner,
+            },
+            MIRTypeKind::MemoryReference {
+                inner_type: to_inner,
+            },
+        ) if same_type(from_inner.as_ref(), to_inner.as_ref()) => {
+            coerce(MIRCoercion::ReinterpretBits)
+        }
+
+        (
+            MIRTypeKind::MemoryReference {
+                inner_type: from_inner,
+            },
+            MIRTypeKind::MemoryReference {
+                inner_type: to_inner,
+            },
+        ) if {
+            let from_unconst = from_inner.without_specifier(CX_CONST);
+            let to_unconst = to_inner.without_specifier(CX_CONST);
+
+            same_type(&from_unconst, &to_unconst)
+                && !from_inner.get_specifier(CX_CONST)
+                && to_inner.get_specifier(CX_CONST)
+        } => {
+            coerce(MIRCoercion::ReinterpretBits)
+        }
+
+        (
+            MIRTypeKind::MemoryReference { inner_type: inner1, .. },
             MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
         ) if same_type(inner1.as_ref(), inner2.as_ref()) => coerce(MIRCoercion::ReinterpretBits),
 
         (
-            MIRTypeKind::MemoryReference(inner1),
+            MIRTypeKind::MemoryReference { inner_type: inner1, .. },
             MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
@@ -213,7 +244,13 @@ pub fn implicit_cast(
             }
         }
 
-        (MIRTypeKind::MemoryReference(inner), _) => {
+        (
+            MIRTypeKind::MemoryReference {
+                inner_type: inner,
+                ..
+            },
+            _,
+        ) => {
             if !env.is_copyable(inner) {
                 return log_typecheck_error!(
                     env,
@@ -223,13 +260,13 @@ pub fn implicit_cast(
                     to_type
                 );
             }
-            
+
             if inner.is_memory_resident() {
                 let copied = TypecheckResult::copy_region(
                     TypecheckResult::expr2(value.clone()),
                     (*inner.clone()).clone(),
                 );
-                implicit_cast(env, expr, copied.into_expression(), to_type) 
+                implicit_cast(env, expr, copied.into_expression(), to_type)
             } else {
                 // Need to read from memory reference and then cast
                 let loaded = TypecheckResult::memory_read(
@@ -240,7 +277,13 @@ pub fn implicit_cast(
             }
         }
 
-        (_, MIRTypeKind::MemoryReference(inner))
+        (
+            _,
+            MIRTypeKind::MemoryReference {
+                inner_type: inner,
+                ..
+            },
+        )
         | (
             _,
             MIRTypeKind::PointerTo {

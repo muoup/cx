@@ -11,6 +11,7 @@ impl Display for TokenKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenKind::Identifier(name) => write!(f, "{name}"),
+            TokenKind::CompilerIdentifier(name) => write!(f, "@{name}"),
             TokenKind::Intrinsic(intrin) => write!(f, "{intrin}"),
             TokenKind::Keyword(keyword) => write!(f, "{}", format!("{keyword:?}").to_lowercase()),
 

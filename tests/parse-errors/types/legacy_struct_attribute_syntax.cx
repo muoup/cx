@@ -1,0 +1,7 @@
+struct Data nocopy {
+    int value;
+};
+
+int main() {
+    return 0;
+}

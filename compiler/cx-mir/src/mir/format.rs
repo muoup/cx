@@ -1,8 +1,6 @@
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
-use crate::mir::types::{
-    MIRFloatType, MIRIntegerType, MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind,
-};
+use crate::mir::types::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRParameter, MIRType, MIRTypeKind};
 use std::fmt::{Display, Formatter};
 
 impl Display for MIRUnit {
@@ -165,9 +163,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     self.expr._type
                 )
             }
-            MIRExpressionKind::Null => {
-                writeln!(f, "Null <'{}>", self.expr._type)
-            }
+
             MIRExpressionKind::Unit => {
                 writeln!(f, "Unit <'{}>", self.expr._type)
             }
@@ -481,6 +477,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, "Defer <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
             }
+            MIRExpressionKind::Unsafe { expression } => {
+                writeln!(f, "Unsafe <'{}>", self.expr._type)?;
+                MIRExpressionFormatter::new(expression, self.depth + 1).fmt(f)
+            }
             MIRExpressionKind::Move { source } => {
                 writeln!(f, "Move <'{}>", self.expr._type)?;
                 MIRExpressionFormatter::new(source, self.depth + 1).fmt(f)
@@ -585,13 +585,27 @@ impl Display for MIRTypeKind {
                 write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
             }
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
-            MIRTypeKind::Structured { name, .. } => {
+            MIRTypeKind::Structured {
+                name, attributes, ..
+            } => {
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
                 write!(
                     f,
-                    "struct {}",
+                    "struct {}{}",
                     name.as_ref()
                         .map(|n| n.to_string())
-                        .unwrap_or_else(|| "".to_string())
+                        .unwrap_or_else(|| "".to_string()),
+                    if attrs.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(" : {}", attrs.join(", "))
+                    }
                 )
             }
             MIRTypeKind::Union { name, .. } => {
@@ -603,12 +617,32 @@ impl Display for MIRTypeKind {
                         .unwrap_or_else(|| "".to_string())
                 )
             }
-            MIRTypeKind::TaggedUnion { name, .. } => {
-                write!(f, "tagged_union {} ", name)
+            MIRTypeKind::TaggedUnion {
+                name,
+                attributes,
+                ..
+            } => {
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
+                write!(
+                    f,
+                    "tagged_union {}{}",
+                    name,
+                    if attrs.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(" : {}", attrs.join(", "))
+                    }
+                )
             }
             MIRTypeKind::Unit => write!(f, "()"),
             MIRTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
-            MIRTypeKind::MemoryReference(inner) => write!(f, "{}&", inner),
+            MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             MIRTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
             MIRTypeKind::Function { prototype } => write!(f, "{prototype}"),

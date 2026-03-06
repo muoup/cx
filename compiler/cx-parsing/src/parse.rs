@@ -1,20 +1,20 @@
+use cx_ast::{
+    assert_token_matches,
+    ast::VisibilityMode,
+    ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
+    data::{CXFunctionPrototype, CXTemplatePrototype},
+    next_kind, peek_next_kind, try_next, PreparseContents,
+};
 use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{SpecifierType, TokenKind},
     TokenIter,
 };
-use cx_ast::{
-    assert_token_matches,
-    ast::VisibilityMode,
-    ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
-    data::{CXPrototype, CXTemplatePrototype},
-    next_kind, peek_next_kind, try_next, PreparseContents,
-};
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
-    functions::{parse_destructor_prototype, try_function_parse},
+    functions::try_function_parse,
     parser::ParserData,
     templates::{note_templatedtype_s, parse_template_prototype, unnote_templatedtype_s},
     types::parse_initializer,
@@ -49,13 +49,7 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
-        specifier!() => parse_access_mods(data)?,
-
-        operator!(Tilda) => {
-            let destructor = parse_destructor_prototype(data)?;
-            parse_fn_merge(data, destructor.prototype, destructor.template_prototype)?;
-        }
-
+        specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
         _ => parse_global_expr(data)?,
     };
 
@@ -104,7 +98,7 @@ pub(crate) fn parsetype_def(data: &mut ParserData) -> CXResult<()> {
 
 fn parse_fn_merge(
     data: &mut ParserData,
-    prototype: CXPrototype,
+    prototype: CXFunctionPrototype,
     template_prototype: Option<CXTemplatePrototype>,
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
@@ -188,11 +182,13 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             );
         }
 
-        _ => return log_parse_error!(
-            data,
-            "Unexpected token in global expression: {:#?}",
-            data.tokens.peek()
-        ),
+        _ => {
+            return log_parse_error!(
+                data,
+                "Unexpected token in global expression: {:#?}",
+                data.tokens.peek()
+            )
+        }
     }
 
     Ok(())
@@ -240,7 +236,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return log_preparse_error!(tokens, "Expected intrinsic identifier"); 
+        return log_preparse_error!(tokens, "Expected intrinsic identifier");
     }
 
     Ok(CXIdent::new(ss))
@@ -252,7 +248,7 @@ pub fn parse_std_ident(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     };
 
     let ident = ident.clone();
-    
+
     tokens.next();
 
     Ok(CXIdent::new(ident))

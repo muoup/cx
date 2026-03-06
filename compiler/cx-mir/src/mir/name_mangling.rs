@@ -12,14 +12,6 @@ pub fn base_mangle_static_member(name: &str, member_type: &MIRType) -> String {
     format!("_S{}_{}", member_type.mangle(), name)
 }
 
-pub fn base_mangle_destructor(_type: &MIRType) -> String {
-    format!("_D_{}", _type.mangle())
-}
-
-pub fn base_mangle_deconstructor(_type: &MIRType) -> String {
-    format!("_DC_{}", _type.mangle())
-}
-
 pub(crate) fn type_mangle(ty: &MIRType) -> String {
     let mut mangled = String::new();
 
@@ -28,7 +20,7 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             mangled.push('P');
             mangled.push_str(&type_mangle(inner_type));
         }
-        MIRTypeKind::MemoryReference(inner_type) => {
+        MIRTypeKind::MemoryReference { inner_type } => {
             mangled.push('R');
             mangled.push_str(&type_mangle(inner_type));
         }
@@ -50,7 +42,12 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             }
             mangled.push(prototype.var_args as u8 as char);
         }
-        MIRTypeKind::Structured { name, fields, .. } => {
+        MIRTypeKind::Structured {
+            name,
+            attributes,
+            fields,
+            ..
+        } => {
             mangled.push('S');
 
             if let Some(n) = name {
@@ -59,6 +56,9 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
                 mangled.push('_');
                 mangled.push_str(n.as_str());
             }
+
+            mangled.push(if attributes.nocopy { 'C' } else { 'c' });
+            mangled.push(if attributes.nodrop { 'D' } else { 'd' });
 
             mangled.push('f');
             mangled.push_str(&fields.len().to_string());
@@ -75,8 +75,14 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
                 mangled.push_str(&type_mangle(&variant.1));
             }
         }
-        MIRTypeKind::TaggedUnion { variants, .. } => {
+        MIRTypeKind::TaggedUnion {
+            attributes,
+            variants,
+            ..
+        } => {
             mangled.push('T');
+            mangled.push(if attributes.nocopy { 'C' } else { 'c' });
+            mangled.push(if attributes.nodrop { 'D' } else { 'd' });
             mangled.push_str(&variants.len().to_string());
             mangled.push('_');
             for variant in variants {

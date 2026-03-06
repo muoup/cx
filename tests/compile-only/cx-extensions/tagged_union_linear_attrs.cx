@@ -1,0 +1,16 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+enum union Result : @nodrop {
+    ok :: int,
+    err :: Resource
+};
+
+void accept(Result* result) {}
+
+int main() {
+    Result* result;
+    accept(result);
+    return 0;
+}

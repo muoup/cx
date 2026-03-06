@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 
 use crate::data::{
-    CXFunctionKey, CXFunctionTemplate, CXPrototype, CXType, CXTypeKey, CXTypeTemplate,
+    CXFunctionKey, CXFunctionTemplate, CXFunctionPrototype, CXType, CXTypeKey, CXTypeTemplate,
     ModuleResource,
 };
 
@@ -14,7 +14,7 @@ pub struct CXMap<Identifier: Eq + std::hash::Hash, Standard, Template> {
 }
 
 pub type CXTypeMap = CXMap<CXTypeKey, CXType, CXTypeTemplate>;
-pub type CXFnMap = CXMap<CXFunctionKey, CXPrototype, CXFunctionTemplate>;
+pub type CXFnMap = CXMap<CXFunctionKey, CXFunctionPrototype, CXFunctionTemplate>;
 
 impl<Identifier, Standard, Template> Default for CXMap<Identifier, Standard, Template>
 where

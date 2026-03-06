@@ -1,0 +1,20 @@
+struct Item : @nocopy {
+    int data;
+};
+
+struct Container {
+    Item inner;
+};
+
+void Item::consume(*this) {}
+
+int main() {
+    Container container = (Container) {
+        .inner = (Item) {
+            .data = 1
+        }
+    };
+
+    container.inner.consume();
+    return 0;
+}

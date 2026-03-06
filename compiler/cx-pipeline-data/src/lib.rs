@@ -50,6 +50,9 @@ pub struct CompilerConfig {
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub output: PathBuf,
+    pub analysis: bool,
+    pub working_directory: PathBuf,
+    pub internal_directory: PathBuf,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]
@@ -112,13 +115,17 @@ impl Display for CompilationUnit {
 
 impl CompilationUnit {
     pub fn from_str(path: &str) -> Self {
+        Self::from_rooted(path, Path::new("."))
+    }
+
+    pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
         let path = if path.ends_with(".cx") {
             &path[..path.len() - 3]
         } else {
             path
         };
 
-        let path_buf = PathBuf::from(file_path(path)).with_extension("cx");
+        let path_buf = file_path(path, working_directory).with_extension("cx");
 
         Self {
             identifier: Rc::new(path.to_string()),

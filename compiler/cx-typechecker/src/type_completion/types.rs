@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use cx_ast::ast::VisibilityMode;
-use cx_ast::data::{CXTemplateInput, CXType, CXTypeKind};
-use cx_pipeline_data::CompilationUnit;
+use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::types::{MIRTemplateInput, MIRType, MIRTypeKind};
+use cx_mir::mir::types::{MIRStructAttributes, MIRTemplateInput, MIRType, MIRTypeKind};
 use cx_util::{CXResult, log_error};
 
-use crate::environment::TypeEnvironment;
+use crate::{environment::TypeEnvironment, log::TypeError};
 use crate::type_completion::complete_type;
 use crate::type_completion::prototypes::_complete_fn_prototype;
 use crate::type_completion::templates::instantiate_type_template;
@@ -22,7 +21,7 @@ pub(crate) fn base_data_from_module<'a>(
             let arc = env
                 .module_data
                 .base_mappings
-                .get(&CompilationUnit::from_str(module));
+                .get(&env.resolve_compilation_unit(module));
 
             (Some(arc.clone()), unsafe {
                 std::mem::transmute(arc.as_ref())
@@ -109,7 +108,9 @@ pub(crate) fn _complete_type(
         CXTypeKind::MemoryReference { inner_type } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
-            construct_type(MIRTypeKind::MemoryReference(Box::new(inner_type)))
+            construct_type(MIRTypeKind::MemoryReference {
+                inner_type: Box::new(inner_type),
+            })
         }
 
         CXTypeKind::PointerTo { inner_type, weak } => {
@@ -131,7 +132,11 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXTypeKind::Structured { name, fields, .. } => {
+        CXTypeKind::Structured {
+            name,
+            attributes,
+            fields,
+        } => {
             let fields = fields
                 .iter()
                 .map(|(name, field_type)| {
@@ -140,9 +145,15 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
+            validate_linear_hierarchy(env, "struct", &fields, *attributes)?;
+
             let ty = construct_type(MIRTypeKind::Structured {
                 name: name.clone(),
                 template_info: None,
+                attributes: MIRStructAttributes {
+                    nocopy: attributes.nocopy || attributes.nodrop,
+                    nodrop: attributes.nodrop,
+                },
                 fields,
             })?;
 
@@ -168,7 +179,11 @@ pub(crate) fn _complete_type(
             })
         }
 
-        CXTypeKind::TaggedUnion { name, variants } => {
+        CXTypeKind::TaggedUnion {
+            name,
+            attributes,
+            variants,
+        } => {
             let variants = variants
                 .iter()
                 .map(|(name, variant_type)| {
@@ -177,10 +192,59 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
+            validate_linear_hierarchy(env, "enum union", &variants, *attributes)?;
+
             Ok(MIRType::from(MIRTypeKind::TaggedUnion {
                 name: name.clone(),
+                attributes: MIRStructAttributes {
+                    nocopy: attributes.nocopy || attributes.nodrop,
+                    nodrop: attributes.nodrop,
+                },
                 variants,
             }))
         }
     }
+}
+
+fn validate_linear_hierarchy(
+    env: &mut TypeEnvironment,
+    aggregate_kind: &str,
+    members: &[(String, MIRType)],
+    attributes: CXStructAttributes,
+) -> CXResult<()> {
+    let aggregate_is_nocopy = attributes.nocopy || attributes.nodrop;
+
+    for (member_name, member_type) in members {
+        let Some(member_attributes) = member_type.struct_attributes() else {
+            continue;
+        };
+
+        if member_attributes.nodrop && !attributes.nodrop {
+            return Err(Box::new(TypeError {
+                compilation_unit: env.compilation_unit.as_path().to_owned(),
+                token_start: 0,
+                token_end: 0,
+                message: format!(
+                    "TYPE ERROR:  {} must be declared @nodrop because member '{}' has type {}",
+                    aggregate_kind, member_name, member_type
+                ),
+                notes: Vec::new(),
+            }));
+        }
+
+        if member_attributes.nocopy && !aggregate_is_nocopy {
+            return Err(Box::new(TypeError {
+                compilation_unit: env.compilation_unit.as_path().to_owned(),
+                token_start: 0,
+                token_end: 0,
+                message: format!(
+                    "TYPE ERROR:  {} must be declared @nocopy because member '{}' has type {}",
+                    aggregate_kind, member_name, member_type
+                ),
+                notes: Vec::new(),
+            }));
+        }
+    }
+
+    Ok(())
 }

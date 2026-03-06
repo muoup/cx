@@ -1,110 +1,86 @@
 # Pipeline Design
 
-## Stages
+## Stage 1: Lexing
 
-### Stage 1: Lexing
-This is the first and most basic stage of compilation, converting the raw text of a file into a stream of tokens.
+Source text is tokenized.
 
-- **Input**: Raw text of the file.
-- **Output**: A list of lexemes/tokens.
+- **Input**: source text
+- **Output**: token stream
 
-### Stage 2: Pre-parsing
-This stage consists of parsing all type declarations and function signatures, while skipping over any function implementations.
-While it may not be immediately obvious why this is necessary to do as a separate stage, consider seeing an expression
-like so in a function body:
+## Stage 2: Pre-parsing
+
+The compiler collects type declarations, function signatures, templates, and imports before parsing function bodies. This resolves declaration-vs-expression ambiguities such as:
+
 ```c
-a * b (...);
+a * b;
 ```
-This can be parsed both as a valid variable declaration (a* b) and a multiplication expression (a * b). The only way
-for the parser to know which one it is, is to be able to determine if a is a type and not a variable. As such, in the
-example code below, trying to parse the whole code in one pass is impossible due to the ambiguity of the expression.
-```c
-int main() {
-    a * b;
-}
 
-typedef int a;
-```
-Given this, along with the additional complexity of using modules, where types may be declared in multiple compilation
-units, the decided approach to solve this is to parse all type declarations and function signatures as its own pipeline
-stage. During this stage, all imports are also collected, for use by the parser.
+- **Input**: token stream
+- **Output**: preparse data and import list
 
-- **Prerequisites**: The source code must be lexed and tokenized before this stage can be performed.
-- **Input**: List of lexemes/tokens.
-- **Output**: A list of type declarations and function signatures, including templates, and a list of imports.
+## Stage 3: Import Combining
 
-### Stage 3: Import Combining
-This stage is responsible for combining the pre-parsed data from all imported modules. This is necessary to make
-all type and function declarations from imported modules available to the parser in the next stage.
+Preparsed data from imported modules is merged into a combined symbol view for the current compilation unit.
 
-- **Prerequisites**: The pre-parsing stage for the compilation unit and all of its imports must be complete.
-- **Input**: A list of pre-parsed data from the compilation unit and all of its imports.
-- **Output**: A single combined data structure containing all type and function declarations.
+- **Input**: local preparse data + imported preparse data
+- **Output**: combined declaration environment
 
-### Stage 4: Parsing
-This stage is the main parsing stage, where the actual syntax tree is built. It uses the declared types and
-function signatures from the previous stage to parse the function bodies. The actual design of the AST will
-be annotated separately (TBD). Prior to the actual parsing, one additional step is performed to ensure that
-all relevant types and function signatures from imports are available to the parser. The implementation of
-this is subject to change, currently all type data is given to the parser, however in cases of type declarations
-spanning over multiple nested imports may allow for truncating type trees to allow for "extern" opaque types.
+## Stage 4: Parsing
 
-- **Prerequisites**: The import combining stage for the compilation unit must be complete.
-- **Input**: List of type declarations, function signatures, and imports.
-- **Output**: An abstract syntax tree (AST) representing the program.
+The parser builds the AST using the combined declaration environment from the preparse stages.
 
-#### Handling Templates
-Because this stage is mostly type-agnostic besides knowing if type symbols exist, templates are all but ignored
-during this stage. When a templated function is encountered, it is parsed by adding the type symbols to the
-type map as if they are defined with real type information, and as this stage does not concern itself with
-said information, it works just as parsing a normal function.
+- **Input**: tokens + combined declaration environment
+- **Output**: AST
 
-### Stage 5: Type Checking and Template Realization
-This stage is responsible for checking the types of expressions and statements in the AST. It ensures that
-no type errors exist in the program, as well as adding implicit casts and conversions where necessary to
-ensure the guarantees of C semantics are met.
+## Stage 5: Type Checking and Template Realization
 
-Additionally, this stage is also responsible for handling templated types and functions. While an expression is
-being typechecked, if a templated reference not previously realized is encountered, in the case of a templated type,
-it is simply instantiated and added to the type map, however in the case of a function, the function prototype is
-instantiated in the same manner, however the type checker also records a request to typecheck the function body under
-this template input later, where typechecking as a stage can only end once all requests have been fulfilled and all
-functions have been typechecked. Because the idiomatic multi-file structure of CX is to use modules, the
-'request to pipeline' system also comes with the advantage that redundant instantiations between compilation units can
-be avoided when possible.
+The typechecker resolves identifiers to concrete types, realizes templates, inserts implicit coercions, validates ownership rules, and constructs MIR.
 
-- **Prerequisites**: The AST must be built before this stage can be performed. ASTs for all imports must also
-    be available to the type checker.
-- **Input**: AST from the parsing stage, type and function signature information.
-- **Output**: A modified AST containing additional implicit AST elements, type information for each node, and realized template functions and types.
+This is the last stage which may hit user errors. After this point, any failures are considered compiler bugs and should be reported.
 
-### Stage 6: LMIR Generation
-This stage converts the type-checked AST into a Lower-level MIR (LMIR), which is a flat SSA (Static
-Single Assignment) intermediate representation. The LMIR serves as the final frontend IR before
-handing off to the supported codegen backends (currently LLVM and Cranelift). The LMIR is
-designed to be easily portable across different backends while maintaining language semantics.
+- **Input**: AST + declaration environment
+- **Output**: MIR
 
-The compiler internally distinguishes between two MIR levels:
-- **MIR (Middle-level IR)**: Type-checked AST with semantic information, produced during type checking
-- **LMIR (Lower-level MIR)**: Flat SSA representation produced from MIR, optimized for backend codegen
+## Stage 5.5: Optional Safe-Function Analysis
 
-- **Prerequisites**: The type-checked and template-realized AST.
-- **Input**: Type-checked and template-realized AST. Type map, and function signature map.
-- **Output**: A flat SSA IR representation of the program (LMIR), along with converted type and function signature maps to match the lower-level representation.
+If the compiler is run with `--analysis`, `safe` functions are lowered from MIR to FMIR and analyzed by `cx-safe-analyzer`.
 
-### Stage 7: Backend Code Generation
-This stage is responsible for converting the LMIR to a target-specific representation. This is
-usually a fairly straightforward process, as the LMIR is designed to be easily ported to different backends.
+FMIR is a functional IR used only for analysis. It is not the canonical lowering path for code generation.
 
-- **Prerequisites**: The LMIR of only the compilation unit, and the target architecture information.
-- **Input**: Flat SSA IR representation of the program (LMIR).
-- **Output**: Object code or assembly code for the target architecture.
+Current behavior:
 
-### Stage 8: Linking
-After all is said and done, the final stage links all generated object files into a single executable.
-See GCC for more information on the linking process, as it is fairly standard and does not require
-any special handling for this language.
+- analysis runs only when `--analysis` is present
+- MIR is lowered to FMIR for analysis
+- verification diagnostics may be emitted here
+- if analysis succeeds, the pipeline returns to MIR and continues to LMIR
 
-- **Prerequisites**: All object files generated from the previous stage.
-- **Input**: Object files from the backend code generation stage.
-- **Output**: A single executable file containing the linked program.
+- **Input**: MIR for `safe` functions and their contracts
+- **Output**: optional verification diagnostics
+
+## Stage 6: LMIR Generation
+
+MIR is lowered to LMIR, the compiler’s flat SSA-style backend-facing IR.
+
+- **Input**: MIR
+- **Output**: LMIR
+
+## Stage 7: Backend Code Generation
+
+LMIR is translated to backend-specific code. The current backends are Cranelift and LLVM.
+
+- **Input**: LMIR
+- **Output**: object code or assembly
+
+## Stage 8: Linking
+
+Generated object files are linked into the final executable.
+
+- **Input**: object files
+- **Output**: executable
+
+## IR Roles
+
+- **AST**: parsed source structure
+- **MIR**: typed, semantically resolved frontend IR
+- **FMIR**: optional analysis IR for `safe` verification
+- **LMIR**: lowered SSA-style IR for code generation

@@ -3,7 +3,7 @@ use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_ast::data::CXTypeKind;
-use cx_ast::{assert_token_matches, next_kind, try_next};
+use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
@@ -14,6 +14,46 @@ use crate::parse::operators::{
 use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
 use crate::parse::{parse_body, parse_intrinsic, parse_std_ident};
+
+fn parse_at_intrinsic_expr(
+    data: &mut ParserData,
+    ident: &str,
+    start_index: usize,
+) -> CXResult<CXExpr> {
+    assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(_));
+
+    match ident {
+        "unsafe" => {
+            let expr = if try_next!(data.tokens, punctuator!(OpenBrace)) {
+                data.tokens.back();
+                parse_body(data)?
+            } else {
+                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                let expr = parse_expr(data)?;
+                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                expr
+            };
+
+            Ok(CXExprKind::Unsafe {
+                expr: Box::new(expr),
+            }
+            .into_expr(start_index, data.tokens.index))
+        }
+
+        "leak" => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+
+            Ok(CXExprKind::Leak {
+                expr: Box::new(expr),
+            }
+            .into_expr(start_index, data.tokens.index))
+        }
+
+        _ => log_parse_error!(data, "Unknown intrinsic expression '{}'", ident),
+    }
+}
 
 pub fn is_type_decl(data: &mut ParserData) -> bool {
     let tok = data.tokens.peek();
@@ -65,9 +105,15 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
-    let Ok(_) = parse_expr_val(data, &mut expr_stack, &mut op_stack) else {
-        return Ok(CXExprKind::Unit.into_expr(0, 0));
-    };
+    let start_index = data.tokens.index;
+
+    if let Err(err) = parse_expr_val(data, &mut expr_stack, &mut op_stack) {
+        if data.tokens.index == start_index {
+            return Ok(CXExprKind::Unit.into_expr(0, 0));
+        }
+
+        return Err(err);
+    }
 
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
@@ -131,21 +177,40 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
         } else {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
             let variant_name = parse_std_ident(&mut data.tokens)?;
+            let variant_expr = if peek_kind!(data.tokens, operator!(Less)) {
+                CXExprKind::TemplatedIdentifier {
+                    name: variant_name,
+                    template_input: parse_template_args(data)?,
+                }
+                .into_expr(start_index, data.tokens.index)
+            } else {
+                CXExprKind::Identifier(variant_name).into_expr(start_index, data.tokens.index)
+            };
 
-            let CXTypeKind::Identifier {
-                name: type_name, ..
-            } = _type.kind
-            else {
-                log_error!("Identifier expected")
+            let type_expr = match _type.kind {
+                CXTypeKind::Identifier { name: type_name, .. } => {
+                    CXExprKind::Identifier(type_name).into_expr(start_index, data.tokens.index)
+                }
+                CXTypeKind::TemplatedIdentifier {
+                    name,
+                    input: template_input,
+                } => CXExprKind::TemplatedIdentifier {
+                    name,
+                    template_input,
+                }
+                .into_expr(start_index, data.tokens.index),
+                _ => {
+                    return log_parse_error!(
+                        data,
+                        "Expected identifier or templated identifier before scope resolution"
+                    )
+                }
             };
 
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
             let inner_expr = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
-            let type_expr = CXExprKind::Identifier(type_name).into_expr(start_index, data.tokens.index);
-            let variant_expr = CXExprKind::Identifier(variant_name).into_expr(start_index, data.tokens.index);
-            
             let scope_res_expr = CXExprKind::BinOp {
                 lhs: Box::new(type_expr),
                 rhs: Box::new(variant_expr),
@@ -284,6 +349,12 @@ pub(crate) fn parse_expr_val(
         TokenKind::Intrinsic(_) => {
             CXExprKind::Identifier(parse_intrinsic(&mut data.back().tokens)?)
         }
+        TokenKind::CompilerIdentifier(ident) => {
+            let ident = ident.clone();
+            data.back();
+            expr_stack.push(parse_at_intrinsic_expr(data, ident.as_str(), start_index)?);
+            return Ok(());
+        }
         TokenKind::Identifier(_) => {
             data.back();
             parse_expr_identifier(data)?
@@ -379,14 +450,6 @@ pub(crate) fn parse_expr_val(
             );
 
             return_type
-        }
-
-        TokenKind::Keyword(KeywordType::New) => {
-            let (None, _type) = parse_initializer(data)? else {
-                return log_parse_error!(data, "Failed to parse type declaration for new");
-            };
-
-            CXExprKind::New { _type }
         }
 
         _ => {

@@ -70,7 +70,7 @@ pub fn typecheck_initializer_list(
     };
 
     let to_type = match &to_type.kind {
-        MIRTypeKind::MemoryReference(inner) => inner.as_ref(),
+        MIRTypeKind::MemoryReference { inner_type, .. } => inner_type.as_ref(),
         _ => to_type,
     };
 

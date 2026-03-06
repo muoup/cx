@@ -259,8 +259,6 @@ pub fn lower_cswitch(
         builder.push_scope(None, None);
         lower_expression(builder, case_body)?;
         builder.pop_scope()?;
-        
-        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             LMIRInstructionKind::Jump { target: exit_block_id.clone() },
             LMIRType::unit(),
@@ -274,8 +272,6 @@ pub fn lower_cswitch(
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
-        
-        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -356,8 +352,6 @@ pub fn lower_match(
         builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
         builder.pop_scope()?;
-        
-        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -373,8 +367,6 @@ pub fn lower_match(
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
-        
-        builder.deconstruct_at_current_depth()?;
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
                 target: exit_block_id.clone(),
@@ -408,10 +400,6 @@ pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>) -> C
         builder.pop_scope()?;
     }
     
-    for i in (1 ..= builder.scope_depth()).rev() {
-        builder.deconstruct_at_depth(i)?;
-    }
-
     let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
 
     if has_return_buffer {

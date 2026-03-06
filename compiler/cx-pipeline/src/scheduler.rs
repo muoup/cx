@@ -1,10 +1,10 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::template_realizing::realize_templates;
+use cx_ast::ast::VisibilityMode;
+use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
-use cx_tokens::TokenIter;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
-use cx_ast::ast::VisibilityMode;
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
@@ -12,11 +12,12 @@ use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
 use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
+use cx_safe_analyzer::FMIRContext;
+use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
 use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
-use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_util::CXErrorTrait;
 use cx_util::format::dump_data;
 use fs2::FileExt;
@@ -143,7 +144,10 @@ pub(crate) fn handle_job(
                     CompilationJob::new(
                         vec![],
                         CompilationStep::PreParse,
-                        CompilationUnit::from_str(import.as_str()),
+                        CompilationUnit::from_rooted(
+                            import.as_str(),
+                            &context.config.working_directory,
+                        ),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -226,7 +230,7 @@ pub(crate) fn perform_job(
                 panic!("Pre-parsing failed for unit: {}", job.unit);
             });
             output.module = job.unit.to_string();
-            
+
             if !job.unit.as_str().contains("/std/") {
                 output
                     .imports
@@ -257,7 +261,10 @@ pub(crate) fn perform_job(
                 let other_pp_data = context
                     .module_db
                     .preparse_base
-                    .get(&CompilationUnit::from_str(import.as_str()));
+                    .get(&CompilationUnit::from_rooted(
+                        import.as_str(),
+                        &context.config.working_directory,
+                    ));
                 let required_visiblity = VisibilityMode::Public;
 
                 for resource in other_pp_data.type_idents.iter() {
@@ -300,21 +307,31 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.naive_ast.get(&job.unit);
             let lexemes = context.module_db.lex_tokens.get(&job.unit);
 
-            let mut env =
-                TypeEnvironment::new(lexemes.as_ref(), job.unit.clone(), &context.module_db);
+                let mut env = TypeEnvironment::new(
+                    lexemes.as_ref(),
+                    job.unit.clone(),
+                    context.config.working_directory.clone(),
+                    &context.module_db,
+                );
 
-            complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(|e: Box<dyn CXErrorTrait>| {
-                e.pretty_print();
-                panic!("Completing base globals failed");
-            });
-            complete_base_functions(&mut env, structure_data.as_ref()).unwrap_or_else(|e: Box<dyn CXErrorTrait>| {
-                e.pretty_print();
-                panic!("Completing base functions failed");
-            });
-            typecheck(&mut env, structure_data.as_ref(), &self_ast).unwrap_or_else(|e: Box<dyn CXErrorTrait>| {
-                e.pretty_print();
-                panic!("Typechecking failed for unit: {}", job.unit);
-            });
+            complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(
+                |e: Box<dyn CXErrorTrait>| {
+                    e.pretty_print();
+                    panic!("Completing base globals failed");
+                },
+            );
+            complete_base_functions(&mut env, structure_data.as_ref()).unwrap_or_else(
+                |e: Box<dyn CXErrorTrait>| {
+                    e.pretty_print();
+                    panic!("Completing base functions failed");
+                },
+            );
+            typecheck(&mut env, structure_data.as_ref(), &self_ast).unwrap_or_else(
+                |e: Box<dyn CXErrorTrait>| {
+                    e.pretty_print();
+                    panic!("Typechecking failed for unit: {}", job.unit);
+                },
+            );
             realize_templates(&job.unit, &mut env).unwrap_or_else(|e| {
                 e.pretty_print();
                 panic!("Template realization failed for unit: {}", job.unit);
@@ -327,6 +344,23 @@ pub(crate) fn perform_job(
 
             if !job.unit.is_std_lib() {
                 dump_data(&mir);
+            }
+
+            if context.config.analysis {
+                let mut fmir_context = FMIRContext::new_from(&mir).unwrap_or_else(|e| {
+                    e.pretty_print();
+                    panic!("FMIR generation failed for unit: {}", job.unit);
+                });
+                fmir_context
+                    .apply_standard_analysis_passes(job.unit.as_path())
+                    .unwrap_or_else(|e| {
+                        e.pretty_print();
+                        panic!("FMIR analysis failed for unit: {}", job.unit);
+                    });
+
+                if !job.unit.is_std_lib() {
+                    dump_data(&fmir_context);
+                }
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);
