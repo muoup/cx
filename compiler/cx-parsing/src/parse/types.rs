@@ -66,17 +66,19 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     let template_prototype = try_parse_template(&mut data.tokens)?;
     let mut attributes = CXStructAttributes::default();
 
-    loop {
-        match peek_next_kind!(data.tokens) {
-            Ok(keyword!(NoCopy)) => {
-                data.tokens.next();
-                attributes.nocopy = true;
+    if try_next!(data.tokens, punctuator!(Colon)) {
+        loop {
+            assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr));
+
+            match attr.as_str() {
+                "nocopy" => attributes.nocopy = true,
+                "nodrop" | "nodestruct" => attributes.nodrop = true,
+                _ => return log_parse_error!(data, "Unknown struct attribute '@{}'", attr),
             }
-            Ok(keyword!(NoDrop)) => {
-                data.tokens.next();
-                attributes.nodrop = true;
+
+            if !try_next!(data.tokens, operator!(Comma)) {
+                break;
             }
-            _ => break,
         }
     }
 

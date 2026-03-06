@@ -7,23 +7,18 @@ semantic guarantees of the language, but rather a general overview of features w
 
 ## 1. Base Syntax
 
-The syntax of CX is implemented with the intention of being a superset of at least C99 syntax.
-In theory, all valid C99 code should be valid CX code, however at this stage supporting all of C99 
-is not a priority, however can be added in the future if deemed necessary. Any divergences from
-the semantics of the language, or much less likely syntax, will be noted in the document, but
-all syntax available in the [C99 Standard](https://www.dii.uchile.cl/~daespino/files/Iso_C_1999_definition.pdf) should be available in CX.
+The syntax of CX is built to be a superset of C99, see the [C99 Standard](https://www.dii.uchile.cl/~daespino/files/Iso_C_1999_definition.pdf) for
+reference. Any valid C99 code should be valid CX code with the same semantics. The only exceptions to this rule are in keywords, this language uses
+a few additional keywords that are not present in C99, meaning that any C code using these keywords as identifiers may not compiler in CX without slight modifications. These keywords are listed in the [Lexical Conventions](#2-lexical-conventions) section.
 
 A significant divergence from C/C++ is that CX is not order-dependent. Types and functions can be declared in any order, as the compiler resolves all declarations within a module before compilation begins. This means a function can be called by another function that appears earlier in the same source file without needing a forward declaration.
 
 ## 2. Lexical Conventions
 
-### 2.1. Identifiers
-As is the case in standard C, while the underscore character ('_') is allowed in identifiers,
-identifiers beginning with an underscore are reserved for the implementation. When generating
-code or intrinsic type definitions, the compiler may generate identifiers beginning with
-at least one underscore, and thus may conflict with user-defined identifiers.
+### 2.1: Identifiers
+As is the case in standard C, while a valid identifier, names beginning with a `_` are reserved for the implementation, and thus should be avoided in user code. 
 
-### 2.2. Keywords
+### 2.2: Keywords
 
 The only exception to section #1 with regards to CX's backwards compatibility is in the usage
 of additional keywords. Any programs using the following keywords may not compile in CX without
@@ -36,32 +31,7 @@ The meaning of these keywords will be explained in their respective sections.
 
 ## 3. Additional Type Semantics
 
-### 3.1. Strong Pointers
-
-CX introduces the concept of strong pointers. This can be thought of as an equivalent to C++'s
-`std::unique_ptr`, and Rust's `Box<T>`, among similar constructs. A strong pointer type is
-declared just as you would a pointer, but with the `strong` keyword prepending the asterisk
-or its `[]` array declaration, and can be initialized using the `new` keyword.
-
-Syntax example:
-```c
-// A strong pointer to an integer.
-int strong* ptr = new int;
-
-// An array of strong pointers to integers.
-int strong[] ptrs = new int[10];
-```
-
-A strong pointer semantically may either be NULL or point to a valid object, or array of objects if declared as such. As well,
-any strong pointer that points to a valid object must 'own' that memory, meaning only one strong pointer may point to a given part
-of memory at any time. 
-
-After a strong pointer or data containing a strong pointer goes out of scope, the compiler will ensure that the memory
-is freed if and only if the strong pointer is not NULL. Any memory that the pointer owns will also be deconstructed likewise.
-This means that in the case of a strong array pointer, all elements in the array with be deconstructed individually before
-the memory is freed.
-
-### 3.2. Structs
+### 3.1: Structs
 
 Structs in CX exist with the same guarantees for padding and alignment as in C, however some additional abstractions are
 provided for common use patterns.
@@ -108,15 +78,15 @@ void func() {
 }
 ```
 
-### 3.3. Tagged Unions
+### 3.2: Tagged Unions
 
 CX provides support for tagged unions, also known as sum types or variants, which are a powerful tool for representing a value that could be one of several types. They are declared using the `union class` keywords.
 
 Each member of a `union class` is a "variant" with a distinct name and type, defined using the `::` separator.
 
 **Syntax Example:**
-```c
-union class Output {
+```c++
+enum union Output {
     integer :: int,
     fp      :: double,
     string  :: const char*,

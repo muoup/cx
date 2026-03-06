@@ -590,17 +590,23 @@ impl Display for MIRTypeKind {
             MIRTypeKind::Structured {
                 name, attributes, ..
             } => {
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
                 write!(
                     f,
-                    "struct {}{}{}",
+                    "struct {}{}",
                     name.as_ref()
                         .map(|n| n.to_string())
                         .unwrap_or_else(|| "".to_string()),
-                    if attributes.nocopy { " nocopy" } else { "" },
-                    if attributes.nodrop {
-                        " nodrop"
+                    if attrs.is_empty() {
+                        "".to_string()
                     } else {
-                        ""
+                        format!(" : {}", attrs.join(", "))
                     }
                 )
             }

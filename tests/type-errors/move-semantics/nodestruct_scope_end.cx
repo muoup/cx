@@ -1,4 +1,4 @@
-struct resource nodrop {
+struct resource : @nodrop {
     int value;
 };
 

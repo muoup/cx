@@ -53,12 +53,6 @@ spanning over multiple nested imports may allow for truncating type trees to all
 - **Input**: List of type declarations, function signatures, and imports.
 - **Output**: An abstract syntax tree (AST) representing the program.
 
-#### Handling Templates
-Because this stage is mostly type-agnostic besides knowing if type symbols exist, templates are all but ignored
-during this stage. When a templated function is encountered, it is parsed by adding the type symbols to the
-type map as if they are defined with real type information, and as this stage does not concern itself with
-said information, it works just as parsing a normal function.
-
 ### Stage 5: Type Checking and Template Realization
 This stage is responsible for checking the types of expressions and statements in the AST. It ensures that
 no type errors exist in the program, as well as adding implicit casts and conversions where necessary to
@@ -75,7 +69,7 @@ be avoided when possible.
 
 - **Prerequisites**: The AST must be built before this stage can be performed. ASTs for all imports must also
     be available to the type checker.
-- **Input**: AST from the parsing stage, type and function signature information.
+- **Input**: AST from the parsing stage, type stumps and function signature information.
 - **Output**: A modified AST containing additional implicit AST elements, type information for each node, and realized template functions and types.
 
 ### Stage 6: LMIR Generation

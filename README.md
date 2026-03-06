@@ -6,13 +6,13 @@ to transform CX code into machine code.
 
 ## Language Philosophy
 CX was originally designed under the philosophy of creating a language built off of C with enough
-modern features for me to self-host its compiler. This is currently not the case, however this 
-starting point has proven to be a good base to build on. The existence of basic templates, member
-functions, and a module system allows for a more beginner-friendly experience, while not necessarily
-forcing the use of these features. On the flip side, I also intend to implement in the future a more
-expressive type system, allowing better intrinsically communicated intent through types, as well as
-more complex types such as algebraic data types and dependent types to allow for an opt-in means
-to request for compiler guarantees, both for debugging and optimization.
+modern features for me to self-host its compiler. The goal is to achieve this by around the end of the year 2026,
+however for now this language serves as a playground for applying modern type theory ideas to systems
+level programming.
+
+There are currently basic modern amenities like templates and destructors available, but idiomatic CX tries
+something different by encouraging safe and hidden behavior free code via linear types and Rust-style 'safe'
+code areas with explicit and isolated 'unsafe' regions.
 
 ## Getting Started
 

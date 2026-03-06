@@ -1,4 +1,4 @@
-struct Data nocopy {
+struct Data : @nocopy {
     int data;
 };
 

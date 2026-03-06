@@ -1,12 +1,12 @@
-struct ref<T> nocopy {
+struct ref<T> : @nocopy {
     T* data;
 };
 
-struct opt_ref<T> nocopy {
+struct opt_ref<T> : @nocopy {
     T* data;
 };
 
-struct resource nodrop {
+struct resource : @nodrop {
     int value;
 };
 

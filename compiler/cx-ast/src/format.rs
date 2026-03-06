@@ -409,13 +409,18 @@ impl Display for CXTypeKind {
                     .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let mut attr_str = String::new();
+                let mut attrs = Vec::new();
                 if attributes.nocopy {
-                    attr_str.push_str(" nocopy");
+                    attrs.push("@nocopy");
                 }
                 if attributes.nodrop {
-                    attr_str.push_str(" nodrop");
+                    attrs.push("@nodrop");
                 }
+                let attr_str = if attrs.is_empty() {
+                    String::new()
+                } else {
+                    format!(" : {}", attrs.join(", "))
+                };
                 write!(
                     f,
                     "struct {}{} {{ {} }}",
