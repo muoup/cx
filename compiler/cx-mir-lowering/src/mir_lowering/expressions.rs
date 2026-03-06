@@ -73,7 +73,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     .current_prototype()
                     .params
                     .iter()
-                    .position(|p| p.name.as_ref().map(|s| s.as_str()) == Some(name.as_str()))
+                    .position(|p| p.name.as_deref() == Some(name.as_str()))
                 else {
                     unreachable!(
                         "Contract variable '{}' not found in parameters of function '{}'",
@@ -404,7 +404,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::TaggedUnionTag { value, sum_type } => {
             let bc_value = lower_expression(builder, value)?;
-            get_tagged_union_tag(builder, bc_value, &sum_type)
+            get_tagged_union_tag(builder, bc_value, sum_type)
         }
 
         MIRExpressionKind::TaggedUnionGet { value, .. } => lower_tagged_union_get(builder, value),

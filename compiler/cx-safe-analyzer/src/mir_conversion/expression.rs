@@ -647,11 +647,10 @@ pub fn convert_expression(
         }
 
         MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
-            if !mir_expr._type.is_memory_reference() {
-                if let Some(known) = env.query_known_value(name) {
+            if !mir_expr._type.is_memory_reference()
+                && let Some(known) = env.query_known_value(name) {
                     return Ok(known);
                 }
-            }
 
             Ok(FMIRNode {
                 source_range: None,
@@ -732,8 +731,7 @@ pub fn convert_expression(
         MIRExpressionKind::MemoryRead { source } => {
             if let MIRExpressionKind::Variable(name)
             | MIRExpressionKind::ContractVariable { name, .. } = &source.kind
-            {
-                if let Some(mut known) = env.query_known_value(name) {
+                && let Some(mut known) = env.query_known_value(name) {
                     if let Some(location) = env.query_memory_location(name) {
                         let access = FMIRType::access(
                             known._type.inner_type().clone(),
@@ -748,7 +746,6 @@ pub fn convert_expression(
 
                     return Ok(known);
                 }
-            }
 
             let source_node = convert_expression(env, source)?;
             Ok(load_node(

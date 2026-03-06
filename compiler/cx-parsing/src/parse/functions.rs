@@ -231,9 +231,9 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
         data.tokens.index = receiver_start;
     }
 
-    if receiver.is_some() {
+    if receiver.is_some()
 
-        if !try_next!(data.tokens, operator!(Comma)) {
+        && !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
             let contract = parse_function_contract(data)?;
 
@@ -244,7 +244,6 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
                 contract,
             });
         }
-    }
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
