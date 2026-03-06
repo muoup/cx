@@ -173,23 +173,47 @@ fn process_for_increment_arrows(
 
 fn type_is_safe_signature(ty: &MIRType) -> bool {
     match &ty.kind {
-        MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. } | MIRTypeKind::Unit => true,
-        MIRTypeKind::Structured { fields, .. } => {
-            fields.iter().all(|(_, field_type)| type_is_safe_signature(field_type))
-        }
-        MIRTypeKind::MemoryReference { .. } => true,
+        MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. } | 
+        MIRTypeKind::Unit | MIRTypeKind::Structured { .. } | MIRTypeKind::TaggedUnion { .. } => true, 
         _ => false,
     }
+}
+
+fn return_type_is_safe_signature(return_type: &MIRType) -> bool {
+    type_is_safe_signature(&return_type) || return_type.is_memory_reference()
+}
+
+fn receiver_type_is_safe_signature(receiver_type: &MIRType) -> bool {
+    match &receiver_type.kind {
+        MIRTypeKind::MemoryReference { inner_type } => type_is_safe_signature(inner_type),
+        _ => false,
+    }
+}
+
+fn parameter_is_safe_signature(
+    prototype: &MIRFunctionPrototype,
+    index: usize,
+    param: &cx_mir::mir::types::MIRParameter,
+) -> bool {
+    if index == 0
+        && prototype.receiver_mode == cx_mir::mir::types::MIRReceiverMode::ByRef
+        && matches!(param.name.as_ref().map(|name| name.as_str()), Some("this"))
+    {
+        return receiver_type_is_safe_signature(&param._type);
+    }
+
+    type_is_safe_signature(&param._type)
 }
 
 fn prototype_is_safe_callable(prototype: &MIRFunctionPrototype) -> bool {
     prototype.contract.safe
         && !prototype.var_args
-        && type_is_safe_signature(&prototype.return_type)
+        && return_type_is_safe_signature(&prototype.return_type)
         && prototype
             .params
             .iter()
-            .all(|param| type_is_safe_signature(&param._type))
+            .enumerate()
+            .all(|(index, param)| parameter_is_safe_signature(prototype, index, param))
 }
 
 fn type_is_safe_expression(ty: &MIRType) -> bool {
@@ -218,7 +242,7 @@ pub(crate) fn validate_safe_function_signature(
         );
     }
 
-    if !type_is_safe_signature(&prototype.return_type) {
+    if !return_type_is_safe_signature(&prototype.return_type) {
         return log_typecheck_error!(
             env,
             expr,
@@ -228,8 +252,8 @@ pub(crate) fn validate_safe_function_signature(
         );
     }
 
-    for param in &prototype.params {
-        if !type_is_safe_signature(&param._type) {
+    for (index, param) in prototype.params.iter().enumerate() {
+        if !parameter_is_safe_signature(prototype, index, param) {
             return log_typecheck_error!(
                 env,
                 expr,
@@ -318,6 +342,7 @@ fn validate_safe_expression(
         | MIRExpressionKind::Block { .. }
         | MIRExpressionKind::TypeConversion { .. }
         | MIRExpressionKind::LeakLifetime { .. }
+        | MIRExpressionKind::Move { .. }
         | MIRExpressionKind::Unsafe { .. } => Ok(()),
         MIRExpressionKind::FunctionReference { .. } | MIRExpressionKind::CallFunction { .. } => {
             let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
@@ -1149,7 +1174,7 @@ pub fn typecheck_expr_inner(
             let Some(inner_val) = env.symbol_table.get(ident.as_str()) else {
                 return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
             };
-            let inner_val = inner_val.clone();
+            let mut inner_val = inner_val.clone();
 
             if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
                 return log_typecheck_error!(
@@ -1162,10 +1187,12 @@ pub fn typecheck_expr_inner(
             let Some(inner_type) = inner_val._type.mem_ref_inner().cloned() else {
                 unreachable!()
             };
-
+            
             if env.is_nocopy(&inner_type) {
                 ensure_binding_available(env, inner_expr, ident)?;
                 env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
+            } else {
+                inner_val = implicit_cast(env, expr, inner_val, &inner_type)?;
             }
 
             TypecheckResult::expr(
@@ -1174,12 +1201,6 @@ pub fn typecheck_expr_inner(
                     source: Box::new(inner_val),
                 },
             )
-        }
-
-        CXExprKind::New { _type } => {
-            todo!(
-                "Intrinsic strong pointers are no longer supported, new semantics for 'new' tbd."
-            );
         }
 
         CXExprKind::InitializerList { indices } => {

@@ -246,10 +246,6 @@ pub enum CXExprKind {
         expr: Box<CXExpr>,
     },
 
-    New {
-        _type: CXType,
-    },
-
     Move {
         expr: Box<CXExpr>,
     },

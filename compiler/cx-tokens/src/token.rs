@@ -180,7 +180,6 @@ pub enum KeywordType {
     Defer,
     Strong,
     Weak,
-    New,
     Template,
     Type,
     Class,
@@ -268,8 +267,6 @@ impl TokenKind {
             "strong" => TokenKind::Keyword(KeywordType::Strong),
             "weak" => TokenKind::Keyword(KeywordType::Weak),
             "move" => TokenKind::Operator(OperatorType::Move),
-
-            "new" => TokenKind::Keyword(KeywordType::New),
 
             "template" => TokenKind::Keyword(KeywordType::Template),
             "type" => TokenKind::Keyword(KeywordType::Type),

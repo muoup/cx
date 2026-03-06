@@ -28,46 +28,52 @@ pub(crate) fn typecheck_access(
 ) -> CXResult<TypecheckResult> {
     let lhs_source = lhs.clone();
 
-    // Here, out aim is to continue with lhs_val being one indirection from the memory,
+    // Here, our aim is to continue with lhs_val being one indirection from the memory,
     // i.e. we need a pointer to the region.
-    let lhs_type = lhs._type.clone();
-    let lhs_ref_const = match &lhs_type.kind {
-        MIRTypeKind::MemoryReference { inner_type } => inner_type.get_specifier(CX_CONST),
-        _ => false,
-    };
+    let mut lhs_ref_const = false;
+    let mut lhs = lhs;
+    let lhs_inner = loop {
+        let lhs_type = lhs._type.clone();
 
-    let (lhs, lhs_inner) = match &lhs_type.kind {
-        MIRTypeKind::MemoryReference { inner_type, .. } => match &inner_type.kind {
-            // If we have a reference to a region containing a pointer, we need to
-            // load one layer of indirection first.
-            MIRTypeKind::PointerTo { inner_type, .. } => {
-                let loaded = MIRExpression {
-                    source_range: None,
-                    kind: MIRExpressionKind::MemoryRead {
-                        source: Box::new(lhs),
-                    },
-                    _type: inner_type.clone().pointer_to(),
-                };
+        match &lhs_type.kind {
+            MIRTypeKind::MemoryReference { inner_type } => {
+                lhs_ref_const |= inner_type.get_specifier(CX_CONST);
 
-                (loaded, inner_type.as_ref().clone())
+                match &inner_type.kind {
+                    MIRTypeKind::PointerTo { inner_type, .. } => {
+                        lhs_ref_const |= inner_type.get_specifier(CX_CONST);
+
+                        lhs = MIRExpression {
+                            source_range: None,
+                            kind: MIRExpressionKind::MemoryRead {
+                                source: Box::new(lhs),
+                            },
+                            _type: inner_type.clone().pointer_to(),
+                        };
+
+                        break inner_type.as_ref().clone();
+                    }
+
+                    MIRTypeKind::MemoryReference { .. } => {
+                        lhs = MIRExpression {
+                            source_range: None,
+                            kind: MIRExpressionKind::MemoryRead {
+                                source: Box::new(lhs),
+                            },
+                            _type: inner_type.as_ref().clone(),
+                        };
+                    }
+
+                    _ => break inner_type.as_ref().clone(),
+                }
             }
 
-            // We could have a memory reference to a structured type, in which cases
-            // we are only one indirection away already, so we can continue as normal.
-            _ => (lhs, inner_type.as_ref().clone()),
-        },
+            MIRTypeKind::PointerTo { inner_type, .. } => {
+                lhs_ref_const |= inner_type.get_specifier(CX_CONST);
+                break inner_type.as_ref().clone();
+            }
 
-        // If we have only a pointer, the compiler is not responsible for any coercions here,
-        // e.g. a pointer-to-a-memory-reference is not automatically dereferenced. Therefore
-        // we can assert that the correct path here is that the pointer is one indirection away
-        MIRTypeKind::PointerTo { inner_type, .. } => (lhs, inner_type.as_ref().clone()),
-
-        // We may also have a owned struct / naked struct type,
-        // we can also treat that type as a pointer, as a struct must exist
-        // in memory, and its alias is thus a pointer by definition.
-        _ => {
-            let lhs_type = lhs._type.clone();
-            (lhs, lhs_type)
+            _ => break lhs_type,
         }
     };
 
@@ -195,7 +201,7 @@ fn build_member_receiver_argument(
                 operand: Box::new(lhs),
                 conversion: MIRCoercion::ReinterpretBits,
             },
-            _type: lhs_inner.clone().pointer_to(),
+            _type: lhs_inner.clone().mem_ref_to(),
         }),
         MIRReceiverMode::ByMove => {
             if let Some(inner_type) = lhs_source._type.mem_ref_inner().cloned() {
@@ -496,20 +502,42 @@ pub(crate) fn typecheck_scoped_call(
         }
     };
 
-    let CXExprKind::Identifier(method_name) = &method_expr.kind else {
-        return log_typecheck_error!(
-            env,
-            expr,
-            "Expected identifier after scope resolution operator, found {:?}",
-            method_expr
-        );
+    let (method_name, template_input) = match &method_expr.kind {
+        CXExprKind::Identifier(method_name) => (method_name, None),
+        CXExprKind::TemplatedIdentifier {
+            name,
+            template_input,
+        } => (name, Some(template_input)),
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr,
+                "Expected identifier after scope resolution operator, found {:?}",
+                method_expr
+            );
+        }
     };
 
     if mir_type.is_tagged_union() {
+        if template_input.is_some() {
+            return log_typecheck_error!(
+                env,
+                expr,
+                "Tagged union constructors may not use template arguments after scope resolution"
+            );
+        }
+
         return typecheck_type_constructor(env, base_data, expr, &mir_type, method_name, args_expr);
     }
 
-    let prototype = query_static_member_function(env, base_data, expr, &mir_type, method_name)?;
+    let prototype = query_static_member_function(
+        env,
+        base_data,
+        expr,
+        &mir_type,
+        method_name,
+        template_input,
+    )?;
 
     let mut tc_args = comma_separated(env, base_data, args_expr)?;
 

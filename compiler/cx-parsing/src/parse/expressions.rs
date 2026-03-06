@@ -3,7 +3,7 @@ use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_ast::data::CXTypeKind;
-use cx_ast::{assert_token_matches, next_kind, try_next};
+use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
@@ -171,21 +171,40 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
         } else {
             assert_token_matches!(data.tokens, operator!(ScopeRes));
             let variant_name = parse_std_ident(&mut data.tokens)?;
+            let variant_expr = if peek_kind!(data.tokens, operator!(Less)) {
+                CXExprKind::TemplatedIdentifier {
+                    name: variant_name,
+                    template_input: parse_template_args(data)?,
+                }
+                .into_expr(start_index, data.tokens.index)
+            } else {
+                CXExprKind::Identifier(variant_name).into_expr(start_index, data.tokens.index)
+            };
 
-            let CXTypeKind::Identifier {
-                name: type_name, ..
-            } = _type.kind
-            else {
-                log_error!("Identifier expected")
+            let type_expr = match _type.kind {
+                CXTypeKind::Identifier { name: type_name, .. } => {
+                    CXExprKind::Identifier(type_name).into_expr(start_index, data.tokens.index)
+                }
+                CXTypeKind::TemplatedIdentifier {
+                    name,
+                    input: template_input,
+                } => CXExprKind::TemplatedIdentifier {
+                    name,
+                    template_input,
+                }
+                .into_expr(start_index, data.tokens.index),
+                _ => {
+                    return log_parse_error!(
+                        data,
+                        "Expected identifier or templated identifier before scope resolution"
+                    )
+                }
             };
 
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
             let inner_expr = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
-            let type_expr = CXExprKind::Identifier(type_name).into_expr(start_index, data.tokens.index);
-            let variant_expr = CXExprKind::Identifier(variant_name).into_expr(start_index, data.tokens.index);
-            
             let scope_res_expr = CXExprKind::BinOp {
                 lhs: Box::new(type_expr),
                 rhs: Box::new(variant_expr),
@@ -425,14 +444,6 @@ pub(crate) fn parse_expr_val(
             );
 
             return_type
-        }
-
-        TokenKind::Keyword(KeywordType::New) => {
-            let (None, _type) = parse_initializer(data)? else {
-                return log_parse_error!(data, "Failed to parse type declaration for new");
-            };
-
-            CXExprKind::New { _type }
         }
 
         _ => {

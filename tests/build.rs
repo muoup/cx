@@ -92,24 +92,24 @@ fn write_module(
 
         match kind {
             TestKind::E2E => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn {test_name}() {{ crate::run_e2e_test(std::path::Path::new({path_literal})); }}\n"
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_e2e_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::CompileOnly => {
                 let analysis = path
                     .components()
                     .any(|component| component.as_os_str() == "analysis");
                 output.push_str(&format!(
-                    "{indent}#[test]\n{indent}fn {test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal}), {analysis}); }}\n"
+                    "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_compile_only_test(std::path::Path::new({path_literal}), {analysis}); }}\n"
                 ));
             }
             TestKind::ParseError => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn {test_name}() {{ crate::run_parse_error_test(std::path::Path::new({path_literal})); }}\n"
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_parse_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::TypeError => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn {test_name}() {{ crate::run_type_error_test(std::path::Path::new({path_literal})); }}\n"
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_type_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::VerifierError => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn {test_name}() {{ crate::run_verifier_error_test(std::path::Path::new({path_literal})); }}\n"
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_verifier_error_test(std::path::Path::new({path_literal})); }}\n"
             )),
         }
     }

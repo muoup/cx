@@ -92,6 +92,7 @@ pub struct CXFunctionContract {
 pub struct CXPrototype {
     pub kind: CXFunctionKind,
     pub receiver_mode: CXReceiverMode,
+    pub receiver_specifiers: CXTypeSpecifier,
     pub params: Vec<CXParameter>,
     pub return_type: CXType,
     pub var_args: bool,

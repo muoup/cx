@@ -2,7 +2,7 @@ import std::vector;
 import std::io;
 
 int main() {
-    vector<int> vec = create_vector<int>();
+    vector<int> vec = vector<int>::create_vector<int>();
 
     vec.push<int>(1);
     vec.push<int>(2);
@@ -12,4 +12,6 @@ int main() {
     printf("Vector capacity: %zu\n", vec.capacity);
     
     printf("vec[0]: %d\n", *(vec.at<int>(0)));
+    
+    vec.drop<int>();
 }

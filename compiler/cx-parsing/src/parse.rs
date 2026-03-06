@@ -1,8 +1,3 @@
-use cx_tokens::{
-    keyword, operator, punctuator, specifier,
-    token::{SpecifierType, TokenKind},
-    TokenIter,
-};
 use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
@@ -10,7 +5,12 @@ use cx_ast::{
     data::{CXPrototype, CXTemplatePrototype},
     next_kind, peek_next_kind, try_next, PreparseContents,
 };
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_tokens::{
+    keyword, operator, punctuator, specifier,
+    token::{SpecifierType, TokenKind},
+    TokenIter,
+};
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
@@ -49,7 +49,7 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
-        specifier!() => parse_access_mods(data)?,
+        specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
         _ => parse_global_expr(data)?,
     };
 
@@ -182,11 +182,13 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             );
         }
 
-        _ => return log_parse_error!(
-            data,
-            "Unexpected token in global expression: {:#?}",
-            data.tokens.peek()
-        ),
+        _ => {
+            return log_parse_error!(
+                data,
+                "Unexpected token in global expression: {:#?}",
+                data.tokens.peek()
+            )
+        }
     }
 
     Ok(())
@@ -234,7 +236,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return log_preparse_error!(tokens, "Expected intrinsic identifier"); 
+        return log_preparse_error!(tokens, "Expected intrinsic identifier");
     }
 
     Ok(CXIdent::new(ss))
@@ -246,7 +248,7 @@ pub fn parse_std_ident(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     };
 
     let ident = ident.clone();
-    
+
     tokens.next();
 
     Ok(CXIdent::new(ident))

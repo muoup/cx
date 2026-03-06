@@ -5,7 +5,7 @@ use crate::{
     ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
     data::{
         CXFunctionKey, CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXPrototype,
-        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind,
+        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
     },
 };
 
@@ -237,9 +237,6 @@ impl<'a> Display for CXExprFormatter<'a> {
             CXExprKind::Leak { expr } => {
                 writeln!(f, "Leak")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
-            CXExprKind::New { _type } => {
-                writeln!(f, "New {}", _type)
             }
             CXExprKind::SizeOf { expr } => {
                 writeln!(f, "SizeOf")?;
@@ -474,8 +471,22 @@ impl Display for CXPrototype {
 
         match self.receiver_mode {
             CXReceiverMode::None => {}
-            CXReceiverMode::ByRef => params.push("this".to_string()),
-            CXReceiverMode::ByMove => params.push("*this".to_string()),
+            CXReceiverMode::ByRef => params.push(format!(
+                "{}this",
+                if self.receiver_specifiers & CX_CONST != 0 {
+                    "const "
+                } else {
+                    ""
+                }
+            )),
+            CXReceiverMode::ByMove => params.push(format!(
+                "{}*this",
+                if self.receiver_specifiers & CX_CONST != 0 {
+                    "const "
+                } else {
+                    ""
+                }
+            )),
         }
 
         params.extend(self.params
@@ -544,7 +555,7 @@ impl Display for CXFunctionKey {
         match self {
             CXFunctionKey::Standard(name) => write!(f, "{name}"),
             CXFunctionKey::MemberFunction { type_base_name, name } => {
-                write!(f, "(non-static) {type_base_name}::{name}")
+                write!(f, "(member) {type_base_name}::{name}")
             }
             CXFunctionKey::StaticMemberFunction { type_base_name, name } => {
                 write!(f, "(static) {type_base_name}::{name}")

@@ -387,6 +387,7 @@ pub(crate) fn parsetype_mods(
             let prototype = CXPrototype {
                 kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
                 receiver_mode: CXReceiverMode::None,
+                receiver_specifiers: 0,
                 return_type: acc_type,
                 params,
                 var_args,

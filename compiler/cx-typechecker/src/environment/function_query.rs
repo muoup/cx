@@ -76,27 +76,36 @@ pub fn query_member_function(
 
 pub fn query_static_member_function(
     env: &mut TypeEnvironment,
-    _base_data: &MIRBaseMappings,
+    base_data: &MIRBaseMappings,
     expr: &CXExpr,
     member_type: &MIRType,
     name: &CXIdent,
+    template_input: Option<&CXTemplateInput>,
 ) -> CXResult<MIRFunctionPrototype> {
-    let mangled_name = base_mangle_static_member(name.as_str(), member_type);
+    if template_input.is_none() {
+        let mangled_name = base_mangle_static_member(name.as_str(), member_type);
 
-    if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-        return Ok(func_proto);
+        if let Some(func_proto) = env.get_realized_func(&mangled_name) {
+            return Ok(func_proto);
+        }
     }
 
-    // Note: We can't call deduce_function here because member_type.get_template_data()
-    // returns MIRTemplateInput (completed), but deduce_function expects CXTemplateInput (raw).
-    // If the function isn't already realized, we return an error.
-    log_typecheck_error!(
-        env,
-        expr,
-        "Static member function '{}' not found for type '{}'",
-        name,
-        member_type,
-    )
+    let Some(base_name) = member_type.get_base_identifier() else {
+        return log_typecheck_error!(
+            env,
+            expr,
+            "Cannot query static member function '{}' on non-identifiable type '{}'",
+            name,
+            member_type,
+        );
+    };
+
+    let key = CXFunctionKey::StaticMemberFunction {
+        type_base_name: base_name.clone(),
+        name: name.clone(),
+    };
+
+    deduce_function(env, base_data, expr, &key, template_input)
 }
 
 pub fn query_standard_function(

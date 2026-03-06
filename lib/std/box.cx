@@ -5,34 +5,35 @@ struct box<T> : @nodrop {
 };
 
 box<T> box<T>::new<T>(T value) safe {
-    @unsafe {
-        box<T> b = (box<T>) {
-            .ptr = malloc(sizeof(T)),
-        };
- 
-        *(b.ptr) = move value;
-    }
+    box<T> b;
     
-    return b;   
+    @unsafe {
+        b.ptr = malloc(sizeof(T));
+        *(b.ptr) = move value;
+    };
+    
+    return (move b);   
 }
 
-void box<T>::drop<T>(this) safe {
+void box<T>::drop<T>(*this) safe {
     @unsafe {
         free(this.ptr);
-    }
+        @leak(this);
+    };
 }
 
-const T& box<T>::deref<T>(this) {
-    return *(this.ptr);
+const T& box<T>::deref<T>(const this) safe {
+    return @unsafe(*(this.ptr));
 }
 
-T& box<T>::deref_mut<T>(this) {
-    return *(this.ptr);
+T& box<T>::deref_mut<T>(this) safe {
+    return @unsafe(*(this.ptr));
 }
 
-T* box<T>::leak<T>(move this) {
-    @nodrop this;
-    return this.ptr;
+T* box<T>::leak<T>(*this) {
+    T* ptr = this.ptr;
+    @leak(this);
+    return ptr;
 }
 
 private:
