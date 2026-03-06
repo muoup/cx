@@ -5,6 +5,12 @@ schema_version = 1
 authors = ["Zachary Verlardi <zacharyverlardi@gmail.com>"]
 description = "Language Support for the CX Language"
 repository = "https://github.com/muoup/cx"
+languages = ["languages/cx"]
+
+[grammars.cx]
+repository = "https://github.com/muoup/cx"
+rev = "af346fd7ed62d11936a8942404cd695671a0a652"
+path = "compiler/cx-treesitter-grammar"
 
 [language_servers.cx-lsp]
 name = "CX Language Server"

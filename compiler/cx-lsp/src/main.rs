@@ -52,15 +52,15 @@ fn find_project_root(file_path: &Path) -> PathBuf {
     }
 }
 
-const KEYWORD_IDX : u32 = 0;
-const _OPERATOR_IDX : u32 = 1;
-const STRING_IDX : u32 = 2;
-const NUMBER_IDX : u32 = 3;
-const _TYPE_IDX : u32 = 4;
-const _VARIABLE_IDX : u32 = 5;
-const _FUNCTION_IDX : u32 = 6;
-const _COMMENT_IDX : u32 = 7;
-const _MACRO_IDX : u32 = 8;
+const KEYWORD_IDX: u32 = 0;
+const _OPERATOR_IDX: u32 = 1;
+const STRING_IDX: u32 = 2;
+const NUMBER_IDX: u32 = 3;
+const _TYPE_IDX: u32 = 4;
+const _VARIABLE_IDX: u32 = 5;
+const _FUNCTION_IDX: u32 = 6;
+const _COMMENT_IDX: u32 = 7;
+const _MACRO_IDX: u32 = 8;
 
 // Define the token types that our server supports.
 const LEGEND_TYPE: &[SemanticTokenType] = &[
@@ -129,8 +129,10 @@ impl LanguageServer for Backend {
                         change: Some(TextDocumentSyncKind::FULL),
                         will_save: Some(false),
                         will_save_wait_until: Some(false),
-                        save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions::default())),
-                    }
+                        save: Some(TextDocumentSyncSaveOptions::SaveOptions(
+                            SaveOptions::default(),
+                        )),
+                    },
                 )),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
@@ -187,9 +189,7 @@ impl LanguageServer for Backend {
                 self.client
                     .log_message(MessageType::ERROR, format!("Invalid file path: {}", uri))
                     .await;
-                self.client
-                    .publish_diagnostics(uri, vec![], None)
-                    .await;
+                self.client.publish_diagnostics(uri, vec![], None).await;
                 return;
             }
         };
@@ -200,7 +200,10 @@ impl LanguageServer for Backend {
 
         // Log for debugging
         self.client
-            .log_message(MessageType::INFO, format!("File: {:?}, Project root: {:?}", file_path, detected_root))
+            .log_message(
+                MessageType::INFO,
+                format!("File: {:?}, Project root: {:?}", file_path, detected_root),
+            )
             .await;
 
         // Perform all synchronous operations before any await
@@ -220,10 +223,7 @@ impl LanguageServer for Backend {
                 .await;
         }
 
-        let current_files = diagnostics_by_file
-            .keys()
-            .cloned()
-            .collect::<HashSet<_>>();
+        let current_files = diagnostics_by_file.keys().cloned().collect::<HashSet<_>>();
         let stale_files = {
             let mut published = self
                 .published_diagnostic_files
@@ -266,14 +266,14 @@ impl LanguageServer for Backend {
 
         for token in tokens {
             let token_type = match token.kind {
-                TokenKind::Keyword(_) |
-                TokenKind::Intrinsic(_) => KEYWORD_IDX,
-                
-                TokenKind::IntLiteral(_) |
-                TokenKind::FloatLiteral(_) => NUMBER_IDX,
-                
+                TokenKind::Keyword(_)
+                | TokenKind::Intrinsic(_)
+                | TokenKind::CompilerIdentifier(_) => KEYWORD_IDX,
+
+                TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_) => NUMBER_IDX,
+
                 TokenKind::StringLiteral(_) => STRING_IDX,
-                
+
                 _ => continue,
             };
 
