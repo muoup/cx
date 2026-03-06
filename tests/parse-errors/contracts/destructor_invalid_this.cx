@@ -1,7 +1,0 @@
-struct Lifetime {};
-
-~Lifetime(value) {}
-
-int main() {
-    return 0;
-}

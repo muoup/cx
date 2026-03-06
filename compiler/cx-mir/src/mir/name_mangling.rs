@@ -12,14 +12,6 @@ pub fn base_mangle_static_member(name: &str, member_type: &MIRType) -> String {
     format!("_S{}_{}", member_type.mangle(), name)
 }
 
-pub fn base_mangle_destructor(_type: &MIRType) -> String {
-    format!("_D_{}", _type.mangle())
-}
-
-pub fn base_mangle_deconstructor(_type: &MIRType) -> String {
-    format!("_DC_{}", _type.mangle())
-}
-
 pub(crate) fn type_mangle(ty: &MIRType) -> String {
     let mut mangled = String::new();
 

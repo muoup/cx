@@ -16,7 +16,6 @@ use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
-    log_typecheck_error,
     type_checking::typechecker::{
         global_expr, typecheck_expr, validate_safe_function_signature,
     },
@@ -87,31 +86,9 @@ pub fn typecheck(
     ast: &CXAST,
 ) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
-        match stmt {
-            CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                let prototype = env.complete_prototype(base_data, None, prototype)?;
-                typecheck_function(env, base_data, prototype.clone(), body)?;
-            }
-
-            CXFunctionStmt::DestructorDefinition { _type, body } => {
-                let cx_type = env.complete_type(base_data, _type)?;
-
-                if env.is_nodrop(&cx_type) {
-                    return log_typecheck_error!(
-                        env,
-                        body,
-                        " nodrop types may not define destructors"
-                    );
-                }
-
-                let Some(prototype) = env.get_destructor(base_data, &cx_type) else {
-                    unreachable!("Destructor prototype should not be missing: {}", _type);
-                };
-
-                typecheck_function(env, base_data, prototype.clone(), body)?;
-            }
-
-            _ => {}
+        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
+            let prototype = env.complete_prototype(base_data, None, prototype)?;
+            typecheck_function(env, base_data, prototype.clone(), body)?;
         }
     }
 

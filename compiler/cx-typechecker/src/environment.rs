@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use crate::log::TypeError;
 use crate::environment::function_query::{
-    query_deconstructor, query_destructor, query_member_function, query_standard_function,
+    query_member_function, query_standard_function,
 };
 use crate::type_completion::{complete_prototype_no_insert, complete_type};
 
@@ -457,18 +457,6 @@ impl TypeEnvironment<'_> {
         self.realized_types.get(name).cloned()
     }
 
-    pub fn get_deconstructor(&mut self, _type: &MIRType) -> Option<MIRFunctionPrototype> {
-        query_deconstructor(self, _type)
-    }
-
-    pub fn get_destructor(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        _type: &MIRType,
-    ) -> Option<MIRFunctionPrototype> {
-        query_destructor(self, base_data, _type)
-    }
-
     pub fn current_function(&self) -> &MIRFunctionPrototype {
         self.current_function.as_ref().unwrap()
     }
@@ -496,11 +484,7 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn is_copyable(&mut self, ty: &MIRType) -> bool {
-        if self.is_nocopy(ty) {
-            return false;
-        }
-
-        self.get_deconstructor(ty).is_none()
+        !self.is_nocopy(ty)
     }
 
     pub fn is_nocopy(&self, ty: &MIRType) -> bool {

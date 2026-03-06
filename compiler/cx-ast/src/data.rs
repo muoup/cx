@@ -25,9 +25,6 @@ pub enum CXFunctionKey {
         type_base_name: CXIdent,
         name: CXIdent,
     },
-    Destructor {
-        type_base_name: CXIdent,
-    },
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -41,7 +38,6 @@ pub enum CXFunctionKind {
         member_type: CXFunctionTypeIdent,
         name: CXIdent,
     },
-    Destructor(CXFunctionTypeIdent),
 }
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
@@ -121,8 +117,6 @@ pub struct CXTemplate<Shell> {
 
 pub type CXTypeTemplate = CXTemplate<CXType>;
 pub type CXFunctionTemplate = CXTemplate<CXPrototype>;
-pub type CXDestructorTemplate = CXTemplate<String>;
-
 pub type CXTypeSpecifier = u8;
 
 pub const CX_CONST: CXTypeSpecifier = 1 << 0;
@@ -297,7 +291,6 @@ impl CXFunctionKind {
     pub fn implicit_member(&self) -> Option<&CXFunctionTypeIdent> {
         match self {
             CXFunctionKind::MemberFunction { member_type, .. } => Some(member_type),
-            CXFunctionKind::Destructor(name) => Some(name),
             CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => None,
         }
     }
@@ -319,13 +312,6 @@ impl CXFunctionKind {
                 CXFunctionKey::StaticMemberFunction {
                     type_base_name,
                     name: name.clone(),
-                }
-            }
-            CXFunctionKind::Destructor(base_type) => {
-                let type_base_name = base_type.base_name().clone();
-
-                CXFunctionKey::Destructor {
-                    type_base_name,
                 }
             }
         }

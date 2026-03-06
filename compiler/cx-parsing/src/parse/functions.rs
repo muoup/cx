@@ -11,7 +11,6 @@ use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
     expressions::parse_expr,
-    parse_std_ident,
     parser::ParserData,
     templates::{convert_template_proto_to_args, try_parse_template},
     types::parse_initializer,
@@ -20,54 +19,6 @@ use crate::parse::{
 pub struct FunctionDeclaration {
     pub prototype: CXPrototype,
     pub template_prototype: Option<CXTemplatePrototype>,
-}
-
-fn destructor_prototype(_type: CXType) -> CXPrototype {
-    CXPrototype {
-        kind: CXFunctionKind::Destructor(CXFunctionTypeIdent::from_type(&_type).unwrap()),
-        receiver_mode: CXReceiverMode::None,
-
-        return_type: CXTypeKind::Identifier {
-            name: CXIdent::new("void"),
-            predeclaration: PredeclarationType::None,
-        }
-        .to_type(),
-        params: vec![],
-        var_args: false,
-        contract: CXFunctionContract::default(),
-    }
-}
-
-pub fn parse_destructor_prototype(data: &mut ParserData) -> CXResult<FunctionDeclaration> {
-    assert_token_matches!(data.tokens, operator!(Tilda));
-
-    let name = parse_std_ident(&mut data.tokens)?;
-    let template_prototype = try_parse_template(&mut data.tokens)?;
-
-    assert_token_matches!(data.tokens, punctuator!(OpenParen));
-    assert_token_matches!(data.tokens, identifier!(this));
-    if this.as_str() != "this" {
-        return log_preparse_error!(data.tokens, "Destructor can only have 'this' as parameter.");
-    }
-    assert_token_matches!(data.tokens, punctuator!(CloseParen));
-
-    let _type = match &template_prototype {
-        Some(prototype) => CXTypeKind::TemplatedIdentifier {
-            name: name.clone(),
-            input: convert_template_proto_to_args(prototype.clone()),
-        },
-        None => CXTypeKind::Identifier {
-            name: name.clone(),
-            predeclaration: PredeclarationType::None,
-        },
-    };
-
-    let prototype = destructor_prototype(_type.to_type());
-
-    Ok(FunctionDeclaration {
-        prototype,
-        template_prototype,
-    })
 }
 
 pub fn try_function_parse(

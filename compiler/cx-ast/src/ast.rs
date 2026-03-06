@@ -36,11 +36,6 @@ pub enum CXFunctionStmt {
         body: Box<CXExpr>,
     },
 
-    DestructorDefinition {
-        _type: CXType,
-        body: Box<CXExpr>,
-    },
-
     TemplatedFunction {
         prototype: CXPrototype,
         body: Box<CXExpr>,

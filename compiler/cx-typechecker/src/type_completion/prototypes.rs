@@ -1,7 +1,7 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::name_mangling::base_mangle_fn_name;
 use crate::type_checking::binary_ops::typecheck_contract;
-use cx_ast::data::{CXFunctionKind, CXReceiverMode, CXTemplateInput, CXParameter, CXPrototype};
+use cx_ast::data::{CXReceiverMode, CXTemplateInput, CXParameter, CXPrototype};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRParameter, MIRReceiverMode, MIRTemplateInput};
 use cx_util::CXResult;
@@ -9,13 +9,10 @@ use cx_util::identifier::CXIdent;
 
 pub(crate) fn apply_implicit_fn_attr(mut proto: CXPrototype) -> CXPrototype {
     if let Some(implicit_member) = proto.kind.implicit_member() {
-        let receiver_type = match &proto.kind {
-            CXFunctionKind::Destructor(_) => implicit_member.as_type().pointer_to(true, 0),
-            _ => match proto.receiver_mode {
-                CXReceiverMode::ByRef => implicit_member.as_type().pointer_to(true, 0),
-                CXReceiverMode::ByMove => implicit_member.as_type(),
-                CXReceiverMode::None => return proto,
-            },
+        let receiver_type = match proto.receiver_mode {
+            CXReceiverMode::ByRef => implicit_member.as_type().pointer_to(true, 0),
+            CXReceiverMode::ByMove => implicit_member.as_type(),
+            CXReceiverMode::None => return proto,
         };
 
         proto.params.insert(

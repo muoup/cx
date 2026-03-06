@@ -193,22 +193,6 @@ Call syntax:
 MyStruct s = MyStruct::create();
 ```
 
-### 4.4 Destructors
-
-Ordinary structs may define destructors:
-
-```c
-~MyStruct(this) {
-    printf("destroy\n");
-}
-```
-
-Current constraints:
-
-- destructors use `this`, not `*this`
-- `@nodrop` types may not define destructors
-- for `@nodrop` types, cleanup must be explicit via move or `@leak`
-
 ## 5. Templates
 
 CX supports templated functions and aggregate types.

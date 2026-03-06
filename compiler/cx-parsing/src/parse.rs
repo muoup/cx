@@ -14,7 +14,7 @@ use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
-    functions::{parse_destructor_prototype, try_function_parse},
+    functions::try_function_parse,
     parser::ParserData,
     templates::{note_templatedtype_s, parse_template_prototype, unnote_templatedtype_s},
     types::parse_initializer,
@@ -50,12 +50,6 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
             data.tokens.next();
         }
         specifier!() => parse_access_mods(data)?,
-
-        operator!(Tilda) => {
-            let destructor = parse_destructor_prototype(data)?;
-            parse_fn_merge(data, destructor.prototype, destructor.template_prototype)?;
-        }
-
         _ => parse_global_expr(data)?,
     };
 

@@ -110,12 +110,6 @@ impl Display for CXFunctionStmt {
                 writeln!(f, "}}")
             }
 
-            CXFunctionStmt::DestructorDefinition { _type, body } => {
-                writeln!(f, "DestructorDef for {} {{ ", _type)?;
-                write!(f, "{}", CXExprFormatter::new(body, 1))?;
-                writeln!(f, "}}")
-            }
-
             CXFunctionStmt::TemplatedFunction { prototype, body } => {
                 writeln!(f, "TemplatedFunction {prototype} {{ ")?;
                 write!(f, "{}", CXExprFormatter::new(body, 1))?;
@@ -543,9 +537,6 @@ impl Display for CXFunctionKind {
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
                 write!(f, "{member_type}::{name}")
             }
-            CXFunctionKind::Destructor(base) => {
-                write!(f, "~{base}")
-            }
         }
     }
 }
@@ -559,9 +550,6 @@ impl Display for CXFunctionKey {
             }
             CXFunctionKey::StaticMemberFunction { type_base_name, name } => {
                 write!(f, "(static) {type_base_name}::{name}")
-            }
-            CXFunctionKey::Destructor { type_base_name } => {
-                write!(f, "~{type_base_name}")
             }
         }
     }
