@@ -9,7 +9,7 @@ pub fn resource_path(
     data_suffix: &str,
 ) -> PathBuf {
     let mut path = internal_directory(context, unit);
-    path.push(data_suffix);
+    path.set_extension(data_suffix.trim_start_matches('.'));
     path
 }
 
@@ -20,6 +20,9 @@ pub fn store_text(
     text: &str,
 ) {
     let path = resource_path(context, unit, data_suffix);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("Failed to create parent directory for text data");
+    }
 
     std::fs::write(path, text).expect("Failed to write text to file");
 }
@@ -34,6 +37,9 @@ where
     Data: Writable<LittleEndian>,
 {
     let path = resource_path(context, unit, data_suffix);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
 
     data.write_to_file(path.as_path()).ok()
 }

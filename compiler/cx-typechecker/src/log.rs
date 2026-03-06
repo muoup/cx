@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use cx_util::CXErrorTrait;
 
+#[derive(Clone, Debug)]
 pub struct TypeError {
     pub compilation_unit: PathBuf,
     pub token_start: usize,
@@ -18,6 +19,30 @@ impl CXErrorTrait for TypeError {
             self.token_start,
             self.token_end,
         );
+    }
+
+    fn error_message(&self) -> String {
+        self.message.clone()
+    }
+
+    fn compilation_unit(&self) -> Option<PathBuf> {
+        Some(self.compilation_unit.clone())
+    }
+
+    fn token_start(&self) -> Option<usize> {
+        Some(self.token_start)
+    }
+
+    fn token_end(&self) -> Option<usize> {
+        Some(self.token_end)
+    }
+
+    fn notes(&self) -> Vec<String> {
+        self.notes.clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

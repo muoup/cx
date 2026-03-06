@@ -2,7 +2,11 @@
 resolver = "2"
 
 members = [
-    "compiler/cx", "compiler/cx-safe-analyzer", "compiler/cx-safe-ir", "tests"
+    "compiler/cx",
+    "compiler/cx-lsp",
+    "compiler/cx-treesitter-grammar",
+    "compiler/cx-zed-extension",
+    "tests"
 ]
 
 # For the time being, any optional packages (i.e. ones only compiled when passed a feature flag) should be included here

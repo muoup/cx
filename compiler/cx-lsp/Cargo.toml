@@ -1,0 +1,18 @@
+[package]
+name = "cx-lsp"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+tower-lsp = "0.20"
+tokio = { version = "1.48.0", features = ["full"] }
+dashmap = "5.5"
+
+cx-lexer = { path = "../cx-lexer" }
+cx-log = { path = "../cx-log" }
+cx-parsing = { path = "../cx-parsing" }
+cx-pipeline = { path = "../cx-pipeline" }
+cx-pipeline-data = { path = "../cx-pipeline-data" }
+cx-tokens = { path = "../cx-tokens" }
+cx-typechecker = { path = "../cx-typechecker" }
+cx-util = { path = "../cx-util" }
