@@ -72,7 +72,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
             match attr.as_str() {
                 "nocopy" => attributes.nocopy = true,
-                "nodrop" | "nodestruct" => attributes.nodrop = true,
+                "nodrop" => attributes.nodrop = true,
                 _ => return log_parse_error!(data, "Unknown struct attribute '@{}'", attr),
             }
 

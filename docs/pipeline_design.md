@@ -54,23 +54,29 @@ spanning over multiple nested imports may allow for truncating type trees to all
 - **Output**: An abstract syntax tree (AST) representing the program.
 
 ### Stage 5: Type Checking and Template Realization
-This stage is responsible for checking the types of expressions and statements in the AST. It ensures that
-no type errors exist in the program, as well as adding implicit casts and conversions where necessary to
-ensure the guarantees of C semantics are met.
+This stage performs a type checking pass on the contextless AST produced by the parser. It is responsible both for completing
+types and templated types -- i.e. flattening identifiers to their full type information, including across module boundaries, as well as converting
+the initially parsed expressions inside of function bodies to properly typed MIR nodes which have resolved expression types as
+well as applied implicit coercions where necessary. Any expressions which involved templates are realized as well at this stage,
+the MIR stage currently uses a C++-style copy-and-paste template system, so a templated function must be instantiated and fully
+typechecked each time a unique set of template parameters are used.
 
-Additionally, this stage is also responsible for handling templated types and functions. While an expression is
-being typechecked, if a templated reference not previously realized is encountered, in the case of a templated type,
-it is simply instantiated and added to the type map, however in the case of a function, the function prototype is
-instantiated in the same manner, however the type checker also records a request to typecheck the function body under
-this template input later, where typechecking as a stage can only end once all requests have been fulfilled and all
-functions have been typechecked. Because the idiomatic multi-file structure of CX is to use modules, the
-'request to pipeline' system also comes with the advantage that redundant instantiations between compilation units can
-be avoided when possible.
+Any type errors will cause this stage to fail and report the cause of the fail. This stage is the last failable stage, any errors that
+occur in later stages are considered internal compiler errors and should be reported as such.
 
 - **Prerequisites**: The AST must be built before this stage can be performed. ASTs for all imports must also
     be available to the type checker.
 - **Input**: AST from the parsing stage, type stumps and function signature information.
-- **Output**: A modified AST containing additional implicit AST elements, type information for each node, and realized template functions and types.
+- **Output**: MIR, "Mid-Level Intermediate Representation", a typed AST-style IR with resolved types and fleshed out expression semantics.
+
+### Stage 5.5: Safe Function Analysis (Optional — FMIR)
+This stage runs only for functions marked `safe`. It lowers MIR to **FMIR (Functional MIR)**, a pure functional intermediate representation that models C memory operations as monadic state transformations. The FMIR enables compile-time formal verification to throw compile-time errors for tautological invariant violations caused by common logic errors.
+
+This stage is implemented by `cx-safe-analyzer` operating on the `cx-safe-ir` data structures.
+
+- **Prerequisites**: Type-checked MIR for safe functions, function contracts.
+- **Input**: MIR for functions marked `safe`, along with their `where` clause contracts.
+- **Output**: Verification diagnostics (errors if contracts are provably violated). Functions that pass verification proceed unchanged to LMIR generation.
 
 ### Stage 6: LMIR Generation
 This stage converts the type-checked AST into a Lower-level MIR (LMIR), which is a flat SSA (Static

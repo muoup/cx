@@ -1,90 +1,107 @@
-# CX Language Documentation
+# CX Language Specification
 
-NOTE: No feature in this document is currently set in stone, code should not be written
-at the moment under the assumption it will not break in the future. As well, given the
-early stage of the language, this document will not be a complete specification of the
-semantic guarantees of the language, but rather a general overview of features with examples.
+> This specification reflects the current state of the CX language and may evolve as the language matures.
+
+## Overview
+
+CX is a safe-by-default systems programming language designed as a superset of C99. It extends C with modern type system features — linear types, contracts, and compile-time formal verification — while maintaining full C ABI compatibility and predictable memory layout. CX aims to bring the rigor of modern type theory to systems-level programming without sacrificing the simplicity and transparency that make C effective.
 
 ## 1. Base Syntax
 
-The syntax of CX is built to be a superset of C99, see the [C99 Standard](https://www.dii.uchile.cl/~daespino/files/Iso_C_1999_definition.pdf) for
-reference. Any valid C99 code should be valid CX code with the same semantics. The only exceptions to this rule are in keywords, this language uses
-a few additional keywords that are not present in C99, meaning that any C code using these keywords as identifiers may not compiler in CX without slight modifications. These keywords are listed in the [Lexical Conventions](#2-lexical-conventions) section.
+CX is a superset of C99 (see the [C99 Standard](https://www.dii.uchile.cl/~daespino/files/Iso_C_1999_definition.pdf)). Any valid C99 program should be valid CX with identical semantics, with the sole exception of additional reserved keywords listed in [§2.2](#22-keywords).
 
-A significant divergence from C/C++ is that CX is not order-dependent. Types and functions can be declared in any order, as the compiler resolves all declarations within a module before compilation begins. This means a function can be called by another function that appears earlier in the same source file without needing a forward declaration.
+A significant divergence from C/C++ is that CX is **not order-dependent**. Types and functions can be declared in any order; the compiler resolves all declarations within a module before compilation begins. Forward declarations are never required.
 
 ## 2. Lexical Conventions
 
 ### 2.1: Identifiers
-As is the case in standard C, while a valid identifier, names beginning with a `_` are reserved for the implementation, and thus should be avoided in user code. 
+
+As in standard C, names beginning with `_` are reserved for the implementation and should be avoided in user code.
 
 ### 2.2: Keywords
 
-The only exception to section #1 with regards to CX's backwards compatibility is in the usage
-of additional keywords. Any programs using the following keywords may not compile in CX without
-slight modifications. The following keywords are currently reserved in addition to the C99 keywords:
+CX reserves the following keywords in addition to those defined by C99. Programs using these as identifiers will require modification:
 
-*   `import`, `defer`, `strong`, `weak`, `new`, `template`, `type`, `match`, `is`, `private`, `public`, `class`.
+*   `import`, `defer`, `strong`, `weak`, `new`, `template`, `type`, `match`, `is`, `private`, `public`, `class`, `safe`, `where`, `move`.
 
+#### Compiler Attributes
 
-The meaning of these keywords will be explained in their respective sections.
+CX also defines `@`-prefixed compiler attributes, which are not identifiers and cannot collide with user code:
+
+*   `@nocopy` — marks a struct as not trivially copyable. Values of this type must either be initialized with an rvalue, or by an lvalue explicitly
+                moved via the `move` keyword. Assignment without `move` is a compile error.
+*   `@nodrop` — marks a struct as unable to be implicitly dropped. Every `@nodrop` value is implicitly `@nocopy`, and can never fall out of scope
+                without being explicitly consumed via a move or leaked via `@leak`.
+*   `@leak(variable)` — 'moves' a '@nodrop' variable without transferring ownership. Used as the escape hatch destructor for linear types. This
+                operation is inherently unsafe and requires the programmer to ensure that the contents of the variable are adequately cleaned up
+                manually beforehand.
 
 ## 3. Additional Type Semantics
 
 ### 3.1: Structs
 
-Structs in CX exist with the same guarantees for padding and alignment as in C, however some additional abstractions are
-provided for common use patterns.
+Structs in CX share the same guarantees for padding and alignment as C. You may also use attributes as mentioned in [Compiler Attributes](#compiler-attributes) to enforce ownership semantics for complex non-POD types.
 
-For instance, CX allows for the declaration of member functions for structured types. These functions do not themselves
-allow for polymorphism, however they do allow for a more object-oriented conception of using structured data. Member
-functions act as syntactic sugar for creating a method that acts on a struct type, to allow for alternative syntax
-for a function which takes in a pointer to a struct. Note that while not currently implemented, the explicit `this`
-parameter at the beginning of the function declaration is enforced, as its exclusion will be treated in the future
-as a function inside the namespace of the struct, similar to how Rust handles its `self` keyword.
+#### Instance Methods
 
-As well, structs may have destructors, which are called when a struct goes out of scope. When a struct either contains
-a destructable object (e.g a strong pointer, or another struct with a deconstruction logic), or has a destructor defined,
-the compiler must create implicit logic for deconstructing the struct as is required. Note that a pointer to a destructable
-type has no special meaning, as the compiler cannot deduce that the type `owns` the memory it points to. As of right now,
-a struct is always deconstructed when it goes out of scope, however in the future this may be subject to change where
-structs which are `moved` are not deconstructed, creating a more clear ownership model over structs.
+CX allows declaring member functions for structured types. These do not enable polymorphism, but provide a more ergonomic calling convention for functions that operate on a struct. An instance method declares an explicit `this` parameter, and is called via dot notation on an instance.
 
 ```c++
 struct MyStruct {
     int x;
 };
 
-// A member function.
+// An instance method: note the explicit `this` parameter.
 void MyStruct::print(this) {
     printf("x = %d\n", this->x);
 }
 
-// NOTE: Not currently supported, but since `this` is an explicit parameter,
-// it can be marked as `const` to create a read-only method, similar to C++'s `const` methods.
-
-// A destructor.
-~MyStruct(this) {
-    printf("MyStruct destructor\n");
-}
-
-// Example usage.
 void func() {
     MyStruct s { .x = 10 };
-    
-    s.print(); // Calls the member function.
-    
-    // s goes out of scope here, thus a call to ~MyStruct(this) is inserted by the compiler. 
+    s.print(); // Calls the instance method.
+}
+```
+
+#### Static Member Functions
+
+A member function declared *without* a `this` parameter is a **static member function**. It belongs to the type's namespace but does not operate on an instance.
+
+*   **Syntax:** `ReturnType TypeName::function_name(params) { ... }` — no `this` parameter.
+*   **Invocation:** Called via `TypeName::function_name(args)`, never via dot notation on an instance.
+
+Static member functions are commonly used for factory patterns:
+
+```c++
+struct MyStruct {
+    int c;
+};
+
+// A static member function — no `this` parameter.
+MyStruct MyStruct::create_struct() {
+    return { .c = 42 };
+}
+
+int main() {
+    MyStruct s = MyStruct::create_struct();
+    printf("s.c = %d\n", s.c);
+    return 0;
+}
+```
+
+#### Destructors
+
+Structs may define destructors, which the compiler calls when an instance goes out of scope. When a struct contains a destructable object (e.g., a strong pointer or another struct with destruction logic), the compiler inserts implicit destruction calls as needed. A pointer to a destructable type carries no special semantics — the compiler cannot deduce ownership through a raw pointer.
+
+```c++
+~MyStruct(this) {
+    printf("MyStruct destructor\n");
 }
 ```
 
 ### 3.2: Tagged Unions
 
-CX provides support for tagged unions, also known as sum types or variants, which are a powerful tool for representing a value that could be one of several types. They are declared using the `union class` keywords.
+CX provides tagged unions (sum types / variants) declared with the `enum union` keywords. Each member is a variant with a distinct name and type, defined using the `::` separator.
 
-Each member of a `union class` is a "variant" with a distinct name and type, defined using the `::` separator.
-
-**Syntax Example:**
 ```c++
 enum union Output {
     integer :: int,
@@ -94,9 +111,8 @@ enum union Output {
 };
 ```
 
-To create an instance of a tagged union, you use the `::` operator on the union type, followed by the variant name and the value to be stored.
+Instances are constructed via the `::` operator:
 
-**Construction Example:**
 ```c
 Output o1 = Output::integer(42);
 Output o2 = Output::fp(3.14);
@@ -105,37 +121,26 @@ Output o3 = Output::string("Hello, World!");
 
 ## 4. Templates
 
-CX supports templates, which allow you to write generic functions and types that can work with any type.
-Templates are declared using angle brackets (`<>`) containing the generic type parameters.
+CX supports templates for writing generic functions and types. Template parameters are declared using angle brackets (`<>`). For functions, the template declaration comes after the function name; for types, after the type name.
 
 For information regarding templated symbols, see the [name mangling documentation](name_mangling.md).
 
-For functions, the template declaration comes after the function name. For type definitions like `struct` or `typedef`, it comes after the type name. This syntax is similar to templates in Rust or generics in Java/C#.
-
 **Function Syntax Example:**
 ```c
-// A generic 'add' function
 T add<T>(T a, T b) {
     return a + b;
 }
 
 int main() {
-    int ix = 5;
-    int iy = 10;
-    float fx = 5.5;
-    float fy = 10.5;
-
-    int int_result = add<int>(ix, iy);       // int_result is 15
-    float float_result = add<float>(fx, fy); // float_result is 16.0
+    int int_result = add<int>(5, 10);       // 15
+    float float_result = add<float>(5.5, 10.5); // 16.0
 }
 ```
 
 **Type Syntax Example:**
 ```c
-// A generic 'Ptr' type alias
 typedef<T> T* Ptr;
 
-// A generic 'Data' struct
 struct Data<T> {
     Ptr<T> ptr;
 };
@@ -150,34 +155,28 @@ int main() {
 
 ### 4.1. Current Limitations
 
-**Type Inference:** The language currently does not perform type inference for template arguments during instantiation. You must explicitly specify the types in angle brackets (e.g., `add<int>(...)`).
+**Type Inference:** Template arguments must be explicitly specified at instantiation sites (e.g., `add<int>(...)`). Inference is not yet supported.
 
-**Specialization:** When declaring a templated type or function, only one definition is allowed per function identifier (i.e. standard function name, member function type + name, etc.). With member functions on templated types, this restriction is to one type parameterization + function name combination. 
+**Specialization:** Only one definition is allowed per function identifier. For member functions on templated types, the restriction is one definition per type parameterization + function name combination.
 
 ```c
-struct Vec<T> {
-    // ...
-};
+struct Vec<T> { /* ... */ };
 
 // If this is declared:
 void Vec<int>::some_function() { /* ... */ }
-// This will throw an error:
-void Vec<float>::some_function() { /* ... */ } 
+// This will produce an error:
+void Vec<float>::some_function() { /* ... */ }
 ```
 
 ## 5. Control Flow
 
 ### 5.1. Match Expressions
 
-CX includes a `match` expression, which is a semantically enhanced version of the C `switch` statement. It is designed to safely handle different cases of a value, such as the variants of a tagged union.
+CX provides a `match` expression as a safer alternative to the C `switch` statement.
 
-The key differences from a C `switch` are:
-*   **No Fallthrough:** Each arm of a `match` expression is an independent, scoped block. There is no fallthrough behavior, which eliminates a common source of bugs.
-*   **Tagged Union Support:** It can deconstruct tagged unions, allowing you to handle each variant in a separate arm.
+*   **No Fallthrough:** Each arm is an independent, scoped block.
+*   **Tagged Union Support:** Arms can deconstruct tagged union variants.
 
-Currently, `match` is primarily used for tagged unions. However, it is planned to support integer-like types in the future, making it a more general-purpose control flow tool.
-
-**Syntax Example:**
 ```c
 void print_output(Output out) {
     match (out) {
@@ -191,43 +190,255 @@ void print_output(Output out) {
 
 ### 5.2. The `is` Operator
 
-The `is` operator is used to check if a tagged union instance corresponds to a specific variant at runtime. It returns a boolean `true` if the instance matches the variant and `false` otherwise.
+The `is` operator checks whether a tagged union instance matches a specific variant at runtime, returning a boolean. When the check succeeds, the variant's inner value is extracted into a new variable available within the conditional's scope.
 
-Its primary use is within conditional statements like `if` and `while` to safely inspect a tagged union's current type.
-
-When the `is` operator evaluates to true, it also extracts the variant's inner value into a new variable that is made available within the conditional's scope.
-
-**Syntax Example:**
 ```c
 Output out = generate_output(2);
 
 if (out is Output::string(s)) {
-    // 's' is now available here and holds the string value
     printf("The output is a string: %s\n", s);
 } else {
     printf("The output is not a string.\n");
 }
 ```
 
-**Important Warning:** The `is` operator also performs an **unchecked coercion**. If used outside of a conditional check where the type is not guaranteed, it will still attempt to extract the value. Accessing this extracted variable when the tagged union instance is not of the expected variant results in **undefined behavior**. 
-Currently also, tagged unions are not safely deconstructed, any deconstruction logic for a contained variant is not invoked automatically, but this will be changed in the future.
+**Warning:** The `is` operator performs an **unchecked coercion**. If used outside of a conditional check, accessing the extracted variable when the union is not of the expected variant results in **undefined behavior**. Tagged union variants are not yet safely deconstructed; destruction logic for contained variants is not automatically invoked.
 
 ## 6. Modules and Visibility
 
-CX includes a simple and powerful module system to help organize code.
-
 ### 6.1. Importing Modules
 
-The `import` keyword brings all public declarations from another module into the current file's scope. Once imported, a module's public functions and types can be used directly. Note that any
-imported information is implicitly privately declared, so no information imported will be available to any module that imports the current one, as one might expect with #include and a header file.
+The `import` keyword brings all public declarations from another module into the current file's scope. Imported declarations are implicitly private — they are not re-exported to modules that import the current one.
 
 ### 6.2. Visibility Control
 
-The visibility of declarations within a module is controlled by `public:` and `private:` headers.
+Declaration visibility is controlled by `public:` and `private:` headers.
 
-*   `public:`: All declarations following this header will be visible to other modules that `import` this one.
-*   `private:`: All declarations following this header will be local to the current module and cannot be accessed from outside.
+*   `public:` — declarations following this header are visible to importing modules.
+*   `private:` — declarations following this header are local to the current module.
 
-These headers can be used multiple times within a file to toggle the visibility of different sections of code. If no visibility header is specified, declarations are `private` by default.
+These headers can appear multiple times to toggle visibility. Declarations are `private` by default.
 
+```
+// my_library.cx
+public:
+
+struct PublicType {
+    int value;
+};
+
+void public_function() { /* ... */ }
+
+private:
+
+void internal_helper() { /* ... */ }
+```
+
+## 7. Contracts — Pre/Post-Conditions
+
+CX supports function contracts via `where` clauses on function declarations. Contracts specify preconditions and postconditions that constrain function behavior.
+
+### Syntax
+
+```
+return_type function_name(params)
+where
+    pre: (expr),
+    post(result_name): (expr)
+{ ... }
+```
+
+*   **`pre: (expr)`** — a precondition evaluated before each call site. The expression must hold true for all callers.
+*   **`post(result_name): (expr)`** — a postcondition evaluated after the function body. `result_name` binds the return value for use in the expression.
+*   Multiple clauses are separated by commas.
+
+### Runtime Behavior
+
+In **debug builds**, precondition and postcondition violations abort execution at runtime. In **release builds**, the compiler treats contract expressions as optimization assumptions.
+
+### Example
+
+```c
+#include <stdio.h>
+
+int contract(int a, int b)
+where
+    pre: (a > 0 && b > 0),
+    post(result): (result > a && result > b)
+{
+    return a + b;
+}
+
+int main() {
+    int z = contract(5, 10);
+    printf("Result: %d\n", z);
+    return z;
+}
+```
+
+## 8. Linear Types — `@nocopy` and `@nodrop`
+
+CX supports linear type attributes on structs to enforce ownership discipline at compile time.
+
+### `@nocopy`
+
+A struct marked `@nocopy` cannot be implicitly copied. Values must be explicitly transferred via the `move` keyword. Assignment without `move` is a compile error.
+
+```c
+struct Data : @nocopy {
+    int data;
+};
+
+void consume(Data data) {}
+
+int good() {
+    Data data = (Data) { .data = 1 };
+    consume(move data);
+
+    // After moving, `data` can be reinitialized:
+    data = (Data) { .data = 2 };
+    consume(move data);
+    return 0;
+}
+```
+
+### `@nodrop`
+
+A struct marked `@nodrop` is a **linear type** — it implies `@nocopy` and additionally cannot silently fall out of scope. Every value of a `@nodrop` type must be explicitly consumed via a destructive move or leaked via `@leak(variable)`. `@nodestruct` is accepted as an alias for `@nodrop`.
+
+```c
+struct Resource : @nodrop {
+    int data;
+};
+```
+
+If a `@nodrop` value reaches the end of its scope without being consumed, the compiler emits an error:
+
+```c
+int bad() {
+    Resource value;
+    return 0; // ERROR: linear type `Resource` not consumed before scope exit.
+}
+```
+
+### `@leak(variable)`
+
+The `@leak` attribute explicitly suppresses the `@nodrop` obligation, marking the binding as consumed without transferring ownership.
+
+### Control-Flow Awareness
+
+The compiler tracks moves across all control-flow paths — branches, loops, `break`, and `continue` — to ensure linearity is satisfied on every possible execution path.
+
+**Valid: consumed in both branches.**
+```c
+int good() {
+    int cond = 0;
+    Data data = (Data) { .data = 1 };
+
+    if (cond) {
+        consume(move data);
+    } else {
+        consume(move data);
+    }
+    return 0;
+}
+```
+
+**Invalid: consumed in only one branch.**
+```c
+int bad() {
+    int cond = 0;
+    Data data = (Data) { .data = 1 };
+
+    if (cond) {
+        consume(move data);
+    }
+    // ERROR: `data` may not be consumed on the else path.
+    return 0;
+}
+```
+
+**Invalid: conditional `@leak` does not satisfy linearity.**
+```c
+int bad() {
+    int cond = 0;
+    Resource value = (Resource) { .data = 1 };
+
+    if (cond) {
+        @leak(value);
+    }
+    // ERROR: `value` may not be consumed on the else path.
+    return 0;
+}
+```
+
+## 9. Safe Functions and Formal Verification
+
+CX provides a `safe` keyword for function declarations that enables compile-time formal verification.
+
+### Syntax
+
+```c
+int fn() safe
+where
+    post(ret): (ret == 1)
+{
+    int x = 1;
+    return x;
+}
+```
+
+### Restrictions
+
+Safe functions enforce the following constraints:
+
+1.  **No raw pointers.** Parameters and local variables cannot have pointer types.
+
+    ```c
+    // ERROR: raw pointer parameter in safe function.
+    int bad(int* ptr) safe { return 0; }
+
+    // ERROR: raw pointer local in safe function.
+    int bad() safe {
+        int value = 1;
+        int* ptr = &value;
+        return value;
+    }
+    ```
+
+2.  **Safe-only calls.** A safe function can only call other functions marked `safe`.
+
+    ```c
+    int helper() { return 1; }
+
+    // ERROR: safe function calls non-safe function `helper`.
+    int bad() safe { return helper(); }
+    ```
+
+3.  **Pure contracts.** Contract expressions in safe functions must be pure — they cannot contain function calls or side effects.
+
+    ```c
+    int helper() { return 1; }
+
+    // ERROR: impure expression in contract of safe function.
+    int bad() safe
+    where
+        post(ret): (helper() == ret)
+    { return 1; }
+    ```
+
+### Formal Verification via FMIR
+
+The compiler lowers safe functions to **FMIR (Functional MIR)**, a pure functional intermediate representation that models C memory operations as monadic state transformations. This enables compile-time formal verification of contracts.
+
+When a contract is **tautologically violated** — the postcondition is provably false given the function body — the compiler emits an error at compile time rather than deferring to runtime:
+
+```c
+int fn() safe
+where
+    post(ret): (ret == 1)
+{
+    int x = 0;
+    return x; // ERROR: postcondition `ret == 1` is provably violated.
+}
 ```

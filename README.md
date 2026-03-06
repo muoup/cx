@@ -10,9 +10,11 @@ modern features for me to self-host its compiler. The goal is to achieve this by
 however for now this language serves as a playground for applying modern type theory ideas to systems
 level programming.
 
-There are currently basic modern amenities like templates and destructors available, but idiomatic CX tries
-something different by encouraging safe and hidden behavior free code via linear types and Rust-style 'safe'
-code areas with explicit and isolated 'unsafe' regions.
+Beyond basic modern amenities like templates and destructors, idiomatic CX encourages safe and transparent
+code through **linear types** (`@nocopy`, `@nodrop`), **function contracts** (`where` clauses with
+pre/post-conditions), and **compile-time formal verification** of `safe` functions via a pure functional
+IR (FMIR). These features work to provide safety guarantees while allowing a paradigm with strong low-level
+control and a lack of implicit hidden behavior for a more C-like experience. 
 
 ## Getting Started
 
@@ -99,12 +101,14 @@ The compiler is organized into several crates following a modular design:
 - `cx-ast` - Abstract Syntax Tree structures
 - `cx-mir` - Middle-level IR (type system + MIR definitions)
 - `cx-lmir` - Lower-level MIR (flat SSA representation for backend codegen)
+- `cx-safe-ir` - Functional MIR (FMIR) for safe function analysis
 
 **Implementation Crates** (implement compilation stages):
 - `cx-lexer` - Lexical analysis (text → tokens)
 - `cx-parsing` - Parsing and pre-parsing (tokens → AST)
 - `cx-typechecker` - Type checking and template realization (AST → MIR)
 - `cx-mir-lowering` - MIR to LMIR conversion (MIR → flat SSA)
+- `cx-safe-analyzer` - Compile-time formal verification of safe functions
 - `cx-pipeline` - Pipeline orchestration and module management
 
 **Backend Crates** (code generation):
