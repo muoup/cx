@@ -1,7 +1,9 @@
 use std::hash::{Hash, Hasher};
 
 use cx_ast::ast::VisibilityMode;
-use cx_ast::data::CXTypeSpecifier;
+use cx_ast::data::{
+    CX_CONST, CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXTypeKind, CXTypeSpecifier, PredeclarationType
+};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -35,9 +37,10 @@ pub struct MIRParameter {
     pub _type: MIRType,
 }
 
-#[derive(Debug, Clone, Default, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRFunctionPrototype {
     pub name: CXIdent,
+    pub source_prototype: CXFunctionPrototype,
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
@@ -73,6 +76,12 @@ pub struct TemplateInstantiationInformation {
     pub template_input: MIRTemplateInput,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct MIRStructAttributes {
+    pub nocopy: bool,
+    pub nodrop: bool,
+}
+
 #[derive(Debug, Clone, Readable, Writable)]
 pub enum MIRTypeKind {
     Integer {
@@ -86,6 +95,7 @@ pub enum MIRTypeKind {
         name: Option<CXIdent>,
         // Boxed for size reasons
         template_info: Option<Box<TemplateInstantiationInformation>>,
+        attributes: MIRStructAttributes,
         fields: Vec<(String, MIRType)>,
     },
     Union {
@@ -94,6 +104,7 @@ pub enum MIRTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
+        attributes: MIRStructAttributes,
         variants: Vec<(String, MIRType)>,
     },
     Unit,
@@ -105,7 +116,7 @@ pub enum MIRTypeKind {
         weak: bool,
         nullable: bool,
     },
-    MemoryReference(Box<MIRType>),
+    MemoryReference { inner_type: Box<MIRType> },
     Array {
         size: usize,
         inner_type: Box<MIRType>,
@@ -240,11 +251,11 @@ impl MIRType {
     }
 
     pub fn mem_ref_inner(&self) -> Option<&MIRType> {
-        let MIRTypeKind::MemoryReference(inner) = &self.kind else {
+        let MIRTypeKind::MemoryReference { inner_type, .. } = &self.kind else {
             return None;
         };
 
-        Some(inner.as_ref())
+        Some(inner_type.as_ref())
     }
 
     pub fn array_inner(&self) -> Option<&MIRType> {
@@ -282,7 +293,9 @@ impl MIRType {
         MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
-            kind: MIRTypeKind::MemoryReference(Box::new(self)),
+            kind: MIRTypeKind::MemoryReference {
+                inner_type: Box::new(self),
+            },
         }
     }
 
@@ -332,8 +345,24 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::Structured { .. })
     }
 
+    pub fn struct_attributes(&self) -> Option<MIRStructAttributes> {
+        match &self.kind {
+            MIRTypeKind::Structured { attributes, .. } => Some(*attributes),
+            MIRTypeKind::TaggedUnion { attributes, .. } => Some(*attributes),
+            _ => None,
+        }
+    }
+
     pub fn is_memory_reference(&self) -> bool {
-        matches!(self.kind, MIRTypeKind::MemoryReference(_))
+        matches!(self.kind, MIRTypeKind::MemoryReference { .. })
+    }
+
+    pub fn is_mutable_memory_reference(&self) -> bool {
+        let MIRTypeKind::MemoryReference { inner_type } = &self.kind else {
+            return false;
+        };
+
+        !inner_type.get_specifier(CX_CONST)
     }
 
     pub fn was_template_instantiated(&self) -> bool {
@@ -410,7 +439,7 @@ impl MIRType {
             MIRTypeKind::Float { _type } => _type.bytes(),
             MIRTypeKind::Unit => 0,
             MIRTypeKind::Opaque { size, .. } => *size,
-            MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
+            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
                 std::mem::size_of::<usize>()
             }
 
@@ -459,7 +488,7 @@ impl MIRType {
             MIRTypeKind::Float { _type } => _type.bytes().min(8),
             MIRTypeKind::Unit => 1,
             MIRTypeKind::Opaque { size, .. } => (*size).min(8),
-            MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
+            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
                 std::mem::size_of::<usize>()
             }
 
@@ -497,6 +526,17 @@ impl MIRType {
             MIRTypeKind::Function {
                 prototype: Box::new(MIRFunctionPrototype {
                     name: CXIdent::from("__internal_function"),
+                    source_prototype: CXFunctionPrototype {
+                        kind: CXFunctionKind::Standard(CXIdent::from("__internal_function")),
+                        params: vec![],
+                        return_type: CXTypeKind::Identifier {
+                            name: CXIdent::from("void"),
+                            predeclaration: PredeclarationType::None,
+                        }
+                        .to_type(),
+                        var_args: false,
+                        contract: CXFunctionContract::default(),
+                    },
                     return_type: MIRType::unit(),
                     params: vec![],
                     var_args: false,
@@ -551,16 +591,19 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
         (
             MIRTypeKind::Structured {
                 name: n1,
+                attributes: a1,
                 fields: t1_fields,
                 ..
             },
             MIRTypeKind::Structured {
                 name: n2,
+                attributes: a2,
                 fields: t2_fields,
                 ..
             },
         ) => {
             n1 == n2
+                && a1 == a2
                 && t1_fields
                     .iter()
                     .zip(t2_fields.iter())

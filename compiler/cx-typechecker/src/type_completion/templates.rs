@@ -1,8 +1,5 @@
-use crate::environment::function_query::deduce_function;
 use crate::environment::name_mangling::mangle_templated_fn_name;
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
-use cx_ast::ast::CXExpr;
-use cx_ast::data::CXFunctionKey;
 use crate::type_completion::complete_prototype_no_insert;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
 use cx_ast::data::{
@@ -85,16 +82,6 @@ pub(crate) fn instantiate_type_template(
     );
 
     env.add_type(template_name.clone(), cx_type.clone());
-
-    // Realize the destructor for this templated type using the raw template input
-    let Some(base_name) = cx_type.get_base_identifier() else {
-        return Ok(cx_type);
-    };
-    let destructor_key = CXFunctionKey::Destructor {
-        type_base_name: base_name.clone(),
-    };
-    // Use the raw input (not completed) for deduce_function
-    let _ = deduce_function(env, base_data, &CXExpr::default(), &destructor_key, Some(input));
 
     Ok(cx_type)
 }

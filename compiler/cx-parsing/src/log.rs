@@ -20,6 +20,10 @@ macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
+            
+            // if cfg!(debug_assertions) {
+            //     panic!();
+            // }
 
             Err(Box::new($crate::log::ParseErrorLog {
                 message,

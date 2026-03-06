@@ -2,18 +2,17 @@
 name = "integration-tests"
 version = "0.0.0"
 edition = "2021"
+build = "build.rs"
 
 [features]
 default = ["cx-pipeline-data/test"]
 backend-llvm = ["cx-pipeline/backend-llvm"]
 
 [[test]]
-name = "integration_tests"
+name = "suite"
 path = "test.rs"
 harness = true
 
 [dependencies]
 cx-pipeline-data = { path = "../compiler/cx-pipeline-data" }
 cx-pipeline = { path = "../compiler/cx-pipeline" }
-
-ctor = "0.1.23"

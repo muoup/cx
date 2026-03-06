@@ -1,19 +1,24 @@
+use crate::{
+    type_checking::typechecker::add_implicit_return,
+    type_completion::types::_complete_template_input,
+};
 use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
     data::{CXFunctionKind, CXTemplateInput},
 };
-use cx_pipeline_data::CompilationUnit;
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRFunction},
     types::{MIRFunctionPrototype, MIRParameter},
 };
-use crate::type_completion::types::_complete_template_input;
+use cx_pipeline_data::CompilationUnit;
 use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
-    type_checking::typechecker::{global_expr, typecheck_expr},
+    type_checking::typechecker::{
+        global_expr, typecheck_expr, validate_safe_function_signature,
+    },
     type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
     },
@@ -33,7 +38,14 @@ fn typecheck_function(
     body: &CXExpr,
 ) -> CXResult<()> {
     env.push_scope(false, false);
+    env.set_scope_anchor(body);
+    env.configure_merge_scope(body, "function exit", Some("fallthrough"), true);
     env.current_function = Some(prototype.clone());
+    env.safe_mode = prototype.contract.safe;
+    env.contract_pure_mode = false;
+    env.unsafe_depth = 0;
+
+    validate_safe_function_signature(env, &prototype, body)?;
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
@@ -43,20 +55,26 @@ fn typecheck_function(
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: _type.clone().mem_ref_to(),
             },
         );
+        env.track_binding(name.as_string(), _type);
     }
 
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+    let with_implicit_return = add_implicit_return(env, body_expr)?;
 
     env.current_function = None;
-    env.pop_scope();
+    env.pop_scope()?;
+    env.safe_mode = false;
+    env.contract_pure_mode = false;
+    env.unsafe_depth = 0;
 
     env.generated_functions.push(MIRFunction {
         prototype,
-        body: body_expr.clone(),
+        body: with_implicit_return,
     });
 
     Ok(())
@@ -68,23 +86,9 @@ pub fn typecheck(
     ast: &CXAST,
 ) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
-        match stmt {
-            CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                let prototype = env.complete_prototype(base_data, None, prototype)?;
-                typecheck_function(env, base_data, prototype.clone(), body)?;
-            }
-
-            CXFunctionStmt::DestructorDefinition { _type, body } => {
-                let cx_type = env.complete_type(base_data, _type)?;
-
-                let Some(prototype) = env.get_destructor(base_data, &cx_type) else {
-                    unreachable!("Destructor prototype should not be missing: {}", _type);
-                };
-
-                typecheck_function(env, base_data, prototype.clone(), body)?;
-            }
-
-            _ => {}
+        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
+            let prototype = env.complete_prototype(base_data, None, prototype)?;
+            typecheck_function(env, base_data, prototype.clone(), body)?;
         }
     }
 

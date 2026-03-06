@@ -2,10 +2,9 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::{
-    ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
+    ast::{CXAST, CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex},
     data::{
-        CXFunctionKey, CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXPrototype,
-        CXTemplateInput, CXType, CXTypeKind, CXTemplate,
+        CX_CONST, CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind
     },
 };
 
@@ -106,12 +105,6 @@ impl Display for CXFunctionStmt {
 
             CXFunctionStmt::FunctionDefinition { prototype, body } => {
                 writeln!(f, "FunctionDef {} {{ ", prototype)?;
-                write!(f, "{}", CXExprFormatter::new(body, 1))?;
-                writeln!(f, "}}")
-            }
-
-            CXFunctionStmt::DestructorDefinition { _type, body } => {
-                writeln!(f, "DestructorDef for {} {{ ", _type)?;
                 write!(f, "{}", CXExprFormatter::new(body, 1))?;
                 writeln!(f, "}}")
             }
@@ -236,8 +229,13 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "Defer")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-            CXExprKind::New { _type } => {
-                writeln!(f, "New {}", _type)
+            CXExprKind::Unsafe { expr } => {
+                writeln!(f, "Unsafe")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
+            CXExprKind::Leak { expr } => {
+                writeln!(f, "Leak")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             CXExprKind::SizeOf { expr } => {
                 writeln!(f, "SizeOf")?;
@@ -384,23 +382,38 @@ impl Display for CXTypeKind {
             CXTypeKind::TemplatedIdentifier { name, input } => write!(f, "{name}{input}"),
             CXTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
-            CXTypeKind::MemoryReference { inner_type } => {
-                write!(f, "&{}", inner_type)
-            }
+            CXTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             CXTypeKind::PointerTo { inner_type, weak } => {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }
 
-            CXTypeKind::Structured { name, fields, .. } => {
+            CXTypeKind::Structured {
+                name,
+                attributes,
+                fields,
+            } => {
                 let fields_str = fields
                     .iter()
                     .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
+                let attr_str = if attrs.is_empty() {
+                    String::new()
+                } else {
+                    format!(" : {}", attrs.join(", "))
+                };
                 write!(
                     f,
-                    "struct {} {{ {} }}",
+                    "struct {}{} {{ {} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
+                    attr_str,
                     fields_str
                 )
             }
@@ -417,13 +430,32 @@ impl Display for CXTypeKind {
                     fields_str
                 )
             }
-            CXTypeKind::TaggedUnion { name, variants } => {
+            CXTypeKind::TaggedUnion {
+                name,
+                attributes,
+                variants,
+            } => {
                 let variants_str = variants
                     .iter()
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "union class {name} {{ {variants_str} }}")
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
+                write!(
+                    f,
+                    "union class {name}{} {{ {variants_str} }}",
+                    if attrs.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(" : {}", attrs.join(", "))
+                    }
+                )
             }
             CXTypeKind::FunctionPointer { prototype } => {
                 write!(f, "FunctionPointer({prototype})")
@@ -432,10 +464,11 @@ impl Display for CXTypeKind {
     }
 }
 
-impl Display for CXPrototype {
+impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let params_str = self
-            .params
+        let mut params = Vec::new();
+
+        params.extend(self.params
             .iter()
             .map(|param| {
                 format!(
@@ -443,9 +476,9 @@ impl Display for CXPrototype {
                     param.name.as_ref().unwrap_or(&CXIdent::new("_")),
                     param._type
                 )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+            }));
+
+        let params_str = params.join(", ");
         write!(f, "{} {}({})", self.return_type, self.kind, params_str)
     }
 }
@@ -486,14 +519,25 @@ impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
-            CXFunctionKind::MemberFunction { member_type, name } => {
-                write!(f, "{member_type}::{name}")
+            CXFunctionKind::MemberFunction { member_type, name, receiver } => {
+                write!(f, "{member_type}::{name}")?;
+                
+                match receiver.mode {
+                    CXReceiverMode::ByRef => {
+                        let is_const = (receiver.specifiers & CX_CONST) != 0;
+                        
+                        write!(f, " (receiver: {}this)", if is_const { "const " } else { "" })
+                    }
+                    CXReceiverMode::ByMove => {
+                        let is_const = (receiver.specifiers & CX_CONST) != 0;
+                        
+                        write!(f, " (receiver: {}*this)", if is_const { "const " } else { "" })
+                    }
+                    CXReceiverMode::None => Ok(())
+                }
             }
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
                 write!(f, "{member_type}::{name}")
-            }
-            CXFunctionKind::Destructor(base) => {
-                write!(f, "~{base}")
             }
         }
     }
@@ -504,13 +548,10 @@ impl Display for CXFunctionKey {
         match self {
             CXFunctionKey::Standard(name) => write!(f, "{name}"),
             CXFunctionKey::MemberFunction { type_base_name, name } => {
-                write!(f, "(non-static) {type_base_name}::{name}")
+                write!(f, "(member) {type_base_name}::{name}")
             }
             CXFunctionKey::StaticMemberFunction { type_base_name, name } => {
                 write!(f, "(static) {type_base_name}::{name}")
-            }
-            CXFunctionKey::Destructor { type_base_name } => {
-                write!(f, "~{type_base_name}")
             }
         }
     }

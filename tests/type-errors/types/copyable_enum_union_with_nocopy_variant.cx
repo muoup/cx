@@ -1,0 +1,13 @@
+struct Item : @nocopy {
+    int value;
+};
+
+enum union Result {
+    ok :: int,
+    item :: Item
+};
+
+int main() {
+    Result value;
+    return 0;
+}

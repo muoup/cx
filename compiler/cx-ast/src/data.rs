@@ -25,9 +25,6 @@ pub enum CXFunctionKey {
         type_base_name: CXIdent,
         name: CXIdent,
     },
-    Destructor {
-        type_base_name: CXIdent,
-    },
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -36,12 +33,26 @@ pub enum CXFunctionKind {
     MemberFunction {
         member_type: CXFunctionTypeIdent,
         name: CXIdent,
+        receiver: CXReceiverData,
     },
     StaticMemberFunction {
         member_type: CXFunctionTypeIdent,
         name: CXIdent,
     },
-    Destructor(CXFunctionTypeIdent),
+}
+
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum CXReceiverMode {
+    #[default]
+    None,
+    ByRef,
+    ByMove,
+}
+
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct CXReceiverData {
+    pub mode: CXReceiverMode,
+    pub specifiers: CXTypeSpecifier,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
@@ -70,6 +81,12 @@ pub enum PredeclarationType {
     Enum,
 }
 
+#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct CXStructAttributes {
+    pub nocopy: bool,
+    pub nodrop: bool,
+}
+
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXFunctionContract {
     pub safe: bool,
@@ -79,7 +96,7 @@ pub struct CXFunctionContract {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
-pub struct CXPrototype {
+pub struct CXFunctionPrototype {
     pub kind: CXFunctionKind,
     pub params: Vec<CXParameter>,
     pub return_type: CXType,
@@ -105,9 +122,7 @@ pub struct CXTemplate<Shell> {
 }
 
 pub type CXTypeTemplate = CXTemplate<CXType>;
-pub type CXFunctionTemplate = CXTemplate<CXPrototype>;
-pub type CXDestructorTemplate = CXTemplate<String>;
-
+pub type CXFunctionTemplate = CXTemplate<CXFunctionPrototype>;
 pub type CXTypeSpecifier = u8;
 
 pub const CX_CONST: CXTypeSpecifier = 1 << 0;
@@ -141,9 +156,7 @@ pub enum CXTypeKind {
     ExplicitSizedArray(Box<CXType>, usize),
     ImplicitSizedArray(Box<CXType>),
 
-    MemoryReference {
-        inner_type: Box<CXType>,
-    },
+    MemoryReference { inner_type: Box<CXType> },
     PointerTo {
         inner_type: Box<CXType>,
         weak: bool,
@@ -151,6 +164,7 @@ pub enum CXTypeKind {
 
     Structured {
         name: Option<CXIdent>,
+        attributes: CXStructAttributes,
         fields: Vec<(String, CXType)>,
     },
     Union {
@@ -159,11 +173,12 @@ pub enum CXTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
+        attributes: CXStructAttributes,
         variants: Vec<(String, CXType)>,
     },
 
     FunctionPointer {
-        prototype: Box<CXPrototype>,
+        prototype: Box<CXFunctionPrototype>,
     },
 }
 
@@ -280,7 +295,13 @@ impl CXFunctionKind {
     pub fn implicit_member(&self) -> Option<&CXFunctionTypeIdent> {
         match self {
             CXFunctionKind::MemberFunction { member_type, .. } => Some(member_type),
-            CXFunctionKind::Destructor(name) => Some(name),
+            CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => None,
+        }
+    }
+
+    pub fn receiver(&self) -> Option<&CXReceiverData> {
+        match self {
+            CXFunctionKind::MemberFunction { receiver, .. } => Some(receiver),
             CXFunctionKind::Standard(_) | CXFunctionKind::StaticMemberFunction { .. } => None,
         }
     }
@@ -288,7 +309,9 @@ impl CXFunctionKind {
     pub fn into_key(&self) -> CXFunctionKey {
         match self {
             CXFunctionKind::Standard(name) => CXFunctionKey::Standard(name.clone()),
-            CXFunctionKind::MemberFunction { member_type, name } => {
+            CXFunctionKind::MemberFunction {
+                member_type, name, ..
+            } => {
                 let type_base_name = member_type.base_name().clone();
 
                 CXFunctionKey::MemberFunction {
@@ -302,13 +325,6 @@ impl CXFunctionKind {
                 CXFunctionKey::StaticMemberFunction {
                     type_base_name,
                     name: name.clone(),
-                }
-            }
-            CXFunctionKind::Destructor(base_type) => {
-                let type_base_name = base_type.base_name().clone();
-
-                CXFunctionKey::Destructor {
-                    type_base_name,
                 }
             }
         }

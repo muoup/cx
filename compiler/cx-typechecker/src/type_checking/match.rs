@@ -1,9 +1,12 @@
 use crate::environment::TypeEnvironment;
+use crate::environment::ScopeExitTarget;
 use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
-use crate::type_checking::typechecker::typecheck_expr;
+use crate::type_checking::typechecker::{
+    expr_may_fall_through, typecheck_expr,
+};
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
@@ -21,12 +24,13 @@ pub fn typecheck_switch(
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(false, false);
-
+    env.push_scope(true, false);
+    env.set_scope_anchor(condition);
+    env.configure_merge_scope(condition, "switch join", None, false);
+    let join_scope_idx = env.current_scope_index();
     let condition_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
-
-    env.pop_scope();
+    let base_snapshot = env.current_snapshot();
 
     // Build match arms from the cases
     // Each case maps a constant value to a range of expressions in the block
@@ -44,10 +48,18 @@ pub fn typecheck_switch(
             );
         };
 
-        // Typecheck the case body
-        env.push_scope(true, false);
-        let case_body = typecheck_expr(env, base_data, case_expr, None)?;
-        env.pop_scope();
+        let case_body_expr = typecheck_expr(env, base_data, case_expr, None)?.into_expression();
+        if expr_may_fall_through(&case_body_expr) {
+            env.enqueue_scope_arrow(
+                &ScopeExitTarget {
+                    target_scope_idx: join_scope_idx,
+                    sink: crate::environment::ScopeArrowSink::Merge,
+                    label: format!("case {}", case_value),
+                },
+                env.current_snapshot(),
+            );
+        }
+        env.restore_snapshot(&base_snapshot);
 
         // Create a pattern expression that matches the constant value
         // Use the condition's integer type for the pattern
@@ -61,6 +73,7 @@ pub fn typecheck_switch(
         };
 
         let pattern_expr = MIRExpression {
+            source_range: None,
             kind: MIRExpressionKind::IntLiteral(*case_value as i64, *_type, *signed),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
@@ -70,7 +83,7 @@ pub fn typecheck_switch(
 
         arms.push((
             Box::new(pattern_expr),
-            Box::new(case_body.into_expression()),
+            Box::new(case_body_expr),
         ));
     }
 
@@ -86,14 +99,35 @@ pub fn typecheck_switch(
                     block.len()
                 );
             };
-            env.push_scope(true, false);
-            let body = typecheck_expr(env, base_data, expr, None)?;
-            env.pop_scope();
-
-            Some(Box::new(body.into_expression()))
+            let body_expr = typecheck_expr(env, base_data, expr, None)?.into_expression();
+            if expr_may_fall_through(&body_expr) {
+                env.enqueue_scope_arrow(
+                    &ScopeExitTarget {
+                        target_scope_idx: join_scope_idx,
+                        sink: crate::environment::ScopeArrowSink::Merge,
+                        label: "default".to_string(),
+                    },
+                    env.current_snapshot(),
+                );
+            }
+            env.restore_snapshot(&base_snapshot);
+            Some(Box::new(body_expr))
         }
         None => None,
     };
+
+    if default_case.is_none() {
+        env.enqueue_scope_arrow(
+            &ScopeExitTarget {
+                target_scope_idx: join_scope_idx,
+                sink: crate::environment::ScopeArrowSink::Merge,
+                label: "no case matched".to_string(),
+            },
+            env.current_snapshot(),
+        );
+    }
+
+    env.pop_scope()?;
 
     // Build the match expression
     Ok(TypecheckResult::expr(
@@ -114,16 +148,20 @@ pub fn typecheck_match(
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
 ) -> CXResult<TypecheckResult> {
-    env.push_scope(true, false);
-
     let mut expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
     let mut expr_type = expr_value.get_type();
+    env.push_scope(false, false);
+    env.set_scope_anchor(condition);
+    env.configure_merge_scope(condition, "match join", None, false);
+    let join_scope_idx = env.current_scope_index();
+    let base_snapshot = env.current_snapshot();
 
     if let Some(inner) = expr_type.mem_ref_inner() {
         expr_type = inner.clone();
 
         if !expr_type.is_memory_resident() {
             expr_value = MIRExpression {
+                source_range: None,
                 kind: MIRExpressionKind::MemoryRead {
                     source: Box::new(expr_value),
                 },
@@ -162,6 +200,7 @@ pub fn typecheck_match(
                 // Create a pattern expression that matches this value
                 // Use the condition's integer type for the pattern
                 let pattern_expr = MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::IntLiteral(*pattern_value, *_type, *signed),
                     _type: MIRType::from(MIRTypeKind::Integer {
                         signed: *signed,
@@ -169,10 +208,18 @@ pub fn typecheck_match(
                     }),
                 };
 
-                // Typecheck the body
-                env.push_scope(true, false);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                env.pop_scope();
+                if expr_may_fall_through(&body_expr) {
+                    env.enqueue_scope_arrow(
+                        &ScopeExitTarget {
+                            target_scope_idx: join_scope_idx,
+                            sink: crate::environment::ScopeArrowSink::Merge,
+                            label: "arm".to_string(),
+                        },
+                        env.current_snapshot(),
+                    );
+                }
+                env.restore_snapshot(&base_snapshot);
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
@@ -183,6 +230,7 @@ pub fn typecheck_match(
         MIRTypeKind::TaggedUnion {
             name: expected_union_name,
             variants,
+            ..
         } => {
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
@@ -219,6 +267,7 @@ pub fn typecheck_match(
 
                 // Create a pattern that matches the tag value
                 let pattern_expr = MIRExpression {
+                    source_range: None,
                     kind: MIRExpressionKind::IntLiteral(
                         variant_id as i64,
                         MIRIntegerType::I8,
@@ -246,18 +295,27 @@ pub fn typecheck_match(
                     );
                 };
 
-                // Typecheck the body with the variant value bound
-                env.push_scope(false, false);
+                // Typecheck the body with the variant value bound.
                 env.insert_symbol(name.as_string(), variant_value_expr);
                 let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                env.pop_scope();
+                if expr_may_fall_through(&body_expr) {
+                    env.enqueue_scope_arrow(
+                        &ScopeExitTarget {
+                            target_scope_idx: join_scope_idx,
+                            sink: crate::environment::ScopeArrowSink::Merge,
+                            label: "arm".to_string(),
+                        },
+                        env.current_snapshot(),
+                    );
+                }
+                env.restore_snapshot(&base_snapshot);
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }
 
             result_arms
-        },
-        
+        }
+
         _ => {
             return log_typecheck_error!(
                 env,
@@ -265,21 +323,41 @@ pub fn typecheck_match(
                 "Match condition must be an integer or tagged union type, found {}",
                 expr_type
             );
-        },
+        }
     };
 
     // Handle default case
     let default_body = match default {
         Some(default_expr) => {
-            env.push_scope(false, false);
             let body = typecheck_expr(env, base_data, default_expr, None)?.into_expression();
-            env.pop_scope();
+            if expr_may_fall_through(&body) {
+                env.enqueue_scope_arrow(
+                    &ScopeExitTarget {
+                        target_scope_idx: join_scope_idx,
+                        sink: crate::environment::ScopeArrowSink::Merge,
+                        label: "default".to_string(),
+                    },
+                    env.current_snapshot(),
+                );
+            }
+            env.restore_snapshot(&base_snapshot);
             Some(Box::new(body))
         }
         None => None,
     };
 
-    env.pop_scope();
+    if default.is_none() {
+        env.enqueue_scope_arrow(
+            &ScopeExitTarget {
+                target_scope_idx: join_scope_idx,
+                sink: crate::environment::ScopeArrowSink::Merge,
+                label: "default".to_string(),
+            },
+            env.current_snapshot(),
+        );
+    }
+
+    env.pop_scope()?;
 
     // Build the match expression
     Ok(TypecheckResult::expr(

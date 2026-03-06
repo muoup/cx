@@ -87,6 +87,7 @@ pub enum TokenKind {
     Punctuator(PunctuatorType),
 
     Identifier(String),
+    CompilerIdentifier(String),
     StringLiteral(String),
     IntLiteral(i64),
     FloatLiteral(f64),
@@ -179,14 +180,13 @@ pub enum KeywordType {
     Defer,
     Strong,
     Weak,
-    New,
     Template,
     Type,
     Class,
     Match,
     Where,
     Safe,
-    
+
     Precondition,
     Postcondition,
 }
@@ -268,8 +268,6 @@ impl TokenKind {
             "weak" => TokenKind::Keyword(KeywordType::Weak),
             "move" => TokenKind::Operator(OperatorType::Move),
 
-            "new" => TokenKind::Keyword(KeywordType::New),
-
             "template" => TokenKind::Keyword(KeywordType::Template),
             "type" => TokenKind::Keyword(KeywordType::Type),
 
@@ -279,11 +277,13 @@ impl TokenKind {
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),
-            
             "where" => TokenKind::Keyword(KeywordType::Where),
             "pre" => TokenKind::Keyword(KeywordType::Precondition),
             "post" => TokenKind::Keyword(KeywordType::Postcondition),
 
+            _ if str.starts_with('@') => {
+                TokenKind::CompilerIdentifier(str.trim_start_matches('@').to_string())
+            }
             _ => TokenKind::Identifier(str),
         }
     }

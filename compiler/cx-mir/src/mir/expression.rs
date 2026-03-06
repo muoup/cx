@@ -5,6 +5,7 @@ use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
 pub struct MIRFunctionContract {
+    pub safe: bool,
     pub precondition: Option<Box<MIRExpression>>,
     pub postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
 }
@@ -13,6 +14,13 @@ pub struct MIRFunctionContract {
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
+    pub source_range: Option<MIRSourceRange>,
+}
+
+#[derive(Clone, Debug, Default, Readable, Writable)]
+pub struct MIRSourceRange {
+    pub start_token: usize,
+    pub end_token: usize,
 }
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -21,7 +29,6 @@ pub enum MIRExpressionKind {
     BoolLiteral(bool),
     IntLiteral(i64, MIRIntegerType, bool),
     FloatLiteral(FloatWrapper, MIRFloatType),
-    Null,
 
     #[default]
     Unit,
@@ -203,6 +210,9 @@ pub enum MIRExpressionKind {
     Defer {
         expression: Box<MIRExpression>,
     },
+    Unsafe {
+        expression: Box<MIRExpression>,
+    },
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
@@ -374,6 +384,7 @@ impl MIRExpression {
                 visibility: Default::default(),
                 specifiers: 0,
             },
+            source_range: None,
         }
     }
 }

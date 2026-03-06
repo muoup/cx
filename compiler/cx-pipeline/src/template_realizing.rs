@@ -17,7 +17,7 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
                 input,
             } => {
                 let origin = match &module_origin {
-                    Some(module) => CompilationUnit::from_str(module.as_str()),
+                    Some(module) => env.resolve_compilation_unit(module.as_str()),
                     None => job.clone(),
                 };
 

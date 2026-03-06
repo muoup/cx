@@ -13,10 +13,7 @@ use cx_mir::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{
-    builder::LMIRBuilder,
-    mir_lowering::deconstructors::{allocate_liveness_variable, needs_deconstruction},
-};
+use crate::builder::LMIRBuilder;
 
 use super::binary_ops::{lower_binary_op, lower_unary_op};
 use super::coercion::lower_type_conversion;
@@ -52,7 +49,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::Unit => Ok(LMIRValue::NULL),
-        MIRExpressionKind::Null => Ok(LMIRValue::NULL),
 
         MIRExpressionKind::Variable(name) => {
             if let Some(local_value) = builder.get_symbol(name) {
@@ -77,7 +73,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     .current_prototype()
                     .params
                     .iter()
-                    .position(|p| p.name.as_ref().map(|s| s.as_str()) == Some(name.as_str()))
+                    .position(|p| p.name.as_deref() == Some(name.as_str()))
                 else {
                     unreachable!(
                         "Contract variable '{}' not found in parameters of function '{}'",
@@ -144,23 +140,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
                     if let Some(name) = name {
                         builder.insert_symbol(name.clone(), bc_iv.clone());
-
-                        if let LMIRValue::Register { register, .. } = &bc_iv {
-                            if needs_deconstruction(builder, _type) {
-                                let liveness = allocate_liveness_variable(builder)?;
-                                let ptr_val = LMIRValue::Register {
-                                    register: register.clone(),
-                                    _type: LMIRType::default_pointer(),
-                                };
-
-                                builder.add_liveness_mapping(
-                                    name.to_string(),
-                                    ptr_val,
-                                    liveness,
-                                    _type.clone(),
-                                );
-                            }
-                        }
                     }
 
                     return Ok(bc_iv);
@@ -201,23 +180,6 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             // Symbol table insertion (for non-memory-resident with init, or no init cases)
             if let Some(name) = name {
                 builder.insert_symbol(name.clone(), result.clone());
-
-                if let LMIRValue::Register { register, .. } = &result {
-                    if needs_deconstruction(builder, _type) {
-                        let liveness = allocate_liveness_variable(builder)?;
-                        let ptr_val = LMIRValue::Register {
-                            register: register.clone(),
-                            _type: LMIRType::default_pointer(),
-                        };
-
-                        builder.add_liveness_mapping(
-                            name.to_string(),
-                            ptr_val,
-                            liveness,
-                            _type.clone(),
-                        );
-                    }
-                }
             }
 
             Ok(result)
@@ -347,6 +309,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             _type: _,
         } => Ok(LMIRValue::NULL),
         MIRExpressionKind::LeakLifetime { expression } => lower_expression(builder, expression),
+        MIRExpressionKind::Unsafe { expression } => lower_expression(builder, expression),
 
         MIRExpressionKind::StructFieldAccess {
             base,
@@ -441,7 +404,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::TaggedUnionTag { value, sum_type } => {
             let bc_value = lower_expression(builder, value)?;
-            get_tagged_union_tag(builder, bc_value, &sum_type)
+            get_tagged_union_tag(builder, bc_value, sum_type)
         }
 
         MIRExpressionKind::TaggedUnionGet { value, .. } => lower_tagged_union_get(builder, value),
@@ -470,12 +433,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             struct_type,
         } => lower_struct_initializer(builder, initializations, struct_type),
 
-        MIRExpressionKind::Break { scope_depth } => {
-            let current_depth = builder.scope_depth();
-            for i in ((scope_depth + 1)..=current_depth).rev() {
-                builder.deconstruct_at_depth(i)?;
-            }
-
+        MIRExpressionKind::Break { scope_depth: _ } => {
             let Some(to) = builder.get_break_target().cloned() else {
                 unreachable!("Break used outside of loop or switch context");
             };
@@ -487,11 +445,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             )
         }
 
-        MIRExpressionKind::Continue { scope_depth } => {
-            for i in ((scope_depth + 1)..=builder.scope_depth()).rev() {
-                builder.deconstruct_at_depth(i)?;
-            }
-
+        MIRExpressionKind::Continue { scope_depth: _ } => {
             let Some(to) = builder.get_continue_block().cloned() else {
                 unreachable!("Continue used outside of loop context");
             };
@@ -874,10 +828,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
         } else if mir_fn.prototype.return_type.is_unit() {
             lower_return(builder, None)?;
         } else {
-            unreachable!(
-                "Function '{}' missing return statement",
-                mir_fn.prototype.name
-            );
+            // Possible and fine, means that the end of the function is unreachable (e.g. diverging function or infinite loop)
         }
     }
 

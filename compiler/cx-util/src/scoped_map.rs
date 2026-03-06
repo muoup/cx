@@ -84,6 +84,10 @@ impl<T> ScopedMap<T> {
     pub fn get(&self, name: &str) -> Option<&T> {
         self.data.get(name)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.data.iter()
+    }
     
     pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = (&String, &T)> {
         self.overwrites
@@ -133,5 +137,21 @@ impl<T: Eq + Hash + Clone> ScopedSet<T> {
 
     pub fn contains(&self, name: &T) -> bool {
         self.data.contains(name)
+    }
+
+    pub fn remove(&mut self, name: &T) {
+        self.data.remove(name);
+    }
+
+    pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = &T> {
+        self.writes
+            .get(level)
+            .expect("Invalid level in ScopedSet")
+            .iter()
+            .filter(move |name| self.data.contains(*name))
+    }
+
+    pub fn scope_depth(&self) -> usize {
+        self.writes.len() - 1
     }
 }

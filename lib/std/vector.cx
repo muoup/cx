@@ -2,21 +2,24 @@
 
 public:
 
-struct vector<T> {
+struct vector<T> : @nodrop {
     T* data;
     usize length;
     usize capacity;
 };
 
-~vector<T>(this) {
-    free(this.data);
-}
-
-vector<T> create_vector<T>() {
+vector<T> vector<T>::create_vector<T>() {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),
         .length = 0,
         .capacity = 4
+    };
+}
+
+void vector<T>::drop<T>(*this) {
+    @unsafe {
+        free(this.data);
+        @leak(this);
     };
 }
 
