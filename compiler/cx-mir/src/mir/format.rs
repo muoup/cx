@@ -619,8 +619,28 @@ impl Display for MIRTypeKind {
                         .unwrap_or_else(|| "".to_string())
                 )
             }
-            MIRTypeKind::TaggedUnion { name, .. } => {
-                write!(f, "tagged_union {} ", name)
+            MIRTypeKind::TaggedUnion {
+                name,
+                attributes,
+                ..
+            } => {
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
+                write!(
+                    f,
+                    "tagged_union {}{}",
+                    name,
+                    if attrs.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(" : {}", attrs.join(", "))
+                    }
+                )
             }
             MIRTypeKind::Unit => write!(f, "()"),
             MIRTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),

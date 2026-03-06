@@ -83,8 +83,14 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
                 mangled.push_str(&type_mangle(&variant.1));
             }
         }
-        MIRTypeKind::TaggedUnion { variants, .. } => {
+        MIRTypeKind::TaggedUnion {
+            attributes,
+            variants,
+            ..
+        } => {
             mangled.push('T');
+            mangled.push(if attributes.nocopy { 'C' } else { 'c' });
+            mangled.push(if attributes.nodrop { 'D' } else { 'd' });
             mangled.push_str(&variants.len().to_string());
             mangled.push('_');
             for variant in variants {

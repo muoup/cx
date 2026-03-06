@@ -3,9 +3,8 @@ use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
-    CXFunctionKind, CXPrototype, CXStructAttributes, CXType, CXTypeKind,
-    CXTemplatePrototype, CXTypeSpecifier, PredeclarationType, CX_CONST,
-    CX_RESTRICT, CX_VOLATILE,
+    CXFunctionKind, CXPrototype, CXReceiverMode, CXStructAttributes, CXTemplatePrototype, CXType,
+    CXTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_util::identifier::CXIdent;
@@ -16,6 +15,31 @@ use crate::parse::templates::{
     note_templatedtype_s, parse_template_args, try_parse_template, unnote_templatedtype_s,
 };
 use crate::parse::{parse_intrinsic, parse_std_ident};
+
+fn parse_type_attributes(
+    data: &mut ParserData,
+    kind_name: &str,
+) -> CXResult<CXStructAttributes> {
+    let mut attributes = CXStructAttributes::default();
+
+    if try_next!(data.tokens, punctuator!(Colon)) {
+        loop {
+            assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr));
+
+            match attr.as_str() {
+                "nocopy" => attributes.nocopy = true,
+                "nodrop" => attributes.nodrop = true,
+                _ => return log_parse_error!(data, "Unknown {kind_name} attribute '@{}'", attr),
+            }
+
+            if !try_next!(data.tokens, operator!(Comma)) {
+                break;
+            }
+        }
+    }
+
+    Ok(attributes)
+}
 
 fn predeclaration_type(
     data: &mut ParserData,
@@ -64,23 +88,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
     let name = parse_std_ident(&mut data.tokens).ok();
     let template_prototype = try_parse_template(&mut data.tokens)?;
-    let mut attributes = CXStructAttributes::default();
-
-    if try_next!(data.tokens, punctuator!(Colon)) {
-        loop {
-            assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr));
-
-            match attr.as_str() {
-                "nocopy" => attributes.nocopy = true,
-                "nodrop" => attributes.nodrop = true,
-                _ => return log_parse_error!(data, "Unknown struct attribute '@{}'", attr),
-            }
-
-            if !try_next!(data.tokens, operator!(Comma)) {
-                break;
-            }
-        }
-    }
+    let attributes = parse_type_attributes(data, "struct")?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Struct);
@@ -192,6 +200,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 
     let name = parse_std_ident(&mut data.tokens)?;
     let template_prototype = try_parse_template(&mut data.tokens)?;
+    let attributes = parse_type_attributes(data, "enum union")?;
 
     assert_token_matches!(data.tokens, punctuator!(OpenBrace));
 
@@ -235,6 +244,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
         Some(name.clone()),
         CXTypeKind::TaggedUnion {
             name: name.clone(),
+            attributes,
             variants: variants.clone(),
         }
         .to_type(),
@@ -350,12 +360,21 @@ pub(crate) fn parsetype_mods(
             let ParseParamsResult {
                 params,
                 var_args,
+                receiver_mode,
                 contract,
                 ..
             } = parse_params(data)?;
 
+            if receiver_mode != CXReceiverMode::None {
+                return log_parse_error!(
+                    data,
+                    "Function pointer types may not declare a 'this' receiver"
+                );
+            }
+
             let prototype = CXPrototype {
                 kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
+                receiver_mode: CXReceiverMode::None,
                 return_type: acc_type,
                 params,
                 var_args,

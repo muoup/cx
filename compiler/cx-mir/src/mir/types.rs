@@ -35,9 +35,18 @@ pub struct MIRParameter {
     pub _type: MIRType,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
+pub enum MIRReceiverMode {
+    #[default]
+    None,
+    ByRef,
+    ByMove,
+}
+
 #[derive(Debug, Clone, Default, Readable, Writable)]
 pub struct MIRFunctionPrototype {
     pub name: CXIdent,
+    pub receiver_mode: MIRReceiverMode,
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
@@ -101,6 +110,7 @@ pub enum MIRTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
+        attributes: MIRStructAttributes,
         variants: Vec<(String, MIRType)>,
     },
     Unit,
@@ -342,6 +352,7 @@ impl MIRType {
     pub fn struct_attributes(&self) -> Option<MIRStructAttributes> {
         match &self.kind {
             MIRTypeKind::Structured { attributes, .. } => Some(*attributes),
+            MIRTypeKind::TaggedUnion { attributes, .. } => Some(*attributes),
             _ => None,
         }
     }
@@ -511,6 +522,7 @@ impl MIRType {
             MIRTypeKind::Function {
                 prototype: Box::new(MIRFunctionPrototype {
                     name: CXIdent::from("__internal_function"),
+                    receiver_mode: MIRReceiverMode::None,
                     return_type: MIRType::unit(),
                     params: vec![],
                     var_args: false,

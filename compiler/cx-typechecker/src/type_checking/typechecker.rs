@@ -65,7 +65,7 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
 }
 
 
-fn ensure_binding_available(
+pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
     expr: &CXExpr,
     name: &CXIdent,
@@ -801,6 +801,14 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Leak { expr: inner } => {
+            if env.in_safe_context() {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " @leak is unsafe and must be wrapped in @unsafe in safe functions"
+                );
+            }
+
             let CXExprKind::Identifier(ident) = &inner.kind else {
                 return log_typecheck_error!(
                     env,

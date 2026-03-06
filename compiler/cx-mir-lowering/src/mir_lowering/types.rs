@@ -135,7 +135,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
             }
         }
 
-        MIRTypeKind::TaggedUnion { name, variants } => LMIRTypeKind::Struct {
+        MIRTypeKind::TaggedUnion { name, variants, .. } => LMIRTypeKind::Struct {
             name: name.as_string(),
             fields: vec![
                 (

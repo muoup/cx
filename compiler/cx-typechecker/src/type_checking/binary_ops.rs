@@ -1,12 +1,13 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::function_query::query_static_member_function;
+use crate::environment::BindingMoveState;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
-use crate::type_checking::typechecker::typecheck_expr;
+use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_ast::data::{CXPrototype, CXType, CXTypeKind};
 use cx_mir::mir::expression::{
@@ -14,7 +15,7 @@ use cx_mir::mir::expression::{
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRReceiverMode, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
@@ -25,6 +26,8 @@ pub(crate) fn typecheck_access(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
+    let lhs_source = lhs.clone();
+
     // Here, out aim is to continue with lhs_val being one indirection from the memory,
     // i.e. we need a pointer to the region.
     let lhs_type = lhs._type.clone();
@@ -112,22 +115,20 @@ pub(crate) fn typecheck_access(
 
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
 
-            let lhs_val_as_pointer = MIRExpression {
-                source_range: None,
-                kind: MIRExpressionKind::TypeConversion {
-                    operand: Box::new(lhs),
-                    conversion: MIRCoercion::ReinterpretBits,
-                },
-                _type: lhs_inner.clone().pointer_to(),
-            };
-
             Ok(TypecheckResult::expr(
                 MIRTypeKind::Function {
-                    prototype: Box::new(prototype),
+                    prototype: Box::new(prototype.clone()),
                 }
                 .into(),
                 MIRExpressionKind::FunctionReference {
-                    implicit_variables: vec![lhs_val_as_pointer],
+                    implicit_variables: vec![build_member_receiver_argument(
+                        env,
+                        expr,
+                        &lhs_source,
+                        lhs,
+                        &lhs_inner,
+                        &prototype,
+                    )?],
                 },
             ))
         }
@@ -139,22 +140,20 @@ pub(crate) fn typecheck_access(
             let prototype =
                 env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?;
 
-            let lhs_val_as_pointer = MIRExpression {
-                source_range: None,
-                kind: MIRExpressionKind::TypeConversion {
-                    operand: Box::new(lhs),
-                    conversion: MIRCoercion::ReinterpretBits,
-                },
-                _type: lhs_inner.clone().pointer_to(),
-            };
-
             Ok(TypecheckResult::expr(
                 MIRTypeKind::Function {
-                    prototype: Box::new(prototype),
+                    prototype: Box::new(prototype.clone()),
                 }
                 .into(),
                 MIRExpressionKind::FunctionReference {
-                    implicit_variables: vec![lhs_val_as_pointer],
+                    implicit_variables: vec![build_member_receiver_argument(
+                        env,
+                        expr,
+                        &lhs_source,
+                        lhs,
+                        &lhs_inner,
+                        &prototype,
+                    )?],
                 },
             ))
         }
@@ -165,6 +164,53 @@ pub(crate) fn typecheck_access(
             " Invalid rhs for access expression, found {:?}",
             rhs
         ),
+    }
+}
+
+fn build_member_receiver_argument(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    lhs_source: &MIRExpression,
+    lhs: MIRExpression,
+    lhs_inner: &MIRType,
+    prototype: &cx_mir::mir::types::MIRFunctionPrototype,
+) -> CXResult<MIRExpression> {
+    match prototype.receiver_mode {
+        MIRReceiverMode::None => unreachable!("member function reference missing receiver mode"),
+        MIRReceiverMode::ByRef => Ok(MIRExpression {
+            source_range: None,
+            kind: MIRExpressionKind::TypeConversion {
+                operand: Box::new(lhs),
+                conversion: MIRCoercion::ReinterpretBits,
+            },
+            _type: lhs_inner.clone().pointer_to(),
+        }),
+        MIRReceiverMode::ByMove => {
+            if let Some(inner_type) = lhs_source._type.mem_ref_inner().cloned() {
+                let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
+                    return log_typecheck_error!(
+                        env,
+                        expr,
+                        " Consuming member calls currently require a named binding or owned struct rvalue"
+                    );
+                };
+
+                ensure_binding_available(env, expr, name)?;
+                if env.is_nocopy(&inner_type) {
+                    env.set_tracked_binding_state(name.as_str(), BindingMoveState::Moved);
+                }
+
+                Ok(MIRExpression {
+                    source_range: None,
+                    _type: inner_type,
+                    kind: MIRExpressionKind::Move {
+                        source: Box::new(lhs_source.clone()),
+                    },
+                })
+            } else {
+                Ok(lhs_source.clone())
+            }
+        }
     }
 }
 

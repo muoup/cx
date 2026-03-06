@@ -5,7 +5,7 @@ use crate::{
     ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
     data::{
         CXFunctionKey, CXFunctionKind, CXFunctionTypeIdent, CXLinkageMode, CXPrototype,
-        CXTemplateInput, CXType, CXTypeKind, CXTemplate,
+        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind,
     },
 };
 
@@ -442,13 +442,32 @@ impl Display for CXTypeKind {
                     fields_str
                 )
             }
-            CXTypeKind::TaggedUnion { name, variants } => {
+            CXTypeKind::TaggedUnion {
+                name,
+                attributes,
+                variants,
+            } => {
                 let variants_str = variants
                     .iter()
                     .map(|(name, ty)| format!("{name}: {ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                write!(f, "union class {name} {{ {variants_str} }}")
+                let mut attrs = Vec::new();
+                if attributes.nocopy {
+                    attrs.push("@nocopy");
+                }
+                if attributes.nodrop {
+                    attrs.push("@nodrop");
+                }
+                write!(
+                    f,
+                    "union class {name}{} {{ {variants_str} }}",
+                    if attrs.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(" : {}", attrs.join(", "))
+                    }
+                )
             }
             CXTypeKind::FunctionPointer { prototype } => {
                 write!(f, "FunctionPointer({prototype})")
@@ -459,8 +478,15 @@ impl Display for CXTypeKind {
 
 impl Display for CXPrototype {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let params_str = self
-            .params
+        let mut params = Vec::new();
+
+        match self.receiver_mode {
+            CXReceiverMode::None => {}
+            CXReceiverMode::ByRef => params.push("this".to_string()),
+            CXReceiverMode::ByMove => params.push("*this".to_string()),
+        }
+
+        params.extend(self.params
             .iter()
             .map(|param| {
                 format!(
@@ -468,9 +494,9 @@ impl Display for CXPrototype {
                     param.name.as_ref().unwrap_or(&CXIdent::new("_")),
                     param._type
                 )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
+            }));
+
+        let params_str = params.join(", ");
         write!(f, "{} {}({})", self.return_type, self.kind, params_str)
     }
 }

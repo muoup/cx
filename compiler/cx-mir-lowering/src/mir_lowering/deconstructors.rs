@@ -1,7 +1,7 @@
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
 use cx_mir::mir::name_mangling::base_mangle_deconstructor;
-use cx_mir::mir::types::{MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind};
+use cx_mir::mir::types::{MIRFunctionPrototype, MIRParameter, MIRReceiverMode, MIRType, MIRTypeKind};
 use cx_util::CXResult;
 
 use crate::builder::LMIRBuilder;
@@ -32,6 +32,7 @@ pub fn create_deconstructor_prototype(mir_type: &MIRType) -> MIRFunctionPrototyp
     let ptr_type = MIRType::pointer_to(mir_type.clone());
     MIRFunctionPrototype {
         name: base_mangle_deconstructor(mir_type).into(),
+        receiver_mode: MIRReceiverMode::ByRef,
         return_type: MIRType::unit(),
         params: vec![MIRParameter {
             name: Some("self".into()),

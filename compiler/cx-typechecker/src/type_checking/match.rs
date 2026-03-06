@@ -230,6 +230,7 @@ pub fn typecheck_match(
         MIRTypeKind::TaggedUnion {
             name: expected_union_name,
             variants,
+            ..
         } => {
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();

@@ -44,6 +44,14 @@ pub enum CXFunctionKind {
     Destructor(CXFunctionTypeIdent),
 }
 
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum CXReceiverMode {
+    #[default]
+    None,
+    ByRef,
+    ByMove,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
 pub enum CXLinkageMode {
     #[default]
@@ -87,6 +95,7 @@ pub struct CXFunctionContract {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXPrototype {
     pub kind: CXFunctionKind,
+    pub receiver_mode: CXReceiverMode,
     pub params: Vec<CXParameter>,
     pub return_type: CXType,
     pub var_args: bool,
@@ -166,6 +175,7 @@ pub enum CXTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
+        attributes: CXStructAttributes,
         variants: Vec<(String, CXType)>,
     },
 
