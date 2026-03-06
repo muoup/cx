@@ -24,7 +24,7 @@ macro_rules! expr_error_log {
 }
 
 #[macro_export]
-macro_rules! bytecode_error_log {
+macro_rules! lmir_error_log {
     ($builder:ident, $($arg:tt)*) => {
         {
             use cx_util::log_error;

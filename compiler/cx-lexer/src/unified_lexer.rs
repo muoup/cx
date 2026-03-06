@@ -1,6 +1,6 @@
 use crate::line_lexer::lex_line;
 use crate::preprocessor::{generate_lexable_slice, handle_comment, handle_directive};
-use cx_lexer_data::token::{Token, TokenKind};
+use cx_tokens::token::{Token, TokenKind};
 use cx_util::char_iter::CharIter;
 use std::collections::HashMap;
 

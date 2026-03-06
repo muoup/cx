@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_lexer_data::token::Token;
+use cx_tokens::token::Token;
 use cx_util::CXErrorTrait;
 
 pub struct ParseErrorLog {
@@ -20,6 +20,10 @@ macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
             let message = format!("PARSER ERROR: {}", format!($($arg)*));
+            
+            // if cfg!(debug_assertions) {
+            //     panic!();
+            // }
 
             Err(Box::new($crate::log::ParseErrorLog {
                 message,

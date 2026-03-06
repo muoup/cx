@@ -1,0 +1,3 @@
+int bad(int* ptr) safe {
+    return 0;
+}

@@ -10,7 +10,7 @@ test = []
 [dependencies]
 speedy = { version = "0.8.7" }
 
-cx-lexer-data = { path = "../cx-lexer-data" }
-cx-parsing-data  = { path = "../cx-parsing-data" }
-cx-typechecker-data = { path = "../cx-typechecker-data" }
-cx-bytecode-data = { path = "../cx-bytecode-data" }
+cx-tokens = { path = "../cx-tokens" }
+cx-ast  = { path = "../cx-ast" }
+cx-mir = { path = "../cx-mir" }
+cx-lmir = { path = "../cx-lmir" }

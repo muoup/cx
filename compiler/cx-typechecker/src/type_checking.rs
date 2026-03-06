@@ -1,34 +1,35 @@
-use cx_parsing_data::{
+use crate::{
+    type_checking::typechecker::add_implicit_return,
+    type_completion::types::_complete_template_input,
+};
+use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
-    data::CXFunctionKind,
+    data::{CXFunctionKind, CXTemplateInput},
+};
+use cx_mir::mir::{
+    expression::{MIRExpression, MIRExpressionKind},
+    program::{MIRBaseMappings, MIRFunction},
+    types::{MIRFunctionPrototype, MIRParameter},
 };
 use cx_pipeline_data::CompilationUnit;
-use cx_typechecker_data::mir::{
-    expression::{MIRInstruction, MIRValue},
-    program::MIRBaseMappings,
-    types::{CXIntegerType, CXTemplateInput, MIRFunctionPrototype, MIRParameter, MIRType},
-};
-use cx_util::{CXError, CXResult};
+use cx_util::CXResult;
 
 use crate::{
-    environment::{TypeEnvironment, deconstruction::generate_deconstructor},
-    type_checking::{
-        move_semantics::acknowledge_declared_object,
-        typechecker::{global_expr, typecheck_expr},
+    environment::TypeEnvironment,
+    type_checking::typechecker::{
+        global_expr, typecheck_expr, validate_safe_function_signature,
     },
     type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
     },
 };
 
+pub mod accumulation;
 pub mod binary_ops;
-
-pub(crate) mod casting;
-pub(crate) mod contract;
-pub(crate) mod r#match;
-pub(crate) mod move_semantics;
-pub(crate) mod structured_initialization;
-pub(crate) mod typechecker;
+pub mod casting;
+pub mod r#match;
+pub mod structured_initialization;
+pub mod typechecker;
 
 fn typecheck_function(
     env: &mut TypeEnvironment,
@@ -36,91 +37,46 @@ fn typecheck_function(
     prototype: MIRFunctionPrototype,
     body: &CXExpr,
 ) -> CXResult<()> {
-    env.push_scope(None, None);
-    env.builder.start_function(prototype.clone());
-    env.arg_vals.clear();
+    env.push_scope(false, false);
+    env.set_scope_anchor(body);
+    env.configure_merge_scope(body, "function exit", Some("fallthrough"), true);
+    env.current_function = Some(prototype.clone());
+    env.safe_mode = prototype.contract.safe;
+    env.contract_pure_mode = false;
+    env.unsafe_depth = 0;
+
+    validate_safe_function_signature(env, &prototype, body)?;
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
             continue;
         };
 
-        if _type.is_memory_resident() {
-            let alias = env.builder.new_register();
-            env.builder.add_instruction(MIRInstruction::Alias {
-                result: alias.clone(),
-                value: MIRValue::Parameter {
-                    name: name.clone(),
-                    _type: _type.clone(),
-                },
-            });
-
-            env.insert_symbol(
-                name.as_string(),
-                MIRValue::Register {
-                    register: alias.clone(),
-                    _type: _type.clone().mem_ref_to(),
-                },
-            );
-
-            acknowledge_declared_object(env, name.to_string(), alias, _type.clone());
-        } else {
-            let region = env.builder.new_register();
-            env.builder
-                .add_instruction(MIRInstruction::CreateStackRegion {
-                    result: region.clone(),
-                    _type: _type.clone(),
-                });
-
-            acknowledge_declared_object(env, name.to_string(), region.clone(), _type.clone());
-
-            env.builder.add_instruction(MIRInstruction::MemoryWrite {
-                target: MIRValue::Register {
-                    register: region.clone(),
-                    _type: _type.clone(),
-                },
-                value: MIRValue::Parameter {
-                    name: name.clone(),
-                    _type: _type.clone(),
-                },
-            });
-
-            env.arg_vals.push(MIRValue::Register {
-                register: region.clone(),
+        env.insert_symbol(
+            name.as_string(),
+            MIRExpression {
+                source_range: None,
+                kind: MIRExpressionKind::Variable(name.clone()),
                 _type: _type.clone().mem_ref_to(),
-            });
-
-            env.insert_symbol(
-                name.as_string(),
-                MIRValue::Register {
-                    register: region,
-                    _type: _type.clone().mem_ref_to(),
-                },
-            );
-        }
+            },
+        );
+        env.track_binding(name.as_string(), _type);
     }
 
-    typecheck_expr(env, base_data, body, None)?;
+    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+    let with_implicit_return = add_implicit_return(env, body_expr)?;
 
-    if !env.builder.current_block_closed() {
-        if env.builder.current_prototype().return_type.is_unit() {
-            env.builder.add_return(None);
-        } else if env.builder.current_prototype().name.as_str() == "main" {
-            env.builder.add_return(Some(MIRValue::IntLiteral {
-                value: 0,
-                signed: true,
-                _type: CXIntegerType::I32,
-            }));
-        } else {
-            return CXError::create_result(format!(
-                "Function '{}' is missing a return statement",
-                env.builder.current_prototype().name
-            ));
-        }
-    }
+    env.current_function = None;
+    env.pop_scope()?;
+    env.safe_mode = false;
+    env.contract_pure_mode = false;
+    env.unsafe_depth = 0;
 
-    env.builder.finish_function();
-    env.pop_scope();
+    env.generated_functions.push(MIRFunction {
+        prototype,
+        body: with_implicit_return,
+    });
+
     Ok(())
 }
 
@@ -130,37 +86,13 @@ pub fn typecheck(
     ast: &CXAST,
 ) -> CXResult<()> {
     for stmt in ast.function_stmts.iter() {
-        match stmt {
-            CXFunctionStmt::FunctionDefinition { prototype, body } => {
-                let prototype = env.complete_prototype(base_data, None, prototype)?;
-                typecheck_function(env, base_data, prototype.clone(), body)?;
-            }
-
-            CXFunctionStmt::DestructorDefinition { _type, body } => {
-                let cx_type = env.complete_type(base_data, _type)?;
-
-                let Some(prototype) = env.get_destructor(base_data, &cx_type) else {
-                    unreachable!("Destructor prototype should not be missing: {}", _type);
-                };
-
-                typecheck_function(env, base_data, prototype.clone(), body)?;
-            }
-
-            _ => {}
+        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
+            let prototype = env.complete_prototype(base_data, None, prototype)?;
+            typecheck_function(env, base_data, prototype.clone(), body)?;
         }
     }
 
     Ok(())
-}
-
-pub fn realize_deconstructor(
-    env: &mut TypeEnvironment,
-    origin: &CompilationUnit,
-    _type: MIRType,
-) -> CXResult<()> {
-    let base_data = env.module_data.base_mappings.get(origin);
-
-    generate_deconstructor(env, base_data.as_ref(), _type)
 }
 
 pub fn realize_fn_implementation(
@@ -189,7 +121,9 @@ pub fn realize_fn_implementation(
         })
         .expect("Function template body not found");
 
-    let overwrites = add_templated_types(env, &template.resource.prototype, input);
+    // Complete the template input from CX to MIR level
+    let completed_input = _complete_template_input(env, base_data.as_ref(), None, input)?;
+    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
     env.in_external_templated_function = true;

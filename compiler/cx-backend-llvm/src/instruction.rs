@@ -3,8 +3,8 @@ use crate::attributes::attr_noundef;
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_bytecode_data::{
-    BCCoercionType, BCFloatBinOp, BCFloatUnOp, BCInstruction, BCInstructionKind, BCIntUnOp,
+use cx_lmir::{
+    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntUnOp,
 };
 use cx_util::log_error;
 use inkwell::AddressSpace;
@@ -29,12 +29,12 @@ pub(crate) fn inst_num() -> String {
 pub(crate) fn generate_instruction<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    block_instruction: &BCInstruction,
+    block_instruction: &LMIRInstruction,
 ) -> Option<CodegenValue<'a>> {
     Some(match &block_instruction.kind {
-        BCInstructionKind::Alias { value } => function_state.get_value(value)?,
+        LMIRInstructionKind::Alias { value } => function_state.get_value(value)?,
 
-        BCInstructionKind::Allocate { _type, alignment } => {
+        LMIRInstructionKind::Allocate { _type, alignment } => {
             let inst = function_state
                 .builder
                 .build_alloca(
@@ -54,7 +54,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(inst)
         }
 
-        BCInstructionKind::DirectCall { args, method_sig } => {
+        LMIRInstructionKind::DirectCall { args, method_sig } => {
             let Some(function_val) = get_function(global_state, method_sig) else {
                 log_error!("Function not found in module: {}", method_sig.name);
             };
@@ -88,7 +88,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             }
         }
 
-        BCInstructionKind::IndirectCall {
+        LMIRInstructionKind::IndirectCall {
             func_ptr,
             args,
             method_sig,
@@ -122,9 +122,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             }
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::BitCast,
+            coercion_type: LMIRCoercionType::BitCast,
         } => {
             let val = function_state.get_value(value)?.get_value();
             let basic_val = any_to_basic_val(val)?;
@@ -141,9 +141,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::IntToPtr { .. },
+            coercion_type: LMIRCoercionType::IntToPtr { .. },
         } => {
             let value = function_state
                 .get_value(value)?
@@ -161,7 +161,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::Jump { target } => {
+        LMIRInstructionKind::Jump { target } => {
             function_state
                 .builder
                 .build_unconditional_branch(function_state.get_block(target).unwrap())
@@ -170,7 +170,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::Return { value } => {
+        LMIRInstructionKind::Return { value } => {
             let Some(value) = value else {
                 function_state.builder.build_return(None).unwrap();
 
@@ -189,7 +189,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::Store {
+        LMIRInstructionKind::Store {
             value,
             _type,
             memory,
@@ -214,7 +214,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::Memcpy {
+        LMIRInstructionKind::Memcpy {
             dest,
             src,
             size,
@@ -238,7 +238,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::Load { memory, _type } => {
+        LMIRInstructionKind::Load { memory, _type } => {
             let memory_val = function_state
                 .get_value(memory)?
                 .get_value()
@@ -257,7 +257,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(loaded_value)
         }
 
-        BCInstructionKind::ZeroMemory { memory, _type } => {
+        LMIRInstructionKind::ZeroMemory { memory, _type } => {
             let any_value = function_state
                 .get_value(memory)?
                 .get_value()
@@ -278,7 +278,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::PointerBinOp {
+        LMIRInstructionKind::PointerBinOp {
             left,
             ptr_type: _,
             type_padded_size,
@@ -299,29 +299,29 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )?
         }
 
-        BCInstructionKind::IntegerUnOp { value, op } => {
+        LMIRInstructionKind::IntegerUnOp { value, op } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
                 .into_int_value();
 
             CodegenValue::Value(match op {
-                // BCIntUnOp::NEG if signed => function_state
+                // LMIRIntUnOp::NEG if signed => function_state
                 //     .builder
                 //     .build_int_nsw_neg(value, inst_num().as_str())
                 //     .unwrap()
                 //     .as_any_value_enum(),
-                BCIntUnOp::NEG => function_state
+                LMIRIntUnOp::NEG => function_state
                     .builder
                     .build_int_neg(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                BCIntUnOp::BNOT => function_state
+                LMIRIntUnOp::BNOT => function_state
                     .builder
                     .build_not(value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
-                BCIntUnOp::LNOT => function_state
+                LMIRIntUnOp::LNOT => function_state
                     .builder
                     .build_int_compare(
                         inkwell::IntPredicate::EQ,
@@ -334,7 +334,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        BCInstructionKind::IntegerBinOp { left, right, op } => {
+        LMIRInstructionKind::IntegerBinOp { left, right, op } => {
             let left = function_state.get_value(left)?.get_value().into_int_value();
 
             let right = function_state
@@ -345,14 +345,14 @@ pub(crate) fn generate_instruction<'a, 'b>(
             generate_int_binop(global_state, function_state, left, right, *op)?
         }
 
-        BCInstructionKind::FloatUnOp { value, op } => {
+        LMIRInstructionKind::FloatUnOp { value, op } => {
             let value = function_state
                 .get_value(value)?
                 .get_value()
                 .into_float_value();
 
             CodegenValue::Value(match op {
-                BCFloatUnOp::NEG => function_state
+                LMIRFloatUnOp::NEG => function_state
                     .builder
                     .build_float_neg(value, inst_num().as_str())
                     .unwrap()
@@ -360,7 +360,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        BCInstructionKind::FloatBinOp { left, right, op } => {
+        LMIRInstructionKind::FloatBinOp { left, right, op } => {
             let left_value = function_state
                 .get_value(left)?
                 .get_value()
@@ -372,43 +372,43 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .into_float_value();
 
             CodegenValue::Value(match op {
-                BCFloatBinOp::ADD => function_state
+                LMIRFloatBinOp::ADD => function_state
                     .builder
                     .build_float_add(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::SUB => function_state
+                LMIRFloatBinOp::SUB => function_state
                     .builder
                     .build_float_sub(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::FMUL => function_state
+                LMIRFloatBinOp::FMUL => function_state
                     .builder
                     .build_float_mul(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::FDIV => function_state
+                LMIRFloatBinOp::FDIV => function_state
                     .builder
                     .build_float_div(left_value, right_value, inst_num().as_str())
                     .unwrap()
                     .as_any_value_enum(),
 
-                BCFloatBinOp::EQ
-                | BCFloatBinOp::NEQ
-                | BCFloatBinOp::FLT
-                | BCFloatBinOp::FLE
-                | BCFloatBinOp::FGT
-                | BCFloatBinOp::FGE => {
+                LMIRFloatBinOp::EQ
+                | LMIRFloatBinOp::NEQ
+                | LMIRFloatBinOp::FLT
+                | LMIRFloatBinOp::FLE
+                | LMIRFloatBinOp::FGT
+                | LMIRFloatBinOp::FGE => {
                     let predicate = match op {
-                        BCFloatBinOp::EQ => inkwell::FloatPredicate::OEQ,
-                        BCFloatBinOp::NEQ => inkwell::FloatPredicate::ONE,
-                        BCFloatBinOp::FLT => inkwell::FloatPredicate::OLT,
-                        BCFloatBinOp::FLE => inkwell::FloatPredicate::OLE,
-                        BCFloatBinOp::FGT => inkwell::FloatPredicate::OGT,
-                        BCFloatBinOp::FGE => inkwell::FloatPredicate::OGE,
+                        LMIRFloatBinOp::EQ => inkwell::FloatPredicate::OEQ,
+                        LMIRFloatBinOp::NEQ => inkwell::FloatPredicate::ONE,
+                        LMIRFloatBinOp::FLT => inkwell::FloatPredicate::OLT,
+                        LMIRFloatBinOp::FLE => inkwell::FloatPredicate::OLE,
+                        LMIRFloatBinOp::FGT => inkwell::FloatPredicate::OGT,
+                        LMIRFloatBinOp::FGE => inkwell::FloatPredicate::OGE,
                         _ => unreachable!(),
                     };
 
@@ -426,7 +426,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        BCInstructionKind::Phi { predecessors: from } => {
+        LMIRInstructionKind::Phi { predecessors: from } => {
             let val_type = bc_llvm_type(global_state.context, &block_instruction.value_type)?;
             let as_basic_type =
                 any_to_basic_type(val_type).expect("Failed to convert value type to basic type");
@@ -449,7 +449,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(phi_node.as_any_value_enum())
         }
 
-        BCInstructionKind::Branch {
+        LMIRInstructionKind::Branch {
             condition,
             true_block,
             false_block,
@@ -481,7 +481,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::JumpTable {
+        LMIRInstructionKind::JumpTable {
             value,
             targets,
             default,
@@ -514,9 +514,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::ZExtend,
+            coercion_type: LMIRCoercionType::ZExtend,
         } => {
             let value = function_state
                 .get_value(value)?
@@ -534,9 +534,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::SExtend,
+            coercion_type: LMIRCoercionType::SExtend,
         } => {
             let value = function_state
                 .get_value(value)?
@@ -554,7 +554,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::StructAccess {
+        LMIRInstructionKind::StructAccess {
             struct_,
             struct_type,
             field_index,
@@ -580,9 +580,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::Trunc,
+            coercion_type: LMIRCoercionType::Trunc,
         } => {
             let value = function_state
                 .get_value(value)?
@@ -601,7 +601,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::GetFunctionAddr { func } => {
+        LMIRInstructionKind::GetFunctionAddr { func } => {
             let function_val = global_state
                 .module
                 .get_function(func)
@@ -616,9 +616,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(any_value_enum)
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::IntToFloat { from: _, sextend },
+            coercion_type: LMIRCoercionType::IntToFloat { from: _, sextend },
         } => {
             let value = function_state
                 .get_value(value)?
@@ -643,9 +643,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::FloatToInt { from: _, sextend },
+            coercion_type: LMIRCoercionType::FloatToInt { from: _, sextend },
         } => {
             let value = function_state
                 .get_value(value)?
@@ -670,9 +670,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             })
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::PtrToInt,
+            coercion_type: LMIRCoercionType::PtrToInt,
         } => {
             let value = function_state
                 .get_value(value)?
@@ -691,9 +691,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::Coercion {
+        LMIRInstructionKind::Coercion {
             value,
-            coercion_type: BCCoercionType::FloatCast { .. },
+            coercion_type: LMIRCoercionType::FloatCast { .. },
         } => {
             let value = function_state
                 .get_value(value)?
@@ -712,7 +712,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             )
         }
 
-        BCInstructionKind::CompilerAssumption { condition: _ } => {
+        LMIRInstructionKind::CompilerAssumption { condition: _ } => {
             // TODO: Implement assumptions in LLVM
 
             CodegenValue::NULL

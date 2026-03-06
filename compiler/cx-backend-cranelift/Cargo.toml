@@ -6,8 +6,8 @@ autotests = false
 
 [dependencies]
 cx-util = { path = "../cx-util" }
-cx-bytecode-data = { path = "../cx-bytecode-data" }
-cx-parsing-data = { path = "../cx-parsing-data" }
+cx-lmir = { path = "../cx-lmir" }
+cx-ast = { path = "../cx-ast" }
 
 cranelift = "0.120.0"
 cranelift-module = "0.120.0"

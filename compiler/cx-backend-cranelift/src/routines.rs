@@ -1,11 +1,11 @@
 use crate::inst_calling::prepare_function_sig;
 use crate::FunctionState;
 use cranelift_module::{FuncId, Linkage, Module};
-use cx_bytecode_data::{LinkageType, BCFunctionPrototype};
+use cx_lmir::{LinkageType, LMIRFunctionPrototype};
 
 pub fn get_function(
     context: &mut FunctionState,
-    prototype: &BCFunctionPrototype,
+    prototype: &LMIRFunctionPrototype,
 ) -> Option<FuncId> {
     if let Some(func_id) = context.function_ids.get(&prototype.name) {
         return Some(*func_id);
