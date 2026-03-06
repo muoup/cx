@@ -36,6 +36,11 @@ pub trait CXErrorTrait {
     fn token_end(&self) -> Option<usize> {
         None
     }
+
+    /// Get any supplementary notes associated with this error, if applicable.
+    fn notes(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub struct CXError {

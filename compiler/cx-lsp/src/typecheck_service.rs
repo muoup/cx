@@ -3,13 +3,13 @@
 //! This module provides utilities for converting compiler type errors
 //! into LSP diagnostics format.
 
+use cx_pipeline::{LSPErrorSpan, LSPErrors};
 use std::collections::HashMap;
 use std::path::Path;
 use cx_tokens::token::Token;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Position, Range, Url,
 };
-use cx_pipeline::LSPErrors;
 use cx_typechecker::log::TypeError;
 
 fn byte_index_to_position(file_contents: &str, index: usize) -> Position {
@@ -53,6 +53,20 @@ fn token_range(file_contents: &str, tokens: &[Token], token_start: usize, token_
         .unwrap_or(start);
 
     Range { start, end }
+}
+
+fn byte_range(file_contents: &str, start: usize, end: usize) -> Range {
+    let safe_start = start.min(file_contents.len());
+    let safe_end = if end <= start {
+        (safe_start + 1).min(file_contents.len())
+    } else {
+        end.min(file_contents.len())
+    };
+
+    Range {
+        start: byte_index_to_position(file_contents, safe_start),
+        end: byte_index_to_position(file_contents, safe_end),
+    }
 }
 
 fn fallback_range(file_contents: &str, line: Option<usize>) -> Range {
@@ -123,6 +137,33 @@ pub fn type_error_to_diagnostic(error: &TypeError) -> Diagnostic {
 pub fn lsp_error_to_diagnostic(error: &LSPErrors) -> Diagnostic {
     match error {
         LSPErrors::TypeError(e) => type_error_to_diagnostic(e),
+        LSPErrors::SpannedError {
+            compilation_unit,
+            message,
+            span,
+            notes,
+        } => {
+            let file_contents = std::fs::read_to_string(compilation_unit).unwrap_or_default();
+            let uri = Url::from_file_path(compilation_unit).ok();
+            let range = match span {
+                LSPErrorSpan::TokenRange { start, end } => cx_lexer::lex(&file_contents)
+                    .map(|tokens| token_range(&file_contents, &tokens, *start, *end))
+                    .unwrap_or_else(|| fallback_range(&file_contents, None)),
+                LSPErrorSpan::ByteRange { start, end } => byte_range(&file_contents, *start, *end),
+            };
+            let related_information = uri
+                .as_ref()
+                .and_then(|uri| related_information(uri, range, notes));
+
+            Diagnostic {
+                range,
+                severity: Some(DiagnosticSeverity::ERROR),
+                message: message.clone(),
+                related_information,
+                source: Some("cx".to_string()),
+                ..Default::default()
+            }
+        }
         LSPErrors::FatalError { compilation_unit, message, line } => {
             let file_contents = std::fs::read_to_string(compilation_unit).unwrap_or_default();
 
@@ -147,6 +188,7 @@ pub fn group_diagnostics_by_file(errors: &[LSPErrors]) -> HashMap<Url, Vec<Diagn
     for error in errors {
         let compilation_unit = match error {
             LSPErrors::TypeError(e) => &e.compilation_unit,
+            LSPErrors::SpannedError { compilation_unit, .. } => compilation_unit,
             LSPErrors::FatalError { compilation_unit, .. } => compilation_unit,
         };
 

@@ -1,6 +1,6 @@
 use crate::{CompilationUnit, GlobalCompilationContext, compilation_hash};
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub fn stdlib_directory(inner_path: &str) -> String {   
     // {project_root}/compiler/cx-pipeline-data
@@ -33,9 +33,16 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     let mut complete_path = context.config.internal_directory.clone();
     complete_path.push(profile_hash);
 
-    let mut identifier_string = unit.identifier().to_string();
-    identifier_string.push_str(".cx");
-    complete_path.push(identifier_string);
+    let identifier_path = Path::new(unit.identifier());
+    for component in identifier_path.components() {
+        match component {
+            Component::Normal(part) => complete_path.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => complete_path.push("__parent__"),
+            Component::RootDir | Component::Prefix(_) => {}
+        }
+    }
+    complete_path.set_extension("cx");
 
     let parent = complete_path.parent().unwrap_or(&complete_path);
     std::fs::create_dir_all(parent).unwrap_or_else(|_| {

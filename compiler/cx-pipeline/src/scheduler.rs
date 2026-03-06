@@ -3,6 +3,7 @@ use crate::template_realizing::realize_templates;
 use cx_ast::ast::VisibilityMode;
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
+use cx_parsing::ParseErrorLog;
 use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::preparse;
 use cx_pipeline_data::db::ModuleMap;
@@ -421,8 +422,20 @@ pub(crate) fn perform_job(
 
 /// Error type for LSP that includes both type errors and fatal errors
 #[derive(Debug, Clone)]
+pub enum LSPErrorSpan {
+    TokenRange { start: usize, end: usize },
+    ByteRange { start: usize, end: usize },
+}
+
+#[derive(Debug, Clone)]
 pub enum LSPErrors {
     TypeError(TypeError),
+    SpannedError {
+        compilation_unit: std::path::PathBuf,
+        message: String,
+        span: LSPErrorSpan,
+        notes: Vec<String>,
+    },
     FatalError {
         compilation_unit: std::path::PathBuf,
         message: String,
@@ -501,19 +514,26 @@ fn handle_job_collect_errors(
     job: &CompilationJob,
     error_collector: &mut Vec<LSPErrors>,
 ) -> Option<HandleJobResult> {
-    let map_reqs_new_stage = |step: CompilationStep| -> Vec<CompilationJob> {
-        job.requirements
+    let map_reqs_new_stage = |new_step: CompilationStep| -> Box<[CompilationJob]> {
+        let new_requirements = job
+            .requirements
             .iter()
-            .map(|req| CompilationJob::new(
-                vec![],
-                step,
-                req.unit.clone(),
-            ))
-            .collect()
+            .map(|req| CompilationJobRequirement {
+                unit: req.unit.clone(),
+                step: job.step,
+            })
+            .collect::<Vec<_>>();
+
+        [CompilationJob::new(
+            new_requirements,
+            new_step,
+            job.unit.clone(),
+        )]
+        .into()
     };
 
     // Perform the job and collect errors
-    match perform_job_collect_errors(context, job, error_collector) {
+    match perform_job_collect_errors(context, job) {
         JobResultCollect::StandardSuccess => {}
         JobResultCollect::FatalError(e) => {
             error_collector.push(e);
@@ -533,7 +553,10 @@ fn handle_job_collect_errors(
                     CompilationJob::new(
                         vec![],
                         CompilationStep::PreParse,
-                        CompilationUnit::from_str(import.as_str()),
+                        CompilationUnit::from_rooted(
+                            import.as_str(),
+                            &context.config.working_directory,
+                        ),
                     )
                 })
                 .collect();
@@ -547,12 +570,14 @@ fn handle_job_collect_errors(
             Some(HandleJobResult::Success(new_jobs.into()))
         }
         CompilationStep::ASTParse => {
-            let new_jobs = map_reqs_new_stage(CompilationStep::InterfaceCombine);
-            Some(HandleJobResult::Success(new_jobs.into()))
+            Some(HandleJobResult::Success(map_reqs_new_stage(
+                CompilationStep::InterfaceCombine,
+            )))
         }
         CompilationStep::InterfaceCombine => {
-            let new_jobs = map_reqs_new_stage(CompilationStep::Typechecking);
-            Some(HandleJobResult::Success(new_jobs.into()))
+            Some(HandleJobResult::Success(map_reqs_new_stage(
+                CompilationStep::Typechecking,
+            )))
         }
         CompilationStep::Typechecking => {
             // Stop here for LSP - no need for bytecode/codegen
@@ -570,8 +595,73 @@ fn handle_job_collect_errors(
 fn perform_job_collect_errors(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
-    error_collector: &mut Vec<LSPErrors>,
 ) -> JobResultCollect {
+    fn line_start_byte(contents: &str, index: usize) -> usize {
+        let safe_index = index.min(contents.len());
+        contents[..safe_index]
+            .rfind('\n')
+            .map(|idx| idx + 1)
+            .unwrap_or(0)
+    }
+
+    fn line_content_start_byte(contents: &str, index: usize) -> usize {
+        let line_start = line_start_byte(contents, index);
+        let line_end = contents[line_start..]
+            .find('\n')
+            .map(|offset| line_start + offset)
+            .unwrap_or(contents.len());
+        let line = &contents[line_start..line_end];
+        let first_non_whitespace = line
+            .char_indices()
+            .find(|(_, ch)| !ch.is_whitespace())
+            .map(|(offset, _)| offset)
+            .unwrap_or(0);
+
+        line_start + first_non_whitespace
+    }
+
+    fn spanned_error(error: &dyn CXErrorTrait) -> Option<LSPErrors> {
+        if let Some(parse_error) = error.as_any().downcast_ref::<ParseErrorLog>() {
+            let file_contents = std::fs::read_to_string(&parse_error.file).ok()?;
+            let anchor_token = parse_error
+                .previous_token
+                .as_ref()
+                .unwrap_or(&parse_error.token);
+            let start = line_content_start_byte(&file_contents, anchor_token.start_index);
+            let end = anchor_token
+                .end_index
+                .max(anchor_token.start_index.saturating_add(1));
+
+            return Some(LSPErrors::SpannedError {
+                compilation_unit: parse_error.file.clone(),
+                message: parse_error.message.clone(),
+                span: LSPErrorSpan::ByteRange {
+                    start,
+                    end,
+                },
+                notes: Vec::new(),
+            });
+        }
+
+        if let (Some(compilation_unit), Some(token_start), Some(token_end)) = (
+            error.compilation_unit(),
+            error.token_start(),
+            error.token_end(),
+        ) {
+            return Some(LSPErrors::SpannedError {
+                compilation_unit,
+                message: error.error_message(),
+                span: LSPErrorSpan::TokenRange {
+                    start: token_start,
+                    end: token_end,
+                },
+                notes: error.notes(),
+            });
+        }
+
+        None
+    }
+
     match job.step {
         CompilationStep::PreParse => {
             let file_path = job.unit.with_extension("cx");
@@ -596,12 +686,13 @@ fn perform_job_collect_errors(
             let mut output = match preparse(TokenIter::new(&tokens, file_path.clone())) {
                 Ok(p) => p,
                 Err(e) => {
-                    // Can't extract line info from trait object, just use error message
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: file_path.clone(),
-                        message: format!("Pre-parsing failed: {}", e.error_message()),
-                        line: None,
-                    });
+                    return JobResultCollect::FatalError(
+                        spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                            compilation_unit: file_path.clone(),
+                            message: format!("Pre-parsing failed: {}", e.error_message()),
+                            line: None,
+                        }),
+                    );
                 }
             };
             output.module = job.unit.to_string();
@@ -633,7 +724,10 @@ fn perform_job_collect_errors(
                 let other_pp_data = context
                     .module_db
                     .preparse_base
-                    .get(&CompilationUnit::from_str(import.as_str()));
+                    .get(&CompilationUnit::from_rooted(
+                        import.as_str(),
+                        &context.config.working_directory,
+                    ));
                 let required_visiblity = VisibilityMode::Public;
 
                 for resource in other_pp_data.type_idents.iter() {
@@ -651,13 +745,14 @@ fn perform_job_collect_errors(
             ) {
                 Ok(ast) => ast,
                 Err(e) => {
-                    // Can't extract line info from trait object, just use error message
                     let file_path = job.unit.with_extension("cx");
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: file_path,
-                        message: format!("AST parsing failed: {}", e.error_message()),
-                        line: None,
-                    });
+                    return JobResultCollect::FatalError(
+                        spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                            compilation_unit: file_path,
+                            message: format!("AST parsing failed: {}", e.error_message()),
+                            line: None,
+                        }),
+                    );
                 }
             };
 
@@ -699,113 +794,53 @@ fn perform_job_collect_errors(
             match complete_base_globals(&mut env, structure_data.as_ref()) {
                 Ok(_) => {}
                 Err(e) => {
-                    // Try to extract TypeError information from the error
-                    if let (Some(cu), Some(ts), Some(te)) = (
-                        e.compilation_unit(),
-                        e.token_start(),
-                        e.token_end(),
-                    ) {
-                        let type_err = TypeError {
-                            compilation_unit: cu,
-                            token_start: ts,
-                            token_end: te,
+                    return JobResultCollect::FatalError(
+                        spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                            compilation_unit: job.unit.as_path().to_path_buf(),
                             message: e.error_message(),
-                            notes: Vec::new(),
-                        };
-                        error_collector.push(LSPErrors::TypeError(type_err.clone()));
-                        return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
-                    }
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: e.error_message(),
-                        line: None,
-                    });
+                            line: None,
+                        }),
+                    );
                 }
             }
 
             match complete_base_functions(&mut env, structure_data.as_ref()) {
                 Ok(_) => {}
                 Err(e) => {
-                    if let (Some(cu), Some(ts), Some(te)) = (
-                        e.compilation_unit(),
-                        e.token_start(),
-                        e.token_end(),
-                    ) {
-                        let type_err = TypeError {
-                            compilation_unit: cu,
-                            token_start: ts,
-                            token_end: te,
+                    return JobResultCollect::FatalError(
+                        spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                            compilation_unit: job.unit.as_path().to_path_buf(),
                             message: e.error_message(),
-                            notes: Vec::new(),
-                        };
-                        error_collector.push(LSPErrors::TypeError(type_err.clone()));
-                        return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
-                    }
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: e.error_message(),
-                        line: None,
-                    });
+                            line: None,
+                        }),
+                    );
                 }
             }
 
             match typecheck(&mut env, structure_data.as_ref(), &self_ast) {
                 Ok(_) => {}
                 Err(e) => {
-                    if let (Some(cu), Some(ts), Some(te)) = (
-                        e.compilation_unit(),
-                        e.token_start(),
-                        e.token_end(),
-                    ) {
-                        let type_err = TypeError {
-                            compilation_unit: cu,
-                            token_start: ts,
-                            token_end: te,
+                    return JobResultCollect::FatalError(
+                        spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                            compilation_unit: job.unit.as_path().to_path_buf(),
                             message: e.error_message(),
-                            notes: Vec::new(),
-                        };
-                        error_collector.push(LSPErrors::TypeError(type_err.clone()));
-                        return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
-                    }
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: e.error_message(),
-                        line: None,
-                    });
+                            line: None,
+                        }),
+                    );
                 }
             }
 
             match realize_templates(&job.unit, &mut env) {
                 Ok(_) => {}
                 Err(e) => {
-                    if let (Some(cu), Some(ts), Some(te)) = (
-                        e.compilation_unit(),
-                        e.token_start(),
-                        e.token_end(),
-                    ) {
-                        let type_err = TypeError {
-                            compilation_unit: cu,
-                            token_start: ts,
-                            token_end: te,
+                    return JobResultCollect::FatalError(
+                        spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                            compilation_unit: job.unit.as_path().to_path_buf(),
                             message: e.error_message(),
-                            notes: Vec::new(),
-                        };
-                        error_collector.push(LSPErrors::TypeError(type_err.clone()));
-                        return JobResultCollect::FatalError(LSPErrors::TypeError(type_err));
-                    }
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: e.error_message(),
-                        line: None,
-                    });
+                            line: None,
+                        }),
+                    );
                 }
-            }
-
-            // Don't need MIR for LSP diagnostics
-            // Check if any errors were collected during typechecking
-            // If so, return an error to signal failure (errors are still in the collector)
-            if !error_collector.is_empty() {
-                return JobResultCollect::FatalError(error_collector[0].clone());
             }
             JobResultCollect::StandardSuccess
         }

@@ -37,6 +37,10 @@ impl CXErrorTrait for TypeError {
         Some(self.token_end)
     }
 
+    fn notes(&self) -> Vec<String> {
+        self.notes.clone()
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

@@ -318,12 +318,13 @@ impl Backend {
         file_path: &Path,
         project_root: &Path,
     ) -> HashMap<Url, Vec<Diagnostic>> {
-        // Use absolute path directly - scheduler needs absolute paths to read files
-        let path_str = file_path.to_str()
-            .unwrap_or(file_path.to_string_lossy().as_ref())
+        let unit_identifier = file_path
+            .strip_prefix(project_root)
+            .unwrap_or(file_path)
+            .to_string_lossy()
             .to_string();
 
-        let unit = cx_pipeline_data::CompilationUnit::from_rooted(&path_str, project_root);
+        let unit = cx_pipeline_data::CompilationUnit::from_rooted(&unit_identifier, project_root);
         let internal_directory = project_root.join(".internal").join("zed-lsp");
 
         // Create fresh compilation context for each typecheck

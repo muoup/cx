@@ -4,7 +4,7 @@ struct Resource : @nodrop {
 
 Resource make_resource() {
     return (Resource) {
-        .data = 1
+        .data = 0
     };
 }
 
