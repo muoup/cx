@@ -1,17 +1,14 @@
-use cx_ast::ast::VisibilityMode;
+use cx_parsing_data::ast::VisibilityMode;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
-use cx_mir::mir::program::MIRBaseMappings;
+use cx_typechecker_data::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 
 pub(crate) mod log;
+pub(crate) mod builder;
 
 pub mod environment;
 pub mod type_checking;
 pub mod type_completion;
-
-pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
-};
 
 pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
     let ast = context
@@ -23,7 +20,7 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
     let mut base_globals = ast.global_variables.clone();
 
     for import in ast.imports.iter() {
-        let unit = CompilationUnit::from_rooted(import.as_str(), &context.config.working_directory);
+        let unit = CompilationUnit::from_str(import.as_str());
         let ast = context.module_db.naive_ast.get(&unit);
 
         for (type_name, cx_type) in ast.type_data.standard_iter() {

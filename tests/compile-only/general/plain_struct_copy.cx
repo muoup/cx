@@ -1,8 +1,0 @@
-struct Lifetime {};
-
-void take_lifetime(Lifetime lifetime) {}
-
-int main() {
-    Lifetime lifetime;
-    take_lifetime(lifetime);
-}

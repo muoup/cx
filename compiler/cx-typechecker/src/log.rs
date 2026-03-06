@@ -6,14 +6,12 @@ pub struct TypeError {
     pub token_start: usize,
     pub token_end: usize,
     pub message: String,
-    pub notes: Vec<String>,
 }
 
 impl CXErrorTrait for TypeError {
     fn pretty_print(&self) {
-        cx_log::pretty_underline_error_with_notes(
+        cx_log::pretty_underline_error(
             &self.message,
-            &self.notes,
             self.compilation_unit.as_path(),
             self.token_start,
             self.token_end,
@@ -32,7 +30,6 @@ macro_rules! log_typecheck_error {
                 token_start: $expr.start_index,
                 token_end: $expr.end_index,
                 compilation_unit: $env.compilation_unit.as_path().to_owned(),
-                notes: Vec::new(),
             }) as Box<dyn cx_util::CXErrorTrait>)
         }
     };

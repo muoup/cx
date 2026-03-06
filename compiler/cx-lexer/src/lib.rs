@@ -1,4 +1,4 @@
-use cx_tokens::token::Token;
+use cx_lexer_data::token::Token;
 
 pub(crate) mod line_lexer;
 pub(crate) mod preprocessor;

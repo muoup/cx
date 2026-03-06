@@ -6,7 +6,6 @@ pub struct AppArgs {
     pub output_file: String,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
-    pub analysis: bool,
 }
 
 pub fn print_help() {
@@ -29,7 +28,6 @@ pub fn print_help() {
     println!("  -O3                  Aggressive optimization.");
     println!("  -Osize               Optimize for code size.");
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
-    println!("  --analysis           Run FMIR analysis for safe functions.");
     println!("  -help                Display this help message.");
 }
 
@@ -48,7 +46,6 @@ pub fn parse_args() -> Result<AppArgs, String> {
         }
     };
     let mut optimization_level = Default::default();
-    let mut analysis = false;
 
     let mut args_iter = args.iter().skip(1);
 
@@ -72,7 +69,6 @@ pub fn parse_args() -> Result<AppArgs, String> {
             "-O3" => optimization_level = OptimizationLevel::O3,
             "-Osize" => optimization_level = OptimizationLevel::Osize,
             "-Ofast" => optimization_level = OptimizationLevel::Ofast,
-            "--analysis" => analysis = true,
             "-o" => {
                 if let Some(path) = args_iter.next() {
                     output_file = path.clone();
@@ -103,6 +99,5 @@ pub fn parse_args() -> Result<AppArgs, String> {
         output_file,
         backend,
         optimization_level,
-        analysis,
     })
 }

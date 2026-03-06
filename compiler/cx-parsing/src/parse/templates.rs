@@ -1,9 +1,9 @@
-use cx_tokens::{identifier, operator, TokenIter};
-use cx_ast::data::{
-    CXTemplateInput, CXType, CXTypeKind, CXTemplatePrototype, PredeclarationType,
+use cx_lexer_data::{identifier, operator, TokenIter};
+use cx_parsing_data::data::{
+    CXNaiveTemplateInput, CXNaiveType, CXNaiveTypeKind, CXTemplatePrototype, PredeclarationType,
 };
 use crate::parse::ParserData;
-use cx_ast::{assert_token_matches, peek_kind, try_next};
+use cx_parsing_data::{assert_token_matches, peek_kind, try_next};
 use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::parse::types::parse_initializer;
@@ -17,7 +17,7 @@ pub(crate) fn note_templatedtype_s(
             continue;
         }
 
-        let _nil_type: CXType = CXTypeKind::Identifier {
+        let _nil_type: CXNaiveType = CXNaiveTypeKind::Identifier {
             name: CXIdent::new("__undefined_template_type"),
             predeclaration: PredeclarationType::None,
         }
@@ -34,7 +34,7 @@ pub(crate) fn unnote_templatedtype_s(
     for template_name in &template_prototype.types {
         let (name, _type) = data.ast.type_data.remove_standard(template_name).unwrap();
 
-        if let CXTypeKind::Identifier {
+        if let CXNaiveTypeKind::Identifier {
             name,
             predeclaration: PredeclarationType::None,
         } = &_type.resource.kind
@@ -78,12 +78,12 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
 
 pub(crate) fn convert_template_proto_to_args(
     prototype: CXTemplatePrototype,
-) -> CXTemplateInput {
+) -> CXNaiveTemplateInput {
     let params = prototype
         .types
         .into_iter()
         .map(|name| {
-            CXTypeKind::Identifier {
+            CXNaiveTypeKind::Identifier {
                 name: CXIdent::new(name),
                 predeclaration: PredeclarationType::None,
             }
@@ -91,10 +91,10 @@ pub(crate) fn convert_template_proto_to_args(
         })
         .collect();
 
-    CXTemplateInput { params }
+    CXNaiveTemplateInput { params }
 }
 
-pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateInput> {
+pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXNaiveTemplateInput> {
     assert_token_matches!(data.tokens, operator!(Less));
 
     let mut inputtype_s = Vec::new();
@@ -113,7 +113,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
 
     assert_token_matches!(data.tokens, operator!(Greater));
 
-    Ok(CXTemplateInput {
+    Ok(CXNaiveTemplateInput {
         params: inputtype_s,
     })
 }

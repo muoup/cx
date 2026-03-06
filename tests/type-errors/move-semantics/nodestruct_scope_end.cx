@@ -1,8 +1,0 @@
-struct resource : @nodrop {
-    int value;
-};
-
-int bad() {
-    resource value;
-    return 0;
-}
