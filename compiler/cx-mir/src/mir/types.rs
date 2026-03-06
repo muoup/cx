@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 use cx_ast::ast::VisibilityMode;
-use cx_ast::data::CXTypeSpecifier;
+use cx_ast::data::{CXTypeSpecifier, CX_CONST};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -122,7 +122,7 @@ pub enum MIRTypeKind {
         weak: bool,
         nullable: bool,
     },
-    MemoryReference(Box<MIRType>),
+    MemoryReference { inner_type: Box<MIRType> },
     Array {
         size: usize,
         inner_type: Box<MIRType>,
@@ -257,11 +257,11 @@ impl MIRType {
     }
 
     pub fn mem_ref_inner(&self) -> Option<&MIRType> {
-        let MIRTypeKind::MemoryReference(inner) = &self.kind else {
+        let MIRTypeKind::MemoryReference { inner_type, .. } = &self.kind else {
             return None;
         };
 
-        Some(inner.as_ref())
+        Some(inner_type.as_ref())
     }
 
     pub fn array_inner(&self) -> Option<&MIRType> {
@@ -299,7 +299,9 @@ impl MIRType {
         MIRType {
             specifiers: 0,
             visibility: VisibilityMode::Private,
-            kind: MIRTypeKind::MemoryReference(Box::new(self)),
+            kind: MIRTypeKind::MemoryReference {
+                inner_type: Box::new(self),
+            },
         }
     }
 
@@ -358,7 +360,15 @@ impl MIRType {
     }
 
     pub fn is_memory_reference(&self) -> bool {
-        matches!(self.kind, MIRTypeKind::MemoryReference(_))
+        matches!(self.kind, MIRTypeKind::MemoryReference { .. })
+    }
+
+    pub fn is_mutable_memory_reference(&self) -> bool {
+        let MIRTypeKind::MemoryReference { inner_type } = &self.kind else {
+            return false;
+        };
+
+        !inner_type.get_specifier(CX_CONST)
     }
 
     pub fn was_template_instantiated(&self) -> bool {
@@ -435,7 +445,7 @@ impl MIRType {
             MIRTypeKind::Float { _type } => _type.bytes(),
             MIRTypeKind::Unit => 0,
             MIRTypeKind::Opaque { size, .. } => *size,
-            MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
+            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
                 std::mem::size_of::<usize>()
             }
 
@@ -484,7 +494,7 @@ impl MIRType {
             MIRTypeKind::Float { _type } => _type.bytes().min(8),
             MIRTypeKind::Unit => 1,
             MIRTypeKind::Opaque { size, .. } => (*size).min(8),
-            MIRTypeKind::MemoryReference(_) | MIRTypeKind::PointerTo { .. } => {
+            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
                 std::mem::size_of::<usize>()
             }
 

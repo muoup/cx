@@ -9,7 +9,7 @@ use crate::type_checking::structured_initialization::{
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_ast::data::{CXPrototype, CXType, CXTypeKind};
+use cx_ast::data::{CXPrototype, CXType, CXTypeKind, CX_CONST};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
@@ -31,8 +31,13 @@ pub(crate) fn typecheck_access(
     // Here, out aim is to continue with lhs_val being one indirection from the memory,
     // i.e. we need a pointer to the region.
     let lhs_type = lhs._type.clone();
+    let lhs_ref_const = match &lhs_type.kind {
+        MIRTypeKind::MemoryReference { inner_type } => inner_type.get_specifier(CX_CONST),
+        _ => false,
+    };
+
     let (lhs, lhs_inner) = match &lhs_type.kind {
-        MIRTypeKind::MemoryReference(mem_ref_inner) => match &mem_ref_inner.kind {
+        MIRTypeKind::MemoryReference { inner_type, .. } => match &inner_type.kind {
             // If we have a reference to a region containing a pointer, we need to
             // load one layer of indirection first.
             MIRTypeKind::PointerTo { inner_type, .. } => {
@@ -49,7 +54,7 @@ pub(crate) fn typecheck_access(
 
             // We could have a memory reference to a structured type, in which cases
             // we are only one indirection away already, so we can continue as normal.
-            _ => (lhs, mem_ref_inner.as_ref().clone()),
+            _ => (lhs, inner_type.as_ref().clone()),
         },
 
         // If we have only a pointer, the compiler is not responsible for any coercions here,
@@ -79,7 +84,11 @@ pub(crate) fn typecheck_access(
         CXExprKind::Identifier(name) => {
             if let Some(struct_field) = struct_field(&lhs_inner, name.as_str()) {
                 return Ok(TypecheckResult::expr(
-                    struct_field.field_type.mem_ref_to(),
+                    struct_field
+                        .field_type
+                        .clone()
+                        .with_specifier(if lhs_ref_const { CX_CONST } else { 0 })
+                        .mem_ref_to(),
                     MIRExpressionKind::StructFieldAccess {
                         base: Box::new(lhs),
                         field_index: struct_field.index,
@@ -104,7 +113,10 @@ pub(crate) fn typecheck_access(
                 };
 
                 return Ok(TypecheckResult::expr(
-                    field_type.clone().mem_ref_to(),
+                    field_type
+                        .clone()
+                        .with_specifier(if lhs_ref_const { CX_CONST } else { 0 })
+                        .mem_ref_to(),
                     MIRExpressionKind::UnionAliasAccess {
                         base: Box::new(lhs),
                         variant_type: field_type.clone(),

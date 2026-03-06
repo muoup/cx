@@ -345,6 +345,18 @@ pub(crate) fn parsetype_mods(
             parsetype_mods(data, acc_type)
         }
 
+        operator!(Ampersand) => {
+            data.tokens.next();
+
+            parsetype_mods(
+                data,
+                CXTypeKind::MemoryReference {
+                    inner_type: Box::new(acc_type),
+                }
+                .to_type(),
+            )
+        }
+
         punctuator!(OpenParen) => {
             data.tokens.next();
             if !matches!(next_kind!(data.tokens), Ok(operator!(Asterisk))) {
@@ -430,7 +442,19 @@ pub(crate) fn parse_suffixtype_mod(
 
             assert_token_matches!(tokens, punctuator!(CloseBracket));
 
-            Ok(_type)
+            parse_suffixtype_mod(tokens, _type)
+        }
+
+        operator!(Ampersand) => {
+            tokens.next();
+
+            parse_suffixtype_mod(
+                tokens,
+                CXTypeKind::MemoryReference {
+                    inner_type: Box::new(acc_type),
+                }
+                .to_type(),
+            )
         }
 
         _ => Ok(acc_type),

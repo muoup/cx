@@ -164,7 +164,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
             size: *size,
         },
 
-        MIRTypeKind::MemoryReference(..) => LMIRTypeKind::Pointer {
+        MIRTypeKind::MemoryReference { .. } => LMIRTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,
         },

@@ -20,7 +20,7 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             mangled.push('P');
             mangled.push_str(&type_mangle(inner_type));
         }
-        MIRTypeKind::MemoryReference(inner_type) => {
+        MIRTypeKind::MemoryReference { inner_type } => {
             mangled.push('R');
             mangled.push_str(&type_mangle(inner_type));
         }

@@ -177,6 +177,7 @@ fn type_is_safe_signature(ty: &MIRType) -> bool {
         MIRTypeKind::Structured { fields, .. } => {
             fields.iter().all(|(_, field_type)| type_is_safe_signature(field_type))
         }
+        MIRTypeKind::MemoryReference { .. } => true,
         _ => false,
     }
 }
@@ -193,7 +194,7 @@ fn prototype_is_safe_callable(prototype: &MIRFunctionPrototype) -> bool {
 
 fn type_is_safe_expression(ty: &MIRType) -> bool {
     match &ty.kind {
-        MIRTypeKind::MemoryReference(inner) => type_is_safe_expression(inner),
+        MIRTypeKind::MemoryReference { inner_type, .. } => type_is_safe_expression(inner_type),
         MIRTypeKind::Function { prototype } => prototype_is_safe_callable(prototype),
         _ => type_is_safe_signature(ty),
     }
@@ -1073,6 +1074,10 @@ pub fn typecheck_expr_inner(
                     lhs_type
                 );
             };
+
+            if !lhs_type.is_mutable_memory_reference() {
+                return log_typecheck_error!(env, expr, " Cannot assign through immutable reference");
+            }
 
             let mut rhs_val = typecheck_expr(env, base_data, rhs, Some(inner))?;
 

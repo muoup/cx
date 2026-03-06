@@ -150,9 +150,7 @@ pub enum CXTypeKind {
     ExplicitSizedArray(Box<CXType>, usize),
     ImplicitSizedArray(Box<CXType>),
 
-    MemoryReference {
-        inner_type: Box<CXType>,
-    },
+    MemoryReference { inner_type: Box<CXType> },
     PointerTo {
         inner_type: Box<CXType>,
         weak: bool,

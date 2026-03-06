@@ -1,8 +1,6 @@
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
-use crate::mir::types::{
-    MIRFloatType, MIRIntegerType, MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind,
-};
+use crate::mir::types::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRParameter, MIRType, MIRTypeKind};
 use std::fmt::{Display, Formatter};
 
 impl Display for MIRUnit {
@@ -644,7 +642,7 @@ impl Display for MIRTypeKind {
             }
             MIRTypeKind::Unit => write!(f, "()"),
             MIRTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
-            MIRTypeKind::MemoryReference(inner) => write!(f, "{}&", inner),
+            MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             MIRTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
             MIRTypeKind::Function { prototype } => write!(f, "{prototype}"),

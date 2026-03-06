@@ -386,9 +386,7 @@ impl Display for CXTypeKind {
             CXTypeKind::TemplatedIdentifier { name, input } => write!(f, "{name}{input}"),
             CXTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             CXTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
-            CXTypeKind::MemoryReference { inner_type } => {
-                write!(f, "&{}", inner_type)
-            }
+            CXTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             CXTypeKind::PointerTo { inner_type, weak } => {
                 write!(f, "{}{}", if *weak { "weak " } else { "" }, inner_type)
             }

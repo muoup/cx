@@ -108,7 +108,9 @@ pub(crate) fn _complete_type(
         CXTypeKind::MemoryReference { inner_type } => {
             let inner_type = recurse_ty(inner_type.as_ref())?;
 
-            construct_type(MIRTypeKind::MemoryReference(Box::new(inner_type)))
+            construct_type(MIRTypeKind::MemoryReference {
+                inner_type: Box::new(inner_type),
+            })
         }
 
         CXTypeKind::PointerTo { inner_type, weak } => {
