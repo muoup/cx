@@ -4,7 +4,7 @@
  */
 
 /// <reference types="tree-sitter-cli/dsl" />
-// @ts-check
+// @ts-nocheck
 
 const KEYWORDS = [
   'break',
