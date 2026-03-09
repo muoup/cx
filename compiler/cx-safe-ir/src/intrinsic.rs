@@ -60,7 +60,7 @@ pub enum FMIRBinaryIntrinsic {
         op: FMIRPointerBinaryIntrinsicOp,
     },
     PointerDiff {
-        op: FMIRPointerDiffBinaryIntrinsicOp,
+        op: FMIRIntrinsicPtrDiffBinop,
     },
 }
 
@@ -116,7 +116,7 @@ pub enum FMIRPointerBinaryIntrinsicOp {
 }
 
 #[derive(Clone, Debug)]
-pub enum FMIRPointerDiffBinaryIntrinsicOp {
+pub enum FMIRIntrinsicPtrDiffBinop {
     ADD,
     SUB,
 }

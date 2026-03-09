@@ -236,11 +236,11 @@ impl Display for FMIRPointerBinaryIntrinsicOp {
     }
 }
 
-impl Display for FMIRPointerDiffBinaryIntrinsicOp {
+impl Display for FMIRIntrinsicPtrDiffBinop {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRPointerDiffBinaryIntrinsicOp::ADD => write!(f, "add"),
-            FMIRPointerDiffBinaryIntrinsicOp::SUB => write!(f, "sub"),
+            FMIRIntrinsicPtrDiffBinop::ADD => write!(f, "add"),
+            FMIRIntrinsicPtrDiffBinop::SUB => write!(f, "sub"),
         }
     }
 }

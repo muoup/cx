@@ -4,10 +4,9 @@ use cx_util::CXResult;
 
 use crate::mir_conversion::environment::FMIREnvironment;
 
-mod expression;
-
+pub mod factories;
 pub(crate) mod environment;
-pub(crate) mod factories;
+mod expression;
 
 pub fn convert_mir(env: &mut FMIREnvironment, mir_fn: &MIRFunction) -> CXResult<FMIRFunction> {
     env.begin_function(mir_fn.prototype.clone());

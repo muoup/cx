@@ -3,19 +3,18 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
-use cx_mir::mir::types::{MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRNodeBody, FMIRSourceRange};
-use cx_safe_ir::intrinsic::{
-    FMIRBinaryIntrinsic, FMIRCastIntrinsic, FMIRIntrinsicFBinOp,
-    FMIRIntrinsicIBinOp, FMIRIntrinsicKind, FMIRPointerBinaryIntrinsicOp,
-    FMIRPointerDiffBinaryIntrinsicOp, FMIRUnaryIntrinsic,
-};
+use cx_safe_ir::intrinsic::FMIRIntrinsicKind;
 use cx_util::{CXError, CXErrorTrait, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
+use crate::simplify::{ConstValue, int_to_bool};
+use crate::simplify::{binary, unary};
 use crate::traversal::{VisitControl, walk_pre_order};
 
 pub(crate) mod mir_conversion;
+pub(crate) mod simplify;
 pub(crate) mod traversal;
 
 pub type FMIRAnalysisPass<'a> = &'a dyn Fn(&FMIRContext, FMIRFunction) -> CXResult<FMIRFunction>;
@@ -43,14 +42,6 @@ impl CXErrorTrait for FMIRAnalysisError {
     }
 }
 
-#[derive(Clone, Debug)]
-enum ConstValue {
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    Unit,
-}
-
 struct AnalysisDiagnosticContext {
     compilation_unit: PathBuf,
     file_contents: Option<String>,
@@ -64,7 +55,7 @@ impl AnalysisDiagnosticContext {
             compilation_unit: compilation_unit.to_path_buf(),
             file_contents: std::fs::read_to_string(compilation_unit).ok(),
             function_name: function_prototype.name.as_string(),
-            function_signature: format_function_signature(function_prototype),
+            function_signature: format!("{function_prototype}"),
         }
     }
 
@@ -181,251 +172,6 @@ impl FMIRContext {
     }
 }
 
-fn format_human_readable_type(mir_type: &MIRType) -> String {
-    match &mir_type.kind {
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I1,
-            signed: false,
-        } => "bool".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I8,
-            signed: true,
-        } => "char".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I8,
-            signed: false,
-        } => "unsigned char".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I16,
-            signed: true,
-        } => "short".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I16,
-            signed: false,
-        } => "unsigned short".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I32,
-            signed: true,
-        } => "int".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I32,
-            signed: false,
-        } => "unsigned int".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I64,
-            signed: true,
-        } => "long".to_string(),
-        MIRTypeKind::Integer {
-            _type: MIRIntegerType::I64,
-            signed: false,
-        } => "unsigned long".to_string(),
-        _ => format!("{mir_type}"),
-    }
-}
-
-fn format_function_signature(prototype: &MIRFunctionPrototype) -> String {
-    let mut signature = format!(
-        "{} {}(",
-        format_human_readable_type(&prototype.return_type),
-        prototype.name
-    );
-
-    for (index, param) in prototype.params.iter().enumerate() {
-        if index > 0 {
-            signature.push_str(", ");
-        }
-
-        if let Some(name) = &param.name {
-            signature.push_str(
-                format!("{} {}", format_human_readable_type(&param._type), name).as_str(),
-            );
-        } else {
-            signature.push_str(format_human_readable_type(&param._type).as_str());
-        }
-    }
-
-    if prototype.var_args {
-        if !prototype.params.is_empty() {
-            signature.push_str(", ");
-        }
-        signature.push_str("...");
-    }
-
-    signature.push(')');
-    signature
-}
-
-fn int_to_bool(value: i64) -> bool {
-    value != 0
-}
-
-fn bool_to_int(value: bool) -> i64 {
-    if value { 1 } else { 0 }
-}
-
-fn eval_unary_intrinsic(op: &FMIRUnaryIntrinsic, arg: ConstValue) -> Option<ConstValue> {
-    match (op, arg) {
-        (FMIRUnaryIntrinsic::NEG, ConstValue::Int(inner))
-        | (FMIRUnaryIntrinsic::INEG, ConstValue::Int(inner)) => Some(ConstValue::Int(-inner)),
-        (FMIRUnaryIntrinsic::FNEG, ConstValue::Float(inner)) => Some(ConstValue::Float(-inner)),
-        (FMIRUnaryIntrinsic::BNOT, ConstValue::Int(inner)) => Some(ConstValue::Int(!inner)),
-        (FMIRUnaryIntrinsic::LNOT, ConstValue::Bool(inner)) => Some(ConstValue::Bool(!inner)),
-        (FMIRUnaryIntrinsic::LNOT, ConstValue::Int(inner)) => {
-            Some(ConstValue::Bool(!int_to_bool(inner)))
-        }
-        _ => None,
-    }
-}
-
-fn eval_int_binary_operator(
-    op: &FMIRIntrinsicIBinOp,
-    left: i64,
-    right: i64,
-) -> Option<ConstValue> {
-    match op {
-        FMIRIntrinsicIBinOp::ADD => Some(ConstValue::Int(left + right)),
-        FMIRIntrinsicIBinOp::SUB => Some(ConstValue::Int(left - right)),
-        FMIRIntrinsicIBinOp::MUL | FMIRIntrinsicIBinOp::IMUL => {
-            Some(ConstValue::Int(left * right))
-        }
-        FMIRIntrinsicIBinOp::DIV | FMIRIntrinsicIBinOp::IDIV => {
-            if right == 0 {
-                None
-            } else {
-                Some(ConstValue::Int(left / right))
-            }
-        }
-        FMIRIntrinsicIBinOp::MOD | FMIRIntrinsicIBinOp::IMOD => {
-            if right == 0 {
-                None
-            } else {
-                Some(ConstValue::Int(left % right))
-            }
-        }
-        FMIRIntrinsicIBinOp::EQ => Some(ConstValue::Bool(left == right)),
-        FMIRIntrinsicIBinOp::NE => Some(ConstValue::Bool(left != right)),
-        FMIRIntrinsicIBinOp::LT | FMIRIntrinsicIBinOp::ILT => {
-            Some(ConstValue::Bool(left < right))
-        }
-        FMIRIntrinsicIBinOp::LE | FMIRIntrinsicIBinOp::ILE => {
-            Some(ConstValue::Bool(left <= right))
-        }
-        FMIRIntrinsicIBinOp::GT | FMIRIntrinsicIBinOp::IGT => {
-            Some(ConstValue::Bool(left > right))
-        }
-        FMIRIntrinsicIBinOp::GE | FMIRIntrinsicIBinOp::IGE => {
-            Some(ConstValue::Bool(left >= right))
-        }
-        FMIRIntrinsicIBinOp::LAND => {
-            Some(ConstValue::Bool(int_to_bool(left) && int_to_bool(right)))
-        }
-        FMIRIntrinsicIBinOp::LOR => {
-            Some(ConstValue::Bool(int_to_bool(left) || int_to_bool(right)))
-        }
-        FMIRIntrinsicIBinOp::BAND => Some(ConstValue::Int(left & right)),
-        FMIRIntrinsicIBinOp::BOR  => Some(ConstValue::Int(left | right)),
-        FMIRIntrinsicIBinOp::BXOR => Some(ConstValue::Int(left ^ right)),
-    }
-}
-
-fn eval_float_binary_operator(
-    op: &FMIRIntrinsicFBinOp,
-    left: f64,
-    right: f64,
-) -> Option<ConstValue> {
-    match op {
-        FMIRIntrinsicFBinOp::FADD => Some(ConstValue::Float(left + right)),
-        FMIRIntrinsicFBinOp::FSUB => Some(ConstValue::Float(left - right)),
-        FMIRIntrinsicFBinOp::FMUL => Some(ConstValue::Float(left * right)),
-        FMIRIntrinsicFBinOp::FDIV => Some(ConstValue::Float(left / right)),
-        FMIRIntrinsicFBinOp::FEQ => Some(ConstValue::Bool(left == right)),
-        FMIRIntrinsicFBinOp::FNE => Some(ConstValue::Bool(left != right)),
-        FMIRIntrinsicFBinOp::FLT => Some(ConstValue::Bool(left < right)),
-        FMIRIntrinsicFBinOp::FLE => Some(ConstValue::Bool(left <= right)),
-        FMIRIntrinsicFBinOp::FGT => Some(ConstValue::Bool(left > right)),
-        FMIRIntrinsicFBinOp::FGE => Some(ConstValue::Bool(left >= right)),
-    }
-}
-
-fn eval_binary_intrinsic(
-    intrinsic: &FMIRBinaryIntrinsic,
-    left: ConstValue,
-    right: ConstValue,
-) -> Option<ConstValue> {
-    match intrinsic {
-        FMIRBinaryIntrinsic::Integer { op, .. } => {
-            let left = match left {
-                ConstValue::Int(value) => value,
-                ConstValue::Bool(value) => bool_to_int(value),
-                _ => return None,
-            };
-            let right = match right {
-                ConstValue::Int(value) => value,
-                ConstValue::Bool(value) => bool_to_int(value),
-                _ => return None,
-            };
-            eval_int_binary_operator(op, left, right)
-        }
-        FMIRBinaryIntrinsic::Float { op, .. } => {
-            let left = match left {
-                ConstValue::Float(value) => value,
-                _ => return None,
-            };
-            let right = match right {
-                ConstValue::Float(value) => value,
-                _ => return None,
-            };
-            eval_float_binary_operator(op, left, right)
-        }
-        FMIRBinaryIntrinsic::Pointer { op } => {
-            let op = match op {
-                FMIRPointerBinaryIntrinsicOp::EQ => FMIRIntrinsicIBinOp::EQ,
-                FMIRPointerBinaryIntrinsicOp::NE => FMIRIntrinsicIBinOp::NE,
-                FMIRPointerBinaryIntrinsicOp::LT => FMIRIntrinsicIBinOp::LT,
-                FMIRPointerBinaryIntrinsicOp::GT => FMIRIntrinsicIBinOp::GT,
-                FMIRPointerBinaryIntrinsicOp::LE => FMIRIntrinsicIBinOp::LE,
-                FMIRPointerBinaryIntrinsicOp::GE => FMIRIntrinsicIBinOp::GE,
-            };
-
-            let left = match left {
-                ConstValue::Int(value) => value,
-                _ => return None,
-            };
-            let right = match right {
-                ConstValue::Int(value) => value,
-                _ => return None,
-            };
-            eval_int_binary_operator(&op, left, right)
-        }
-        FMIRBinaryIntrinsic::PointerDiff { op } => {
-            let op = match op {
-                FMIRPointerDiffBinaryIntrinsicOp::ADD => FMIRIntrinsicIBinOp::ADD,
-                FMIRPointerDiffBinaryIntrinsicOp::SUB => FMIRIntrinsicIBinOp::SUB,
-            };
-
-            let left = match left {
-                ConstValue::Int(value) => value,
-                _ => return None,
-            };
-            let right = match right {
-                ConstValue::Int(value) => value,
-                _ => return None,
-            };
-            eval_int_binary_operator(&op, left, right)
-        }
-    }
-}
-
-fn eval_cast_intrinsic(op: &FMIRCastIntrinsic, value: ConstValue) -> Option<ConstValue> {
-    match (op, value) {
-        (FMIRCastIntrinsic::IntToBool, ConstValue::Bool(value)) => Some(ConstValue::Bool(value)),
-        (FMIRCastIntrinsic::IntToBool, ConstValue::Int(value)) => {
-            Some(ConstValue::Bool(int_to_bool(value)))
-        }
-        _ => None,
-    }
-}
-
 fn evaluate_const(
     node: &FMIRNode,
     scoped_variables: &HashMap<String, ConstValue>,
@@ -466,8 +212,8 @@ fn evaluate_const(
 
             if let FMIRNodeBody::IntrinsicFunction(intrinsic) = &function.body {
                 return match &intrinsic.kind {
-                    FMIRIntrinsicKind::Unary(op) => eval_unary_intrinsic(op, argument_value),
-                    FMIRIntrinsicKind::Cast(op) => eval_cast_intrinsic(op, argument_value),
+                    FMIRIntrinsicKind::Unary(op) => unary::eval_unary(op, argument_value),
+                    FMIRIntrinsicKind::Cast(op)  => unary::eval_cast(op, argument_value),
                     FMIRIntrinsicKind::Binary(_) => None,
                 };
             }
@@ -488,7 +234,7 @@ fn evaluate_const(
             };
 
             let left_value = evaluate_const(left_argument, scoped_variables)?;
-            eval_binary_intrinsic(binary_intrinsic, left_value, argument_value)
+            binary::eval_binop(binary_intrinsic, left_value, argument_value)
         }
         _ => None,
     }

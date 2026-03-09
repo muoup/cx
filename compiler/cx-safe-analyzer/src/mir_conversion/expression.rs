@@ -307,23 +307,20 @@ pub fn convert_expression(
         }
 
         MIRExpressionKind::UnaryOperation { operand, op } => {
-            if let MIRUnOp::PreIncrement(amount) = op {
-                return Ok(with_expression_range(
+            match op {
+                MIRUnOp::PreIncrement(amount) => return Ok(with_expression_range(
                     convert_increment(env, operand, *amount, true)?,
                     mir_expr,
-                ));
-            }
-            if let MIRUnOp::PostIncrement(amount) = op {
-                return Ok(with_expression_range(
+                )),
+                MIRUnOp::PostIncrement(amount) => return Ok(with_expression_range(
                     convert_increment(env, operand, *amount, false)?,
                     mir_expr,
-                ));
+                )),
+                _ => {}
             }
 
             let operand_node = convert_expression(env, operand)?;
-            let Some(intrinsic) = unary_op_intrinsic(op) else {
-                return unsupported_expression_error(env, mir_expr);
-            };
+            let intrinsic = unary_op_intrinsic(op);
             let result = app1(
                 FMIRIntrinsicKind::Unary(intrinsic),
                 operand_node.clone(),
