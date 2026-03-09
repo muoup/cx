@@ -39,11 +39,11 @@ pub enum FMIRCastIntrinsic {
 
 #[derive(Clone, Debug)]
 pub enum FMIRUnaryIntrinsic {
-    Neg,
-    INeg,
-    FNeg,
-    BNot,
-    LNot,
+    NEG,
+    INEG,
+    FNEG,
+    BNOT,
+    LNOT,
 }
 
 #[derive(Clone, Debug)]
@@ -66,29 +66,29 @@ pub enum FMIRBinaryIntrinsic {
 
 #[derive(Clone, Debug)]
 pub enum FMIRIntrinsicIBinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    IMul,
-    IDiv,
-    IMod,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    ILt,
-    ILe,
-    IGt,
-    IGe,
-    LAnd,
-    LOr,
-    BAnd,
-    BOr,
-    BXor,
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    MOD,
+    IMUL,
+    IDIV,
+    IMOD,
+    EQ,
+    NE,
+    LT,
+    LE,
+    GT,
+    GE,
+    ILT,
+    ILE,
+    IGT,
+    IGE,
+    LAND,
+    LOR,
+    BAND,
+    BOR,
+    BXOR,
 }
 
 #[derive(Clone, Debug)]
@@ -97,7 +97,7 @@ pub enum FMIRIntrinsicFBinOp {
     FSUB,
     FMUL,
     FDIV,
-    EQ,
+    FEQ,
     FNE,
     FLT,
     FLE,
@@ -107,16 +107,16 @@ pub enum FMIRIntrinsicFBinOp {
 
 #[derive(Clone, Debug)]
 pub enum FMIRPointerBinaryIntrinsicOp {
-    Eq,
-    Ne,
-    Lt,
-    Gt,
-    Le,
-    Ge,
+    EQ,
+    NE,
+    LT,
+    GT,
+    LE,
+    GE,
 }
 
 #[derive(Clone, Debug)]
 pub enum FMIRPointerDiffBinaryIntrinsicOp {
-    Add,
-    Sub,
+    ADD,
+    SUB,
 }

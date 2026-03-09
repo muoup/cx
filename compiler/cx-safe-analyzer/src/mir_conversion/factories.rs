@@ -67,41 +67,47 @@ pub(crate) fn chain_statements(statements: Vec<FMIRNode>) -> FMIRNode {
 }
 
 pub(crate) fn unary_op_intrinsic(op: &MIRUnOp) -> Option<FMIRUnaryIntrinsic> {
+    use MIRUnOp as MIR;
+    use FMIRUnaryIntrinsic as FMIR;
+
     Some(match op {
-        MIRUnOp::NEG => FMIRUnaryIntrinsic::Neg,
-        MIRUnOp::INEG => FMIRUnaryIntrinsic::INeg,
-        MIRUnOp::FNEG => FMIRUnaryIntrinsic::FNeg,
-        MIRUnOp::BNOT => FMIRUnaryIntrinsic::BNot,
-        MIRUnOp::LNOT => FMIRUnaryIntrinsic::LNot,
-        MIRUnOp::PreIncrement(_) | MIRUnOp::PostIncrement(_) => return None,
+        MIR::NEG  => FMIR::NEG,
+        MIR::INEG => FMIR::INEG,
+        MIR::FNEG => FMIR::FNEG,
+        MIR::BNOT => FMIR::BNOT,
+        MIR::LNOT => FMIR::LNOT,
+        MIR::PreIncrement(_) | MIR::PostIncrement(_) => return None,
     })
 }
 
 pub(crate) fn int_binop_intrinsic(op: &MIRIntegerBinOp) -> FMIRIntrinsicIBinOp {
+    use MIRIntegerBinOp as MIR;
+    use FMIRIntrinsicIBinOp as FMIR;
+
     match op {
-        MIRIntegerBinOp::ADD => FMIRIntrinsicIBinOp::Add,
-        MIRIntegerBinOp::SUB => FMIRIntrinsicIBinOp::Sub,
-        MIRIntegerBinOp::MUL => FMIRIntrinsicIBinOp::Mul,
-        MIRIntegerBinOp::DIV => FMIRIntrinsicIBinOp::Div,
-        MIRIntegerBinOp::MOD => FMIRIntrinsicIBinOp::Mod,
-        MIRIntegerBinOp::IMUL => FMIRIntrinsicIBinOp::IMul,
-        MIRIntegerBinOp::IDIV => FMIRIntrinsicIBinOp::IDiv,
-        MIRIntegerBinOp::IMOD => FMIRIntrinsicIBinOp::IMod,
-        MIRIntegerBinOp::EQ => FMIRIntrinsicIBinOp::Eq,
-        MIRIntegerBinOp::NE => FMIRIntrinsicIBinOp::Ne,
-        MIRIntegerBinOp::LT => FMIRIntrinsicIBinOp::Lt,
-        MIRIntegerBinOp::LE => FMIRIntrinsicIBinOp::Le,
-        MIRIntegerBinOp::GT => FMIRIntrinsicIBinOp::Gt,
-        MIRIntegerBinOp::GE => FMIRIntrinsicIBinOp::Ge,
-        MIRIntegerBinOp::ILT => FMIRIntrinsicIBinOp::ILt,
-        MIRIntegerBinOp::ILE => FMIRIntrinsicIBinOp::ILe,
-        MIRIntegerBinOp::IGT => FMIRIntrinsicIBinOp::IGt,
-        MIRIntegerBinOp::IGE => FMIRIntrinsicIBinOp::IGe,
-        MIRIntegerBinOp::LAND => FMIRIntrinsicIBinOp::LAnd,
-        MIRIntegerBinOp::LOR => FMIRIntrinsicIBinOp::LOr,
-        MIRIntegerBinOp::BAND => FMIRIntrinsicIBinOp::BAnd,
-        MIRIntegerBinOp::BOR => FMIRIntrinsicIBinOp::BOr,
-        MIRIntegerBinOp::BXOR => FMIRIntrinsicIBinOp::BXor,
+        MIR::ADD  => FMIR::ADD,
+        MIR::SUB  => FMIR::SUB,
+        MIR::MUL  => FMIR::MUL,
+        MIR::DIV  => FMIR::DIV,
+        MIR::MOD  => FMIR::MOD,
+        MIR::IMUL => FMIR::IMUL,
+        MIR::IDIV => FMIR::IDIV,
+        MIR::IMOD => FMIR::IMOD,
+        MIR::EQ   => FMIR::EQ,
+        MIR::NE   => FMIR::NE,
+        MIR::LT   => FMIR::LT,
+        MIR::LE   => FMIR::LE,
+        MIR::GT   => FMIR::GT,
+        MIR::GE   => FMIR::GE,
+        MIR::ILT  => FMIR::ILT,
+        MIR::ILE  => FMIR::ILE,
+        MIR::IGT  => FMIR::IGT,
+        MIR::IGE  => FMIR::IGE,
+        MIR::LAND => FMIR::LAND,
+        MIR::LOR  => FMIR::LOR,
+        MIR::BAND => FMIR::BAND,
+        MIR::BOR  => FMIR::BOR,
+        MIR::BXOR => FMIR::BXOR,
     }
 }
 
@@ -114,7 +120,7 @@ pub(crate) fn float_binop_intrinsic(op: &MIRFloatBinOp) -> FMIRIntrinsicFBinOp {
         MIR::FSUB    => FMIR::FSUB,
         MIR::FMUL    => FMIR::FMUL,
         MIR::FDIV    => FMIR::FDIV,
-        MIR::FEQ     => FMIR::EQ,
+        MIR::FEQ     => FMIR::FEQ,
         MIR::FNE     => FMIR::FNE,
         MIR::FLT     => FMIR::FLT,
         MIR::FLE     => FMIR::FLE,
@@ -124,20 +130,26 @@ pub(crate) fn float_binop_intrinsic(op: &MIRFloatBinOp) -> FMIRIntrinsicFBinOp {
 }
 
 pub(crate) fn ptrdiff_binop_intrinsic(op: &MIRPtrDiffBinOp) -> FMIRPointerDiffBinaryIntrinsicOp {
+    use MIRPtrDiffBinOp as MIR;
+    use FMIRPointerDiffBinaryIntrinsicOp as FMIR;
+
     match op {
-        MIRPtrDiffBinOp::ADD => FMIRPointerDiffBinaryIntrinsicOp::Add,
-        MIRPtrDiffBinOp::SUB => FMIRPointerDiffBinaryIntrinsicOp::Sub,
+        MIR::ADD => FMIR::ADD,
+        MIR::SUB => FMIR::SUB,
     }
 }
 
 pub(crate) fn ptr_binop_intrinsic(op: &MIRPtrBinOp) -> FMIRPointerBinaryIntrinsicOp {
+    use MIRPtrBinOp as MIR;
+    use FMIRPointerBinaryIntrinsicOp as FMIR;
+
     match op {
-        MIRPtrBinOp::EQ => FMIRPointerBinaryIntrinsicOp::Eq,
-        MIRPtrBinOp::NE => FMIRPointerBinaryIntrinsicOp::Ne,
-        MIRPtrBinOp::LT => FMIRPointerBinaryIntrinsicOp::Lt,
-        MIRPtrBinOp::GT => FMIRPointerBinaryIntrinsicOp::Gt,
-        MIRPtrBinOp::LE => FMIRPointerBinaryIntrinsicOp::Le,
-        MIRPtrBinOp::GE => FMIRPointerBinaryIntrinsicOp::Ge,
+        MIR::EQ => FMIR::EQ,
+        MIR::NE => FMIR::NE,
+        MIR::LT => FMIR::LT,
+        MIR::GT => FMIR::GT,
+        MIR::LE => FMIR::LE,
+        MIR::GE => FMIR::GE,
     }
 }
 
@@ -353,15 +365,15 @@ pub(crate) fn convert_increment(
         MIRTypeKind::Integer { _type, .. } => (
             FMIRIntrinsicKind::Binary(FMIRBinaryIntrinsic::Integer {
                 bits: _type.bytes() * 8,
-                op: FMIRIntrinsicIBinOp::Add,
+                op: FMIRIntrinsicIBinOp::ADD,
             }),
             increment_amount_node(i64::from(amount), &value_type)?,
         ),
         MIRTypeKind::PointerTo { .. } => {
             let op = if amount < 0 {
-                FMIRPointerDiffBinaryIntrinsicOp::Sub
+                FMIRPointerDiffBinaryIntrinsicOp::SUB
             } else {
-                FMIRPointerDiffBinaryIntrinsicOp::Add
+                FMIRPointerDiffBinaryIntrinsicOp::ADD
             };
             let delta_type = MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I64,
