@@ -7,6 +7,7 @@ use crate::mir_conversion::environment::FMIREnvironment;
 mod expression;
 
 pub(crate) mod environment;
+pub(crate) mod factories;
 
 pub fn convert_mir(env: &mut FMIREnvironment, mir_fn: &MIRFunction) -> CXResult<FMIRFunction> {
     env.begin_function(mir_fn.prototype.clone());

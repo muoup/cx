@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 
 use crate::ast::*;
+use crate::intrinsic::*;
 
 impl Display for MemoryLocation {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -175,49 +176,49 @@ impl Display for FMIRBinaryIntrinsic {
     }
 }
 
-impl Display for FMIRIntegerBinaryIntrinsicOp {
+impl Display for FMIRIntrinsicIBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRIntegerBinaryIntrinsicOp::Add => write!(f, "add"),
-            FMIRIntegerBinaryIntrinsicOp::Sub => write!(f, "sub"),
-            FMIRIntegerBinaryIntrinsicOp::Mul => write!(f, "mul"),
-            FMIRIntegerBinaryIntrinsicOp::Div => write!(f, "div"),
-            FMIRIntegerBinaryIntrinsicOp::Mod => write!(f, "mod"),
-            FMIRIntegerBinaryIntrinsicOp::IMul => write!(f, "imul"),
-            FMIRIntegerBinaryIntrinsicOp::IDiv => write!(f, "idiv"),
-            FMIRIntegerBinaryIntrinsicOp::IMod => write!(f, "imod"),
-            FMIRIntegerBinaryIntrinsicOp::Eq => write!(f, "eq"),
-            FMIRIntegerBinaryIntrinsicOp::Ne => write!(f, "ne"),
-            FMIRIntegerBinaryIntrinsicOp::Lt => write!(f, "lt"),
-            FMIRIntegerBinaryIntrinsicOp::Le => write!(f, "le"),
-            FMIRIntegerBinaryIntrinsicOp::Gt => write!(f, "gt"),
-            FMIRIntegerBinaryIntrinsicOp::Ge => write!(f, "ge"),
-            FMIRIntegerBinaryIntrinsicOp::ILt => write!(f, "ilt"),
-            FMIRIntegerBinaryIntrinsicOp::ILe => write!(f, "ile"),
-            FMIRIntegerBinaryIntrinsicOp::IGt => write!(f, "igt"),
-            FMIRIntegerBinaryIntrinsicOp::IGe => write!(f, "ige"),
-            FMIRIntegerBinaryIntrinsicOp::LAnd => write!(f, "land"),
-            FMIRIntegerBinaryIntrinsicOp::LOr => write!(f, "lor"),
-            FMIRIntegerBinaryIntrinsicOp::BAnd => write!(f, "band"),
-            FMIRIntegerBinaryIntrinsicOp::BOr => write!(f, "bor"),
-            FMIRIntegerBinaryIntrinsicOp::BXor => write!(f, "bxor"),
+            FMIRIntrinsicIBinOp::Add => write!(f, "add"),
+            FMIRIntrinsicIBinOp::Sub => write!(f, "sub"),
+            FMIRIntrinsicIBinOp::Mul => write!(f, "mul"),
+            FMIRIntrinsicIBinOp::Div => write!(f, "div"),
+            FMIRIntrinsicIBinOp::Mod => write!(f, "mod"),
+            FMIRIntrinsicIBinOp::IMul => write!(f, "imul"),
+            FMIRIntrinsicIBinOp::IDiv => write!(f, "idiv"),
+            FMIRIntrinsicIBinOp::IMod => write!(f, "imod"),
+            FMIRIntrinsicIBinOp::Eq => write!(f, "eq"),
+            FMIRIntrinsicIBinOp::Ne => write!(f, "ne"),
+            FMIRIntrinsicIBinOp::Lt => write!(f, "lt"),
+            FMIRIntrinsicIBinOp::Le => write!(f, "le"),
+            FMIRIntrinsicIBinOp::Gt => write!(f, "gt"),
+            FMIRIntrinsicIBinOp::Ge => write!(f, "ge"),
+            FMIRIntrinsicIBinOp::ILt => write!(f, "ilt"),
+            FMIRIntrinsicIBinOp::ILe => write!(f, "ile"),
+            FMIRIntrinsicIBinOp::IGt => write!(f, "igt"),
+            FMIRIntrinsicIBinOp::IGe => write!(f, "ige"),
+            FMIRIntrinsicIBinOp::LAnd => write!(f, "land"),
+            FMIRIntrinsicIBinOp::LOr => write!(f, "lor"),
+            FMIRIntrinsicIBinOp::BAnd => write!(f, "band"),
+            FMIRIntrinsicIBinOp::BOr => write!(f, "bor"),
+            FMIRIntrinsicIBinOp::BXor => write!(f, "bxor"),
         }
     }
 }
 
-impl Display for FMIRFloatBinaryIntrinsicOp {
+impl Display for FMIRIntrinsicFBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRFloatBinaryIntrinsicOp::Add => write!(f, "add"),
-            FMIRFloatBinaryIntrinsicOp::Sub => write!(f, "sub"),
-            FMIRFloatBinaryIntrinsicOp::Mul => write!(f, "mul"),
-            FMIRFloatBinaryIntrinsicOp::Div => write!(f, "div"),
-            FMIRFloatBinaryIntrinsicOp::Eq => write!(f, "eq"),
-            FMIRFloatBinaryIntrinsicOp::Ne => write!(f, "ne"),
-            FMIRFloatBinaryIntrinsicOp::Lt => write!(f, "lt"),
-            FMIRFloatBinaryIntrinsicOp::Le => write!(f, "le"),
-            FMIRFloatBinaryIntrinsicOp::Gt => write!(f, "gt"),
-            FMIRFloatBinaryIntrinsicOp::Ge => write!(f, "ge"),
+            FMIRIntrinsicFBinOp::Add => write!(f, "add"),
+            FMIRIntrinsicFBinOp::Sub => write!(f, "sub"),
+            FMIRIntrinsicFBinOp::Mul => write!(f, "mul"),
+            FMIRIntrinsicFBinOp::Div => write!(f, "div"),
+            FMIRIntrinsicFBinOp::Eq => write!(f, "eq"),
+            FMIRIntrinsicFBinOp::Ne => write!(f, "ne"),
+            FMIRIntrinsicFBinOp::Lt => write!(f, "lt"),
+            FMIRIntrinsicFBinOp::Le => write!(f, "le"),
+            FMIRIntrinsicFBinOp::Gt => write!(f, "gt"),
+            FMIRIntrinsicFBinOp::Ge => write!(f, "ge"),
         }
     }
 }

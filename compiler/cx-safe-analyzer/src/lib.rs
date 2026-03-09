@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
-use cx_safe_ir::ast::{
-    FMIRBinaryIntrinsic, FMIRCastIntrinsic, FMIRFloatBinaryIntrinsicOp, FMIRFunction,
-    FMIRIntegerBinaryIntrinsicOp, FMIRIntrinsicKind, FMIRNode, FMIRNodeBody,
-    FMIRPointerBinaryIntrinsicOp, FMIRPointerDiffBinaryIntrinsicOp, FMIRSourceRange,
-    FMIRUnaryIntrinsic,
+use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRNodeBody, FMIRSourceRange};
+use cx_safe_ir::intrinsic::{
+    FMIRBinaryIntrinsic, FMIRCastIntrinsic, FMIRIntrinsicFBinOp,
+    FMIRIntrinsicIBinOp, FMIRIntrinsicKind, FMIRPointerBinaryIntrinsicOp,
+    FMIRPointerDiffBinaryIntrinsicOp, FMIRUnaryIntrinsic,
 };
 use cx_util::{CXError, CXErrorTrait, CXResult};
 
@@ -278,72 +278,72 @@ fn eval_unary_intrinsic(op: &FMIRUnaryIntrinsic, arg: ConstValue) -> Option<Cons
 }
 
 fn eval_int_binary_operator(
-    op: &FMIRIntegerBinaryIntrinsicOp,
+    op: &FMIRIntrinsicIBinOp,
     left: i64,
     right: i64,
 ) -> Option<ConstValue> {
     match op {
-        FMIRIntegerBinaryIntrinsicOp::Add => Some(ConstValue::Int(left + right)),
-        FMIRIntegerBinaryIntrinsicOp::Sub => Some(ConstValue::Int(left - right)),
-        FMIRIntegerBinaryIntrinsicOp::Mul | FMIRIntegerBinaryIntrinsicOp::IMul => {
+        FMIRIntrinsicIBinOp::Add => Some(ConstValue::Int(left + right)),
+        FMIRIntrinsicIBinOp::Sub => Some(ConstValue::Int(left - right)),
+        FMIRIntrinsicIBinOp::Mul | FMIRIntrinsicIBinOp::IMul => {
             Some(ConstValue::Int(left * right))
         }
-        FMIRIntegerBinaryIntrinsicOp::Div | FMIRIntegerBinaryIntrinsicOp::IDiv => {
+        FMIRIntrinsicIBinOp::Div | FMIRIntrinsicIBinOp::IDiv => {
             if right == 0 {
                 None
             } else {
                 Some(ConstValue::Int(left / right))
             }
         }
-        FMIRIntegerBinaryIntrinsicOp::Mod | FMIRIntegerBinaryIntrinsicOp::IMod => {
+        FMIRIntrinsicIBinOp::Mod | FMIRIntrinsicIBinOp::IMod => {
             if right == 0 {
                 None
             } else {
                 Some(ConstValue::Int(left % right))
             }
         }
-        FMIRIntegerBinaryIntrinsicOp::Eq => Some(ConstValue::Bool(left == right)),
-        FMIRIntegerBinaryIntrinsicOp::Ne => Some(ConstValue::Bool(left != right)),
-        FMIRIntegerBinaryIntrinsicOp::Lt | FMIRIntegerBinaryIntrinsicOp::ILt => {
+        FMIRIntrinsicIBinOp::Eq => Some(ConstValue::Bool(left == right)),
+        FMIRIntrinsicIBinOp::Ne => Some(ConstValue::Bool(left != right)),
+        FMIRIntrinsicIBinOp::Lt | FMIRIntrinsicIBinOp::ILt => {
             Some(ConstValue::Bool(left < right))
         }
-        FMIRIntegerBinaryIntrinsicOp::Le | FMIRIntegerBinaryIntrinsicOp::ILe => {
+        FMIRIntrinsicIBinOp::Le | FMIRIntrinsicIBinOp::ILe => {
             Some(ConstValue::Bool(left <= right))
         }
-        FMIRIntegerBinaryIntrinsicOp::Gt | FMIRIntegerBinaryIntrinsicOp::IGt => {
+        FMIRIntrinsicIBinOp::Gt | FMIRIntrinsicIBinOp::IGt => {
             Some(ConstValue::Bool(left > right))
         }
-        FMIRIntegerBinaryIntrinsicOp::Ge | FMIRIntegerBinaryIntrinsicOp::IGe => {
+        FMIRIntrinsicIBinOp::Ge | FMIRIntrinsicIBinOp::IGe => {
             Some(ConstValue::Bool(left >= right))
         }
-        FMIRIntegerBinaryIntrinsicOp::LAnd => {
+        FMIRIntrinsicIBinOp::LAnd => {
             Some(ConstValue::Bool(int_to_bool(left) && int_to_bool(right)))
         }
-        FMIRIntegerBinaryIntrinsicOp::LOr => {
+        FMIRIntrinsicIBinOp::LOr => {
             Some(ConstValue::Bool(int_to_bool(left) || int_to_bool(right)))
         }
-        FMIRIntegerBinaryIntrinsicOp::BAnd => Some(ConstValue::Int(left & right)),
-        FMIRIntegerBinaryIntrinsicOp::BOr => Some(ConstValue::Int(left | right)),
-        FMIRIntegerBinaryIntrinsicOp::BXor => Some(ConstValue::Int(left ^ right)),
+        FMIRIntrinsicIBinOp::BAnd => Some(ConstValue::Int(left & right)),
+        FMIRIntrinsicIBinOp::BOr => Some(ConstValue::Int(left | right)),
+        FMIRIntrinsicIBinOp::BXor => Some(ConstValue::Int(left ^ right)),
     }
 }
 
 fn eval_float_binary_operator(
-    op: &FMIRFloatBinaryIntrinsicOp,
+    op: &FMIRIntrinsicFBinOp,
     left: f64,
     right: f64,
 ) -> Option<ConstValue> {
     match op {
-        FMIRFloatBinaryIntrinsicOp::Add => Some(ConstValue::Float(left + right)),
-        FMIRFloatBinaryIntrinsicOp::Sub => Some(ConstValue::Float(left - right)),
-        FMIRFloatBinaryIntrinsicOp::Mul => Some(ConstValue::Float(left * right)),
-        FMIRFloatBinaryIntrinsicOp::Div => Some(ConstValue::Float(left / right)),
-        FMIRFloatBinaryIntrinsicOp::Eq => Some(ConstValue::Bool(left == right)),
-        FMIRFloatBinaryIntrinsicOp::Ne => Some(ConstValue::Bool(left != right)),
-        FMIRFloatBinaryIntrinsicOp::Lt => Some(ConstValue::Bool(left < right)),
-        FMIRFloatBinaryIntrinsicOp::Le => Some(ConstValue::Bool(left <= right)),
-        FMIRFloatBinaryIntrinsicOp::Gt => Some(ConstValue::Bool(left > right)),
-        FMIRFloatBinaryIntrinsicOp::Ge => Some(ConstValue::Bool(left >= right)),
+        FMIRIntrinsicFBinOp::Add => Some(ConstValue::Float(left + right)),
+        FMIRIntrinsicFBinOp::Sub => Some(ConstValue::Float(left - right)),
+        FMIRIntrinsicFBinOp::Mul => Some(ConstValue::Float(left * right)),
+        FMIRIntrinsicFBinOp::Div => Some(ConstValue::Float(left / right)),
+        FMIRIntrinsicFBinOp::Eq => Some(ConstValue::Bool(left == right)),
+        FMIRIntrinsicFBinOp::Ne => Some(ConstValue::Bool(left != right)),
+        FMIRIntrinsicFBinOp::Lt => Some(ConstValue::Bool(left < right)),
+        FMIRIntrinsicFBinOp::Le => Some(ConstValue::Bool(left <= right)),
+        FMIRIntrinsicFBinOp::Gt => Some(ConstValue::Bool(left > right)),
+        FMIRIntrinsicFBinOp::Ge => Some(ConstValue::Bool(left >= right)),
     }
 }
 
@@ -379,12 +379,12 @@ fn eval_binary_intrinsic(
         }
         FMIRBinaryIntrinsic::Pointer { op } => {
             let op = match op {
-                FMIRPointerBinaryIntrinsicOp::Eq => FMIRIntegerBinaryIntrinsicOp::Eq,
-                FMIRPointerBinaryIntrinsicOp::Ne => FMIRIntegerBinaryIntrinsicOp::Ne,
-                FMIRPointerBinaryIntrinsicOp::Lt => FMIRIntegerBinaryIntrinsicOp::Lt,
-                FMIRPointerBinaryIntrinsicOp::Gt => FMIRIntegerBinaryIntrinsicOp::Gt,
-                FMIRPointerBinaryIntrinsicOp::Le => FMIRIntegerBinaryIntrinsicOp::Le,
-                FMIRPointerBinaryIntrinsicOp::Ge => FMIRIntegerBinaryIntrinsicOp::Ge,
+                FMIRPointerBinaryIntrinsicOp::Eq => FMIRIntrinsicIBinOp::Eq,
+                FMIRPointerBinaryIntrinsicOp::Ne => FMIRIntrinsicIBinOp::Ne,
+                FMIRPointerBinaryIntrinsicOp::Lt => FMIRIntrinsicIBinOp::Lt,
+                FMIRPointerBinaryIntrinsicOp::Gt => FMIRIntrinsicIBinOp::Gt,
+                FMIRPointerBinaryIntrinsicOp::Le => FMIRIntrinsicIBinOp::Le,
+                FMIRPointerBinaryIntrinsicOp::Ge => FMIRIntrinsicIBinOp::Ge,
             };
 
             let left = match left {
@@ -399,8 +399,8 @@ fn eval_binary_intrinsic(
         }
         FMIRBinaryIntrinsic::PointerDiff { op } => {
             let op = match op {
-                FMIRPointerDiffBinaryIntrinsicOp::Add => FMIRIntegerBinaryIntrinsicOp::Add,
-                FMIRPointerDiffBinaryIntrinsicOp::Sub => FMIRIntegerBinaryIntrinsicOp::Sub,
+                FMIRPointerDiffBinaryIntrinsicOp::Add => FMIRIntrinsicIBinOp::Add,
+                FMIRPointerDiffBinaryIntrinsicOp::Sub => FMIRIntrinsicIBinOp::Sub,
             };
 
             let left = match left {
