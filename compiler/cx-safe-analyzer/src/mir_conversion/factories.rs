@@ -110,16 +110,16 @@ pub(crate) fn float_binop_intrinsic(op: &MIRFloatBinOp) -> FMIRIntrinsicFBinOp {
     use FMIRIntrinsicFBinOp as FMIR;
     
     match op {
-        MIR::FADD    => FMIR::Add,
-        MIR::FSUB    => FMIR::Sub,
-        MIR::FMUL    => FMIR::Mul,
-        MIR::FDIV    => FMIR::Div,
-        MIR::EQ      => FMIR::Eq,
-        MIR::NEQ     => FMIR::Ne,
-        MIR::FLT     => FMIR::Lt,
-        MIR::FLE     => FMIR::Le,
-        MIR::FGT     => FMIR::Gt,
-        MIR::FGE     => FMIR::Ge,
+        MIR::FADD    => FMIR::FADD,
+        MIR::FSUB    => FMIR::FSUB,
+        MIR::FMUL    => FMIR::FMUL,
+        MIR::FDIV    => FMIR::FDIV,
+        MIR::FEQ     => FMIR::EQ,
+        MIR::FNE     => FMIR::FNE,
+        MIR::FLT     => FMIR::FLT,
+        MIR::FLE     => FMIR::FLE,
+        MIR::FGT     => FMIR::FGT,
+        MIR::FGE     => FMIR::FGE,
     }
 }
 

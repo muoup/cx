@@ -334,16 +334,16 @@ fn eval_float_binary_operator(
     right: f64,
 ) -> Option<ConstValue> {
     match op {
-        FMIRIntrinsicFBinOp::Add => Some(ConstValue::Float(left + right)),
-        FMIRIntrinsicFBinOp::Sub => Some(ConstValue::Float(left - right)),
-        FMIRIntrinsicFBinOp::Mul => Some(ConstValue::Float(left * right)),
-        FMIRIntrinsicFBinOp::Div => Some(ConstValue::Float(left / right)),
-        FMIRIntrinsicFBinOp::Eq => Some(ConstValue::Bool(left == right)),
-        FMIRIntrinsicFBinOp::Ne => Some(ConstValue::Bool(left != right)),
-        FMIRIntrinsicFBinOp::Lt => Some(ConstValue::Bool(left < right)),
-        FMIRIntrinsicFBinOp::Le => Some(ConstValue::Bool(left <= right)),
-        FMIRIntrinsicFBinOp::Gt => Some(ConstValue::Bool(left > right)),
-        FMIRIntrinsicFBinOp::Ge => Some(ConstValue::Bool(left >= right)),
+        FMIRIntrinsicFBinOp::FADD => Some(ConstValue::Float(left + right)),
+        FMIRIntrinsicFBinOp::FSUB => Some(ConstValue::Float(left - right)),
+        FMIRIntrinsicFBinOp::FMUL => Some(ConstValue::Float(left * right)),
+        FMIRIntrinsicFBinOp::FDIV => Some(ConstValue::Float(left / right)),
+        FMIRIntrinsicFBinOp::EQ => Some(ConstValue::Bool(left == right)),
+        FMIRIntrinsicFBinOp::FNE => Some(ConstValue::Bool(left != right)),
+        FMIRIntrinsicFBinOp::FLT => Some(ConstValue::Bool(left < right)),
+        FMIRIntrinsicFBinOp::FLE => Some(ConstValue::Bool(left <= right)),
+        FMIRIntrinsicFBinOp::FGT => Some(ConstValue::Bool(left > right)),
+        FMIRIntrinsicFBinOp::FGE => Some(ConstValue::Bool(left >= right)),
     }
 }
 

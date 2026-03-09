@@ -822,14 +822,14 @@ pub(crate) fn typecheck_float_float_binop(
                 _type: MIRIntegerType::I1,
                 signed: false,
             }),
-            MIRFloatBinOp::EQ,
+            MIRFloatBinOp::FEQ,
         ),
         CXBinOp::NotEqual => (
             MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I1,
                 signed: false,
             }),
-            MIRFloatBinOp::NEQ,
+            MIRFloatBinOp::FNE,
         ),
         CXBinOp::Less => (
             MIRType::from(MIRTypeKind::Integer {

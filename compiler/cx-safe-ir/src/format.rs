@@ -209,16 +209,16 @@ impl Display for FMIRIntrinsicIBinOp {
 impl Display for FMIRIntrinsicFBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRIntrinsicFBinOp::Add => write!(f, "add"),
-            FMIRIntrinsicFBinOp::Sub => write!(f, "sub"),
-            FMIRIntrinsicFBinOp::Mul => write!(f, "mul"),
-            FMIRIntrinsicFBinOp::Div => write!(f, "div"),
-            FMIRIntrinsicFBinOp::Eq => write!(f, "eq"),
-            FMIRIntrinsicFBinOp::Ne => write!(f, "ne"),
-            FMIRIntrinsicFBinOp::Lt => write!(f, "lt"),
-            FMIRIntrinsicFBinOp::Le => write!(f, "le"),
-            FMIRIntrinsicFBinOp::Gt => write!(f, "gt"),
-            FMIRIntrinsicFBinOp::Ge => write!(f, "ge"),
+            FMIRIntrinsicFBinOp::FADD => write!(f, "add"),
+            FMIRIntrinsicFBinOp::FSUB => write!(f, "sub"),
+            FMIRIntrinsicFBinOp::FMUL => write!(f, "mul"),
+            FMIRIntrinsicFBinOp::FDIV => write!(f, "div"),
+            FMIRIntrinsicFBinOp::EQ => write!(f, "eq"),
+            FMIRIntrinsicFBinOp::FNE => write!(f, "ne"),
+            FMIRIntrinsicFBinOp::FLT => write!(f, "lt"),
+            FMIRIntrinsicFBinOp::FLE => write!(f, "le"),
+            FMIRIntrinsicFBinOp::FGT => write!(f, "gt"),
+            FMIRIntrinsicFBinOp::FGE => write!(f, "ge"),
         }
     }
 }

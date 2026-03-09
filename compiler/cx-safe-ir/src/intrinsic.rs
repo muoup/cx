@@ -93,16 +93,16 @@ pub enum FMIRIntrinsicIBinOp {
 
 #[derive(Clone, Debug)]
 pub enum FMIRIntrinsicFBinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+    FADD,
+    FSUB,
+    FMUL,
+    FDIV,
+    EQ,
+    FNE,
+    FLT,
+    FLE,
+    FGT,
+    FGE,
 }
 
 #[derive(Clone, Debug)]
