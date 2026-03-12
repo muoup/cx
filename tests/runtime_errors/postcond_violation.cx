@@ -1,4 +1,4 @@
-int sum(int a, int b) 
+int sum(int a, int b)
 where
     post(result): (result >= a && result >= b)
 {

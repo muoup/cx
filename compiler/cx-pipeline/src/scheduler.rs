@@ -198,6 +198,8 @@ fn load_precompiled_data(
 
 pub(crate) enum JobResult {
     StandardSuccess,
+    
+    #[allow(dead_code)]
     UnchangedSinceLastCompilation,
 }
 
@@ -217,8 +219,8 @@ pub(crate) fn perform_job(
             let current_hash = hasher.finish().to_string();
             let previous_hash = retrieve_text(context, &job.unit, ".hash").unwrap_or_default();
 
-            let identical_hash = previous_hash == current_hash;
-            let object_exists =
+            let _identical_hash = previous_hash == current_hash;
+            let _object_exists =
                 std::fs::metadata(internal_directory(context, &job.unit).with_extension("o"))
                     .is_ok();
 
@@ -247,11 +249,15 @@ pub(crate) fn perform_job(
                 .preparse_base
                 .insert(job.unit.clone(), output);
 
-            return if identical_hash && object_exists {
-                Some(JobResult::UnchangedSinceLastCompilation)
-            } else {
-                Some(JobResult::StandardSuccess)
-            };
+            return Some(JobResult::StandardSuccess);
+            
+            // FIXME: Cached compilation artifacts aren't currently supported.
+            
+            // return if identical_hash && object_exists {
+            //     Some(JobResult::UnchangedSinceLastCompilation)
+            // } else {
+            //     Some(JobResult::StandardSuccess)
+            // };
         }
 
         CompilationStep::ASTParse => {
@@ -352,16 +358,17 @@ pub(crate) fn perform_job(
                     e.pretty_print();
                     panic!("FMIR generation failed for unit: {}", job.unit);
                 });
+                
+                if !job.unit.is_std_lib() {
+                    dump_data(&fmir_context);
+                }
+                
                 fmir_context
                     .apply_standard_analysis_passes(job.unit.as_path())
                     .unwrap_or_else(|e| {
                         e.pretty_print();
                         panic!("FMIR analysis failed for unit: {}", job.unit);
                     });
-
-                if !job.unit.is_std_lib() {
-                    dump_data(&fmir_context);
-                }
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);

@@ -241,18 +241,22 @@ fn run_e2e_test(input: &Path) {
     }
 }
 
+#[allow(dead_code)]
 fn run_compile_only_test(input: &Path, analysis: bool) {
     expect_compile_success(input, analysis);
 }
 
+#[allow(dead_code)]
 fn run_parse_error_test(input: &Path) {
     expect_failure(input, false, FailureStage::Parse);
 }
 
+#[allow(dead_code)]
 fn run_type_error_test(input: &Path) {
     expect_failure(input, false, FailureStage::Typecheck);
 }
 
+#[allow(dead_code)]
 fn run_verifier_error_test(input: &Path) {
     expect_failure(input, true, FailureStage::Analysis);
 }

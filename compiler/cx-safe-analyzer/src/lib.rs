@@ -46,7 +46,6 @@ struct AnalysisDiagnosticContext {
     compilation_unit: PathBuf,
     file_contents: Option<String>,
     function_name: String,
-    function_signature: String,
 }
 
 impl AnalysisDiagnosticContext {
@@ -55,7 +54,6 @@ impl AnalysisDiagnosticContext {
             compilation_unit: compilation_unit.to_path_buf(),
             file_contents: std::fs::read_to_string(compilation_unit).ok(),
             function_name: function_prototype.name.as_string(),
-            function_signature: format!("{function_prototype}"),
         }
     }
 
@@ -83,8 +81,8 @@ impl AnalysisDiagnosticContext {
                 .and_then(|range| self.source_text_for_range(range))
                 .unwrap_or_else(|| "<unknown post-condition expression>".to_string());
             return format!(
-                "In function `{}`, contract condition\n   post({}): ({})\n\nwill never be true at return site",
-                self.function_signature, ret_name, post_condition_expr
+                "In function `{}`, contract condition\n   post({}): ({})\nwill never be true at return site",
+                self.function_name, ret_name, post_condition_expr
             );
         }
 

@@ -66,7 +66,9 @@ impl Indent {
     fn push(&self) -> Self {
         Indent(self.0 + 2)
     }
+}
 
+impl Display for Indent {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:width$}", "", width = self.0)
     }
@@ -146,9 +148,9 @@ impl Display for FMIRIntrinsicFunction {
 impl Display for FMIRIntrinsicKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRIntrinsicKind::Unary(op) => write!(f, "intrinsic.unary.{op}"),
-            FMIRIntrinsicKind::Binary(op) => write!(f, "intrinsic.binary.{op}"),
-            FMIRIntrinsicKind::Cast(op) => write!(f, "intrinsic.cast.{op}"),
+            FMIRIntrinsicKind::Unary(op) => write!(f, "_intrinsic.unary.{op}"),
+            FMIRIntrinsicKind::Binary(op) => write!(f, "_intrinsic.binary.{op}"),
+            FMIRIntrinsicKind::Cast(op) => write!(f, "_intrinsic.cast.{op}"),
         }
     }
 }
@@ -365,7 +367,7 @@ impl FMIRNodeBody {
             FMIRNodeBody::Then { first, second } => {
                 first.fmt_with_indent(f, indent)?;
                 writeln!(f)?;
-                write!(f, ">> ")?;
+                write!(f, "{}>> ", indent)?;
                 second.fmt_with_indent(f, indent)
             }
 
