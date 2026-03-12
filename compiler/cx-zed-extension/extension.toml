@@ -9,7 +9,7 @@ languages = ["languages/cx"]
 
 [grammars.cx]
 repository = "https://github.com/muoup/cx"
-branch = "dev"
+rev = "150d6686a6777a4d26e319b794e9fe0c9666b578"
 path = "compiler/cx-treesitter-grammar"
 
 [language_servers.cx-lsp]
