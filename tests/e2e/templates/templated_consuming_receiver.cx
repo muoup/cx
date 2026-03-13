@@ -4,7 +4,7 @@ struct templated_object<T> : @nodrop {
     T value;
 };
 
-void templated_object<T>::drop<T>(*this) {
+void templated_object<T>::drop<T>(this) {
     printf("drop templated_object\n");
     @leak(this);
 }

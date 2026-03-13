@@ -13,7 +13,7 @@ box box::new(int init) safe {
     };
 }
 
-void box::drop(*this) {
+void box::drop(this) {
     @unsafe {
         free(this.ptr);
         @leak(this);

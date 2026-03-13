@@ -215,7 +215,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     if matches!(peek_next_kind!(data.tokens), Ok(identifier!(this)) if this.as_str() == "this") {
         data.tokens.next();
         receiver = Some(CXReceiverData {
-            mode: CXReceiverMode::ByRef,
+            mode: CXReceiverMode::ByMove,
             specifiers: parsed_receiver_specifiers,
         });
     } else if try_next!(data.tokens, operator!(Asterisk)) {
@@ -224,7 +224,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             return log_parse_error!(data, "Expected '*this' receiver parameter");
         }
         receiver = Some(CXReceiverData {
-            mode: CXReceiverMode::ByMove,
+            mode: CXReceiverMode::ByRef,
             specifiers: parsed_receiver_specifiers,
         });
     } else {

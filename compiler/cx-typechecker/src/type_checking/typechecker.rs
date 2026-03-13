@@ -872,19 +872,16 @@ pub fn typecheck_expr_inner(
             };
 
             if !env.is_nodrop(inner_type) {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    " @leak is only valid for nodrop locals"
-                );
+                // For templated implementations, it is far more convenient for @leak calls on non-@nodrop types to
+                // be treated as a no-op rather than a type error.
+                return Ok(TypecheckResult::expr2(value));
             }
 
             ensure_binding_available(env, inner, ident)?;
-            let leaked = value.clone();
             env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
 
             TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::LeakLifetime {
-                expression: Box::new(leaked),
+                expression: Box::new(value),
             })
         }
 

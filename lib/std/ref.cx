@@ -1,0 +1,13 @@
+struct ref<T> : @nocopy {
+    T* ptr;
+};
+
+ref<T> ref<T>::new<T>(T* ptr) safe {
+    return (ref<T>) {
+        .ptr = ptr
+    };
+}
+
+T& ref<T>::deref<T>(const this) safe {
+    return @unsafe(*(this.ptr));
+}

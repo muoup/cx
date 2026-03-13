@@ -14,25 +14,25 @@ box<T> box<T>::new<T>(T value) safe {
     };
 }
 
-void box<T>::drop<T>(*this) safe {
+const T& box<T>::deref<T>(const *this) safe {
+    return @unsafe(*(this.ptr));
+}
+
+T& box<T>::deref_mut<T>(*this) safe {
+    return @unsafe(*(this.ptr));
+}
+
+T* box<T>::leak<T>(this) {
+    T* ptr = this.ptr;
+    @leak(this);
+    return ptr;
+}
+
+void box<T>::drop<T>(this) safe {
     @unsafe {
         free(this.ptr);
         @leak(this);
     };
-}
-
-const T& box<T>::deref<T>(const this) safe {
-    return @unsafe(*(this.ptr));
-}
-
-T& box<T>::deref_mut<T>(this) safe {
-    return @unsafe(*(this.ptr));
-}
-
-T* box<T>::leak<T>(*this) {
-    T* ptr = this.ptr;
-    @leak(this);
-    return ptr;
 }
 
 private:

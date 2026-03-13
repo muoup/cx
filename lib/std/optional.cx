@@ -1,0 +1,37 @@
+enum union opt<T> {
+    none :: (),
+    some :: T
+};
+
+bool opt<T>::is_some(*this) safe {
+    switch opt {
+        case Some(T value):
+            return true;
+        case None:
+            return false;
+    }
+}
+
+opt<T> opt<T>::map<T>(*this, T (*func)()) safe {
+    if Some(T value) = opt {
+        return func(value);
+    }
+
+    return None;
+}
+
+T opt<T>::or_else<T>(*this, T otherwise) safe {
+    if Some(T value) = opt {
+        return value;
+    }
+
+    return otherwise;
+}
+
+T opt<T>::unwrap<T>(*this) safe {
+    if Some(T value) = opt {
+        return value;
+    }
+
+    panic("called `opt::unwrap()` on a `None` value");
+}

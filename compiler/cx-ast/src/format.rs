@@ -526,12 +526,12 @@ impl Display for CXFunctionKind {
                     CXReceiverMode::ByRef => {
                         let is_const = (receiver.specifiers & CX_CONST) != 0;
                         
-                        write!(f, " (receiver: {}this)", if is_const { "const " } else { "" })
+                        write!(f, " (receiver: {}*this)", if is_const { "const " } else { "" })
                     }
                     CXReceiverMode::ByMove => {
                         let is_const = (receiver.specifiers & CX_CONST) != 0;
                         
-                        write!(f, " (receiver: {}*this)", if is_const { "const " } else { "" })
+                        write!(f, " (receiver: {}this)", if is_const { "const " } else { "" })
                     }
                     CXReceiverMode::None => Ok(())
                 }
