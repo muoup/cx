@@ -1,3 +1,5 @@
+public:
+
 struct ref<T> : @nocopy {
     T* ptr;
 };

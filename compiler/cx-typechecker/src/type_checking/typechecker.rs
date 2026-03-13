@@ -471,7 +471,18 @@ pub fn typecheck_expr_inner(
             name,
             initial_value,
         } => {
-            let _type = env.complete_type(base_data, _type)?;
+            let _type = env.complete_type(base_data, _type)
+                .map_err(|err| {
+                    let err : CXResult<()> = log_typecheck_error!(
+                        env,
+                        expr,
+                        " Failed to resolve type for variable '{}'\n {}",
+                        name,
+                        err.error_message()
+                    );
+                    
+                    err.err().unwrap()
+                })?;
             let mem_type = _type.clone().mem_ref_to();
 
             // Typecheck initial value if present

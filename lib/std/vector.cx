@@ -1,8 +1,9 @@
 #include <stdlib.h>
 
-public:
-
 import std::ref;
+import std::optional;
+
+public:
 
 struct vector<T> : @nodrop {
     T* data;
@@ -10,7 +11,7 @@ struct vector<T> : @nodrop {
     usize capacity;
 };
 
-vector<T> vector<T>::new<T>() {
+vector<T> vector<T>::new<T>() safe {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),
         .length = 0,
@@ -18,7 +19,7 @@ vector<T> vector<T>::new<T>() {
     };
 }
 
-void vector<T>::drop<T>(*this) {
+void vector<T>::drop<T>(*this) safe {
     @unsafe {
         free(this.data);
         @leak(this);
@@ -33,7 +34,7 @@ vector<T> vector::with_capacity<T>(usize capacity) safe {
     };
 }
 
-void vector<T>::push<T>(this, T object) safe {
+void vector<T>::push<T>(*this, T object) safe {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
         this.data = realloc(this.data, this.capacity * sizeof(T));
@@ -43,7 +44,7 @@ void vector<T>::push<T>(this, T object) safe {
     this.length++;
 }
 
-opt<ref<T>> vector<T>::at<T>(this, usize index) safe {
+opt<ref<T>> vector<T>::at<T>(*this, usize index) safe {
     if (index >= this.length) {
         return opt<T>::none;
     }

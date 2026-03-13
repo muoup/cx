@@ -1,7 +1,7 @@
 use crate::parse::ParserData;
-use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_ast::ast::{CXBinOp, CXUnOp};
 use cx_ast::{assert_token_matches, next_kind};
+use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_util::CXResult;
 
 use crate::parse::expressions::is_type_decl;
@@ -24,7 +24,11 @@ impl PrecOperator {
 
 pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
     match op {
-        CXBinOp::Access | CXBinOp::ScopeRes | CXBinOp::MethodCall | CXBinOp::ArrayIndex | CXBinOp::Is => 1,
+        CXBinOp::Access
+        | CXBinOp::ScopeRes
+        | CXBinOp::MethodCall
+        | CXBinOp::ArrayIndex
+        | CXBinOp::Is => 1,
         CXBinOp::Multiply | CXBinOp::Divide | CXBinOp::Modulus => 4,
         CXBinOp::Add | CXBinOp::Subtract => 5,
 
@@ -48,14 +52,14 @@ pub(crate) fn binop_prec(op: CXBinOp) -> u8 {
 pub(crate) fn unop_prec(op: CXUnOp) -> u8 {
     match op {
         CXUnOp::PostIncrement(_) => 1,
-        
+
         CXUnOp::PreIncrement(_) => 2,
         CXUnOp::BNot => 2,
         CXUnOp::LNot => 2,
         CXUnOp::Negative => 2,
         CXUnOp::Dereference => 2,
         CXUnOp::AddressOf => 2,
-       
+
         CXUnOp::ExplicitCast(_) => 3,
     }
 }
@@ -143,12 +147,11 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<CXBinOp> {
         OperatorType::LessEqual => CXBinOp::LessEqual,
         OperatorType::GreaterEqual => CXBinOp::GreaterEqual,
 
-        OperatorType::Ampersand => CXBinOp::LAnd,
+        OperatorType::Ampersand => CXBinOp::BitAnd,
+        OperatorType::Bar => CXBinOp::BitOr,
+        OperatorType::Caret => CXBinOp::BitXor,
         OperatorType::DoubleBar => CXBinOp::LOr,
         OperatorType::DoubleAmpersand => CXBinOp::LAnd,
-
-        OperatorType::DoubleLT => CXBinOp::LShift,
-        OperatorType::DoubleGT => CXBinOp::RShift,
 
         OperatorType::Is => CXBinOp::Is,
 
@@ -163,7 +166,33 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<CXBinOp> {
                 op_to_binop(data, OperatorType::Comma)?
             } else {
                 data.tokens.back();
-                return log_parse_error!(data, "Comma operator not allowed in this context");
+                return log_parse_error!(data, "Invalid token: expected binary operator, found comma");
+            }
+        }
+        // Handle >> as shift operator (two consecutive Greater tokens)
+        Ok(TokenKind::Operator(OperatorType::Greater)) => {
+            if let Some(next) = data.tokens.peek() {
+                if matches!(next.kind, TokenKind::Operator(OperatorType::Greater)) {
+                    data.tokens.next(); // consume the second Greater
+                    CXBinOp::RShift
+                } else {
+                    CXBinOp::Greater
+                }
+            } else {
+                CXBinOp::Greater
+            }
+        }
+        // Handle << as shift operator (two consecutive Less tokens)
+        Ok(TokenKind::Operator(OperatorType::Less)) => {
+            if let Some(next) = data.tokens.peek() {
+                if matches!(next.kind, TokenKind::Operator(OperatorType::Less)) {
+                    data.tokens.next(); // consume the second Less
+                    CXBinOp::LShift
+                } else {
+                    CXBinOp::Less
+                }
+            } else {
+                CXBinOp::Less
             }
         }
         Ok(TokenKind::Operator(op)) => op_to_binop(data, op)?,

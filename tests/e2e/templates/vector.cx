@@ -1,9 +1,13 @@
 import std::vector;
 import std::io;
+import std::ref;
+import std::optional;
 
 int main() {
+    opt<ref<int>> maybe_value;
+    
     vector<int> vec = vector<int>::new<int>();
-
+    
     vec.push<int>(1);
     vec.push<int>(2);
     vec.push<int>(3);

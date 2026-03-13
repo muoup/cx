@@ -1,6 +1,8 @@
 **/target
 **/.*
 
+tmp
+
 *.exe
 *.out
 *.wasm

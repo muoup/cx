@@ -49,6 +49,15 @@ impl Display for CXAST {
                 writeln!(f, "{func}")?;
             }
         }
+        if !self.type_data.is_empty() {
+            writeln!(f, "\n-- Type Definitions --")?;
+            for ty in self.type_data.standard_iter() {
+                writeln!(f, "{}: {}", ty.0, ty.1.resource)?;
+            }
+            for ty in self.type_data.template_iter() {
+                writeln!(f, "{}: {}", ty.0, ty.1.resource)?;
+            }
+        }
         Ok(())
     }
 }
@@ -155,8 +164,18 @@ impl<'a> Display for CXExprFormatter<'a> {
                 _type,
                 initial_value,
             } => {
-                let init_str = if initial_value.is_some() { " = <init>" } else { "" };
-                writeln!(f, "VarDeclaration {}: {}{}", name, _type, init_str)
+                writeln!(f, "VarDeclaration {name}: {_type}")?;
+                
+                self.indent_plus_one(f)?;
+                
+                if let Some(init) = initial_value {
+                    writeln!(f, "InitialValue:")?;
+                    CXExprFormatter::new(init, self.depth + 2).fmt(f)?;
+                } else {
+                    writeln!(f, "No initial value")?;
+                }
+                
+                Ok(())
             }
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
             CXExprKind::FloatLiteral { val, .. } => writeln!(f, "FloatLiteral {}", val),

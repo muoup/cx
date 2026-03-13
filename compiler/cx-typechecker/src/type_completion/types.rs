@@ -81,8 +81,8 @@ pub(crate) fn _complete_type(
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
-            Ok(instantiate_type_template(env, base_data, input, name.as_str())?
-                .with_specifier(ty.specifiers))
+            instantiate_type_template(env, base_data, input, name.as_str())
+                .map(|ty| ty.with_specifier(ty.specifiers))
         }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {

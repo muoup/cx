@@ -47,6 +47,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     match &next_token.kind {
         keyword!(Struct) | keyword!(Union) | keyword!(Enum) => {
             let Some(identifier!(ident)) = next_kind!(data.tokens).ok() else {
+                data.tokens.back();
                 return Ok(());
             };
 
