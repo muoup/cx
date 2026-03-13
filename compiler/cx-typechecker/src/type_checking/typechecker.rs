@@ -371,7 +371,8 @@ fn validate_safe_expression(
         _ => log_typecheck_error!(
             env,
             expr,
-            " Expression kind is not yet allowed in safe functions"
+            " Expression is not yet allowed in safe functions: {}",
+            expr
         ),
     }
 }

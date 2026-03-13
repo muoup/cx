@@ -78,7 +78,7 @@ pub(crate) fn typecheck_access(
         }
     };
 
-    if !lhs_inner.is_structure() {
+    if !matches!(lhs_inner.kind, MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. } | MIRTypeKind::TaggedUnion { .. }) {
         return log_typecheck_error!(
             env,
             expr,
@@ -466,7 +466,7 @@ fn typecheck_type_constructor(
         .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
     Ok(TypecheckResult::expr(
-        union_type.clone().mem_ref_to(),
+        union_type.clone(),
         MIRExpressionKind::ConstructTaggedUnion {
             value: Box::new(inner),
             variant_index: i,
@@ -608,7 +608,8 @@ pub(crate) fn typecheck_is(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let tc_lhs = typecheck_expr(env, base_data, lhs, None)?;
+    let tc_lhs = typecheck_expr(env, base_data, lhs, None)
+        .and_then(|v| coerce_value(env, lhs, v.into_expression()))?;
     let tc_type = tc_lhs.get_type();
     let union_type = tc_type.mem_ref_inner().unwrap_or(&tc_type);
 
@@ -691,7 +692,7 @@ pub(crate) fn typecheck_is(
     Ok(TypecheckResult::expr(
         MIRType::bool(),
         MIRExpressionKind::PatternIs {
-            lhs: Box::new(tc_lhs.into_expression()),
+            lhs: Box::new(tc_lhs),
             sum_type: union_type.clone(),
             variant_index: expected_tag,
             inner_name,
@@ -1250,7 +1251,7 @@ pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<Struc
     let struct_type = struct_type.memory_resident_type();
 
     let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
-        unreachable!("Invalid type for struct_field: {}", struct_type);
+        return None;
     };
 
     fields

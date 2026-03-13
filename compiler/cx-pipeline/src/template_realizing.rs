@@ -3,7 +3,7 @@ use cx_typechecker::{
     environment::{MIRFunctionGenRequest, TypeEnvironment},
     realize_fn_implementation,
 };
-use cx_util::CXResult;
+use cx_util::{CXError, CXResult};
 use std::collections::HashSet;
 
 pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment) -> CXResult<()> {
@@ -25,7 +25,10 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
                     continue;
                 }
 
-                realize_fn_implementation(env, &origin, &kind, &input)?;
+                realize_fn_implementation(env, &origin, &kind, &input)
+                    .map_err(
+                        |e| CXError::create_boxed(format!("Error realizing template {} with input {:?}:\n{}", kind, input, e.error_message()))
+                    )?;
             }
         }
     }

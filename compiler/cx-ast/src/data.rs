@@ -81,16 +81,17 @@ pub enum PredeclarationType {
     Enum,
 }
 
-#[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXStructAttributes {
     pub nocopy: bool,
     pub nodrop: bool,
+    pub copy_traits: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXFunctionContract {
     pub safe: bool,
-    
+
     pub precondition: Option<CXExpr>,
     pub postcondition: Option<(Option<CXIdent>, CXExpr)>,
 }
@@ -156,7 +157,9 @@ pub enum CXTypeKind {
     ExplicitSizedArray(Box<CXType>, usize),
     ImplicitSizedArray(Box<CXType>),
 
-    MemoryReference { inner_type: Box<CXType> },
+    MemoryReference {
+        inner_type: Box<CXType>,
+    },
     PointerTo {
         inner_type: Box<CXType>,
         weak: bool,
@@ -201,7 +204,7 @@ impl CXType {
         self.specifiers |= specifier;
         self
     }
-    
+
     pub fn get_name(&self) -> Option<&CXIdent> {
         match &self.kind {
             CXTypeKind::Identifier { name, .. } => Some(name),
@@ -214,18 +217,17 @@ impl CXType {
             _ => None,
         }
     }
-    
+
     pub fn set_name(&mut self, to: CXIdent) {
         match &mut self.kind {
-            CXTypeKind::Union { name, .. } |
-            CXTypeKind::Structured { name, .. } => {
+            CXTypeKind::Union { name, .. } | CXTypeKind::Structured { name, .. } => {
                 *name = Some(to);
             }
-            
+
             CXTypeKind::TaggedUnion { name, .. } => {
                 *name = to;
             }
-            
+
             _ => {}
         }
     }
@@ -242,7 +244,7 @@ impl<T: Clone> ModuleResource<T> {
         if self.linkage == CXLinkageMode::Static {
             panic!("Static linkage resources must be declared private");
         }
-        
+
         ModuleResource {
             visibility: VisibilityMode::Private,
             linkage: CXLinkageMode::Extern,
@@ -343,7 +345,7 @@ impl CXFunctionTypeIdent {
             _ => None,
         }
     }
-    
+
     pub fn base_name(&self) -> &CXIdent {
         match self {
             CXFunctionTypeIdent::Standard(name) => name,

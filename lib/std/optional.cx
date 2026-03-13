@@ -4,19 +4,19 @@ void exit(int code);
 
 public:
 
-enum union opt<T> {
+enum union opt<T> : @copy_traits(T) {
     none :: void,
     some :: T
 };
 
-bool opt<T>::is_some<T>(*this) safe {
+bool opt<T>::is_some<T>(*this) {
     match (this) {
-        opt::some(value) => return true;
-        opt::none(_) => return false;
+        opt<T>::some(value) => return true;
+        opt<T>::none(_) => return false;
     }
 }
 
-opt<T> opt<T>::map<T>(*this, T (*func)()) safe {
+opt<U> opt<T>::map<T, U>(*this, U (*func)(T)) {
     if (this.is_some()) {
         return func(value);
     }
@@ -24,19 +24,21 @@ opt<T> opt<T>::map<T>(*this, T (*func)()) safe {
     return None;
 }
 
-T opt<T>::or_else<T>(*this, T otherwise) safe {
-    if (this is opt::some(value)) {
+T opt<T>::unwrap_or<T>(*this, T otherwise) {
+    if (this is opt<T>::some(value)) {
         return value;
     }
 
-    return otherwise;
+    return move otherwise;
 }
 
-T opt<T>::unwrap<T>(*this) safe {
-    if (this is opt::some(value)) {
-        return value;
-    }
+T opt<T>::unwrap<T>(this) {
+    bool valid = this is opt::some(value);
 
-    println("Error: called `opt::unwrap()` on a `None` value");
-    exit(1);
+    if (!valid) {
+        println("Error: called `opt::unwrap()` on a `None` value");
+        exit(1);
+    }
+    
+    return move value;
 }

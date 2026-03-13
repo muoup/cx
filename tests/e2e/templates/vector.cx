@@ -15,7 +15,11 @@ int main() {
     printf("Vector length: %zu\n", vec.length);
     printf("Vector capacity: %zu\n", vec.capacity);
     
-    printf("vec[0]: %d\n", vec.at<int>(0).unwrap().deref());
+    opt<ref<int>> maybe_value = vec.at<int>(0);
+    ref<int> value_ref = maybe_value.unwrap<ref<int>>();
+    int value = value_ref.deref<int>();
+    
+    printf("vec[0]: %d\n", value);
     
     vec.drop<int>();
 }

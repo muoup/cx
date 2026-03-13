@@ -1,16 +1,12 @@
 public:
 
-struct string {
+struct string : @nodrop {
     char* data;
     u64 length;
     u64 capacity;
 };
 
-~string(this) {
-    free(this.data);
-}
-
-string new_string() {
+string string::new_string() {
     string s;
     s.data = malloc(16);
     s.length = 0;
@@ -19,7 +15,7 @@ string new_string() {
     return s;
 }
 
-void string::append(this, const char* str) {
+void string::append(*this, const char* str) {
     u64 str_length = strlen(str);
 
     if (this.length + str_length + 1 > this.capacity) {
@@ -28,6 +24,13 @@ void string::append(this, const char* str) {
 
     memcpy(this.data + this.length, str, str_length);
     this.length = str_length + this.length;
+}
+
+void string::drop(this) {
+    @unsafe {
+        free(this.data);
+        @leak(this);
+    };
 }
 
 private:
