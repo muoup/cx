@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRSourceRange};
-use cx_util::{CXError, CXErrorTrait, CXResult};
+use cx_util::{CXErrorTrait, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
 use crate::simplify::assert_proven_conditions;
@@ -31,6 +31,10 @@ struct FMIRAnalysisError {
 }
 
 impl CXErrorTrait for FMIRAnalysisError {
+    fn error_message(&self) -> String {
+        self.message.clone()
+    }
+    
     fn pretty_print(&self) {
         cx_log::pretty_underline_error(
             &self.message,
@@ -98,21 +102,7 @@ impl AnalysisDiagnosticContext {
         condition: &FMIRNode,
     ) -> CXResult<VisitControl> {
         let resolved_message = self.failure_message(message, condition);
-
-        if let Some(range) = node
-            .source_range
-            .as_ref()
-            .or(condition.source_range.as_ref())
-        {
-            return Err(Box::new(FMIRAnalysisError {
-                message: resolved_message,
-                compilation_unit: self.compilation_unit.clone(),
-                token_start: range.start_token,
-                token_end: range.end_token,
-            }) as Box<dyn CXErrorTrait>);
-        }
-
-        CXError::create_result(resolved_message)
+        return log_analysis_error!(self, node, "{}", resolved_message);
     }
 }
 

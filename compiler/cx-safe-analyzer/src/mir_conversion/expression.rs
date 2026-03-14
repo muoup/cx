@@ -280,6 +280,18 @@ pub fn convert_expression(
         }
 
         MIRExpressionKind::FunctionReference { .. } => {
+            let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
+                unreachable!("FMIR conversion expected function type in function reference expression")
+            };
+            
+            if !prototype.contract.safe {
+                return log_analysis_error!(
+                    env,
+                    mir_expr,
+                    "References to unsafe functions may not be used in safe contexts"
+                );
+            }
+            
             let Some(function_name) = mir_expr._type.get_fn_name() else {
                 return CXError::create_result(format!(
                     "FMIR conversion expected function reference type in function '{}'",

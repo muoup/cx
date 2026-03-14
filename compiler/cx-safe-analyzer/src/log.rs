@@ -13,7 +13,7 @@ pub struct AnalysisError {
 impl CXErrorTrait for AnalysisError {
     fn pretty_print(&self) {
         cx_log::pretty_underline_error_with_notes(
-            &self.message,
+            &self.error_message(),
             &self.notes,
             self.compilation_unit.as_path(),
             self.token_start,
@@ -22,7 +22,7 @@ impl CXErrorTrait for AnalysisError {
     }
 
     fn error_message(&self) -> String {
-        self.message.clone()
+        format!("ANALYSIS ERROR: {}", self.message)
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {
@@ -50,7 +50,7 @@ impl CXErrorTrait for AnalysisError {
 macro_rules! log_analysis_error {
     ($env:expr, $expr:expr, $($arg:tt)*) => {
         {
-            let message = format!("ANALYSIS ERROR: {}", format!($($arg)*));
+            let message = format!("{}", format!($($arg)*));
             
             let (token_start, token_end) = if let Some(token) = $expr.source_range.as_ref() {
                 (token.start_token, token.end_token)

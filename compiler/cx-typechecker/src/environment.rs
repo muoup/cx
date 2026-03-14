@@ -236,7 +236,7 @@ impl TypeEnvironment<'_> {
                 return self.type_error_at_range(
                     range,
                     format!(
-                        "TYPE ERROR:  nodrop local(s) reach scope end without move or @leak: {}",
+                        "nodrop local(s) reach scope end without move or @leak: {}",
                         live.join(", ")
                     ),
                     Vec::new(),
@@ -645,7 +645,7 @@ impl TypeEnvironment<'_> {
                         return self.type_error_at_range(
                             &state.join_range,
                             format!(
-                                "TYPE ERROR:  nodrop binding(s) must be moved or @leak'ed before function exit: {}",
+                                "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
                                 live.join(", ")
                             ),
                             Vec::new(),
@@ -778,7 +778,7 @@ impl TypeEnvironment<'_> {
         self.type_error_at_range::<Option<Vec<(String, TrackedBindingState)>>>(
             join_range,
             format!(
-                "TYPE ERROR:  nocopy binding(s) have inconsistent move state at {join_name}"
+                "nocopy binding(s) have inconsistent move state at {join_name}"
             ),
             notes,
         )

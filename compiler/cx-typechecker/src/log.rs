@@ -13,7 +13,7 @@ pub struct TypeError {
 impl CXErrorTrait for TypeError {
     fn pretty_print(&self) {
         cx_log::pretty_underline_error_with_notes(
-            &self.message,
+            &self.error_message(),
             &self.notes,
             self.compilation_unit.as_path(),
             self.token_start,
@@ -22,7 +22,7 @@ impl CXErrorTrait for TypeError {
     }
 
     fn error_message(&self) -> String {
-        self.message.clone()
+        format!("TYPE ERROR:   {}", self.message)
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {

@@ -258,7 +258,7 @@ fn validate_linear_hierarchy(
                 token_start: 0,
                 token_end: 0,
                 message: format!(
-                    "TYPE ERROR:  {} must be declared @nodrop because member '{}' has type {}",
+                    "{} must be declared @nodrop because member '{}' has type {}",
                     aggregate_kind, member_name, member_type
                 ),
                 notes: Vec::new(),
@@ -271,7 +271,7 @@ fn validate_linear_hierarchy(
                 token_start: 0,
                 token_end: 0,
                 message: format!(
-                    "TYPE ERROR:  {} must be declared @nocopy because member '{}' has type {}",
+                    "T{} must be declared @nocopy because member '{}' has type {}",
                     aggregate_kind, member_name, member_type
                 ),
                 notes: Vec::new(),

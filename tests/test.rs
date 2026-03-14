@@ -79,19 +79,14 @@ fn compiler_config(
 }
 
 fn classify_failure_stage(message: &str) -> Option<FailureStage> {
-    if message.contains("Pre-parsing failed for unit:")
-        || message.contains("AST parsing failed for unit:")
-        || message.contains("PARSER ERROR")
+    if message.starts_with("PARSER ERROR")
     {
         Some(FailureStage::Parse)
-    } else if message.contains("Typechecking failed for unit:")
-        || message.contains("Completing base globals failed")
-        || message.contains("Completing base functions failed")
-        || message.contains("TYPE ERROR")
-        || message.contains("ANALYSIS ERROR")
+    } else if message.starts_with("TYPE ERROR")
     {
         Some(FailureStage::Typecheck)
-    } else if message.contains("FMIR analysis failed for unit:") {
+    } else if message.starts_with("ANALYSIS ERROR")
+    {
         Some(FailureStage::Analysis)
     } else {
         None
@@ -148,22 +143,22 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
     );
 
     let message = match standard_compilation(config, base_file_name(input)) {
-        Ok(_) => None,
+        Ok(_) => panic!("Expected compilation failure but got success"),
         Err(err) => Some(err.error_message()),
     };
 
     let actual_stage = message.as_ref()
         .map(|msg| classify_failure_stage(msg))
         .flatten();
-
-    assert_eq!(
-        actual_stage,
-        Some(expected_stage),
-        "Expected {:?} failure got {:?} with panic message:\n{}",
-        expected_stage,
-        actual_stage,
-        message.unwrap_or("COMPILATION SUCCESSFUL".to_owned())
-    );
+    
+    if actual_stage != Some(expected_stage) {
+        panic!(
+            "\nExpected failure stage: {}\nActual failure stage: {}\n\nMessage: {}",
+            format!("{:?}", expected_stage),
+            actual_stage.map(|s| format!("{:?}", s)).unwrap_or("UNKNOWN STAGE".to_string()),
+            message.unwrap_or("No error message".to_string())
+        );
+    }
 }
 
 fn run_binary(path: &Path) -> String {

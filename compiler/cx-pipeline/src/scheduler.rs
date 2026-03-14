@@ -91,7 +91,7 @@ pub(crate) fn scheduling_loop(
         }
 
         queue.complete_job(&job);
-
+        
         for new_jobs in handle_job(context, job)?.into_iter() {
             queue.push_new_job(new_jobs);
         }
@@ -232,10 +232,7 @@ pub(crate) fn perform_job(
                     job.unit
                 )))?;
 
-            let mut output = preparse(TokenIter::new(&tokens, file_path)).unwrap_or_else(|e| {
-                e.pretty_print();
-                panic!("Pre-parsing failed for unit: {}", job.unit);
-            });
+            let mut output = preparse(TokenIter::new(&tokens, file_path))?;
             output.module = job.unit.to_string();
 
             if !job.unit.as_str().contains("/std/") {
@@ -291,11 +288,7 @@ pub(crate) fn perform_job(
             let parsed_ast = parse_ast(
                 TokenIter::new(&lexemes, job.unit.with_extension("cx")),
                 &pp_data,
-            )
-            .unwrap_or_else(|e| {
-                e.pretty_print();
-                panic!("AST parsing failed for unit: {}", job.unit);
-            });
+            )?;
 
             if !job.unit.is_std_lib() {
                 dump_data(&parsed_ast);
@@ -308,10 +301,7 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::InterfaceCombine => {
-            gather_interface(context, &job.unit).unwrap_or_else(|e| {
-                e.pretty_print();
-                panic!("Interface combining failed for unit: {}", job.unit);
-            });
+            gather_interface(context, &job.unit)?;
         }
 
         CompilationStep::Typechecking => {
@@ -346,11 +336,7 @@ pub(crate) fn perform_job(
 
             if context.config.analysis {
                 fmir_context
-                    .apply_standard_analysis_passes(job.unit.as_path())
-                    .unwrap_or_else(|e| {
-                        e.pretty_print();
-                        panic!("FMIR analysis failed for unit: {}", job.unit);
-                    });
+                    .apply_standard_analysis_passes(job.unit.as_path())?;
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);

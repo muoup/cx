@@ -17,7 +17,7 @@ use cx_util::CXResult;
 use crate::{
     environment::TypeEnvironment,
     type_checking::typechecker::{
-        global_expr, typecheck_expr, validate_safe_function_signature,
+        global_expr, typecheck_expr,
     },
     type_completion::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
@@ -44,8 +44,6 @@ fn typecheck_function(
     env.safe_mode = prototype.contract.safe;
     env.contract_pure_mode = false;
     env.unsafe_depth = 0;
-
-    validate_safe_function_signature(env, &prototype, body)?;
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {

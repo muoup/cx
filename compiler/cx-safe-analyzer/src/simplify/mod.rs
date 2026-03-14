@@ -1,13 +1,19 @@
 use std::{collections::HashMap, path::Path};
 
 use cx_mir::mir::types::MIRFunctionPrototype;
-use cx_safe_ir::{ast::{FMIRNode, FMIRNodeBody}, intrinsic::FMIRIntrinsicKind};
+use cx_safe_ir::{
+    ast::{FMIRNode, FMIRNodeBody},
+    intrinsic::FMIRIntrinsicKind,
+};
 use cx_util::CXResult;
 
-use crate::{AnalysisDiagnosticContext, traversal::{VisitControl, walk_pre_order}};
+use crate::{
+    AnalysisDiagnosticContext,
+    traversal::{VisitControl, walk_pre_order},
+};
 
-pub mod unary;
 pub mod binary;
+pub mod unary;
 
 #[derive(Clone, Debug)]
 pub enum ConstValue {
@@ -47,7 +53,9 @@ pub fn evaluate_const(
             Some(ConstValue::Int(value)) if int_to_bool(value) => {
                 evaluate_const(then_branch, scoped_variables)
             }
-            Some(ConstValue::Int(_)) => evaluate_const(else_branch, scoped_variables),
+            Some(ConstValue::Int(value)) if !int_to_bool(value) => {
+                evaluate_const(else_branch, scoped_variables)
+            }
             _ => None,
         },
         FMIRNodeBody::Bind {
@@ -64,10 +72,10 @@ pub fn evaluate_const(
             let argument_value = evaluate_const(argument, scoped_variables)?;
 
             if let FMIRNodeBody::IntrinsicFunction(intrinsic) = &function.body {
-                return match &intrinsic.kind {
-                    FMIRIntrinsicKind::Unary(op) => unary::eval_unary(op, argument_value),
-                    FMIRIntrinsicKind::Cast(op)  => unary::eval_cast(op, argument_value),
-                    FMIRIntrinsicKind::Binary(_) => None,
+                match &intrinsic.kind {
+                    FMIRIntrinsicKind::Unary(op) => return unary::eval_unary(op, argument_value),
+                    FMIRIntrinsicKind::Cast(op) => return unary::eval_cast(op, argument_value),
+                    FMIRIntrinsicKind::Binary(_) => {}
                 };
             }
 

@@ -47,10 +47,12 @@ fn main() {
         internal_directory,
     };
 
-    standard_compilation(compiler_config, PathBuf::from(file_name).as_path())
-        .unwrap_or_else(|err| {
+    match standard_compilation(compiler_config, PathBuf::from(file_name).as_path()) {
+        Ok(_) => {
+            println!("Compilation complete!");
+        }
+        Err(err) => {
             err.pretty_print();
-        });
-
-    println!("Compilation complete!");
+        }
+    }
 }
