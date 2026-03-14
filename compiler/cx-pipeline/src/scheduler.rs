@@ -19,8 +19,8 @@ use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
 use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
-use cx_util::CXErrorTrait;
 use cx_util::format::dump_data;
+use cx_util::{CXError, CXErrorTrait, CXResult};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ use std::io::Write;
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
     initial_job: CompilationJob,
-) -> Option<()> {
+) -> CXResult<()> {
     let mut queue = JobQueue::new();
 
     let mut compilation_exists = HashMap::new();
@@ -97,13 +97,13 @@ pub(crate) fn scheduling_loop(
         }
     }
 
-    Some(())
+    Ok(())
 }
 
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     mut job: CompilationJob,
-) -> Option<Box<[CompilationJob]>> {
+) -> CXResult<Box<[CompilationJob]>> {
     let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep| {
         let new_requirements = job
             .requirements
@@ -119,7 +119,7 @@ pub(crate) fn handle_job(
             })
             .collect::<Vec<_>>();
 
-        Some(
+        Ok(
             [CompilationJob::new(
                 new_requirements,
                 new_step,
@@ -156,13 +156,13 @@ pub(crate) fn handle_job(
             job.step = CompilationStep::ASTParse;
             new_jobs.push(job);
 
-            Some(new_jobs.into())
+            Ok(new_jobs.into())
         }
         CompilationStep::ASTParse => map_reqs_new_stage(job, CompilationStep::InterfaceCombine),
         CompilationStep::InterfaceCombine => map_reqs_new_stage(job, CompilationStep::Typechecking),
         CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::LMIRGen),
         CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen),
-        CompilationStep::Codegen => Some([].into()),
+        CompilationStep::Codegen => Ok([].into()),
     }
 }
 
@@ -206,7 +206,7 @@ pub(crate) enum JobResult {
 pub(crate) fn perform_job(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
-) -> Option<JobResult> {
+) -> CXResult<JobResult> {
     match job.step {
         CompilationStep::PreParse => {
             let file_path = job.unit.with_extension("cx");
@@ -226,7 +226,11 @@ pub(crate) fn perform_job(
 
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let tokens = cx_lexer::lex(file_contents.as_str())?;
+            let tokens = cx_lexer::lex(file_contents.as_str())
+                .ok_or(CXError::create_boxed(format!(
+                    "Lexing failed for unit: {}",
+                    job.unit
+                )))?;
 
             let mut output = preparse(TokenIter::new(&tokens, file_path)).unwrap_or_else(|e| {
                 e.pretty_print();
@@ -249,7 +253,7 @@ pub(crate) fn perform_job(
                 .preparse_base
                 .insert(job.unit.clone(), output);
 
-            return Some(JobResult::StandardSuccess);
+            return Ok(JobResult::StandardSuccess);
 
             // FIXME: Cached compilation artifacts aren't currently supported.
 
@@ -322,48 +326,25 @@ pub(crate) fn perform_job(
                 &context.module_db,
             );
 
-            complete_base_globals(&mut env, structure_data.as_ref()).unwrap_or_else(
-                |e: Box<dyn CXErrorTrait>| {
-                    e.pretty_print();
-                    panic!("Completing base globals failed");
-                },
-            );
-            complete_base_functions(&mut env, structure_data.as_ref()).unwrap_or_else(
-                |e: Box<dyn CXErrorTrait>| {
-                    e.pretty_print();
-                    panic!("Completing base functions failed");
-                },
-            );
-            typecheck(&mut env, structure_data.as_ref(), &self_ast).unwrap_or_else(
-                |e: Box<dyn CXErrorTrait>| {
-                    e.pretty_print();
-                    panic!("Typechecking failed for unit: {}", job.unit);
-                },
-            );
-            realize_templates(&job.unit, &mut env).unwrap_or_else(|e| {
-                e.pretty_print();
-                panic!("Template realization failed for unit: {}", job.unit);
-            });
+            complete_base_globals(&mut env, structure_data.as_ref())?;
+            complete_base_functions(&mut env, structure_data.as_ref())?;
+            typecheck(&mut env, structure_data.as_ref(), &self_ast)?;
+            realize_templates(&job.unit, &mut env)?;
 
-            let mir = env.finish_mir_unit().unwrap_or_else(|e| {
-                e.pretty_print();
-                panic!("MIR generation failed for unit: {}", job.unit);
-            });
-
+            let mir = env.finish_mir_unit()?;
             if !job.unit.is_std_lib() {
                 dump_data(&mir);
             }
 
+            // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis
+            // is enabled to have a central source of truth for auditing safe functions for uncontained unsafe behavior.
+            let mut fmir_context = FMIRContext::new_from(&mir)?;
+
+            if !job.unit.is_std_lib() {
+                dump_data(&fmir_context);
+            }
+
             if context.config.analysis {
-                let mut fmir_context = FMIRContext::new_from(&mir).unwrap_or_else(|e| {
-                    e.pretty_print();
-                    panic!("FMIR generation failed for unit: {}", job.unit);
-                });
-
-                if !job.unit.is_std_lib() {
-                    dump_data(&fmir_context);
-                }
-
                 fmir_context
                     .apply_standard_analysis_passes(job.unit.as_path())
                     .unwrap_or_else(|e| {
@@ -377,36 +358,31 @@ pub(crate) fn perform_job(
 
         CompilationStep::LMIRGen => {
             let mir = context.module_db.mir.take(&job.unit);
-            let bc = match generate_lmir(&mir) {
-                Ok(bc) => bc,
-                Err(e) => {
-                    e.pretty_print();
-                    panic!("LMIR generation failed for unit: {}", job.unit);
-                }
-            };
+            let lmir = generate_lmir(&mir)?;
 
             if !job.unit.is_std_lib() {
-                dump_data(&bc);
+                dump_data(&lmir);
             }
 
-            context.module_db.lmir.insert(job.unit.clone(), bc);
+            context.module_db.lmir.insert(job.unit.clone(), lmir);
         }
 
         CompilationStep::Codegen => {
             let lmir = context.module_db.lmir.take(&job.unit);
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
+            let internal_directory_str = internal_directory.to_str().ok_or(
+                CXError::create_boxed("Internal directory path is not valid UTF-8"),
+            )?;
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
                     &lmir,
-                    internal_directory.to_str()?,
+                    internal_directory_str,
                     context.config.optimization_level,
                 )
-                .expect("LLVM code generation failed"),
-                CompilerBackend::Cranelift => {
-                    cranelift_compile(&lmir, internal_directory.to_str()?)
-                        .expect("Cranelift code generation failed")
-                }
+                .ok_or(CXError::create_boxed("LLVM code generation failed"))?,
+                CompilerBackend::Cranelift => cranelift_compile(&lmir, internal_directory_str)
+                    .ok_or(CXError::create_boxed("Cranelift code generation failed"))?,
             };
 
             let mut file =
@@ -425,7 +401,7 @@ pub(crate) fn perform_job(
         }
     }
 
-    Some(JobResult::StandardSuccess)
+    Ok(JobResult::StandardSuccess)
 }
 
 /// Error type for LSP that includes both type errors and fatal errors
@@ -449,12 +425,6 @@ pub enum LSPErrors {
         message: String,
         line: Option<usize>,
     },
-}
-
-/// Result type for jobs that can collect errors instead of panicking
-pub(crate) enum JobResultCollect {
-    StandardSuccess,
-    FatalError(LSPErrors),
 }
 
 /// Scheduling loop variant for LSP that collects errors instead of panicking.
@@ -543,66 +513,6 @@ fn handle_job_collect_errors(
         .into()
     };
 
-    // Perform the job and collect errors
-    match perform_job_collect_errors(context, job) {
-        JobResultCollect::StandardSuccess => {}
-        JobResultCollect::FatalError(e) => {
-            error_collector.push(e);
-            return Some(HandleJobResult::Continue);
-        }
-    }
-
-    // Generate next jobs based on the completed step
-    match job.step {
-        CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit);
-
-            let mut new_jobs: Vec<CompilationJob> = pp_data
-                .imports
-                .iter()
-                .map(|import| {
-                    CompilationJob::new(
-                        vec![],
-                        CompilationStep::PreParse,
-                        CompilationUnit::from_rooted(
-                            import.as_str(),
-                            &context.config.working_directory,
-                        ),
-                    )
-                })
-                .collect();
-
-            // Add the next step for this job
-            let mut next_job = job.clone();
-            next_job.step = CompilationStep::ASTParse;
-            next_job.requirements = Vec::new();
-            new_jobs.push(next_job);
-
-            Some(HandleJobResult::Success(new_jobs.into()))
-        }
-        CompilationStep::ASTParse => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::InterfaceCombine,
-        ))),
-        CompilationStep::InterfaceCombine => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::Typechecking,
-        ))),
-        CompilationStep::Typechecking => {
-            // Stop here for LSP - no need for bytecode/codegen
-            Some(HandleJobResult::Success([].into()))
-        }
-        CompilationStep::LMIRGen | CompilationStep::Codegen => {
-            Some(HandleJobResult::Success([].into()))
-        }
-    }
-}
-
-/// Perform a single compilation job, collecting errors instead of panicking.
-///
-/// This is a variant of `perform_job` that returns errors instead of panicking.
-fn perform_job_collect_errors(
-    context: &GlobalCompilationContext,
-    job: &CompilationJob,
-) -> JobResultCollect {
     fn line_start_byte(contents: &str, index: usize) -> usize {
         let safe_index = index.min(contents.len());
         contents[..safe_index]
@@ -666,195 +576,61 @@ fn perform_job_collect_errors(
         None
     }
 
+    // Perform the job and collect errors
+    match perform_job(context, job) {
+        Ok(_) => {}
+        Err(e) => {
+            let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                compilation_unit: job.unit.as_path().to_path_buf(),
+                message: e.error_message(),
+                line: None,
+            });
+
+            error_collector.push(lsp_error);
+            return Some(HandleJobResult::Continue);
+        }
+    }
+
+    // Generate next jobs based on the completed step
     match job.step {
         CompilationStep::PreParse => {
-            let file_path = job.unit.with_extension("cx");
-            let file_contents = match std::fs::read_to_string(&file_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: file_path.clone(),
-                        message: format!("Failed to read file: {}", e),
-                        line: None,
-                    });
-                }
-            };
+            let pp_data = context.module_db.preparse_base.get(&job.unit);
 
-            let tokens = match cx_lexer::lex(&file_contents) {
-                Some(t) => t,
-                None => {
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: file_path.clone(),
-                        message: "Lexing failed: unknown error".to_string(),
-                        line: None,
-                    });
-                }
-            };
-
-            let mut output = match preparse(TokenIter::new(&tokens, file_path.clone())) {
-                Ok(p) => p,
-                Err(e) => {
-                    return JobResultCollect::FatalError(spanned_error(e.as_ref()).unwrap_or(
-                        LSPErrors::FatalError {
-                            compilation_unit: file_path.clone(),
-                            message: format!("Pre-parsing failed: {}", e.error_message()),
-                            line: None,
-                        },
-                    ));
-                }
-            };
-            output.module = job.unit.to_string();
-
-            if !job.unit.as_str().contains("/std/") {
-                output
-                    .imports
-                    .extend(INTRINSIC_IMPORTS.iter().map(|s| s.to_string()));
-            }
-
-            context
-                .module_db
-                .lex_tokens
-                .insert(job.unit.clone(), tokens);
-            context
-                .module_db
-                .preparse_base
-                .insert(job.unit.clone(), output);
-
-            JobResultCollect::StandardSuccess
-        }
-
-        CompilationStep::ASTParse => {
-            let mut pp_data = context.module_db.preparse_base.get_cloned(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
-            // Combine imports
-            for import in pp_data.imports.iter() {
-                let other_pp_data =
-                    context
-                        .module_db
-                        .preparse_base
-                        .get(&CompilationUnit::from_rooted(
+            let mut new_jobs: Vec<CompilationJob> = pp_data
+                .imports
+                .iter()
+                .map(|import| {
+                    CompilationJob::new(
+                        vec![],
+                        CompilationStep::PreParse,
+                        CompilationUnit::from_rooted(
                             import.as_str(),
                             &context.config.working_directory,
-                        ));
-                let required_visiblity = VisibilityMode::Public;
+                        ),
+                    )
+                })
+                .collect();
 
-                for resource in other_pp_data.type_idents.iter() {
-                    if resource.visibility < required_visiblity {
-                        continue;
-                    }
+            // Add the next step for this job
+            let mut next_job = job.clone();
+            next_job.step = CompilationStep::ASTParse;
+            next_job.requirements = Vec::new();
+            new_jobs.push(next_job);
 
-                    pp_data.type_idents.push(resource.transfer(import));
-                }
-            }
-
-            let parsed_ast = match parse_ast(
-                TokenIter::new(&lexemes, job.unit.with_extension("cx")),
-                &pp_data,
-            ) {
-                Ok(ast) => ast,
-                Err(e) => {
-                    let file_path = job.unit.with_extension("cx");
-                    return JobResultCollect::FatalError(spanned_error(e.as_ref()).unwrap_or(
-                        LSPErrors::FatalError {
-                            compilation_unit: file_path,
-                            message: format!("AST parsing failed: {}", e.error_message()),
-                            line: None,
-                        },
-                    ));
-                }
-            };
-
-            context
-                .module_db
-                .naive_ast
-                .insert(job.unit.clone(), parsed_ast);
-
-            JobResultCollect::StandardSuccess
+            Some(HandleJobResult::Success(new_jobs.into()))
         }
-
-        CompilationStep::InterfaceCombine => {
-            match gather_interface(context, &job.unit) {
-                Ok(_) => {}
-                Err(e) => {
-                    return JobResultCollect::FatalError(LSPErrors::FatalError {
-                        compilation_unit: job.unit.as_path().to_path_buf(),
-                        message: format!("Interface combining failed: {}", e.error_message()),
-                        line: None,
-                    });
-                }
-            }
-            JobResultCollect::StandardSuccess
-        }
-
+        CompilationStep::ASTParse => Some(HandleJobResult::Success(map_reqs_new_stage(
+            CompilationStep::InterfaceCombine,
+        ))),
+        CompilationStep::InterfaceCombine => Some(HandleJobResult::Success(map_reqs_new_stage(
+            CompilationStep::Typechecking,
+        ))),
         CompilationStep::Typechecking => {
-            let structure_data = context.module_db.base_mappings.get(&job.unit);
-            let self_ast = context.module_db.naive_ast.get(&job.unit);
-            let lexemes = context.module_db.lex_tokens.get(&job.unit);
-
-            let mut env = TypeEnvironment::new(
-                lexemes.as_ref(),
-                job.unit.clone(),
-                context.config.working_directory.clone(),
-                &context.module_db,
-            );
-
-            // Collect errors from each typecheck stage
-            match complete_base_globals(&mut env, structure_data.as_ref()) {
-                Ok(_) => {}
-                Err(e) => {
-                    return JobResultCollect::FatalError(spanned_error(e.as_ref()).unwrap_or(
-                        LSPErrors::FatalError {
-                            compilation_unit: job.unit.as_path().to_path_buf(),
-                            message: e.error_message(),
-                            line: None,
-                        },
-                    ));
-                }
-            }
-
-            match complete_base_functions(&mut env, structure_data.as_ref()) {
-                Ok(_) => {}
-                Err(e) => {
-                    return JobResultCollect::FatalError(spanned_error(e.as_ref()).unwrap_or(
-                        LSPErrors::FatalError {
-                            compilation_unit: job.unit.as_path().to_path_buf(),
-                            message: e.error_message(),
-                            line: None,
-                        },
-                    ));
-                }
-            }
-
-            match typecheck(&mut env, structure_data.as_ref(), &self_ast) {
-                Ok(_) => {}
-                Err(e) => {
-                    return JobResultCollect::FatalError(spanned_error(e.as_ref()).unwrap_or(
-                        LSPErrors::FatalError {
-                            compilation_unit: job.unit.as_path().to_path_buf(),
-                            message: e.error_message(),
-                            line: None,
-                        },
-                    ));
-                }
-            }
-
-            match realize_templates(&job.unit, &mut env) {
-                Ok(_) => {}
-                Err(e) => {
-                    return JobResultCollect::FatalError(spanned_error(e.as_ref()).unwrap_or(
-                        LSPErrors::FatalError {
-                            compilation_unit: job.unit.as_path().to_path_buf(),
-                            message: e.error_message(),
-                            line: None,
-                        },
-                    ));
-                }
-            }
-            JobResultCollect::StandardSuccess
+            // Stop here for LSP - no need for bytecode/codegen
+            Some(HandleJobResult::Success([].into()))
         }
-
-        // These steps are not executed for LSP
-        CompilationStep::LMIRGen | CompilationStep::Codegen => JobResultCollect::StandardSuccess,
+        CompilationStep::LMIRGen | CompilationStep::Codegen => {
+            Some(HandleJobResult::Success([].into()))
+        }
     }
 }

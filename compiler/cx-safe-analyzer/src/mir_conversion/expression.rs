@@ -7,7 +7,7 @@ use cx_mir::mir::{
 use cx_safe_ir::{ast::{
     CVMOperation, FMIRNode, FMIRNodeBody, FMIRSourceRange, FMIRType, FRc, MemoryLocation,
 }, intrinsic::FMIRIntrinsicKind};
-use crate::mir_conversion::factories::*;
+use crate::{log_analysis_error, mir_conversion::factories::*};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use crate::mir_conversion::environment::FMIREnvironment;
@@ -65,6 +65,14 @@ pub fn convert_expression(
                 .as_ref()
                 .map(|expr| convert_expression(env, expr))
                 .transpose()?;
+            
+            if _type.is_pointer() {
+                return log_analysis_error!(
+                    env,
+                    mir_expr,
+                    "Pointer types may not be used in safe contexts"
+                )
+            }
 
             let mut operation = CVMOperation::Unsafe;
             if let Some(name) = name {

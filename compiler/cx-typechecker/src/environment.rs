@@ -597,6 +597,8 @@ impl TypeEnvironment<'_> {
             functions: self.generated_functions,
             prototypes: self.realized_fns.into_values().collect(),
             global_variables: self.realized_globals.into_values().collect(),
+            
+            source_path: self.compilation_unit.as_path().to_owned(),
         })
     }
 }

@@ -430,6 +430,7 @@ dependencies = [
  "cx-lexer",
  "cx-log",
  "cx-mir",
+ "cx-pipeline-data",
  "cx-safe-ir",
  "cx-util",
 ]

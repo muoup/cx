@@ -48,7 +48,9 @@ fn main() {
     };
 
     standard_compilation(compiler_config, PathBuf::from(file_name).as_path())
-        .expect("Compilation failed");
+        .unwrap_or_else(|err| {
+            err.pretty_print();
+        });
 
     println!("Compilation complete!");
 }

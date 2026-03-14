@@ -210,25 +210,6 @@ fn parameter_is_safe_signature(
     type_is_safe_signature(&param._type)
 }
 
-fn prototype_is_safe_callable(prototype: &MIRFunctionPrototype) -> bool {
-    prototype.contract.safe
-        && !prototype.var_args
-        && return_type_is_safe_signature(&prototype.return_type)
-        && prototype
-            .params
-            .iter()
-            .enumerate()
-            .all(|(index, param)| parameter_is_safe_signature(prototype, index, param))
-}
-
-fn type_is_safe_expression(ty: &MIRType) -> bool {
-    match &ty.kind {
-        MIRTypeKind::MemoryReference { inner_type, .. } => type_is_safe_expression(inner_type),
-        MIRTypeKind::Function { prototype } => prototype_is_safe_callable(prototype),
-        _ => type_is_safe_signature(ty),
-    }
-}
-
 pub(crate) fn validate_safe_function_signature(
     env: &mut TypeEnvironment,
     prototype: &MIRFunctionPrototype,
@@ -270,111 +251,6 @@ pub(crate) fn validate_safe_function_signature(
     }
 
     Ok(())
-}
-
-fn validate_safe_contract_expression(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    mir_expr: &MIRExpression,
-) -> CXResult<()> {
-    if !env.contract_pure_mode {
-        return Ok(());
-    }
-
-    if !type_is_safe_expression(&mir_expr._type) {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Safe contract expression uses unsupported type {}",
-            mir_expr._type
-        );
-    }
-
-    match &mir_expr.kind {
-        MIRExpressionKind::BoolLiteral(_)
-        | MIRExpressionKind::IntLiteral(..)
-        | MIRExpressionKind::FloatLiteral(..)
-        | MIRExpressionKind::Unit
-        | MIRExpressionKind::Variable(_)
-        | MIRExpressionKind::ContractVariable { .. }
-        | MIRExpressionKind::BinaryOperation { .. }
-        | MIRExpressionKind::UnaryOperation { .. }
-        | MIRExpressionKind::TypeConversion { .. }
-        | MIRExpressionKind::Typechange(_) => Ok(()),
-        _ => log_typecheck_error!(
-            env,
-            expr,
-            " Safe contract conditions must be pure expressions"
-        ),
-    }
-}
-
-fn validate_safe_expression(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    mir_expr: &MIRExpression,
-) -> CXResult<()> {
-    if !env.in_safe_context() {
-        return Ok(());
-    }
-
-    if !type_is_safe_expression(&mir_expr._type) {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Safe function expression uses unsupported type {}",
-            mir_expr._type
-        );
-    }
-
-    match &mir_expr.kind {
-        MIRExpressionKind::BoolLiteral(_)
-        | MIRExpressionKind::IntLiteral(..)
-        | MIRExpressionKind::FloatLiteral(..)
-        | MIRExpressionKind::Unit
-        | MIRExpressionKind::Variable(_)
-        | MIRExpressionKind::ContractVariable { .. }
-        | MIRExpressionKind::BinaryOperation { .. }
-        | MIRExpressionKind::UnaryOperation { .. }
-        | MIRExpressionKind::MemoryRead { .. }
-        | MIRExpressionKind::MemoryWrite { .. }
-        | MIRExpressionKind::CreateStackVariable { .. }
-        | MIRExpressionKind::Typechange(_)
-        | MIRExpressionKind::If { .. }
-        | MIRExpressionKind::While { .. }
-        | MIRExpressionKind::For { .. }
-        | MIRExpressionKind::Return { .. }
-        | MIRExpressionKind::Block { .. }
-        | MIRExpressionKind::TypeConversion { .. }
-        | MIRExpressionKind::LeakLifetime { .. }
-        | MIRExpressionKind::Move { .. }
-        | MIRExpressionKind::Unsafe { .. } => Ok(()),
-        MIRExpressionKind::FunctionReference { .. } | MIRExpressionKind::CallFunction { .. } => {
-            let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    " Safe function call target must have a safe function type"
-                );
-            };
-
-            if prototype_is_safe_callable(prototype) {
-                Ok(())
-            } else {
-                log_typecheck_error!(
-                    env,
-                    expr,
-                    " Safe code may only call other safe functions"
-                )
-            }
-        }
-        _ => log_typecheck_error!(
-            env,
-            expr,
-            " Expression is not yet allowed in safe functions: {}",
-            expr
-        ),
-    }
 }
 
 pub fn typecheck_expr(
@@ -1334,9 +1210,6 @@ pub fn typecheck_expr_inner(
             end_token: expr.end_index,
         });
     }
-
-    validate_safe_contract_expression(env, expr, &result.expression)?;
-    validate_safe_expression(env, expr, &result.expression)?;
 
     Ok(result)
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use cx_ast::{
     ast::CXGlobalVariable,
@@ -17,6 +17,7 @@ pub struct MIRUnit {
     pub prototypes: Vec<MIRFunctionPrototype>,
     pub functions: Vec<MIRFunction>,
     pub global_variables: Vec<MIRGlobalVariable>,
+    pub source_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]

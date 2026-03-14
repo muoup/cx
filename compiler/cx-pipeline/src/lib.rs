@@ -7,6 +7,8 @@ mod backends;
 use crate::linker::link;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
+use cx_util::CXError;
+use cx_util::CXResult;
 use cx_util::format::with_dump_directory;
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
@@ -18,17 +20,20 @@ use std::sync::Mutex;
 // Re-export LSP diagnostic types for use by cx-lsp
 pub use crate::scheduler::{LSPErrorSpan, LSPErrors};
 
-pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> Option<()> {
+pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
     };
+    
+    let base_file_str = base_file.to_str()
+        .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
 
     let initial_job = CompilationJob::new(
         vec![],
         CompilationStep::PreParse,
-        CompilationUnit::from_rooted(base_file.to_str()?, &compiler_context.config.working_directory),
+        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory),
     );
 
     with_dump_directory(compiler_context.config.internal_directory.clone(), || {
@@ -36,7 +41,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> Option<
         link(&compiler_context)
     })?;
 
-    Some(())
+    Ok(())
 }
 
 /// Typecheck-only compilation for LSP integration.

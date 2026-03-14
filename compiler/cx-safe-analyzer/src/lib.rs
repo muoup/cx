@@ -4,18 +4,17 @@ use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_mir::mir::types::MIRFunctionPrototype;
-use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRNodeBody, FMIRSourceRange};
-use cx_safe_ir::intrinsic::FMIRIntrinsicKind;
+use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRSourceRange};
 use cx_util::{CXError, CXErrorTrait, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
-use crate::simplify::{ConstValue, int_to_bool};
-use crate::simplify::{binary, unary};
-use crate::traversal::{VisitControl, walk_pre_order};
+use crate::simplify::assert_proven_conditions;
+use crate::traversal::VisitControl;
 
 pub(crate) mod mir_conversion;
 pub(crate) mod simplify;
 pub(crate) mod traversal;
+pub(crate) mod log;
 
 pub type FMIRAnalysisPass<'a> = &'a dyn Fn(&FMIRContext, FMIRFunction) -> CXResult<FMIRFunction>;
 
@@ -118,15 +117,15 @@ impl AnalysisDiagnosticContext {
 }
 
 impl FMIRContext {
-    pub fn new() -> Self {
+    pub fn new(compilation_unit: PathBuf) -> Self {
         FMIRContext {
-            env: FMIREnvironment::new(),
+            env: FMIREnvironment::new(compilation_unit),
             functions: HashMap::new(),
         }
     }
 
     pub fn new_from(mir: &MIRUnit) -> CXResult<Self> {
-        let mut context = FMIRContext::new();
+        let mut context = FMIRContext::new(mir.source_path.to_owned());
 
         for function in mir.functions.iter() {
             if !function.prototype.contract.safe {
@@ -167,102 +166,6 @@ impl FMIRContext {
 
     pub fn drain_functions(&mut self) -> Vec<(String, FMIRFunction)> {
         self.functions.drain().collect()
-    }
-}
-
-fn evaluate_const(
-    node: &FMIRNode,
-    scoped_variables: &HashMap<String, ConstValue>,
-) -> Option<ConstValue> {
-    match &node.body {
-        FMIRNodeBody::IntegerLiteral(value) => Some(ConstValue::Int(*value)),
-        FMIRNodeBody::FloatLiteral(value) => Some(ConstValue::Float(*value)),
-        FMIRNodeBody::BooleanLiteral(value) => Some(ConstValue::Bool(*value)),
-        FMIRNodeBody::Unit => Some(ConstValue::Unit),
-        FMIRNodeBody::VariableAlias { name } => scoped_variables.get(name).cloned(),
-        FMIRNodeBody::CReturn { value } => evaluate_const(value, scoped_variables),
-        FMIRNodeBody::Then { second, .. } => evaluate_const(second, scoped_variables),
-        FMIRNodeBody::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => match evaluate_const(condition, scoped_variables) {
-            Some(ConstValue::Bool(true)) => evaluate_const(then_branch, scoped_variables),
-            Some(ConstValue::Bool(false)) => evaluate_const(else_branch, scoped_variables),
-            Some(ConstValue::Int(value)) if int_to_bool(value) => {
-                evaluate_const(then_branch, scoped_variables)
-            }
-            Some(ConstValue::Int(_)) => evaluate_const(else_branch, scoped_variables),
-            _ => None,
-        },
-        FMIRNodeBody::Bind {
-            monad,
-            capture,
-            function,
-        } => {
-            let value = evaluate_const(monad, scoped_variables)?;
-            let mut scoped = scoped_variables.clone();
-            scoped.insert(capture.as_string(), value);
-            evaluate_const(function, &scoped)
-        }
-        FMIRNodeBody::Application { function, argument } => {
-            let argument_value = evaluate_const(argument, scoped_variables)?;
-
-            if let FMIRNodeBody::IntrinsicFunction(intrinsic) = &function.body {
-                return match &intrinsic.kind {
-                    FMIRIntrinsicKind::Unary(op) => unary::eval_unary(op, argument_value),
-                    FMIRIntrinsicKind::Cast(op)  => unary::eval_cast(op, argument_value),
-                    FMIRIntrinsicKind::Binary(_) => None,
-                };
-            }
-
-            let FMIRNodeBody::Application {
-                function: nested_function,
-                argument: left_argument,
-            } = &function.body
-            else {
-                return None;
-            };
-
-            let FMIRNodeBody::IntrinsicFunction(intrinsic) = &nested_function.body else {
-                return None;
-            };
-            let FMIRIntrinsicKind::Binary(binary_intrinsic) = &intrinsic.kind else {
-                return None;
-            };
-
-            let left_value = evaluate_const(left_argument, scoped_variables)?;
-            binary::eval_binop(binary_intrinsic, left_value, argument_value)
-        }
-        _ => None,
-    }
-}
-
-fn assert_proven_conditions(
-    function_prototype: &MIRFunctionPrototype,
-    root: &FMIRNode,
-    compilation_unit: &Path,
-) -> CXResult<()> {
-    let diagnostics = AnalysisDiagnosticContext::new(function_prototype, compilation_unit);
-    let mut visit = |node: &FMIRNode| -> CXResult<VisitControl> {
-        let FMIRNodeBody::CompilerAssert { condition, message } = &node.body else {
-            return Ok(VisitControl::Continue);
-        };
-
-        match evaluate_const(condition, &HashMap::new()) {
-            Some(ConstValue::Bool(false)) | Some(ConstValue::Int(0)) => {
-                diagnostics.fail_proven_false(message, node, condition)
-            }
-            _ => Ok(VisitControl::Continue),
-        }
-    };
-
-    walk_pre_order(root, &mut visit)
-}
-
-impl Default for FMIRContext {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

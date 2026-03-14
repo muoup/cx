@@ -5,7 +5,7 @@ use cx_mir::mir::{
 use cx_safe_ir::{ast::*, intrinsic::*};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
-use crate::mir_conversion::{environment::FMIREnvironment, expression::convert_expression};
+use crate::{log_analysis_error, mir_conversion::{environment::FMIREnvironment, expression::convert_expression}};
 
 pub(crate) fn monad_unit(operation: CVMOperation) -> FMIRType {
     FMIRType::CMonad {
@@ -413,11 +413,11 @@ pub(crate) fn unsupported_expression_error(
     env: &FMIREnvironment,
     expr: &MIRExpression,
 ) -> CXResult<FMIRNode> {
-    CXError::create_result(format!(
-        "FMIR conversion does not currently support expression '{}' in function '{}'",
+    log_analysis_error!(
+        env,
         expr,
-        env.current_mir_prototype().name,
-    ))
+        "Expression is not supported in safe context, use `unsafe` block if no safe alternative is available"
+    )
 }
 
 pub(crate) fn with_expression_range(mut node: FMIRNode, mir_expr: &MIRExpression) -> FMIRNode {
