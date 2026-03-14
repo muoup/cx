@@ -17,7 +17,7 @@ pub(crate) fn validate_safe_function_signature(
         return log_analysis_error!(
             env,
             body,
-            " Safe function '{}' may not use varargs",
+            "Safe function '{}' may not use varargs",
             prototype.name
         );
     }
@@ -26,7 +26,7 @@ pub(crate) fn validate_safe_function_signature(
         return log_analysis_error!(
             env,
             body,
-            " Safe function '{}' has unsupported return type {}",
+            "Safe function '{}' has unsupported return type {}",
             prototype.name,
             prototype.return_type
         );
@@ -37,7 +37,7 @@ pub(crate) fn validate_safe_function_signature(
             return log_analysis_error!(
                 env,
                 body,
-                " Safe function '{}' has unsupported parameter type {}",
+                "Safe function '{}' has unsupported parameter type {}",
                 prototype.name,
                 param._type
             );

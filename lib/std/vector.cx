@@ -46,7 +46,7 @@ void vector<T>::push<T>(*this, T object) {
 
 opt<ref<T>> vector<T>::at<T>(*this, usize index) {
     if (index >= this.length) {
-        return opt<T>::none();
+        return opt<ref<T>>::none();
     }
 
     return opt<ref<T>>::some(

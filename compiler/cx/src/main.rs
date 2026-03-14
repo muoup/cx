@@ -53,6 +53,7 @@ fn main() {
         }
         Err(err) => {
             err.pretty_print();
+            std::process::exit(1);
         }
     }
 }

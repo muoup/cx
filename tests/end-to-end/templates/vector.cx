@@ -4,8 +4,6 @@ import std::ref;
 import std::optional;
 
 int main() {
-    opt<ref<int>> maybe_value;
-    
     vector<int> vec = vector<int>::new<int>();
     
     vec.push<int>(1);

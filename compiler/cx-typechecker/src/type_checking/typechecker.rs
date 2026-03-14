@@ -337,7 +337,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr,
-                    " Safe functions may not access global variables"
+                    "Safe functions may not access global variables"
                 );
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 TypecheckResult::expr2(global)

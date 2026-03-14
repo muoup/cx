@@ -21,9 +21,9 @@ pub fn eval_cast(op: &FMIRCastIntrinsic, value: ConstValue) -> Option<ConstValue
     match (op, value) {
         (Op::IntToBool, ConstValue::Bool(v)) => Some(ConstValue::Bool(v)),
         (Op::IntToBool, ConstValue::Int(v))  => Some(ConstValue::Bool(int_to_bool(v))),
-        (Op::Integral { sextend, .. }, ConstValue::Int(v)) => {
+        (Op::Integral { sextend, to_bits }, ConstValue::Int(v)) => {
             // Bit-width narrowing is not tracked in ConstValue; preserve value with sign handling.
-            let result = if *sextend { v } else { v & i64::MAX };
+            let result = if *sextend { v } else { v & ((1u64 << to_bits) - 1) as i64 };
             Some(ConstValue::Int(result))
         }
         (Op::FloatCast { .. }, ConstValue::Float(v)) => Some(ConstValue::Float(v)),

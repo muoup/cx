@@ -18,10 +18,10 @@ bool opt<T>::is_some<T>(*this) {
 
 opt<U> opt<T>::map<T, U>(*this, U (*func)(T)) {
     if (this.is_some()) {
-        return func(value);
+        return opt::some(func(value));
     }
 
-    return None;
+    return opt::none;
 }
 
 T opt<T>::unwrap_or<T>(*this, T otherwise) {

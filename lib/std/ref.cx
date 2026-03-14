@@ -1,10 +1,15 @@
+#include <stdlib.h>
+
 public:
 
 struct ref<T> : @nocopy {
     T* ptr;
 };
 
-ref<T> ref<T>::new<T>(T* ptr) {
+ref<T> ref<T>::new<T>(T* ptr) 
+where
+    pre: (ptr != NULL)
+{
     return (ref<T>) {
         .ptr = ptr
     };
