@@ -73,8 +73,12 @@ fn compiler_config(
         },
         output,
         analysis,
+        verbose: false,
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
+        compilation_mode: cx_pipeline_data::CompilationMode::Binary,
+        project_config: None,
+        link_entries: vec![],
     }
 }
 

@@ -447,7 +447,7 @@ impl TypeEnvironment<'_> {
 
     pub fn get_type(&mut self, base_data: &MIRBaseMappings, name: &str) -> CXResult<MIRType> {
         let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
-            return CXError::create_result(format!("Type not found: {}", name));
+            return CXError::create_result(format!("Type '{}' not found", name));
         };
 
         self.complete_type(base_data, &_ty.resource)

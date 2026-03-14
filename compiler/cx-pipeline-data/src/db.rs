@@ -148,6 +148,17 @@ impl<'a, Data> ModuleMap<Data> {
         lock.insert(unit, Arc::from(data));
     }
 
+    pub fn take_all(&self) -> Vec<Data> {
+        let mut lock = self
+            .loaded_data
+            .write()
+            .expect("Failed to acquire write lock on loaded data");
+
+        lock.drain()
+            .map(|(_, arc)| Arc::try_unwrap(arc).ok().expect("Failed to unwrap Arc"))
+            .collect()
+    }
+
     pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<CompilationUnit, Arc<Data>>> {
         self.loaded_data
             .read()
