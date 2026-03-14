@@ -56,7 +56,7 @@ fn type_is_safe_signature(ty: &MIRType) -> bool {
 }
 
 fn return_type_is_safe_signature(return_type: &MIRType) -> bool {
-    type_is_safe_signature(&return_type) || return_type.is_memory_reference()
+    type_is_safe_signature(return_type) || return_type.is_memory_reference()
 }
 
 fn receiver_type_is_safe_signature(receiver_type: &MIRType) -> bool {

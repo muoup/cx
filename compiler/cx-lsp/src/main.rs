@@ -209,7 +209,7 @@ impl LanguageServer for Backend {
         // Perform all synchronous operations before any await
         let diagnostics_by_file = {
             let project_root_guard = self.project_root.lock().unwrap();
-            self.typecheck_file_sync(&file_path, &*project_root_guard)
+            self.typecheck_file_sync(&file_path, &project_root_guard)
         };
 
         self.client
