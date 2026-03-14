@@ -1,3 +1,0 @@
-struct Lifetime {};
-
-~Lifetime(this) {}

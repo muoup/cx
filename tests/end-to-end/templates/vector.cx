@@ -1,0 +1,23 @@
+import std::vector;
+import std::io;
+import std::ref;
+import std::optional;
+
+int main() {
+    vector<int> vec = vector<int>::new<int>();
+    
+    vec.push<int>(1);
+    vec.push<int>(2);
+    vec.push<int>(3);
+
+    printf("Vector length: %zu\n", vec.length);
+    printf("Vector capacity: %zu\n", vec.capacity);
+    
+    opt<ref<int>> maybe_value = vec.at<int>(0);
+    ref<int> value_ref = maybe_value.unwrap<ref<int>>();
+    int value = value_ref.deref<int>();
+    
+    printf("vec[0]: %d\n", value);
+    
+    vec.drop<int>();
+}

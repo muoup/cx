@@ -4,12 +4,12 @@ use cx_ast::ast::VisibilityMode;
 use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRStructAttributes, MIRTemplateInput, MIRType, MIRTypeKind};
-use cx_util::{CXResult, log_error};
+use cx_util::{log_error, CXResult};
 
-use crate::{environment::TypeEnvironment, log::TypeError};
 use crate::type_completion::complete_type;
 use crate::type_completion::prototypes::_complete_fn_prototype;
 use crate::type_completion::templates::instantiate_type_template;
+use crate::{environment::TypeEnvironment, log::TypeError};
 
 pub(crate) fn base_data_from_module<'a>(
     env: &mut TypeEnvironment,
@@ -72,7 +72,8 @@ pub(crate) fn _complete_type(
                     base_data,
                     inner.external_module.as_ref(),
                     &inner.resource,
-                )?.with_specifier(ty.specifiers);                
+                )?
+                .with_specifier(ty.specifiers);
 
                 return Ok(ty);
             };
@@ -81,8 +82,8 @@ pub(crate) fn _complete_type(
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
-            Ok(instantiate_type_template(env, base_data, input, name.as_str())?
-                .with_specifier(ty.specifiers))
+            instantiate_type_template(env, base_data, input, name.as_str())
+                .map(|ty| ty.with_specifier(ty.specifiers))
         }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
@@ -145,15 +146,22 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
-            validate_linear_hierarchy(env, "struct", &fields, *attributes)?;
+            // Resolve copy_traits first to get merged attributes
+            let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
+
+            // Create resolved attributes for validation
+            let resolved_attributes = CXStructAttributes {
+                nocopy,
+                nodrop,
+                copy_traits: None, // Not needed for validation
+            };
+
+            validate_linear_hierarchy(env, "struct", &fields, &resolved_attributes)?;
 
             let ty = construct_type(MIRTypeKind::Structured {
                 name: name.clone(),
                 template_info: None,
-                attributes: MIRStructAttributes {
-                    nocopy: attributes.nocopy || attributes.nodrop,
-                    nodrop: attributes.nodrop,
-                },
+                attributes: MIRStructAttributes { nocopy, nodrop },
                 fields,
             })?;
 
@@ -192,25 +200,50 @@ pub(crate) fn _complete_type(
                 })
                 .collect::<CXResult<Vec<_>>>()?;
 
-            validate_linear_hierarchy(env, "enum union", &variants, *attributes)?;
+            // Resolve copy_traits first to get merged attributes
+            let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
+
+            // Create resolved attributes for validation
+            let resolved_attributes = CXStructAttributes {
+                nocopy,
+                nodrop,
+                copy_traits: None,
+            };
+
+            validate_linear_hierarchy(env, "enum union", &variants, &resolved_attributes)?;
 
             Ok(MIRType::from(MIRTypeKind::TaggedUnion {
                 name: name.clone(),
-                attributes: MIRStructAttributes {
-                    nocopy: attributes.nocopy || attributes.nodrop,
-                    nodrop: attributes.nodrop,
-                },
+                attributes: MIRStructAttributes { nocopy, nodrop },
                 variants,
             }))
         }
     }
 }
 
+/// Resolves copy_traits attribute by looking up the template parameter's resolved type
+/// and merging its nocopy/nodrop attributes into the current type's attributes.
+fn resolve_copy_traits(env: &TypeEnvironment, attributes: &CXStructAttributes) -> (bool, bool) {
+    let mut nocopy = attributes.nocopy || attributes.nodrop;
+    let mut nodrop = attributes.nodrop;
+
+    if let Some(param_name) = &attributes.copy_traits {
+        if let Some(resolved_type) = env.get_realized_type(param_name) {
+            if let Some(src_attrs) = resolved_type.struct_attributes() {
+                nocopy = nocopy || src_attrs.nocopy;
+                nodrop = nodrop || src_attrs.nodrop;
+            }
+        }
+    }
+
+    (nocopy, nodrop)
+}
+
 fn validate_linear_hierarchy(
     env: &mut TypeEnvironment,
     aggregate_kind: &str,
     members: &[(String, MIRType)],
-    attributes: CXStructAttributes,
+    attributes: &CXStructAttributes,
 ) -> CXResult<()> {
     let aggregate_is_nocopy = attributes.nocopy || attributes.nodrop;
 
@@ -225,7 +258,7 @@ fn validate_linear_hierarchy(
                 token_start: 0,
                 token_end: 0,
                 message: format!(
-                    "TYPE ERROR:  {} must be declared @nodrop because member '{}' has type {}",
+                    "{} must be declared @nodrop because member '{}' has type {}",
                     aggregate_kind, member_name, member_type
                 ),
                 notes: Vec::new(),
@@ -238,7 +271,7 @@ fn validate_linear_hierarchy(
                 token_start: 0,
                 token_end: 0,
                 message: format!(
-                    "TYPE ERROR:  {} must be declared @nocopy because member '{}' has type {}",
+                    "T{} must be declared @nocopy because member '{}' has type {}",
                     aggregate_kind, member_name, member_type
                 ),
                 notes: Vec::new(),

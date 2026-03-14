@@ -50,6 +50,10 @@ impl Display for MIRFunctionPrototype {
             write!(f, "...")?;
         }
         write!(f, ") -> {}", self.return_type)?;
+        
+        if self.contract.safe {
+            write!(f, " [safe]")?;
+        }
 
         if let Some(precondition) = &self.contract.precondition {
             writeln!(f, "\nPrecondition:")?;

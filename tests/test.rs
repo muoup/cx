@@ -1,7 +1,5 @@
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
-use std::any::Any;
-use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,9 +20,12 @@ struct TestTempDir {
 impl TestTempDir {
     fn new(test_name: &str) -> Self {
         let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir()
-            .join("cx-e2e-tests")
-            .join(format!("{}-{}-{}", sanitize_name(test_name), std::process::id(), unique_id));
+        let path = std::env::temp_dir().join("cx-end-to-end-tests").join(format!(
+            "{}-{}-{}",
+            sanitize_name(test_name),
+            std::process::id(),
+            unique_id
+        ));
 
         std::fs::create_dir_all(&path).expect("Failed to create temp test directory");
         Self { path }
@@ -49,7 +50,8 @@ fn sanitize_name(name: &str) -> String {
 
 fn base_file_name(input: &Path) -> &Path {
     Path::new(
-        input.file_name()
+        input
+            .file_name()
             .expect("Missing file name for test case")
             .to_str()
             .expect("Failed to convert test file name to string"),
@@ -76,27 +78,15 @@ fn compiler_config(
     }
 }
 
-fn panic_message(payload: Box<dyn Any + Send>) -> String {
-    match payload.downcast::<String>() {
-        Ok(message) => *message,
-        Err(payload) => match payload.downcast::<&'static str>() {
-            Ok(message) => (*message).to_string(),
-            Err(_) => "<non-string panic payload>".to_string(),
-        },
-    }
-}
-
 fn classify_failure_stage(message: &str) -> Option<FailureStage> {
-    if message.contains("Pre-parsing failed for unit:")
-        || message.contains("AST parsing failed for unit:")
+    if message.starts_with("PARSER ERROR")
     {
         Some(FailureStage::Parse)
-    } else if message.contains("Typechecking failed for unit:")
-        || message.contains("Completing base globals failed")
-        || message.contains("Completing base functions failed")
+    } else if message.starts_with("TYPE ERROR")
     {
         Some(FailureStage::Typecheck)
-    } else if message.contains("FMIR analysis failed for unit:") {
+    } else if message.starts_with("ANALYSIS ERROR")
+    {
         Some(FailureStage::Analysis)
     } else {
         None
@@ -124,7 +114,11 @@ fn expect_compile_success(input: &Path, analysis: bool) {
         analysis,
     );
 
-    standard_compilation(config, base_file_name(input)).expect("Compilation failed");
+    standard_compilation(config, base_file_name(input))
+        .unwrap_or_else(|err| {
+            err.pretty_print();
+            std::process::exit(1);
+        });
 }
 
 fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
@@ -148,23 +142,23 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         analysis,
     );
 
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        standard_compilation(config, base_file_name(input));
-    }));
+    let message = match standard_compilation(config, base_file_name(input)) {
+        Ok(_) => panic!("Expected compilation failure but got success"),
+        Err(err) => Some(err.error_message()),
+    };
 
-    let panic = result.expect_err("Expected compilation failure, but compilation succeeded");
-    let message = panic_message(panic);
-    let actual_stage = classify_failure_stage(&message);
-
-    assert_eq!(
-        actual_stage,
-        Some(expected_stage),
-        "Expected {:?} failure for {}, got {:?} with panic message:\n{}",
-        expected_stage,
-        input.display(),
-        actual_stage,
-        message
-    );
+    let actual_stage = message.as_ref()
+        .map(|msg| classify_failure_stage(msg))
+        .flatten();
+    
+    if actual_stage != Some(expected_stage) {
+        panic!(
+            "\nExpected failure stage: {}\nActual failure stage: {}\n\nMessage: {}",
+            format!("{:?}", expected_stage),
+            actual_stage.map(|s| format!("{:?}", s)).unwrap_or("UNKNOWN STAGE".to_string()),
+            message.unwrap_or("No error message".to_string())
+        );
+    }
 }
 
 fn run_binary(path: &Path) -> String {
@@ -178,7 +172,8 @@ fn test_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn run_e2e_test(input: &Path) {
+#[allow(dead_code)]
+fn run_end_to_end_test(input: &Path) {
     let expected_output = input.with_extension("cx-output");
     assert!(
         expected_output.exists(),
@@ -210,7 +205,10 @@ fn run_e2e_test(input: &Path) {
     );
 
     standard_compilation(cranelift_config, base_file_name(input))
-        .expect("Cranelift compilation failed");
+        .unwrap_or_else(|err| {
+            err.pretty_print();
+            std::process::exit(1);
+        });
     assert_eq!(
         expected_output,
         run_binary(&cranelift_output),
@@ -231,7 +229,11 @@ fn run_e2e_test(input: &Path) {
             false,
         );
 
-        standard_compilation(llvm_config, base_file_name(input)).expect("LLVM compilation failed");
+        standard_compilation(llvm_config, base_file_name(input))
+            .unwrap_or_else(|err| {
+                err.pretty_print();
+                std::process::exit(1);
+            });
         assert_eq!(
             expected_output,
             run_binary(&llvm_output),
@@ -241,18 +243,22 @@ fn run_e2e_test(input: &Path) {
     }
 }
 
+#[allow(dead_code)]
 fn run_compile_only_test(input: &Path, analysis: bool) {
     expect_compile_success(input, analysis);
 }
 
+#[allow(dead_code)]
 fn run_parse_error_test(input: &Path) {
     expect_failure(input, false, FailureStage::Parse);
 }
 
+#[allow(dead_code)]
 fn run_type_error_test(input: &Path) {
     expect_failure(input, false, FailureStage::Typecheck);
 }
 
+#[allow(dead_code)]
 fn run_verifier_error_test(input: &Path) {
     expect_failure(input, true, FailureStage::Analysis);
 }

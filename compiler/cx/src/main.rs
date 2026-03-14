@@ -47,8 +47,13 @@ fn main() {
         internal_directory,
     };
 
-    standard_compilation(compiler_config, PathBuf::from(file_name).as_path())
-        .expect("Compilation failed");
-
-    println!("Compilation complete!");
+    match standard_compilation(compiler_config, PathBuf::from(file_name).as_path()) {
+        Ok(_) => {
+            println!("Compilation complete!");
+        }
+        Err(err) => {
+            err.pretty_print();
+            std::process::exit(1);
+        }
+    }
 }

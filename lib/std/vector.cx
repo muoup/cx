@@ -1,5 +1,8 @@
 #include <stdlib.h>
 
+import std::ref;
+import std::optional;
+
 public:
 
 struct vector<T> : @nodrop {
@@ -8,7 +11,7 @@ struct vector<T> : @nodrop {
     usize capacity;
 };
 
-vector<T> vector<T>::create_vector<T>() {
+vector<T> vector<T>::new<T>() {
     return (vector<T>) {
         .data = malloc(4 * sizeof(T)),
         .length = 0,
@@ -16,14 +19,14 @@ vector<T> vector<T>::create_vector<T>() {
     };
 }
 
-void vector<T>::drop<T>(*this) {
+void vector<T>::drop<T>(this) {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
-vector<T> create_vector_with_capacity<T>(usize capacity) {
+vector<T> vector::with_capacity<T>(usize capacity) {
     return (vector<T>) {
         .data = malloc(capacity * sizeof(T)),
         .length = 0,
@@ -31,7 +34,7 @@ vector<T> create_vector_with_capacity<T>(usize capacity) {
     };
 }
 
-void vector<T>::push<T>(this, T object) {
+void vector<T>::push<T>(*this, T object) {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
         this.data = realloc(this.data, this.capacity * sizeof(T));
@@ -41,10 +44,12 @@ void vector<T>::push<T>(this, T object) {
     this.length++;
 }
 
-T* vector<T>::at<T>(this, usize index) {
+opt<ref<T>> vector<T>::at<T>(*this, usize index) {
     if (index >= this.length) {
-        return NULL;
+        return opt<ref<T>>::none();
     }
 
-    return &this.data[index];
+    return opt<ref<T>>::some(
+        @unsafe(ref<T>::new<T>(&this.data[index]))
+    );
 }

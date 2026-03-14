@@ -17,12 +17,16 @@ pub(crate) fn coerce_value(
 ) -> CXResult<MIRExpression> {
     let value_type = value.get_type();
     let mem_ref_inner = value_type.mem_ref_inner();
+    
+    let Some(mem_ref_inner) = mem_ref_inner else {
+        return Ok(value)
+    };
 
-    if let Some(mem_ref_inner) = mem_ref_inner {
-        implicit_cast(env, expr, value, mem_ref_inner)
-    } else {
-        Ok(value)
+    if !env.is_copyable(mem_ref_inner) {
+        return Ok(value);
     }
+    
+    implicit_cast(env, expr, value, mem_ref_inner)
 }
 
 pub(crate) fn coerce_condition(
@@ -255,9 +259,8 @@ pub fn implicit_cast(
                 return log_typecheck_error!(
                     env,
                     expr,
-                    "Cannot implicitly copy value of type {} to type {}",
-                    from_type,
-                    to_type
+                    "Cannot implicitly copy value of type {}",
+                    inner,
                 );
             }
 

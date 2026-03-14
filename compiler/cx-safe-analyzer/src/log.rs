@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use cx_util::CXErrorTrait;
 
 #[derive(Clone, Debug)]
-pub struct TypeError {
+pub struct AnalysisError {
     pub compilation_unit: PathBuf,
     pub token_start: usize,
     pub token_end: usize,
@@ -10,7 +10,7 @@ pub struct TypeError {
     pub notes: Vec<String>,
 }
 
-impl CXErrorTrait for TypeError {
+impl CXErrorTrait for AnalysisError {
     fn pretty_print(&self) {
         cx_log::pretty_underline_error_with_notes(
             &self.error_message(),
@@ -22,7 +22,7 @@ impl CXErrorTrait for TypeError {
     }
 
     fn error_message(&self) -> String {
-        format!("TYPE ERROR:   {}", self.message)
+        format!("ANALYSIS ERROR: {}", self.message)
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {
@@ -47,15 +47,21 @@ impl CXErrorTrait for TypeError {
 }
 
 #[macro_export]
-macro_rules! log_typecheck_error {
+macro_rules! log_analysis_error {
     ($env:expr, $expr:expr, $($arg:tt)*) => {
         {
-            let message = format!("TYPE ERROR: {}", format!($($arg)*));
+            let message = format!("{}", format!($($arg)*));
             
-            Err(Box::new($crate::log::TypeError {
+            let (token_start, token_end) = if let Some(token) = $expr.source_range.as_ref() {
+                (token.start_token, token.end_token)
+            } else {
+                (0, 0) // Default to 0 if no token information is available
+            };
+            
+            Err(Box::new($crate::log::AnalysisError {
                 message,
-                token_start: $expr.start_index,
-                token_end: $expr.end_index,
+                token_start,
+                token_end,
                 compilation_unit: $env.compilation_unit.as_path().to_owned(),
                 notes: Vec::new(),
             }) as Box<dyn cx_util::CXErrorTrait>)

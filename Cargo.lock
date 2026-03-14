@@ -427,9 +427,11 @@ dependencies = [
 name = "cx-safe-analyzer"
 version = "0.1.0"
 dependencies = [
+ "cx-ast",
  "cx-lexer",
  "cx-log",
  "cx-mir",
+ "cx-pipeline-data",
  "cx-safe-ir",
  "cx-util",
 ]

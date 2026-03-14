@@ -400,6 +400,10 @@ impl MIRType {
                 .as_ref()
                 .map(|info| &info.base_name)
                 .or(name.as_ref()),
+            
+            MIRTypeKind::Union { name, .. } => name.as_ref(),
+            
+            MIRTypeKind::TaggedUnion { name, .. } => Some(name),
 
             _ => None,
         }

@@ -1,12 +1,12 @@
 use crate::parse::ParserData;
-use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
-use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
     CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
     CXTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
+use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
+use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
 use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
 
@@ -16,10 +16,7 @@ use crate::parse::templates::{
 };
 use crate::parse::{parse_intrinsic, parse_std_ident};
 
-fn parse_type_attributes(
-    data: &mut ParserData,
-    kind_name: &str,
-) -> CXResult<CXStructAttributes> {
+fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
     let mut attributes = CXStructAttributes::default();
 
     if try_next!(data.tokens, punctuator!(Colon)) {
@@ -29,6 +26,13 @@ fn parse_type_attributes(
             match attr.as_str() {
                 "nocopy" => attributes.nocopy = true,
                 "nodrop" => attributes.nodrop = true,
+                "copy_traits" => {
+                    assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                    assert_token_matches!(data.tokens, identifier!(type_param));
+                    let type_param = type_param.clone();
+                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                    attributes.copy_traits = Some(type_param);
+                }
                 _ => return log_parse_error!(data, "Unknown {kind_name} attribute '@{}'", attr),
             }
 
@@ -408,10 +412,7 @@ pub(crate) fn parsetype_mods(
     }
 }
 
-pub(crate) fn parse_suffixtype_mod(
-    tokens: &mut TokenIter,
-    acc_type: CXType,
-) -> CXResult<CXType> {
+pub(crate) fn parse_suffixtype_mod(tokens: &mut TokenIter, acc_type: CXType) -> CXResult<CXType> {
     let Some(next_tok) = tokens.peek() else {
         return Ok(acc_type);
     };

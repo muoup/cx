@@ -18,9 +18,7 @@ pub trait CXErrorTrait {
     }
 
     /// Get the error as a string for LSP diagnostics
-    fn error_message(&self) -> String {
-        "".to_string()
-    }
+    fn error_message(&self) -> String;
 
     /// Get the compilation unit for this error, if applicable
     fn compilation_unit(&self) -> Option<std::path::PathBuf> {

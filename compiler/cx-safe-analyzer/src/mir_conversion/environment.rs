@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_safe_ir::ast::{FMIRNode, FMIRType, MemoryLocation};
 use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
@@ -20,13 +22,15 @@ pub struct VariableIdentifier {
 pub(crate) struct FMIREnvironment {
     current_mir_prototype: Option<MIRFunctionPrototype>,
     region_table: ScopedMap<VariableIdentifier>,
+    pub compilation_unit: PathBuf,
 }
 
 impl FMIREnvironment {
-    pub fn new() -> Self {
+    pub fn new(compilation_unit: PathBuf) -> Self {
         Self {
             current_mir_prototype: None,
             region_table: ScopedMap::new_with_starting_scope(),
+            compilation_unit,
         }
     }
 

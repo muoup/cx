@@ -8,7 +8,7 @@ use cx_ast::data::{
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRTemplateInput, MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
-use cx_util::{CXResult, log_error};
+use cx_util::{CXError, CXResult};
 
 pub(crate) type Overwrites = Vec<(String, MIRType)>;
 
@@ -58,15 +58,7 @@ pub(crate) fn instantiate_type_template(
     }
 
     let Some(template) = base_data.type_data.get_template(&name.to_owned()) else {
-        log_error!(
-            "Template not found: {name}<{}>",
-            completed_input
-                .args
-                .iter()
-                .map(|param| format!("{param}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        return CXError::create_result(format!("Unknown template type: {}", name));
     };
     
     let shell = &template.resource.shell;

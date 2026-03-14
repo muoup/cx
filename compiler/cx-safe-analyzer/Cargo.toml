@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+cx-ast = { path = "../cx-ast" }
 cx-mir = { path = "../cx-mir" }
 cx-safe-ir = { path = "../cx-safe-ir" }
 cx-lexer = { path = "../cx-lexer" }
 cx-log = { path = "../cx-log" }
 
 cx-util = { path = "../cx-util" }
+cx-pipeline-data = { path = "../cx-pipeline-data" }

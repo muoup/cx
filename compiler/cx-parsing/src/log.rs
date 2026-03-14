@@ -17,7 +17,7 @@ impl CXErrorTrait for ParseErrorLog {
     }
 
     fn error_message(&self) -> String {
-        self.message.clone()
+        format!("PARSER ERROR: {}", self.message)
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {
@@ -41,7 +41,7 @@ impl CXErrorTrait for ParseErrorLog {
 macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
-            let message = format!("PARSER ERROR: {}", format!($($arg)*));
+            let message = format!("{}", format!($($arg)*));
             
             // if cfg!(debug_assertions) {
             //     panic!();
@@ -61,7 +61,7 @@ macro_rules! log_parse_error {
 macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
-            let message = format!("PARSER ERROR: {}", format!($($arg)*));
+            let message = format!("{}", format!($($arg)*));
 
             Err(Box::new($crate::log::ParseErrorLog {
                 message,

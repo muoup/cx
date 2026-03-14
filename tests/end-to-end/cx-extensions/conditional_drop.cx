@@ -4,7 +4,7 @@ struct Resource : @nodrop {
     int data;
 };
 
-void Resource::drop(*this) {
+void Resource::drop(this) {
     printf("drop %d\n", this.data);
     @leak(this);
 }

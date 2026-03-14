@@ -270,8 +270,8 @@ pub enum MIRFloatBinOp {
     FMUL,
     FDIV,
 
-    EQ,
-    NEQ,
+    FEQ,
+    FNE,
 
     FLT,
     FLE,

@@ -114,9 +114,6 @@ pub enum OperatorType {
     Bar,
     Caret,
     Tilda,
-    DoubleLT,
-    DoubleGT,
-
     Increment,
     Decrement,
 
@@ -174,7 +171,7 @@ pub enum KeywordType {
     Restrict,
 
     Sizeof,
-    
+
     // CX Specific
     Import,
     Defer,

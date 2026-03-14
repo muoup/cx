@@ -270,10 +270,6 @@ fn operator_lex(iter: &mut CharIter) -> Option<TokenKind> {
         }
 
         '>' => match iter.peek() {
-            Some('>') => {
-                iter.next();
-                Some(TokenKind::Operator(OperatorType::DoubleGT))
-            }
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::GreaterEqual))
@@ -281,10 +277,6 @@ fn operator_lex(iter: &mut CharIter) -> Option<TokenKind> {
             _ => Some(TokenKind::Operator(OperatorType::Greater)),
         },
         '<' => match iter.peek() {
-            Some('<') => {
-                iter.next();
-                Some(TokenKind::Operator(OperatorType::DoubleLT))
-            }
             Some('=') => {
                 iter.next();
                 Some(TokenKind::Operator(OperatorType::LessEqual))

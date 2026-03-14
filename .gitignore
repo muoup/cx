@@ -1,10 +1,10 @@
 **/target
 **/.*
 
+tmp
+
 *.exe
 *.out
 *.wasm
-!compiler/cx-zed-extension/extension.wasm
-!compiler/cx-zed-extension/grammars/cx.wasm
 
 !.gitignore

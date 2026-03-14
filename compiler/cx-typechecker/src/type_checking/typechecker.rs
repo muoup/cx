@@ -26,7 +26,7 @@ fn anonymous_name_gen() -> String {
 
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
-use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+use cx_mir::mir::types::{MIRType};
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
@@ -172,210 +172,6 @@ fn process_for_increment_arrows(
     Ok(())
 }
 
-fn type_is_safe_signature(ty: &MIRType) -> bool {
-    match &ty.kind {
-        MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. } | 
-        MIRTypeKind::Unit | MIRTypeKind::Structured { .. } | MIRTypeKind::TaggedUnion { .. } => true, 
-        _ => false,
-    }
-}
-
-fn return_type_is_safe_signature(return_type: &MIRType) -> bool {
-    type_is_safe_signature(&return_type) || return_type.is_memory_reference()
-}
-
-fn receiver_type_is_safe_signature(receiver_type: &MIRType) -> bool {
-    match &receiver_type.kind {
-        MIRTypeKind::MemoryReference { inner_type } => type_is_safe_signature(inner_type),
-        _ => false,
-    }
-}
-
-fn parameter_is_safe_signature(
-    prototype: &MIRFunctionPrototype,
-    index: usize,
-    param: &cx_mir::mir::types::MIRParameter,
-) -> bool {
-    if index == 0
-        && prototype
-            .source_prototype
-            .kind
-            .receiver()
-            .is_some_and(|receiver| receiver.mode == cx_ast::data::CXReceiverMode::ByRef)
-        && matches!(param.name.as_ref().map(|name| name.as_str()), Some("this"))
-    {
-        return receiver_type_is_safe_signature(&param._type);
-    }
-
-    type_is_safe_signature(&param._type)
-}
-
-fn prototype_is_safe_callable(prototype: &MIRFunctionPrototype) -> bool {
-    prototype.contract.safe
-        && !prototype.var_args
-        && return_type_is_safe_signature(&prototype.return_type)
-        && prototype
-            .params
-            .iter()
-            .enumerate()
-            .all(|(index, param)| parameter_is_safe_signature(prototype, index, param))
-}
-
-fn type_is_safe_expression(ty: &MIRType) -> bool {
-    match &ty.kind {
-        MIRTypeKind::MemoryReference { inner_type, .. } => type_is_safe_expression(inner_type),
-        MIRTypeKind::Function { prototype } => prototype_is_safe_callable(prototype),
-        _ => type_is_safe_signature(ty),
-    }
-}
-
-pub(crate) fn validate_safe_function_signature(
-    env: &mut TypeEnvironment,
-    prototype: &MIRFunctionPrototype,
-    expr: &CXExpr,
-) -> CXResult<()> {
-    if !prototype.contract.safe {
-        return Ok(());
-    }
-
-    if prototype.var_args {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Safe function '{}' may not use varargs",
-            prototype.name
-        );
-    }
-
-    if !return_type_is_safe_signature(&prototype.return_type) {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Safe function '{}' has unsupported return type {}",
-            prototype.name,
-            prototype.return_type
-        );
-    }
-
-    for (index, param) in prototype.params.iter().enumerate() {
-        if !parameter_is_safe_signature(prototype, index, param) {
-            return log_typecheck_error!(
-                env,
-                expr,
-                " Safe function '{}' has unsupported parameter type {}",
-                prototype.name,
-                param._type
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_safe_contract_expression(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    mir_expr: &MIRExpression,
-) -> CXResult<()> {
-    if !env.contract_pure_mode {
-        return Ok(());
-    }
-
-    if !type_is_safe_expression(&mir_expr._type) {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Safe contract expression uses unsupported type {}",
-            mir_expr._type
-        );
-    }
-
-    match &mir_expr.kind {
-        MIRExpressionKind::BoolLiteral(_)
-        | MIRExpressionKind::IntLiteral(..)
-        | MIRExpressionKind::FloatLiteral(..)
-        | MIRExpressionKind::Unit
-        | MIRExpressionKind::Variable(_)
-        | MIRExpressionKind::ContractVariable { .. }
-        | MIRExpressionKind::BinaryOperation { .. }
-        | MIRExpressionKind::UnaryOperation { .. }
-        | MIRExpressionKind::TypeConversion { .. }
-        | MIRExpressionKind::Typechange(_) => Ok(()),
-        _ => log_typecheck_error!(
-            env,
-            expr,
-            " Safe contract conditions must be pure expressions"
-        ),
-    }
-}
-
-fn validate_safe_expression(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    mir_expr: &MIRExpression,
-) -> CXResult<()> {
-    if !env.in_safe_context() {
-        return Ok(());
-    }
-
-    if !type_is_safe_expression(&mir_expr._type) {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Safe function expression uses unsupported type {}",
-            mir_expr._type
-        );
-    }
-
-    match &mir_expr.kind {
-        MIRExpressionKind::BoolLiteral(_)
-        | MIRExpressionKind::IntLiteral(..)
-        | MIRExpressionKind::FloatLiteral(..)
-        | MIRExpressionKind::Unit
-        | MIRExpressionKind::Variable(_)
-        | MIRExpressionKind::ContractVariable { .. }
-        | MIRExpressionKind::BinaryOperation { .. }
-        | MIRExpressionKind::UnaryOperation { .. }
-        | MIRExpressionKind::MemoryRead { .. }
-        | MIRExpressionKind::MemoryWrite { .. }
-        | MIRExpressionKind::CreateStackVariable { .. }
-        | MIRExpressionKind::Typechange(_)
-        | MIRExpressionKind::If { .. }
-        | MIRExpressionKind::While { .. }
-        | MIRExpressionKind::For { .. }
-        | MIRExpressionKind::Return { .. }
-        | MIRExpressionKind::Block { .. }
-        | MIRExpressionKind::TypeConversion { .. }
-        | MIRExpressionKind::LeakLifetime { .. }
-        | MIRExpressionKind::Move { .. }
-        | MIRExpressionKind::Unsafe { .. } => Ok(()),
-        MIRExpressionKind::FunctionReference { .. } | MIRExpressionKind::CallFunction { .. } => {
-            let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    " Safe function call target must have a safe function type"
-                );
-            };
-
-            if prototype_is_safe_callable(prototype) {
-                Ok(())
-            } else {
-                log_typecheck_error!(
-                    env,
-                    expr,
-                    " Safe code may only call other safe functions"
-                )
-            }
-        }
-        _ => log_typecheck_error!(
-            env,
-            expr,
-            " Expression kind is not yet allowed in safe functions"
-        ),
-    }
-}
-
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -471,7 +267,18 @@ pub fn typecheck_expr_inner(
             name,
             initial_value,
         } => {
-            let _type = env.complete_type(base_data, _type)?;
+            let _type = env.complete_type(base_data, _type)
+                .map_err(|err| {
+                    let err : CXResult<()> = log_typecheck_error!(
+                        env,
+                        expr,
+                        " Failed to resolve type for variable '{}'\n {}",
+                        name,
+                        err.error_message()
+                    );
+                    
+                    err.err().unwrap()
+                })?;
             let mem_type = _type.clone().mem_ref_to();
 
             // Typecheck initial value if present
@@ -530,7 +337,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr,
-                    " Safe functions may not access global variables"
+                    "Safe functions may not access global variables"
                 );
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 TypecheckResult::expr2(global)
@@ -872,19 +679,16 @@ pub fn typecheck_expr_inner(
             };
 
             if !env.is_nodrop(inner_type) {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    " @leak is only valid for nodrop locals"
-                );
+                // For templated implementations, it is far more convenient for @leak calls on non-@nodrop types to
+                // be treated as a no-op rather than a type error.
+                return Ok(TypecheckResult::expr2(value));
             }
 
             ensure_binding_available(env, inner, ident)?;
-            let leaked = value.clone();
             env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
 
             TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::LeakLifetime {
-                expression: Box::new(leaked),
+                expression: Box::new(value),
             })
         }
 
@@ -1325,9 +1129,6 @@ pub fn typecheck_expr_inner(
             end_token: expr.end_index,
         });
     }
-
-    validate_safe_contract_expression(env, expr, &result.expression)?;
-    validate_safe_expression(env, expr, &result.expression)?;
 
     Ok(result)
 }

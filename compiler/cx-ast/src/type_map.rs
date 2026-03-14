@@ -63,6 +63,10 @@ where
     {
         self.templates.remove_entry(name)
     }
+    
+    pub fn is_empty(&self) -> bool {
+        self.standard.is_empty() && self.templates.is_empty()
+    }
 
     pub fn standard_iter(&self) -> impl Iterator<Item = (&Identifier, &ModuleResource<Standard>)> {
         self.standard.iter()
