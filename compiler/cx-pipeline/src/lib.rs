@@ -56,7 +56,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     Ok(())
 }
 
-pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<Vec<cx_lmir::LMIRUnit>> {
+pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<(cx_lmir::LMIRUnit, HashSet<std::path::PathBuf>)> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
         config,
@@ -67,10 +67,12 @@ pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult
     let base_file_str = base_file.to_str()
         .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
 
+    let entry_unit = CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+
     let initial_job = CompilationJob::new(
         vec![],
         CompilationStep::PreParse,
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory),
+        entry_unit.clone(),
     );
 
     let mut reporter = ProgressReporter::new(verbose);
@@ -86,9 +88,16 @@ pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult
 
     reporter.finish();
 
-    // Collect all retained LMIR units
-    let lmir_units = compiler_context.module_db.lmir.take_all();
-    Ok(lmir_units)
+    // Take only the entry file's LMIR unit (not imports/dependencies)
+    let entry_lmir = compiler_context.module_db.lmir.take(&entry_unit);
+
+    // Drain the linking files so the caller can copy them to the output directory
+    let linking_files = compiler_context.linking_files.lock()
+        .expect("Deadlock on linking files mutex")
+        .drain()
+        .collect();
+
+    Ok((entry_lmir, linking_files))
 }
 
 pub fn project_compilation(
@@ -142,10 +151,14 @@ pub fn project_compilation(
 
                 eprintln!("Building library '{}' (target: {})", library.name, target_name);
 
-                let lmir_units = library_compilation(config.clone(), Path::new(&library.entry))?;
+                let (lmir_units, _) = library_compilation(config.clone(), Path::new(&library.entry))?;
 
                 // Generate .h header from LMIR
-                let header = cx_c_header::generate_header(&library.name, &lmir_units, &link_entries);
+                let Ok(header) = cx_c_header::generate_header(&library.name, &lmir_units, &link_entries) else {
+                    eprintln!("Warning: Failed to generate header for library '{}': {}", library.name, "Header generation is best-effort and will not fail the build");
+                    continue;
+                };
+                
                 let header_path = output_dir.join(format!("{}.h", library.name));
                 std::fs::write(&header_path, header)
                     .map_err(|e| CXError::create_boxed(format!(

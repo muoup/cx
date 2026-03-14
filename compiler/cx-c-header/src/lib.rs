@@ -4,43 +4,41 @@ use cx_pipeline_data::config::LinkEntry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-/// Generate a C header file from LMIR units.
+/// Generate a C header file from the entry file's LMIR unit.
 ///
-/// Exports all functions with non-Static linkage that have bodies (are defined, not just declared).
-pub fn generate_header(lib_name: &str, lmir_units: &[LMIRUnit], link_entries: &[LinkEntry]) -> String {
+/// Exports functions that are defined in this unit with non-Static, non-External linkage.
+/// Static functions are internal; External functions are declarations of symbols defined elsewhere.
+pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[LinkEntry]) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
-    let guard = lib_name.to_uppercase().replace(|c: char| !c.is_alphanumeric(), "_");
 
-    writeln!(output, "#pragma once").unwrap();
-    writeln!(output, "#ifndef {guard}_H").unwrap();
-    writeln!(output, "#define {guard}_H").unwrap();
-    writeln!(output).unwrap();
+    writeln!(output, "#pragma once")?;
+    writeln!(output)?;
 
     // Link dependency comments
     if !link_entries.is_empty() {
         writeln!(output, "/* Link dependencies:").unwrap();
         for entry in link_entries {
-            writeln!(output, " *   -l{} ({})", entry.name, entry.kind).unwrap();
+            writeln!(output, " *   -l{} ({})", entry.name, entry.kind)?;
         }
-        writeln!(output, " */").unwrap();
-        writeln!(output).unwrap();
+        writeln!(output, " */")?;
+        writeln!(output)?;
     }
 
-    writeln!(output, "#include <stdint.h>").unwrap();
-    writeln!(output, "#include <stdbool.h>").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "#ifdef __cplusplus").unwrap();
-    writeln!(output, "extern \"C\" {{").unwrap();
-    writeln!(output, "#endif").unwrap();
-    writeln!(output).unwrap();
+    writeln!(output, "#include <stdint.h>")?;
+    writeln!(output, "#include <stdbool.h>")?;
+    writeln!(output)?;
+    writeln!(output, "#ifdef __cplusplus")?;
+    writeln!(output, "extern \"C\" {{")?;
+    writeln!(output, "#endif")?;
+    writeln!(output)?;
 
-    // Collect all exported function prototypes
+    // Collect exported function prototypes (skip Static and External linkage)
     let mut exported_protos: Vec<&LMIRFunctionPrototype> = Vec::new();
-    for unit in lmir_units {
-        for func in &unit.fn_defs {
-            if func.prototype.linkage != LinkageType::Static {
-                exported_protos.push(&func.prototype);
-            }
+    for func in &lmir_unit.fn_defs {
+        if func.prototype.linkage != LinkageType::Static
+            && func.prototype.linkage != LinkageType::External
+        {
+            exported_protos.push(&func.prototype);
         }
     }
 
@@ -60,32 +58,31 @@ pub fn generate_header(lib_name: &str, lmir_units: &[LMIRUnit], link_entries: &[
 
     // Emit forward declarations
     for decl in &forward_decls {
-        writeln!(output, "{decl};").unwrap();
+        writeln!(output, "{decl};")?;
     }
     if !forward_decls.is_empty() {
-        writeln!(output).unwrap();
+        writeln!(output)?;
     }
 
     // Emit type definitions
     for (_, def) in &type_defs {
-        writeln!(output, "{def}").unwrap();
-        writeln!(output).unwrap();
+        writeln!(output, "{def}")?;
+        writeln!(output)?;
     }
 
     // Emit function declarations
     for proto in &exported_protos {
         let decl = format_function_declaration(proto);
-        writeln!(output, "{decl};").unwrap();
+        writeln!(output, "{decl};")?;
     }
 
-    writeln!(output).unwrap();
-    writeln!(output, "#ifdef __cplusplus").unwrap();
-    writeln!(output, "}}").unwrap();
-    writeln!(output, "#endif").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "#endif /* {guard}_H */").unwrap();
+    writeln!(output)?;
+    writeln!(output, "#ifdef __cplusplus")?;
+    writeln!(output, "}}")?;
+    writeln!(output, "#endif")?;
+    writeln!(output)?;
 
-    output
+    Ok(output)
 }
 
 fn collect_types(
