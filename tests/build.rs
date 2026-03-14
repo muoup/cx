@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]
 enum TestKind {
-    E2E,
+    EndToEnd,
     CompileOnly,
     ParseError,
     TypeError,
@@ -14,7 +14,7 @@ enum TestKind {
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("Missing manifest dir"));
     let tests = [
-        ("e2e", TestKind::E2E),
+        ("end-to-end", TestKind::EndToEnd),
         ("compile-only", TestKind::CompileOnly),
         ("parse-errors", TestKind::ParseError),
         ("type-errors", TestKind::TypeError),
@@ -77,7 +77,7 @@ fn write_module(
             continue;
         }
 
-        if matches!(kind, TestKind::E2E) && !path.with_extension("cx-output").exists() {
+        if matches!(kind, TestKind::EndToEnd) && !path.with_extension("cx-output").exists() {
             continue;
         }
 
@@ -91,8 +91,8 @@ fn write_module(
         let indent = "    ".repeat(depth + 1);
 
         match kind {
-            TestKind::E2E => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_e2e_test(std::path::Path::new({path_literal})); }}\n"
+            TestKind::EndToEnd => output.push_str(&format!(
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_end_to_end_test(std::path::Path::new({path_literal})); }}\n"
             )),
             TestKind::CompileOnly => {
                 let analysis = path

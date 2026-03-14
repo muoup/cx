@@ -20,7 +20,7 @@ struct TestTempDir {
 impl TestTempDir {
     fn new(test_name: &str) -> Self {
         let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join("cx-e2e-tests").join(format!(
+        let path = std::env::temp_dir().join("cx-end-to-end-tests").join(format!(
             "{}-{}-{}",
             sanitize_name(test_name),
             std::process::id(),
@@ -172,7 +172,7 @@ fn test_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn run_e2e_test(input: &Path) {
+fn run_end_to_end_test(input: &Path) {
     let expected_output = input.with_extension("cx-output");
     assert!(
         expected_output.exists(),
