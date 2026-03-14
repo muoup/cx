@@ -172,6 +172,7 @@ fn test_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[allow(dead_code)]
 fn run_end_to_end_test(input: &Path) {
     let expected_output = input.with_extension("cx-output");
     assert!(
