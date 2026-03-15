@@ -649,7 +649,7 @@ impl Display for MIRTypeKind {
             MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             MIRTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
-            MIRTypeKind::Str => write!(f, "str"),
+            MIRTypeKind::Str => write!(f, "_str"),
             MIRTypeKind::Function { prototype } => write!(f, "{prototype}"),
         }
     }

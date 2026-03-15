@@ -209,5 +209,5 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
             _type: MIRFloatType::F64,
         },
     ),
-    ("str", MIRTypeKind::Str),
+    ("_str", MIRTypeKind::Str),
 ];

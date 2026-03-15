@@ -6,11 +6,11 @@ public:
 
 int printf(const char* fmt, ...);
 
-void print(const str& s) safe {
+void print(const _str& s) safe {
     @unsafe { printf(s); };
 }
 
-void println(const str& s) safe {
+void println(const _str& s) safe {
     @unsafe { puts(s); };
 }
 
