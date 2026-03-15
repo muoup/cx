@@ -22,6 +22,11 @@ pub(crate) fn coerce_value(
         return Ok(value)
     };
 
+    // str is unsized — never auto-dereference &str
+    if mem_ref_inner.is_str() {
+        return Ok(value);
+    }
+
     if !env.is_copyable(mem_ref_inner) {
         return Ok(value);
     }
@@ -246,6 +251,23 @@ pub fn implicit_cast(
                     to_type
                 )
             }
+        }
+
+        // &str -> char* / const char* coercion (not allowed in safe context)
+        (
+            MIRTypeKind::MemoryReference { inner_type: from_inner, .. },
+            MIRTypeKind::PointerTo { inner_type: to_inner, .. },
+        ) if from_inner.is_str() && to_inner.is_integer() && {
+            matches!(to_inner.kind, MIRTypeKind::Integer { _type: MIRIntegerType::I8, .. })
+        } => {
+            if env.in_safe_context() {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "Cannot coerce &str to char* in safe context; use @unsafe"
+                );
+            }
+            coerce(MIRCoercion::ReinterpretBits)
         }
 
         (

@@ -49,8 +49,10 @@ pub(crate) fn validate_safe_function_signature(
 
 fn type_is_safe_signature(ty: &MIRType) -> bool {
     match &ty.kind {
-        MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. } | 
-        MIRTypeKind::Unit | MIRTypeKind::Structured { .. } | MIRTypeKind::TaggedUnion { .. } => true, 
+        MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. } |
+        MIRTypeKind::Unit | MIRTypeKind::Structured { .. } | MIRTypeKind::TaggedUnion { .. } |
+        MIRTypeKind::Str => true,
+        MIRTypeKind::MemoryReference { inner_type } => type_is_safe_signature(inner_type),
         _ => false,
     }
 }

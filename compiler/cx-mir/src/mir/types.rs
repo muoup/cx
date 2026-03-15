@@ -128,6 +128,7 @@ pub enum MIRTypeKind {
     Function {
         prototype: Box<MIRFunctionPrototype>,
     },
+    Str,
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
@@ -325,6 +326,10 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::TaggedUnion { .. })
     }
 
+    pub fn is_str(&self) -> bool {
+        matches!(self.kind, MIRTypeKind::Str)
+    }
+
     pub fn is_function(&self) -> bool {
         matches!(self.kind, MIRTypeKind::Function { .. })
     }
@@ -476,6 +481,7 @@ impl MIRType {
                     + 1
             }
 
+            MIRTypeKind::Str => unreachable!("str is unsized and has no type_size"),
             MIRTypeKind::Function { .. } => unreachable!(),
         }
     }
@@ -515,6 +521,7 @@ impl MIRType {
                 .max()
                 .unwrap_or(8),
 
+            MIRTypeKind::Str => unreachable!("str is unsized and has no type_alignment"),
             MIRTypeKind::Function { .. } => unreachable!(),
         }
     }
@@ -638,7 +645,14 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
             *t1_type == *t2_type
         }
 
+        (
+            MIRTypeKind::MemoryReference { inner_type: t1_type },
+            MIRTypeKind::MemoryReference { inner_type: t2_type },
+        ) => same_type(t1_type, t2_type),
+
         (MIRTypeKind::Unit, MIRTypeKind::Unit) => true,
+
+        (MIRTypeKind::Str, MIRTypeKind::Str) => true,
 
         _ => false,
     }

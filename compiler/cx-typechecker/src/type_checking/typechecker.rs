@@ -248,17 +248,14 @@ pub fn typecheck_expr_inner(
                 },
             );
 
-            let char_type = env
-                .get_realized_type("char")
-                .unwrap()
-                .clone()
-                .pointer_to()
-                .add_specifier(CX_CONST);
+            let str_ref_type = MIRType::from(MIRTypeKind::Str)
+                .add_specifier(CX_CONST)
+                .mem_ref_to();
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
                 kind: MIRExpressionKind::Variable(name_ident),
-                _type: char_type,
+                _type: str_ref_type,
             })
         }
 
@@ -279,6 +276,15 @@ pub fn typecheck_expr_inner(
                     
                     err.err().unwrap()
                 })?;
+
+            if _type.is_str() {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    "Cannot create a variable of unsized type 'str'; use '&str' instead"
+                );
+            }
+
             let mem_type = _type.clone().mem_ref_to();
 
             // Typecheck initial value if present

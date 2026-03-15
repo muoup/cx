@@ -194,5 +194,8 @@ pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
         },
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,
+
+        // Str is unsized; behind a reference it's just i8 for pointer element purposes
+        MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
     }
 }

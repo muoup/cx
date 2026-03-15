@@ -6,14 +6,14 @@ public:
 
 int printf(const char* fmt, ...);
 
-void print(const char* str) {
-    while (*str) putchar(*str++);
+void print(const str& s) safe {
+    @unsafe { printf(s); };
 }
 
-void println(const char* str) {
-    puts(str);
+void println(const str& s) safe {
+    @unsafe { puts(s); };
 }
 
-void print_char(i32 c) {
-    putchar(c);
+void print_char(i32 c) safe {
+    @unsafe { putchar(c); };
 }

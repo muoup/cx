@@ -1,5 +1,6 @@
 use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 
+
 pub fn is_intrinsic_type(name: &str) -> bool {
     for (intrinsic_name, _) in INTRINSIC_TYPES.iter() {
         if intrinsic_name == &name {
@@ -208,4 +209,5 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
             _type: MIRFloatType::F64,
         },
     ),
+    ("str", MIRTypeKind::Str),
 ];

@@ -96,6 +96,9 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
         MIRTypeKind::Float { _type } => {
             mangled.push_str(format!("{}", _type).as_str());
         }
+        MIRTypeKind::Str => {
+            mangled.push_str("str");
+        }
         MIRTypeKind::Unit => {
             mangled.push('v');
         }

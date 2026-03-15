@@ -15,14 +15,14 @@ string string::new_string() {
     return s;
 }
 
-void string::append(*this, const char* str) {
-    u64 str_length = strlen(str);
+void string::append(*this, const char* s) {
+    u64 str_length = strlen(s);
 
     if (this.length + str_length + 1 > this.capacity) {
         this._realloc();
     }
 
-    memcpy(this.data + this.length, str, str_length);
+    memcpy(this.data + this.length, s, str_length);
     this.length = str_length + this.length;
 }
 
