@@ -156,10 +156,6 @@
               },
               {
                 "type": "STRING",
-                "value": "strong"
-              },
-              {
-                "type": "STRING",
                 "value": "struct"
               },
               {
@@ -169,10 +165,6 @@
               {
                 "type": "STRING",
                 "value": "template"
-              },
-              {
-                "type": "STRING",
-                "value": "type"
               },
               {
                 "type": "STRING",

@@ -3,7 +3,6 @@ resolver = "2"
 
 members = [
     "compiler/cx",
-    "compiler/cx-c-header",
     "compiler/cx-lsp",
     "compiler/cx-treesitter-grammar",
     "compiler/cx-zed-extension",

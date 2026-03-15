@@ -17,6 +17,38 @@ CX is an experimental C-like systems language with opt-in ownership and verifica
 
 CX remains intentionally close to C syntax. It is also not order-dependent: types and functions may be declared in any order within a module. Forward declarations are generally unnecessary.
 
+### Reference Types
+
+CX supports reference types using `&`. A reference type is a pointer type which must be nonnull, and only points to a single value.
+
+```c
+void increment(int& x) {
+    x = x + 1;
+}
+```
+
+### Global Variables
+
+Variables may be declared at module scope:
+
+```c
+int counter = 0;
+```
+
+### C-Style Enumerations
+
+Plain `enum` declarations define named integer constants:
+
+```c
+enum Color {
+    Red,
+    Green,
+    Blue
+};
+```
+
+These are distinct from tagged unions (`enum union`).
+
 ## 2. Lexical Conventions
 
 ### 2.1 Identifiers
@@ -28,10 +60,6 @@ Names beginning with `_` are reserved for the implementation.
 In addition to C keywords, CX reserves:
 
 - `import`
-- `defer`
-- `strong`
-- `weak`
-- `new`
 - `template`
 - `type`
 - `match`
@@ -93,6 +121,15 @@ enum union Output {
 };
 ```
 
+Tagged unions support the `@copy_traits(T)` attribute, which propagates copyability based on the realized type parameter:
+
+```c
+enum union opt<T> : @copy_traits(T) {
+    some :: T,
+    none :: void
+};
+```
+
 They also support the same ownership attributes:
 
 ```c
@@ -136,14 +173,14 @@ CX supports namespaced member syntax without dynamic dispatch.
 
 ### 4.1 Borrowed Receiver
 
-An instance method declares `this` as its receiver.
+An instance method declares `*this` as its receiver. This 
 
 ```c
 struct Counter {
     int value;
 };
 
-void Counter::print(this) {
+void Counter::print(*this) {
     printf("%d\n", this->value);
 }
 ```
@@ -157,15 +194,17 @@ c.print();
 
 ### 4.2 Consuming Receiver
 
-A method may consume its receiver with `*this`.
+A method may consume its receiver with `this`.
 
 ```c
-void Box<T>::drop(*this) safe {
+void Counter::drop(this) {
     @unsafe {
         @leak(this);
     };
 }
 ```
+
+A 'consuming' receiver indicates that the method inherently 'moves' the instance it is called on (see move semantics in section 9). The method body is responsible for discharging the receiver's ownership, either by transferring it to another binding or by marking it as discharged with `@leak`.
 
 Current behavior:
 
@@ -213,6 +252,12 @@ struct Box<T> {
 };
 ```
 
+`typedef` creates template type aliases:
+
+```c
+typedef<T> T* Ptr;
+```
+
 Current limitations:
 
 - template argument inference is not implemented
@@ -234,7 +279,9 @@ match (out) {
 
 ### 6.2 `is`
 
-`is` checks a tagged-union variant and introduces the payload binding on the success path.
+`is` checks a tagged-union variant and introduces the payload binding on the success path. The operator returns a boolean indicating the check result,
+the right-hand side's pattern binds a new variable to the payload. This binding is unconditional, however any use of its binding outside of a successful
+check is undefined behavior.
 
 ```c
 if (out is Output::string(s)) {
@@ -244,9 +291,45 @@ if (out is Output::string(s)) {
 
 ## 7. Modules and Visibility
 
+### 7.1 Imports
+
 `import` brings public declarations from another module into scope. Imported declarations are not implicitly re-exported.
 
+```c
+import std::io;
+import math::vec;
+```
+
+Module paths map to file paths: `std::io` resolves to `lib/std/io.cx` (or the equivalent path relative to the project root). Imports are resolved during the preparse stage, and their public declarations are merged into the importing module's symbol environment.
+
+### 7.2 Visibility
+
 Visibility is controlled by `public:` and `private:` section headers. Declarations are private by default.
+
+```c
+public:
+
+i32 api_function(i32 x) {
+    return helper(x);
+}
+
+struct Point {
+    i32 x;
+    i32 y;
+};
+
+private:
+
+i32 helper(i32 x) {
+    return x + 1;
+}
+```
+
+All declarations following a `public:` header are visible to importers. A `private:` header switches back to module-internal visibility.
+
+### 7.3 `.cxl` Library Entry Files
+
+Files with the `.cxl` extension serve as library entry points. They use the same syntax as `.cx` files. When a `.cxl` file is compiled as a library target, its non-static, non-external functions become the library's exported symbols. See [docs/build_system.md](build_system.md) for details on library compilation.
 
 ## 8. Contracts
 
@@ -346,42 +429,42 @@ where
 }
 ```
 
-`safe` currently means:
+A `safe` function must contain a subset of C and CX semantics such that it is amenable to formal verification. This section will be expanded upon on the
+future after better stabilization of the language feature, however generally speaking, the following restrictions apply:
 
-- safe signatures only
-- safe expressions only, except inside `@unsafe`
-- pure contract expressions
-- optional FMIR verification when compilation is run with `--analysis`
-
-### 10.1 Core Restrictions
-
-Current enforced restrictions include:
-
-- raw pointers are rejected in safe signatures and safe expressions
+- raw pointers are not allowed in safe contexts
 - safe code may call only other `safe` functions
 - contracts in safe functions must be pure
 - `@leak` is unsafe-only in safe code
+- pointers to external data passed into a safe function may not outlive the function's lifetime without explicit annotation (to be defined in the future)
 
-Note however that safe functions may use unsafe features, however they must be enclosed in `@unsafe` blocks or expressions. The safe-subset checks are suppressed for the enclosed subtree only.
+### 10.1 Safe Usage of References
 
-Examples:
+'References' in almost all cases are unsafe. For most general-purpose, usage of reference-like data should be done via safe abstractions like `ref<T>` in the standard library. In its current form ref<T> does not categorically disallow all unsafe reference usage, the purpose of the abstraction however is to prevent aliases to data escaping safe contexts without explicit annotation. The exact design of `ref<T>` is to be iterated, however in its current form, it may not be copied, and should not escape its intended lifetime without explicit annotation.
 
-```c
-int bad(int* ptr) safe { return 0; }
-```
+As for native `T&` style references, there is one narrow domain in which their usage is well-defined and safe. There is currently no safe means to extract a reference from an alias, however a `T&` may be safely returned from a safe function and used with an rvalue lifetime in the caller's context. This is a common pattern for safe accessors, and is currently the only supported form of reference usage in safe code.
 
-```c
-int helper() { return 1; }
-int bad() safe { return helper(); }
-```
+For instance, the following is well-defined:
 
 ```c
-int helper() { return 1; }
-int bad() safe
-where
-    post(ret): (helper() == ret)
-{
-    return 1;
+import std::io;
+
+struct Data {
+    int value;
+};
+
+int& get_value(Data data) safe {
+    return @unsafe(data.value);
+}
+
+int extern_function(int x) safe;
+
+int main() safe {
+    Data data = { .value = 42 };
+    get_value(data) = 100; // safe mutation of data.value via reference
+    
+    // data.value will be 100 here
+    extern_function(data.value);
 }
 ```
 

@@ -73,6 +73,19 @@ cx <file.cx> [options]
 - `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: optimization level
 - `-o <output_file>`: output path
 - `--analysis`: run FMIR generation and verification for `safe` functions before continuing to LMIR
+- `--verbose`: print each compilation step
+
+### Project Build System
+
+CX includes a project-oriented build system. Initialize a new project and build it with:
+
+```bash
+cx init my_project
+cd my_project
+cx build
+```
+
+See [docs/build_system.md](docs/build_system.md) for `cx.toml` configuration, library compilation, and C interop.
 
 ## Compiler Pipeline
 
@@ -98,6 +111,10 @@ See [docs/pipeline_design.md](docs/pipeline_design.md) for the full pipeline des
 **Backend crates**
 - `cx-backend-cranelift`: Cranelift code generation
 - `cx-backend-llvm`: LLVM code generation
+
+**Build system and interop crates**
+- `cx-pipeline-data`: build configuration, `cx.toml` parsing, job scheduling data
+- `cx-c-header`: C header generation for library targets
 
 **Utility crates**
 - `cx-util`

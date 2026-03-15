@@ -41,6 +41,7 @@ pub fn print_help() {
     println!("Commands:");
     println!("  init <project-name>  Create a new CX project");
     println!("  build [target]       Build project from cx.toml (all targets or a specific one)");
+    println!("  [target]             Build a single target without using cx.toml");
     println!();
     println!("Options:");
     #[cfg(feature = "backend-llvm")]

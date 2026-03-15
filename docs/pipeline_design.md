@@ -73,10 +73,25 @@ LMIR is translated to backend-specific code. The current backends are Cranelift 
 
 ## Stage 8: Linking
 
-Generated object files are linked into the final executable.
+Object files are linked into either an executable or a relocatable library object. Both Cranelift and LLVM backends emit per-function ELF sections (`.text.<function_name>`) to enable linker-level dead code elimination.
+
+### Binary Linking
+
+Binary targets are linked via `gcc` with `--gc-sections`, which strips any function sections not reachable from `main`.
 
 - **Input**: object files
 - **Output**: executable
+
+### Library Linking
+
+Library targets use `ld -r --gc-sections` to produce a single merged relocatable object file. Exported symbols (non-static, non-external functions from the entry file) are marked with `--undefined=<sym>` to prevent the linker from stripping them.
+
+- **Input**: object files + exported symbol list
+- **Output**: merged `.o` file
+
+### C Header Generation
+
+After library linking, a C header is generated from the entry file's LMIR unit. The header contains type definitions and function declarations for all exported symbols, wrapped in `extern "C"` guards. See [docs/build_system.md](build_system.md) for the full type mapping and header structure.
 
 ## IR Roles
 
