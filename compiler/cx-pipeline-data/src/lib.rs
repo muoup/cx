@@ -1,3 +1,4 @@
+pub mod config;
 pub mod db;
 pub mod directories;
 pub mod internal_storage;
@@ -45,14 +46,24 @@ impl Drop for GlobalCompilationContext {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompilationMode {
+    Binary,
+    Library,
+}
+
 #[derive(Debug, Clone)]
 pub struct CompilerConfig {
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub output: PathBuf,
     pub analysis: bool,
+    pub verbose: bool,
     pub working_directory: PathBuf,
     pub internal_directory: PathBuf,
+    pub compilation_mode: CompilationMode,
+    pub project_config: Option<config::CXProjectConfig>,
+    pub link_entries: Vec<config::LinkEntry>,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]
@@ -119,16 +130,18 @@ impl CompilationUnit {
     }
 
     pub fn from_rooted(path: &str, working_directory: &Path) -> Self {
-        let path = if path.ends_with(".cx") {
-            &path[..path.len() - 3]
+        let (stripped, ext) = if path.ends_with(".cxl") {
+            (&path[..path.len() - 4], "cxl")
+        } else if path.ends_with(".cx") {
+            (&path[..path.len() - 3], "cx")
         } else {
-            path
+            (path, "cx")
         };
 
-        let path_buf = file_path(path, working_directory).with_extension("cx");
+        let path_buf = file_path(stripped, working_directory).with_extension(ext);
 
         Self {
-            identifier: Rc::new(path.to_string()),
+            identifier: Rc::new(stripped.to_string()),
             path: path_buf.into_boxed_path().into(),
         }
     }

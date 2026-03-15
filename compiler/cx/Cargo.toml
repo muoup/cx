@@ -11,3 +11,5 @@ backend-llvm = ["cx-pipeline/backend-llvm"]
 [dependencies]
 cx-pipeline = { path = "../cx-pipeline" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
+toml = { version = "0.8" }
+serde = { version = "1", features = ["derive"] }

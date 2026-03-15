@@ -1,0 +1,7 @@
+import std::io;
+
+public:
+
+void test_print() {
+    println("Hello, world!");
+}

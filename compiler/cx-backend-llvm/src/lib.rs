@@ -307,6 +307,9 @@ fn cache_prototype<'a>(
         Some(convert_linkage(prototype.linkage)),
     );
 
+    // Put each function in its own ELF section for --gc-sections DCE
+    func.set_section(Some(&format!(".text.{}", prototype.name)));
+
     for (i, _type) in prototype.params.iter().enumerate() {
         get_type_attributes(global_state.context, &_type._type)
             .into_iter()

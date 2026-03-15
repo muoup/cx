@@ -1,4 +1,5 @@
 use crate::backends::{cranelift_compile, llvm_compile};
+use crate::progress::ProgressReporter;
 use crate::template_realizing::realize_templates;
 use cx_ast::ast::VisibilityMode;
 use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
@@ -12,7 +13,7 @@ use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
-use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
+use cx_pipeline_data::{CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
@@ -30,12 +31,14 @@ use std::io::Write;
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
     initial_job: CompilationJob,
+    reporter: &mut ProgressReporter,
 ) -> CXResult<()> {
     let mut queue = JobQueue::new();
 
     let mut compilation_exists = HashMap::new();
 
     queue.push_job(initial_job);
+    reporter.add_total(1);
 
     // TODO: Parallelize this loop
     'queue: while !queue.is_empty() {
@@ -52,18 +55,12 @@ pub(crate) fn scheduling_loop(
 
             for req in job.requirements.iter() {
                 match compilation_exists.get(&req.unit) {
-                    // previous compilation does not exist for a dependency, so this job must be recompiled
                     Some(false) => {
                         job.compilation_exists = false;
                         queue.push_job(job);
                         continue 'queue;
                     }
-
-                    // previous compilation exists for a dependency, if all other dependencies are the same
-                    // we may skip this job
                     Some(true) => {}
-
-                    // all dependencies have not been processed yet, so we must check again later
                     _ => {
                         queue.push_job(job);
                         continue 'queue;
@@ -71,10 +68,8 @@ pub(crate) fn scheduling_loop(
                 }
             }
 
-            println!(
-                "Skipping job: {} at step: {:?} as it has already been compiled",
-                job.unit, job.step
-            );
+            reporter.skip_step(&job.unit.to_string());
+            reporter.complete_step();
             queue.complete_all_unit_jobs(&job.unit);
             context.module_db.set_no_reexport(&job.unit);
             context
@@ -91,9 +86,28 @@ pub(crate) fn scheduling_loop(
         }
 
         queue.complete_job(&job);
-        
-        for new_jobs in handle_job(context, job)?.into_iter() {
+
+        let step_name = match job.step {
+            CompilationStep::PreParse => "Lexing",
+            CompilationStep::ASTParse => "Parsing",
+            CompilationStep::InterfaceCombine => "Resolving",
+            CompilationStep::Typechecking => "Typechecking",
+            CompilationStep::LMIRGen => "Lowering",
+            CompilationStep::Codegen => "Compiling",
+        };
+        reporter.start_step(step_name, &job.unit.to_string());
+
+        let is_codegen = matches!(job.step, CompilationStep::Codegen);
+        let retain_lmir = context.config.compilation_mode == CompilationMode::Library;
+
+        for new_jobs in handle_job(context, job, retain_lmir)?.into_iter() {
+            reporter.add_total(1);
             queue.push_new_job(new_jobs);
+        }
+
+        reporter.complete_step();
+        if is_codegen {
+            reporter.increment_modules();
         }
     }
 
@@ -103,6 +117,7 @@ pub(crate) fn scheduling_loop(
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     mut job: CompilationJob,
+    retain_lmir: bool,
 ) -> CXResult<Box<[CompilationJob]>> {
     let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep| {
         let new_requirements = job
@@ -129,7 +144,7 @@ pub(crate) fn handle_job(
         )
     };
 
-    match perform_job(context, &job)? {
+    match perform_job(context, &job, retain_lmir)? {
         JobResult::StandardSuccess => {}
         JobResult::UnchangedSinceLastCompilation => job.compilation_exists = true,
     };
@@ -182,10 +197,6 @@ fn load_precompiled_data(
             map.insert(unit.clone(), data);
             Some(())
         } else {
-            println!(
-                "Failed to retrieve data for unit: {} with storage extension: {}",
-                unit, map.storage_extension
-            );
             None
         }
     }
@@ -206,10 +217,11 @@ pub(crate) enum JobResult {
 pub(crate) fn perform_job(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
+    retain_lmir: bool,
 ) -> CXResult<JobResult> {
     match job.step {
         CompilationStep::PreParse => {
-            let file_path = job.unit.with_extension("cx");
+            let file_path = job.unit.as_path().to_path_buf();
             let file_contents = std::fs::read_to_string(&file_path)
                 .unwrap_or_else(|_| panic!("File not found: {}", job.unit));
 
@@ -286,7 +298,7 @@ pub(crate) fn perform_job(
             }
 
             let parsed_ast = parse_ast(
-                TokenIter::new(&lexemes, job.unit.with_extension("cx")),
+                TokenIter::new(&lexemes, job.unit.as_path().to_path_buf()),
                 &pp_data,
             )?;
 
@@ -354,7 +366,15 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Codegen => {
-            let lmir = context.module_db.lmir.take(&job.unit);
+            let lmir_arc;
+            let lmir_owned;
+            let lmir: &cx_lmir::LMIRUnit = if retain_lmir {
+                lmir_arc = context.module_db.lmir.get(&job.unit);
+                &lmir_arc
+            } else {
+                lmir_owned = context.module_db.lmir.take(&job.unit);
+                &lmir_owned
+            };
             let internal_directory = internal_directory(context, &job.unit).with_extension("o");
             let internal_directory_str = internal_directory.to_str().ok_or(
                 CXError::create_boxed("Internal directory path is not valid UTF-8"),
@@ -563,7 +583,7 @@ fn handle_job_collect_errors(
     }
 
     // Perform the job and collect errors
-    match perform_job(context, job) {
+    match perform_job(context, job, false) {
         Ok(_) => {}
         Err(e) => {
             let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {

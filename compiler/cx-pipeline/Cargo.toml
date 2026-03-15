@@ -19,6 +19,7 @@ cx-mir-lowering = { path = "../cx-mir-lowering" }
 cx-backend-llvm = { path = "../cx-backend-llvm", optional = true }
 cx-backend-cranelift = { path = "../cx-backend-cranelift" }
 
+cx-c-header = { path = "../cx-c-header" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
 cx-ast = { path = "../cx-ast" }

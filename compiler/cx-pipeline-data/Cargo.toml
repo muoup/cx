@@ -9,6 +9,8 @@ test = []
 
 [dependencies]
 speedy = { version = "0.8.7" }
+toml = { version = "0.8" }
+serde = { version = "1", features = ["derive"] }
 
 cx-tokens = { path = "../cx-tokens" }
 cx-ast  = { path = "../cx-ast" }

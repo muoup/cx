@@ -12,37 +12,33 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 mod typecheck_service;
 
-/// Find the project root by searching for .internal or .git directories
+/// Find the project root by searching for cx.toml, .internal, or .git directories
 /// in parent directories of the given file path.
+/// Prefers cx.toml over other markers.
 fn find_project_root(file_path: &Path) -> PathBuf {
     let mut current = file_path.parent().unwrap_or(file_path);
 
+    // First pass: look for cx.toml (highest priority)
+    let mut search = current;
     loop {
-        // Check for .internal directory
-        let internal_dir = current.join(".internal");
-        if internal_dir.is_dir() {
+        if search.join("cx.toml").is_file() {
+            return search.to_path_buf();
+        }
+        match search.parent() {
+            Some(parent) if parent != search => search = parent,
+            _ => break,
+        }
+    }
+
+    // Second pass: fall back to .internal or .git
+    loop {
+        if current.join(".internal").is_dir() || current.join(".git").is_dir() {
             return current.to_path_buf();
         }
 
-        // Check for .git directory
-        let git_dir = current.join(".git");
-        if git_dir.is_dir() {
-            return current.to_path_buf();
-        }
-
-        // Move to parent
         match current.parent() {
-            Some(parent) => {
-                if parent == current {
-                    // Reached root, return file's directory
-                    return file_path
-                        .parent()
-                        .unwrap_or_else(|| Path::new("/"))
-                        .to_path_buf();
-                }
-                current = parent;
-            }
-            None => {
+            Some(parent) if parent != current => current = parent,
+            _ => {
                 return file_path
                     .parent()
                     .unwrap_or_else(|| Path::new("/"))
@@ -334,8 +330,12 @@ impl Backend {
                 optimization_level: cx_pipeline_data::OptimizationLevel::O0,
                 output: project_root.join("zed-lsp-output"),
                 analysis: false,
+                verbose: false,
                 working_directory: project_root.to_path_buf(),
                 internal_directory,
+                compilation_mode: cx_pipeline_data::CompilationMode::Binary,
+                project_config: None,
+                link_entries: vec![],
             },
             module_db: cx_pipeline_data::db::ModuleData::new(),
             linking_files: Mutex::new(HashSet::new()),

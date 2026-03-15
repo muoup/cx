@@ -147,14 +147,16 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> Option<Vec<u8>> {
     let isa = native_builder.finish(flags).unwrap();
 
     let mut global_state = GlobalState {
-        object_module: ObjectModule::new(
-            ObjectBuilder::new(
+        object_module: {
+            let mut builder = ObjectBuilder::new(
                 isa.clone(),
                 output,
                 cranelift_module::default_libcall_names(),
             )
-            .unwrap(),
-        ),
+            .unwrap();
+            builder.per_function_section(true);
+            ObjectModule::new(builder)
+        },
 
         context: Context::new(),
         target_frontend_config: isa.frontend_config(),
