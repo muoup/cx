@@ -4,7 +4,7 @@ mod template_realizing;
 mod backends;
 pub mod progress;
 
-use crate::linker::link;
+use crate::linker::{link, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
@@ -43,7 +43,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 
     let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
-        link(&compiler_context, &reporter)
+        link(&compiler_context, &mut reporter)
     });
 
     if result.is_err() {
@@ -56,7 +56,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     Ok(())
 }
 
-pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<(cx_lmir::LMIRUnit, HashSet<std::path::PathBuf>)> {
+pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<cx_lmir::LMIRUnit> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
         config,
@@ -78,7 +78,19 @@ pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult
     let mut reporter = ProgressReporter::new(verbose);
 
     let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
-        scheduling_loop(&compiler_context, initial_job, &mut reporter)
+        scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
+
+        // Extract exported symbol names from the entry file's LMIR to use as GC roots
+        let entry_lmir = compiler_context.module_db.lmir.get(&entry_unit);
+        let exported_symbols: Vec<String> = entry_lmir.fn_defs.iter()
+            .filter(|f| {
+                f.prototype.linkage != cx_lmir::LinkageType::Static
+                    && f.prototype.linkage != cx_lmir::LinkageType::External
+            })
+            .map(|f| f.prototype.name.clone())
+            .collect();
+
+        link_relocatable(&compiler_context, &exported_symbols, &mut reporter)
     });
 
     if result.is_err() {
@@ -91,13 +103,7 @@ pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult
     // Take only the entry file's LMIR unit (not imports/dependencies)
     let entry_lmir = compiler_context.module_db.lmir.take(&entry_unit);
 
-    // Drain the linking files so the caller can copy them to the output directory
-    let linking_files = compiler_context.linking_files.lock()
-        .expect("Deadlock on linking files mutex")
-        .drain()
-        .collect();
-
-    Ok((entry_lmir, linking_files))
+    Ok(entry_lmir)
 }
 
 pub fn project_compilation(
@@ -147,14 +153,16 @@ pub fn project_compilation(
                 let mut config = base_config.clone();
                 config.compilation_mode = CompilationMode::Library;
                 config.link_entries = link_entries.clone();
-                config.output = output_dir.join(&library.name);
+                config.output = output_dir.join(format!("{}.o", library.name));
 
                 eprintln!("Building library '{}' (target: {})", library.name, target_name);
 
-                let (lmir_units, _) = library_compilation(config.clone(), Path::new(&library.entry))?;
+                let entry_lmir = library_compilation(config.clone(), Path::new(&library.entry))?;
+
+                eprintln!("  Linked {}", config.output.display());
 
                 // Generate .h header from LMIR
-                let Ok(header) = cx_c_header::generate_header(&library.name, &lmir_units, &link_entries) else {
+                let Ok(header) = cx_c_header::generate_header(&library.name, &entry_lmir, &link_entries) else {
                     eprintln!("Warning: Failed to generate header for library '{}': {}", library.name, "Header generation is best-effort and will not fail the build");
                     continue;
                 };

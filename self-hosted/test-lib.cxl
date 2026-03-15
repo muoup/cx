@@ -1,5 +1,7 @@
+import std::io;
+
 public:
 
-i32 add(i32 a, i32 b) {
-    return a + b;
+void test_print() {
+    println("Hello, world!");
 }

@@ -6,6 +6,7 @@ pub struct ProgressReporter {
     start_time: Instant,
     verbose: bool,
     modules_compiled: usize,
+    last_line_len: usize,
 }
 
 impl ProgressReporter {
@@ -16,6 +17,7 @@ impl ProgressReporter {
             start_time: Instant::now(),
             verbose,
             modules_compiled: 0,
+            last_line_len: 0,
         }
     }
 
@@ -30,17 +32,18 @@ impl ProgressReporter {
     /// Clear the progress line so subsequent output (errors, etc.) starts clean.
     pub fn clear_line(&self) {
         if !self.verbose {
-            eprint!("\r{:<80}\r", "");
+            eprint!("\r{:width$}\r", "", width = self.last_line_len);
         }
     }
 
-    pub fn start_step(&self, step_name: &str, unit_name: &str) {
+    pub fn start_step(&mut self, step_name: &str, unit_name: &str) {
         if self.verbose {
             eprintln!("[{}/{}] {} {}", self.completed + 1, self.total, step_name, unit_name);
         } else {
             let line = format!("[{}/{}] {} {}...", self.completed + 1, self.total, step_name, unit_name);
-            // Pad with spaces to overwrite previous longer lines
-            eprint!("\r{:<80}", line);
+            let pad_width = self.last_line_len.max(line.len());
+            eprint!("\r{:<width$}", line, width = pad_width);
+            self.last_line_len = line.len();
         }
     }
 
@@ -58,11 +61,13 @@ impl ProgressReporter {
         }
     }
 
-    pub fn link_status(&self, message: &str) {
+    pub fn link_status(&mut self, message: &str) {
         if self.verbose {
             eprintln!("{}", message);
         } else {
-            eprint!("\r{:<80}", message);
+            let pad_width = self.last_line_len.max(message.len());
+            eprint!("\r{:<width$}", message, width = pad_width);
+            self.last_line_len = message.len();
         }
     }
 
@@ -70,7 +75,7 @@ impl ProgressReporter {
         let elapsed = self.start_time.elapsed();
         if !self.verbose {
             // Clear the progress line
-            eprint!("\r{:<80}\r", "");
+            eprint!("\r{:width$}\r", "", width = self.last_line_len);
         }
         eprintln!(
             "Compiled {} module{} in {:.2}s",
@@ -83,7 +88,7 @@ impl ProgressReporter {
     pub fn finish_target(&self, target_name: &str) {
         let elapsed = self.start_time.elapsed();
         if !self.verbose {
-            eprint!("\r{:<80}\r", "");
+            eprint!("\r{:width$}\r", "", width = self.last_line_len);
         }
         eprintln!(
             "Built target '{}': {} module{} in {:.2}s",
