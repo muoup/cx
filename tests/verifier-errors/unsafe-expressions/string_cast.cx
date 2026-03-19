@@ -1,0 +1,3 @@
+void unsafe_cast(const char* c) safe {
+    _str& s = (_str&) c;
+}

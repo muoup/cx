@@ -86,14 +86,8 @@ pub fn try_function_parse(
             assert_token_matches!(data.tokens, identifier!(name));
             let method_name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens)?;
-
-            let Ok(params) = parse_params(data) else {
-                return log_parse_error!(
-                    data,
-                    "Failed to parse parameters in member function declaration!"
-                );
-            };
-
+            let params = parse_params(data)?;
+            
             let kind = if let Some(receiver) = params.receiver {
                 CXFunctionKind::MemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),

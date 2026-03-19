@@ -172,30 +172,38 @@ pub fn binary_op_intrinsic(op: &MIRBinOp) -> FMIRBinaryIntrinsic {
     }
 }
 
-pub fn coercion_intrinsic(coercion: &MIRCoercion) -> FMIRCastIntrinsic {
-    match coercion {
-        MIRCoercion::Integral { sextend, to_type } => FMIRCastIntrinsic::Integral {
-            sextend: *sextend,
-            to_bits: to_type.bytes() * 8,
-        },
-        MIRCoercion::FloatCast { to_type } => FMIRCastIntrinsic::FloatCast {
-            to_bits: to_type.bytes() * 8,
-        },
-        MIRCoercion::PtrToInt { to_type } => FMIRCastIntrinsic::PtrToInt {
-            to_bits: to_type.bytes() * 8,
-        },
-        MIRCoercion::IntToPtr { sextend } => FMIRCastIntrinsic::IntToPtr { sextend: *sextend },
-        MIRCoercion::IntToFloat { to_type, sextend } => FMIRCastIntrinsic::IntToFloat {
-            to_bits: to_type.bytes() * 8,
-            sextend: *sextend,
-        },
-        MIRCoercion::FloatToInt { to_type, sextend } => FMIRCastIntrinsic::FloatToInt {
-            to_bits: to_type.bytes() * 8,
-            sextend: *sextend,
-        },
-        MIRCoercion::IntToBool => FMIRCastIntrinsic::IntToBool,
-        MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
-    }
+pub fn coercion_intrinsic(env: &FMIREnvironment, expr: &MIRExpression, coercion: &MIRCoercion) -> CXResult<FMIRCastIntrinsic> {
+    Ok(
+        match coercion {
+            MIRCoercion::Integral { sextend, to_type } => FMIRCastIntrinsic::Integral {
+                sextend: *sextend,
+                to_bits: to_type.bytes() * 8,
+            },
+            MIRCoercion::FloatCast { to_type } => FMIRCastIntrinsic::FloatCast {
+                to_bits: to_type.bytes() * 8,
+            },
+            MIRCoercion::PtrToInt { to_type } => FMIRCastIntrinsic::PtrToInt {
+                to_bits: to_type.bytes() * 8,
+            },
+            MIRCoercion::IntToPtr { sextend } => FMIRCastIntrinsic::IntToPtr { sextend: *sextend },
+            MIRCoercion::IntToFloat { to_type, sextend } => FMIRCastIntrinsic::IntToFloat {
+                to_bits: to_type.bytes() * 8,
+                sextend: *sextend,
+            },
+            MIRCoercion::FloatToInt { to_type, sextend } => FMIRCastIntrinsic::FloatToInt {
+                to_bits: to_type.bytes() * 8,
+                sextend: *sextend,
+            },
+            MIRCoercion::IntToBool => FMIRCastIntrinsic::IntToBool,
+            MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
+            
+            MIRCoercion::CStrToStr => return log_analysis_error!(
+                env,
+                expr,
+                "Converting from char* to _str& is an unsafe coercion",
+            ),
+        }
+    )
 }
 
 pub(crate) fn app1(intrinsic: FMIRIntrinsicKind, arg: FMIRNode, output_type: &MIRType) -> FMIRNode {

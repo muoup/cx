@@ -116,6 +116,8 @@ fn convert_coercion(
                 from: from_type,
                 sextend: *sextend,
             })
-        }
+        },
+        MIRCoercion::CStrToStr =>
+            Ok(LMIRCoercionType::BitCast),
     }
 }

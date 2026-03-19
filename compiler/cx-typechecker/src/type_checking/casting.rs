@@ -96,6 +96,17 @@ pub(crate) fn explicit_cast(
         (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::PointerTo { .. }) => {
             coerce(MIRCoercion::IntToPtr { sextend: *signed })
         }
+        
+        (MIRTypeKind::PointerTo { inner_type: ptr_inner, .. }, MIRTypeKind::MemoryReference { inner_type: str_inner })
+            if matches!(ptr_inner.kind, MIRTypeKind::Integer { _type: MIRIntegerType::I8, .. }) &&
+               matches!(str_inner.kind, MIRTypeKind::Str) => {
+        
+           coerce(MIRCoercion::CStrToStr)        
+        }
+        
+        (MIRTypeKind::MemoryReference { inner_type }, _) => {
+            cast_recurse(env, expr, value, to_type, inner_type, explicit_cast)
+        },
 
         _ => {
             log_typecheck_error!(
@@ -276,31 +287,7 @@ pub fn implicit_cast(
                 ..
             },
             _,
-        ) => {
-            if !env.is_copyable(inner) {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    "Cannot implicitly copy value of type {}",
-                    inner,
-                );
-            }
-
-            if inner.is_memory_resident() {
-                let copied = TypecheckResult::copy_region(
-                    TypecheckResult::expr2(value.clone()),
-                    (*inner.clone()).clone(),
-                );
-                implicit_cast(env, expr, copied.into_expression(), to_type)
-            } else {
-                // Need to read from memory reference and then cast
-                let loaded = TypecheckResult::memory_read(
-                    TypecheckResult::expr2(value.clone()),
-                    (*inner.clone()).clone(),
-                );
-                implicit_cast(env, expr, loaded.into_expression(), to_type)
-            }
-        }
+        ) => cast_recurse(env, expr, value, to_type, inner, implicit_cast),
 
         (
             _,
@@ -352,5 +339,34 @@ pub fn implicit_cast(
                 to_type
             )
         }
+    }
+}
+
+fn cast_recurse<Func>(env: &mut TypeEnvironment, expr: &CXExpr, value: MIRExpression, to_type: &MIRType, inner_type: &MIRType, cast: Func)
+    -> CXResult<MIRExpression> where
+    Func: Fn(&mut TypeEnvironment, &CXExpr, MIRExpression, &MIRType) -> CXResult<MIRExpression> 
+{
+    if !env.is_copyable(inner_type) {
+        return log_typecheck_error!(
+            env,
+            expr,
+            "Cannot implicitly copy value of type {}",
+            inner_type,
+        );
+    }
+
+    if inner_type.is_memory_resident() {
+        let copied = TypecheckResult::copy_region(
+            TypecheckResult::expr2(value.clone()),
+            inner_type.clone()
+        );
+        cast(env, expr, copied.into_expression(), to_type)
+    } else {
+        // Need to read from memory reference and then cast
+        let loaded = TypecheckResult::memory_read(
+            TypecheckResult::expr2(value.clone()),
+            inner_type.clone()
+        );
+        cast(env, expr, loaded.into_expression(), to_type)
     }
 }

@@ -6,13 +6,19 @@ struct string : @nodrop {
     u64 capacity;
 };
 
-string string::new_string() {
+string string::new_string() safe {
     string s;
-    s.data = malloc(16);
-    s.length = 0;
-    s.capacity = 16;
-    s.data[0] = '\0'; // Initialize as an empty string
-    return s;
+
+    @unsafe {
+        s = (string) {
+            .data = malloc(16),
+            .length = 0,
+            .capacity = 16
+        };
+        *s.data = '\0';
+    };
+
+    return @unsafe(move s);
 }
 
 void string::append(*this, const char* s) {
@@ -26,16 +32,22 @@ void string::append(*this, const char* s) {
     this.length = str_length + this.length;
 }
 
-void string::drop(this) {
+void string::drop(this) safe {
     @unsafe {
         free(this.data);
         @leak(this);
     };
 }
 
+_str& string::as_str(*this) safe {
+    // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
+    // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
+    return @unsafe((_str&) this.data);
+}
+
 private:
 
-void string::_realloc(this) {   
+void string::_realloc(*this) {
     this.capacity = this.capacity * 2;
     this.data = realloc(this.data, this.capacity);
 }

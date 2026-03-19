@@ -571,6 +571,7 @@ impl Display for MIRCoercion {
             ),
             MIRCoercion::IntToBool => write!(f, "int_to_bool"),
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
+            MIRCoercion::CStrToStr => write!(f, "cstr_to_str"),
         }
     }
 }

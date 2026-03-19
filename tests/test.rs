@@ -11,6 +11,7 @@ enum FailureStage {
     Parse,
     Typecheck,
     Analysis,
+    Linking
 }
 
 struct TestTempDir {
@@ -92,6 +93,8 @@ fn classify_failure_stage(message: &str) -> Option<FailureStage> {
     } else if message.starts_with("ANALYSIS ERROR")
     {
         Some(FailureStage::Analysis)
+    } else if message.contains("Linking failed") {
+        Some(FailureStage::Linking)
     } else {
         None
     }

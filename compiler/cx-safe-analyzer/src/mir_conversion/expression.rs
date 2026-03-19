@@ -1,13 +1,12 @@
+use crate::{log_analysis_error, mir_conversion::factories::*};
 use cx_mir::mir::{
-    expression::{
-        MIRExpression, MIRExpressionKind, MIRUnOp,
-    },
+    expression::{MIRExpression, MIRExpressionKind, MIRUnOp},
     types::{MIRType, MIRTypeKind},
 };
-use cx_safe_ir::{ast::{
-    CVMOperation, FMIRNode, FMIRNodeBody, FMIRSourceRange, FMIRType, FRc, MemoryLocation,
-}, intrinsic::FMIRIntrinsicKind};
-use crate::{log_analysis_error, mir_conversion::factories::*};
+use cx_safe_ir::{
+    ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRSourceRange, FMIRType, FRc, MemoryLocation},
+    intrinsic::FMIRIntrinsicKind,
+};
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use crate::mir_conversion::environment::FMIREnvironment;
@@ -65,14 +64,6 @@ pub fn convert_expression(
                 .as_ref()
                 .map(|expr| convert_expression(env, expr))
                 .transpose()?;
-            
-            if _type.is_pointer() {
-                return log_analysis_error!(
-                    env,
-                    mir_expr,
-                    "Pointer types may not be used in safe contexts"
-                )
-            }
 
             let mut operation = CVMOperation::Unsafe;
             if let Some(name) = name {
@@ -281,9 +272,11 @@ pub fn convert_expression(
 
         MIRExpressionKind::FunctionReference { .. } => {
             let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
-                unreachable!("FMIR conversion expected function type in function reference expression")
+                unreachable!(
+                    "FMIR conversion expected function type in function reference expression"
+                )
             };
-            
+
             if !prototype.contract.safe {
                 return log_analysis_error!(
                     env,
@@ -291,7 +284,7 @@ pub fn convert_expression(
                     "References to unsafe functions may not be used in safe contexts"
                 );
             }
-            
+
             let Some(function_name) = mir_expr._type.get_fn_name() else {
                 return CXError::create_result(format!(
                     "FMIR conversion expected function reference type in function '{}'",
@@ -328,14 +321,18 @@ pub fn convert_expression(
 
         MIRExpressionKind::UnaryOperation { operand, op } => {
             match op {
-                MIRUnOp::PreIncrement(amount) => return Ok(with_expression_range(
-                    convert_increment(env, operand, *amount, true)?,
-                    mir_expr,
-                )),
-                MIRUnOp::PostIncrement(amount) => return Ok(with_expression_range(
-                    convert_increment(env, operand, *amount, false)?,
-                    mir_expr,
-                )),
+                MIRUnOp::PreIncrement(amount) => {
+                    return Ok(with_expression_range(
+                        convert_increment(env, operand, *amount, true)?,
+                        mir_expr,
+                    ));
+                }
+                MIRUnOp::PostIncrement(amount) => {
+                    return Ok(with_expression_range(
+                        convert_increment(env, operand, *amount, false)?,
+                        mir_expr,
+                    ));
+                }
                 _ => {}
             }
 
@@ -398,7 +395,17 @@ pub fn convert_expression(
             ))
         }
 
-        MIRExpressionKind::Typechange(inner) => convert_expression(env, inner),
+        MIRExpressionKind::Typechange(inner) => {
+            if inner._type.is_pointer() {
+                return log_analysis_error!(
+                    env,
+                    mir_expr,
+                    "Dereferencing raw pointers is not allowed in safe contexts"
+                );
+            }
+
+            convert_expression(env, inner)
+        }
 
         MIRExpressionKind::CallFunction {
             function,
@@ -442,7 +449,7 @@ pub fn convert_expression(
         } => {
             let operand_node = convert_expression(env, operand)?;
             let converted = app1(
-                FMIRIntrinsicKind::Cast(coercion_intrinsic(conversion)),
+                FMIRIntrinsicKind::Cast(coercion_intrinsic(env, operand, conversion)?),
                 operand_node.clone(),
                 &mir_expr._type,
             );
