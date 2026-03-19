@@ -1,0 +1,15 @@
+struct test<T> {
+    T i;
+};
+
+test<U> test<T>::map<T, U>(*this, U (*func)(T)) {
+    return test::new(func(i));
+}
+
+int main() {
+    test<int> a = (test<int>) { .i = 42 };
+    test<int> b = a.map<int>(add_one);
+    
+    printf("a.i: %d\n", a.i);
+    printf("b.i: %d\n", b.i);
+}

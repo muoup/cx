@@ -114,9 +114,10 @@ fn parse_fn_merge(
                 let body = parse_body(data)?;
                 unnote_templatedtype_s(data, &template_prototype);
 
-                data.add_function(prototype.clone(), Some(template_prototype));
+                data.add_function(prototype.clone(), Some(template_prototype.clone()));
                 data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
                     prototype,
+                    template_prototype,
                     body: Box::new(body),
                 });
             }

@@ -177,14 +177,11 @@ pub fn implicit_cast(
                 ..
             },
         ) => {
-            if t1 < t2 {
-                coerce(MIRCoercion::Integral {
-                    to_type: *t2,
-                    sextend: *s2,
-                })
-            } else {
-                coerce(MIRCoercion::ReinterpretBits)
-            }
+            coerce(MIRCoercion::Integral {
+                from_type: *t1,
+                to_type: *t2,
+                sextend: *s2,
+            })
         }
 
         (MIRTypeKind::Float { .. }, MIRTypeKind::Float { _type: to_type }) => {

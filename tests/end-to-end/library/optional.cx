@@ -1,0 +1,29 @@
+import std::optional;
+import std::io;
+
+int add_one(int x) {
+    return x + 1;
+}
+
+int main() {
+    opt<i8> a = opt<i8>::some(42);
+    opt<i8> b = opt<i8>::none();
+    
+    printf("a is some: %b\n", a.is_some<i8>());
+    printf("b is some: %b\n", b.is_some<i8>());
+    
+    printf("a unwrap_or 100: %d\n", a.unwrap_or<i8>(100));
+    printf("b unwrap_or 100: %d\n", b.unwrap_or<i8>(100));
+    
+    a = opt<i8>::some(42);
+    b = opt<i8>::none();
+    
+    opt<i8> c = a.map<i8>(add_one);
+    opt<i8> d = b.map<i8>(add_one);
+    
+    printf("c is some: %b\n", c.is_some<i8>());
+    printf("d is some: %b\n", d.is_some<i8>());
+    
+    printf("c unwrap: %d\n", c.unwrap<i8>());
+    printf("d unwrap: %d\n", d.unwrap<i8>());
+}

@@ -11,9 +11,11 @@ enum union opt<T> : @copy_traits(T) {
 
 bool opt<T>::is_some<T>(*this) {
     match (this) {
-        opt<T>::some(value) => return true;
-        opt<T>::none(_) => return false;
+        opt<T>::some(value) => return 1;
+        opt<T>::none(_) => return 0;
     }
+    
+    return 0;
 }
 
 opt<U> opt<T>::map<T, U>(*this, U (*func)(T)) {
@@ -33,7 +35,7 @@ T opt<T>::unwrap_or<T>(*this, T otherwise) {
 }
 
 T opt<T>::unwrap<T>(this) {
-    bool valid = this is opt::some(value);
+    bool valid = this is opt<T>::some(value);
 
     if (!valid) {
         println("Error: called `opt::unwrap()` on a `None` value");

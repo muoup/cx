@@ -1,4 +1,4 @@
-use cx_ast::data::{CXFunctionPrototype, CXType};
+use cx_ast::{ast::CXExpr, data::{CXFunctionPrototype, CXType}};
 use cx_mir::mir::{program::MIRBaseMappings, types::{MIRFunctionPrototype, MIRType}};
 use cx_util::CXResult;
 
@@ -25,9 +25,10 @@ pub fn complete_type(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
+    expr: &CXExpr,
     _type: &CXType,
 ) -> CXResult<MIRType> {
     let (_, base_data) = base_data_from_module(env, base_data, external_module);
     
-    _complete_type(env, base_data, _type)
+    _complete_type(env, base_data, expr, _type)
 }

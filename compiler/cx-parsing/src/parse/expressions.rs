@@ -116,17 +116,19 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
 
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
-    compress_stack(&mut expr_stack, &mut op_stack, 100)?;
+    compress_stack(data, &mut expr_stack, &mut op_stack, 100)?;
 
     let Some(expr) = expr_stack.pop() else {
-        log_error!(
+        return log_parse_error!(
+            data,
             "Failed to parse expression value after operator: {:#?}",
             data.tokens.peek()
         );
     };
 
     if !expr_stack.is_empty() {
-        log_error!(
+        return log_parse_error!(
+            data,
             "Expression stack is not empty after parsing expression: {:#?} {:#?}",
             expr_stack,
             op_stack
@@ -134,7 +136,8 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
     }
     
     if !op_stack.is_empty() {
-        log_error!(
+        return log_parse_error!(
+            data,
             "Operator stack is not empty after parsing expression: {:#?} {:#?}",
             expr_stack,
             op_stack
@@ -249,7 +252,7 @@ pub(crate) fn parse_expr_op_concat(
     };
 
     let op_prec = binop_prec(op.clone());
-    compress_stack(expr_stack, op_stack, op_prec)?;
+    compress_stack(data, expr_stack, op_stack, op_prec)?;
 
     op_stack.push(PrecOperator::BinOp(op));
 
@@ -259,11 +262,13 @@ pub(crate) fn parse_expr_op_concat(
 }
 
 fn compress_one_expr(
+    data: &mut ParserData,
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
 ) -> CXResult<CXExpr> {
-    let op = op_stack.pop()
-        .ok_or_else(|| log_error!("Operator stack is empty when trying to compress expression"))?;
+    let Some(op) = op_stack.pop() else {
+        return log_parse_error!(data, "Operator stack is empty when trying to compress expression");
+    };
 
     match op {
         PrecOperator::UnOp(un_op) => {
@@ -298,6 +303,7 @@ fn compress_one_expr(
 }
 
 pub(crate) fn compress_stack(
+    data: &mut ParserData,
     expr_stack: &mut Vec<CXExpr>,
     op_stack: &mut Vec<PrecOperator>,
     rprec: u8,
@@ -311,7 +317,7 @@ pub(crate) fn compress_stack(
             break;
         }
 
-        let expr = compress_one_expr(expr_stack, op_stack)?;
+        let expr = compress_one_expr(data, expr_stack, op_stack)?;
         expr_stack.push(expr);
     }
 
@@ -454,7 +460,7 @@ pub(crate) fn parse_expr_val(
     while let Some(op) = parse_postfix_unop(data) {
         let prec = unop_prec(op.clone());
 
-        compress_stack(expr_stack, op_stack, prec)?;
+        compress_stack(data, expr_stack, op_stack, prec)?;
         op_stack.push(PrecOperator::UnOp(op));
     }
 

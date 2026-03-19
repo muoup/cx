@@ -20,9 +20,13 @@ impl CXErrorTrait for TypeError {
             self.token_end,
         );
     }
-
-    fn error_message(&self) -> String {
-        format!("TYPE ERROR:   {}", self.message)
+    
+    fn error_prefix(&self) -> String {
+        "TYPE ERROR".to_string()
+    }
+    
+    fn error_content(&self) -> String {
+        self.message.clone()
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {

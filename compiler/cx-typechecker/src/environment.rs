@@ -1,6 +1,6 @@
 use cx_tokens::token::Token;
 use cx_ast::ast::CXExpr;
-use cx_ast::data::{CXTemplateInput, CXFunctionKind, CXFunctionPrototype, CXType};
+use cx_ast::data::{CXFunctionKind, CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_mir::CXTypeMap;
@@ -11,7 +11,7 @@ use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRU
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
-use cx_util::{CXError, CXResult};
+use cx_util::CXResult;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -445,12 +445,13 @@ impl TypeEnvironment<'_> {
         self.realized_fns.get(name).cloned()
     }
 
-    pub fn get_type(&mut self, base_data: &MIRBaseMappings, name: &str) -> CXResult<MIRType> {
-        let Some(_ty) = base_data.type_data.get_standard(&name.to_string()) else {
-            return CXError::create_result(format!("Type '{}' not found", name));
-        };
-
-        self.complete_type(base_data, &_ty.resource)
+    pub fn get_type(&mut self, base_data: &MIRBaseMappings, expr: &CXExpr, name: &str) -> CXResult<MIRType> {
+        let as_cx_type = CXTypeKind::Identifier {
+            predeclaration: PredeclarationType::None,
+            name: CXIdent::new(name),
+        }.to_type();
+        
+        self.complete_type(base_data, expr, &as_cx_type)
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
@@ -464,9 +465,10 @@ impl TypeEnvironment<'_> {
     pub fn complete_type(
         &mut self,
         base_data: &MIRBaseMappings,
+        expr: &CXExpr,
         _type: &CXType,
     ) -> CXResult<MIRType> {
-        complete_type(self, base_data, None, _type)
+        complete_type(self, base_data, None, expr, _type)
     }
 
     pub fn complete_prototype(

@@ -1,12 +1,10 @@
-use crate::environment::TypeEnvironment;
 use crate::environment::ScopeExitTarget;
+use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
-use crate::type_checking::typechecker::{
-    expr_may_fall_through, typecheck_expr,
-};
+use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
@@ -81,10 +79,7 @@ pub fn typecheck_switch(
             }),
         };
 
-        arms.push((
-            Box::new(pattern_expr),
-            Box::new(case_body_expr),
-        ));
+        arms.push((Box::new(pattern_expr), Box::new(case_body_expr)));
     }
 
     // Handle default case
@@ -148,14 +143,15 @@ pub fn typecheck_match(
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
 ) -> CXResult<TypecheckResult> {
-    let mut expr_value = typecheck_expr(env, base_data, condition, None)?.into_expression();
+    let mut expr_value = typecheck_expr(env, base_data, condition, None)
+        .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
     let mut expr_type = expr_value.get_type();
     env.push_scope(false, false);
     env.set_scope_anchor(condition);
     env.configure_merge_scope(condition, "match join", None, false);
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
-
+    
     if let Some(inner) = expr_type.mem_ref_inner() {
         expr_type = inner.clone();
 
@@ -237,12 +233,12 @@ pub fn typecheck_match(
 
             for (pattern, body) in arms.iter() {
                 let TypeConstructor {
-                    union_name,
+                    union_type,
                     variant_name,
                     inner,
                 } = deconstruct_type_constructor(env, base_data, pattern)?;
 
-                if union_name.as_str() != expected_union_name.as_str() {
+                if union_type.get_name().unwrap().as_str() != expected_union_name.as_str() {
                     return log_typecheck_error!(
                         env,
                         pattern,
@@ -278,43 +274,60 @@ pub fn typecheck_match(
                         _type: MIRIntegerType::I8,
                     }),
                 };
-                
-                let variant_get_type = if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
-                    variant_type.clone()
-                } else {
-                    variant_type.clone().mem_ref_to()
-                };
-                
+
+                let variant_get_type =
+                    if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
+                        variant_type.clone()
+                    } else {
+                        variant_type.clone().mem_ref_to()
+                    };
+
                 // Extract the variant value and bind it
                 let variant_value_expr = TypecheckResult::tagged_union_get(
                     TypecheckResult::expr2(expr_value.clone()),
                     variant_type.clone(),
-                    variant_get_type
+                    variant_get_type,
                 )
                 .into_expression();
 
-                let CXExprKind::Identifier(name) = &inner.kind else {
-                    return log_typecheck_error!(
-                        env,
-                        inner,
-                        "Tagged union variant pattern must bind to an identifier"
-                    );
-                };
+                let body_expr = if let Some(inner) = inner {
+                    let CXExprKind::Identifier(name) = &inner.kind else {
+                        return log_typecheck_error!(
+                            env,
+                            inner,
+                            "Tagged union variant pattern must bind to an identifier"
+                        );
+                    };
 
-                // Typecheck the body with the variant value bound.
-                env.insert_symbol(name.as_string(), variant_value_expr);
-                let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-                if expr_may_fall_through(&body_expr) {
-                    env.enqueue_scope_arrow(
-                        &ScopeExitTarget {
-                            target_scope_idx: join_scope_idx,
-                            sink: crate::environment::ScopeArrowSink::Merge,
-                            label: "arm".to_string(),
-                        },
-                        env.current_snapshot(),
-                    );
-                }
-                env.restore_snapshot(&base_snapshot);
+                    // Typecheck the body with the variant value bound.
+                    env.insert_symbol(name.as_string(), variant_value_expr);
+                    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                    if expr_may_fall_through(&body_expr) {
+                        env.enqueue_scope_arrow(
+                            &ScopeExitTarget {
+                                target_scope_idx: join_scope_idx,
+                                sink: crate::environment::ScopeArrowSink::Merge,
+                                label: "arm".to_string(),
+                            },
+                            env.current_snapshot(),
+                        );
+                    }
+                    env.restore_snapshot(&base_snapshot);
+                    body_expr
+                } else {
+                    let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                    if expr_may_fall_through(&body_expr) {
+                        env.enqueue_scope_arrow(
+                            &ScopeExitTarget {
+                                target_scope_idx: join_scope_idx,
+                                sink: crate::environment::ScopeArrowSink::Merge,
+                                label: "arm".to_string(),
+                            },
+                            env.current_snapshot(),
+                        );
+                    }
+                    body_expr
+                };
 
                 result_arms.push((Box::new(pattern_expr), Box::new(body_expr)));
             }

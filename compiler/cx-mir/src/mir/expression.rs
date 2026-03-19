@@ -323,6 +323,7 @@ pub enum MIRCoercion {
     // Any integer to any integer conversion
     Integral {
         sextend: bool,
+        from_type: MIRIntegerType,
         to_type: MIRIntegerType,
     },
 

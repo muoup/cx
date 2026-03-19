@@ -9,7 +9,7 @@ use crate::type_checking::structured_initialization::{
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_ast::data::{CXFunctionPrototype, CXType, CXTypeKind, CX_CONST};
+use cx_ast::data::{CXFunctionPrototype, CXTypeKind, CX_CONST};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
@@ -484,21 +484,21 @@ pub(crate) fn typecheck_scoped_call(
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
     let mir_type = match &type_expr.kind {
-        CXExprKind::Identifier(name) => env.get_type(base_data, name.as_str())?,
+        CXExprKind::Identifier(name) => {
+            env.get_type(base_data, type_expr, name.as_str())?
+        },
 
         CXExprKind::TemplatedIdentifier {
             name,
             template_input,
-        } => env.complete_type(
-            base_data,
-            &CXType {
-                kind: CXTypeKind::TemplatedIdentifier {
-                    name: name.clone(),
-                    input: template_input.clone(),
-                },
-                specifiers: 0,
-            },
-        )?,
+        } => {
+            let cx_type = CXTypeKind::TemplatedIdentifier {
+                name: name.clone(),
+                input: template_input.clone(),
+            }.to_type();
+            
+            env.complete_type(base_data, type_expr, &cx_type)?
+        },
 
         _ => {
             return log_typecheck_error!(
@@ -628,28 +628,29 @@ pub(crate) fn typecheck_is(
     };
 
     let TypeConstructor {
-        union_name,
+        union_type,
         variant_name,
         inner,
     } = deconstruct_type_constructor(env, base_data, rhs)?;
-
-    if *expected_union_name != union_name {
+    let union_name = union_type.get_name().unwrap().as_str();
+    
+    if expected_union_name.as_str() != union_name {
         return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
             expected_union_name,
-            union_name.as_string()
+            union_name
         );
     }
 
-    if union_type.get_name().map(|x| x.as_str()) != Some(union_name.as_str()) {
+    if union_type.get_name().map(|x| x.as_str()) != Some(union_name) {
         return log_typecheck_error!(
             env,
             expr,
             " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
             union_type,
-            union_name.as_string()
+            union_name
         );
     }
 
@@ -667,26 +668,29 @@ pub(crate) fn typecheck_is(
             union_name
         );
     };
-
-    let inner_name = if let CXExprKind::Identifier(name) = &inner.kind {
-        env.insert_symbol(
-            name.to_string(),
-            MIRExpression {
+    
+    let inner_name = match inner {
+        None => CXIdent::from(""),
+        Some(inner) if matches!(inner.kind, CXExprKind::Unit) => CXIdent::from(""),
+    
+        Some(inner) => {
+            let CXExprKind::Identifier(name) = &inner.kind else {
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " 'is' operator inner expression must be an identifier or unit, found {:?}",
+                    inner
+                );
+            };
+            
+            env.insert_symbol(name.as_string(), MIRExpression {
                 source_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: variant_type.clone().mem_ref_to(),
-            },
-        );
-        name.clone()
-    } else if matches!(inner.kind, CXExprKind::Unit) {
-        CXIdent::from("")
-    } else {
-        return log_typecheck_error!(
-            env,
-            expr,
-            "unknown inner expression for 'is' operator: {:?}",
-            inner
-        );
+            });
+            
+            name.clone()
+        },
     };
 
     Ok(TypecheckResult::expr(
@@ -1287,7 +1291,7 @@ pub(crate) fn typecheck_contract(
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
-            let mir_type = env.complete_type(base_data, &param._type)?;
+            let mir_type = env.complete_type(base_data, &CXExpr::default(), &param._type)?;
             env.insert_symbol(
                 name.to_string(),
                 MIRExpression {
@@ -1313,7 +1317,7 @@ pub(crate) fn typecheck_contract(
 
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
-            let mir_type = env.complete_type(base_data, &prototype.return_type)?;
+            let mir_type = env.complete_type(base_data, &CXExpr::default(), &prototype.return_type)?;
             env.insert_symbol(
                 ret_name.to_string(),
                 MIRExpression {

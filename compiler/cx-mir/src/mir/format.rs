@@ -546,9 +546,10 @@ impl Display for MIRUnOp {
 impl Display for MIRCoercion {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRCoercion::Integral { sextend, to_type } => write!(
+            MIRCoercion::Integral { sextend, from_type, to_type } => write!(
                 f,
-                "integral({}, to: {})",
+                "integral({}, {} -> {})",
+                from_type,
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),

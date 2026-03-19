@@ -44,8 +44,10 @@ fn convert_coercion(
         MIRCoercion::IntToBool => {
             Ok(LMIRCoercionType::Trunc)
         }
-        MIRCoercion::Integral { sextend, .. } => {
-            if *sextend {
+        MIRCoercion::Integral { sextend, from_type, to_type } => {
+            if from_type.bytes() > to_type.bytes() {
+                Ok(LMIRCoercionType::Trunc)
+            } else if *sextend {
                 Ok(LMIRCoercionType::SExtend)
             } else {
                 Ok(LMIRCoercionType::ZExtend)

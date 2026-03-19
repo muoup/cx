@@ -258,13 +258,13 @@ pub fn typecheck_expr_inner(
             name,
             initial_value,
         } => {
-            let _type = env.complete_type(base_data, _type).map_err(|err| {
+            let _type = env.complete_type(base_data, expr, _type).map_err(|err| {
                 let err: CXResult<()> = log_typecheck_error!(
                     env,
                     expr,
                     " Failed to resolve type for variable '{}'\n {}",
                     name,
-                    err.error_message()
+                    err.error_content()
                 );
 
                 err.err().unwrap()
@@ -874,7 +874,7 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::ExplicitCast(to_type) => {
-                    let to_type = env.complete_type(base_data, to_type)?;
+                    let to_type = env.complete_type(base_data, expr, to_type)?;
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
 
                     TypecheckResult {
@@ -1035,7 +1035,7 @@ pub fn typecheck_expr_inner(
             variant_name: name,
             inner,
         } => {
-            let union_type = env.get_type(base_data, type_name.as_str())?;
+            let union_type = env.get_type(base_data, expr, type_name.as_str())?;
             let MIRTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
                 return log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
             };
@@ -1085,7 +1085,7 @@ pub fn typecheck_expr_inner(
         }),
 
         CXExprKind::SizeOfType { _type } => {
-            let tc_type = env.complete_type(base_data, _type)?;
+            let tc_type = env.complete_type(base_data, expr, _type)?;
 
             TypecheckResult::expr2(MIRExpression {
                 source_range: None,
@@ -1191,7 +1191,7 @@ pub(crate) fn global_expr(
             initializer,
             is_mutable,
         } => {
-            let _type = env.complete_type(base_data, _type)?;
+            let _type = env.complete_type(base_data, &CXExpr::default(), _type)?;
             let _initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {

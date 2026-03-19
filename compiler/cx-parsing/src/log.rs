@@ -15,9 +15,13 @@ impl CXErrorTrait for ParseErrorLog {
     fn pretty_print(&self) {
         cx_log::pretty_point_error(&self.message, &self.file, &self.token);
     }
-
-    fn error_message(&self) -> String {
-        format!("PARSER ERROR: {}", self.message)
+    
+    fn error_prefix(&self) -> String {
+        "PARSER ERROR".to_string()
+    }
+    
+    fn error_content(&self) -> String {
+        self.message.clone()
     }
 
     fn compilation_unit(&self) -> Option<PathBuf> {

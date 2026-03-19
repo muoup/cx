@@ -118,8 +118,9 @@ impl Display for CXFunctionStmt {
                 writeln!(f, "}}")
             }
 
-            CXFunctionStmt::TemplatedFunction { prototype, body } => {
+            CXFunctionStmt::TemplatedFunction { prototype, template_prototype, body } => {
                 writeln!(f, "TemplatedFunction {prototype} {{ ")?;
+                writeln!(f, "Template Prototype: {}", template_prototype.types.join(", "))?;
                 write!(f, "{}", CXExprFormatter::new(body, 1))?;
                 writeln!(f, "}}")
             }

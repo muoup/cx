@@ -175,7 +175,7 @@ pub fn binary_op_intrinsic(op: &MIRBinOp) -> FMIRBinaryIntrinsic {
 pub fn coercion_intrinsic(env: &FMIREnvironment, expr: &MIRExpression, coercion: &MIRCoercion) -> CXResult<FMIRCastIntrinsic> {
     Ok(
         match coercion {
-            MIRCoercion::Integral { sextend, to_type } => FMIRCastIntrinsic::Integral {
+            MIRCoercion::Integral { sextend, to_type, .. } => FMIRCastIntrinsic::Integral {
                 sextend: *sextend,
                 to_bits: to_type.bytes() * 8,
             },

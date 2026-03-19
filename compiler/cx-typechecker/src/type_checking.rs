@@ -49,7 +49,7 @@ fn typecheck_function(
         let Some(name) = name else {
             continue;
         };
-
+        
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
@@ -110,7 +110,7 @@ pub fn realize_fn_implementation(
         .function_stmts
         .iter()
         .find_map(|stmt| match stmt {
-            CXFunctionStmt::TemplatedFunction { prototype, body }
+            CXFunctionStmt::TemplatedFunction { prototype, body, .. }
                 if prototype.kind == template.resource.shell.kind =>
             {
                 Some(body)
@@ -120,7 +120,7 @@ pub fn realize_fn_implementation(
         .expect("Function template body not found");
 
     // Complete the template input from CX to MIR level
-    let completed_input = _complete_template_input(env, base_data.as_ref(), None, input)?;
+    let completed_input = _complete_template_input(env, base_data.as_ref(), None, &CXExpr::default(), input)?;
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 

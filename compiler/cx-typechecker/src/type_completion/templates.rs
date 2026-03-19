@@ -2,6 +2,7 @@ use crate::environment::name_mangling::mangle_templated_fn_name;
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use crate::type_completion::complete_prototype_no_insert;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
+use cx_ast::ast::CXExpr;
 use cx_ast::data::{
     CXFunctionTemplate, CXTemplateInput, CXTemplatePrototype, ModuleResource,
 };
@@ -50,7 +51,7 @@ pub(crate) fn instantiate_type_template(
     input: &CXTemplateInput,
     name: &str,
 ) -> CXResult<MIRType> {
-    let completed_input = _complete_template_input(env, base_data, None, input)?;
+    let completed_input = _complete_template_input(env, base_data, None, &CXExpr::default(), input)?;
     let template_name = mangle_template_name(name, &completed_input);
     
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
@@ -64,7 +65,7 @@ pub(crate) fn instantiate_type_template(
     let shell = &template.resource.shell;
 
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
-    let cx_type = _complete_type(env, base_data, shell);
+    let cx_type = _complete_type(env, base_data, &CXExpr::default(), shell);
     restore_template_overwrites(env, overwrites);
 
     let mut cx_type = cx_type?;
@@ -114,7 +115,7 @@ pub(crate) fn instantiate_function_template(
     let template_prototype = &resource.prototype;
 
     // Complete the input
-    let completed_input = _complete_template_input(env, base_data, module_origin.as_ref(), input)?;
+    let completed_input = _complete_template_input(env, base_data, module_origin.as_ref(), &CXExpr::default(), input)?;
     let overwrites = add_templated_types(env, template_prototype, &completed_input);
     let instantiated = complete_function_template(env, base_data, template)?;
 

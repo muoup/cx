@@ -1,0 +1,7 @@
+a is some: 1
+b is some: 0
+a unwrap_or 100: 42
+b unwrap_or 100: 100
+c is some: 1
+d is some: 0
+a 

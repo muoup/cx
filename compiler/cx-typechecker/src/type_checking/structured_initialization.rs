@@ -1,4 +1,7 @@
-use cx_ast::{ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex}, data::CXTypeKind};
+use cx_ast::{
+    ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex},
+    data::{CXTypeKind, PredeclarationType},
+};
 use cx_mir::mir::{
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
@@ -10,15 +13,15 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        accumulation::TypecheckResult, binary_ops::{struct_field}, casting::implicit_cast,
+        accumulation::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
         typechecker::typecheck_expr,
     },
 };
 
 pub struct TypeConstructor<'a> {
-    pub union_name: CXIdent,
+    pub union_type: MIRType,
     pub variant_name: CXIdent,
-    pub inner: &'a CXExpr,
+    pub inner: Option<&'a CXExpr>,
 }
 
 pub fn deconstruct_type_constructor<'a>(
@@ -26,50 +29,69 @@ pub fn deconstruct_type_constructor<'a>(
     base_data: &MIRBaseMappings,
     pattern: &'a CXExpr,
 ) -> CXResult<TypeConstructor<'a>> {
-    let CXExprKind::BinOp {
-        op: CXBinOp::MethodCall,
-        lhs,
-        rhs: inner,
-    } = &pattern.kind
-    else {
-        return log_typecheck_error!(env, pattern, "Expected method call in type constructor pattern");
+    let (constructor, inner) = match &pattern.kind {
+        CXExprKind::BinOp {
+            op: CXBinOp::MethodCall,
+            lhs,
+            rhs: inner,
+        } => (lhs.as_ref(), Some(inner.as_ref())),
+
+        // T::Variant with no inner value can be written without parentheses, so we also allow that form for patterns with no inner value
+        _ => (pattern, None),
     };
 
     let CXExprKind::BinOp {
         op: CXBinOp::ScopeRes,
-        lhs,
-        rhs,
-    } = &lhs.kind
+        lhs: union,
+        rhs: variant,
+    } = &constructor.kind
     else {
-        return log_typecheck_error!(env, pattern, "Expected '::' in type constructor pattern");
+        return log_typecheck_error!(env, pattern, "Expected type constructor");
     };
-    
-    let union_name = match &lhs.kind {
-        CXExprKind::Identifier(union_name) => union_name.clone(),
-        CXExprKind::TemplatedIdentifier { name, template_input } => {
-            let as_type = CXTypeKind::TemplatedIdentifier { 
-                name: name.clone(),
-                input: template_input.clone()
-            }.to_type();
+
+    let union_name = match &union.kind {
+        CXExprKind::Identifier(union_name) => {
+            let as_type = CXTypeKind::Identifier {
+                predeclaration: PredeclarationType::None,
+                name: union_name.clone(),
+            }
+            .to_type();
             
-            let as_type = env.complete_type(base_data, &as_type)?;
-          
-            as_type.get_name()
-                .unwrap()
-                .clone()
-        },
-        
+            env.complete_type(base_data, union, &as_type)?
+        }
+
+        CXExprKind::TemplatedIdentifier {
+            name,
+            template_input,
+        } => {
+            let as_type = CXTypeKind::TemplatedIdentifier {
+                name: name.clone(),
+                input: template_input.clone(),
+            }
+            .to_type();
+
+            env.complete_type(base_data, union, &as_type)?
+        }
+
         _ => {
-            return log_typecheck_error!(env, lhs, "Expected union name in type constructor pattern");
+            return log_typecheck_error!(
+                env,
+                union,
+                "Expected union name in type constructor pattern"
+            );
         }
     };
 
-    let CXExprKind::Identifier(variant_name) = &rhs.kind else {
-        return log_typecheck_error!(env, rhs, "Expected variant name in type constructor pattern");
+    let CXExprKind::Identifier(variant_name) = &variant.kind else {
+        return log_typecheck_error!(
+            env,
+            variant,
+            "Expected variant name in type constructor pattern"
+        );
     };
 
     Ok(TypeConstructor {
-        union_name: union_name,
+        union_type: union_name,
         variant_name: variant_name.clone(),
         inner,
     })
@@ -150,7 +172,8 @@ fn typecheck_array_initializer(
     let elements = indices
         .iter()
         .map(|index| {
-            typecheck_expr(env, base_data, &index.value, Some(inner_type)).map(|v| v.into_expression())
+            typecheck_expr(env, base_data, &index.value, Some(inner_type))
+                .map(|v| v.into_expression())
         })
         .collect::<CXResult<_>>()?;
 

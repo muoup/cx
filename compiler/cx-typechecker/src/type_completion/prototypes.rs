@@ -1,6 +1,7 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::name_mangling::base_mangle_fn_name;
 use crate::type_checking::binary_ops::typecheck_contract;
+use cx_ast::ast::CXExpr;
 use cx_ast::data::{CXFunctionPrototype, CXParameter, CXReceiverMode, CXTemplateInput, CXTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput, MIRType, MIRTypeKind};
@@ -41,7 +42,7 @@ pub fn complete_template_args(
     let args = template_args
         .params
         .iter()
-        .map(|arg| env.complete_type(base_data, arg))
+        .map(|arg| env.complete_type(base_data, &CXExpr::default(), arg))
         .collect::<CXResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args })
@@ -58,13 +59,13 @@ pub fn _complete_fn_prototype(
 ) -> CXResult<MIRFunctionPrototype> {
     let source_prototype = prototype.clone();
     let normalized_prototype = apply_implicit_fn_attr(source_prototype.clone());
-    let return_type = env.complete_type(base_data, &normalized_prototype.return_type)?;
+    let return_type = env.complete_type(base_data, &CXExpr::default(), &normalized_prototype.return_type)?;
 
     let parameters = normalized_prototype
         .params
         .iter()
         .map(|CXParameter { name, _type }| {
-            let param_type = env.complete_type(base_data, _type)?;
+            let param_type = env.complete_type(base_data, &CXExpr::default(), _type)?;
             
             if !valid_prototype_type(&param_type) {
                 return CXError::create_result(
