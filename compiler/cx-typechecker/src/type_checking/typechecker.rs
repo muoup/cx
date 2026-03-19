@@ -26,7 +26,7 @@ fn anonymous_name_gen() -> String {
 
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
-use cx_mir::mir::types::{MIRType};
+use cx_mir::mir::types::MIRType;
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
@@ -34,10 +34,9 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
         | MIRExpressionKind::Break { .. }
         | MIRExpressionKind::Continue { .. } => false,
         MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
-        MIRExpressionKind::Block { statements } => statements
-            .last()
-            .map(expr_may_fall_through)
-            .unwrap_or(true),
+        MIRExpressionKind::Block { statements } => {
+            statements.last().map(expr_may_fall_through).unwrap_or(true)
+        }
         MIRExpressionKind::If {
             then_branch,
             else_branch,
@@ -55,7 +54,9 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
             default,
             ..
         } => {
-            cases.iter().any(|(_, branch)| expr_may_fall_through(branch))
+            cases
+                .iter()
+                .any(|(_, branch)| expr_may_fall_through(branch))
                 || default
                     .as_ref()
                     .map(|branch| expr_may_fall_through(branch))
@@ -64,7 +65,6 @@ pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
         _ => true,
     }
 }
-
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
@@ -77,12 +77,9 @@ pub(crate) fn ensure_binding_available(
 
     match binding.state {
         BindingMoveState::Available => Ok(()),
-        BindingMoveState::Moved => log_typecheck_error!(
-            env,
-            expr,
-            " Identifier '{}' has been moved",
-            name
-        ),
+        BindingMoveState::Moved => {
+            log_typecheck_error!(env, expr, " Identifier '{}' has been moved", name)
+        }
         BindingMoveState::ConditionallyMoved => log_typecheck_error!(
             env,
             expr,
@@ -92,10 +89,7 @@ pub(crate) fn ensure_binding_available(
     }
 }
 
-fn enqueue_jump_arrow(
-    env: &mut TypeEnvironment,
-    target: &ScopeExitTarget,
-) {
+fn enqueue_jump_arrow(env: &mut TypeEnvironment, target: &ScopeExitTarget) {
     let snapshot = env.current_snapshot();
     env.enqueue_scope_arrow(target, snapshot);
 
@@ -264,18 +258,17 @@ pub fn typecheck_expr_inner(
             name,
             initial_value,
         } => {
-            let _type = env.complete_type(base_data, _type)
-                .map_err(|err| {
-                    let err : CXResult<()> = log_typecheck_error!(
-                        env,
-                        expr,
-                        " Failed to resolve type for variable '{}'\n {}",
-                        name,
-                        err.error_message()
-                    );
-                    
-                    err.err().unwrap()
-                })?;
+            let _type = env.complete_type(base_data, _type).map_err(|err| {
+                let err: CXResult<()> = log_typecheck_error!(
+                    env,
+                    expr,
+                    " Failed to resolve type for variable '{}'\n {}",
+                    name,
+                    err.error_message()
+                );
+
+                err.err().unwrap()
+            })?;
 
             if _type.is_str() {
                 return log_typecheck_error!(
@@ -499,7 +492,8 @@ pub fn typecheck_expr_inner(
                 "loop fallthrough",
             )?;
             process_for_increment_arrows(env, base_data, loop_scope_idx, increment)?;
-            let increment_result = typecheck_expr(env, base_data, increment, None)?.into_expression();
+            let increment_result =
+                typecheck_expr(env, base_data, increment, None)?.into_expression();
             env.restore_snapshot(&env.loop_entry_snapshot(loop_scope_idx));
             if let Some(scope) = env.scope_stack.get_mut(loop_scope_idx) {
                 scope.reachable = true;
@@ -677,11 +671,7 @@ pub fn typecheck_expr_inner(
             let value = value.clone();
 
             let Some(inner_type) = value._type.mem_ref_inner() else {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    " @leak requires a stack local value"
-                );
+                return log_typecheck_error!(env, expr, " @leak requires a stack local value");
             };
 
             if !env.is_nodrop(inner_type) {
@@ -693,9 +683,12 @@ pub fn typecheck_expr_inner(
             ensure_binding_available(env, inner, ident)?;
             env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
 
-            TypecheckResult::expr(MIRType::unit(), MIRExpressionKind::LeakLifetime {
-                expression: Box::new(value),
-            })
+            TypecheckResult::expr(
+                MIRType::unit(),
+                MIRExpressionKind::LeakLifetime {
+                    expression: Box::new(value),
+                },
+            )
         }
 
         CXExprKind::UnOp { operator, operand } => {
@@ -926,7 +919,11 @@ pub fn typecheck_expr_inner(
             };
 
             if !lhs_type.is_mutable_memory_reference() {
-                return log_typecheck_error!(env, expr, " Cannot assign through immutable reference");
+                return log_typecheck_error!(
+                    env,
+                    expr,
+                    " Cannot assign through immutable reference"
+                );
             }
 
             let mut rhs_val = typecheck_expr(env, base_data, rhs, Some(inner))?;
@@ -992,7 +989,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr,
-                    "Move expressions can currently only be applied to stack variable indentifiers"
+                    "Move expressions can currently only be applied to stack variable identifiers"
                 );
             };
 
@@ -1005,14 +1002,15 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr,
-                    "Move expressions can currently only be applied to stack variable indentifiers"
+                    "Move expressions can currently only be applied to stack variable identifiers, found {:?}",
+                    inner_val.kind
                 );
             }
 
             let Some(inner_type) = inner_val._type.mem_ref_inner().cloned() else {
                 unreachable!()
             };
-            
+
             if env.is_nocopy(&inner_type) {
                 ensure_binding_available(env, inner_expr, ident)?;
                 env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
@@ -1086,7 +1084,24 @@ pub fn typecheck_expr_inner(
             _type: cx_mir::mir::types::MIRType::unit(),
         }),
 
-        CXExprKind::SizeOf { expr } => {
+        CXExprKind::SizeOfType { _type } => {
+            let tc_type = env.complete_type(base_data, _type)?;
+
+            TypecheckResult::expr2(MIRExpression {
+                source_range: None,
+                kind: MIRExpressionKind::IntLiteral(
+                    tc_type.type_size() as i64,
+                    MIRIntegerType::I64,
+                    false,
+                ),
+                _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Integer {
+                    _type: MIRIntegerType::I64,
+                    signed: false,
+                }),
+            })
+        }
+
+        CXExprKind::SizeOfExpr { expr } => {
             let tc_expr = typecheck_expr(env, base_data, expr, None)?;
             let tc_type = tc_expr.get_type();
 

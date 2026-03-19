@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
+use cx_ast::{ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex}, data::CXTypeKind};
 use cx_mir::mir::{
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
@@ -23,6 +23,7 @@ pub struct TypeConstructor<'a> {
 
 pub fn deconstruct_type_constructor<'a>(
     env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     pattern: &'a CXExpr,
 ) -> CXResult<TypeConstructor<'a>> {
     let CXExprKind::BinOp {
@@ -31,7 +32,7 @@ pub fn deconstruct_type_constructor<'a>(
         rhs: inner,
     } = &pattern.kind
     else {
-        return log_typecheck_error!(env, pattern, "Expected type constructor");
+        return log_typecheck_error!(env, pattern, "Expected method call in type constructor pattern");
     };
 
     let CXExprKind::BinOp {
@@ -40,19 +41,35 @@ pub fn deconstruct_type_constructor<'a>(
         rhs,
     } = &lhs.kind
     else {
-        return log_typecheck_error!(env, pattern, "Expected type constructor");
+        return log_typecheck_error!(env, pattern, "Expected '::' in type constructor pattern");
     };
-
-    let CXExprKind::Identifier(union_name) = &lhs.kind else {
-        return log_typecheck_error!(env, pattern, "Expected type constructor");
+    
+    let union_name = match &lhs.kind {
+        CXExprKind::Identifier(union_name) => union_name.clone(),
+        CXExprKind::TemplatedIdentifier { name, template_input } => {
+            let as_type = CXTypeKind::TemplatedIdentifier { 
+                name: name.clone(),
+                input: template_input.clone()
+            }.to_type();
+            
+            let as_type = env.complete_type(base_data, &as_type)?;
+          
+            as_type.get_name()
+                .unwrap()
+                .clone()
+        },
+        
+        _ => {
+            return log_typecheck_error!(env, lhs, "Expected union name in type constructor pattern");
+        }
     };
 
     let CXExprKind::Identifier(variant_name) = &rhs.kind else {
-        return log_typecheck_error!(env, pattern, "Expected type constructor");
+        return log_typecheck_error!(env, rhs, "Expected variant name in type constructor pattern");
     };
 
     Ok(TypeConstructor {
-        union_name: union_name.clone(),
+        union_name: union_name,
         variant_name: variant_name.clone(),
         inner,
     })

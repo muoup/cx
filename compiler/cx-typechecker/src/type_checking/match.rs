@@ -240,7 +240,7 @@ pub fn typecheck_match(
                     union_name,
                     variant_name,
                     inner,
-                } = deconstruct_type_constructor(env, pattern)?;
+                } = deconstruct_type_constructor(env, base_data, pattern)?;
 
                 if union_name.as_str() != expected_union_name.as_str() {
                     return log_typecheck_error!(
@@ -278,12 +278,18 @@ pub fn typecheck_match(
                         _type: MIRIntegerType::I8,
                     }),
                 };
-
+                
+                let variant_get_type = if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
+                    variant_type.clone()
+                } else {
+                    variant_type.clone().mem_ref_to()
+                };
+                
                 // Extract the variant value and bind it
                 let variant_value_expr = TypecheckResult::tagged_union_get(
                     TypecheckResult::expr2(expr_value.clone()),
                     variant_type.clone(),
-                    variant_type.clone().mem_ref_to(),
+                    variant_get_type
                 )
                 .into_expression();
 

@@ -5,7 +5,6 @@ use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex};
 use cx_ast::data::CXTypeKind;
 use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
-use cx_util::identifier::CXIdent;
 use cx_util::{CXResult, log_error};
 
 use crate::parse::operators::{
@@ -426,20 +425,11 @@ pub(crate) fn parse_expr_val(
                     return log_parse_error!(data, "Failed to parse type declaration for sizeof");
                 };
 
-                CXExprKind::SizeOf {
-                    expr: Box::new(
-                        CXExprKind::VarDeclaration {
-                            name: CXIdent::new("__internal_sizeof_dummy_decl"),
-                            _type,
-                            initial_value: None,
-                        }
-                        .into_expr(start_index, data.tokens.index),
-                    ),
-                }
+                CXExprKind::SizeOfType { _type }
             } else {
                 let expr = parse_expr(data)?;
 
-                CXExprKind::SizeOf {
+                CXExprKind::SizeOfExpr {
                     expr: Box::new(expr),
                 }
             };

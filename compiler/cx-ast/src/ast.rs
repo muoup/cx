@@ -202,9 +202,13 @@ pub enum CXExprKind {
         default_case: Option<usize>,
     },
 
-    SizeOf {
+    SizeOfExpr {
         expr: Box<CXExpr>,
     },
+    SizeOfType {
+        _type: CXType,
+    },
+    
     VarDeclaration {
         _type: CXType,
         name: CXIdent,

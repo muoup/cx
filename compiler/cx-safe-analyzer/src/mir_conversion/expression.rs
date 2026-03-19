@@ -394,6 +394,8 @@ pub fn convert_expression(
                 write_operation_for_expr(env, target),
             ))
         }
+        
+        MIRExpressionKind::Move { source } => convert_expression(env, source),
 
         MIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {

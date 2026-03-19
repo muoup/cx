@@ -631,7 +631,7 @@ pub(crate) fn typecheck_is(
         union_name,
         variant_name,
         inner,
-    } = deconstruct_type_constructor(env, rhs)?;
+    } = deconstruct_type_constructor(env, base_data, rhs)?;
 
     if *expected_union_name != union_name {
         return log_typecheck_error!(

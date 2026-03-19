@@ -271,13 +271,6 @@ pub fn implicit_cast(
         ) if from_inner.is_str() && to_inner.is_integer() && {
             matches!(to_inner.kind, MIRTypeKind::Integer { _type: MIRIntegerType::I8, .. })
         } => {
-            if env.in_safe_context() {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    "Cannot coerce &str to char* in safe context; use @unsafe"
-                );
-            }
             coerce(MIRCoercion::ReinterpretBits)
         }
 
