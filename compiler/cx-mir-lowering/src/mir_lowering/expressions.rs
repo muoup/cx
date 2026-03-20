@@ -489,9 +489,18 @@ fn lower_call(
         .map(|arg| lower_expression(builder, arg))
         .collect::<CXResult<Vec<LMIRValue>>>()?;
 
-    let MIRTypeKind::Function { prototype } = &function._type.kind else {
-        unreachable!("CallFunction must have function type");
-    };
+    let prototype = match &function._type.kind {
+        MIRTypeKind::Function { prototype } => prototype,
+        MIRTypeKind::PointerTo { inner_type, .. } => {
+            if let MIRTypeKind::Function { prototype } = &inner_type.kind {
+                prototype
+            } else {
+                unreachable!("Call expression function pointer must point to function type")
+            }
+        }
+        
+        _ => unreachable!("Call expression function must have function type"),
+    }; 
 
     let bc_prototype = builder.convert_cx_prototype(prototype);
 

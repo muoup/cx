@@ -288,10 +288,10 @@ pub(crate) fn typecheck_method_call(
     }
 
     let lhs_val = typecheck_expr(env, base_data, lhs, None)?.into_expression();
-
-    let loaded_lhs = coerce_value(env, lhs, lhs_val.clone())?;
-    let loaded_lhs_type = loaded_lhs._type.clone();
-
+    
+    let loaded_lhs_val = coerce_value(env, lhs, lhs_val)?;
+    let loaded_lhs_type = loaded_lhs_val.get_type();
+    
     let loaded_lhs_type = match loaded_lhs_type.kind {
         MIRTypeKind::PointerTo { inner_type, .. } => *inner_type,
 
@@ -309,13 +309,9 @@ pub(crate) fn typecheck_method_call(
 
     let mut tc_args = comma_separated(env, base_data, rhs)?;
 
-    let MIRExpressionKind::FunctionReference { implicit_variables } = &lhs_val.kind else {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Expected function reference for method call, found {}",
-            lhs_val
-        );
+    let implicit_variables = match &loaded_lhs_val.kind {
+        MIRExpressionKind::FunctionReference { implicit_variables } => implicit_variables.clone(),
+        _ => vec![],
     };
 
     let faux_expr = CXExpr::default();
@@ -415,16 +411,7 @@ pub(crate) fn typecheck_method_call(
     Ok(TypecheckResult::expr(
         prototype.return_type.clone(),
         MIRExpressionKind::CallFunction {
-            function: Box::new(MIRExpression {
-                source_range: None,
-                kind: MIRExpressionKind::FunctionReference {
-                    implicit_variables: implicit_variables.clone(),
-                },
-                _type: MIRTypeKind::Function {
-                    prototype: prototype.clone(),
-                }
-                .into(),
-            }),
+            function: Box::new(loaded_lhs_val),
             arguments: args.clone(),
         },
     ))

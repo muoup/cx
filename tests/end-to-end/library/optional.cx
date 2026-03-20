@@ -1,7 +1,7 @@
 import std::optional;
 import std::io;
 
-int add_one(int x) {
+int add_one(i8 x) {
     return x + 1;
 }
 
@@ -18,8 +18,8 @@ int main() {
     a = opt<i8>::some(42);
     b = opt<i8>::none();
     
-    opt<i8> c = a.map<i8>(add_one);
-    opt<i8> d = b.map<i8>(add_one);
+    opt<int> c = a.map<i8, int>(add_one);
+    opt<int> d = b.map<i8, int>(add_one);
     
     printf("c is some: %b\n", c.is_some<i8>());
     printf("d is some: %b\n", d.is_some<i8>());

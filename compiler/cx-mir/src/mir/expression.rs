@@ -363,6 +363,8 @@ pub enum MIRCoercion {
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
+    
+    GetFnPtr,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

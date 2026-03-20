@@ -196,6 +196,7 @@ pub fn coercion_intrinsic(env: &FMIREnvironment, expr: &MIRExpression, coercion:
             },
             MIRCoercion::IntToBool => FMIRCastIntrinsic::IntToBool,
             MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
+            MIRCoercion::GetFnPtr => FMIRCastIntrinsic::ReinterpretBits,
             
             MIRCoercion::CStrToStr => return log_analysis_error!(
                 env,

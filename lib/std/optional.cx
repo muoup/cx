@@ -10,20 +10,15 @@ enum union opt<T> : @copy_traits(T) {
 };
 
 bool opt<T>::is_some<T>(*this) {
-    match (this) {
-        opt<T>::some(value) => return 1;
-        opt<T>::none(_) => return 0;
-    }
-    
-    return 0;
+    return this is opt<T>::some(_);
 }
 
 opt<U> opt<T>::map<T, U>(*this, U (*func)(T)) {
-    if (this.is_some()) {
-        return opt::some(func(value));
+    if (this is opt<T>::some(value)) {
+        return opt<U>::some(func(value));
     }
 
-    return opt::none;
+    return opt<U>::none();
 }
 
 T opt<T>::unwrap_or<T>(*this, T otherwise) {

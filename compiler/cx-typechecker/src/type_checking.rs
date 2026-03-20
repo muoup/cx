@@ -1,6 +1,6 @@
 use crate::{
     type_checking::typechecker::add_implicit_return,
-    type_completion::types::_complete_template_input,
+    type_completion::{templates::complete_function_template, types::_complete_template_input},
 };
 use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
@@ -20,7 +20,7 @@ use crate::{
         global_expr, typecheck_expr,
     },
     type_completion::templates::{
-        add_templated_types, complete_function_template, restore_template_overwrites,
+        add_templated_types, restore_template_overwrites,
     },
 };
 
@@ -121,7 +121,7 @@ pub fn realize_fn_implementation(
 
     // Complete the template input from CX to MIR level
     let completed_input = _complete_template_input(env, base_data.as_ref(), None, &CXExpr::default(), input)?;
-    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
+    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input)?;
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
     env.in_external_templated_function = true;

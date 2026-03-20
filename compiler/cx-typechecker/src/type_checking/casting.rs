@@ -318,7 +318,9 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) => Ok(value),
+        ) if same_type(inner.as_ref(), &from_type) => {
+            coerce(MIRCoercion::GetFnPtr)
+        },
 
         _ => {
             log_typecheck_error!(

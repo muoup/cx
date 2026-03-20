@@ -421,6 +421,15 @@ impl MIRType {
             _ => None,
         }
     }
+    
+    pub fn set_name(&mut self, new_name: CXIdent) {
+        match &mut self.kind {
+            MIRTypeKind::Structured { name: n, .. } | MIRTypeKind::Union { name: n, .. } => *n = Some(new_name),
+            MIRTypeKind::Opaque { name, .. } => *name = new_name,
+            MIRTypeKind::TaggedUnion { name, .. } => *name = new_name,
+            _ => {}
+        }
+    }
 
     pub fn add_template_info(&mut self, new_name: CXIdent, template_input: MIRTemplateInput) {
         match &mut self.kind {
