@@ -104,6 +104,7 @@ pub enum MIRTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
+        template_info: Option<Box<TemplateInstantiationInformation>>,
         attributes: MIRStructAttributes,
         variants: Vec<(String, MIRType)>,
     },
@@ -407,8 +408,11 @@ impl MIRType {
                 .or(name.as_ref()),
             
             MIRTypeKind::Union { name, .. } => name.as_ref(),
-            
-            MIRTypeKind::TaggedUnion { name, .. } => Some(name),
+
+            MIRTypeKind::TaggedUnion { name, template_info, .. } => template_info
+                .as_ref()
+                .map(|info| &info.base_name)
+                .or(Some(name)),
 
             _ => None,
         }
@@ -416,7 +420,8 @@ impl MIRType {
 
     pub fn get_template_data(&self) -> Option<&TemplateInstantiationInformation> {
         match &self.kind {
-            MIRTypeKind::Structured { template_info, .. } => template_info.as_deref(),
+            MIRTypeKind::Structured { template_info, .. }
+            | MIRTypeKind::TaggedUnion { template_info, .. } => template_info.as_deref(),
 
             _ => None,
         }
@@ -441,6 +446,13 @@ impl MIRType {
                 let old_name = std::mem::take(n).expect("Templated types cannot be nameless");
 
                 *n = Some(new_name.clone());
+                *template_info = Some(Box::new(TemplateInstantiationInformation {
+                    base_name: old_name,
+                    template_input,
+                }));
+            }
+            MIRTypeKind::TaggedUnion { name: n, template_info, .. } => {
+                let old_name = std::mem::replace(n, new_name.clone());
                 *template_info = Some(Box::new(TemplateInstantiationInformation {
                     base_name: old_name,
                     template_input,

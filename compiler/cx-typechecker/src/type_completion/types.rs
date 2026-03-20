@@ -222,6 +222,7 @@ pub(crate) fn _complete_type(
 
             Ok(MIRType::from(MIRTypeKind::TaggedUnion {
                 name: name.clone(),
+                template_info: None,
                 attributes: MIRStructAttributes { nocopy, nodrop },
                 variants,
             }))

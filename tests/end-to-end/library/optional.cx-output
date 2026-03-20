@@ -4,4 +4,5 @@ a unwrap_or 100: 42
 b unwrap_or 100: 100
 c is some: 1
 d is some: 0
+c unwrap: 43
 Error: called `opt::unwrap()` on a `None` value

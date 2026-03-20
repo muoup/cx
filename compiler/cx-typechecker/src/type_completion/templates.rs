@@ -84,6 +84,7 @@ pub(crate) fn instantiate_type_template(
         CXIdent::new(template_name.as_str()),
         completed_input.clone(),
     );
+    cx_type.set_name(CXIdent::new(template_name.clone()));
 
     env.add_type(template_name, cx_type.clone());
 
