@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use cx_mir::mir::expression::MIRSourceRange;
 use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::intrinsic::FMIRIntrinsicFunction;
@@ -103,22 +103,7 @@ pub enum FMIRType {
 pub struct FMIRNode {
     pub _type: FMIRType,
     pub body: FMIRNodeBody,
-    pub source_range: Option<FMIRSourceRange>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FMIRSourceRange {
-    pub start_token: usize,
-    pub end_token: usize,
-}
-
-impl From<&MIRSourceRange> for FMIRSourceRange {
-    fn from(value: &MIRSourceRange) -> Self {
-        Self {
-            start_token: value.start_token,
-            end_token: value.end_token,
-        }
-    }
+    pub token_range: Option<TokenRange>,
 }
 
 #[derive(Clone, Debug)]
@@ -291,7 +276,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::pure(MIRType::unit()),
             body: FMIRNodeBody::Unit,
-            source_range: None,
+            token_range: None,
         }
     }
 
@@ -300,7 +285,7 @@ impl FMIRNode {
         FMIRNode {
             _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
             body: FMIRNodeBody::CLoop { condition, body },
-            source_range: None,
+            token_range: None,
         }
     }
 
@@ -317,7 +302,7 @@ impl FMIRNode {
                 then_branch,
                 else_branch: else_branch.unwrap_or(Rc::new(FMIRNode::unit())),
             },
-            source_range: None,
+            token_range: None,
         }
     }
 }

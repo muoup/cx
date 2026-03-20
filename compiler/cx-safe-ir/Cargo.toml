@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+cx-tokens = { path = "../cx-tokens" }
 cx-mir = { path = "../cx-mir" }
 cx-util = { path = "../cx-util" }

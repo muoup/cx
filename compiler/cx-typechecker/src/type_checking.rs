@@ -53,7 +53,7 @@ fn typecheck_function(
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
-                source_range: None,
+                token_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: _type.clone().mem_ref_to(),
             },

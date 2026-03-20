@@ -2,7 +2,7 @@ use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
-    TypeConstructor, deconstruct_type_constructor,
+    deconstruct_type_constructor, TypeConstructor,
 };
 use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
@@ -71,7 +71,7 @@ pub fn typecheck_switch(
         };
 
         let pattern_expr = MIRExpression {
-            source_range: None,
+            token_range: None,
             kind: MIRExpressionKind::IntLiteral(*case_value as i64, *_type, *signed),
             _type: MIRType::from(MIRTypeKind::Integer {
                 signed: *signed,
@@ -88,7 +88,7 @@ pub fn typecheck_switch(
             let Some(expr) = block.get(idx) else {
                 return log_typecheck_error!(
                     env,
-                    condition,
+                    condition.token_range(),
                     "Switch default case index {} out of bounds (block has {} expressions)",
                     idx,
                     block.len()
@@ -151,13 +151,13 @@ pub fn typecheck_match(
     env.configure_merge_scope(condition, "match join", None, false);
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
-    
+
     if let Some(inner) = expr_type.mem_ref_inner() {
         expr_type = inner.clone();
 
         if !expr_type.is_memory_resident() {
             expr_value = MIRExpression {
-                source_range: None,
+                token_range: None,
                 kind: MIRExpressionKind::MemoryRead {
                     source: Box::new(expr_value),
                 },
@@ -175,7 +175,7 @@ pub fn typecheck_match(
             let MIRTypeKind::Integer { _type, signed } = &expr_type.kind else {
                 return log_typecheck_error!(
                     env,
-                    condition,
+                    condition.token_range(),
                     "Match condition must be an integer type, found {}",
                     expr_type
                 );
@@ -188,7 +188,7 @@ pub fn typecheck_match(
                 else {
                     return log_typecheck_error!(
                         env,
-                        pattern,
+                        pattern.token_range(),
                         "Match pattern must be an integer literal"
                     );
                 };
@@ -196,7 +196,7 @@ pub fn typecheck_match(
                 // Create a pattern expression that matches this value
                 // Use the condition's integer type for the pattern
                 let pattern_expr = MIRExpression {
-                    source_range: None,
+                    token_range: None,
                     kind: MIRExpressionKind::IntLiteral(*pattern_value, *_type, *signed),
                     _type: MIRType::from(MIRTypeKind::Integer {
                         signed: *signed,
@@ -241,7 +241,7 @@ pub fn typecheck_match(
                 if union_type.get_name().unwrap().as_str() != expected_union_name.as_str() {
                     return log_typecheck_error!(
                         env,
-                        pattern,
+                        pattern.token_range(),
                         "Tagged union variant does not match the type being matched"
                     );
                 }
@@ -254,7 +254,7 @@ pub fn typecheck_match(
                 else {
                     return log_typecheck_error!(
                         env,
-                        pattern,
+                        pattern.token_range(),
                         "Variant '{}' not found in tagged union '{}'",
                         variant_name,
                         expected_union_name
@@ -263,7 +263,7 @@ pub fn typecheck_match(
 
                 // Create a pattern that matches the tag value
                 let pattern_expr = MIRExpression {
-                    source_range: None,
+                    token_range: None,
                     kind: MIRExpressionKind::IntLiteral(
                         variant_id as i64,
                         MIRIntegerType::I8,
@@ -294,7 +294,7 @@ pub fn typecheck_match(
                     let CXExprKind::Identifier(name) = &inner.kind else {
                         return log_typecheck_error!(
                             env,
-                            inner,
+                            inner.token_range(),
                             "Tagged union variant pattern must bind to an identifier"
                         );
                     };
@@ -338,7 +338,7 @@ pub fn typecheck_match(
         _ => {
             return log_typecheck_error!(
                 env,
-                condition,
+                condition.token_range(),
                 "Match condition must be an integer or tagged union type, found {}",
                 expr_type
             );

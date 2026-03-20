@@ -47,7 +47,7 @@ pub fn deconstruct_type_constructor<'a>(
         rhs: variant,
     } = &constructor.kind
     else {
-        return log_typecheck_error!(env, pattern, "Expected type constructor");
+        return log_typecheck_error!(env, pattern.token_range(), "Expected type constructor");
     };
 
     let union_name = match &union.kind {
@@ -77,7 +77,7 @@ pub fn deconstruct_type_constructor<'a>(
         _ => {
             return log_typecheck_error!(
                 env,
-                union,
+                union.token_range(),
                 "Expected union name in type constructor pattern"
             );
         }
@@ -86,7 +86,7 @@ pub fn deconstruct_type_constructor<'a>(
     let CXExprKind::Identifier(variant_name) = &variant.kind else {
         return log_typecheck_error!(
             env,
-            variant,
+            variant.token_range(),
             "Expected variant name in type constructor pattern"
         );
     };
@@ -106,7 +106,7 @@ pub fn typecheck_initializer_list(
     to_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
-        return log_typecheck_error!(env, expr, " Initializer lists must have an explicit type");
+        return log_typecheck_error!(env, expr.token_range(), " Initializer lists must have an explicit type");
     };
 
     let to_type = match &to_type.kind {
@@ -130,7 +130,7 @@ pub fn typecheck_initializer_list(
             typecheck_structured_initializer(env, base_data, expr, indices, to_type)
         }
 
-        _ => log_typecheck_error!(env, expr, " Cannot coerce initializer to type {to_type}"),
+        _ => log_typecheck_error!(env, expr.token_range(), " Cannot coerce initializer to type {to_type}"),
     }
 }
 
@@ -146,7 +146,7 @@ fn typecheck_array_initializer(
         if let Some(name) = &index.name {
             return log_typecheck_error!(
                 env,
-                &CXExpr::default(),
+                &TokenRange::default(),
                 "Array initializer cannot have named indices, found: {name}"
             );
         }
@@ -157,7 +157,7 @@ fn typecheck_array_initializer(
     {
         return log_typecheck_error!(
             env,
-            &CXExpr::default(),
+            &TokenRange::default(),
             "Too many elements in array initializer (expected {}, found {})",
             size,
             indices.len()
@@ -197,7 +197,7 @@ fn typecheck_structured_initializer(
     let MIRTypeKind::Structured { fields, .. } = &to_type.kind else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Expected structured type for initializer, found: {to_type}"
         );
     };
@@ -215,7 +215,7 @@ fn typecheck_structured_initializer(
             else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Structured initializer has unexpected field: {name}"
                 );
             };
@@ -223,13 +223,13 @@ fn typecheck_structured_initializer(
         }
 
         if counter >= fields.len() {
-            return log_typecheck_error!(env, expr, "Too many elements in struct initializer");
+            return log_typecheck_error!(env, expr.token_range(), "Too many elements in struct initializer");
         }
 
         if initialized_fields[counter] {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 "Field '{}' initialized more than once",
                 fields[counter].0
             );
@@ -242,7 +242,7 @@ fn typecheck_structured_initializer(
         let Some(struct_field_info) = struct_field(to_type, field_name.as_str()) else {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 " Could not find field '{}' in type {}",
                 field_name,
                 to_type

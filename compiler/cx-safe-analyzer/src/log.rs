@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use cx_util::CXErrorTrait;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct AnalysisError {
@@ -20,11 +20,11 @@ impl CXErrorTrait for AnalysisError {
             self.token_end,
         );
     }
-    
+
     fn error_prefix(&self) -> String {
         "ANALYSIS ERROR".to_string()
     }
-    
+
     fn error_content(&self) -> String {
         self.message.clone()
     }
@@ -55,13 +55,13 @@ macro_rules! log_analysis_error {
     ($env:expr, $expr:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
-            
-            let (token_start, token_end) = if let Some(token) = $expr.source_range.as_ref() {
+
+            let (token_start, token_end) = if let Some(token) = $expr.token_range.as_ref() {
                 (token.start_token, token.end_token)
             } else {
                 (0, 0) // Default to 0 if no token information is available
             };
-            
+
             Err(Box::new($crate::log::AnalysisError {
                 message,
                 token_start,
