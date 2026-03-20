@@ -1,4 +1,4 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{TokenRange, TypeEnvironment};
 use crate::environment::function_query::query_static_member_function;
 use crate::environment::BindingMoveState;
 use crate::log_typecheck_error;
@@ -1056,7 +1056,7 @@ pub(crate) fn typecheck_int_ptr_binop(
     if op == CXBinOp::Subtract {
         return log_typecheck_error!(
             env,
-            &CXExpr::default(),
+            TokenRange::default(),
             " Invalid operation [integer] - [pointer] for types {} and {}",
             non_pointer.get_type(),
             pointer.get_type()

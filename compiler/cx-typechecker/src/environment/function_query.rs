@@ -24,7 +24,7 @@ pub(crate) fn deduce_function(
         let Some(templated_input) = templated_input else {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 "Template argument deduction not yet implemented",
             );
         };
@@ -34,7 +34,7 @@ pub(crate) fn deduce_function(
     
     log_typecheck_error!(
         env,
-        expr,
+        expr.token_range(),
         "Function with key {} not found in base mappings",
         key,
     )
@@ -51,7 +51,7 @@ pub fn query_member_function(
     let Some(base_name) = member_type.get_base_identifier() else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             "Cannot query member function '{}' on non-identifiable type '{}'",
             name,
             member_type,
@@ -93,7 +93,7 @@ pub fn query_static_member_function(
     let Some(base_name) = member_type.get_base_identifier() else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             "Cannot query static member function '{}' on non-identifiable type '{}'",
             name,
             member_type,

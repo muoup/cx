@@ -2,6 +2,7 @@ use cx_ast::{
     ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex},
     data::{CXTypeKind, PredeclarationType},
 };
+use cx_tokens::TokenRange;
 use cx_mir::mir::{
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,

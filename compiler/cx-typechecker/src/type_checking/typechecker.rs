@@ -78,11 +78,11 @@ pub(crate) fn ensure_binding_available(
     match binding.state {
         BindingMoveState::Available => Ok(()),
         BindingMoveState::Moved => {
-            log_typecheck_error!(env, expr, " Identifier '{}' has been moved", name)
+            log_typecheck_error!(env, expr.token_range(), " Identifier '{}' has been moved", name)
         }
         BindingMoveState::ConditionallyMoved => log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Identifier '{}' was conditionally moved across a control-flow join",
             name
         ),
@@ -261,7 +261,7 @@ pub fn typecheck_expr_inner(
             let _type = env.complete_type(base_data, expr, _type).map_err(|err| {
                 let err: CXResult<()> = log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Failed to resolve type for variable '{}'\n {}",
                     name,
                     err.error_content()
@@ -273,7 +273,7 @@ pub fn typecheck_expr_inner(
             if _type.is_str() {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     "Cannot create a variable of unsized type 'str'; use '&str' instead"
                 );
             }
@@ -335,13 +335,13 @@ pub fn typecheck_expr_inner(
             {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     "Safe functions may not access global variables"
                 );
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 TypecheckResult::expr2(global)
             } else {
-                return log_typecheck_error!(env, expr, "Identifier '{}' not found", name);
+                return log_typecheck_error!(env, expr.token_range(), "Identifier '{}' not found", name);
             }
         }
 
@@ -516,7 +516,7 @@ pub fn typecheck_expr_inner(
             let Some(scope_idx) = env.nearest_break_scope() else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " 'break' used outside of a loop or switch context"
                 );
             };
@@ -542,7 +542,7 @@ pub fn typecheck_expr_inner(
             let Some(scope_idx) = env.nearest_continue_scope() else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " 'continue' used outside of a loop context"
                 );
             };
@@ -603,7 +603,7 @@ pub fn typecheck_expr_inner(
                 (Some(_), _) => {
                     return log_typecheck_error!(
                         env,
-                        expr,
+                        expr.token_range(),
                         " Cannot return from function {} with a void return type",
                         env.current_function()
                     );
@@ -612,7 +612,7 @@ pub fn typecheck_expr_inner(
                 (None, _) => {
                     return log_typecheck_error!(
                         env,
-                        expr,
+                        expr.token_range(),
                         " Function {} expects a return value, but none was provided",
                         env.current_function()
                     );
@@ -652,7 +652,7 @@ pub fn typecheck_expr_inner(
             if env.in_safe_context() {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " @leak is unsafe and must be wrapped in @unsafe in safe functions"
                 );
             }
@@ -660,18 +660,18 @@ pub fn typecheck_expr_inner(
             let CXExprKind::Identifier(ident) = &inner.kind else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " @leak currently requires a local identifier"
                 );
             };
 
             let Some(value) = env.symbol_value(ident.as_str()) else {
-                return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
+                return log_typecheck_error!(env, expr.token_range(), " Identifier '{}' not found", ident);
             };
             let value = value.clone();
 
             let Some(inner_type) = value._type.mem_ref_inner() else {
-                return log_typecheck_error!(env, expr, " @leak requires a stack local value");
+                return log_typecheck_error!(env, expr.token_range(), " @leak requires a stack local value");
             };
 
             if !env.is_nodrop(inner_type) {
@@ -702,7 +702,7 @@ pub fn typecheck_expr_inner(
                     let Some(inner) = operand_type.mem_ref_inner() else {
                         return log_typecheck_error!(
                             env,
-                            operand,
+                            operand.token_range(),
                             " Cannot apply pre-increment to a non-reference {}",
                             operand_type
                         );
@@ -732,7 +732,7 @@ pub fn typecheck_expr_inner(
                         _ => {
                             return log_typecheck_error!(
                                 env,
-                                operand,
+                                operand.token_range(),
                                 " Pre-increment operator requires an integer or pointer type, found {}",
                                 inner
                             );
@@ -748,7 +748,7 @@ pub fn typecheck_expr_inner(
                     if !loaded_operand_type.is_integer() {
                         return log_typecheck_error!(
                             env,
-                            operand,
+                            operand.token_range(),
                             " Logical NOT operator requires an integer type, found {}",
                             loaded_operand_type
                         );
@@ -773,7 +773,7 @@ pub fn typecheck_expr_inner(
                     if !loaded_op_type.is_integer() {
                         return log_typecheck_error!(
                             env,
-                            operand,
+                            operand.token_range(),
                             " Bitwise NOT operator requires an integer type, found {}",
                             loaded_op_type
                         );
@@ -817,7 +817,7 @@ pub fn typecheck_expr_inner(
                         _ => {
                             return log_typecheck_error!(
                                 env,
-                                operand,
+                                operand.token_range(),
                                 " Negation operator requires an integer or float type, found {}",
                                 loaded_op_type
                             );
@@ -837,7 +837,7 @@ pub fn typecheck_expr_inner(
                     let Some(inner) = operand_type.mem_ref_inner() else {
                         return log_typecheck_error!(
                             env,
-                            operand,
+                            operand.token_range(),
                             " Cannot take address of a non-reference type"
                         );
                     };
@@ -859,7 +859,7 @@ pub fn typecheck_expr_inner(
                     let Some(inner) = loaded_operand_type.ptr_inner().cloned() else {
                         return log_typecheck_error!(
                             env,
-                            operand,
+                            operand.token_range(),
                             " Cannot dereference a non-pointer type {}",
                             loaded_operand_type
                         );
@@ -912,7 +912,7 @@ pub fn typecheck_expr_inner(
             let Some(inner) = lhs_type.mem_ref_inner() else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Cannot assign to non-reference type {}",
                     lhs_type
                 );
@@ -921,7 +921,7 @@ pub fn typecheck_expr_inner(
             if !lhs_type.is_mutable_memory_reference() {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Cannot assign through immutable reference"
                 );
             }
@@ -936,7 +936,7 @@ pub fn typecheck_expr_inner(
             }
 
             if inner.get_specifier(CX_CONST) {
-                return log_typecheck_error!(env, expr, " Cannot assign to a const type");
+                return log_typecheck_error!(env, expr.token_range(), " Cannot assign to a const type");
             }
 
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), inner)?;
@@ -988,20 +988,20 @@ pub fn typecheck_expr_inner(
             let CXExprKind::Identifier(ident) = &inner_expr.kind else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     "Move expressions can currently only be applied to stack variable identifiers"
                 );
             };
 
             let Some(inner_val) = env.symbol_table.get(ident.as_str()) else {
-                return log_typecheck_error!(env, expr, " Identifier '{}' not found", ident);
+                return log_typecheck_error!(env, expr.token_range(), " Identifier '{}' not found", ident);
             };
             let mut inner_val = inner_val.clone();
 
             if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     "Move expressions can currently only be applied to stack variable identifiers, found {:?}",
                     inner_val.kind
                 );
@@ -1037,7 +1037,7 @@ pub fn typecheck_expr_inner(
         } => {
             let union_type = env.get_type(base_data, expr, type_name.as_str())?;
             let MIRTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
-                return log_typecheck_error!(env, expr, " Unknown type: {}", type_name);
+                return log_typecheck_error!(env, expr.token_range(), " Unknown type: {}", type_name);
             };
 
             let Some((i, variant_type)) = variants
@@ -1048,7 +1048,7 @@ pub fn typecheck_expr_inner(
             else {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Variant '{}' not found in tagged union type {}",
                     name,
                     type_name
@@ -1146,8 +1146,8 @@ pub fn typecheck_expr_inner(
 
     if result.expression.source_range.is_none() {
         result.expression.source_range = Some(MIRSourceRange {
-            start_token: expr.start_index,
-            end_token: expr.end_index,
+            start_token: expr.range.start_token,
+            end_token: expr.range.end_token,
         });
     }
 
@@ -1197,7 +1197,7 @@ pub(crate) fn global_expr(
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
                         return log_typecheck_error!(
                             env,
-                            init_expr,
+                            init_expr.token_range(),
                             " CX currently only supports integer initializers for global variable initialization"
                         );
                     };
@@ -1264,7 +1264,7 @@ pub fn add_implicit_return(
     } else {
         return log_typecheck_error!(
             env,
-            &CXExpr::default(),
+            expr.token_range(),
             "Function '{}' with non-void return type must have an explicit return statement",
             func.name
         );

@@ -1,3 +1,4 @@
+use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_ast::ast::CXExpr;
 use cx_ast::data::{CXFunctionKind, CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
@@ -78,12 +79,6 @@ pub struct TrackedBindingState {
 pub struct ControlFlowSnapshot {
     pub symbol_table: ScopedMap<MIRExpression>,
     pub tracked_bindings: ScopedMap<TrackedBindingState>,
-}
-
-#[derive(Clone)]
-pub struct TokenRange {
-    pub start_token: usize,
-    pub end_token: usize,
 }
 
 #[derive(Clone)]
@@ -278,10 +273,7 @@ impl TypeEnvironment<'_> {
 
     pub fn set_scope_anchor(&mut self, expr: &CXExpr) {
         if let Some(scope) = self.scope_stack.last_mut() {
-            scope.anchor_range = Some(TokenRange {
-                start_token: expr.start_index,
-                end_token: expr.end_index,
-            });
+            scope.anchor_range = Some(expr.token_range().clone());
         }
     }
 
@@ -293,10 +285,7 @@ impl TypeEnvironment<'_> {
         require_nodrop_discharge: bool,
     ) {
         let entry_snapshot = self.current_snapshot();
-        let range = TokenRange {
-            start_token: expr.start_index,
-            end_token: expr.end_index,
-        };
+        let range = expr.token_range().clone();
 
         let scope = self.scope_stack.last_mut().expect("Missing scope to configure");
         scope.anchor_range = Some(range.clone());
@@ -312,10 +301,7 @@ impl TypeEnvironment<'_> {
 
     pub fn configure_loop_scope(&mut self, expr: &CXExpr, loop_kind: LoopScopeKind) {
         let entry_snapshot = self.current_snapshot();
-        let range = TokenRange {
-            start_token: expr.start_index,
-            end_token: expr.end_index,
-        };
+        let range = expr.token_range().clone();
 
         let scope = self.scope_stack.last_mut().expect("Missing scope to configure");
         scope.anchor_range = Some(range.clone());

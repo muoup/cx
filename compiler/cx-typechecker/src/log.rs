@@ -52,15 +52,22 @@ impl CXErrorTrait for TypeError {
 
 #[macro_export]
 macro_rules! log_typecheck_error {
-    ($env:expr, $expr:expr, $($arg:tt)*) => {
+    ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             let message = format!("TYPE ERROR: {}", format!($($arg)*));
-            
+            let range: &cx_tokens::TokenRange = $range;
+
+            let compilation_unit = if range.file_origin.is_empty() {
+                $env.compilation_unit.as_path().to_owned()
+            } else {
+                std::path::PathBuf::from(range.file_origin.as_ref())
+            };
+
             Err(Box::new($crate::log::TypeError {
                 message,
-                token_start: $expr.start_index,
-                token_end: $expr.end_index,
-                compilation_unit: $env.compilation_unit.as_path().to_owned(),
+                token_start: range.start_token,
+                token_end: range.end_token,
+                compilation_unit,
                 notes: Vec::new(),
             }) as Box<dyn cx_util::CXErrorTrait>)
         }

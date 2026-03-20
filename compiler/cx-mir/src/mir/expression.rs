@@ -1,3 +1,4 @@
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
@@ -14,7 +15,7 @@ pub struct MIRFunctionContract {
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
-    pub source_range: Option<MIRSourceRange>,
+    pub token_range: Option<TokenRange>,
 }
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -390,7 +391,7 @@ impl MIRExpression {
                 visibility: Default::default(),
                 specifiers: 0,
             },
-            source_range: None,
+            token_range: None,
         }
     }
 }

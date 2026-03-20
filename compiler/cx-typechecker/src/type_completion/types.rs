@@ -83,10 +83,10 @@ pub(crate) fn _complete_type(
             };
             
             if base_data.type_data.get_template(&name.as_string()).is_some() {
-                return log_typecheck_error!(env, expr, "Template deduction is not yet implemented!");
+                return log_typecheck_error!(env, &expr.range, "Template deduction is not yet implemented!");
             }
 
-            return log_typecheck_error!(env, &CXExpr::default(), "Type not found: {name}");
+            return log_typecheck_error!(env, &expr.range, "Type not found: {name}");
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {

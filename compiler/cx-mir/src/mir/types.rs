@@ -4,6 +4,7 @@ use cx_ast::ast::VisibilityMode;
 use cx_ast::data::{
     CX_CONST, CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXTypeKind, CXTypeSpecifier, PredeclarationType
 };
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -568,6 +569,7 @@ impl MIRType {
                         .to_type(),
                         var_args: false,
                         contract: CXFunctionContract::default(),
+                        range: TokenRange::default(),
                     },
                     return_type: MIRType::unit(),
                     params: vec![],

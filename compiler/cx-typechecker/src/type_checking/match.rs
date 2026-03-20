@@ -39,7 +39,7 @@ pub fn typecheck_switch(
         let Some(case_expr) = block.get(*case_index as usize) else {
             return log_typecheck_error!(
                 env,
-                condition,
+                condition.token_range(),
                 "Switch case index {} out of bounds (block has {} expressions)",
                 *case_index,
                 block.len()
@@ -64,7 +64,7 @@ pub fn typecheck_switch(
         let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
             return log_typecheck_error!(
                 env,
-                condition,
+                condition.token_range(),
                 "Switch condition must be an integer type, found {}",
                 condition_value.get_type()
             );

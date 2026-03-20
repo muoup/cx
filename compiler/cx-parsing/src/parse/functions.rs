@@ -1,4 +1,4 @@
-use cx_tokens::{identifier, keyword, operator, punctuator};
+use cx_tokens::{identifier, keyword, operator, punctuator, TokenRange};
 use cx_ast::{
     assert_token_matches,
     data::{
@@ -27,6 +27,7 @@ pub fn try_function_parse(
     return_type: CXType,
     name: CXIdent,
 ) -> CXResult<Option<FunctionDeclaration>> {
+    let range_start = data.tokens.index;
     let template_prototype = try_parse_template(&mut data.tokens)?;
 
     match peek_next_kind!(data.tokens)? {
@@ -43,6 +44,7 @@ pub fn try_function_parse(
                 params: args.params,
                 var_args: args.var_args,
                 contract: args.contract,
+                range: TokenRange::new(range_start, data.tokens.index, data.file_origin.clone()),
             };
 
             if args.receiver.is_some() {
@@ -107,6 +109,7 @@ pub fn try_function_parse(
                 params: params.params,
                 var_args: params.var_args,
                 contract: params.contract,
+                range: TokenRange::new(range_start, data.tokens.index, data.file_origin.clone()),
             };
 
             data.add_function(prototype.clone(), template_prototype.clone());
