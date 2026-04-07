@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use cx_util::{unsafe_float::FloatWrapper, identifier::CXIdent};
+use cx_tokens::TokenRange;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
 use crate::{
-    data::{CXFunctionPrototype, CXTemplateInput, CXType, ModuleResource}, type_map::{CXFnMap, CXTypeMap}
+    data::{CXFunctionPrototype, CXTemplateInput, CXTemplatePrototype, CXType, ModuleResource}, type_map::{CXFnMap, CXTypeMap}
 };
 
 #[derive(Debug, Default)]
@@ -38,6 +40,7 @@ pub enum CXFunctionStmt {
 
     TemplatedFunction {
         prototype: CXFunctionPrototype,
+        template_prototype: CXTemplatePrototype,
         body: Box<CXExpr>,
     },
 }
@@ -120,9 +123,7 @@ pub enum CXGlobalVariable {
 pub struct CXExpr {
     pub uuid: u64,
     pub kind: CXExprKind,
-
-    pub start_index: usize,
-    pub end_index: usize,
+    pub range: TokenRange,
 }
 
 impl Clone for CXExpr {
@@ -130,9 +131,7 @@ impl Clone for CXExpr {
         CXExpr {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self.kind.clone(),
-
-            start_index: self.start_index,
-            end_index: self.end_index,
+            range: self.range.clone(),
         }
     }
 }
@@ -142,10 +141,14 @@ impl Default for CXExpr {
         CXExpr {
             uuid: 0,
             kind: CXExprKind::Taken,
-
-            start_index: 0,
-            end_index: 0,
+            range: TokenRange::default(),
         }
+    }
+}
+
+impl CXExpr {
+    pub fn token_range(&self) -> &TokenRange {
+        &self.range
     }
 }
 
@@ -202,9 +205,13 @@ pub enum CXExprKind {
         default_case: Option<usize>,
     },
 
-    SizeOf {
+    SizeOfExpr {
         expr: Box<CXExpr>,
     },
+    SizeOfType {
+        _type: CXType,
+    },
+    
     VarDeclaration {
         _type: CXType,
         name: CXIdent,
@@ -266,9 +273,21 @@ impl CXExprKind {
         CXExpr {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
+            range: TokenRange::new(start_index, end_index, Arc::from("")),
+        }
+    }
 
-            start_index,
-            end_index,
+    pub fn into_expr_with_origin(self, start_index: usize, end_index: usize, file_origin: Arc<str>) -> CXExpr {
+        let (start_index, end_index) = if start_index > end_index {
+            (0, 0)
+        } else {
+            (start_index, end_index)
+        };
+
+        CXExpr {
+            uuid: Uuid::new_v4().as_u128() as u64,
+            kind: self,
+            range: TokenRange::new(start_index, end_index, file_origin),
         }
     }
 

@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_mir::mir::types::MIRFunctionPrototype;
-use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRSourceRange};
+use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
+use cx_tokens::TokenRange;
 use cx_util::CXResult;
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
@@ -38,7 +39,7 @@ impl AnalysisDiagnosticContext {
         }
     }
 
-    fn source_text_for_range(&self, range: &FMIRSourceRange) -> Option<String> {
+    fn source_text_for_range(&self, range: &TokenRange) -> Option<String> {
         let file_contents = self.file_contents.as_ref()?;
         let tokens = cx_lexer::lex(file_contents)?;
 
@@ -57,7 +58,7 @@ impl AnalysisDiagnosticContext {
     fn failure_message(&self, message: &str, condition: &FMIRNode) -> String {
         if let Some(ret_name) = message.strip_prefix("postcondition failed:") {
             let post_condition_expr = condition
-                .source_range
+                .token_range
                 .as_ref()
                 .and_then(|range| self.source_text_for_range(range))
                 .unwrap_or_else(|| "<unknown post-condition expression>".to_string());

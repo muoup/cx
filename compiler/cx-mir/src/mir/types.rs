@@ -4,6 +4,7 @@ use cx_ast::ast::VisibilityMode;
 use cx_ast::data::{
     CX_CONST, CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXTypeKind, CXTypeSpecifier, PredeclarationType
 };
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -104,6 +105,7 @@ pub enum MIRTypeKind {
     },
     TaggedUnion {
         name: CXIdent,
+        template_info: Option<Box<TemplateInstantiationInformation>>,
         attributes: MIRStructAttributes,
         variants: Vec<(String, MIRType)>,
     },
@@ -128,6 +130,7 @@ pub enum MIRTypeKind {
     Function {
         prototype: Box<MIRFunctionPrototype>,
     },
+    Str,
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
@@ -325,6 +328,10 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::TaggedUnion { .. })
     }
 
+    pub fn is_str(&self) -> bool {
+        matches!(self.kind, MIRTypeKind::Str)
+    }
+
     pub fn is_function(&self) -> bool {
         matches!(self.kind, MIRTypeKind::Function { .. })
     }
@@ -402,8 +409,11 @@ impl MIRType {
                 .or(name.as_ref()),
             
             MIRTypeKind::Union { name, .. } => name.as_ref(),
-            
-            MIRTypeKind::TaggedUnion { name, .. } => Some(name),
+
+            MIRTypeKind::TaggedUnion { name, template_info, .. } => template_info
+                .as_ref()
+                .map(|info| &info.base_name)
+                .or(Some(name)),
 
             _ => None,
         }
@@ -411,9 +421,19 @@ impl MIRType {
 
     pub fn get_template_data(&self) -> Option<&TemplateInstantiationInformation> {
         match &self.kind {
-            MIRTypeKind::Structured { template_info, .. } => template_info.as_deref(),
+            MIRTypeKind::Structured { template_info, .. }
+            | MIRTypeKind::TaggedUnion { template_info, .. } => template_info.as_deref(),
 
             _ => None,
+        }
+    }
+    
+    pub fn set_name(&mut self, new_name: CXIdent) {
+        match &mut self.kind {
+            MIRTypeKind::Structured { name: n, .. } | MIRTypeKind::Union { name: n, .. } => *n = Some(new_name),
+            MIRTypeKind::Opaque { name, .. } => *name = new_name,
+            MIRTypeKind::TaggedUnion { name, .. } => *name = new_name,
+            _ => {}
         }
     }
 
@@ -427,6 +447,13 @@ impl MIRType {
                 let old_name = std::mem::take(n).expect("Templated types cannot be nameless");
 
                 *n = Some(new_name.clone());
+                *template_info = Some(Box::new(TemplateInstantiationInformation {
+                    base_name: old_name,
+                    template_input,
+                }));
+            }
+            MIRTypeKind::TaggedUnion { name: n, template_info, .. } => {
+                let old_name = std::mem::replace(n, new_name.clone());
                 *template_info = Some(Box::new(TemplateInstantiationInformation {
                     base_name: old_name,
                     template_input,
@@ -476,6 +503,7 @@ impl MIRType {
                     + 1
             }
 
+            MIRTypeKind::Str => unreachable!("str is unsized and has no type_size"),
             MIRTypeKind::Function { .. } => unreachable!(),
         }
     }
@@ -515,6 +543,7 @@ impl MIRType {
                 .max()
                 .unwrap_or(8),
 
+            MIRTypeKind::Str => unreachable!("str is unsized and has no type_alignment"),
             MIRTypeKind::Function { .. } => unreachable!(),
         }
     }
@@ -540,6 +569,7 @@ impl MIRType {
                         .to_type(),
                         var_args: false,
                         contract: CXFunctionContract::default(),
+                        range: TokenRange::default(),
                     },
                     return_type: MIRType::unit(),
                     params: vec![],
@@ -638,7 +668,14 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
             *t1_type == *t2_type
         }
 
+        (
+            MIRTypeKind::MemoryReference { inner_type: t1_type },
+            MIRTypeKind::MemoryReference { inner_type: t2_type },
+        ) => same_type(t1_type, t2_type),
+
         (MIRTypeKind::Unit, MIRTypeKind::Unit) => true,
+
+        (MIRTypeKind::Str, MIRTypeKind::Str) => true,
 
         _ => false,
     }

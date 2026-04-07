@@ -7,6 +7,7 @@ edition = "2024"
 speedy = "0.8.7"
 
 cx-ast = { path = "../cx-ast" }
+cx-tokens = { path = "../cx-tokens" }
 cx-util = { path = "../cx-util" }
 
 uuid = { version = "1.17.0", features = ["v4"] }

@@ -114,9 +114,10 @@ fn parse_fn_merge(
                 let body = parse_body(data)?;
                 unnote_templatedtype_s(data, &template_prototype);
 
-                data.add_function(prototype.clone(), Some(template_prototype));
+                data.add_function(prototype.clone(), Some(template_prototype.clone()));
                 data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
                     prototype,
+                    template_prototype,
                     body: Box::new(body),
                 });
             }
@@ -200,13 +201,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
         let mut body = Vec::new();
 
         while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-            let Ok(stmt) = parse_expr(data) else {
-                return log_parse_error!(
-                    data,
-                    "Failed to parse statement in body: {:#?}",
-                    data.tokens.peek()
-                );
-            };
+            let stmt = parse_expr(data)?;
 
             if expression_requires_semicolon(&stmt) {
                 assert_token_matches!(data.tokens, punctuator!(Semicolon));
@@ -215,7 +210,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
             body.push(stmt);
         }
 
-        Ok(CXExprKind::Block { exprs: body }.into_expr(start_index, data.tokens.index))
+        Ok(CXExprKind::Block { exprs: body }.into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone()))
     } else {
         let body = parse_expr(data)?;
 

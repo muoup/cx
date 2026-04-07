@@ -2,7 +2,7 @@ use cx_ast::ast::CXExpr;
 use cx_ast::data::CX_CONST;
 use cx_mir::mir::{
     expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp},
-    types::{MIRIntegerType, MIRType, MIRTypeKind, same_type},
+    types::{same_type, MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -17,15 +17,20 @@ pub(crate) fn coerce_value(
 ) -> CXResult<MIRExpression> {
     let value_type = value.get_type();
     let mem_ref_inner = value_type.mem_ref_inner();
-    
+
     let Some(mem_ref_inner) = mem_ref_inner else {
-        return Ok(value)
+        return Ok(value);
     };
+
+    // str is unsized — never auto-dereference &str
+    if mem_ref_inner.is_str() {
+        return Ok(value);
+    }
 
     if !env.is_copyable(mem_ref_inner) {
         return Ok(value);
     }
-    
+
     implicit_cast(env, expr, value, mem_ref_inner)
 }
 
@@ -92,10 +97,33 @@ pub(crate) fn explicit_cast(
             coerce(MIRCoercion::IntToPtr { sextend: *signed })
         }
 
+        (
+            MIRTypeKind::PointerTo {
+                inner_type: ptr_inner,
+                ..
+            },
+            MIRTypeKind::MemoryReference {
+                inner_type: str_inner,
+            },
+        ) if matches!(
+            ptr_inner.kind,
+            MIRTypeKind::Integer {
+                _type: MIRIntegerType::I8,
+                ..
+            }
+        ) && matches!(str_inner.kind, MIRTypeKind::Str) =>
+        {
+            coerce(MIRCoercion::CStrToStr)
+        }
+
+        (MIRTypeKind::MemoryReference { inner_type }, _) => {
+            cast_recurse(env, expr, value, to_type, inner_type, explicit_cast)
+        }
+
         _ => {
             log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 "No explicit cast from {} to {}",
                 from_type,
                 to_type
@@ -118,7 +146,7 @@ pub fn implicit_cast(
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
         Ok(MIRExpression {
-            source_range: None,
+            token_range: None,
             _type: to_type.clone(),
             kind: MIRExpressionKind::TypeConversion {
                 operand: Box::new(value.clone()),
@@ -160,16 +188,11 @@ pub fn implicit_cast(
                 signed: s2,
                 ..
             },
-        ) => {
-            if t1 < t2 {
-                coerce(MIRCoercion::Integral {
-                    to_type: *t2,
-                    sextend: *s2,
-                })
-            } else {
-                coerce(MIRCoercion::ReinterpretBits)
-            }
-        }
+        ) => coerce(MIRCoercion::Integral {
+            from_type: *t1,
+            to_type: *t2,
+            sextend: *s2,
+        }),
 
         (MIRTypeKind::Float { .. }, MIRTypeKind::Float { _type: to_type }) => {
             coerce(MIRCoercion::FloatCast { to_type: *to_type })
@@ -216,19 +239,24 @@ pub fn implicit_cast(
             same_type(&from_unconst, &to_unconst)
                 && !from_inner.get_specifier(CX_CONST)
                 && to_inner.get_specifier(CX_CONST)
-        } => {
+        } =>
+        {
             coerce(MIRCoercion::ReinterpretBits)
         }
 
         (
-            MIRTypeKind::MemoryReference { inner_type: inner1, .. },
+            MIRTypeKind::MemoryReference {
+                inner_type: inner1, ..
+            },
             MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
         ) if same_type(inner1.as_ref(), inner2.as_ref()) => coerce(MIRCoercion::ReinterpretBits),
 
         (
-            MIRTypeKind::MemoryReference { inner_type: inner1, .. },
+            MIRTypeKind::MemoryReference {
+                inner_type: inner1, ..
+            },
             MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
@@ -240,7 +268,7 @@ pub fn implicit_cast(
             } else {
                 log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     "No implicit cast from {} to {}",
                     from_type,
                     to_type
@@ -248,43 +276,40 @@ pub fn implicit_cast(
             }
         }
 
+        // &str -> char* / const char* coercion (not allowed in safe context)
         (
             MIRTypeKind::MemoryReference {
-                inner_type: inner,
+                inner_type: from_inner,
                 ..
             },
-            _,
-        ) => {
-            if !env.is_copyable(inner) {
-                return log_typecheck_error!(
-                    env,
-                    expr,
-                    "Cannot implicitly copy value of type {}",
-                    inner,
-                );
-            }
-
-            if inner.is_memory_resident() {
-                let copied = TypecheckResult::copy_region(
-                    TypecheckResult::expr2(value.clone()),
-                    (*inner.clone()).clone(),
-                );
-                implicit_cast(env, expr, copied.into_expression(), to_type)
-            } else {
-                // Need to read from memory reference and then cast
-                let loaded = TypecheckResult::memory_read(
-                    TypecheckResult::expr2(value.clone()),
-                    (*inner.clone()).clone(),
-                );
-                implicit_cast(env, expr, loaded.into_expression(), to_type)
-            }
+            MIRTypeKind::PointerTo {
+                inner_type: to_inner,
+                ..
+            },
+        ) if from_inner.is_str() && to_inner.is_integer() && {
+            matches!(
+                to_inner.kind,
+                MIRTypeKind::Integer {
+                    _type: MIRIntegerType::I8,
+                    ..
+                }
+            )
+        } =>
+        {
+            coerce(MIRCoercion::ReinterpretBits)
         }
 
         (
+            MIRTypeKind::MemoryReference {
+                inner_type: inner, ..
+            },
+            _,
+        ) => cast_recurse(env, expr, value, to_type, inner, implicit_cast),
+
+        (
             _,
             MIRTypeKind::MemoryReference {
-                inner_type: inner,
-                ..
+                inner_type: inner, ..
             },
         )
         | (
@@ -319,16 +344,48 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) => Ok(value),
+        ) if same_type(inner.as_ref(), &from_type) => coerce(MIRCoercion::GetFnPtr),
 
         _ => {
             log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 "No implicit cast from {} to {}",
                 from_type,
                 to_type
             )
         }
+    }
+}
+
+fn cast_recurse<Func>(
+    env: &mut TypeEnvironment,
+    expr: &CXExpr,
+    value: MIRExpression,
+    to_type: &MIRType,
+    inner_type: &MIRType,
+    cast: Func,
+) -> CXResult<MIRExpression>
+where
+    Func: Fn(&mut TypeEnvironment, &CXExpr, MIRExpression, &MIRType) -> CXResult<MIRExpression>,
+{
+    if !env.is_copyable(inner_type) {
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            "Cannot implicitly copy value of type {}",
+            inner_type,
+        );
+    }
+
+    if inner_type.is_memory_resident() {
+        let copied =
+            TypecheckResult::copy_region(TypecheckResult::expr2(value.clone()), inner_type.clone());
+        cast(env, expr, copied.into_expression(), to_type)
+    } else {
+        // Need to read from memory reference and then cast
+        let loaded =
+            TypecheckResult::memory_read(TypecheckResult::expr2(value.clone()), inner_type.clone());
+        cast(env, expr, loaded.into_expression(), to_type)
     }
 }

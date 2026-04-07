@@ -5,7 +5,7 @@ macro_rules! log_error {
             use cx_util::CXError;
             let msg = format!($($arg)*);
             eprintln!("Error: {}", msg);
-
+            
             panic!()
         }
     }

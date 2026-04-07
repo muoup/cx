@@ -219,12 +219,20 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 initial_value,
             } => {
                 let name_str = name.as_ref().map(|t| t.as_str()).unwrap_or("(unnamed)");
-                let init_str = if initial_value.is_some() { " = <init>" } else { "" };
                 writeln!(
                     f,
-                    "CreateStackVariable {}: {}{} <'{}>",
-                    name_str, _type, init_str, self.expr._type
-                )
+                    "CreateStackVariable {}: {} <'{}>",
+                    name_str, _type, self.expr._type
+                )?;
+                
+                if let Some(init) = initial_value {
+                    MIRExpressionFormatter::new(init, self.depth + 1).fmt(f)?;
+                } else {
+                    self.indent(f)?;
+                    writeln!(f, "(no initializer)")?;
+                }
+                
+                Ok(())
             }
             MIRExpressionKind::CopyRegion { source, _type } => {
                 writeln!(f, "CopyRegion [{}] <'{}>", _type, self.expr._type)?;
@@ -546,9 +554,10 @@ impl Display for MIRUnOp {
 impl Display for MIRCoercion {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRCoercion::Integral { sextend, to_type } => write!(
+            MIRCoercion::Integral { sextend, from_type, to_type } => write!(
                 f,
-                "integral({}, to: {})",
+                "integral({}, {} -> {})",
+                from_type,
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
@@ -571,6 +580,8 @@ impl Display for MIRCoercion {
             ),
             MIRCoercion::IntToBool => write!(f, "int_to_bool"),
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
+            MIRCoercion::GetFnPtr => write!(f, "get_fn_ptr"),
+            MIRCoercion::CStrToStr => write!(f, "cstr_to_str"),
         }
     }
 }
@@ -649,6 +660,7 @@ impl Display for MIRTypeKind {
             MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             MIRTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
+            MIRTypeKind::Str => write!(f, "_str"),
             MIRTypeKind::Function { prototype } => write!(f, "{prototype}"),
         }
     }

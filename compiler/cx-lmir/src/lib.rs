@@ -330,5 +330,5 @@ pub enum LMIRCoercionType {
     IntToFloat { from: LMIRIntegerType, sextend: bool },
     FloatToInt { from: LMIRFloatType, sextend: bool },
     PtrToInt,
-    BitCast
+    BitCast,
 }

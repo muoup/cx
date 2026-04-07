@@ -1,0 +1,21 @@
+import std::io;
+
+struct test<T> {
+    T i;
+};
+
+test<U> test<T>::map<T, U>(*this, U (*func)(T)) {
+    return (test<U>) { .i = func(this.i) };
+}
+
+float add_one(int x) {
+    return (float)(x + 1);
+}
+
+int main() {
+    test<int> a = (test<int>) { .i = 42 };
+    test<float> b = a.map<int, float>(add_one);
+    
+    printf("a.i: %d\n", a.i);
+    printf("b.i: %.0f\n", b.i);
+}

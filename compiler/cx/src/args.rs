@@ -143,7 +143,7 @@ pub fn parse_args() -> Result<Command, String> {
     }
 
     // Legacy single-file mode
-    parse_file_args(first_arg, &mut args_iter)
+    parse_file_args(&mut args.iter().skip(1))
 }
 
 fn parse_build_args(
@@ -188,7 +188,6 @@ fn parse_build_args(
 }
 
 fn parse_file_args(
-    first_arg: &str,
     args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
 ) -> Result<Command, String> {
     let mut output_file = "a.out".to_string();
@@ -196,12 +195,8 @@ fn parse_file_args(
     let mut optimization_level = None;
     let mut analysis = false;
     let mut verbose = false;
-
-    // First arg is the input file (unless it's a flag)
-    if first_arg.starts_with('-') {
-        return Err(format!("Unknown flag: {first_arg}"));
-    }
-    let mut input_file = Some(first_arg.to_string());
+    
+    let mut input_file = None;
 
     while let Some(arg) = args_iter.next() {
         if parse_common_flag(

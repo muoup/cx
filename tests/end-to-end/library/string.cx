@@ -1,0 +1,10 @@
+import std::string;
+import std::optional;
+import std::io;
+
+int main() {
+    string s = string::new();
+    s.append("Hello, world!");
+    printf("%s\n", s.data);
+    s.drop();
+}

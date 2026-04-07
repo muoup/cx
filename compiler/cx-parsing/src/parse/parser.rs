@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use cx_ast::{
     ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
     data::{
@@ -15,17 +17,20 @@ pub struct ParserData<'a> {
     pub visibility: VisibilityMode,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
+    pub file_origin: Arc<str>,
 
     pub ast: CXAST,
 }
 
 impl<'a> ParserData<'a> {
     pub fn new(tokens: TokenIter<'a>, pp_contents: &'a PreparseContents) -> Self {
+        let file_origin: Arc<str> = Arc::from(tokens.file.to_string_lossy().as_ref());
         Self {
             tokens,
             visibility: VisibilityMode::Package,
             expr_commas: vec![true],
             pp_contents,
+            file_origin,
             ast: CXAST {
                 imports: pp_contents.imports.clone(),
                 ..Default::default()
@@ -37,7 +42,7 @@ impl<'a> ParserData<'a> {
         self.tokens.back();
         self
     }
-
+    
     pub fn change_comma_mode(&mut self, expr_comma: bool) {
         self.expr_commas.push(expr_comma);
     }

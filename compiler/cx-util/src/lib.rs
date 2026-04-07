@@ -16,9 +16,15 @@ pub trait CXErrorTrait {
     fn as_any(&self) -> &dyn std::any::Any {
         &()
     }
+    
+    fn error_prefix(&self) -> String;
+    
+    fn error_content(&self) -> String;
 
     /// Get the error as a string for LSP diagnostics
-    fn error_message(&self) -> String;
+    fn error_message(&self) -> String {
+        format!("{}: {}", self.error_prefix(), self.error_content())
+    }
 
     /// Get the compilation unit for this error, if applicable
     fn compilation_unit(&self) -> Option<std::path::PathBuf> {
@@ -49,8 +55,12 @@ impl CXErrorTrait for CXError {
     fn pretty_print(&self) {
         println!("CXError: {}", self.message);
     }
-
-    fn error_message(&self) -> String {
+    
+    fn error_prefix(&self) -> String {
+        "Error".to_string()
+    }
+    
+    fn error_content(&self) -> String {
         self.message.clone()
     }
 }
