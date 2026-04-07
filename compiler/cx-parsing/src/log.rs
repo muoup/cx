@@ -66,7 +66,7 @@ macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
-
+            
             Err(Box::new($crate::log::ParseErrorLog {
                 message,
                 file: $toks.file.clone(),

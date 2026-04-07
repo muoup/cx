@@ -42,7 +42,7 @@ impl<'a> ParserData<'a> {
         self.tokens.back();
         self
     }
-
+    
     pub fn change_comma_mode(&mut self, expr_comma: bool) {
         self.expr_commas.push(expr_comma);
     }

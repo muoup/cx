@@ -93,14 +93,6 @@ pub(crate) fn expression_requires_semicolon(expr: &CXExpr) -> bool {
 }
 
 pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
-    if try_next!(data.tokens, TokenKind::Keyword(_)) {
-        data.tokens.back();
-
-        if let Ok(expr) = parse_keyword_expr(data) {
-            return Ok(expr);
-        }
-    }
-
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
@@ -113,7 +105,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpr> {
 
         return Err(err);
     }
-
+    
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
     compress_stack(data, &mut expr_stack, &mut op_stack, 100)?;
@@ -177,17 +169,12 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
                     .into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone()),
             );
         } else {
+            // If our expression starts with a type but has no name, we have a few options:
+            //  1. We could be in a sizeof expression (e.g. sizeof(T)), in which we should just return the type as a dummy expression
+            //  2. We could be in a scope resolution expression for either a static member function or a variant of a tagged enum
+            
             assert_token_matches!(data.tokens, operator!(ScopeRes));
-            let variant_name = parse_std_ident(&mut data.tokens)?;
-            let variant_expr = if peek_kind!(data.tokens, operator!(Less)) {
-                CXExprKind::TemplatedIdentifier {
-                    name: variant_name,
-                    template_input: parse_template_args(data)?,
-                }
-                .into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone())
-            } else {
-                CXExprKind::Identifier(variant_name).into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone())
-            };
+            let variant_expr = parse_expr_identifier(data)?;
 
             let type_expr = match _type.kind {
                 CXTypeKind::Identifier { name: type_name, .. } => {
@@ -210,7 +197,9 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpr> {
             };
 
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
+            data.change_comma_mode(true);
             let inner_expr = parse_expr(data)?;
+            data.pop_comma_mode();
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
             let scope_res_expr = CXExprKind::BinOp {
@@ -335,6 +324,11 @@ pub(crate) fn parse_expr_val(
         expr_stack.push(parse_declaration(data)?);
         return Ok(());
     }
+    
+    if peek_kind!(data.tokens, TokenKind::Keyword(_)) {
+        expr_stack.push(parse_keyword_expr(data)?);
+        return Ok(());
+    }
 
     while let Some(op) = parse_prefix_unop(data)? {
         op_stack.push(PrecOperator::UnOp(op));
@@ -362,7 +356,7 @@ pub(crate) fn parse_expr_val(
         }
         TokenKind::Identifier(_) => {
             data.back();
-            parse_expr_identifier(data)?
+            parse_expr_identifier(data)?.kind
         }
 
         TokenKind::Operator(OperatorType::Move) => {
@@ -420,34 +414,6 @@ pub(crate) fn parse_expr_val(
             index.kind
         }
 
-        TokenKind::Keyword(KeywordType::Sizeof) => {
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::OpenParen)
-            );
-
-            let return_type = if is_type_decl(data) {
-                let (None, _type) = parse_initializer(data)? else {
-                    return log_parse_error!(data, "Failed to parse type declaration for sizeof");
-                };
-
-                CXExprKind::SizeOfType { _type }
-            } else {
-                let expr = parse_expr(data)?;
-
-                CXExprKind::SizeOfExpr {
-                    expr: Box::new(expr),
-                }
-            };
-
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen)
-            );
-
-            return_type
-        }
-
         _ => {
             data.back();
             return log_parse_error!(data, "Failed to parse expression value");
@@ -467,12 +433,13 @@ pub(crate) fn parse_expr_val(
     Ok(())
 }
 
-pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExprKind> {
+pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpr> {
+    let start_index = data.tokens.index;
     let ident = parse_std_ident(&mut data.tokens)?;
 
     if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
         data.tokens.back();
-        return Ok(CXExprKind::Identifier(ident));
+        return Ok(CXExprKind::Identifier(ident).into_expr(start_index, data.tokens.index));
     }
 
     data.tokens.back();
@@ -482,7 +449,7 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExprKin
     Ok(CXExprKind::TemplatedIdentifier {
         name: ident,
         template_input: args,
-    })
+    }.into_expr(start_index, data.tokens.index))
 }
 
 pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
@@ -645,6 +612,35 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpr> {
                 pre_eval: true,
             })
         }
+        
+        KeywordType::Sizeof => {
+            assert_token_matches!(
+                data.tokens,
+                TokenKind::Punctuator(PunctuatorType::OpenParen)
+            );
+
+            let return_type = if is_type_decl(data) {
+                let (None, _type) = parse_initializer(data)? else {
+                    return log_parse_error!(data, "Failed to parse type declaration for sizeof");
+                };
+
+                CXExprKind::SizeOfType { _type }
+            } else {
+                let expr = parse_expr(data)?;
+
+                CXExprKind::SizeOfExpr {
+                    expr: Box::new(expr),
+                }
+            };
+
+            assert_token_matches!(
+                data.tokens,
+                TokenKind::Punctuator(PunctuatorType::CloseParen)
+            );
+
+            Ok(return_type)
+        }
+        
         KeywordType::Break => Ok(CXExprKind::Break),
         KeywordType::Continue => Ok(CXExprKind::Continue),
         KeywordType::For => {

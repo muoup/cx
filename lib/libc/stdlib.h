@@ -1,6 +1,6 @@
 #define NULL (void*)0
 
-typedef u64 size_t;
+typedef long size_t;
 
 void* malloc(u64 size);
 void* calloc(u64 num, u64 size);

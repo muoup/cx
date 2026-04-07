@@ -201,13 +201,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
         let mut body = Vec::new();
 
         while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-            let Ok(stmt) = parse_expr(data) else {
-                return log_parse_error!(
-                    data,
-                    "Failed to parse statement in body: {:#?}",
-                    data.tokens.peek()
-                );
-            };
+            let stmt = parse_expr(data)?;
 
             if expression_requires_semicolon(&stmt) {
                 assert_token_matches!(data.tokens, punctuator!(Semicolon));

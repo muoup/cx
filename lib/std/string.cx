@@ -38,7 +38,7 @@ opt<string> string::try_new_string() safe {
         void* base_buffer = malloc(sizeof(string) + 16);
 
         if (base_buffer == NULL) {
-            return opt<string>::none;
+            return opt<string>::none();
         }
         
         @leak(s);
