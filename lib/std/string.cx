@@ -13,13 +13,13 @@ struct string : @nodrop {
     u64 capacity;
 };
 
-string string::new() {
+string string::new() safe {
     opt<string> s = string::try_new_string();
     
     match (move s) {
         opt<string>::some(val) => return val;
         opt<string>::none(_) => {
-            printf("Failed to allocate memory for string\n");
+            println("Failed to allocate memory for string");
             exit(1);
         }
     }

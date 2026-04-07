@@ -136,7 +136,6 @@ pub enum FMIRNodeBody {
         writes: Vec<MemoryLocation>,
     },
 
-    // ===== Monadic Combinators =====
     /// _pure :: a -> CMonad a
     Pure,
 
@@ -153,27 +152,21 @@ pub enum FMIRNodeBody {
         second: FRc<FMIRNode>,
     },
 
-    // ===== Memory Operations =====
     /// _alloca :: CMonad (Ptr a)
     /// Stack allocation - returns unsafe CMonad (conservative)
     Alloca,
 
     /// _load :: Ptr a -> CMonad a
-    /// Load from pointer - returns unsafe CMonad (conservative)
-    /// Library ref<T>::read() wraps this with DeclareAccess
     Load {
         pointer: FRc<FMIRNode>,
     },
 
     /// _store :: Ptr a -> a -> CMonad ()
-    /// Store to pointer - returns unsafe CMonad (conservative)
-    /// Library ref<T>::write() wraps this with DeclareAccess
     Store {
         pointer: FRc<FMIRNode>,
         value: FRc<FMIRNode>,
     },
 
-    // ===== Control Flow =====
     /// if ... then ... else ...
     If {
         condition: FRc<FMIRNode>,
@@ -186,11 +179,23 @@ pub enum FMIRNodeBody {
         condition: FRc<FMIRNode>,
         body: FRc<FMIRNode>,
     },
+    
+    /// _cloop :: [(a, CMonad a)] -> CMonad a -> a -> CMonad a
+    Match {
+        condition: FRc<FMIRNode>,
+        arms: Vec<(FRc<FMIRNode>, FRc<FMIRNode>)>,
+        default: FRc<FMIRNode>,
+    },
+    
+    // _aggregate_initialization :: [(field_name, value)] -> CMonad T
+    AggregateInitialization {
+        fields: Vec<(usize, FRc<FMIRNode>)>,
+    },
 
     /// _creturn :: a -> CMonad a
     // /
     /// Early returns may seem counter to pure functional semantics, however you can think of them
-    /// as a mapping to an CMonad in which all subsequent CMonad actions are skipped. The value
+    /// as a mapping to a CMonad in which all subsequent CMonad actions are skipped. The value
     /// that is generated after is thus dead and optimized away, and when reaching the true end
     /// of a function, an CMonad wraps this current state to ensure that we escape the skip-all
     /// context.
@@ -201,6 +206,13 @@ pub enum FMIRNodeBody {
     /// Alias for source-language variables/functions (not intrinsic IDs).
     VariableAlias {
         name: String,
+    },
+    
+    // Identity function for reinterpreting a value semantically as a different type, use sparingly as I am still
+    // investigating if there are more sound ways to map things like tagged union accesses
+    Transmute {
+        value: FRc<FMIRNode>,
+        target_type: FMIRType,
     },
 
     // ===== Literals =====

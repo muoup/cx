@@ -151,6 +151,34 @@ pub fn convert_expression(
                 },
             })
         }
+        
+        MIRExpressionKind::Match { condition, arms, default } => {
+            let condition_node = convert_expression(env, condition)?;
+            let default_node = default.as_ref()
+                .map(|expr| convert_expression(env, expr))
+                .transpose()?
+                .unwrap_or(FMIRNode::unit());
+
+            let mut effect = condition_node._type.union(&default_node._type);
+            let mut arm_nodes = Vec::new();
+
+            for (value, arm_expr) in arms {
+                let value = convert_expression(env, value)?;
+                let arm_node = convert_expression(env, arm_expr)?;
+                effect = effect.union(&arm_node._type);
+                arm_nodes.push((FRc::new(value), FRc::new(arm_node)));
+            }
+
+            Ok(FMIRNode {
+                token_range: None,
+                _type: effect.apply(default_node._type.inner_type().clone()),
+                body: FMIRNodeBody::Match {
+                    condition: FRc::new(condition_node),
+                    arms: arm_nodes,
+                    default: FRc::new(default_node),
+                },
+            })
+        }
 
         MIRExpressionKind::While {
             pre_eval,
@@ -351,7 +379,35 @@ pub fn convert_expression(
                 body: result.body,
             })
         }
-
+        
+        MIRExpressionKind::TaggedUnionGet { value, variant_type } => {
+            // FIXME: MIR should output invariant assertions including tagged union accesses, so we are currently flakily
+            // assuming that accesses are valid here.
+            
+            let value_node = convert_expression(env, value)?;
+            
+            Ok(FMIRNode {
+                _type: FMIRType::pure(variant_type.clone().mem_ref_to()),
+                body: FMIRNodeBody::Transmute { value: FRc::new(value_node), target_type: FMIRType::pure(variant_type.clone()) },
+                token_range: mir_expr.token_range.clone(),
+            })
+        },
+ 
+        MIRExpressionKind::StructInitializer { initializations, struct_type } => {
+            let fields = initializations.iter()
+                .map(|init| {
+                    let field_node = convert_expression(env, &init.value)?;
+                    Ok((init.field_index, FRc::new(field_node)))
+                })
+                .collect::<CXResult<Vec<_>>>()?;
+            
+            Ok(FMIRNode {
+                token_range: mir_expr.token_range.clone(),
+                _type: FMIRType::pure(struct_type.clone()),
+                body: FMIRNodeBody::AggregateInitialization { fields },
+            })
+        },
+        
         MIRExpressionKind::MemoryRead { source } => {
             if let MIRExpressionKind::Variable(name)
             | MIRExpressionKind::ContractVariable { name, .. } = &source.kind

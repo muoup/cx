@@ -370,6 +370,23 @@ impl FMIRNodeBody {
                 write!(f, "{}>> ", indent)?;
                 second.fmt_with_indent(f, indent)
             }
+            
+            FMIRNodeBody::AggregateInitialization { fields } => {
+                write!(f, "_aggregate_initialization {{")?;
+                let nested = indent.push();
+                for (i, (field_name, value)) in fields.iter().enumerate() {
+                    writeln!(f)?;
+                    nested.fmt(f)?;
+                    write!(f, "{field_name}: ")?;
+                    value.fmt_with_indent(f, &nested)?;
+                    if i < fields.len() - 1 {
+                        write!(f, ",")?;
+                    }
+                }
+                writeln!(f)?;
+                indent.fmt(f)?;
+                write!(f, "}}")
+            },
 
             FMIRNodeBody::If {
                 condition,
@@ -388,6 +405,33 @@ impl FMIRNodeBody {
                 write!(f, "else ")?;
                 else_branch.fmt_with_indent(f, &nested)
             }
+            
+            FMIRNodeBody::Match {
+                condition,
+                arms,
+                default
+            } => {
+                write!(f, "match ")?;
+                condition.fmt_with_indent(f, indent)?;
+                let nested = indent.push();
+                writeln!(f)?;
+                for (pattern, arm) in arms {
+                    nested.fmt(f)?;
+                    write!(f, "| {} -> ", pattern)?;
+                    arm.fmt_with_indent(f, &nested)?;
+                    writeln!(f)?;
+                }
+                nested.fmt(f)?;
+                write!(f, "| _ -> ")?;
+                default.fmt_with_indent(f, &nested)?;
+                Ok(())
+            },
+            
+            FMIRNodeBody::Transmute { value, target_type } => {
+                write!(f, "_transmute (")?;
+                value.fmt_with_indent(f, indent)?;
+                write!(f, ") :: {}", target_type)
+            },
 
             FMIRNodeBody::CReturn { value } => {
                 write!(f, "_creturn {}", value)
