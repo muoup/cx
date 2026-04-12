@@ -2,27 +2,6 @@ use crate::{CompilationUnit, GlobalCompilationContext, compilation_hash};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
 
-pub fn stdlib_directory(inner_path: &str) -> String {   
-    // {project_root}/compiler/cx-pipeline-data
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    
-    format!("{manifest_dir}/../../lib/{inner_path}")
-}
-
-pub fn file_path(path: &str, working_directory: &Path) -> PathBuf {
-    if path.starts_with("std") {
-        PathBuf::from(stdlib_directory(&format!("{}/{}.cx", "std", &path[3..])))
-    } else {
-        let path = Path::new(path);
-
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            working_directory.join(path)
-        }
-    }
-}
-
 pub fn internal_directory(context: &GlobalCompilationContext, unit: &CompilationUnit) -> PathBuf {
     let mut profile_hash = DefaultHasher::new();
     context.config.backend.hash(&mut profile_hash);

@@ -1,4 +1,4 @@
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, module_path::ModulePath};
 use speedy::{Readable, Writable};
 
 use crate::{ast::CXAST, data::ModuleResource};
@@ -14,7 +14,7 @@ mod format;
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct PreparseContents {
     pub module: String,
-    pub imports: Vec<String>,
+    pub imports: Vec<ModulePath>,
     pub type_idents: Vec<ModuleResource<CXIdent>>,
 }
 

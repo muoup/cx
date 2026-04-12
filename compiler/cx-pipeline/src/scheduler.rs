@@ -9,6 +9,7 @@ use cx_parsing::parse::parse_ast;
 use cx_parsing::preparse::{preparse, PreparseConfig};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
+use cx_util::module_path::ModulePath;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
@@ -114,6 +115,30 @@ pub(crate) fn scheduling_loop(
     Ok(())
 }
 
+fn import_jobs_for_unit(
+    context: &GlobalCompilationContext,
+    imports: &[ModulePath],
+) -> CXResult<Vec<CompilationJob>> {
+    let mut jobs = Vec::new();
+
+    for import in imports {
+        if !context.module_mode && !import.is_library_module() {
+            return CXError::create_result(format!(
+                "Import '{}' is not available in single-file compilation mode. Only compiler library modules under `std::` may be imported here; use `cx build` for project/module imports.",
+                import.as_str().replace('/', "::")
+            ));
+        }
+
+        jobs.push(CompilationJob::new(
+            vec![],
+            CompilationStep::PreParse,
+            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory),
+        ));
+    }
+
+    Ok(jobs)
+}
+
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     mut job: CompilationJob,
@@ -153,20 +178,7 @@ pub(crate) fn handle_job(
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(&job.unit);
 
-            let mut new_jobs = pp_data
-                .imports
-                .iter()
-                .map(|import| {
-                    CompilationJob::new(
-                        vec![],
-                        CompilationStep::PreParse,
-                        CompilationUnit::from_rooted(
-                            import.as_str(),
-                            &context.config.working_directory,
-                        ),
-                    )
-                })
-                .collect::<Vec<_>>();
+            let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             job.step = CompilationStep::ASTParse;
             new_jobs.push(job);
@@ -248,10 +260,10 @@ pub(crate) fn perform_job(
             let mut output = preparse(&preparse_config, TokenIter::new(&tokens, file_path))?;
             output.module = job.unit.to_string();
 
-            if context.module_mode && !job.unit.as_str().contains("/std/") {
+            if !job.unit.is_std_lib() {
                 output
                     .imports
-                    .extend(INTRINSIC_IMPORTS.iter().map(|s| s.to_string()));
+                    .extend(INTRINSIC_IMPORTS.iter().map(|s| ModulePath::from_source_path(s)));
             }
 
             context
@@ -283,8 +295,8 @@ pub(crate) fn perform_job(
                     context
                         .module_db
                         .preparse_base
-                        .get(&CompilationUnit::from_rooted(
-                            import.as_str(),
+                        .get(&CompilationUnit::from_module_path(
+                            import.clone(),
                             &context.config.working_directory,
                         ));
                 let required_visiblity = VisibilityMode::Public;
@@ -603,20 +615,18 @@ fn handle_job_collect_errors(
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(&job.unit);
 
-            let mut new_jobs: Vec<CompilationJob> = pp_data
-                .imports
-                .iter()
-                .map(|import| {
-                    CompilationJob::new(
-                        vec![],
-                        CompilationStep::PreParse,
-                        CompilationUnit::from_rooted(
-                            import.as_str(),
-                            &context.config.working_directory,
-                        ),
-                    )
-                })
-                .collect();
+            let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
+                Ok(jobs) => jobs,
+                Err(e) => {
+                    let lsp_error = spanned_error(e.as_ref()).unwrap_or(LSPErrors::FatalError {
+                        compilation_unit: job.unit.as_path().to_path_buf(),
+                        message: e.error_message(),
+                        line: None,
+                    });
+                    error_collector.push(lsp_error);
+                    return Some(HandleJobResult::Continue);
+                }
+            };
 
             // Add the next step for this job
             let mut next_job = job.clone();

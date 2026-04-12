@@ -242,7 +242,7 @@ impl CXTypeKind {
 }
 
 impl<T: Clone> ModuleResource<T> {
-    pub fn transfer(&self, from_module: &str) -> ModuleResource<T> {
+    pub fn transfer(&self, from_module: impl AsRef<str>) -> ModuleResource<T> {
         if self.linkage == CXLinkageMode::Static {
             panic!("Static linkage resources must be declared private");
         }
@@ -250,7 +250,7 @@ impl<T: Clone> ModuleResource<T> {
         ModuleResource {
             visibility: VisibilityMode::Private,
             linkage: CXLinkageMode::Extern,
-            external_module: Some(from_module.to_string()),
+            external_module: Some(from_module.as_ref().to_string()),
             resource: self.resource.clone(),
         }
     }

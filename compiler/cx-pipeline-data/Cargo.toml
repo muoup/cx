@@ -16,3 +16,4 @@ cx-tokens = { path = "../cx-tokens" }
 cx-ast  = { path = "../cx-ast" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }
+cx-util = { path = "../cx-util" }

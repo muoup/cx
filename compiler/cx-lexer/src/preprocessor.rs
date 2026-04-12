@@ -1,6 +1,5 @@
 use crate::unified_lexer::Lexer;
-use cx_pipeline_data::directories::stdlib_directory;
-use cx_util::{CXError, CXResult, char_iter::CharIter};
+use cx_util::{CXError, CXResult, char_iter::CharIter, module_path::stdlib_directory};
 use std::path::PathBuf;
 
 pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIter<'a>> {

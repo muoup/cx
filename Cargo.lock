@@ -432,6 +432,7 @@ dependencies = [
  "cx-lmir",
  "cx-mir",
  "cx-tokens",
+ "cx-util",
  "serde",
  "speedy",
  "toml",

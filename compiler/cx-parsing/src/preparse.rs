@@ -6,7 +6,7 @@ use cx_ast::{
     data::{CXLinkageMode, ModuleResource},
     next_kind, try_next, PreparseContents,
 };
-use cx_util::{identifier::CXIdent, log_error, CXResult};
+use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
 
 use crate::parse::parse_std_ident;
 
@@ -24,6 +24,7 @@ impl PreparseConfig {
 }
 
 pub(crate) struct PreparseData<'a> {
+    #[allow(dead_code)]
     pub(crate) config: &'a PreparseConfig,
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
@@ -92,12 +93,6 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Import) => {
             data.tokens.back();
-            if !data.config.module_mode {
-                return log_preparse_error!(
-                    data.tokens,
-                    "import is only allowed in module builds; use `cx build`"
-                );
-            }
             let import_path = parse_import(&mut data.tokens)?;
             data.contents.imports.push(import_path);
         }
@@ -118,7 +113,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
+fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
     assert_token_matches!(tokens, keyword!(Import));
 
     let mut import_path = String::new();
@@ -137,5 +132,5 @@ fn parse_import(tokens: &mut TokenIter) -> CXResult<String> {
         }
     }
 
-    Ok(import_path)
+    Ok(ModulePath::new(import_path))
 }

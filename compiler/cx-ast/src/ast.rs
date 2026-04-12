@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_util::{unsafe_float::FloatWrapper, identifier::CXIdent};
+use cx_util::{unsafe_float::FloatWrapper, identifier::CXIdent, module_path::ModulePath};
 use cx_tokens::TokenRange;
 use speedy::{Readable, Writable};
 use uuid::Uuid;
@@ -18,7 +18,7 @@ pub struct CXAST {
     // Prefix for internal paths (i.e. {internal_path}.[o|cx-types|cx-functions])
     pub internal_path: String,
 
-    pub imports: Vec<String>,
+    pub imports: Vec<ModulePath>,
     pub function_stmts: Vec<CXFunctionStmt>,
 
     pub global_variables: HashMap<String, ModuleResource<CXGlobalVariable>>,
