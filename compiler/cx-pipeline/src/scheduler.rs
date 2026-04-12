@@ -6,7 +6,7 @@ use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::ParseErrorLog;
 use cx_parsing::parse::parse_ast;
-use cx_parsing::preparse::preparse;
+use cx_parsing::preparse::{preparse, PreparseConfig};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
@@ -238,16 +238,17 @@ pub(crate) fn perform_job(
 
             store_text(context, &job.unit, ".hash", &current_hash);
 
-            let tokens = cx_lexer::lex(file_contents.as_str())
-                .ok_or(CXError::create_boxed(format!(
-                    "Lexing failed for unit: {}",
-                    job.unit
-                )))?;
+            let tokens = cx_lexer::lex_with_context(
+                file_contents.as_str(),
+                &file_path,
+                &context.config.include_dirs,
+            )?;
 
-            let mut output = preparse(TokenIter::new(&tokens, file_path))?;
+            let preparse_config = PreparseConfig::from_compiler_config(&context.config);
+            let mut output = preparse(&preparse_config, TokenIter::new(&tokens, file_path))?;
             output.module = job.unit.to_string();
 
-            if !job.unit.as_str().contains("/std/") {
+            if context.module_mode && !job.unit.as_str().contains("/std/") {
                 output
                     .imports
                     .extend(INTRINSIC_IMPORTS.iter().map(|s| s.to_string()));

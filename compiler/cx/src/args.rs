@@ -1,4 +1,5 @@
 use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
+use std::path::Path;
 
 #[derive(Debug)]
 pub enum Command {
@@ -19,6 +20,7 @@ pub struct InitArgs {
 pub struct FileArgs {
     pub input_file: String,
     pub output_file: String,
+    pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
     pub analysis: bool,
@@ -53,6 +55,7 @@ pub fn print_help() {
     {
         println!("  --backend-cranelift  Use the Cranelift backend for code generation (default).");
     }
+    println!("  -c                   Compile only; emit an object file.");
     println!("  -o <output_file>     Specify the output file name.");
     println!("  -O0                  No optimization.");
     println!("  -O1                  Basic optimization.");
@@ -83,7 +86,8 @@ fn parse_common_flag(
     optimization_level: &mut Option<OptimizationLevel>,
     analysis: &mut bool,
     verbose: &mut bool,
-    output_file: Option<&mut String>,
+    output_file: Option<&mut Option<String>>,
+    compile_only: Option<&mut bool>,
 ) -> Result<bool, String> {
     match arg {
         "-help" => {
@@ -101,10 +105,17 @@ fn parse_common_flag(
         "-Ofast" => *optimization_level = Some(OptimizationLevel::Ofast),
         "--analysis" => *analysis = true,
         "--verbose" => *verbose = true,
+        "-c" => {
+            if let Some(compile_only) = compile_only {
+                *compile_only = true;
+            } else {
+                return Err("-c flag is not supported with `cx build`".to_string());
+            }
+        }
         "-o" => {
             if let Some(out) = output_file {
                 if let Some(path) = args_iter.next() {
-                    *out = path.clone();
+                    *out = Some(path.clone());
                 } else {
                     return Err("-o flag requires an output file path".to_string());
                 }
@@ -164,6 +175,7 @@ fn parse_build_args(
             &mut analysis,
             &mut verbose,
             None,
+            None,
         )? {
             continue;
         }
@@ -191,29 +203,28 @@ fn parse_file_args(
     first_arg: &str,
     args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
 ) -> Result<Command, String> {
-    let mut output_file = "a.out".to_string();
+    let mut output_file = None;
+    let mut compile_only = false;
     let mut backend = None;
     let mut optimization_level = None;
     let mut analysis = false;
     let mut verbose = false;
+    let mut input_file = None;
 
-    // First arg is the input file (unless it's a flag)
-    if first_arg.starts_with('-') {
-        return Err(format!("Unknown flag: {first_arg}"));
-    }
-    let mut input_file = Some(first_arg.to_string());
-
-    while let Some(arg) = args_iter.next() {
+    let mut handle_arg = |arg: &str,
+                          args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>|
+     -> Result<(), String> {
         if parse_common_flag(
-            arg.as_str(),
+            arg,
             args_iter,
             &mut backend,
             &mut optimization_level,
             &mut analysis,
             &mut verbose,
             Some(&mut output_file),
+            Some(&mut compile_only),
         )? {
-            continue;
+            return Ok(());
         }
 
         if arg.starts_with('-') {
@@ -223,7 +234,14 @@ fn parse_file_args(
         if input_file.is_some() {
             return Err("Multiple input files not currently supported".to_string());
         }
-        input_file = Some(arg.clone());
+        input_file = Some(arg.to_string());
+        Ok(())
+    };
+
+    handle_arg(first_arg, args_iter)?;
+
+    while let Some(arg) = args_iter.next() {
+        handle_arg(arg.as_str(), args_iter)?;
     }
 
     let input_file = input_file.ok_or_else(|| format!("Usage: cx <file> [options]"))?;
@@ -232,9 +250,22 @@ fn parse_file_args(
         return Err("Input file must have a .cx extension".to_string());
     }
 
+    let output_file = output_file.unwrap_or_else(|| {
+        if compile_only {
+            let stem = Path::new(&input_file)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("a");
+            format!("{stem}.o")
+        } else {
+            "a.out".to_string()
+        }
+    });
+
     Ok(Command::CompileFile(FileArgs {
         input_file,
         output_file,
+        compile_only,
         backend: backend.unwrap_or_else(default_backend),
         optimization_level: optimization_level.unwrap_or_default(),
         analysis,

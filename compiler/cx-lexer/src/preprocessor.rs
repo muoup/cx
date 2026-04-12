@@ -1,6 +1,7 @@
 use crate::unified_lexer::Lexer;
 use cx_pipeline_data::directories::stdlib_directory;
-use cx_util::char_iter::CharIter;
+use cx_util::{CXError, CXResult, char_iter::CharIter};
+use std::path::PathBuf;
 
 pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIter<'a>> {
     lexer.char_iter.skip_whitespace();
@@ -68,26 +69,43 @@ pub(crate) fn handle_comment(lexer: &mut Lexer) -> bool {
     }
 }
 
-pub(crate) fn handle_directive(lexer: &mut Lexer) {
+fn resolve_include_path(lexer: &Lexer, file_name: &str) -> Option<PathBuf> {
+    let is_quoted = file_name.starts_with('"') && file_name.ends_with('"');
+    let is_angled = file_name.starts_with('<') && file_name.ends_with('>');
+
+    if !is_quoted && !is_angled {
+        panic!("Invalid include statement: {file_name}");
+    }
+
+    let inner = &file_name[1..file_name.len() - 1];
+    let mut candidates = Vec::new();
+
+    if is_quoted && let Some(parent) = lexer.file_path.parent() {
+        candidates.push(parent.join(inner));
+    }
+
+    std::iter::once(PathBuf::from(stdlib_directory(&format!("libc/{inner}"))))
+        .chain(lexer.include_dirs.iter().map(|dir| dir.join(inner)))
+        .find(|path| path.is_file())
+}
+
+pub(crate) fn handle_directive(lexer: &mut Lexer) -> CXResult<()> {
     match lexer.char_iter.next_word().unwrap() {
         "#include" => {
-            let file_name = lexer.char_iter.next_word().unwrap();
+            let file_name = lexer.char_iter.next_word().unwrap().to_string();
+            let path = resolve_include_path(lexer, &file_name).ok_or(CXError::create_boxed(
+                format!("Included file not found: {file_name}"),
+            ))?;
 
-            let prefix = if file_name.starts_with("\"") && file_name.ends_with("\"") {
-                "".to_string()
-            } else if file_name.starts_with("<") && file_name.ends_with(">") {
-                stdlib_directory("libc/")
-            } else {
-                panic!("Invalid include statement: {file_name}");
-            };
+            let string = std::fs::read_to_string(path.as_path()).map_err(|e| {
+                CXError::create_boxed(format!(
+                    "Failed to read included file {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
 
-            let path = format!("{}{}", prefix, &file_name[1..file_name.len() - 1]);
-            let string = std::fs::read_to_string(path.as_str())
-                .unwrap_or_else(|_| panic!("Failed to read file: {path}"));
-
-            let tokens = lexer
-                .independent_lex(&string)
-                .unwrap_or_else(|| panic!("Failed to lex included file: {path}"));
+            let tokens = lexer.independent_lex(&string, path.as_path())?;
 
             lexer.tokens.extend(tokens);
         }
@@ -98,15 +116,16 @@ pub(crate) fn handle_directive(lexer: &mut Lexer) {
             lexer.char_iter.skip_whitespace();
             let rest_of_line = lexer.char_iter.rest_of_line().to_string();
 
-            let tokens = lexer
-                .independent_lex(&rest_of_line)
-                .unwrap_or_else(|| panic!("Failed to lex macro definition for: {name}"));
+            let file_path = lexer.file_path.clone();
+            let tokens = lexer.independent_lex(&rest_of_line, &file_path)?;
 
             lexer.macros.insert(name, tokens.into_boxed_slice());
         }
 
         dir => todo!("Preprocessor directive not implemented: {dir}"),
     }
+
+    Ok(())
 }
 
 // pub(crate) fn preprocess_line(preprocessor: &mut Preprocessor, mut string: &str) -> String {

@@ -35,6 +35,7 @@ pub fn compilation_hash() -> u64 {
 #[derive(Debug)]
 pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
+    pub module_mode: bool,
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<HashSet<PathBuf>>,
@@ -48,7 +49,8 @@ impl Drop for GlobalCompilationContext {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompilationMode {
-    Binary,
+    Executable,
+    Object,
     Library,
 }
 
@@ -62,8 +64,11 @@ pub struct CompilerConfig {
     pub working_directory: PathBuf,
     pub internal_directory: PathBuf,
     pub compilation_mode: CompilationMode,
+    pub module_mode: bool,
     pub project_config: Option<config::CXProjectConfig>,
     pub link_entries: Vec<config::LinkEntry>,
+    pub native_objects: Vec<PathBuf>,
+    pub include_dirs: Vec<PathBuf>,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]

@@ -116,7 +116,7 @@ pub fn type_error_to_diagnostic(error: &TypeError) -> Diagnostic {
     let uri = Url::from_file_path(file_path).ok();
     let range = cx_lexer::lex(&file_contents)
         .map(|tokens| token_range(&file_contents, &tokens, error.token_start, error.token_end))
-        .unwrap_or_else(|| fallback_range(&file_contents, None));
+        .unwrap_or_else(|_| fallback_range(&file_contents, None));
     let related_information = uri
         .as_ref()
         .and_then(|uri| related_information(uri, range, &error.notes));
@@ -148,7 +148,7 @@ pub fn lsp_error_to_diagnostic(error: &LSPErrors) -> Diagnostic {
             let range = match span {
                 LSPErrorSpan::TokenRange { start, end } => cx_lexer::lex(&file_contents)
                     .map(|tokens| token_range(&file_contents, &tokens, *start, *end))
-                    .unwrap_or_else(|| fallback_range(&file_contents, None)),
+                    .unwrap_or_else(|_| fallback_range(&file_contents, None)),
                 LSPErrorSpan::ByteRange { start, end } => byte_range(&file_contents, *start, *end),
             };
             let related_information = uri

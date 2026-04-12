@@ -166,6 +166,11 @@ pub fn implicit_cast(
                     to_type: *t2,
                     sextend: *s2,
                 })
+            } else if t1 > t2 {
+                coerce(MIRCoercion::Integral {
+                    to_type: *t2,
+                    sextend: false,
+                })
             } else {
                 coerce(MIRCoercion::ReinterpretBits)
             }

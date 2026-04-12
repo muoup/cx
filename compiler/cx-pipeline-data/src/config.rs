@@ -31,6 +31,8 @@ pub struct TargetConfig {
     pub binaries: Option<Vec<BinaryEntry>>,
     pub libraries: Option<Vec<LibraryEntry>>,
     pub link: Option<Vec<LinkEntry>>,
+    pub native_objects: Option<Vec<String>>,
+    pub include_dirs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

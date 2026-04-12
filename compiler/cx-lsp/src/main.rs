@@ -252,10 +252,8 @@ impl LanguageServer for Backend {
         let Some(text) = self.document_map.get(&uri) else {
             return Ok(None);
         };
-        let Some(tokens) = lex(&text) else {
-            return Ok(None);
-        };
-
+        let tokens = lex(&text)
+            .map_err(|_| tower_lsp::jsonrpc::Error::internal_error())?;
         let mut semantic_tokens = Vec::new();
         let mut last_line = 0;
         let mut last_start = 0;
@@ -333,10 +331,14 @@ impl Backend {
                 verbose: false,
                 working_directory: project_root.to_path_buf(),
                 internal_directory,
-                compilation_mode: cx_pipeline_data::CompilationMode::Binary,
+                compilation_mode: cx_pipeline_data::CompilationMode::Executable,
+                module_mode: true,
                 project_config: None,
                 link_entries: vec![],
+                native_objects: vec![],
+                include_dirs: vec![],
             },
+            module_mode: true,
             module_db: cx_pipeline_data::db::ModuleData::new(),
             linking_files: Mutex::new(HashSet::new()),
         };

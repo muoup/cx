@@ -10,6 +10,7 @@ use crate::scheduler::scheduling_loop;
 use crate::scheduler::scheduling_loop_collect_errors;
 use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
+use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext};
 use cx_util::CXError;
@@ -25,6 +26,7 @@ pub use crate::scheduler::{LSPErrorSpan, LSPErrors};
 pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
+        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
@@ -32,18 +34,41 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 
     let base_file_str = base_file.to_str()
         .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
+    let entry_unit = CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
 
     let initial_job = CompilationJob::new(
         vec![],
         CompilationStep::PreParse,
-        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory),
+        entry_unit.clone(),
     );
 
     let mut reporter = ProgressReporter::new(verbose);
 
     let result = with_dump_directory(compiler_context.config.internal_directory.clone(), || {
         scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
-        link(&compiler_context, &mut reporter)
+
+        match compiler_context.config.compilation_mode {
+            CompilationMode::Executable => link(&compiler_context, &mut reporter),
+            CompilationMode::Object => {
+                let object_path = resource_path(&compiler_context, &entry_unit, ".o");
+                if let Some(parent) = compiler_context.config.output.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| CXError::create_boxed(format!(
+                        "Failed to create object output directory {}: {}",
+                        parent.display(),
+                        e
+                    )))?;
+                }
+                std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
+                    CXError::create_boxed(format!(
+                        "Failed to write object file {}: {}",
+                        compiler_context.config.output.display(),
+                        e
+                    ))
+                })?;
+                Ok(())
+            }
+            CompilationMode::Library => unreachable!("standard_compilation does not support library mode"),
+        }
     });
 
     if result.is_err() {
@@ -59,6 +84,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<cx_lmir::LMIRUnit> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
+        module_mode: config.module_mode,
         config,
         module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
@@ -126,6 +152,34 @@ pub fn project_compilation(
 
     for (target_name, target_config) in targets {
         let link_entries = target_config.link.clone().unwrap_or_default();
+        let native_objects = target_config
+            .native_objects
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|path| {
+                let path = std::path::PathBuf::from(path);
+                if path.is_absolute() {
+                    path
+                } else {
+                    base_config.working_directory.join(path)
+                }
+            })
+            .collect::<Vec<_>>();
+        let include_dirs = target_config
+            .include_dirs
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|path| {
+                let path = std::path::PathBuf::from(path);
+                if path.is_absolute() {
+                    path
+                } else {
+                    base_config.working_directory.join(path)
+                }
+            })
+            .collect::<Vec<_>>();
 
         let output_dir = base_config.internal_directory.join("output").join(target_name);
         std::fs::create_dir_all(&output_dir)
@@ -139,8 +193,10 @@ pub fn project_compilation(
                 let output = output_dir.join(&binary.name);
                 let mut config = base_config.clone();
                 config.output = output;
-                config.compilation_mode = CompilationMode::Binary;
+                config.compilation_mode = CompilationMode::Executable;
                 config.link_entries = link_entries.clone();
+                config.native_objects = native_objects.clone();
+                config.include_dirs = include_dirs.clone();
 
                 eprintln!("Building binary '{}' (target: {})", binary.name, target_name);
                 standard_compilation(config, Path::new(&binary.entry))?;
@@ -153,6 +209,8 @@ pub fn project_compilation(
                 let mut config = base_config.clone();
                 config.compilation_mode = CompilationMode::Library;
                 config.link_entries = link_entries.clone();
+                config.native_objects = native_objects.clone();
+                config.include_dirs = include_dirs.clone();
                 config.output = output_dir.join(format!("{}.o", library.name));
 
                 eprintln!("Building library '{}' (target: {})", library.name, target_name);

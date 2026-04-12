@@ -48,26 +48,7 @@ fn setup_internal_directory(working_directory: &Path) -> PathBuf {
 fn run_file_mode(args: args::FileArgs) {
     let path = Path::new(&args.input_file);
     let invocation_directory = std::env::current_dir().expect("Failed to get current directory");
-
-    // Try to find cx.toml for project root
-    let (working_directory, project_config) =
-        if let Some((root, config)) = find_and_load_config(&invocation_directory) {
-            (root, Some(config))
-        } else {
-            let wd = path
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .map(|parent| invocation_directory.join(parent))
-                .unwrap_or_else(|| invocation_directory.clone());
-            (wd, None)
-        };
-
-    let file_name = path
-        .file_name()
-        .expect("Failed to get file name from path")
-        .to_str()
-        .expect("Failed to convert file name to string");
-
+    let working_directory = invocation_directory.clone();
     let internal_directory = setup_internal_directory(&working_directory);
 
     let output_file = PathBuf::from(&args.output_file);
@@ -85,12 +66,19 @@ fn run_file_mode(args: args::FileArgs) {
         verbose: args.verbose,
         working_directory,
         internal_directory,
-        compilation_mode: CompilationMode::Binary,
-        project_config,
+        compilation_mode: if args.compile_only {
+            CompilationMode::Object
+        } else {
+            CompilationMode::Executable
+        },
+        module_mode: false,
+        project_config: None,
         link_entries: vec![],
+        native_objects: vec![],
+        include_dirs: vec![],
     };
 
-    match standard_compilation(compiler_config, PathBuf::from(file_name).as_path()) {
+    match standard_compilation(compiler_config, path) {
         Ok(_) => {}
         Err(err) => {
             println!();
@@ -139,9 +127,12 @@ fn run_build_mode(args: args::BuildArgs) {
         verbose: args.verbose,
         working_directory: project_root.clone(),
         internal_directory,
-        compilation_mode: CompilationMode::Binary,
+        compilation_mode: CompilationMode::Executable,
+        module_mode: true,
         project_config: Some(config.clone()),
         link_entries: vec![],
+        native_objects: vec![],
+        include_dirs: vec![],
     };
 
     match project_compilation(base_config, &config, args.target.as_deref()) {

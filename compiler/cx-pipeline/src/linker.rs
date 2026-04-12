@@ -31,6 +31,10 @@ pub(crate) fn link_relocatable(
         cmd.arg(file.to_str().expect("File path invalid"));
     }
 
+    for file in &context.config.native_objects {
+        cmd.arg(file);
+    }
+
     let output = cmd.output()
         .map_err(|e| CXError::create_boxed(format!("Failed to execute linker: {}", e)))?;
 
@@ -61,6 +65,10 @@ pub(crate) fn link(context: &GlobalCompilationContext, reporter: &mut ProgressRe
 
     for file in linking_files.iter() {
         cmd.arg(file.to_str().expect("File path invalid"));
+    }
+
+    for file in &context.config.native_objects {
+        cmd.arg(file);
     }
 
     // Add link entries from config

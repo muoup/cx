@@ -76,9 +76,12 @@ fn compiler_config(
         verbose: false,
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
-        compilation_mode: cx_pipeline_data::CompilationMode::Binary,
+        compilation_mode: cx_pipeline_data::CompilationMode::Executable,
+        module_mode: true,
         project_config: None,
         link_entries: vec![],
+        native_objects: vec![],
+        include_dirs: vec![],
     }
 }
 

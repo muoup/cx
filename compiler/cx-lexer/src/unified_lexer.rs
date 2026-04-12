@@ -1,32 +1,38 @@
 use crate::line_lexer::lex_line;
 use crate::preprocessor::{generate_lexable_slice, handle_comment, handle_directive};
 use cx_tokens::token::{Token, TokenKind};
+use cx_util::CXResult;
 use cx_util::char_iter::CharIter;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub(crate) struct Lexer<'a> {
     pub(crate) source: &'a str,
+    pub(crate) file_path: PathBuf,
+    pub(crate) include_dirs: Vec<PathBuf>,
     pub(crate) char_iter: CharIter<'a>,
     pub(crate) macros: HashMap<String, Box<[Token]>>,
     pub(crate) tokens: Vec<Token>,
 }
 
 impl<'a> Lexer<'a> {
-    pub(crate) fn new(source: &'a str) -> Self {
+    pub(crate) fn new(source: &'a str, source_path: &Path, include_dirs: &[PathBuf]) -> Self {
         Lexer {
             source,
+            file_path: source_path.to_path_buf(),
+            include_dirs: include_dirs.to_vec(),
             char_iter: CharIter::new(source),
             macros: HashMap::new(),
             tokens: Vec::new(),
         }
     }
 
-    pub(crate) fn lex_source(&mut self) -> Option<()> {
-        let source = self.source.to_string();
-        
+    pub(crate) fn lex_source(&mut self) -> CXResult<()> {
+        let source = self.file_path.to_string_lossy().to_string();
+
         while self.char_iter.has_next() {
-            if let Some(mut lexable_iter) = self.interpret_directive_line() {
-                let tokens_in_line = lex_line(&mut lexable_iter, source.clone())?;
+            if let Some(mut lexable_iter) = self.interpret_directive_line()? {
+                let tokens_in_line = lex_line(&mut lexable_iter, source.clone());
 
                 self.tokens.extend(self.expand_macros(tokens_in_line));
             } else {
@@ -34,29 +40,29 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Some(())
+        Ok(())
     }
 
-    pub(crate) fn independent_lex(&mut self, str: &str) -> Option<Vec<Token>> {
-        let mut sublexer = Lexer::new(str);
+    pub(crate) fn independent_lex(&mut self, str: &str, source_path: &Path) -> CXResult<Vec<Token>> {
+        let mut sublexer = Lexer::new(str, source_path, &self.include_dirs);
         std::mem::swap(&mut sublexer.macros, &mut self.macros);
         sublexer.lex_source()?;
         std::mem::swap(&mut sublexer.macros, &mut self.macros);
-        Some(sublexer.tokens)
+        Ok(sublexer.tokens)
     }
 
     // returns text that the lexer can lex over, i.e. not comments or preprocessor directives
-    fn interpret_directive_line(&mut self) -> Option<CharIter<'_>> {
+    fn interpret_directive_line(&mut self) -> CXResult<Option<CharIter<'_>>> {
         loop {
             self.char_iter.skip_whitespace();
 
             if !self.char_iter.has_next() {
-                return None;
+                return Ok(None);
             }
 
             match self.char_iter.peek() {
                 Some('#') => {
-                    handle_directive(self);
+                    handle_directive(self)?;
                     continue;
                 }
 
@@ -69,7 +75,7 @@ impl<'a> Lexer<'a> {
                 _ => (),
             }
 
-            return generate_lexable_slice(self);
+            return Ok(generate_lexable_slice(self));
         }
     }
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_mir::mir::types::MIRFunctionPrototype;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRSourceRange};
-use cx_util::CXResult;
+use cx_util::{CXError, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
 use crate::simplify::assert_proven_conditions;
@@ -38,39 +38,67 @@ impl AnalysisDiagnosticContext {
         }
     }
 
-    fn source_text_for_range(&self, range: &FMIRSourceRange) -> Option<String> {
-        let file_contents = self.file_contents.as_ref()?;
+    fn source_text_for_range(&self, range: &FMIRSourceRange) -> CXResult<String> {
+        let file_contents = self.file_contents.as_ref().ok_or_else(|| {
+            CXError::create_boxed(format!(
+                "Failed to read source file for analysis diagnostics: {}",
+                self.compilation_unit.display()
+            ))
+        })?;
         let tokens = cx_lexer::lex(file_contents)?;
 
-        let start_token = tokens.get(range.start_token)?;
-        let end_token = tokens.get(range.end_token.saturating_sub(1))?;
+        let start_token = tokens.get(range.start_token).ok_or_else(|| {
+            CXError::create_boxed(format!(
+                "Invalid source range: start token index {} out of bounds",
+                range.start_token
+            ))
+        })?;
+        let end_token = tokens
+            .get(range.end_token.saturating_sub(1))
+            .ok_or_else(|| {
+                CXError::create_boxed(format!(
+                    "Invalid source range: end token index {} out of bounds",
+                    range.end_token
+                ))
+            })?;
         if start_token.file_origin != end_token.file_origin {
-            return None;
+            return CXError::create_result(format!(
+                "Source range tokens have different file origins: {} and {}",
+                start_token.file_origin, end_token.file_origin
+            ));
         }
 
         let source_slice = file_contents
-            .get(start_token.start_index..end_token.end_index)?
+            .get(start_token.start_index..end_token.end_index)
+            .ok_or(CXError::create_boxed(format!(
+                "Invalid source range: token indices {} to {} out of bounds in file {}",
+                range.start_token,
+                range.end_token,
+                self.compilation_unit.display()
+            )))?
             .trim();
-        Some(source_slice.to_string())
+        Ok(source_slice.to_string())
     }
 
-    fn failure_message(&self, message: &str, condition: &FMIRNode) -> String {
+    fn failure_message(&self, message: &str, condition: &FMIRNode) -> CXResult<String> {
         if let Some(ret_name) = message.strip_prefix("postcondition failed:") {
             let post_condition_expr = condition
                 .source_range
                 .as_ref()
-                .and_then(|range| self.source_text_for_range(range))
-                .unwrap_or_else(|| "<unknown post-condition expression>".to_string());
-            return format!(
+                .ok_or_else(|| {
+                    CXError::create_boxed("Condition node has no source range for diagnostics")
+                })
+                .and_then(|range| self.source_text_for_range(range))?;
+            return CXError::create_result(format!(
                 "In function `{}`, contract condition\n   post({}): ({})\nwill never be true at return site",
                 self.function_name, ret_name, post_condition_expr
-            );
+            ));
         }
 
-        format!(
+        CXError::create_result(format!(
             "FMIR analysis error in safe function '{}': {} (condition proven false)",
             self.function_name, message
-        )
+        ))
     }
 
     fn fail_proven_false(
@@ -79,7 +107,7 @@ impl AnalysisDiagnosticContext {
         node: &FMIRNode,
         condition: &FMIRNode,
     ) -> CXResult<VisitControl> {
-        let resolved_message = self.failure_message(message, condition);
+        let resolved_message = self.failure_message(message, condition)?;
         log_analysis_error!(self, node, "{}", resolved_message)
     }
 }

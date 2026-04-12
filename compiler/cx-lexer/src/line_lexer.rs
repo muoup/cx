@@ -12,10 +12,10 @@ pub(crate) struct LineLexer<'a> {
     pub tokens: Vec<Token>,
 }
 
-pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>, file_origin: String) -> Option<Vec<Token>> {
+pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>, file_origin: String) -> Vec<Token> {
     let mut line_lexer = LineLexer::new(iter, file_origin);
     line_lexer.generate_tokens();
-    Some(line_lexer.tokens)
+    line_lexer.tokens
 }
 
 impl<'a> LineLexer<'a> {

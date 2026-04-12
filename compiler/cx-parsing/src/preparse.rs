@@ -1,3 +1,4 @@
+use cx_pipeline_data::CompilerConfig;
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_ast::{
     assert_token_matches,
@@ -9,16 +10,31 @@ use cx_util::{identifier::CXIdent, log_error, CXResult};
 
 use crate::parse::parse_std_ident;
 
+#[derive(Debug, Clone, Copy)]
+pub struct PreparseConfig {
+    pub module_mode: bool,
+}
+
+impl PreparseConfig {
+    pub fn from_compiler_config(config: &CompilerConfig) -> Self {
+        Self {
+            module_mode: config.module_mode,
+        }
+    }
+}
+
 pub(crate) struct PreparseData<'a> {
+    pub(crate) config: &'a PreparseConfig,
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
     pub(crate) visibility_mode: VisibilityMode,
 }
 
-pub fn preparse(tokens: TokenIter) -> CXResult<PreparseContents> {
+pub fn preparse(config: &PreparseConfig, tokens: TokenIter) -> CXResult<PreparseContents> {
     let mut contents = PreparseContents::default();
 
     let mut data = PreparseData {
+        config,
         contents: &mut contents,
         tokens,
         visibility_mode: VisibilityMode::Private,
@@ -76,6 +92,12 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Import) => {
             data.tokens.back();
+            if !data.config.module_mode {
+                return log_preparse_error!(
+                    data.tokens,
+                    "import is only allowed in module builds; use `cx build`"
+                );
+            }
             let import_path = parse_import(&mut data.tokens)?;
             data.contents.imports.push(import_path);
         }

@@ -55,7 +55,7 @@ pub fn pretty_underline_error_with_notes(
             .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()))
     );
     
-    let Some(tokens) = tokens else {
+    let Ok(tokens) = tokens else {
         panic!("No tokens provided for error reporting");
     };
 
