@@ -154,7 +154,7 @@ pub fn parse_args() -> Result<Command, String> {
     }
 
     // Legacy single-file mode
-    parse_file_args(first_arg, &mut args_iter)
+    parse_file_args(&mut args.iter().skip(1))
 }
 
 fn parse_build_args(
@@ -200,7 +200,6 @@ fn parse_build_args(
 }
 
 fn parse_file_args(
-    first_arg: &str,
     args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>,
 ) -> Result<Command, String> {
     let mut output_file = None;
@@ -211,11 +210,9 @@ fn parse_file_args(
     let mut verbose = false;
     let mut input_file = None;
 
-    let mut handle_arg = |arg: &str,
-                          args_iter: &mut std::iter::Skip<std::slice::Iter<'_, String>>|
-     -> Result<(), String> {
+    while let Some(arg) = args_iter.next() {
         if parse_common_flag(
-            arg,
+            arg.as_str(),
             args_iter,
             &mut backend,
             &mut optimization_level,
@@ -224,7 +221,7 @@ fn parse_file_args(
             Some(&mut output_file),
             Some(&mut compile_only),
         )? {
-            return Ok(());
+            continue;
         }
 
         if arg.starts_with('-') {
@@ -235,13 +232,6 @@ fn parse_file_args(
             return Err("Multiple input files not currently supported".to_string());
         }
         input_file = Some(arg.to_string());
-        Ok(())
-    };
-
-    handle_arg(first_arg, args_iter)?;
-
-    while let Some(arg) = args_iter.next() {
-        handle_arg(arg.as_str(), args_iter)?;
     }
 
     let input_file = input_file.ok_or_else(|| format!("Usage: cx <file> [options]"))?;

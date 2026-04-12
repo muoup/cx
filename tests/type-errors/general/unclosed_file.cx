@@ -1,0 +1,15 @@
+import std::file;
+import std::optional;
+
+#include <stdlib.h>
+
+int main() {
+    file f = file::open("test.txt", "w").unwrap<file>();
+    
+    // Some extra work
+    if (f.handle != NULL) {
+        f.write_line("Hello, world!");
+    }
+    
+    f.flush();
+}

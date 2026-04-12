@@ -1,0 +1,59 @@
+#include <stdio.h>
+
+import std::optional;
+
+public:
+
+struct file : @nodrop {
+    FILE* handle;
+};
+
+opt<file> file::open(const char* path, const char* mode) {
+    FILE* handle = fopen(path, mode);
+    
+    if (handle == NULL) {
+        return opt<file>::none();
+    }
+    
+    return opt<file>::some((file) { .handle = handle });
+}
+
+void file::write(*this, const char* data) {
+    if (this.handle != NULL) {
+        fputs(data, this.handle);
+    }
+}
+
+void file::write_line(*this, const char* data) {
+    if (this.handle != NULL) {
+        fputs(data, this.handle);
+        fputc('\n', this.handle);
+    }
+}
+
+void file::flush(*this) {
+    if (this.handle != NULL) {
+        fflush(this.handle);
+    }
+}
+
+void file::read_line(*this, char* buffer, u64 buffer_size) {
+    if (this.handle != NULL) {
+        fgets(buffer, buffer_size, this.handle);
+    }
+}
+
+void file::read(*this, char* buffer, u64 buffer_size) {
+    if (this.handle != NULL) {
+        fread(buffer, 1, buffer_size, this.handle);
+    }
+}
+
+void file::close(this) {
+    if (this.handle != NULL) {
+        fclose(this.handle);
+        this.handle = NULL;
+    }
+    
+    @leak(this);
+}

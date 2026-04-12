@@ -40,7 +40,7 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             for param in &prototype.params {
                 mangled.push_str(&type_mangle(&param._type));
             }
-            mangled.push(prototype.var_args as u8 as char);
+            mangled.push(if prototype.var_args { 'V' } else { 'v' });
         }
         MIRTypeKind::Structured {
             name,
@@ -95,6 +95,9 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
         }
         MIRTypeKind::Float { _type } => {
             mangled.push_str(format!("{}", _type).as_str());
+        }
+        MIRTypeKind::Str => {
+            mangled.push_str("_str");
         }
         MIRTypeKind::Unit => {
             mangled.push('v');

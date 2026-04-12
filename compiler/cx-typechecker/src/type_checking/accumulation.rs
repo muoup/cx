@@ -18,7 +18,7 @@ impl TypecheckResult {
     pub fn expr(_type: MIRType, kind: MIRExpressionKind) -> Self {
         Self {
             expression: MIRExpression {
-                source_range: None,
+                token_range: None,
                 kind,
                 _type,
             },
@@ -27,7 +27,7 @@ impl TypecheckResult {
 
     pub fn chain(self, other: TypecheckResult) -> TypecheckResult {
         TypecheckResult::expr2(MIRExpression {
-            source_range: None,
+            token_range: None,
             kind: MIRExpressionKind::Block {
                 statements: vec![self.expression, other.expression],
             },
@@ -67,7 +67,7 @@ impl TypecheckResult {
     {
         TypecheckResult {
             expression: MIRExpression {
-                source_range: None,
+                token_range: None,
                 kind: f(self.expression.kind),
                 _type: self.expression._type,
             },

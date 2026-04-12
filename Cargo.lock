@@ -372,6 +372,7 @@ name = "cx-mir"
 version = "0.0.0"
 dependencies = [
  "cx-ast",
+ "cx-tokens",
  "cx-util",
  "speedy",
  "uuid",
@@ -446,6 +447,7 @@ dependencies = [
  "cx-mir",
  "cx-pipeline-data",
  "cx-safe-ir",
+ "cx-tokens",
  "cx-util",
 ]
 
@@ -454,6 +456,7 @@ name = "cx-safe-ir"
 version = "0.1.0"
 dependencies = [
  "cx-mir",
+ "cx-tokens",
  "cx-util",
 ]
 
@@ -462,6 +465,7 @@ name = "cx-tokens"
 version = "0.0.0"
 dependencies = [
  "cx-util",
+ "speedy",
 ]
 
 [[package]]

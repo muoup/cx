@@ -6,7 +6,7 @@ use cx_ast::data::{
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
-use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter};
+use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
 
@@ -394,6 +394,7 @@ pub(crate) fn parsetype_mods(
                 params,
                 var_args,
                 contract,
+                range: TokenRange::default(),
             };
 
             Ok((

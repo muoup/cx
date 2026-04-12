@@ -303,7 +303,7 @@ pub(crate) fn perform_job(
                 &pp_data,
             )?;
 
-            if !job.unit.is_std_lib() {
+            if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&parsed_ast);
             }
 
@@ -335,7 +335,7 @@ pub(crate) fn perform_job(
             realize_templates(&job.unit, &mut env)?;
 
             let mir = env.finish_mir_unit()?;
-            if !job.unit.is_std_lib() {
+            if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);
             }
 
@@ -343,7 +343,7 @@ pub(crate) fn perform_job(
             // is enabled to have a central source of truth for auditing safe functions for uncontained unsafe behavior.
             let mut fmir_context = FMIRContext::new_from(&mir)?;
 
-            if !job.unit.is_std_lib() {
+            if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&fmir_context);
             }
 
@@ -359,7 +359,7 @@ pub(crate) fn perform_job(
             let mir = context.module_db.mir.take(&job.unit);
             let lmir = generate_lmir(&mir)?;
 
-            if !job.unit.is_std_lib() {
+            if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&lmir);
             }
 

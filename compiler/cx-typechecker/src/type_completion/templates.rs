@@ -2,11 +2,10 @@ use crate::environment::name_mangling::mangle_templated_fn_name;
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use crate::type_completion::complete_prototype_no_insert;
 use crate::type_completion::types::{_complete_template_input, _complete_type};
-use cx_ast::data::{
-    CXFunctionTemplate, CXTemplateInput, CXTemplatePrototype, ModuleResource,
-};
+use cx_ast::ast::CXExpr;
+use cx_ast::data::{CXFunctionTemplate, CXTemplateInput, CXTemplatePrototype, ModuleResource};
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::types::{MIRTemplateInput, MIRFunctionPrototype, MIRType};
+use cx_mir::mir::types::{MIRFunctionPrototype, MIRTemplateInput, MIRType};
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -16,13 +15,25 @@ pub(crate) fn add_templated_types(
     env: &mut TypeEnvironment,
     args: &CXTemplatePrototype,
     input: &MIRTemplateInput,
-) -> Overwrites {
-    args.types.iter().zip(input.args.iter())
-        .filter_map(|(ident, arg_type)|
-            env.realized_types.insert(ident.clone(), arg_type.clone())
+) -> CXResult<Overwrites> {
+    if args.types.len() != input.args.len() {
+        return CXError::create_result(format!(
+            "Template argument count mismatch: expected {}, got {}",
+            args.types.len(),
+            input.args.len()
+        ));
+    }
+
+    Ok(args
+        .types
+        .iter()
+        .zip(input.args.iter())
+        .filter_map(|(ident, arg_type)| {
+            env.realized_types
+                .insert(ident.clone(), arg_type.clone())
                 .map(|existing| (ident.clone(), existing))
-        )
-        .collect()
+        })
+        .collect())
 }
 
 pub(crate) fn restore_template_overwrites(env: &mut TypeEnvironment, overwrites: Overwrites) {
@@ -50,9 +61,10 @@ pub(crate) fn instantiate_type_template(
     input: &CXTemplateInput,
     name: &str,
 ) -> CXResult<MIRType> {
-    let completed_input = _complete_template_input(env, base_data, None, input)?;
+    let completed_input =
+        _complete_template_input(env, base_data, None, &CXExpr::default(), input)?;
     let template_name = mangle_template_name(name, &completed_input);
-    
+
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
         return Ok(template.clone());
     }
@@ -60,11 +72,11 @@ pub(crate) fn instantiate_type_template(
     let Some(template) = base_data.type_data.get_template(&name.to_owned()) else {
         return CXError::create_result(format!("Unknown template type: {}", name));
     };
-    
+
     let shell = &template.resource.shell;
 
-    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
-    let cx_type = _complete_type(env, base_data, shell);
+    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input)?;
+    let cx_type = _complete_type(env, base_data, &CXExpr::default(), shell);
     restore_template_overwrites(env, overwrites);
 
     let mut cx_type = cx_type?;
@@ -72,10 +84,48 @@ pub(crate) fn instantiate_type_template(
         CXIdent::new(template_name.as_str()),
         completed_input.clone(),
     );
+    cx_type.set_name(CXIdent::new(template_name.clone()));
 
-    env.add_type(template_name.clone(), cx_type.clone());
+    env.add_type(template_name, cx_type.clone());
 
     Ok(cx_type)
+}
+
+pub(crate) fn instantiate_function_template(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    template: &ModuleResource<CXFunctionTemplate>,
+    input: &CXTemplateInput,
+) -> CXResult<MIRFunctionPrototype> {
+    let resource = &template.resource;
+    let module_origin = &template.external_module;
+    let template_prototype = &resource.prototype;
+
+    // Complete the input
+    let completed_input = _complete_template_input(
+        env,
+        base_data,
+        module_origin.as_ref(),
+        &CXExpr::default(),
+        input,
+    )?;
+    let overwrites = add_templated_types(env, template_prototype, &completed_input)?;
+    let instantiated = complete_function_template(env, base_data, template)?;
+
+    if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
+        return Ok(generated);
+    }
+
+    env.realized_fns
+        .insert(instantiated.name.to_string(), instantiated.clone());
+    env.requests.push(MIRFunctionGenRequest::Template {
+        module_origin: module_origin.clone(),
+        kind: template.resource.shell.kind.clone(),
+        input: input.clone(),
+    });
+
+    restore_template_overwrites(env, overwrites);
+    Ok(instantiated)
 }
 
 pub(crate) fn complete_function_template(
@@ -101,35 +151,4 @@ pub(crate) fn complete_function_template(
     .into();
 
     Ok(completed)
-}
-
-pub(crate) fn instantiate_function_template(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    template: &ModuleResource<CXFunctionTemplate>,
-    input: &CXTemplateInput,
-) -> CXResult<MIRFunctionPrototype> {
-    let resource = &template.resource;
-    let module_origin = &template.external_module;
-    let template_prototype = &resource.prototype;
-
-    // Complete the input
-    let completed_input = _complete_template_input(env, base_data, module_origin.as_ref(), input)?;
-    let overwrites = add_templated_types(env, template_prototype, &completed_input);
-    let instantiated = complete_function_template(env, base_data, template)?;
-
-    if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
-        return Ok(generated);
-    }
-
-    env.realized_fns
-        .insert(instantiated.name.to_string(), instantiated.clone());
-    env.requests.push(MIRFunctionGenRequest::Template {
-        module_origin: module_origin.clone(),
-        kind: template.resource.shell.kind.clone(),
-        input: input.clone(),
-    });
-
-    restore_template_overwrites(env, overwrites);
-    Ok(instantiated)
 }

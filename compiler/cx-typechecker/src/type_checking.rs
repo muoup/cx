@@ -1,6 +1,6 @@
 use crate::{
     type_checking::typechecker::add_implicit_return,
-    type_completion::types::_complete_template_input,
+    type_completion::{templates::complete_function_template, types::_complete_template_input},
 };
 use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
@@ -20,7 +20,7 @@ use crate::{
         global_expr, typecheck_expr,
     },
     type_completion::templates::{
-        add_templated_types, complete_function_template, restore_template_overwrites,
+        add_templated_types, restore_template_overwrites,
     },
 };
 
@@ -49,11 +49,11 @@ fn typecheck_function(
         let Some(name) = name else {
             continue;
         };
-
+        
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
-                source_range: None,
+                token_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: _type.clone().mem_ref_to(),
             },
@@ -110,7 +110,7 @@ pub fn realize_fn_implementation(
         .function_stmts
         .iter()
         .find_map(|stmt| match stmt {
-            CXFunctionStmt::TemplatedFunction { prototype, body }
+            CXFunctionStmt::TemplatedFunction { prototype, body, .. }
                 if prototype.kind == template.resource.shell.kind =>
             {
                 Some(body)
@@ -120,8 +120,8 @@ pub fn realize_fn_implementation(
         .expect("Function template body not found");
 
     // Complete the template input from CX to MIR level
-    let completed_input = _complete_template_input(env, base_data.as_ref(), None, input)?;
-    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input);
+    let completed_input = _complete_template_input(env, base_data.as_ref(), None, &CXExpr::default(), input)?;
+    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input)?;
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
     env.in_external_templated_function = true;

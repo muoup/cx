@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
 use cx_mir::mir::types::MIRFunctionPrototype;
-use cx_safe_ir::ast::{FMIRFunction, FMIRNode, FMIRSourceRange};
+use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
+use cx_tokens::TokenRange;
 use cx_util::{CXError, CXResult};
 
 use crate::mir_conversion::{convert_mir, environment::FMIREnvironment};
@@ -38,14 +39,19 @@ impl AnalysisDiagnosticContext {
         }
     }
 
-    fn source_text_for_range(&self, range: &FMIRSourceRange) -> CXResult<String> {
+    fn source_text_for_range(&self, range: &TokenRange) -> CXResult<String> {
         let file_contents = self.file_contents.as_ref().ok_or_else(|| {
             CXError::create_boxed(format!(
                 "Failed to read source file for analysis diagnostics: {}",
                 self.compilation_unit.display()
             ))
         })?;
-        let tokens = cx_lexer::lex(file_contents)?;
+        let tokens = cx_lexer::lex(file_contents).map_err(|_| {
+            CXError::create_boxed(format!(
+                "Failed to lex source file for analysis diagnostics: {}",
+                self.compilation_unit.display()
+            ))
+        })?;
 
         let start_token = tokens.get(range.start_token).ok_or_else(|| {
             CXError::create_boxed(format!(
@@ -83,19 +89,19 @@ impl AnalysisDiagnosticContext {
     fn failure_message(&self, message: &str, condition: &FMIRNode) -> CXResult<String> {
         if let Some(ret_name) = message.strip_prefix("postcondition failed:") {
             let post_condition_expr = condition
-                .source_range
+                .token_range
                 .as_ref()
                 .ok_or_else(|| {
                     CXError::create_boxed("Condition node has no source range for diagnostics")
                 })
                 .and_then(|range| self.source_text_for_range(range))?;
-            return CXError::create_result(format!(
+            return Ok(format!(
                 "In function `{}`, contract condition\n   post({}): ({})\nwill never be true at return site",
                 self.function_name, ret_name, post_condition_expr
             ));
         }
 
-        CXError::create_result(format!(
+        Ok(format!(
             "FMIR analysis error in safe function '{}': {} (condition proven false)",
             self.function_name, message
         ))

@@ -4,17 +4,12 @@ use cx_pipeline_data::config::LinkEntry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-/// Generate a C header file from the entry file's LMIR unit.
-///
-/// Exports functions that are defined in this unit with non-Static, non-External linkage.
-/// Static functions are internal; External functions are declarations of symbols defined elsewhere.
 pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[LinkEntry]) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
 
     writeln!(output, "#pragma once")?;
     writeln!(output)?;
 
-    // Link dependency comments
     if !link_entries.is_empty() {
         writeln!(output, "/* Link dependencies:").unwrap();
         for entry in link_entries {
@@ -32,7 +27,6 @@ pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[Li
     writeln!(output, "#endif")?;
     writeln!(output)?;
 
-    // Collect exported function prototypes (skip Static and External linkage)
     let mut exported_protos: Vec<&LMIRFunctionPrototype> = Vec::new();
     for func in &lmir_unit.fn_defs {
         if func.prototype.linkage != LinkageType::Static
@@ -42,7 +36,6 @@ pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[Li
         }
     }
 
-    // Collect all types referenced by exported functions
     let mut type_defs: BTreeMap<String, String> = BTreeMap::new();
     let mut forward_decls: BTreeSet<String> = BTreeSet::new();
 
@@ -56,7 +49,6 @@ pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[Li
         }
     }
 
-    // Emit forward declarations
     for decl in &forward_decls {
         writeln!(output, "{decl};")?;
     }
@@ -64,13 +56,11 @@ pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[Li
         writeln!(output)?;
     }
 
-    // Emit type definitions
     for (_, def) in &type_defs {
         writeln!(output, "{def}")?;
         writeln!(output)?;
     }
 
-    // Emit function declarations
     for proto in &exported_protos {
         let decl = format_function_declaration(proto);
         writeln!(output, "{decl};")?;
@@ -132,8 +122,6 @@ fn collect_types(
     }
 }
 
-/// Format an LMIR type as a C type string.
-/// If `var_name` is Some, includes the variable name (needed for arrays).
 fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
     let name = var_name.unwrap_or("");
     match &ty.kind {
@@ -195,8 +183,6 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
 }
 
 fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
-    // If function has a temp_buffer, it returns a struct via implicit first pointer param.
-    // For the C header, we emit it as returning by value.
     let return_type = if let Some(ref tb) = proto.temp_buffer {
         lmir_type_to_c(tb, None)
     } else {
@@ -205,7 +191,6 @@ fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
 
     let params: Vec<String> = proto.params.iter().enumerate()
         .filter(|(i, _)| {
-            // Skip the implicit temp_buffer parameter (first param if temp_buffer is set)
             !(proto.temp_buffer.is_some() && *i == 0)
         })
         .map(|(i, param)| {

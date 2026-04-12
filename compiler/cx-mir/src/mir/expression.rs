@@ -1,3 +1,4 @@
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
@@ -14,7 +15,7 @@ pub struct MIRFunctionContract {
 pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
-    pub source_range: Option<MIRSourceRange>,
+    pub token_range: Option<TokenRange>,
 }
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -323,6 +324,7 @@ pub enum MIRCoercion {
     // Any integer to any integer conversion
     Integral {
         sextend: bool,
+        from_type: MIRIntegerType,
         to_type: MIRIntegerType,
     },
 
@@ -355,10 +357,15 @@ pub enum MIRCoercion {
 
     // Any integer type to a boolean (i1)
     IntToBool,
+    
+    // Conversion from a const char* to a _str& -- a no-op but is unsafe
+    CStrToStr,
 
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
+    
+    GetFnPtr,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
@@ -384,7 +391,7 @@ impl MIRExpression {
                 visibility: Default::default(),
                 specifiers: 0,
             },
-            source_range: None,
+            token_range: None,
         }
     }
 }

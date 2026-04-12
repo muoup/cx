@@ -1,24 +1,25 @@
-use crate::environment::TypeEnvironment;
 use crate::environment::function_query::query_static_member_function;
 use crate::environment::BindingMoveState;
+use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
-    TypeConstructor, deconstruct_type_constructor,
+    deconstruct_type_constructor, TypeConstructor,
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
-use cx_ast::data::{CXFunctionPrototype, CXType, CXTypeKind, CX_CONST};
+use cx_ast::data::CXReceiverMode;
+use cx_ast::data::{CXFunctionPrototype, CXTypeKind, CX_CONST};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_ast::data::CXReceiverMode;
 use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
-use cx_util::CXResult;
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
+use cx_util::CXResult;
 
 pub(crate) fn typecheck_access(
     env: &mut TypeEnvironment,
@@ -45,7 +46,7 @@ pub(crate) fn typecheck_access(
                         lhs_ref_const |= inner_type.get_specifier(CX_CONST);
 
                         lhs = MIRExpression {
-                            source_range: None,
+                            token_range: None,
                             kind: MIRExpressionKind::MemoryRead {
                                 source: Box::new(lhs),
                             },
@@ -57,7 +58,7 @@ pub(crate) fn typecheck_access(
 
                     MIRTypeKind::MemoryReference { .. } => {
                         lhs = MIRExpression {
-                            source_range: None,
+                            token_range: None,
                             kind: MIRExpressionKind::MemoryRead {
                                 source: Box::new(lhs),
                             },
@@ -78,10 +79,15 @@ pub(crate) fn typecheck_access(
         }
     };
 
-    if !matches!(lhs_inner.kind, MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. } | MIRTypeKind::TaggedUnion { .. }) {
+    if !matches!(
+        lhs_inner.kind,
+        MIRTypeKind::Structured { .. }
+            | MIRTypeKind::Union { .. }
+            | MIRTypeKind::TaggedUnion { .. }
+    ) {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Expected struct or union type for access expression LHS, found {}",
             lhs_inner
         );
@@ -112,7 +118,7 @@ pub(crate) fn typecheck_access(
                 else {
                     return log_typecheck_error!(
                         env,
-                        expr,
+                        expr.token_range(),
                         " Union type {} has no field named {}",
                         lhs_inner,
                         name
@@ -179,7 +185,7 @@ pub(crate) fn typecheck_access(
 
         _ => log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Invalid rhs for access expression, found {:?}",
             rhs
         ),
@@ -204,7 +210,7 @@ fn build_member_receiver_argument(
             unreachable!("member function reference missing receiver mode")
         }
         Some(CXReceiverMode::ByRef) => Ok(MIRExpression {
-            source_range: None,
+            token_range: None,
             kind: MIRExpressionKind::TypeConversion {
                 operand: Box::new(lhs),
                 conversion: MIRCoercion::ReinterpretBits,
@@ -216,7 +222,7 @@ fn build_member_receiver_argument(
                 let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
                     return log_typecheck_error!(
                         env,
-                        expr,
+                        expr.token_range(),
                         " Consuming member calls currently require a named binding or owned struct rvalue"
                     );
                 };
@@ -227,7 +233,7 @@ fn build_member_receiver_argument(
                 }
 
                 Ok(MIRExpression {
-                    source_range: None,
+                    token_range: None,
                     _type: inner_type,
                     kind: MIRExpressionKind::Move {
                         source: Box::new(lhs_source.clone()),
@@ -289,8 +295,8 @@ pub(crate) fn typecheck_method_call(
 
     let lhs_val = typecheck_expr(env, base_data, lhs, None)?.into_expression();
 
-    let loaded_lhs = coerce_value(env, lhs, lhs_val.clone())?;
-    let loaded_lhs_type = loaded_lhs._type.clone();
+    let loaded_lhs_val = coerce_value(env, lhs, lhs_val)?;
+    let loaded_lhs_type = loaded_lhs_val.get_type();
 
     let loaded_lhs_type = match loaded_lhs_type.kind {
         MIRTypeKind::PointerTo { inner_type, .. } => *inner_type,
@@ -301,7 +307,7 @@ pub(crate) fn typecheck_method_call(
     let MIRTypeKind::Function { prototype } = &loaded_lhs_type.kind else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Attempted to call non-function type {}",
             loaded_lhs_type
         );
@@ -309,13 +315,9 @@ pub(crate) fn typecheck_method_call(
 
     let mut tc_args = comma_separated(env, base_data, rhs)?;
 
-    let MIRExpressionKind::FunctionReference { implicit_variables } = &lhs_val.kind else {
-        return log_typecheck_error!(
-            env,
-            expr,
-            " Expected function reference for method call, found {}",
-            lhs_val
-        );
+    let implicit_variables = match &loaded_lhs_val.kind {
+        MIRExpressionKind::FunctionReference { implicit_variables } => implicit_variables.clone(),
+        _ => vec![],
     };
 
     let faux_expr = CXExpr::default();
@@ -329,7 +331,7 @@ pub(crate) fn typecheck_method_call(
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Method {} expects {} arguments, found {}",
             prototype,
             prototype.params.len(),
@@ -340,7 +342,7 @@ pub(crate) fn typecheck_method_call(
     if tc_args.len() < prototype.params.len() {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Method {} expects at least {} arguments, found {}",
             prototype,
             prototype.params.len(),
@@ -402,7 +404,7 @@ pub(crate) fn typecheck_method_call(
             _ => {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
                     arg_type
                 );
@@ -415,16 +417,7 @@ pub(crate) fn typecheck_method_call(
     Ok(TypecheckResult::expr(
         prototype.return_type.clone(),
         MIRExpressionKind::CallFunction {
-            function: Box::new(MIRExpression {
-                source_range: None,
-                kind: MIRExpressionKind::FunctionReference {
-                    implicit_variables: implicit_variables.clone(),
-                },
-                _type: MIRTypeKind::Function {
-                    prototype: prototype.clone(),
-                }
-                .into(),
-            }),
+            function: Box::new(loaded_lhs_val),
             arguments: args.clone(),
         },
     ))
@@ -455,7 +448,7 @@ fn typecheck_type_constructor(
     else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Variant '{}' not found in tagged union type {}",
             name,
             union_name
@@ -484,26 +477,25 @@ pub(crate) fn typecheck_scoped_call(
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
     let mir_type = match &type_expr.kind {
-        CXExprKind::Identifier(name) => env.get_type(base_data, name.as_str())?,
+        CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, name.as_str())?,
 
         CXExprKind::TemplatedIdentifier {
             name,
             template_input,
-        } => env.complete_type(
-            base_data,
-            &CXType {
-                kind: CXTypeKind::TemplatedIdentifier {
-                    name: name.clone(),
-                    input: template_input.clone(),
-                },
-                specifiers: 0,
-            },
-        )?,
+        } => {
+            let cx_type = CXTypeKind::TemplatedIdentifier {
+                name: name.clone(),
+                input: template_input.clone(),
+            }
+            .to_type();
+
+            env.complete_type(base_data, type_expr, &cx_type)?
+        }
 
         _ => {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 " Expected type identifier before scope resolution operator, found {:?}",
                 type_expr
             );
@@ -519,7 +511,7 @@ pub(crate) fn typecheck_scoped_call(
         _ => {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 "Expected identifier after scope resolution operator, found {:?}",
                 method_expr
             );
@@ -530,7 +522,7 @@ pub(crate) fn typecheck_scoped_call(
         if template_input.is_some() {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 "Tagged union constructors may not use template arguments after scope resolution"
             );
         }
@@ -538,21 +530,15 @@ pub(crate) fn typecheck_scoped_call(
         return typecheck_type_constructor(env, base_data, expr, &mir_type, method_name, args_expr);
     }
 
-    let prototype = query_static_member_function(
-        env,
-        base_data,
-        expr,
-        &mir_type,
-        method_name,
-        template_input,
-    )?;
+    let prototype =
+        query_static_member_function(env, base_data, expr, &mir_type, method_name, template_input)?;
 
     let mut tc_args = comma_separated(env, base_data, args_expr)?;
 
     if tc_args.len() != prototype.params.len() && !prototype.var_args {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Static method {} expects {} arguments, found {}",
             prototype,
             prototype.params.len(),
@@ -563,7 +549,7 @@ pub(crate) fn typecheck_scoped_call(
     if tc_args.len() < prototype.params.len() {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " Static method {} expects at least {} arguments, found {}",
             prototype,
             prototype.params.len(),
@@ -587,7 +573,7 @@ pub(crate) fn typecheck_scoped_call(
         prototype.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(MIRExpression {
-                source_range: None,
+                token_range: None,
                 kind: MIRExpressionKind::FunctionReference {
                     implicit_variables: vec![],
                 },
@@ -621,35 +607,36 @@ pub(crate) fn typecheck_is(
     else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " 'is' operator requires a tagged union on the left-hand side, found {}",
             union_type
         );
     };
 
     let TypeConstructor {
-        union_name,
+        union_type,
         variant_name,
         inner,
-    } = deconstruct_type_constructor(env, rhs)?;
+    } = deconstruct_type_constructor(env, base_data, rhs)?;
+    let union_name = union_type.get_name().unwrap().as_str();
 
-    if *expected_union_name != union_name {
+    if expected_union_name.as_str() != union_name {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
             expected_union_name,
-            union_name.as_string()
+            union_name
         );
     }
 
-    if union_type.get_name().map(|x| x.as_str()) != Some(union_name.as_str()) {
+    if union_type.get_name().map(|x| x.as_str()) != Some(union_name) {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
             union_type,
-            union_name.as_string()
+            union_name
         );
     }
 
@@ -661,32 +648,38 @@ pub(crate) fn typecheck_is(
     else {
         return log_typecheck_error!(
             env,
-            expr,
+            expr.token_range(),
             " 'is' operator variant name '{}' not found in tagged union {}",
             variant_name,
             union_name
         );
     };
 
-    let inner_name = if let CXExprKind::Identifier(name) = &inner.kind {
-        env.insert_symbol(
-            name.to_string(),
-            MIRExpression {
-                source_range: None,
-                kind: MIRExpressionKind::Variable(name.clone()),
-                _type: variant_type.clone().mem_ref_to(),
-            },
-        );
-        name.clone()
-    } else if matches!(inner.kind, CXExprKind::Unit) {
-        CXIdent::from("")
-    } else {
-        return log_typecheck_error!(
-            env,
-            expr,
-            "unknown inner expression for 'is' operator: {:?}",
-            inner
-        );
+    let inner_name = match inner {
+        None => CXIdent::from(""),
+        Some(inner) if matches!(inner.kind, CXExprKind::Unit) => CXIdent::from(""),
+
+        Some(inner) => {
+            let CXExprKind::Identifier(name) = &inner.kind else {
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " 'is' operator inner expression must be an identifier or unit, found {:?}",
+                    inner
+                );
+            };
+
+            env.insert_symbol(
+                name.as_string(),
+                MIRExpression {
+                    token_range: None,
+                    kind: MIRExpressionKind::Variable(name.clone()),
+                    _type: variant_type.clone().mem_ref_to(),
+                },
+            );
+
+            name.clone()
+        }
     };
 
     Ok(TypecheckResult::expr(
@@ -775,7 +768,7 @@ pub(crate) fn typecheck_binop_mir_vals(
         _ => {
             log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 " Invalid binary operation {op} for types {} and {}",
                 mir_lhs._type,
                 mir_rhs._type
@@ -864,7 +857,7 @@ pub(crate) fn typecheck_float_float_binop(
         _ => {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 " Invalid float binary operation {op} for types {} and {}",
                 lhs_type,
                 rhs_type
@@ -974,7 +967,7 @@ pub(crate) fn typecheck_int_int_binop(
             _ => {
                 return log_typecheck_error!(
                     env,
-                    expr,
+                    expr.token_range(),
                     " Invalid integer binary operation {op} for types {} and {}",
                     lhs_type,
                     rhs_type
@@ -1037,7 +1030,7 @@ pub(crate) fn typecheck_int_int_binop(
         _ => {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 " Invalid integer binary operation {op} for types {} and {}",
                 lhs_type,
                 rhs_type
@@ -1065,7 +1058,7 @@ pub(crate) fn typecheck_int_ptr_binop(
     if op == CXBinOp::Subtract {
         return log_typecheck_error!(
             env,
-            &CXExpr::default(),
+            &TokenRange::default(),
             " Invalid operation [integer] - [pointer] for types {} and {}",
             non_pointer.get_type(),
             pointer.get_type()
@@ -1197,7 +1190,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
         _ => {
             return log_typecheck_error!(
                 env,
-                expr,
+                expr.token_range(),
                 " Invalid binary operation {op} for pointer types",
             );
         }
@@ -1287,11 +1280,11 @@ pub(crate) fn typecheck_contract(
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
-            let mir_type = env.complete_type(base_data, &param._type)?;
+            let mir_type = env.complete_type(base_data, &CXExpr::default(), &param._type)?;
             env.insert_symbol(
                 name.to_string(),
                 MIRExpression {
-                    source_range: None,
+                    token_range: None,
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
                         parent_function: function_name.clone(),
@@ -1313,11 +1306,12 @@ pub(crate) fn typecheck_contract(
 
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
-            let mir_type = env.complete_type(base_data, &prototype.return_type)?;
+            let mir_type =
+                env.complete_type(base_data, &CXExpr::default(), &prototype.return_type)?;
             env.insert_symbol(
                 ret_name.to_string(),
                 MIRExpression {
-                    source_range: None,
+                    token_range: None,
                     kind: MIRExpressionKind::Variable(ret_name.clone()),
                     _type: mir_type,
                 },

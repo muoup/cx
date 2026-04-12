@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use cx_ast::ast::VisibilityMode;
+use cx_ast::ast::{CXExpr, VisibilityMode};
 use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::types::{MIRStructAttributes, MIRTemplateInput, MIRType, MIRTypeKind};
-use cx_util::{log_error, CXResult};
+use cx_util::CXResult;
 
+use crate::log_typecheck_error;
 use crate::type_completion::complete_type;
 use crate::type_completion::prototypes::_complete_fn_prototype;
 use crate::type_completion::templates::instantiate_type_template;
@@ -35,12 +36,13 @@ pub(crate) fn _complete_template_input(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
+    expr: &CXExpr,
     input: &CXTemplateInput,
 ) -> CXResult<MIRTemplateInput> {
     let _ty = input
         .params
         .iter()
-        .map(|param| complete_type(env, base_data, external_module, param))
+        .map(|param| complete_type(env, base_data, external_module, expr, param))
         .collect::<CXResult<Vec<_>>>()?;
 
     Ok(MIRTemplateInput { args: _ty })
@@ -49,9 +51,10 @@ pub(crate) fn _complete_template_input(
 pub(crate) fn _complete_type(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
+    expr: &CXExpr,
     ty: &CXType,
 ) -> CXResult<MIRType> {
-    let mut recurse_ty = |ty: &CXType| _complete_type(env, base_data, ty);
+    let mut recurse_ty = |ty: &CXType| _complete_type(env, base_data, expr, ty);
     let construct_type = |kind: MIRTypeKind| -> CXResult<MIRType> {
         Ok(MIRType {
             specifiers: ty.specifiers,
@@ -71,14 +74,19 @@ pub(crate) fn _complete_type(
                     env,
                     base_data,
                     inner.external_module.as_ref(),
+                    expr,
                     &inner.resource,
                 )?
                 .with_specifier(ty.specifiers);
 
                 return Ok(ty);
             };
+            
+            if base_data.type_data.get_template(&name.as_string()).is_some() {
+                return log_typecheck_error!(env, &expr.range, "Template deduction is not yet implemented!");
+            }
 
-            log_error!("Type not found: {name}");
+            return log_typecheck_error!(env, &expr.range, "Type not found: {name}");
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
@@ -214,6 +222,7 @@ pub(crate) fn _complete_type(
 
             Ok(MIRType::from(MIRTypeKind::TaggedUnion {
                 name: name.clone(),
+                template_info: None,
                 attributes: MIRStructAttributes { nocopy, nodrop },
                 variants,
             }))

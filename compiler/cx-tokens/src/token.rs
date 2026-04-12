@@ -1,5 +1,61 @@
 use std::sync::Arc;
 
+use speedy::{Context, Readable, Reader, Writable, Writer};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TokenRange {
+    pub start_token: usize,
+    pub end_token: usize,
+    pub file_origin: Arc<str>,
+}
+
+impl Default for TokenRange {
+    fn default() -> Self {
+        Self {
+            start_token: 0,
+            end_token: 0,
+            file_origin: Arc::from(""),
+        }
+    }
+}
+
+impl TokenRange {
+    pub fn new(start_token: usize, end_token: usize, file_origin: Arc<str>) -> Self {
+        Self {
+            start_token,
+            end_token,
+            file_origin,
+        }
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.start_token == 0 && self.end_token == 0
+    }
+}
+
+impl<'a, C: Context> Readable<'a, C> for TokenRange {
+    fn read_from<R: Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let start_token = reader.read_u64()? as usize;
+        let end_token = reader.read_u64()? as usize;
+        let file_origin_str: String = reader.read_value()?;
+        Ok(TokenRange {
+            start_token,
+            end_token,
+            file_origin: Arc::from(file_origin_str.as_str()),
+        })
+    }
+}
+
+impl<C: Context> Writable<C> for TokenRange {
+    fn write_to<T: ?Sized + Writer<C>>(&self, writer: &mut T) -> Result<(), C::Error> {
+        writer.write_u64(self.start_token as u64)?;
+        writer.write_u64(self.end_token as u64)?;
+        let s: &str = &self.file_origin;
+        writer.write_value(&s.to_string())?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,

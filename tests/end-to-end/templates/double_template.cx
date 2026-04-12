@@ -1,0 +1,9 @@
+import std::io;
+
+void test<T, U>(T a, U b) {
+    printf("result: %.2f\n", (U) a + b);
+}
+
+int main() {
+    test<int, float>(5, 3.14);
+}

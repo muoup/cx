@@ -1,4 +1,5 @@
 use cx_util::identifier::CXIdent;
+use cx_tokens::TokenRange;
 use speedy::{Readable, Writable};
 
 use crate::ast::{CXExpr, VisibilityMode};
@@ -103,6 +104,7 @@ pub struct CXFunctionPrototype {
     pub return_type: CXType,
     pub var_args: bool,
     pub contract: CXFunctionContract,
+    pub range: TokenRange,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
