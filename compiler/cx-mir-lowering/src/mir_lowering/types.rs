@@ -1,14 +1,14 @@
 use crate::builder::LMIRBuilder;
+use cx_ast::data::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LMIRParameter, LinkageType};
-use cx_ast::data::CXLinkageMode;
-use cx_mir::mir::types::{
-    MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind,
+use cx_mir::mir::data::{
+    MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind,
 };
 
 impl LMIRBuilder {
     pub(crate) fn convert_cx_type(&self, cx_type: &MIRType) -> LMIRType {
-        convert_type(cx_type)
+        convert_type(cx_type, &self.type_definitions)
     }
 
     #[allow(dead_code)]
@@ -16,7 +16,7 @@ impl LMIRBuilder {
         &self,
         cx_proto: &MIRFunctionPrototype,
     ) -> LMIRFunctionPrototype {
-        convert_cx_prototype(cx_proto)
+        convert_cx_prototype(cx_proto, &self.type_definitions)
     }
 
     pub(crate) fn convert_integer_type(&self, cx_itype: &MIRIntegerType) -> LMIRIntegerType {
@@ -32,15 +32,15 @@ impl LMIRBuilder {
     }
 }
 
-fn convert_type(cx_type: &MIRType) -> LMIRType {
+fn convert_type(cx_type: &MIRType, definitions: &MIRTypeContext) -> LMIRType {
     LMIRType {
-        kind: convert_type_kind(&cx_type.kind),
+        kind: convert_type_kind(cx_type, definitions),
     }
 }
 
-fn convert_parameter_type(param_type: &MIRType) -> LMIRType {
-    let bc_type = convert_type(param_type);
-    
+fn convert_parameter_type(param_type: &MIRType, definitions: &MIRTypeContext) -> LMIRType {
+    let bc_type = convert_type(param_type, definitions);
+
     if bc_type.is_structure() {
         LMIRType::default_pointer()
     } else {
@@ -48,17 +48,20 @@ fn convert_parameter_type(param_type: &MIRType) -> LMIRType {
     }
 }
 
-pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> LMIRFunctionPrototype {
+pub(crate) fn convert_cx_prototype(
+    cx_proto: &MIRFunctionPrototype,
+    definitions: &MIRTypeContext,
+) -> LMIRFunctionPrototype {
     let mut params = cx_proto
         .params
         .iter()
         .map(|param| LMIRParameter {
             name: param.name.as_ref().map(|name| name.as_string()),
-            _type: convert_parameter_type(&param._type),
+            _type: convert_parameter_type(&param._type, definitions),
         })
         .collect::<Vec<_>>();
 
-    let mut return_type = convert_type(&cx_proto.return_type);
+    let mut return_type = convert_type(&cx_proto.return_type, definitions);
     let mut buffer_type = None;
 
     if cx_proto.return_type.is_memory_resident() {
@@ -71,7 +74,7 @@ pub(crate) fn convert_cx_prototype(cx_proto: &MIRFunctionPrototype) -> LMIRFunct
         );
 
         return_type = LMIRType::default_pointer();
-        buffer_type = Some(convert_type(&cx_proto.return_type));
+        buffer_type = Some(convert_type(&cx_proto.return_type, definitions));
     }
 
     LMIRFunctionPrototype {
@@ -110,8 +113,11 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
-    match cx_type_kind {
+pub(crate) fn convert_type_kind(
+    cx_type: &MIRType,
+    definitions: &MIRTypeContext,
+) -> LMIRTypeKind {
+    match &cx_type.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
 
         MIRTypeKind::Integer {
@@ -135,16 +141,21 @@ pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
             }
         }
 
-        MIRTypeKind::TaggedUnion { name, variants, .. } => LMIRTypeKind::Struct {
-            name: name.as_string(),
+        MIRTypeKind::TaggedUnion { .. } => LMIRTypeKind::Struct {
+            name: cx_type
+                .get_name()
+                .map(|name| name.as_string())
+                .unwrap_or_default(),
             fields: vec![
                 (
                     "data".to_string(),
                     LMIRTypeKind::Union {
                         name: String::new(),
-                        fields: variants
+                        fields: cx_type
+                            .aggregate_fields(definitions)
+                            .unwrap()
                             .iter()
-                            .map(|(name, _type)| (name.clone(), convert_type(_type)))
+                            .map(|(name, _type)| (name.clone(), convert_type(_type, definitions)))
                             .collect::<Vec<_>>(),
                     }
                     .into(),
@@ -160,7 +171,7 @@ pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
             inner_type: _type,
             size,
         } => LMIRTypeKind::Array {
-            element: Box::new(convert_type(_type)),
+            element: Box::new(convert_type(_type, definitions)),
             size: *size,
         },
 
@@ -169,33 +180,37 @@ pub(crate) fn convert_type_kind(cx_type_kind: &MIRTypeKind) -> LMIRTypeKind {
             dereferenceable: 0,
         },
 
-        MIRTypeKind::Structured { fields, name, .. } => LMIRTypeKind::Struct {
-            name: match name {
-                Some(name) => name.as_string(),
-                None => "".to_string(),
-            },
-            fields: fields
+        MIRTypeKind::Structured { .. } => LMIRTypeKind::Struct {
+            name: cx_type
+                .get_name()
+                .map(|name| name.as_string())
+                .unwrap_or_default(),
+            fields: cx_type
+                .aggregate_fields(definitions)
+                .unwrap()
                 .iter()
-                .map(|(_name, _type)| (_name.clone(), convert_type(_type)))
+                .map(|(_name, _type)| (_name.clone(), convert_type(_type, definitions)))
                 .collect::<Vec<_>>(),
         },
-        MIRTypeKind::Union {
-            variants: fields,
-            name,
-        } => LMIRTypeKind::Union {
-            name: match name {
-                Some(name) => name.as_string(),
-                None => "".to_string(),
-            },
-            fields: fields
+        MIRTypeKind::Union { .. } => LMIRTypeKind::Union {
+            name: cx_type
+                .get_name()
+                .map(|name| name.as_string())
+                .unwrap_or_default(),
+            fields: cx_type
+                .aggregate_fields(definitions)
+                .unwrap()
                 .iter()
-                .map(|(_name, _type)| (_name.clone(), convert_type(_type)))
+                .map(|(_name, _type)| (_name.clone(), convert_type(_type, definitions)))
                 .collect::<Vec<_>>(),
         },
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,
 
         // Str is unsized; behind a reference it's just i8 for pointer element purposes
+        MIRTypeKind::Undefined { .. } => {
+            unreachable!("Cannot lower incomplete type {}", cx_type)
+        }
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
     }
 }

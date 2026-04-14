@@ -2,7 +2,7 @@ use cx_ast::ast::CXExpr;
 use cx_ast::data::CX_CONST;
 use cx_mir::mir::{
     expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp},
-    types::{same_type, MIRIntegerType, MIRType, MIRTypeKind},
+    data::{same_type, MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 

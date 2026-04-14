@@ -1,19 +1,20 @@
 use crate::mir_lowering::types::convert_cx_prototype;
-use crate::{LMIRUnit, LMIRResult};
+use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
 use cx_mir::mir::program::MIRUnit;
-use cx_mir::mir::types::MIRFunctionPrototype;
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRTypeContext};
+use cx_util::CXResult;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::unsafe_float::FloatWrapper;
-use cx_util::CXResult;
 
 #[derive(Debug)]
 pub struct LMIRBuilder {
     functions: Vec<LMIRFunction>,
     global_variables: Vec<LMIRGlobalValue>,
+    pub type_definitions: MIRTypeContext,
 
     pub fn_map: LMIRFunctionMap,
 
@@ -45,11 +46,17 @@ impl LMIRBuilder {
         LMIRBuilder {
             functions: Vec::new(),
             global_variables: Vec::new(),
+            type_definitions: mir.type_definitions.clone(),
 
             fn_map: mir
                 .prototypes
                 .iter()
-                .map(|proto| (proto.name.to_string(), convert_cx_prototype(proto)))
+                .map(|proto| {
+                    (
+                        proto.name.to_string(),
+                        convert_cx_prototype(proto, &mir.type_definitions),
+                    )
+                })
                 .collect(),
             symbol_table: ScopedMap::new_with_starting_scope(),
             goto_stack: Vec::new(),
@@ -76,7 +83,7 @@ impl LMIRBuilder {
             "Attempted to start a new function while another function context is active"
         );
 
-        let bc_prototype = convert_cx_prototype(&fn_prototype);
+        let bc_prototype = convert_cx_prototype(&fn_prototype, &self.type_definitions);
 
         if !self.fn_map.contains_key(bc_prototype.name.as_str()) {
             self.insert_fn_prototype(bc_prototype.clone());
@@ -176,7 +183,7 @@ impl LMIRBuilder {
             .rev()
             .find_map(|ctx| ctx.break_block.as_ref())
     }
-    
+
     pub fn move_block_to_end(&mut self, block_id: &CXIdent) {
         let context = self.fun_mut();
 

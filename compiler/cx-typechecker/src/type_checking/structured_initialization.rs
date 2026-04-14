@@ -2,12 +2,12 @@ use cx_ast::{
     ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex},
     data::{CXTypeKind, PredeclarationType},
 };
-use cx_tokens::TokenRange;
 use cx_mir::mir::{
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
-    types::{MIRType, MIRTypeKind},
+    data::{MIRType, MIRTypeKind},
 };
+use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::{
@@ -57,7 +57,7 @@ pub fn deconstruct_type_constructor<'a>(
                 name: union_name.clone(),
             }
             .to_type();
-            
+
             env.complete_type(base_data, union, &as_type)?
         }
 
@@ -106,7 +106,11 @@ pub fn typecheck_initializer_list(
     to_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let Some(to_type) = to_type else {
-        return log_typecheck_error!(env, expr.token_range(), " Initializer lists must have an explicit type");
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            " Initializer lists must have an explicit type"
+        );
     };
 
     let to_type = match &to_type.kind {
@@ -122,7 +126,6 @@ pub fn typecheck_initializer_list(
 
         MIRTypeKind::PointerTo {
             inner_type: inner,
-            sizeless_array: true,
             ..
         } => typecheck_array_initializer(env, base_data, indices, inner.as_ref(), None, to_type),
 
@@ -130,7 +133,11 @@ pub fn typecheck_initializer_list(
             typecheck_structured_initializer(env, base_data, expr, indices, to_type)
         }
 
-        _ => log_typecheck_error!(env, expr.token_range(), " Cannot coerce initializer to type {to_type}"),
+        _ => log_typecheck_error!(
+            env,
+            expr.token_range(),
+            " Cannot coerce initializer to type {to_type}"
+        ),
     }
 }
 
@@ -194,13 +201,14 @@ fn typecheck_structured_initializer(
     indices: &[CXInitIndex],
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
-    let MIRTypeKind::Structured { fields, .. } = &to_type.kind else {
+    let Some(fields) = to_type.aggregate_fields(&env.generated_types) else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
             " Expected structured type for initializer, found: {to_type}"
         );
     };
+    let fields = fields.clone();
 
     let mut initializations = Vec::new();
 
@@ -223,7 +231,11 @@ fn typecheck_structured_initializer(
         }
 
         if counter >= fields.len() {
-            return log_typecheck_error!(env, expr.token_range(), "Too many elements in struct initializer");
+            return log_typecheck_error!(
+                env,
+                expr.token_range(),
+                "Too many elements in struct initializer"
+            );
         }
 
         if initialized_fields[counter] {
@@ -239,7 +251,9 @@ fn typecheck_structured_initializer(
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
             .and_then(|v| implicit_cast(env, &index.value, v.into_expression(), field_type))?;
 
-        let Some(struct_field_info) = struct_field(to_type, field_name.as_str()) else {
+        let Some(struct_field_info) =
+            struct_field(to_type, &env.generated_types, field_name.as_str())
+        else {
             return log_typecheck_error!(
                 env,
                 expr.token_range(),

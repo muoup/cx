@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_mir::mir::types::MIRFunctionPrototype;
+use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_safe_ir::ast::{FMIRNode, FMIRType, MemoryLocation};
 use cx_util::{identifier::CXIdent, scoped_map::ScopedMap};
 

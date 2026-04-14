@@ -1,25 +1,25 @@
-use crate::environment::function_query::query_static_member_function;
 use crate::environment::BindingMoveState;
 use crate::environment::TypeEnvironment;
+use crate::environment::function_query::query_static_member_function;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
-    deconstruct_type_constructor, TypeConstructor,
+    TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_ast::data::CXReceiverMode;
-use cx_ast::data::{CXFunctionPrototype, CXTypeKind, CX_CONST};
+use cx_ast::data::{CX_CONST, CXFunctionPrototype, CXTypeKind};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
+use cx_util::identifier::CXIdent;
 
 pub(crate) fn typecheck_access(
     env: &mut TypeEnvironment,
@@ -95,7 +95,9 @@ pub(crate) fn typecheck_access(
 
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
-            if let Some(struct_field) = struct_field(&lhs_inner, name.as_str()) {
+            if let Some(struct_field) =
+                struct_field(&lhs_inner, &env.generated_types, name.as_str())
+            {
                 return Ok(TypecheckResult::expr(
                     struct_field
                         .field_type
@@ -111,31 +113,33 @@ pub(crate) fn typecheck_access(
                 ));
             }
 
-            if let MIRTypeKind::Union { variants, .. } = &lhs_inner.kind {
-                let Some((_, field_type)) = variants
-                    .iter()
-                    .find(|(field_name, _)| field_name.as_str() == name.as_str())
-                else {
-                    return log_typecheck_error!(
-                        env,
-                        expr.token_range(),
-                        " Union type {} has no field named {}",
-                        lhs_inner,
-                        name
-                    );
-                };
+            if let Some(variants) = lhs_inner.aggregate_fields(&env.generated_types) {
+                if matches!(lhs_inner.kind, MIRTypeKind::Union { .. }) {
+                    let Some((_, field_type)) = variants
+                        .iter()
+                        .find(|(field_name, _)| field_name.as_str() == name.as_str())
+                    else {
+                        return log_typecheck_error!(
+                            env,
+                            expr.token_range(),
+                            " Union type {} has no field named {}",
+                            lhs_inner,
+                            name
+                        );
+                    };
 
-                return Ok(TypecheckResult::expr(
-                    field_type
-                        .clone()
-                        .with_specifier(if lhs_ref_const { CX_CONST } else { 0 })
-                        .mem_ref_to(),
-                    MIRExpressionKind::UnionAliasAccess {
-                        base: Box::new(lhs),
-                        variant_type: field_type.clone(),
-                        union_type: lhs_inner.clone(),
-                    },
-                ));
+                    return Ok(TypecheckResult::expr(
+                        field_type
+                            .clone()
+                            .with_specifier(if lhs_ref_const { CX_CONST } else { 0 })
+                            .mem_ref_to(),
+                        MIRExpressionKind::UnionAliasAccess {
+                            base: Box::new(lhs),
+                            variant_type: field_type.clone(),
+                            union_type: lhs_inner.clone(),
+                        },
+                    ));
+                }
             }
 
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
@@ -198,7 +202,7 @@ fn build_member_receiver_argument(
     lhs_source: &MIRExpression,
     lhs: MIRExpression,
     lhs_inner: &MIRType,
-    prototype: &cx_mir::mir::types::MIRFunctionPrototype,
+    prototype: &cx_mir::mir::data::MIRFunctionPrototype,
 ) -> CXResult<MIRExpression> {
     match prototype
         .source_prototype
@@ -431,14 +435,11 @@ fn typecheck_type_constructor(
     name: &CXIdent,
     inner: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let MIRTypeKind::TaggedUnion {
-        name: union_name,
-        variants,
-        ..
-    } = &union_type.kind
-    else {
+    let Some(variants) = union_type.aggregate_fields(&env.generated_types) else {
         unreachable!()
     };
+    let variants = variants.clone();
+    let union_name = union_type.get_name().unwrap();
 
     let Some((i, variant_type)) = variants
         .iter()
@@ -599,12 +600,7 @@ pub(crate) fn typecheck_is(
     let tc_type = tc_lhs.get_type();
     let union_type = tc_type.mem_ref_inner().unwrap_or(&tc_type);
 
-    let MIRTypeKind::TaggedUnion {
-        name: expected_union_name,
-        variants,
-        ..
-    } = &union_type.kind
-    else {
+    let Some(variants) = union_type.aggregate_fields(&env.generated_types) else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
@@ -612,6 +608,8 @@ pub(crate) fn typecheck_is(
             union_type
         );
     };
+    let variants = variants.clone();
+    let expected_union_name = union_type.get_name().unwrap();
 
     let TypeConstructor {
         union_type,
@@ -1216,17 +1214,23 @@ pub struct StructField {
     pub field_type: MIRType,
 }
 
-pub fn struct_field_offset(struct_type: &MIRType, field_index: usize) -> Option<usize> {
+pub fn struct_field_offset(
+    struct_type: &MIRType,
+    definitions: &cx_mir::mir::data::MIRTypeContext,
+    field_index: usize,
+) -> Option<usize> {
     let struct_type = struct_type.memory_resident_type();
-
-    let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
+    if !matches!(struct_type.kind, MIRTypeKind::Structured { .. }) {
+        return None;
+    }
+    let Some(fields) = struct_type.aggregate_fields(definitions) else {
         unreachable!("Invalid type for struct_field_offset: {}", struct_type);
     };
 
     let mut field_offset = 0;
 
     for (i, (_, field_type)) in fields.iter().enumerate() {
-        let field_alignment = field_type.type_alignment();
+        let field_alignment = field_type.type_alignment(definitions);
 
         field_offset = (field_offset + field_alignment - 1) / field_alignment * field_alignment;
 
@@ -1234,16 +1238,22 @@ pub fn struct_field_offset(struct_type: &MIRType, field_index: usize) -> Option<
             return Some(field_offset);
         }
 
-        field_offset += field_type.type_size();
+        field_offset += field_type.type_size(definitions);
     }
 
     None
 }
 
-pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<StructField> {
+pub fn struct_field<'a>(
+    struct_type: &MIRType,
+    definitions: &cx_mir::mir::data::MIRTypeContext,
+    field_name: &str,
+) -> Option<StructField> {
     let struct_type = struct_type.memory_resident_type();
-
-    let MIRTypeKind::Structured { fields, .. } = &struct_type.kind else {
+    if !matches!(struct_type.kind, MIRTypeKind::Structured { .. }) {
+        return None;
+    }
+    let Some(fields) = struct_type.aggregate_fields(definitions) else {
         return None;
     };
 
@@ -1251,7 +1261,7 @@ pub fn struct_field<'a>(struct_type: &MIRType, field_name: &str) -> Option<Struc
         .iter()
         .position(|(name, _)| name.as_str() == field_name)
         .and_then(|index| {
-            let offset = struct_field_offset(struct_type, index)?;
+            let offset = struct_field_offset(struct_type, definitions, index)?;
 
             Some(StructField {
                 index,

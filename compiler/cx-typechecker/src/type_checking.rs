@@ -9,7 +9,7 @@ use cx_ast::{
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRFunction},
-    types::{MIRFunctionPrototype, MIRParameter},
+    data::{MIRFunctionPrototype, MIRParameter},
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_util::CXResult;

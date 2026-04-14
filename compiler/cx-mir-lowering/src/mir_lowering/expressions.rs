@@ -3,13 +3,13 @@
 //! This module handles lowering of MIRExpression (AST-style IR) to LMIR.
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
+    types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
 };
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, StructInitialization},
     program::MIRFunction,
-    types::MIRTypeKind,
+    data::MIRTypeKind,
 };
 use cx_util::CXResult;
 
@@ -317,8 +317,11 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             field_offset,
             struct_type,
         } => {
-            assert!(struct_type.is_structure(), "StructFieldAccess struct_type must be a memory-resident struct");
-            
+            assert!(
+                struct_type.is_structure(),
+                "StructFieldAccess struct_type must be a memory-resident struct"
+            );
+
             let bc_base = lower_expression(builder, base)?;
             let bc_struct_type = builder.convert_cx_type(struct_type);
 
@@ -479,7 +482,7 @@ fn lower_call(
     builder: &mut LMIRBuilder,
     function: &MIRExpression,
     arguments: &[MIRExpression],
-    result_type: &cx_mir::mir::types::MIRType,
+    result_type: &cx_mir::mir::data::MIRType,
 ) -> CXResult<LMIRValue> {
     let return_type = builder.convert_cx_type(result_type);
 
@@ -498,9 +501,9 @@ fn lower_call(
                 unreachable!("Call expression function pointer must point to function type")
             }
         }
-        
+
         _ => unreachable!("Call expression function must have function type"),
-    }; 
+    };
 
     let bc_prototype = builder.convert_cx_prototype(prototype);
 
@@ -626,7 +629,7 @@ pub(crate) fn lower_contract_assertion(
 fn lower_array_initializer(
     builder: &mut LMIRBuilder,
     elements: &[MIRExpression],
-    element_type: &cx_mir::mir::types::MIRType,
+    element_type: &cx_mir::mir::data::MIRType,
 ) -> CXResult<LMIRValue> {
     let bc_element_type = builder.convert_cx_type(element_type);
     let element_size = bc_element_type.size() as u64;
@@ -700,7 +703,7 @@ fn lower_array_initializer(
 fn lower_struct_initializer(
     builder: &mut LMIRBuilder,
     initializations: &[StructInitialization],
-    struct_type: &cx_mir::mir::types::MIRType,
+    struct_type: &cx_mir::mir::data::MIRType,
 ) -> CXResult<LMIRValue> {
     let bc_struct_type = builder.convert_cx_type(struct_type);
 
@@ -762,7 +765,12 @@ fn lower_struct_initializer(
 /// Generate LMIR for an MIR function
 pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
     let return_buffer_size = if mir_fn.prototype.return_type.is_memory_resident() {
-        Some(mir_fn.prototype.return_type.type_size())
+        Some(
+            mir_fn
+                .prototype
+                .return_type
+                .type_size(&builder.type_definitions),
+        )
     } else {
         None
     };

@@ -1,6 +1,11 @@
-use cx_ast::{ast::CXExpr, data::{CXFunctionKey, CXTemplateInput}};
+use cx_ast::{
+    ast::CXExpr,
+    data::{CXFunctionKey, CXTemplateInput},
+};
 use cx_mir::mir::{
-    name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member}, program::MIRBaseMappings, types::{MIRFunctionPrototype, MIRType}
+    name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
+    program::MIRBaseMappings,
+    data::{MIRFunctionPrototype, MIRType},
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -17,9 +22,13 @@ pub(crate) fn deduce_function(
     templated_input: Option<&CXTemplateInput>,
 ) -> CXResult<MIRFunctionPrototype> {
     if let Some(standard) = base_data.fn_data.get_standard(key) {
-        return env.complete_prototype(base_data, standard.external_module.as_ref(), &standard.resource);
+        return env.complete_prototype(
+            base_data,
+            standard.external_module.as_ref(),
+            &standard.resource,
+        );
     }
-    
+
     if let Some(template) = base_data.fn_data.get_template(key) {
         let Some(templated_input) = templated_input else {
             return log_typecheck_error!(
@@ -28,10 +37,10 @@ pub(crate) fn deduce_function(
                 "Template argument deduction not yet implemented",
             );
         };
-        
+
         return instantiate_function_template(env, base_data, template, templated_input);
     }
-    
+
     log_typecheck_error!(
         env,
         expr.token_range(),

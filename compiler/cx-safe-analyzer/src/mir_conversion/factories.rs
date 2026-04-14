@@ -3,7 +3,7 @@ use cx_mir::mir::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
         MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
     },
-    types::{MIRIntegerType, MIRType, MIRTypeKind},
+    data::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_safe_ir::{ast::*, intrinsic::*};
 use cx_util::{identifier::CXIdent, CXError, CXResult};

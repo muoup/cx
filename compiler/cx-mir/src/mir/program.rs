@@ -8,8 +8,7 @@ use cx_ast::{
 use cx_util::identifier::CXIdent;
 
 use crate::mir::{
-    expression::MIRExpression,
-    types::{MIRFunctionPrototype, MIRType},
+    data::{MIRFunctionPrototype, MIRTypeContext}, expression::MIRExpression
 };
 
 #[derive(Debug, Clone)]
@@ -17,6 +16,7 @@ pub struct MIRUnit {
     pub prototypes: Vec<MIRFunctionPrototype>,
     pub functions: Vec<MIRFunction>,
     pub global_variables: Vec<MIRGlobalVariable>,
+    pub type_definitions: MIRTypeContext,
     pub source_path: PathBuf,
 }
 

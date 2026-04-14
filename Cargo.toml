@@ -5,7 +5,7 @@ members = [
     "compiler/cx",
     "compiler/cx-lsp",
     "compiler/cx-treesitter-grammar",
-    "compiler/cx-zed-extension", "self-hosted",
+    "compiler/cx-zed-extension",
     "tests"
 ]
 

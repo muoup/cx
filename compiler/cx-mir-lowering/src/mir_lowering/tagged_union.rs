@@ -4,7 +4,7 @@ use cx_lmir::{
 };
 use cx_mir::mir::{
     expression::MIRExpression,
-    types::{MIRType, MIRTypeKind},
+    data::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 

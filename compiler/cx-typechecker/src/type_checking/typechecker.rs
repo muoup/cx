@@ -12,7 +12,7 @@ use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_ast::data::{CX_CONST, CXLinkageMode};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
 use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_mir::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
+use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -27,7 +27,7 @@ fn anonymous_name_gen() -> String {
 
 use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
 use crate::type_checking::structured_initialization::typecheck_initializer_list;
-use cx_mir::mir::types::MIRType;
+use cx_mir::mir::data::MIRType;
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
@@ -79,7 +79,12 @@ pub(crate) fn ensure_binding_available(
     match binding.state {
         BindingMoveState::Available => Ok(()),
         BindingMoveState::Moved => {
-            log_typecheck_error!(env, expr.token_range(), " Identifier '{}' has been moved", name)
+            log_typecheck_error!(
+                env,
+                expr.token_range(),
+                " Identifier '{}' has been moved",
+                name
+            )
         }
         BindingMoveState::ConditionallyMoved => log_typecheck_error!(
             env,
@@ -213,7 +218,7 @@ pub fn typecheck_expr_inner(
                 MIRIntegerType::from_bytes(*bytes).unwrap(),
                 true,
             ),
-            _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Integer {
+            _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Integer {
                 _type: MIRIntegerType::from_bytes(*bytes).unwrap(),
                 signed: true,
             }),
@@ -222,7 +227,7 @@ pub fn typecheck_expr_inner(
         CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::expr2(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::FloatLiteral(*val, MIRFloatType::from_bytes(*bytes).unwrap()),
-            _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Float {
+            _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Float {
                 _type: MIRFloatType::from_bytes(*bytes).unwrap(),
             }),
         }),
@@ -342,7 +347,12 @@ pub fn typecheck_expr_inner(
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
                 TypecheckResult::expr2(global)
             } else {
-                return log_typecheck_error!(env, expr.token_range(), "Identifier '{}' not found", name);
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    "Identifier '{}' not found",
+                    name
+                );
             }
         }
 
@@ -417,7 +427,7 @@ pub fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: else_result.map(|r| Box::new(r)),
                 },
-                _type: cx_mir::mir::types::MIRType::unit(),
+                _type: cx_mir::mir::data::MIRType::unit(),
             })
         }
 
@@ -458,7 +468,7 @@ pub fn typecheck_expr_inner(
                     body: Box::new(body_result),
                     pre_eval: *pre_eval,
                 },
-                _type: cx_mir::mir::types::MIRType::unit(),
+                _type: cx_mir::mir::data::MIRType::unit(),
             })
         }
 
@@ -509,7 +519,7 @@ pub fn typecheck_expr_inner(
                     increment: Box::new(increment_result),
                     body: Box::new(body_result),
                 },
-                _type: cx_mir::mir::types::MIRType::unit(),
+                _type: cx_mir::mir::data::MIRType::unit(),
             })
         }
 
@@ -667,12 +677,21 @@ pub fn typecheck_expr_inner(
             };
 
             let Some(value) = env.symbol_value(ident.as_str()) else {
-                return log_typecheck_error!(env, expr.token_range(), " Identifier '{}' not found", ident);
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " Identifier '{}' not found",
+                    ident
+                );
             };
             let value = value.clone();
 
             let Some(inner_type) = value._type.mem_ref_inner() else {
-                return log_typecheck_error!(env, expr.token_range(), " @leak requires a stack local value");
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " @leak requires a stack local value"
+                );
             };
 
             if !env.is_nodrop(inner_type) {
@@ -937,7 +956,11 @@ pub fn typecheck_expr_inner(
             }
 
             if inner.get_specifier(CX_CONST) {
-                return log_typecheck_error!(env, expr.token_range(), " Cannot assign to a const type");
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " Cannot assign to a const type"
+                );
             }
 
             let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), inner)?;
@@ -995,7 +1018,12 @@ pub fn typecheck_expr_inner(
             };
 
             let Some(inner_val) = env.symbol_table.get(ident.as_str()) else {
-                return log_typecheck_error!(env, expr.token_range(), " Identifier '{}' not found", ident);
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " Identifier '{}' not found",
+                    ident
+                );
             };
             let mut inner_val = inner_val.clone();
 
@@ -1037,9 +1065,15 @@ pub fn typecheck_expr_inner(
             inner,
         } => {
             let union_type = env.get_type(base_data, expr, type_name.as_str())?;
-            let MIRTypeKind::TaggedUnion { variants, .. } = &union_type.kind else {
-                return log_typecheck_error!(env, expr.token_range(), " Unknown type: {}", type_name);
+            let Some(variants) = union_type.aggregate_fields(&env.generated_types) else {
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " Unknown type: {}",
+                    type_name
+                );
             };
+            let variants = variants.clone();
 
             let Some((i, variant_type)) = variants
                 .iter()
@@ -1082,7 +1116,7 @@ pub fn typecheck_expr_inner(
         CXExprKind::Unit => TypecheckResult::expr2(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::Unit,
-            _type: cx_mir::mir::types::MIRType::unit(),
+            _type: cx_mir::mir::data::MIRType::unit(),
         }),
 
         CXExprKind::SizeOfType { _type } => {
@@ -1091,11 +1125,11 @@ pub fn typecheck_expr_inner(
             TypecheckResult::expr2(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::IntLiteral(
-                    tc_type.type_size() as i64,
+                    tc_type.type_size(&env.generated_types) as i64,
                     MIRIntegerType::I64,
                     false,
                 ),
-                _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Integer {
+                _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Integer {
                     _type: MIRIntegerType::I64,
                     signed: false,
                 }),
@@ -1109,11 +1143,11 @@ pub fn typecheck_expr_inner(
             TypecheckResult::expr2(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::IntLiteral(
-                    tc_type.type_size() as i64,
+                    tc_type.type_size(&env.generated_types) as i64,
                     MIRIntegerType::I64,
                     false,
                 ),
-                _type: cx_mir::mir::types::MIRType::from(MIRTypeKind::Integer {
+                _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Integer {
                     _type: MIRIntegerType::I64,
                     signed: false,
                 }),

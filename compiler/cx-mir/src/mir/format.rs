@@ -1,6 +1,7 @@
+use crate::mir::data::{MIRFunctionPrototype, MIRParameter};
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
-use crate::mir::types::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRParameter, MIRType, MIRTypeKind};
+use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
 use std::fmt::{Display, Formatter};
 
 impl Display for MIRUnit {
@@ -50,7 +51,7 @@ impl Display for MIRFunctionPrototype {
             write!(f, "...")?;
         }
         write!(f, ") -> {}", self.return_type)?;
-        
+
         if self.contract.safe {
             write!(f, " [safe]")?;
         }
@@ -224,14 +225,14 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     "CreateStackVariable {}: {} <'{}>",
                     name_str, _type, self.expr._type
                 )?;
-                
+
                 if let Some(init) = initial_value {
                     MIRExpressionFormatter::new(init, self.depth + 1).fmt(f)?;
                 } else {
                     self.indent(f)?;
                     writeln!(f, "(no initializer)")?;
                 }
-                
+
                 Ok(())
             }
             MIRExpressionKind::CopyRegion { source, _type } => {
@@ -554,7 +555,11 @@ impl Display for MIRUnOp {
 impl Display for MIRCoercion {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MIRCoercion::Integral { sextend, from_type, to_type } => write!(
+            MIRCoercion::Integral {
+                sextend,
+                from_type,
+                to_type,
+            } => write!(
                 f,
                 "integral({}, {} -> {})",
                 from_type,
@@ -600,69 +605,44 @@ impl Display for MIRTypeKind {
                 write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
             }
             MIRTypeKind::Float { _type } => write!(f, "{}", _type),
-            MIRTypeKind::Structured {
-                name, attributes, ..
-            } => {
-                let mut attrs = Vec::new();
-                if attributes.nocopy {
-                    attrs.push("@nocopy");
-                }
-                if attributes.nodrop {
-                    attrs.push("@nodrop");
-                }
-                write!(
-                    f,
-                    "struct {}{}",
-                    name.as_ref()
-                        .map(|n| n.to_string())
-                        .unwrap_or_else(|| "".to_string()),
-                    if attrs.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!(" : {}", attrs.join(", "))
-                    }
-                )
+            MIRTypeKind::Structured { .. } => {
+                write!(f, "struct")
             }
-            MIRTypeKind::Union { name, .. } => {
-                write!(
-                    f,
-                    "union {}",
-                    name.as_ref()
-                        .map(|n| n.to_string())
-                        .unwrap_or_else(|| "".to_string())
-                )
+            MIRTypeKind::Union { .. } => {
+                write!(f, "union")
             }
-            MIRTypeKind::TaggedUnion {
-                name,
-                attributes,
-                ..
-            } => {
-                let mut attrs = Vec::new();
-                if attributes.nocopy {
-                    attrs.push("@nocopy");
-                }
-                if attributes.nodrop {
-                    attrs.push("@nodrop");
-                }
-                write!(
-                    f,
-                    "tagged_union {}{}",
-                    name,
-                    if attrs.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!(" : {}", attrs.join(", "))
-                    }
-                )
+            MIRTypeKind::TaggedUnion { .. } => {
+                write!(f, "tagged_union")
             }
             MIRTypeKind::Unit => write!(f, "()"),
             MIRTypeKind::PointerTo { inner_type, .. } => write!(f, "{}*", inner_type),
             MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
             MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
-            MIRTypeKind::Opaque { name, .. } => write!(f, "opaque {}", name),
+            MIRTypeKind::Opaque { size, .. } => write!(f, "opaque({})", size),
+            MIRTypeKind::Undefined => write!(f, "undefined"),
             MIRTypeKind::Str => write!(f, "_str"),
-            MIRTypeKind::Function { prototype } => write!(f, "{prototype}"),
+            MIRTypeKind::Function {
+                return_type,
+                params,
+                var_args,
+            } => write!(
+                f,
+                "fn({}{}) -> {}",
+                params
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if *var_args { ", ..." } else { "" },
+                return_type
+            ),
         }
+    }
+}
+
+impl Display for MIRTypeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "T{}", self.0)
     }
 }
 

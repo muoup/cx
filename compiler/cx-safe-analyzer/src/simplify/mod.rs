@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use cx_mir::mir::types::MIRFunctionPrototype;
+use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_safe_ir::{
     ast::{FMIRNode, FMIRNodeBody},
     intrinsic::FMIRIntrinsicKind,

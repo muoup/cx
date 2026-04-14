@@ -1,7 +1,7 @@
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFunctionContract, MIRUnOp,
 };
-use cx_mir::mir::types::{MIRIntegerType, MIRType, MIRTypeKind};
+use cx_mir::mir::data::{MIRIntegerType, MIRType, MIRTypeKind};
 
 /// Result of typechecking an expression/statement
 #[derive(Debug, Clone)]

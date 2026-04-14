@@ -1,7 +1,7 @@
 use crate::{log_analysis_error, mir_conversion::factories::*};
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind, MIRUnOp},
-    types::{MIRType, MIRTypeKind},
+    data::{MIRType, MIRTypeKind},
 };
 use cx_safe_ir::{
     ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRType, FRc, MemoryLocation},

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use cx_mir::mir::types::{MIRFunctionPrototype, MIRType};
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRType};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 

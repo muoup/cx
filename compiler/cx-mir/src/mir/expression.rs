@@ -2,7 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
-use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
+use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
 pub struct MIRFunctionContract {
@@ -388,8 +388,8 @@ impl MIRExpression {
                     _type: itype,
                     signed: is_signed,
                 },
-                visibility: Default::default(),
-                specifiers: 0,
+                
+                ..Default::default()
             },
             token_range: None,
         }

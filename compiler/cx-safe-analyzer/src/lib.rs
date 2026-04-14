@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
 use cx_mir::mir::program::{MIRFunction, MIRUnit};
-use cx_mir::mir::types::MIRFunctionPrototype;
+use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_safe_ir::ast::{FMIRFunction, FMIRNode};
 use cx_tokens::TokenRange;
 use cx_util::{CXError, CXResult};

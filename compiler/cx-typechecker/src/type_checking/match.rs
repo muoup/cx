@@ -2,7 +2,7 @@ use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
 use crate::type_checking::structured_initialization::{
-    deconstruct_type_constructor, TypeConstructor,
+    TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
@@ -10,7 +10,7 @@ use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::MIRBaseMappings,
-    types::{MIRIntegerType, MIRType, MIRTypeKind},
+    data::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -223,11 +223,12 @@ pub fn typecheck_match(
             result_arms
         }
 
-        MIRTypeKind::TaggedUnion {
-            name: expected_union_name,
-            variants,
-            ..
-        } => {
+        MIRTypeKind::TaggedUnion { .. } => {
+            let expected_union_name = expr_type.get_name().unwrap();
+            let variants = expr_type
+                .aggregate_fields(&env.generated_types)
+                .expect("Tagged union match requires completed variants")
+                .clone();
             // Tagged union matching: each arm has a type constructor pattern
             let mut result_arms = Vec::new();
 

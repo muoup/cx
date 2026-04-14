@@ -1,15 +1,15 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    types::{LMIRIntegerType, LMIRType},
     LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
+    types::{LMIRIntegerType, LMIRType},
 };
 use cx_mir::mir::{
     expression::{
         MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
         MIRUnOp,
     },
-    types::{MIRType, MIRTypeKind},
+    data::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 
@@ -61,7 +61,7 @@ pub fn lower_binary_op(
             LMIRInstructionKind::PointerBinOp {
                 op: ptr_op,
                 ptr_type: bc_inner_type.clone(),
-                type_padded_size: ptr_inner.padded_size() as u64,
+                type_padded_size: ptr_inner.padded_size(&builder.type_definitions) as u64,
                 left: bc_lhs,
                 right: bc_rhs,
             }
@@ -270,7 +270,7 @@ pub fn lower_unary_op(
                     LMIRInstructionKind::PointerBinOp {
                         op: LMIRPtrBinOp::ADD,
                         ptr_type: bc_inner_type,
-                        type_padded_size: result_type.padded_size() as u64,
+                        type_padded_size: result_type.padded_size(&builder.type_definitions) as u64,
                         left: pre_loaded_val.clone(),
                         right: LMIRValue::IntImmediate {
                             val: *amt as i64,

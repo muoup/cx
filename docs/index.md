@@ -1,14 +1,10 @@
 # The CX Programming Language
 
-&nbsp;
-
 The CX Programming Language is a work-in-progress language designed to be a superset to the C99 standard with a simple template and metaprogramming syntax suite and a linear type system to power opt-in type-safety, correctness, and formal verification while still upholding C's explicit nature and no hidden functionality philosophy. 
 
 CX as a name may be subject to change, but has been so for quite some time and may have found its stay. The 'X' started as a placeholder to indicate a future name should be some word or wordplay beginning with C, but the name can also be conceptualized as 'C-Xtended' if you so please.
 
-### If You Are a Passerby,
-
-you don't care for fancy buzzwords like 'linear typing' and 'type safety' and want a quick overview of the language to see what makes its approach different from the other C-like languages nowadays like [Zig](https://ziglang.org) and [C3](https://c3-lang.org), consider this very simple program:
+If you are a passerby, you don't care for fancy buzzwords like 'linear typing' and 'type safety' and want a quick overview of the language to see what makes its approach different from the other C-like languages nowadays like [Zig](https://ziglang.org) and [C3](https://c3-lang.org), consider this very simple program:
 
 ```c++
 

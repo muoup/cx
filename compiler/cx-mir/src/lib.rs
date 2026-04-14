@@ -7,7 +7,7 @@ use cx_ast::data::{CXTypeTemplate, ModuleResource};
 use speedy::{Readable, Writable};
 use std::collections::{HashMap, HashSet};
 
-use crate::mir::types::{MIRTemplateInput, MIRType};
+use crate::mir::{data::MIRTemplateInput, r#type::MIRType};
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct TemplateCache<Template> {

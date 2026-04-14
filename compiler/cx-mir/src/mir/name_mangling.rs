@@ -1,4 +1,4 @@
-use crate::mir::types::{MIRType, MIRTypeKind};
+use crate::mir::data::{MIRAggregateContents, MIRType, MIRTypeKind};
 
 pub fn base_mangle_standard(name: &str) -> String {
     name.to_string()
@@ -43,8 +43,6 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             mangled.push(if prototype.var_args { 'V' } else { 'v' });
         }
         MIRTypeKind::Structured {
-            name,
-            attributes,
             fields,
             ..
         } => {
@@ -60,33 +58,70 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
             mangled.push(if attributes.nocopy { 'C' } else { 'c' });
             mangled.push(if attributes.nodrop { 'D' } else { 'd' });
 
-            mangled.push('f');
-            mangled.push_str(&fields.len().to_string());
-            mangled.push('_');
-            for field in fields {
-                mangled.push_str(&type_mangle(&field.1));
+            match fields {
+                MIRAggregateContents::Named(_) => {
+                    mangled.push('n');
+                }
+                MIRAggregateContents::Anonymous(fields) => {
+                    mangled.push('f');
+                    mangled.push_str(&fields.len().to_string());
+                    mangled.push('_');
+                    for field in fields {
+                        mangled.push_str(&type_mangle(&field.1));
+                    }
+                }
             }
         }
-        MIRTypeKind::Union { variants, .. } => {
+        MIRTypeKind::Union { name, variants } => {
             mangled.push('U');
-            mangled.push_str(&variants.len().to_string());
-            mangled.push('_');
-            for variant in variants {
-                mangled.push_str(&type_mangle(&variant.1));
+
+            if let Some(n) = name {
+                mangled.push('n');
+                mangled.push_str(n.as_str().len().to_string().as_str());
+                mangled.push('_');
+                mangled.push_str(n.as_str());
+            }
+
+            match variants {
+                MIRAggregateContents::Named(_) => {
+                    mangled.push('n');
+                }
+                MIRAggregateContents::Anonymous(variants) => {
+                    mangled.push_str(&variants.len().to_string());
+                    mangled.push('_');
+                    for variant in variants {
+                        mangled.push_str(&type_mangle(&variant.1));
+                    }
+                }
             }
         }
         MIRTypeKind::TaggedUnion {
+            name,
             attributes,
             variants,
             ..
         } => {
             mangled.push('T');
+
+            mangled.push('n');
+            mangled.push_str(name.as_str().len().to_string().as_str());
+            mangled.push('_');
+            mangled.push_str(name.as_str());
+
             mangled.push(if attributes.nocopy { 'C' } else { 'c' });
             mangled.push(if attributes.nodrop { 'D' } else { 'd' });
-            mangled.push_str(&variants.len().to_string());
-            mangled.push('_');
-            for variant in variants {
-                mangled.push_str(&type_mangle(&variant.1));
+
+            match variants {
+                MIRAggregateContents::Named(_) => {
+                    mangled.push('n');
+                }
+                MIRAggregateContents::Anonymous(variants) => {
+                    mangled.push_str(&variants.len().to_string());
+                    mangled.push('_');
+                    for variant in variants {
+                        mangled.push_str(&type_mangle(&variant.1));
+                    }
+                }
             }
         }
         MIRTypeKind::Integer { _type, signed } => {
@@ -98,6 +133,12 @@ pub(crate) fn type_mangle(ty: &MIRType) -> String {
         }
         MIRTypeKind::Str => {
             mangled.push_str("_str");
+        }
+        MIRTypeKind::Undefined { name } => {
+            mangled.push('X');
+            mangled.push_str(name.as_str().len().to_string().as_str());
+            mangled.push('_');
+            mangled.push_str(name.as_str());
         }
         MIRTypeKind::Unit => {
             mangled.push('v');

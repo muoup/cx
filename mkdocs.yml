@@ -1,7 +1,14 @@
 site_name: CX Programming Language
 repo_url: https://github.com/muoup/cx
-theme: dracula
+theme: ivory
 
 nav:
     - Home: index.md
     - Getting Started: getting_started.md
+    - Language Basics:
+        - Introduction: language_basics/0_introduction.md
+        - Tagged Unions: language_basics/1_tagged_unions.md
+        - Module System: language_basics/2_module_system.md
+        - Templates: language_basics/3_templates.md
+        - Type Constraints: language_basics/4_type_constraints.md
+        - Safe Functions: language_basics/5_safe_functions.md

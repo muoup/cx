@@ -1,4 +1,4 @@
-use cx_mir::mir::{expression::MIRExpression, types::MIRFunctionPrototype};
+use cx_mir::mir::{expression::MIRExpression, data::MIRFunctionPrototype};
 use cx_util::CXResult;
 
 use crate::{log_analysis_error, mir_conversion::environment::FMIREnvironment};

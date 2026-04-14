@@ -1,5 +1,5 @@
 use cx_ast::{ast::CXExpr, data::{CXFunctionPrototype, CXType}};
-use cx_mir::mir::{program::MIRBaseMappings, types::{MIRFunctionPrototype, MIRType}};
+use cx_mir::mir::{program::MIRBaseMappings, data::{MIRFunctionPrototype, MIRType}};
 use cx_util::CXResult;
 
 use crate::{

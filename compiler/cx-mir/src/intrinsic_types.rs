@@ -1,4 +1,4 @@
-use crate::mir::types::{MIRFloatType, MIRIntegerType, MIRTypeKind};
+use crate::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 
 
 pub fn is_intrinsic_type(name: &str) -> bool {
