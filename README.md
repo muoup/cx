@@ -20,7 +20,7 @@ CX is a research vehicle for extending a largely C-shaped language with explicit
 
 #### Optional Prerequisite: LLVM
 
-LLVM is an optional backend. Cranelift is the default backend unless the project is built with the LLVM feature and explicitly configured otherwise.
+LLVM is the compiler tools framework powering many modern systems language compilers like Rustc and Clang. LLVM will in most cases produce faster, more optimized binaries at the cost of slower compile times, and additionally can prove troublesome to set up if you are building from scratch on Windows. As such, the default code generation backend for this project is Cranelift, a lighterweight alternative that is set up automatically by Cargo on build, meaning LLVM is not required when building from scratch unless explicitly desired.
 
 ##### On Ubuntu/Debian
 The [LLVM releases page](https://github.com/llvm/llvm-project/releases) provides prebuilt binaries for common Linux targets.
@@ -53,23 +53,30 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
 
 For language syntax and semantics, see [docs/language_spec.md](docs/language_spec.md).
 
-Basic invocation:
+Basic usage:
 
 ```bash
 cargo run --release -- <file.cx> [options]
 ```
 
-Example symlink on Ubuntu/Debian:
+It is also recommended after building to create a symlink to the executable or alias to make invoking the compiler simpler.
+
+If on Linux or MacOS for instance, you may do:
 
 ```bash
-ln -s target/debug/cx /usr/bin/cx
+ln -s [PROJECT_DIRECTORY]/target/debug/cx ~/.local/bin
+```
+
+so that your shell can access your compiler directly from its PATH:
+
+```bash
 cx <file.cx> [options]
 ```
 
 ### Options
 
-- `--backend-cranelift`: use the Cranelift backend
-- `--backend-llvm`: use the LLVM backend when compiled with LLVM support
+- `--backend-cranelift`: use the Cranelift backend (default if not built with the LLVM backend)
+- `--backend-llvm`: use the LLVM backend if compiled with LLVM support (default if built with the LLVM backend)
 - `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: optimization level
 - `-o <output_file>`: output path
 - `--analysis`: run FMIR generation and verification for `safe` functions before continuing to LMIR

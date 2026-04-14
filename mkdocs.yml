@@ -1,0 +1,7 @@
+site_name: CX Programming Language
+repo_url: https://github.com/muoup/cx
+theme: dracula
+
+nav:
+    - Home: index.md
+    - Getting Started: getting_started.md
