@@ -1,33 +1,32 @@
+use crate::environment::function_query::query_static_member_function;
 use crate::environment::BindingMoveState;
 use crate::environment::TypeEnvironment;
-use crate::environment::function_query::query_static_member_function;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
-    TypeConstructor, deconstruct_type_constructor,
+    deconstruct_type_constructor, TypeConstructor,
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
+use crate::type_completion::templates::deduce_function_template;
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_ast::data::CXReceiverMode;
-use cx_ast::data::{CX_CONST, CXFunctionPrototype, CXTypeKind};
+use cx_ast::data::{CXFunctionKey, CXFunctionPrototype, CXTypeKind, CX_CONST};
+use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
     MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
 };
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_tokens::TokenRange;
-use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
+use cx_util::CXResult;
 
-pub(crate) fn typecheck_access(
+fn resolve_access_base(
     env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    lhs: MIRExpression,
-    rhs: &CXExpr,
     expr: &CXExpr,
-) -> CXResult<TypecheckResult> {
+    lhs: MIRExpression,
+) -> CXResult<(MIRExpression, MIRExpression, MIRType, bool)> {
     let lhs_source = lhs.clone();
 
     // Here, our aim is to continue with lhs_val being one indirection from the memory,
@@ -87,6 +86,133 @@ pub(crate) fn typecheck_access(
         );
     }
 
+    Ok((lhs_source, lhs, lhs_inner, lhs_ref_const))
+}
+
+fn build_function_reference(
+    prototype: &MIRFunctionPrototype,
+    implicit_variables: Vec<MIRExpression>,
+) -> MIRExpression {
+    MIRExpression {
+        token_range: None,
+        kind: MIRExpressionKind::FunctionReference { implicit_variables },
+        _type: MIRTypeKind::Function {
+            prototype: Box::new(prototype.clone()),
+        }
+        .into(),
+    }
+}
+
+fn finish_function_call<'a>(
+    env: &mut TypeEnvironment,
+    expr: &'a CXExpr,
+    prototype: &MIRFunctionPrototype,
+    function: MIRExpression,
+    mut tc_args: Vec<(&'a CXExpr, MIRExpression)>,
+) -> CXResult<TypecheckResult> {
+    let implicit_variables = match &function.kind {
+        MIRExpressionKind::FunctionReference { implicit_variables } => implicit_variables.clone(),
+        _ => vec![],
+    };
+    tc_args = implicit_variables
+        .iter()
+        .map(|val| (expr, val.clone()))
+        .chain(tc_args)
+        .collect();
+
+    if tc_args.len() != prototype.params.len() && !prototype.var_args {
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            " Method {} expects {} arguments, found {}",
+            prototype,
+            prototype.params.len(),
+            tc_args.len()
+        );
+    }
+
+    if tc_args.len() < prototype.params.len() {
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            " Method {} expects at least {} arguments, found {}",
+            prototype,
+            prototype.params.len(),
+            tc_args.len()
+        );
+    }
+
+    let canon_params = prototype.params.len();
+
+    for ((arg_expr, val), param) in tc_args.iter_mut().zip(prototype.params.iter()) {
+        *val = implicit_cast(env, arg_expr, std::mem::take(val), &param._type)?;
+    }
+
+    for (arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
+        *val = coerce_value(env, arg_expr, std::mem::take(val))?;
+        let arg_type = val._type.clone();
+
+        match &arg_type.kind {
+            MIRTypeKind::PointerTo { .. } => {}
+            MIRTypeKind::Integer { signed, .. } => {
+                *val = implicit_cast(
+                    env,
+                    arg_expr,
+                    std::mem::take(val),
+                    &MIRTypeKind::Integer {
+                        _type: MIRIntegerType::I64,
+                        signed: *signed,
+                    }
+                    .into(),
+                )?;
+            }
+            MIRTypeKind::Float {
+                _type: MIRFloatType::F32,
+            } => {
+                *val = implicit_cast(
+                    env,
+                    arg_expr,
+                    std::mem::take(val),
+                    &MIRTypeKind::Float {
+                        _type: MIRFloatType::F64,
+                    }
+                    .into(),
+                )?;
+            }
+            MIRTypeKind::Float {
+                _type: MIRFloatType::F64,
+            } => {}
+            _ => {
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
+                    arg_type
+                );
+            }
+        }
+    }
+
+    let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
+
+    Ok(TypecheckResult::expr(
+        prototype.return_type.clone(),
+        MIRExpressionKind::CallFunction {
+            function: Box::new(function),
+            arguments: args,
+        },
+    ))
+}
+
+pub(crate) fn typecheck_access(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    lhs: MIRExpression,
+    rhs: &CXExpr,
+    expr: &CXExpr,
+) -> CXResult<TypecheckResult> {
+    let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
+
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
             if let Some(struct_field) =
@@ -125,9 +251,11 @@ pub(crate) fn typecheck_access(
 
                     return Ok(TypecheckResult::expr(
                         env.generated_types.mem_ref_to(
-                            &field_type
-                                .clone()
-                                .with_specifier(if lhs_ref_const { CX_CONST } else { 0 }),
+                            &field_type.clone().with_specifier(if lhs_ref_const {
+                                CX_CONST
+                            } else {
+                                0
+                            }),
                         ),
                         MIRExpressionKind::UnionAliasAccess {
                             base: Box::new(lhs),
@@ -139,23 +267,19 @@ pub(crate) fn typecheck_access(
             }
 
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
+            let receiver = build_member_receiver_argument(
+                env,
+                expr,
+                &lhs_source,
+                lhs,
+                &lhs_inner,
+                &prototype,
+            )?;
 
-            Ok(TypecheckResult::expr(
-                MIRTypeKind::Function {
-                    prototype: Box::new(prototype.clone()),
-                }
-                .into(),
-                MIRExpressionKind::FunctionReference {
-                    implicit_variables: vec![build_member_receiver_argument(
-                        env,
-                        expr,
-                        &lhs_source,
-                        lhs,
-                        &lhs_inner,
-                        &prototype,
-                    )?],
-                },
-            ))
+            Ok(TypecheckResult::expr2(build_function_reference(
+                &prototype,
+                vec![receiver],
+            )))
         }
 
         CXExprKind::TemplatedIdentifier {
@@ -164,23 +288,19 @@ pub(crate) fn typecheck_access(
         } => {
             let prototype =
                 env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?;
+            let receiver = build_member_receiver_argument(
+                env,
+                expr,
+                &lhs_source,
+                lhs,
+                &lhs_inner,
+                &prototype,
+            )?;
 
-            Ok(TypecheckResult::expr(
-                MIRTypeKind::Function {
-                    prototype: Box::new(prototype.clone()),
-                }
-                .into(),
-                MIRExpressionKind::FunctionReference {
-                    implicit_variables: vec![build_member_receiver_argument(
-                        env,
-                        expr,
-                        &lhs_source,
-                        lhs,
-                        &lhs_inner,
-                        &prototype,
-                    )?],
-                },
-            ))
+            Ok(TypecheckResult::expr2(build_function_reference(
+                &prototype,
+                vec![receiver],
+            )))
         }
 
         _ => log_typecheck_error!(
@@ -218,7 +338,11 @@ fn build_member_receiver_argument(
             _type: env.generated_types.mem_ref_to(lhs_inner),
         }),
         Some(CXReceiverMode::ByMove) => {
-            if let Some(inner_type) = env.generated_types.mem_ref_inner(&lhs_source._type).cloned() {
+            if let Some(inner_type) = env
+                .generated_types
+                .mem_ref_inner(&lhs_source._type)
+                .cloned()
+            {
                 let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
                     return log_typecheck_error!(
                         env,
@@ -276,6 +400,151 @@ pub(crate) fn comma_separated<'a>(
     Ok(exprs)
 }
 
+fn try_typecheck_direct_function_call(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    lhs: &CXExpr,
+    rhs: &CXExpr,
+    expr: &CXExpr,
+) -> CXResult<Option<TypecheckResult>> {
+    let CXExprKind::Identifier(name) = &lhs.kind else {
+        return Ok(None);
+    };
+
+    if env.symbol_value(name.as_str()).is_some() {
+        return Ok(None);
+    }
+
+    let key = CXFunctionKey::Standard(name.clone());
+    let standard = base_data.fn_data.get_standard(&key);
+    let template = base_data.fn_data.get_template(&key);
+
+    if standard.is_none() && template.is_none() {
+        return Ok(None);
+    }
+
+    let tc_args = comma_separated(env, base_data, rhs)?;
+    let prototype = if let Some(standard) = standard {
+        env.complete_prototype(
+            base_data,
+            standard.external_module.as_ref(),
+            &standard.resource,
+        )?
+    } else {
+        let arg_types = tc_args
+            .iter()
+            .map(|(_, value)| value.get_type())
+            .collect::<Vec<_>>();
+        match deduce_function_template(env, base_data, template.unwrap(), None, &arg_types) {
+            Ok(prototype) => prototype,
+            Err(err) => {
+                return log_typecheck_error!(env, expr.token_range(), "{}", err.error_content());
+            }
+        }
+    };
+
+    let function = build_function_reference(&prototype, vec![]);
+    Ok(Some(finish_function_call(
+        env, expr, &prototype, function, tc_args,
+    )?))
+}
+
+fn try_typecheck_direct_member_template_call(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    lhs: &CXExpr,
+    rhs: &CXExpr,
+    expr: &CXExpr,
+) -> CXResult<Option<TypecheckResult>> {
+    let CXExprKind::BinOp {
+        op: CXBinOp::Access,
+        lhs: receiver_expr,
+        rhs: member_expr,
+    } = &lhs.kind
+    else {
+        return Ok(None);
+    };
+
+    let CXExprKind::Identifier(name) = &member_expr.kind else {
+        return Ok(None);
+    };
+
+    let receiver_source = typecheck_expr(env, base_data, receiver_expr, None)?.into_expression();
+    let (receiver_root, receiver_value, receiver_type, _) =
+        resolve_access_base(env, expr, receiver_source)?;
+
+    if struct_field(&receiver_type, &env.generated_types, name.as_str()).is_some() {
+        return Ok(None);
+    }
+
+    if matches!(receiver_type.kind, MIRTypeKind::Union { .. })
+        && receiver_type
+            .aggregate_fields(&env.generated_types)
+            .map(|fields| {
+                fields
+                    .iter()
+                    .any(|(field_name, _)| field_name == name.as_str())
+            })
+            .unwrap_or(false)
+    {
+        return Ok(None);
+    }
+
+    let Some(base_name) = receiver_type.get_base_identifier() else {
+        return Ok(None);
+    };
+
+    let key = CXFunctionKey::MemberFunction {
+        type_base_name: base_name.clone(),
+        name: name.clone(),
+    };
+    let standard = base_data.fn_data.get_standard(&key);
+    let template = base_data.fn_data.get_template(&key);
+
+    if standard.is_none() && template.is_none() {
+        return Ok(None);
+    }
+
+    let tc_args = comma_separated(env, base_data, rhs)?;
+    let prototype = if let Some(standard) = standard {
+        env.complete_prototype(
+            base_data,
+            standard.external_module.as_ref(),
+            &standard.resource,
+        )?
+    } else {
+        let arg_types = tc_args
+            .iter()
+            .map(|(_, value)| value.get_type())
+            .collect::<Vec<_>>();
+        match deduce_function_template(
+            env,
+            base_data,
+            template.unwrap(),
+            Some(&receiver_type),
+            &arg_types,
+        ) {
+            Ok(prototype) => prototype,
+            Err(err) => {
+                return log_typecheck_error!(env, expr.token_range(), "{}", err.error_content());
+            }
+        }
+    };
+
+    let receiver = build_member_receiver_argument(
+        env,
+        expr,
+        &receiver_root,
+        receiver_value,
+        &receiver_type,
+        &prototype,
+    )?;
+    let function = build_function_reference(&prototype, vec![receiver]);
+    Ok(Some(finish_function_call(
+        env, expr, &prototype, function, tc_args,
+    )?))
+}
+
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -283,7 +552,6 @@ pub(crate) fn typecheck_method_call(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    // Check if this is a scoped call (Type::method(args)) pattern
     if let CXExprKind::BinOp {
         op: CXBinOp::ScopeRes,
         lhs: type_expr,
@@ -291,6 +559,15 @@ pub(crate) fn typecheck_method_call(
     } = &lhs.kind
     {
         return typecheck_scoped_call(env, base_data, type_expr, method_expr, rhs, expr);
+    }
+
+    if let Some(result) = try_typecheck_direct_function_call(env, base_data, lhs, rhs, expr)? {
+        return Ok(result);
+    }
+
+    if let Some(result) = try_typecheck_direct_member_template_call(env, base_data, lhs, rhs, expr)?
+    {
+        return Ok(result);
     }
 
     let lhs_val = typecheck_expr(env, base_data, lhs, None)?.into_expression();
@@ -313,114 +590,8 @@ pub(crate) fn typecheck_method_call(
         );
     };
 
-    let mut tc_args = comma_separated(env, base_data, rhs)?;
-
-    let implicit_variables = match &loaded_lhs_val.kind {
-        MIRExpressionKind::FunctionReference { implicit_variables } => implicit_variables.clone(),
-        _ => vec![],
-    };
-
-    let faux_expr = CXExpr::default();
-
-    tc_args = implicit_variables
-        .iter()
-        .map(|val| (&faux_expr, val.clone()))
-        .chain(tc_args)
-        .collect();
-
-    if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            " Method {} expects {} arguments, found {}",
-            prototype,
-            prototype.params.len(),
-            tc_args.len()
-        );
-    }
-
-    if tc_args.len() < prototype.params.len() {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            " Method {} expects at least {} arguments, found {}",
-            prototype,
-            prototype.params.len(),
-            tc_args.len()
-        );
-    }
-
-    let canon_params = prototype.params.len();
-
-    // Standard argument coercion
-    for ((expr, val), param) in tc_args.iter_mut().zip(prototype.params.iter()) {
-        *val = implicit_cast(env, expr, std::mem::take(val), &param._type)?;
-    }
-
-    // Varargs argument coercion
-    for (expr, val) in tc_args.iter_mut().skip(canon_params) {
-        // All varargs arguments must be lvalues, coerce_value is necessary here
-        *val = coerce_value(env, expr, std::mem::take(val))?;
-        let arg_type = val._type.clone();
-
-        match &arg_type.kind {
-            MIRTypeKind::PointerTo { .. } => {
-                // Pointer types are already compatible with varargs, no need to cast
-            }
-
-            MIRTypeKind::Integer { signed, .. } => {
-                *val = implicit_cast(
-                    env,
-                    expr,
-                    std::mem::take(val),
-                    &MIRTypeKind::Integer {
-                        _type: MIRIntegerType::I64,
-                        signed: *signed,
-                    }
-                    .into(),
-                )?;
-            }
-
-            MIRTypeKind::Float {
-                _type: MIRFloatType::F32,
-            } => {
-                *val = implicit_cast(
-                    env,
-                    expr,
-                    std::mem::take(val),
-                    &MIRTypeKind::Float {
-                        _type: MIRFloatType::F64,
-                    }
-                    .into(),
-                )?;
-            }
-
-            MIRTypeKind::Float {
-                _type: MIRFloatType::F64,
-            } => {
-                // Already the correct type for varargs
-            }
-
-            _ => {
-                return log_typecheck_error!(
-                    env,
-                    expr.token_range(),
-                    " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
-                    arg_type
-                );
-            }
-        }
-    }
-
-    let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
-
-    Ok(TypecheckResult::expr(
-        prototype.return_type.clone(),
-        MIRExpressionKind::CallFunction {
-            function: Box::new(loaded_lhs_val),
-            arguments: args.clone(),
-        },
-    ))
+    let tc_args = comma_separated(env, base_data, rhs)?;
+    finish_function_call(env, expr, prototype, loaded_lhs_val, tc_args)
 }
 
 fn typecheck_type_constructor(
@@ -527,61 +698,49 @@ pub(crate) fn typecheck_scoped_call(
         return typecheck_type_constructor(env, base_data, expr, &mir_type, method_name, args_expr);
     }
 
-    let prototype =
-        query_static_member_function(env, base_data, expr, &mir_type, method_name, template_input)?;
+    let key = CXFunctionKey::StaticMemberFunction {
+        type_base_name: mir_type
+            .get_base_identifier()
+            .expect("Scoped type should have a base identifier")
+            .clone(),
+        name: method_name.clone(),
+    };
+    let standard = base_data.fn_data.get_standard(&key);
+    let template = base_data.fn_data.get_template(&key);
+    let tc_args = comma_separated(env, base_data, args_expr)?;
 
-    let mut tc_args = comma_separated(env, base_data, args_expr)?;
-
-    if tc_args.len() != prototype.params.len() && !prototype.var_args {
-        return log_typecheck_error!(
+    let prototype = if let Some(template_input) = template_input {
+        query_static_member_function(
             env,
-            expr.token_range(),
-            " Static method {} expects {} arguments, found {}",
-            prototype,
-            prototype.params.len(),
-            tc_args.len()
-        );
-    }
+            base_data,
+            expr,
+            &mir_type,
+            method_name,
+            Some(template_input),
+        )?
+    } else if let Some(standard) = standard {
+        env.complete_prototype(
+            base_data,
+            standard.external_module.as_ref(),
+            &standard.resource,
+        )?
+    } else if let Some(template) = template {
+        let arg_types = tc_args
+            .iter()
+            .map(|(_, value)| value.get_type())
+            .collect::<Vec<_>>();
+        match deduce_function_template(env, base_data, template, Some(&mir_type), &arg_types) {
+            Ok(prototype) => prototype,
+            Err(err) => {
+                return log_typecheck_error!(env, expr.token_range(), "{}", err.error_content());
+            }
+        }
+    } else {
+        query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
+    };
 
-    if tc_args.len() < prototype.params.len() {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            " Static method {} expects at least {} arguments, found {}",
-            prototype,
-            prototype.params.len(),
-            tc_args.len()
-        );
-    }
-
-    let canon_params = prototype.params.len();
-
-    for ((arg_expr, val), param) in tc_args.iter_mut().zip(prototype.params.iter()) {
-        *val = implicit_cast(env, arg_expr, std::mem::take(val), &param._type)?;
-    }
-
-    for (arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
-        *val = coerce_value(env, arg_expr, std::mem::take(val))?;
-    }
-
-    let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
-
-    Ok(TypecheckResult::expr(
-        prototype.return_type.clone(),
-        MIRExpressionKind::CallFunction {
-            function: Box::new(MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::FunctionReference {
-                    implicit_variables: vec![],
-                },
-                _type: MIRTypeKind::Function {
-                    prototype: Box::new(prototype.clone()),
-                }
-                .into(),
-            }),
-            arguments: args.clone(),
-        },
-    ))
+    let function = build_function_reference(&prototype, vec![]);
+    finish_function_call(env, expr, &prototype, function, tc_args)
 }
 
 pub(crate) fn typecheck_is(
@@ -747,7 +906,12 @@ pub(crate) fn typecheck_binop_mir_vals(
     let lhs_ptr_inner = env.generated_types.ptr_inner(&mir_lhs._type).cloned();
     let rhs_ptr_inner = env.generated_types.ptr_inner(&mir_rhs._type).cloned();
 
-    match (&lhs_ptr_inner, &rhs_ptr_inner, &mir_lhs._type.kind, &mir_rhs._type.kind) {
+    match (
+        &lhs_ptr_inner,
+        &rhs_ptr_inner,
+        &mir_lhs._type.kind,
+        &mir_rhs._type.kind,
+    ) {
         (Some(l_inner), None, _, MIRTypeKind::Integer { .. }) => {
             typecheck_ptr_int_binop(env, op.clone(), l_inner, mir_lhs, mir_rhs)
         }
@@ -760,9 +924,7 @@ pub(crate) fn typecheck_binop_mir_vals(
         (None, None, MIRTypeKind::Float { .. }, MIRTypeKind::Float { .. }) => {
             typecheck_float_float_binop(env, op, mir_lhs, mir_rhs, expr)
         }
-        (Some(_), Some(_), _, _) => {
-            typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr)
-        }
+        (Some(_), Some(_), _, _) => typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr),
         _ => {
             log_typecheck_error!(
                 env,

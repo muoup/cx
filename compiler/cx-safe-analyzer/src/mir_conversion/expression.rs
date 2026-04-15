@@ -309,7 +309,8 @@ pub fn convert_expression(
                 return log_analysis_error!(
                     env,
                     mir_expr,
-                    "References to unsafe functions may not be used in safe contexts"
+                    "References to unsafe function `{}` may not be used in safe contexts",
+                    prototype.name
                 );
             }
 

@@ -1,27 +1,23 @@
 use crate::{
     type_checking::typechecker::add_implicit_return,
-    type_completion::{templates::complete_function_template, types::_complete_template_input},
+    type_completion::templates::complete_function_template,
 };
 use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
-    data::{CXFunctionKind, CXTemplateInput},
+    data::CXFunctionKind,
 };
 use cx_mir::mir::{
+    data::{MIRFunctionPrototype, MIRParameter, MIRTemplateInput},
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRFunction},
-    data::{MIRFunctionPrototype, MIRParameter},
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
-    type_checking::typechecker::{
-        global_expr, typecheck_expr,
-    },
-    type_completion::templates::{
-        add_templated_types, restore_template_overwrites,
-    },
+    type_checking::typechecker::{global_expr, typecheck_expr},
+    type_completion::templates::{add_templated_types, restore_template_overwrites},
 };
 
 pub mod accumulation;
@@ -50,7 +46,7 @@ fn typecheck_function(
             continue;
         };
         let ref_type = env.generated_types.mem_ref_to(_type);
-        
+
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
@@ -98,7 +94,7 @@ pub fn realize_fn_implementation(
     env: &mut TypeEnvironment,
     origin: &CompilationUnit,
     template_kind: &CXFunctionKind,
-    input: &CXTemplateInput,
+    input: &MIRTemplateInput,
 ) -> CXResult<()> {
     let base_ast = env.module_data.naive_ast.get(origin);
     let base_data = env.module_data.base_mappings.get(origin);
@@ -111,18 +107,14 @@ pub fn realize_fn_implementation(
         .function_stmts
         .iter()
         .find_map(|stmt| match stmt {
-            CXFunctionStmt::TemplatedFunction { prototype, body, .. }
-                if prototype.kind == template.resource.shell.kind =>
-            {
-                Some(body)
-            }
+            CXFunctionStmt::TemplatedFunction {
+                prototype, body, ..
+            } if prototype.kind == template.resource.shell.kind => Some(body),
             _ => None,
         })
         .expect("Function template body not found");
 
-    // Complete the template input from CX to MIR level
-    let completed_input = _complete_template_input(env, base_data.as_ref(), None, &CXExpr::default(), input)?;
-    let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input)?;
+    let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
     env.in_external_templated_function = true;

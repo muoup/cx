@@ -20,7 +20,7 @@ string string::new() safe {
         opt<string>::some(val) => return val;
         opt<string>::none(_) => {
             println("Failed to allocate memory for string");
-            exit(1);
+            @unsafe(exit(1));
         }
     }
     

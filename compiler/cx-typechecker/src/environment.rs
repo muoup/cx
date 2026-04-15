@@ -5,7 +5,9 @@ use cx_ast::data::{
 use cx_mir::CXTypeMap;
 use cx_mir::function_map::CXFnMap;
 use cx_mir::intrinsic_types::INTRINSIC_TYPES;
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind};
+use cx_mir::mir::data::{
+    MIRFunctionPrototype, MIRTemplateInput, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
+};
 use cx_mir::mir::expression::MIRExpression;
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_pipeline_data::CompilationUnit;
@@ -64,7 +66,7 @@ pub enum MIRFunctionGenRequest {
     Template {
         module_origin: Option<String>,
         kind: CXFunctionKind,
-        input: CXTemplateInput,
+        input: MIRTemplateInput,
     },
 }
 
