@@ -3,16 +3,14 @@ use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
 use crate::mir::{
-    data::{
-        MIRFunctionPrototype, MIRTemplateInput, TemplateInfo,
-    },
+    data::{MIRFunctionPrototype, MIRTemplateInput, TemplateInfo},
     name_mangling::type_mangle,
 };
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct MIRTypeContext {
     pub type_identifiers: Vec<(CXIdent, MIRTypeId)>,
-    pub types: Vec<Option<MIRType>>,
+    pub types: Vec<MIRType>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
@@ -24,7 +22,7 @@ pub struct MIRType {
     pub specifiers: CXTypeSpecifier,
     pub move_attributes: MIRMoveAttributes,
     pub strong_identifier: Option<CXIdent>,
-    
+
     pub template_info: Option<Box<TemplateInfo>>,
     pub kind: MIRTypeKind,
 }
@@ -136,13 +134,28 @@ impl MIRTypeContext {
         id.0.checked_sub(1).map(|idx| idx as usize)
     }
 
+    fn undefined_type() -> MIRType {
+        MIRType {
+            kind: MIRTypeKind::Undefined,
+            ..Default::default()
+        }
+    }
+
     pub fn insert(&mut self, id: MIRTypeId, ty: MIRType) -> Option<MIRType> {
         let idx = Self::index_of(id)?;
-        if self.types.len() <= idx {
-            self.types.resize(idx + 1, None);
+
+        if idx == self.types.len() {
+            self.types.push(ty);
+            return None;
         }
 
-        self.types[idx].replace(ty)
+        if self.types.len() < idx {
+            self.types.resize_with(idx, Self::undefined_type);
+            self.types.push(ty);
+            return None;
+        }
+
+        Some(std::mem::replace(&mut self.types[idx], ty))
     }
 
     pub fn intern(&mut self, ty: MIRType) -> MIRTypeId {
@@ -150,27 +163,27 @@ impl MIRTypeContext {
             .types
             .iter()
             .enumerate()
-            .find(|(_, existing)| existing.as_ref() == Some(&ty))
+            .find(|(_, existing)| *existing == &ty)
         {
             return MIRTypeId(idx as u64 + 1);
         }
 
-        self.types.push(Some(ty));
+        self.types.push(ty);
         MIRTypeId(self.types.len() as u64)
     }
 
     pub fn get(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.types.get(Self::index_of(id)?).and_then(|ty| ty.as_ref())
+        self.types.get(Self::index_of(id)?)
     }
 
     pub fn get_mut(&mut self, id: MIRTypeId) -> Option<&mut MIRType> {
-        self.types
-            .get_mut(Self::index_of(id)?)
-            .and_then(|ty| ty.as_mut())
+        self.types.get_mut(Self::index_of(id)?)
     }
 
     pub fn contains(&self, id: MIRTypeId) -> bool {
-        self.get(id).is_some()
+        self.get(id)
+            .map(|ty| !matches!(ty.kind, MIRTypeKind::Undefined))
+            .unwrap_or(false)
     }
 
     pub fn register_identifier(&mut self, name: CXIdent, id: MIRTypeId) {
@@ -197,7 +210,7 @@ impl MIRTypeContext {
         self.types
             .iter()
             .enumerate()
-            .find(|(_, existing)| existing.as_ref() == Some(ty))
+            .find(|(_, existing)| *existing == ty)
             .map(|(idx, _)| MIRTypeId(idx as u64 + 1))
     }
 

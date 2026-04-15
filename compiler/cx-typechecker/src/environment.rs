@@ -5,11 +5,9 @@ use cx_ast::data::{
 use cx_mir::CXTypeMap;
 use cx_mir::function_map::CXFnMap;
 use cx_mir::intrinsic_types::INTRINSIC_TYPES;
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind};
 use cx_mir::mir::expression::MIRExpression;
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
-use cx_mir::mir::data::{
-    MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
-};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
@@ -40,11 +38,11 @@ pub struct TypeEnvironment<'a> {
     pub currently_defining_types: HashSet<MIRTypeId>,
     pub definition_stack: Vec<MIRTypeId>,
     pub next_type_id: u64,
-    
+
     pub realized_types: CXTypeMap,
     pub realized_fns: CXFnMap,
     pub realized_globals: HashMap<String, MIRGlobalVariable>,
-    
+
     pub requests: Vec<MIRFunctionGenRequest>,
     pub current_function: Option<MIRFunctionPrototype>,
     pub arg_vals: Vec<MIRExpression>,
@@ -471,10 +469,14 @@ impl TypeEnvironment<'_> {
         let id = MIRTypeId(self.next_type_id.max(next_available));
         self.next_type_id = id.0 + 1;
         self.named_type_ids.insert(name.to_string(), id);
-        let idx = id.0.saturating_sub(1) as usize;
-        if self.generated_types.types.len() <= idx {
-            self.generated_types.types.resize(idx + 1, None);
-        }
+        self.generated_types.insert(
+            id,
+            MIRType {
+                strong_identifier: Some(CXIdent::new(name)),
+                kind: MIRTypeKind::Undefined,
+                ..Default::default()
+            },
+        );
         id
     }
 
@@ -538,11 +540,8 @@ impl TypeEnvironment<'_> {
         if let Some(name) = ty.get_name()
             && let Some(id) = self.named_type_ids.get(name.as_str()).copied()
         {
-            self.generated_types
-                .register_identifier(name.clone(), id);
-            if !self.generated_types.contains(id)
-                && matches!(ty.kind, MIRTypeKind::Undefined)
-            {
+            self.generated_types.register_identifier(name.clone(), id);
+            if self.generated_types.get(id).is_none() {
                 self.generated_types.insert(id, ty);
             }
 
