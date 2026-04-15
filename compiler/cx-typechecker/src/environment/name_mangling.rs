@@ -8,18 +8,6 @@ use cx_util::CXResult;
 
 use crate::environment::TypeEnvironment;
 
-fn prototype_mangle(return_type: &MIRType, parameter_types: &[MIRType]) -> String {
-    let mut mangled = String::new();
-
-    mangled.push_str(&return_type.mangle());
-
-    for param_type in parameter_types {
-        mangled.push_str(&param_type.mangle());
-    }
-
-    mangled
-}
-
 pub fn base_mangle_fn_name(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -33,13 +21,13 @@ pub fn base_mangle_fn_name(
         } => {
             let member_type =
                 env.complete_type(base_data, &CXExpr::default(), &member_type.as_type())?;
-            base_mangle_member(name.as_str(), &member_type)
+            base_mangle_member(&env.generated_types, name.as_str(), &member_type)
         }
 
         CXFunctionKind::StaticMemberFunction { name, member_type } => {
             let member_type =
                 env.complete_type(base_data, &CXExpr::default(), &member_type.as_type())?;
-            base_mangle_static_member(name.as_str(), &member_type)
+            base_mangle_static_member(&env.generated_types, name.as_str(), &member_type)
         }
     })
 }
@@ -52,7 +40,11 @@ pub fn mangle_templated_fn_name(
     parameter_types: &[MIRType],
 ) -> CXResult<String> {
     let base_mangle = base_mangle_fn_name(env, base_data, kind)?;
-    let prototype_mangling = prototype_mangle(return_type, parameter_types);
+    let mut prototype_mangling = String::new();
+    prototype_mangling.push_str(&env.generated_types.mangle(return_type));
+    for param_type in parameter_types {
+        prototype_mangling.push_str(&env.generated_types.mangle(param_type));
+    }
 
     Ok(format!("{}_{}", base_mangle, prototype_mangling))
 }

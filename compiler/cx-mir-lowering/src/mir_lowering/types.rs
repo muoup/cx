@@ -127,19 +127,17 @@ pub(crate) fn convert_type_kind(
 
         MIRTypeKind::Float { _type } => LMIRTypeKind::Float(convert_float_type(_type)),
 
-        MIRTypeKind::PointerTo {
-            nullable: false, ..
-        } => LMIRTypeKind::Pointer {
-            nullable: false,
-            dereferenceable: 0,
-        },
-
-        MIRTypeKind::Function { .. } | MIRTypeKind::PointerTo { nullable: true, .. } => {
+        MIRTypeKind::Function { .. } => {
             LMIRTypeKind::Pointer {
                 nullable: true,
                 dereferenceable: 0,
             }
         }
+
+        MIRTypeKind::PointerTo { .. } => LMIRTypeKind::Pointer {
+            nullable: false,
+            dereferenceable: 0,
+        },
 
         MIRTypeKind::TaggedUnion { .. } => LMIRTypeKind::Struct {
             name: cx_type
@@ -171,7 +169,12 @@ pub(crate) fn convert_type_kind(
             inner_type: _type,
             size,
         } => LMIRTypeKind::Array {
-            element: Box::new(convert_type(_type, definitions)),
+            element: Box::new(convert_type(
+                definitions
+                    .get(*_type.as_ref())
+                    .unwrap_or_else(|| panic!("Unknown type id {}", _type.0)),
+                definitions,
+            )),
             size: *size,
         },
 

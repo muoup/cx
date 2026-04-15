@@ -46,11 +46,15 @@ pub(crate) fn restore_template_overwrites(env: &mut TypeEnvironment, overwrites:
     }
 }
 
-pub fn mangle_template_name(name: &str, input: &MIRTemplateInput) -> String {
+pub fn mangle_template_name(
+    env: &TypeEnvironment,
+    name: &str,
+    input: &MIRTemplateInput,
+) -> String {
     let mut mangled_name = String::from("_t");
 
     for arg in &input.args {
-        mangled_name.push_str(&arg.mangle());
+        mangled_name.push_str(&env.generated_types.mangle(arg));
     }
 
     mangled_name.push('_');
@@ -68,7 +72,7 @@ pub(crate) fn instantiate_type_template(
     let (_, base_data) = base_data_from_module(env, base_data, None);
     let completed_input =
         _complete_template_input(env, base_data, None, &CXExpr::default(), input)?;
-    let template_name = mangle_template_name(name, &completed_input);
+    let template_name = mangle_template_name(env, name, &completed_input);
 
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
         return Ok(template.clone());
@@ -100,28 +104,41 @@ pub(crate) fn instantiate_type_template(
         let provisional = match &shell.kind {
             CXTypeKind::Structured { attributes, .. } => {
                 let attrs = resolve_template_attributes(env, attributes);
-                MIRType::named_struct(
-                    CXIdent::new(base_name.clone()),
-                    template_type_id,
-                    None,
-                    attrs,
-                )
+                MIRType {
+                    visibility: cx_ast::ast::VisibilityMode::Private,
+                    specifiers: 0,
+                    move_attributes: attrs,
+                    strong_identifier: Some(CXIdent::new(base_name.clone())),
+                    template_info: None,
+                    kind: cx_mir::mir::data::MIRTypeKind::Structured { fields: vec![] },
+                }
             }
-            CXTypeKind::Union { .. } => {
-                MIRType::named_union(CXIdent::new(base_name.clone()), template_type_id)
-            }
+            CXTypeKind::Union { .. } => MIRType {
+                visibility: cx_ast::ast::VisibilityMode::Private,
+                specifiers: 0,
+                move_attributes: MIRMoveAttributes::default(),
+                strong_identifier: Some(CXIdent::new(base_name.clone())),
+                template_info: None,
+                kind: cx_mir::mir::data::MIRTypeKind::Union { variants: vec![] },
+            },
             CXTypeKind::TaggedUnion { attributes, .. } => {
                 let attrs = resolve_template_attributes(env, attributes);
-                MIRType::named_tagged_union(
-                    CXIdent::new(base_name.clone()),
-                    template_type_id,
-                    None,
-                    attrs,
-                )
+                MIRType {
+                    visibility: cx_ast::ast::VisibilityMode::Private,
+                    specifiers: 0,
+                    move_attributes: attrs,
+                    strong_identifier: Some(CXIdent::new(base_name.clone())),
+                    template_info: None,
+                    kind: cx_mir::mir::data::MIRTypeKind::TaggedUnion { variants: vec![] },
+                }
             }
             _ => unreachable!("Templated named type must be an aggregate"),
         };
 
+        env.generated_types.register_identifier(
+            CXIdent::new(base_name.clone()),
+            template_type_id,
+        );
         previous_named_type = env.realized_types.insert(base_name.clone(), provisional);
     }
 
@@ -154,12 +171,12 @@ pub(crate) fn instantiate_type_template(
     );
     cx_type.set_name(CXIdent::new(template_name.clone()));
 
-    if let Some(type_id) = cx_type.named_type_id() {
-        let template_info = cx_type
-            .get_template_data()
-            .map(|info| Box::new(info.clone()));
+    if let Some(type_id) = cx_type
+        .get_name()
+        .and_then(|name| env.get_named_type_id(name.as_str()))
+    {
+        let template_info = cx_type.get_template_data().map(|info| Box::new(info.clone()));
         let renamed = CXIdent::new(template_name.clone());
-        cx_type.rewrite_named_type_metadata(type_id, &renamed, &template_info);
         env.update_named_type_metadata(type_id, renamed, template_info);
     }
 

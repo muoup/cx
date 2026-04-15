@@ -295,9 +295,9 @@ pub fn lower_match(
     default: Option<&MIRExpression>,
 ) -> CXResult<LMIRValue> {
     let mut bc_condition = lower_expression(builder, condition)?;
-    let inner = condition
-        ._type
-        .mem_ref_inner()
+    let inner = builder
+        .type_definitions
+        .mem_ref_inner(&condition._type)
         .cloned()
         .unwrap_or_else(|| condition._type.clone());
 

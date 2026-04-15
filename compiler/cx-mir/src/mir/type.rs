@@ -1,38 +1,41 @@
-use std::hash::{Hash, Hasher};
-
 use cx_ast::{ast::VisibilityMode, data::CXTypeSpecifier};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::mir::{data::{MIRParameter, MIRTypeContext}, name_mangling::type_mangle};
+use crate::mir::{
+    data::{
+        MIRFunctionPrototype, MIRTemplateInput, TemplateInfo,
+    },
+    name_mangling::type_mangle,
+};
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct MIRTypeContext {
     pub type_identifiers: Vec<(CXIdent, MIRTypeId)>,
+    pub types: Vec<Option<MIRType>>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
 pub struct MIRTypeId(pub u64);
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeSpecifier,
     pub move_attributes: MIRMoveAttributes,
     pub strong_identifier: Option<CXIdent>,
-
+    
+    pub template_info: Option<Box<TemplateInfo>>,
     pub kind: MIRTypeKind,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
-pub enum MIRMoveAttributes {
-    #[default]
-    TriviallyCopyable,
-    NoCopy,
-    NoDrop
+pub struct MIRMoveAttributes {
+    pub nocopy: bool,
+    pub nodrop: bool,
 }
 
-#[derive(Debug, Clone, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum MIRTypeKind {
     Unit,
     Integer {
@@ -62,9 +65,7 @@ pub enum MIRTypeKind {
         inner_type: Box<MIRTypeId>,
     },
     Function {
-        return_type: Box<MIRTypeId>,
-        params: Vec<MIRParameter>,
-        var_args: bool,
+        prototype: Box<MIRFunctionPrototype>,
     },
     Opaque {
         size: usize,
@@ -73,7 +74,7 @@ pub enum MIRTypeKind {
     Str,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum MIRIntegerType {
     I1,
     I8,
@@ -83,7 +84,7 @@ pub enum MIRIntegerType {
     I128,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum MIRFloatType {
     F32,
     F64,
@@ -130,40 +131,280 @@ impl MIRFloatType {
     }
 }
 
-impl Hash for MIRType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.visibility.hash(state);
-        self.specifiers.hash(state);
-        state.write(&self.mangle().into_bytes());
+impl MIRTypeContext {
+    fn index_of(id: MIRTypeId) -> Option<usize> {
+        id.0.checked_sub(1).map(|idx| idx as usize)
+    }
+
+    pub fn insert(&mut self, id: MIRTypeId, ty: MIRType) -> Option<MIRType> {
+        let idx = Self::index_of(id)?;
+        if self.types.len() <= idx {
+            self.types.resize(idx + 1, None);
+        }
+
+        self.types[idx].replace(ty)
+    }
+
+    pub fn intern(&mut self, ty: MIRType) -> MIRTypeId {
+        if let Some((idx, _)) = self
+            .types
+            .iter()
+            .enumerate()
+            .find(|(_, existing)| existing.as_ref() == Some(&ty))
+        {
+            return MIRTypeId(idx as u64 + 1);
+        }
+
+        self.types.push(Some(ty));
+        MIRTypeId(self.types.len() as u64)
+    }
+
+    pub fn get(&self, id: MIRTypeId) -> Option<&MIRType> {
+        self.types.get(Self::index_of(id)?).and_then(|ty| ty.as_ref())
+    }
+
+    pub fn get_mut(&mut self, id: MIRTypeId) -> Option<&mut MIRType> {
+        self.types
+            .get_mut(Self::index_of(id)?)
+            .and_then(|ty| ty.as_mut())
+    }
+
+    pub fn contains(&self, id: MIRTypeId) -> bool {
+        self.get(id).is_some()
+    }
+
+    pub fn register_identifier(&mut self, name: CXIdent, id: MIRTypeId) {
+        if let Some((_, existing_id)) = self
+            .type_identifiers
+            .iter_mut()
+            .find(|(existing_name, _)| existing_name == &name)
+        {
+            *existing_id = id;
+            return;
+        }
+
+        self.type_identifiers.push((name, id));
+    }
+
+    pub fn identifier_id(&self, name: &str) -> Option<MIRTypeId> {
+        self.type_identifiers
+            .iter()
+            .find(|(existing_name, _)| existing_name.as_str() == name)
+            .map(|(_, id)| *id)
+    }
+
+    pub fn type_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
+        self.types
+            .iter()
+            .enumerate()
+            .find(|(_, existing)| existing.as_ref() == Some(ty))
+            .map(|(idx, _)| MIRTypeId(idx as u64 + 1))
+    }
+
+    pub fn pointer_to(&mut self, inner_type: &MIRType) -> MIRType {
+        let inner_id = self.intern(inner_type.clone());
+        MIRType {
+            kind: MIRTypeKind::PointerTo {
+                inner_type: Box::new(inner_id),
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn mem_ref_to(&mut self, inner_type: &MIRType) -> MIRType {
+        let inner_id = self.intern(inner_type.clone());
+        MIRType {
+            kind: MIRTypeKind::MemoryReference {
+                inner_type: Box::new(inner_id),
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn mem_ref_inner_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
+        let MIRTypeKind::MemoryReference { inner_type } = &ty.kind else {
+            return None;
+        };
+
+        Some(*inner_type.as_ref())
+    }
+
+    pub fn array_inner_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
+        let MIRTypeKind::Array { inner_type, .. } = &ty.kind else {
+            return None;
+        };
+
+        Some(*inner_type.as_ref())
+    }
+
+    pub fn ptr_inner_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
+        let MIRTypeKind::PointerTo { inner_type } = &ty.kind else {
+            return None;
+        };
+
+        Some(*inner_type.as_ref())
+    }
+
+    pub fn mem_ref_inner<'a>(&'a self, ty: &MIRType) -> Option<&'a MIRType> {
+        self.get(self.mem_ref_inner_id(ty)?)
+    }
+
+    pub fn array_inner<'a>(&'a self, ty: &MIRType) -> Option<&'a MIRType> {
+        self.get(self.array_inner_id(ty)?)
+    }
+
+    pub fn ptr_inner<'a>(&'a self, ty: &MIRType) -> Option<&'a MIRType> {
+        self.get(self.ptr_inner_id(ty)?)
+    }
+
+    pub fn memory_resident_type<'a>(&'a self, ty: &'a MIRType) -> &'a MIRType {
+        self.mem_ref_inner(ty)
+            .or_else(|| self.ptr_inner(ty))
+            .unwrap_or(ty)
+    }
+
+    pub fn is_mutable_memory_reference(&self, ty: &MIRType) -> bool {
+        let Some(inner_type) = self.mem_ref_inner(ty) else {
+            return false;
+        };
+
+        !inner_type.get_specifier(cx_ast::data::CX_CONST)
+    }
+
+    pub fn aggregate_fields<'a>(&'a self, ty: &'a MIRType) -> Option<&'a Vec<(String, MIRTypeId)>> {
+        match &ty.kind {
+            MIRTypeKind::Structured { fields } => Some(fields),
+            MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => {
+                Some(variants)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn mangle(&self, ty: &MIRType) -> String {
+        type_mangle(self, ty)
+    }
+
+    pub fn type_size(&self, ty: &MIRType) -> usize {
+        match &ty.kind {
+            MIRTypeKind::Integer { _type, .. } => _type.bytes(),
+            MIRTypeKind::Float { _type } => _type.bytes(),
+            MIRTypeKind::Unit => 0,
+            MIRTypeKind::Opaque { size } => *size,
+            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
+                std::mem::size_of::<usize>()
+            }
+            MIRTypeKind::Structured { fields } => {
+                let mut offset = 0usize;
+
+                for (_, field_id) in fields {
+                    let field_type = self
+                        .get(*field_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
+                    let align = self.type_alignment(field_type);
+                    offset = offset.div_ceil(align) * align;
+                    offset += self.type_size(field_type);
+                }
+
+                offset
+            }
+            MIRTypeKind::Union { variants } => variants
+                .iter()
+                .map(|(_, field_id)| {
+                    let field_type = self
+                        .get(*field_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
+                    self.type_size(field_type)
+                })
+                .max()
+                .unwrap_or(0),
+            MIRTypeKind::Array { size, inner_type } => {
+                let inner_type = self
+                    .get(*inner_type.as_ref())
+                    .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
+                size * self.padded_size(inner_type)
+            }
+            MIRTypeKind::TaggedUnion { variants } => {
+                variants
+                    .iter()
+                    .map(|(_, field_id)| {
+                        let field_type = self
+                            .get(*field_id)
+                            .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
+                        self.type_size(field_type)
+                    })
+                    .max()
+                    .unwrap_or(0)
+                    + 1
+            }
+            MIRTypeKind::Undefined => unreachable!("Incomplete type has no type_size"),
+            MIRTypeKind::Str => unreachable!("str is unsized and has no type_size"),
+            MIRTypeKind::Function { .. } => unreachable!("Function has no type_size"),
+        }
+    }
+
+    pub fn padded_size(&self, ty: &MIRType) -> usize {
+        let size = self.type_size(ty);
+        let align = self.type_alignment(ty);
+        size.div_ceil(align) * align
+    }
+
+    pub fn type_alignment(&self, ty: &MIRType) -> usize {
+        match &ty.kind {
+            MIRTypeKind::Integer { _type, .. } => _type.bytes().min(8),
+            MIRTypeKind::Float { _type } => _type.bytes().min(8),
+            MIRTypeKind::Unit => 1,
+            MIRTypeKind::Opaque { size } => (*size).min(8),
+            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
+                std::mem::size_of::<usize>()
+            }
+            MIRTypeKind::Structured { fields } => fields
+                .iter()
+                .map(|(_, field_id)| {
+                    let field_type = self
+                        .get(*field_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
+                    self.type_alignment(field_type)
+                })
+                .max()
+                .unwrap_or(8),
+            MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => variants
+                .iter()
+                .map(|(_, field_id)| {
+                    let field_type = self
+                        .get(*field_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
+                    self.type_alignment(field_type)
+                })
+                .max()
+                .unwrap_or(8),
+            MIRTypeKind::Array { inner_type, .. } => {
+                let inner_type = self
+                    .get(*inner_type.as_ref())
+                    .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
+                self.type_alignment(inner_type)
+            }
+            MIRTypeKind::Undefined => unreachable!("Incomplete type has no type_alignment"),
+            MIRTypeKind::Str => unreachable!("str is unsized and has no type_alignment"),
+            MIRTypeKind::Function { .. } => unreachable!("Function has no type_alignment"),
+        }
     }
 }
-
-impl PartialEq<Self> for MIRType {
-    fn eq(&self, other: &Self) -> bool {
-        same_type(self, other)
-    }
-}
-
-impl Eq for MIRType {}
 
 impl Default for MIRType {
     fn default() -> Self {
         MIRType {
-            kind: MIRTypeKind::Unit,
-        
             visibility: VisibilityMode::Private,
             specifiers: CXTypeSpecifier::default(),
             move_attributes: MIRMoveAttributes::default(),
             strong_identifier: None,
+            template_info: None,
+            kind: MIRTypeKind::Unit,
         }
     }
 }
 
 impl MIRType {
-    pub fn mangle(&self) -> String {
-        type_mangle(self)
-    }
-
     pub fn unit() -> Self {
         Self::default()
     }
@@ -174,15 +415,11 @@ impl MIRType {
                 _type: MIRIntegerType::I1,
                 signed: false,
             },
-            
             ..Default::default()
         }
     }
-    
-    pub fn with_name(
-        mut self,
-        name: CXIdent,
-    ) -> MIRType {
+
+    pub fn with_name(mut self, name: CXIdent) -> MIRType {
         self.strong_identifier = Some(name);
         self
     }
@@ -214,30 +451,6 @@ impl MIRType {
 
     pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
         self.specifiers & specifier == specifier
-    }
-
-    pub fn mem_ref_inner(&self) -> Option<&MIRTypeId> {
-        let MIRTypeKind::MemoryReference { inner_type, .. } = &self.kind else {
-            return None;
-        };
-
-        Some(inner_type.as_ref())
-    }
-
-    pub fn array_inner(&self) -> Option<&MIRTypeId> {
-        let MIRTypeKind::Array { inner_type, .. } = &self.kind else {
-            return None;
-        };
-
-        Some(inner_type.as_ref())
-    }
-
-    pub fn ptr_inner(&self) -> Option<&MIRTypeId> {
-        let MIRTypeKind::PointerTo { inner_type, .. } = &self.kind else {
-            return None;
-        };
-
-        Some(inner_type.as_ref())
     }
 
     pub fn is_pointer(&self) -> bool {
@@ -291,120 +504,173 @@ impl MIRType {
     }
 
     pub fn struct_attributes(&self) -> Option<MIRMoveAttributes> {
-        Some(self.move_attributes)
+        match self.kind {
+            MIRTypeKind::Structured { .. }
+            | MIRTypeKind::Union { .. }
+            | MIRTypeKind::TaggedUnion { .. } => Some(self.move_attributes),
+            _ => None,
+        }
     }
 
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, MIRTypeKind::MemoryReference { .. })
     }
-    
+
     pub fn get_name(&self) -> Option<&CXIdent> {
         self.strong_identifier.as_ref()
+    }
+
+    pub fn get_base_identifier(&self) -> Option<&CXIdent> {
+        self.template_info
+            .as_ref()
+            .map(|info| &info.base_name)
+            .or(self.strong_identifier.as_ref())
+    }
+
+    pub fn get_template_data(&self) -> Option<&TemplateInfo> {
+        self.template_info.as_deref()
+    }
+
+    pub fn get_fn_name(&self) -> Option<&CXIdent> {
+        match &self.kind {
+            MIRTypeKind::Function { prototype } => Some(&prototype.name),
+            _ => None,
+        }
+    }
+
+    pub fn add_template_info(&mut self, new_name: CXIdent, template_input: MIRTemplateInput) {
+        let old_name = self
+            .strong_identifier
+            .clone()
+            .unwrap_or_else(|| new_name.clone());
+        self.strong_identifier = Some(new_name);
+        self.template_info = Some(Box::new(TemplateInfo {
+            base_name: old_name,
+            template_input,
+        }));
+    }
+
+    pub fn was_template_instantiated(&self) -> bool {
+        self.template_info.is_some()
     }
 
     pub fn set_name(&mut self, new_name: CXIdent) {
         self.strong_identifier = Some(new_name);
     }
 
-    pub fn type_size(&self, definitions: &MIRTypeContext) -> usize {
-        match &self.kind {
-            MIRTypeKind::Integer { _type, .. } => _type.bytes(),
-            MIRTypeKind::Float { _type } => _type.bytes(),
-            MIRTypeKind::Unit => 0,
-            MIRTypeKind::Opaque { size, .. } => *size,
-            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
-                std::mem::size_of::<usize>()
-            }
-
-            MIRTypeKind::Structured { .. } => {
-                let Some(fields) = self.aggregate_fields(definitions) else {
-                    panic!("Incomplete structured type has no size: {}", self);
-                };
-
-                let mut offset: usize = 0;
-
-                for (_, t) in fields {
-                    let align = t.type_alignment(definitions);
-                    offset = offset.div_ceil(align) * align;
-                    offset += t.type_size(definitions);
-                }
-
-                offset
-            }
-
-            MIRTypeKind::Union { variants, .. } => variants
-                .iter()
-                .map(|(_, t)| t.type_size(definitions))
-                .max()
-                .unwrap_or(0),
-
-            MIRTypeKind::Array { size, inner_type } => size * inner_type.padded_size(definitions),
-
-            MIRTypeKind::TaggedUnion { .. } => {
-                self.aggregate_fields(definitions)
-                    .unwrap_or_else(|| panic!("Incomplete tagged union type has no size: {}", self))
-                    .iter()
-                    .map(|(_, t)| t.type_size(definitions))
-                    .max()
-                    .unwrap_or(0)
-                    + 1
-            }
-
-            MIRTypeKind::Undefined { .. } => {
-                unreachable!("Incomplete type has no type_size")
-            }
-            MIRTypeKind::Str => unreachable!("str is unsized and has no type_size"),
-            MIRTypeKind::Function { .. } => unreachable!(),
+    pub fn named_struct(
+        name: CXIdent,
+        _type_id: MIRTypeId,
+        template_info: Option<Box<TemplateInfo>>,
+        attributes: MIRMoveAttributes,
+    ) -> Self {
+        MIRType {
+            strong_identifier: Some(name),
+            template_info,
+            move_attributes: attributes,
+            kind: MIRTypeKind::Structured { fields: vec![] },
+            ..Default::default()
         }
+    }
+
+    pub fn named_union(name: CXIdent, _type_id: MIRTypeId) -> Self {
+        MIRType {
+            strong_identifier: Some(name),
+            kind: MIRTypeKind::Union { variants: vec![] },
+            ..Default::default()
+        }
+    }
+
+    pub fn named_tagged_union(
+        name: CXIdent,
+        _type_id: MIRTypeId,
+        template_info: Option<Box<TemplateInfo>>,
+        attributes: MIRMoveAttributes,
+    ) -> Self {
+        MIRType {
+            strong_identifier: Some(name),
+            template_info,
+            move_attributes: attributes,
+            kind: MIRTypeKind::TaggedUnion { variants: vec![] },
+            ..Default::default()
+        }
+    }
+
+    pub fn named_type_id(&self, definitions: &MIRTypeContext) -> Option<MIRTypeId> {
+        self.get_name()
+            .and_then(|name| definitions.identifier_id(name.as_str()))
+    }
+
+    pub fn aggregate_fields(&self, definitions: &MIRTypeContext) -> Option<Vec<(String, MIRType)>> {
+        definitions.aggregate_fields(self).map(|fields| {
+            fields
+                .iter()
+                .map(|(name, id)| {
+                    (
+                        name.clone(),
+                        definitions
+                            .get(*id)
+                            .unwrap_or_else(|| panic!("Unknown type id {}", id.0))
+                            .clone(),
+                    )
+                })
+                .collect()
+        })
+    }
+
+    pub fn is_named_aggregate_complete(&self, definitions: &MIRTypeContext) -> bool {
+        self.named_type_id(definitions)
+            .map(|id| definitions.contains(id))
+            .unwrap_or(true)
+    }
+
+    pub fn rewrite_named_type_metadata(
+        &mut self,
+        _target_id: MIRTypeId,
+        new_name: &CXIdent,
+        template_info: &Option<Box<TemplateInfo>>,
+    ) {
+        self.strong_identifier = Some(new_name.clone());
+        self.template_info = template_info.clone();
+    }
+
+    pub fn type_size(&self, definitions: &MIRTypeContext) -> usize {
+        definitions.type_size(self)
     }
 
     pub fn padded_size(&self, definitions: &MIRTypeContext) -> usize {
-        let size = self.type_size(definitions);
-        let align = self.type_alignment(definitions);
-        size.div_ceil(align) * align
+        definitions.padded_size(self)
     }
 
     pub fn type_alignment(&self, definitions: &MIRTypeContext) -> usize {
-        match &self.kind {
-            MIRTypeKind::Integer { _type, .. } => _type.bytes().min(8),
-            MIRTypeKind::Float { _type } => _type.bytes().min(8),
-            MIRTypeKind::Unit => 1,
-            MIRTypeKind::Opaque { size, .. } => (*size).min(8),
-            MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
-                std::mem::size_of::<usize>()
-            }
+        definitions.type_alignment(self)
+    }
 
-            MIRTypeKind::Structured { fields } => fields
-                .iter()
-                .map(|(_, t)| t.type_alignment(definitions))
-                .max()
-                .unwrap_or(8),
-            MIRTypeKind::Union { .. } => self
-                .aggregate_fields(definitions)
-                .unwrap_or_else(|| panic!("Incomplete union type has no alignment: {}", self))
-                .iter()
-                .map(|(_, t)| t.type_alignment(definitions))
-                .max()
-                .unwrap_or(8),
-
-            MIRTypeKind::Array { inner_type, .. } => inner_type.type_alignment(definitions),
-
-            MIRTypeKind::TaggedUnion { .. } => self
-                .aggregate_fields(definitions)
-                .unwrap_or_else(|| {
-                    panic!("Incomplete tagged union type has no alignment: {}", self)
-                })
-                .iter()
-                .map(|(_, t)| t.type_alignment(definitions))
-                .max()
-                .unwrap_or(8),
-
-            MIRTypeKind::Undefined { .. } => {
-                unreachable!("Incomplete type has no type_alignment")
-            }
-            MIRTypeKind::Str => unreachable!("str is unsized and has no type_alignment"),
-            MIRTypeKind::Function { .. } => unreachable!(),
-        }
+    pub fn internal_function() -> Self {
+        MIRType::from(MIRTypeKind::Function {
+            prototype: Box::new(MIRFunctionPrototype {
+                name: CXIdent::from("__internal_function"),
+                source_prototype: cx_ast::data::CXFunctionPrototype {
+                    kind: cx_ast::data::CXFunctionKind::Standard(CXIdent::from(
+                        "__internal_function",
+                    )),
+                    params: vec![],
+                    return_type: cx_ast::data::CXTypeKind::Identifier {
+                        name: CXIdent::from("void"),
+                        predeclaration: cx_ast::data::PredeclarationType::None,
+                    }
+                    .to_type(),
+                    var_args: false,
+                    contract: cx_ast::data::CXFunctionContract::default(),
+                    range: cx_tokens::TokenRange::default(),
+                },
+                return_type: MIRType::unit(),
+                params: vec![],
+                var_args: false,
+                contract: crate::mir::expression::MIRFunctionContract::default(),
+            }),
+        })
+        .with_name(CXIdent::from("__internal_function"))
     }
 }
 
@@ -412,110 +678,32 @@ impl From<MIRTypeKind> for MIRType {
     fn from(kind: MIRTypeKind) -> Self {
         MIRType {
             kind,
- 
             ..Default::default()
         }
     }
 }
 
 pub fn same_types(t1: impl Iterator<Item = MIRType>, t2: impl Iterator<Item = MIRType>) -> bool {
-    t1.zip(t2).all(|(t1, t2)| same_type(&t1, &t2))
+    t1.eq(t2)
 }
 
 pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
     match (&t1.kind, &t2.kind) {
         (
-            MIRTypeKind::Array {
-                inner_type: t1_type,
-                size: t1_size,
+            MIRTypeKind::Function {
+                prototype: prototype1,
             },
-            MIRTypeKind::Array {
-                inner_type: t2_type,
-                size: t2_size,
+            MIRTypeKind::Function {
+                prototype: prototype2,
             },
-        ) => t1_size == t2_size && same_type(t1_type, t2_type),
-
-        (
-            MIRTypeKind::PointerTo {
-                inner_type: t1_type,
-            },
-            MIRTypeKind::PointerTo {
-                inner_type: t2_type,
-            },
-        ) => t1_type == t2_type,
-
-        (
-            MIRTypeKind::Structured {
-                fields: t1_fields,
-                ..
-            },
-            MIRTypeKind::Structured {
-                fields: t2_fields,
-                ..
-            },
-        ) => t1_fields.iter().zip(t2_fields.zip()).all(|x, y| x == y),
-
-        (
-            MIRTypeKind::Union {
-                variants: t1_fields,
-                ..
-            },
-            MIRTypeKind::Union {
-                variants: t2_fields,
-                ..
-            },
-        ) => t1_fields.iter().zip(t2_fields.zip()).all(|x, y| x == y),
-
-        (
-            MIRTypeKind::TaggedUnion {
-                variants: t1_variants,
-                ..
-            },
-            MIRTypeKind::TaggedUnion {
-                variants: t2_variants,
-                ..
-            },
-        ) => *a1 == *a2 && t1_variants.iter().zip(t2_variants.zip()).all(|x, y| x == y),
-
-        (MIRTypeKind::Function { return_type, params, var_args }, MIRTypeKind::Function { return_type: r2, params: p2, var_args: v2 }) => {
-            var_args == v2 && same_type(return_type, r2) && params.len() == p2.len() && params.iter().zip(p2.iter()).all(|(p1, p2)| p1.name == p2.name && same_type(&p1._type, &p2._type))
+        ) => {
+            prototype1.var_args == prototype2.var_args
+                && same_type(&prototype1.return_type, &prototype2.return_type)
+                && same_types(
+                    prototype1.params.iter().map(|param| param._type.clone()),
+                    prototype2.params.iter().map(|param| param._type.clone()),
+                )
         }
-
-        (
-            MIRTypeKind::Integer {
-                _type: t1_type,
-                signed: t1_signed,
-            },
-            MIRTypeKind::Integer {
-                _type: t2_type,
-                signed: t2_signed,
-            },
-        ) => *t1_type == *t2_type && *t1_signed == *t2_signed,
-
-        (MIRTypeKind::Float { _type: t1_type }, MIRTypeKind::Float { _type: t2_type }) => {
-            *t1_type == *t2_type
-        }
-
-        (
-            MIRTypeKind::MemoryReference {
-                inner_type: t1_type,
-            },
-            MIRTypeKind::MemoryReference {
-                inner_type: t2_type,
-            },
-        ) => same_type(t1_type, t2_type),
-
-        (
-            MIRTypeKind::Opaque { name: n1, size: s1 },
-            MIRTypeKind::Opaque { name: n2, size: s2 },
-        ) => n1 == n2 && s1 == s2,
-
-        (MIRTypeKind::Undefined { name: n1 }, MIRTypeKind::Undefined { name: n2 }) => n1 == n2,
-
-        (MIRTypeKind::Unit, MIRTypeKind::Unit) => true,
-
-        (MIRTypeKind::Str, MIRTypeKind::Str) => true,
-
-        _ => false,
+        _ => t1 == t2,
     }
 }

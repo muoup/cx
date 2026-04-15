@@ -493,10 +493,14 @@ fn lower_call(
         .collect::<CXResult<Vec<LMIRValue>>>()?;
 
     let prototype = match &function._type.kind {
-        MIRTypeKind::Function { prototype } => prototype,
+        MIRTypeKind::Function { prototype } => prototype.as_ref().clone(),
         MIRTypeKind::PointerTo { inner_type, .. } => {
+            let inner_type = builder
+                .type_definitions
+                .get(*inner_type.as_ref())
+                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             if let MIRTypeKind::Function { prototype } = &inner_type.kind {
-                prototype
+                prototype.as_ref().clone()
             } else {
                 unreachable!("Call expression function pointer must point to function type")
             }
@@ -505,14 +509,14 @@ fn lower_call(
         _ => unreachable!("Call expression function must have function type"),
     };
 
-    let bc_prototype = builder.convert_cx_prototype(prototype);
+    let bc_prototype = builder.convert_cx_prototype(&prototype);
 
     if let Some(precondition) = &prototype.contract.precondition {
         builder.push_scope(None, None);
 
         for (arg_expr, param) in args.iter().cloned().zip(prototype.params.iter()) {
             if let Some(name) = &param.name {
-                builder.insert_symbol(name.clone(), arg_expr);
+                builder.insert_symbol((*name).clone(), arg_expr);
             }
         }
 
@@ -577,12 +581,12 @@ fn lower_call(
 
         for (arg_expr, param) in args_cloned.into_iter().zip(prototype.params.iter()) {
             if let Some(name) = &param.name {
-                builder.insert_symbol(name.clone(), arg_expr);
+                builder.insert_symbol((*name).clone(), arg_expr);
             }
         }
 
         if let Some(ret_name) = ret_name {
-            builder.insert_symbol(ret_name.clone(), value.clone());
+            builder.insert_symbol((*ret_name).clone(), value.clone());
         }
 
         let assumption = lower_expression(builder, postcondition)?;

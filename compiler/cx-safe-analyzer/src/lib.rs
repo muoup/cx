@@ -121,13 +121,16 @@ impl AnalysisDiagnosticContext {
 impl FMIRContext {
     pub fn new(compilation_unit: PathBuf) -> Self {
         FMIRContext {
-            env: FMIREnvironment::new(compilation_unit),
+            env: FMIREnvironment::new(compilation_unit, Default::default()),
             functions: HashMap::new(),
         }
     }
 
     pub fn new_from(mir: &MIRUnit) -> CXResult<Self> {
-        let mut context = FMIRContext::new(mir.source_path.to_owned());
+        let mut context = FMIRContext {
+            env: FMIREnvironment::new(mir.source_path.to_owned(), mir.type_definitions.clone()),
+            functions: HashMap::new(),
+        };
 
         for function in mir.functions.iter() {
             if !function.prototype.contract.safe {

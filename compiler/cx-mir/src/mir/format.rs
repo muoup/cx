@@ -621,20 +621,17 @@ impl Display for MIRTypeKind {
             MIRTypeKind::Opaque { size, .. } => write!(f, "opaque({})", size),
             MIRTypeKind::Undefined => write!(f, "undefined"),
             MIRTypeKind::Str => write!(f, "_str"),
-            MIRTypeKind::Function {
-                return_type,
-                params,
-                var_args,
-            } => write!(
+            MIRTypeKind::Function { prototype } => write!(
                 f,
                 "fn({}{}) -> {}",
-                params
+                prototype
+                    .params
                     .iter()
                     .map(|arg| arg.to_string())
                     .collect::<Vec<_>>()
                     .join(", "),
-                if *var_args { ", ..." } else { "" },
-                return_type
+                if prototype.var_args { ", ..." } else { "" },
+                prototype.return_type
             ),
         }
     }

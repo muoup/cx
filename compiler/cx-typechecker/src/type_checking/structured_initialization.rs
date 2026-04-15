@@ -113,21 +113,38 @@ pub fn typecheck_initializer_list(
         );
     };
 
-    let to_type = match &to_type.kind {
-        MIRTypeKind::MemoryReference { inner_type, .. } => inner_type.as_ref(),
-        _ => to_type,
+    let owned_inner;
+    let to_type = if let Some(inner_type) = env.generated_types.mem_ref_inner(to_type) {
+        owned_inner = inner_type.clone();
+        &owned_inner
+    } else {
+        to_type
     };
 
     match &to_type.kind {
         MIRTypeKind::Array {
             inner_type: _type,
             size,
-        } => typecheck_array_initializer(env, base_data, indices, _type, Some(*size), to_type),
+        } => {
+            let inner_type = env
+                .generated_types
+                .get(*_type.as_ref())
+                .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
+                .clone();
+            typecheck_array_initializer(env, base_data, indices, &inner_type, Some(*size), to_type)
+        }
 
         MIRTypeKind::PointerTo {
             inner_type: inner,
             ..
-        } => typecheck_array_initializer(env, base_data, indices, inner.as_ref(), None, to_type),
+        } => {
+            let inner_type = env
+                .generated_types
+                .get(*inner.as_ref())
+                .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
+                .clone();
+            typecheck_array_initializer(env, base_data, indices, &inner_type, None, to_type)
+        }
 
         MIRTypeKind::Structured { .. } => {
             typecheck_structured_initializer(env, base_data, expr, indices, to_type)
@@ -172,8 +189,9 @@ fn typecheck_array_initializer(
     }
 
     let array_size = size.unwrap_or(indices.len());
+    let inner_type_id = env.intern_type(inner_type.clone());
     let array_type = MIRType::from(MIRTypeKind::Array {
-        inner_type: Box::new(inner_type.clone()),
+        inner_type: Box::new(inner_type_id),
         size: array_size,
     });
 

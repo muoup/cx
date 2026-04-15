@@ -8,7 +8,7 @@ use cx_mir::intrinsic_types::INTRINSIC_TYPES;
 use cx_mir::mir::expression::MIRExpression;
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_mir::mir::data::{
-    MIRFunctionPrototype, MIRNamedTypeDefinition, MIRType, MIRTypeContext, MIRTypeId,
+    MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
 };
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -160,10 +160,21 @@ impl TypeEnvironment<'_> {
         working_directory: PathBuf,
         module_data: &'a ModuleData,
     ) -> TypeEnvironment<'a> {
-        let intrinsic_types = INTRINSIC_TYPES
-            .iter()
-            .map(|(name, ty)| (name.to_string(), ty.clone().into()))
-            .collect::<HashMap<_, _>>();
+        let mut realized_types = HashMap::new();
+        let mut generated_types = MIRTypeContext::default();
+        let mut named_type_ids = HashMap::new();
+        let mut next_type_id = 1u64;
+
+        for (name, ty_kind) in INTRINSIC_TYPES {
+            let ty: MIRType = ty_kind.clone().into();
+            let id = MIRTypeId(next_type_id);
+            next_type_id += 1;
+
+            generated_types.insert(id, ty.clone());
+            generated_types.register_identifier(CXIdent::new(*name), id);
+            named_type_ids.insert((*name).to_string(), id);
+            realized_types.insert((*name).to_string(), ty);
+        }
 
         TypeEnvironment {
             tokens,
@@ -172,12 +183,12 @@ impl TypeEnvironment<'_> {
 
             module_data,
 
-            realized_types: intrinsic_types,
-            named_type_ids: HashMap::new(),
-            generated_types: MIRTypeContext::default(),
+            realized_types,
+            named_type_ids,
+            generated_types,
             currently_defining_types: HashSet::new(),
             definition_stack: Vec::new(),
-            next_type_id: 1,
+            next_type_id,
             realized_fns: HashMap::new(),
             realized_globals: HashMap::new(),
 
@@ -456,9 +467,14 @@ impl TypeEnvironment<'_> {
             return *id;
         }
 
-        let id = MIRTypeId(self.next_type_id);
-        self.next_type_id += 1;
+        let next_available = self.generated_types.types.len() as u64 + 1;
+        let id = MIRTypeId(self.next_type_id.max(next_available));
+        self.next_type_id = id.0 + 1;
         self.named_type_ids.insert(name.to_string(), id);
+        let idx = id.0.saturating_sub(1) as usize;
+        if self.generated_types.types.len() <= idx {
+            self.generated_types.types.resize(idx + 1, None);
+        }
         id
     }
 
@@ -474,8 +490,8 @@ impl TypeEnvironment<'_> {
     pub fn finish_type_definition(
         &mut self,
         id: MIRTypeId,
-        definition: MIRNamedTypeDefinition,
-    ) -> Option<MIRNamedTypeDefinition> {
+        definition: MIRType,
+    ) -> Option<MIRType> {
         self.currently_defining_types.remove(&id);
         if self.definition_stack.last().copied() == Some(id) {
             self.definition_stack.pop();
@@ -508,28 +524,51 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn has_complete_named_type_definition(&self, id: MIRTypeId) -> bool {
-        self.generated_types.contains(id)
+        self.generated_types
+            .get(id)
+            .map(|definition| !matches!(definition.kind, MIRTypeKind::Undefined))
+            .unwrap_or(false)
     }
 
-    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRNamedTypeDefinition> {
+    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
         self.generated_types.get(id)
+    }
+
+    pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeId {
+        if let Some(name) = ty.get_name()
+            && let Some(id) = self.named_type_ids.get(name.as_str()).copied()
+        {
+            self.generated_types
+                .register_identifier(name.clone(), id);
+            if !self.generated_types.contains(id)
+                && matches!(ty.kind, MIRTypeKind::Undefined)
+            {
+                self.generated_types.insert(id, ty);
+            }
+
+            return id;
+        }
+
+        let id = self.generated_types.intern(ty.clone());
+        if let Some(name) = ty.get_name() {
+            self.generated_types.register_identifier(name.clone(), id);
+        }
+        id
     }
 
     pub fn update_named_type_metadata(
         &mut self,
         id: MIRTypeId,
         new_name: CXIdent,
-        template_info: Option<Box<cx_mir::mir::data::TemplateInstantiationInformation>>,
+        template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     ) {
-        let Some(existing) = self.generated_types.named.get_mut(&id) else {
+        let Some(existing) = self.generated_types.get_mut(id) else {
             return;
         };
 
-        existing.name = new_name;
+        existing.strong_identifier = Some(new_name.clone());
         existing.template_info = template_info.clone();
-        for (_, field_type) in existing.fields.iter_mut() {
-            field_type.rewrite_named_type_metadata(id, &existing.name, &template_info);
-        }
+        self.generated_types.register_identifier(new_name, id);
     }
 
     pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
@@ -556,6 +595,16 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
+        if let Some(id) = self.get_named_type_id(name)
+            && let Some(definition) = self.get_named_type_definition(id)
+            && definition
+                .get_name()
+                .map(|ident| ident.as_str() == name)
+                .unwrap_or(false)
+        {
+            return Some(definition.clone());
+        }
+
         self.realized_types.get(name).cloned()
     }
 

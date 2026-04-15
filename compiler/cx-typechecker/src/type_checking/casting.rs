@@ -16,7 +16,7 @@ pub(crate) fn coerce_value(
     value: MIRExpression,
 ) -> CXResult<MIRExpression> {
     let value_type = value.get_type();
-    let mem_ref_inner = value_type.mem_ref_inner();
+    let mem_ref_inner = env.generated_types.mem_ref_inner(&value_type).cloned();
 
     let Some(mem_ref_inner) = mem_ref_inner else {
         return Ok(value);
@@ -27,11 +27,11 @@ pub(crate) fn coerce_value(
         return Ok(value);
     }
 
-    if !env.is_copyable(mem_ref_inner) {
+    if !env.is_copyable(&mem_ref_inner) {
         return Ok(value);
     }
 
-    implicit_cast(env, expr, value, mem_ref_inner)
+    implicit_cast(env, expr, value, &mem_ref_inner)
 }
 
 pub(crate) fn coerce_condition(
@@ -97,27 +97,25 @@ pub(crate) fn explicit_cast(
             coerce(MIRCoercion::IntToPtr { sextend: *signed })
         }
 
-        (
-            MIRTypeKind::PointerTo {
-                inner_type: ptr_inner,
-                ..
-            },
-            MIRTypeKind::MemoryReference {
-                inner_type: str_inner,
-            },
-        ) if matches!(
-            ptr_inner.kind,
-            MIRTypeKind::Integer {
-                _type: MIRIntegerType::I8,
-                ..
-            }
-        ) && matches!(str_inner.kind, MIRTypeKind::Str) =>
+        (MIRTypeKind::PointerTo { inner_type: ptr_inner }, MIRTypeKind::MemoryReference { inner_type: str_inner })
+            if matches!(
+                env.generated_types.get(*ptr_inner.as_ref()).map(|ty| &ty.kind),
+                Some(MIRTypeKind::Integer { _type: MIRIntegerType::I8, .. })
+            ) && matches!(
+                env.generated_types.get(*str_inner.as_ref()).map(|ty| &ty.kind),
+                Some(MIRTypeKind::Str)
+            ) =>
         {
             coerce(MIRCoercion::CStrToStr)
         }
 
         (MIRTypeKind::MemoryReference { inner_type }, _) => {
-            cast_recurse(env, expr, value, to_type, inner_type, explicit_cast)
+            let inner_type = env
+                .generated_types
+                .get(*inner_type.as_ref())
+                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
+                .clone();
+            cast_recurse(env, expr, value, to_type, &inner_type, explicit_cast)
         }
 
         _ => {
@@ -221,7 +219,12 @@ pub fn implicit_cast(
             MIRTypeKind::MemoryReference {
                 inner_type: to_inner,
             },
-        ) if same_type(from_inner.as_ref(), to_inner.as_ref()) => {
+        ) if env
+            .generated_types
+            .get(*from_inner.as_ref())
+            .zip(env.generated_types.get(*to_inner.as_ref()))
+            .map(|(from_inner, to_inner)| same_type(from_inner, to_inner))
+            .unwrap_or(false) => {
             coerce(MIRCoercion::ReinterpretBits)
         }
 
@@ -233,6 +236,8 @@ pub fn implicit_cast(
                 inner_type: to_inner,
             },
         ) if {
+            let from_inner = env.generated_types.get(*from_inner.as_ref()).unwrap();
+            let to_inner = env.generated_types.get(*to_inner.as_ref()).unwrap();
             let from_unconst = from_inner.without_specifier(CX_CONST);
             let to_unconst = to_inner.without_specifier(CX_CONST);
 
@@ -251,7 +256,14 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
-        ) if same_type(inner1.as_ref(), inner2.as_ref()) => coerce(MIRCoercion::ReinterpretBits),
+        ) if env
+            .generated_types
+            .get(*inner1.as_ref())
+            .zip(env.generated_types.get(*inner2.as_ref()))
+            .map(|(inner1, inner2)| same_type(inner1, inner2))
+            .unwrap_or(false) => {
+            coerce(MIRCoercion::ReinterpretBits)
+        }
 
         (
             MIRTypeKind::MemoryReference {
@@ -260,10 +272,23 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner2, ..
             },
-        ) if inner1.is_array() => {
-            let inner1_inner = inner1.array_inner().unwrap();
+        ) if env
+            .generated_types
+            .get(*inner1.as_ref())
+            .map(|ty| ty.is_array())
+            .unwrap_or(false) => {
+            let inner1_inner = env
+                .generated_types
+                .get(*inner1.as_ref())
+                .and_then(|ty| env.generated_types.array_inner(ty))
+                .unwrap();
 
-            if same_type(inner1_inner, inner2.as_ref()) {
+            if env
+                .generated_types
+                .get(*inner2.as_ref())
+                .map(|inner2| same_type(inner1_inner, inner2))
+                .unwrap_or(false)
+            {
                 coerce(MIRCoercion::ReinterpretBits)
             } else {
                 log_typecheck_error!(
@@ -286,15 +311,15 @@ pub fn implicit_cast(
                 inner_type: to_inner,
                 ..
             },
-        ) if from_inner.is_str() && to_inner.is_integer() && {
-            matches!(
-                to_inner.kind,
-                MIRTypeKind::Integer {
-                    _type: MIRIntegerType::I8,
-                    ..
-                }
-            )
-        } =>
+        ) if env
+            .generated_types
+            .get(*from_inner.as_ref())
+            .map(|ty| ty.is_str())
+            .unwrap_or(false)
+            && matches!(
+                env.generated_types.get(*to_inner.as_ref()).map(|ty| &ty.kind),
+                Some(MIRTypeKind::Integer { _type: MIRIntegerType::I8, .. })
+            ) =>
         {
             coerce(MIRCoercion::ReinterpretBits)
         }
@@ -304,7 +329,14 @@ pub fn implicit_cast(
                 inner_type: inner, ..
             },
             _,
-        ) => cast_recurse(env, expr, value, to_type, inner, implicit_cast),
+        ) => {
+            let inner = env
+                .generated_types
+                .get(*inner.as_ref())
+                .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
+                .clone();
+            cast_recurse(env, expr, value, to_type, &inner, implicit_cast)
+        }
 
         (
             _,
@@ -317,7 +349,12 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) && from_type.is_memory_resident() => {
+        ) if env
+            .generated_types
+            .get(*inner.as_ref())
+            .map(|inner| same_type(inner, &from_type))
+            .unwrap_or(false)
+            && from_type.is_memory_resident() => {
             coerce(MIRCoercion::ReinterpretBits)
         }
 
@@ -328,12 +365,18 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(_type, inner) => {
+        ) if env
+            .generated_types
+            .get(*_type.as_ref())
+            .zip(env.generated_types.get(*inner.as_ref()))
+            .map(|(lhs, rhs)| same_type(lhs, rhs))
+            .unwrap_or(false) => {
             // Array to pointer decay: access element 0
+            let inner_type = env.generated_types.get(*inner.as_ref()).unwrap().clone();
             Ok(TypecheckResult::array_access(
                 TypecheckResult::expr2(value),
                 TypecheckResult::expr2(MIRExpression::int_literal(0, MIRIntegerType::I64, false)),
-                (*inner.clone()).clone(),
+                inner_type,
                 to_type.clone(),
             )
             .into_expression())
@@ -344,7 +387,13 @@ pub fn implicit_cast(
             MIRTypeKind::PointerTo {
                 inner_type: inner, ..
             },
-        ) if same_type(inner.as_ref(), &from_type) => coerce(MIRCoercion::GetFnPtr),
+        ) if env
+            .generated_types
+            .get(*inner.as_ref())
+            .map(|inner| same_type(inner, &from_type))
+            .unwrap_or(false) => {
+            coerce(MIRCoercion::GetFnPtr)
+        }
 
         _ => {
             log_typecheck_error!(

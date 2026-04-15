@@ -152,7 +152,7 @@ pub fn typecheck_match(
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
 
-    if let Some(inner) = expr_type.mem_ref_inner() {
+    if let Some(inner) = env.generated_types.mem_ref_inner(&expr_type) {
         expr_type = inner.clone();
 
         if !expr_type.is_memory_resident() {
@@ -280,7 +280,7 @@ pub fn typecheck_match(
                     if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
                         variant_type.clone()
                     } else {
-                        variant_type.clone().mem_ref_to()
+                        env.generated_types.mem_ref_to(&variant_type)
                     };
 
                 // Extract the variant value and bind it

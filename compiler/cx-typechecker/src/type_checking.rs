@@ -49,13 +49,14 @@ fn typecheck_function(
         let Some(name) = name else {
             continue;
         };
+        let ref_type = env.generated_types.mem_ref_to(_type);
         
         env.insert_symbol(
             name.as_string(),
             MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
-                _type: _type.clone().mem_ref_to(),
+                _type: ref_type,
             },
         );
         env.track_binding(name.as_string(), _type);

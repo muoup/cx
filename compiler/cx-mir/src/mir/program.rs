@@ -8,7 +8,8 @@ use cx_ast::{
 use cx_util::identifier::CXIdent;
 
 use crate::mir::{
-    data::{MIRFunctionPrototype, MIRTypeContext}, expression::MIRExpression
+    data::{MIRFunctionPrototype, MIRType, MIRTypeContext},
+    expression::MIRExpression,
 };
 
 #[derive(Debug, Clone)]

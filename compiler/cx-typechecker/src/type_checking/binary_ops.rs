@@ -37,45 +37,39 @@ pub(crate) fn typecheck_access(
     let lhs_inner = loop {
         let lhs_type = lhs._type.clone();
 
-        match &lhs_type.kind {
-            MIRTypeKind::MemoryReference { inner_type } => {
-                lhs_ref_const |= inner_type.get_specifier(CX_CONST);
+        if let Some(inner_type) = env.generated_types.mem_ref_inner(&lhs_type).cloned() {
+            lhs_ref_const |= inner_type.get_specifier(CX_CONST);
 
-                match &inner_type.kind {
-                    MIRTypeKind::PointerTo { inner_type, .. } => {
-                        lhs_ref_const |= inner_type.get_specifier(CX_CONST);
+            if let Some(ptr_inner) = env.generated_types.ptr_inner(&inner_type).cloned() {
+                lhs_ref_const |= ptr_inner.get_specifier(CX_CONST);
 
-                        lhs = MIRExpression {
-                            token_range: None,
-                            kind: MIRExpressionKind::MemoryRead {
-                                source: Box::new(lhs),
-                            },
-                            _type: inner_type.clone().pointer_to(),
-                        };
+                lhs = MIRExpression {
+                    token_range: None,
+                    kind: MIRExpressionKind::MemoryRead {
+                        source: Box::new(lhs),
+                    },
+                    _type: env.generated_types.pointer_to(&ptr_inner),
+                };
 
-                        break inner_type.as_ref().clone();
-                    }
-
-                    MIRTypeKind::MemoryReference { .. } => {
-                        lhs = MIRExpression {
-                            token_range: None,
-                            kind: MIRExpressionKind::MemoryRead {
-                                source: Box::new(lhs),
-                            },
-                            _type: inner_type.as_ref().clone(),
-                        };
-                    }
-
-                    _ => break inner_type.as_ref().clone(),
-                }
+                break ptr_inner;
             }
 
-            MIRTypeKind::PointerTo { inner_type, .. } => {
-                lhs_ref_const |= inner_type.get_specifier(CX_CONST);
-                break inner_type.as_ref().clone();
+            if env.generated_types.mem_ref_inner(&inner_type).is_some() {
+                lhs = MIRExpression {
+                    token_range: None,
+                    kind: MIRExpressionKind::MemoryRead {
+                        source: Box::new(lhs),
+                    },
+                    _type: inner_type.clone(),
+                };
+            } else {
+                break inner_type;
             }
-
-            _ => break lhs_type,
+        } else if let Some(inner_type) = env.generated_types.ptr_inner(&lhs_type).cloned() {
+            lhs_ref_const |= inner_type.get_specifier(CX_CONST);
+            break inner_type;
+        } else {
+            break lhs_type;
         }
     };
 
@@ -99,11 +93,12 @@ pub(crate) fn typecheck_access(
                 struct_field(&lhs_inner, &env.generated_types, name.as_str())
             {
                 return Ok(TypecheckResult::expr(
-                    struct_field
-                        .field_type
-                        .clone()
-                        .with_specifier(if lhs_ref_const { CX_CONST } else { 0 })
-                        .mem_ref_to(),
+                    env.generated_types.mem_ref_to(
+                        &struct_field
+                            .field_type
+                            .clone()
+                            .with_specifier(if lhs_ref_const { CX_CONST } else { 0 }),
+                    ),
                     MIRExpressionKind::StructFieldAccess {
                         base: Box::new(lhs),
                         field_index: struct_field.index,
@@ -129,10 +124,11 @@ pub(crate) fn typecheck_access(
                     };
 
                     return Ok(TypecheckResult::expr(
-                        field_type
-                            .clone()
-                            .with_specifier(if lhs_ref_const { CX_CONST } else { 0 })
-                            .mem_ref_to(),
+                        env.generated_types.mem_ref_to(
+                            &field_type
+                                .clone()
+                                .with_specifier(if lhs_ref_const { CX_CONST } else { 0 }),
+                        ),
                         MIRExpressionKind::UnionAliasAccess {
                             base: Box::new(lhs),
                             variant_type: field_type.clone(),
@@ -219,10 +215,10 @@ fn build_member_receiver_argument(
                 operand: Box::new(lhs),
                 conversion: MIRCoercion::ReinterpretBits,
             },
-            _type: lhs_inner.clone().mem_ref_to(),
+            _type: env.generated_types.mem_ref_to(lhs_inner),
         }),
         Some(CXReceiverMode::ByMove) => {
-            if let Some(inner_type) = lhs_source._type.mem_ref_inner().cloned() {
+            if let Some(inner_type) = env.generated_types.mem_ref_inner(&lhs_source._type).cloned() {
                 let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
                     return log_typecheck_error!(
                         env,
@@ -302,11 +298,11 @@ pub(crate) fn typecheck_method_call(
     let loaded_lhs_val = coerce_value(env, lhs, lhs_val)?;
     let loaded_lhs_type = loaded_lhs_val.get_type();
 
-    let loaded_lhs_type = match loaded_lhs_type.kind {
-        MIRTypeKind::PointerTo { inner_type, .. } => *inner_type,
-
-        _ => loaded_lhs_type,
-    };
+    let loaded_lhs_type = env
+        .generated_types
+        .ptr_inner(&loaded_lhs_type)
+        .cloned()
+        .unwrap_or(loaded_lhs_type);
 
     let MIRTypeKind::Function { prototype } = &loaded_lhs_type.kind else {
         return log_typecheck_error!(
@@ -598,7 +594,13 @@ pub(crate) fn typecheck_is(
     let tc_lhs = typecheck_expr(env, base_data, lhs, None)
         .and_then(|v| coerce_value(env, lhs, v.into_expression()))?;
     let tc_type = tc_lhs.get_type();
-    let union_type = tc_type.mem_ref_inner().unwrap_or(&tc_type);
+    let owned_union_type;
+    let union_type = if let Some(inner) = env.generated_types.mem_ref_inner(&tc_type) {
+        owned_union_type = inner.clone();
+        &owned_union_type
+    } else {
+        &tc_type
+    };
 
     let Some(variants) = union_type.aggregate_fields(&env.generated_types) else {
         return log_typecheck_error!(
@@ -667,12 +669,13 @@ pub(crate) fn typecheck_is(
                 );
             };
 
+            let variant_ref_type = env.generated_types.mem_ref_to(&variant_type);
             env.insert_symbol(
                 name.as_string(),
                 MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::Variable(name.clone()),
-                    _type: variant_type.clone().mem_ref_to(),
+                    _type: variant_ref_type,
                 },
             );
 
@@ -712,13 +715,19 @@ fn binop_coerce_value(
 ) -> CXResult<MIRExpression> {
     let val_type = val.get_type();
 
-    let Some(inner) = val_type.mem_ref_inner() else {
+    let Some(inner) = env.generated_types.mem_ref_inner(&val_type) else {
         return Ok(val);
     };
 
     match &inner.kind {
         MIRTypeKind::Array { inner_type, .. } => {
-            implicit_cast(env, expr, val, &inner_type.clone().pointer_to())
+            let inner_type = env
+                .generated_types
+                .get(*inner_type.as_ref())
+                .unwrap()
+                .clone();
+            let pointer_type = env.generated_types.pointer_to(&inner_type);
+            implicit_cast(env, expr, val, &pointer_type)
         }
 
         _ => coerce_value(env, expr, val),
@@ -735,32 +744,23 @@ pub(crate) fn typecheck_binop_mir_vals(
     let mir_lhs = binop_coerce_value(env, expr, lhs)?;
     let mir_rhs = binop_coerce_value(env, expr, rhs)?;
 
-    match (&mir_lhs._type.kind, &mir_rhs._type.kind) {
-        (
-            MIRTypeKind::PointerTo {
-                inner_type: l_inner,
-                ..
-            },
-            MIRTypeKind::Integer { .. },
-        ) => typecheck_ptr_int_binop(env, op.clone(), l_inner.clone().as_ref(), mir_lhs, mir_rhs),
+    let lhs_ptr_inner = env.generated_types.ptr_inner(&mir_lhs._type).cloned();
+    let rhs_ptr_inner = env.generated_types.ptr_inner(&mir_rhs._type).cloned();
 
-        (
-            MIRTypeKind::Integer { .. },
-            MIRTypeKind::PointerTo {
-                inner_type: r_inner,
-                ..
-            },
-        ) => typecheck_int_ptr_binop(env, op.clone(), r_inner.clone().as_ref(), mir_lhs, mir_rhs),
-
-        (MIRTypeKind::Integer { .. }, MIRTypeKind::Integer { .. }) => {
+    match (&lhs_ptr_inner, &rhs_ptr_inner, &mir_lhs._type.kind, &mir_rhs._type.kind) {
+        (Some(l_inner), None, _, MIRTypeKind::Integer { .. }) => {
+            typecheck_ptr_int_binop(env, op.clone(), l_inner, mir_lhs, mir_rhs)
+        }
+        (None, Some(r_inner), MIRTypeKind::Integer { .. }, _) => {
+            typecheck_int_ptr_binop(env, op.clone(), r_inner, mir_lhs, mir_rhs)
+        }
+        (None, None, MIRTypeKind::Integer { .. }, MIRTypeKind::Integer { .. }) => {
             typecheck_int_int_binop(env, op, mir_lhs, mir_rhs, expr)
         }
-
-        (MIRTypeKind::Float { .. }, MIRTypeKind::Float { .. }) => {
+        (None, None, MIRTypeKind::Float { .. }, MIRTypeKind::Float { .. }) => {
             typecheck_float_float_binop(env, op, mir_lhs, mir_rhs, expr)
         }
-
-        (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
+        (Some(_), Some(_), _, _) => {
             typecheck_ptr_ptr_binop(env, op, mir_lhs, mir_rhs, expr)
         }
         _ => {
@@ -1105,9 +1105,9 @@ pub(crate) fn typecheck_ptr_int_binop(
             };
 
             let return_type = match op {
-                CXBinOp::ArrayIndex => pointer_inner.clone().mem_ref_to(),
+                CXBinOp::ArrayIndex => env.generated_types.mem_ref_to(pointer_inner),
 
-                _ => pointer_inner.clone().pointer_to(),
+                _ => env.generated_types.pointer_to(pointer_inner),
             };
 
             Ok(TypecheckResult::expr(
@@ -1219,7 +1219,7 @@ pub fn struct_field_offset(
     definitions: &cx_mir::mir::data::MIRTypeContext,
     field_index: usize,
 ) -> Option<usize> {
-    let struct_type = struct_type.memory_resident_type();
+    let struct_type = definitions.memory_resident_type(struct_type);
     if !matches!(struct_type.kind, MIRTypeKind::Structured { .. }) {
         return None;
     }
@@ -1249,7 +1249,7 @@ pub fn struct_field<'a>(
     definitions: &cx_mir::mir::data::MIRTypeContext,
     field_name: &str,
 ) -> Option<StructField> {
-    let struct_type = struct_type.memory_resident_type();
+    let struct_type = definitions.memory_resident_type(struct_type);
     if !matches!(struct_type.kind, MIRTypeKind::Structured { .. }) {
         return None;
     }

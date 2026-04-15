@@ -362,7 +362,7 @@ pub(crate) fn convert_increment(
     is_pre: bool,
 ) -> CXResult<FMIRNode> {
     let pointer_node = convert_expression(env, operand_expr)?;
-    let Some(value_type) = operand_expr._type.mem_ref_inner().cloned() else {
+    let Some(value_type) = env.type_definitions.mem_ref_inner(&operand_expr._type).cloned() else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
             operand_expr._type

@@ -2,13 +2,10 @@ use std::sync::Arc;
 
 use cx_ast::ast::{CXExpr, VisibilityMode};
 use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
+use cx_mir::mir::data::{MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_mir::mir::data::{
-    MIRAggregateContents, MIRAggregateKind, MIRNamedTypeDefinition, MIRMoveAttributes,
-    MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind,
-};
-use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
+use cx_util::CXResult;
 
 use crate::log_typecheck_error;
 use crate::type_completion::complete_type;
@@ -54,59 +51,58 @@ pub(crate) fn _complete_template_input(
 
 fn construct_type(ty: &CXType, kind: MIRTypeKind) -> MIRType {
     MIRType {
-        specifiers: ty.specifiers,
         visibility: VisibilityMode::Private,
+        specifiers: ty.specifiers,
+        move_attributes: MIRMoveAttributes::default(),
+        strong_identifier: None,
+        template_info: None,
         kind,
     }
 }
 
+fn complete_type_id(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    ty: &CXType,
+) -> CXResult<MIRTypeId> {
+    let completed = _complete_type(env, base_data, expr, ty)?;
+    Ok(env.intern_type(completed))
+}
+
 fn make_named_type(
     ty: &CXType,
-    kind: MIRAggregateKind,
-    type_id: MIRTypeId,
     name: CXIdent,
-    template_info: Option<Box<cx_mir::mir::data::TemplateInstantiationInformation>>,
+    template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     attributes: MIRMoveAttributes,
+    kind: MIRTypeKind,
 ) -> MIRType {
-    let base = match kind {
-        MIRAggregateKind::Struct => MIRType::named_struct(name, type_id, template_info, attributes),
-        MIRAggregateKind::Union => MIRType::named_union(name, type_id),
-        MIRAggregateKind::TaggedUnion => {
-            MIRType::named_tagged_union(name, type_id, template_info, attributes)
-        }
-    };
-
-    base.with_specifier(ty.specifiers)
+    MIRType {
+        visibility: VisibilityMode::Private,
+        specifiers: ty.specifiers,
+        move_attributes: attributes,
+        strong_identifier: Some(name),
+        template_info,
+        kind,
+    }
 }
 
 fn named_predeclaration_type(
     env: &mut TypeEnvironment,
     ty: &CXType,
     name: &CXIdent,
-    predeclaration: PredeclarationType,
+    _predeclaration: PredeclarationType,
 ) -> MIRType {
     let id = env.get_or_create_named_type_id(name.as_str());
+    env.generated_types.register_identifier(name.clone(), id);
 
-    let mir_type = match predeclaration {
-        PredeclarationType::Struct => make_named_type(
-            ty,
-            MIRAggregateKind::Struct,
-            id,
-            name.clone(),
-            None,
-            MIRMoveAttributes::default(),
-        ),
-        PredeclarationType::Union => make_named_type(
-            ty,
-            MIRAggregateKind::Union,
-            id,
-            name.clone(),
-            None,
-            MIRMoveAttributes::default(),
-        ),
-        PredeclarationType::Enum | PredeclarationType::None => {
-            construct_type(ty, MIRTypeKind::Undefined { name: name.clone() })
-        }
+    let mir_type = MIRType {
+        visibility: VisibilityMode::Private,
+        specifiers: ty.specifiers,
+        move_attributes: MIRMoveAttributes::default(),
+        strong_identifier: Some(name.clone()),
+        template_info: None,
+        kind: MIRTypeKind::Undefined,
     };
 
     env.add_type(name.to_string(), mir_type.clone());
@@ -128,62 +124,78 @@ fn ensure_complete_value_type(
         | MIRTypeKind::Opaque { .. }
         | MIRTypeKind::Function { .. }
         | MIRTypeKind::Str => Ok(()),
-
-        MIRTypeKind::Undefined { name } => log_typecheck_error!(
+        MIRTypeKind::Undefined => log_typecheck_error!(
             env,
             expr.token_range(),
             "Field '{}' uses incomplete type {} by value",
             field_name,
-            name
+            field_type
         ),
-
         MIRTypeKind::Array { inner_type, .. } => {
-            ensure_complete_value_type(env, expr, field_name, inner_type)
+            let inner_type = env
+                .generated_types
+                .get(*inner_type.as_ref())
+                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
+                .clone();
+            ensure_complete_value_type(env, expr, field_name, &inner_type)
         }
-
         MIRTypeKind::Structured { .. }
         | MIRTypeKind::Union { .. }
         | MIRTypeKind::TaggedUnion { .. } => {
-            if field_type.is_named_aggregate_complete(&env.generated_types) {
-                Ok(())
-            } else {
-                log_typecheck_error!(
+            if let Some(name) = field_type.get_name()
+                && let Some(id) = env.get_named_type_id(name.as_str())
+                && !env.has_complete_named_type_definition(id)
+            {
+                return log_typecheck_error!(
                     env,
                     expr.token_range(),
                     "Field '{}' uses incomplete type {} by value",
                     field_name,
                     field_type
-                )
+                );
             }
+
+            Ok(())
         }
     }
 }
 
-fn complete_named_aggregate(
+fn complete_named_aggregate<F>(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     ty: &CXType,
-    kind: MIRAggregateKind,
     name: CXIdent,
-    template_info: Option<Box<cx_mir::mir::data::TemplateInstantiationInformation>>,
+    template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     attributes: MIRMoveAttributes,
     raw_fields: &[(String, CXType)],
-) -> CXResult<MIRType> {
+    aggregate_kind: &str,
+    kind_ctor: F,
+) -> CXResult<MIRType>
+where
+    F: Fn(Vec<(String, MIRTypeId)>) -> MIRTypeKind,
+{
     let type_id = env.get_or_create_named_type_id(name.as_str());
-    let nominal_type = make_named_type(
+    env.generated_types.register_identifier(name.clone(), type_id);
+
+    let provisional = make_named_type(
         ty,
-        kind,
-        type_id,
         name.clone(),
         template_info.clone(),
         attributes,
+        kind_ctor(Vec::new()),
     );
+    env.add_type(name.to_string(), provisional.clone());
 
-    env.add_type(name.to_string(), nominal_type.clone());
+    if env.has_complete_named_type_definition(type_id) {
+        return Ok(env
+            .get_named_type_definition(type_id)
+            .cloned()
+            .unwrap_or(provisional));
+    }
 
-    if env.has_complete_named_type_definition(type_id) || env.is_type_defining(type_id) {
-        return Ok(nominal_type);
+    if env.is_type_defining(type_id) {
+        return Ok(provisional);
     }
 
     env.mark_type_defining(type_id);
@@ -192,50 +204,34 @@ fn complete_named_aggregate(
         let fields = raw_fields
             .iter()
             .map(|(field_name, field_type)| {
-                let field_type = _complete_type(env, base_data, expr, field_type)?;
-                ensure_complete_value_type(env, expr, field_name, &field_type)?;
-                Ok((field_name.clone(), field_type))
+                let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
+                let resolved_field_type = env
+                    .generated_types
+                    .get(field_type_id)
+                    .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
+                    .clone();
+                ensure_complete_value_type(env, expr, field_name, &resolved_field_type)?;
+                Ok((field_name.clone(), field_type_id))
             })
             .collect::<CXResult<Vec<_>>>()?;
 
-        if matches!(
-            kind,
-            MIRAggregateKind::Struct | MIRAggregateKind::TaggedUnion
-        ) {
-            let resolved_attributes = CXStructAttributes {
-                nocopy: attributes.nocopy,
-                nodrop: attributes.nodrop,
-                copy_traits: None,
-            };
-
-            validate_linear_hierarchy(
-                env,
-                if kind == MIRAggregateKind::Struct {
-                    "struct"
-                } else {
-                    "enum union"
-                },
-                &fields,
-                &resolved_attributes,
-            )?;
-        }
+        validate_linear_hierarchy(env, aggregate_kind, &fields, &attributes)?;
 
         Ok(fields)
     })();
 
     match result {
         Ok(fields) => {
-            env.finish_type_definition(
-                type_id,
-                MIRNamedTypeDefinition {
-                    kind,
-                    name,
-                    template_info,
-                    attributes,
-                    fields,
-                },
+            let completed = make_named_type(
+                ty,
+                name.clone(),
+                template_info,
+                attributes,
+                kind_ctor(fields),
             );
-            Ok(nominal_type)
+            env.finish_type_definition(type_id, completed.clone());
+            env.add_type(name.to_string(), completed.clone());
+            Ok(completed)
         }
         Err(err) => {
             env.abort_type_definition(type_id);
@@ -267,11 +263,12 @@ fn ensure_named_identifier_completed(
                 base_data,
                 expr,
                 ty,
-                MIRAggregateKind::Struct,
                 struct_name.clone(),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 fields.as_slice(),
+                "struct",
+                |fields| MIRTypeKind::Structured { fields },
             )?
         }
         CXTypeKind::Union {
@@ -282,11 +279,12 @@ fn ensure_named_identifier_completed(
             base_data,
             expr,
             ty,
-            MIRAggregateKind::Union,
             union_name.clone(),
             None,
             MIRMoveAttributes::default(),
             fields.as_slice(),
+            "union",
+            |variants| MIRTypeKind::Union { variants },
         )?,
         CXTypeKind::TaggedUnion {
             name: union_name,
@@ -299,11 +297,12 @@ fn ensure_named_identifier_completed(
                 base_data,
                 expr,
                 ty,
-                MIRAggregateKind::TaggedUnion,
                 union_name.clone(),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 variants.as_slice(),
+                "enum union",
+                |variants| MIRTypeKind::TaggedUnion { variants },
             )?
         }
         CXTypeKind::Identifier {
@@ -337,14 +336,12 @@ pub(crate) fn _complete_type(
             predeclaration,
         } => {
             if let Some(existing) = env.get_realized_type(&name.as_string()) {
-                if existing.named_type_id().is_some()
-                    && !existing.is_named_aggregate_complete(&env.generated_types)
-                {
-                    if let Some(completed) =
+                if let Some(id) = env.get_named_type_id(name.as_str())
+                    && !env.has_complete_named_type_definition(id)
+                    && let Some(completed) =
                         ensure_named_identifier_completed(env, base_data, expr, ty, name)?
-                    {
-                        return Ok(completed.with_specifier(ty.specifiers));
-                    }
+                {
+                    return Ok(completed.with_specifier(ty.specifiers));
                 }
 
                 return Ok(existing.with_specifier(ty.specifiers));
@@ -356,11 +353,7 @@ pub(crate) fn _complete_type(
                 return Ok(completed.with_specifier(ty.specifiers));
             }
 
-            if base_data
-                .type_data
-                .get_template(&name.as_string())
-                .is_some()
-            {
+            if base_data.type_data.get_template(&name.as_string()).is_some() {
                 return log_typecheck_error!(
                     env,
                     &expr.range,
@@ -372,67 +365,64 @@ pub(crate) fn _complete_type(
                 return Ok(named_predeclaration_type(env, ty, name, *predeclaration));
             }
 
-            return log_typecheck_error!(env, &expr.range, "Type not found: {name}");
+            log_typecheck_error!(env, &expr.range, "Type not found: {name}")
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
             instantiate_type_template(env, base_data, input, name.as_str())
-                .map(|ty| ty.with_specifier(ty.specifiers))
+                .map(|completed| completed.with_specifier(ty.specifiers))
         }
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
-            let inner_type = _complete_type(env, base_data, expr, inner)?;
+            let inner_type_id = complete_type_id(env, base_data, expr, inner)?;
+            let inner_type = env
+                .generated_types
+                .get(inner_type_id)
+                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type_id.0))
+                .clone();
             ensure_complete_value_type(env, expr, "<array element>", &inner_type)?;
 
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Array {
-                    inner_type: Box::new(inner_type),
                     size: *size,
+                    inner_type: Box::new(inner_type_id),
                 },
             ))
         }
 
         CXTypeKind::ImplicitSizedArray(inner) => {
-            let inner_type = _complete_type(env, base_data, expr, inner)?;
-
+            let inner_type_id = complete_type_id(env, base_data, expr, inner)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::PointerTo {
-                    inner_type: Box::new(inner_type),
-                    weak: false,
-                    nullable: true,
+                    inner_type: Box::new(inner_type_id),
                 },
             ))
         }
 
         CXTypeKind::MemoryReference { inner_type } => {
-            let inner_type = _complete_type(env, base_data, expr, inner_type.as_ref())?;
-
+            let inner_type_id = complete_type_id(env, base_data, expr, inner_type)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::MemoryReference {
-                    inner_type: Box::new(inner_type),
+                    inner_type: Box::new(inner_type_id),
                 },
             ))
         }
 
-        CXTypeKind::PointerTo { inner_type, weak } => {
-            let inner_type = _complete_type(env, base_data, expr, inner_type.as_ref())?;
-
+        CXTypeKind::PointerTo { inner_type, .. } => {
+            let inner_type_id = complete_type_id(env, base_data, expr, inner_type)?;
             Ok(construct_type(
                 ty,
                 MIRTypeKind::PointerTo {
-                    inner_type: Box::new(inner_type),
-                    weak: *weak,
-                    nullable: true,
+                    inner_type: Box::new(inner_type_id),
                 },
             ))
         }
 
         CXTypeKind::FunctionPointer { prototype } => {
             let prototype = _complete_fn_prototype(env, base_data, prototype)?;
-
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Function {
@@ -452,11 +442,12 @@ pub(crate) fn _complete_type(
                 base_data,
                 expr,
                 ty,
-                MIRAggregateKind::Struct,
                 name.clone(),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 fields.as_slice(),
+                "struct",
+                |fields| MIRTypeKind::Structured { fields },
             )
         }
 
@@ -465,31 +456,38 @@ pub(crate) fn _complete_type(
             attributes,
             fields,
         } => {
-            let mut completed_fields = Vec::with_capacity(fields.len());
-            for (field_name, field_type) in fields {
-                let field_type = _complete_type(env, base_data, expr, field_type)?;
-                ensure_complete_value_type(env, expr, field_name, &field_type)?;
-                completed_fields.push((field_name.clone(), field_type));
-            }
+            let completed_fields = fields
+                .iter()
+                .map(|(field_name, field_type)| {
+                    let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
+                    let resolved_field_type = env
+                        .generated_types
+                        .get(field_type_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
+                        .clone();
+                    ensure_complete_value_type(env, expr, field_name, &resolved_field_type)?;
+                    Ok((field_name.clone(), field_type_id))
+                })
+                .collect::<CXResult<Vec<_>>>()?;
 
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
-            let resolved_attributes = CXStructAttributes {
-                nocopy,
-                nodrop,
-                copy_traits: None,
-            };
+            validate_linear_hierarchy(
+                env,
+                "struct",
+                &completed_fields,
+                &MIRMoveAttributes { nocopy, nodrop },
+            )?;
 
-            validate_linear_hierarchy(env, "struct", &completed_fields, &resolved_attributes)?;
-
-            Ok(construct_type(
-                ty,
-                MIRTypeKind::Structured {
-                    name: None,
-                    template_info: None,
-                    attributes: MIRMoveAttributes { nocopy, nodrop },
-                    fields: MIRAggregateContents::Anonymous(completed_fields),
+            Ok(MIRType {
+                visibility: VisibilityMode::Private,
+                specifiers: ty.specifiers,
+                move_attributes: MIRMoveAttributes { nocopy, nodrop },
+                strong_identifier: None,
+                template_info: None,
+                kind: MIRTypeKind::Structured {
+                    fields: completed_fields,
                 },
-            ))
+            })
         }
 
         CXTypeKind::Union {
@@ -500,28 +498,39 @@ pub(crate) fn _complete_type(
             base_data,
             expr,
             ty,
-            MIRAggregateKind::Union,
             name.clone(),
             None,
             MIRMoveAttributes::default(),
             fields.as_slice(),
+            "union",
+            |variants| MIRTypeKind::Union { variants },
         ),
 
         CXTypeKind::Union { name: None, fields } => {
-            let mut completed_fields = Vec::with_capacity(fields.len());
-            for (field_name, field_type) in fields {
-                let field_type = _complete_type(env, base_data, expr, field_type)?;
-                ensure_complete_value_type(env, expr, field_name, &field_type)?;
-                completed_fields.push((field_name.clone(), field_type));
-            }
+            let completed_fields = fields
+                .iter()
+                .map(|(field_name, field_type)| {
+                    let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
+                    let resolved_field_type = env
+                        .generated_types
+                        .get(field_type_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
+                        .clone();
+                    ensure_complete_value_type(env, expr, field_name, &resolved_field_type)?;
+                    Ok((field_name.clone(), field_type_id))
+                })
+                .collect::<CXResult<Vec<_>>>()?;
 
-            Ok(construct_type(
-                ty,
-                MIRTypeKind::Union {
-                    name: None,
-                    variants: MIRAggregateContents::Anonymous(completed_fields),
+            Ok(MIRType {
+                visibility: VisibilityMode::Private,
+                specifiers: ty.specifiers,
+                move_attributes: MIRMoveAttributes::default(),
+                strong_identifier: None,
+                template_info: None,
+                kind: MIRTypeKind::Union {
+                    variants: completed_fields,
                 },
-            ))
+            })
         }
 
         CXTypeKind::TaggedUnion {
@@ -535,11 +544,12 @@ pub(crate) fn _complete_type(
                 base_data,
                 expr,
                 ty,
-                MIRAggregateKind::TaggedUnion,
                 name.clone(),
                 None,
                 MIRMoveAttributes { nocopy, nodrop },
                 variants.as_slice(),
+                "enum union",
+                |variants| MIRTypeKind::TaggedUnion { variants },
             )
         }
     }
@@ -564,12 +574,16 @@ fn resolve_copy_traits(env: &TypeEnvironment, attributes: &CXStructAttributes) -
 fn validate_linear_hierarchy(
     env: &mut TypeEnvironment,
     aggregate_kind: &str,
-    members: &[(String, MIRType)],
-    attributes: &CXStructAttributes,
+    members: &[(String, MIRTypeId)],
+    attributes: &MIRMoveAttributes,
 ) -> CXResult<()> {
     let aggregate_is_nocopy = attributes.nocopy || attributes.nodrop;
 
-    for (member_name, member_type) in members {
+    for (member_name, member_id) in members {
+        let member_type = env
+            .generated_types
+            .get(*member_id)
+            .unwrap_or_else(|| panic!("Unknown type id {}", member_id.0));
         let Some(member_attributes) = member_type.struct_attributes() else {
             continue;
         };
