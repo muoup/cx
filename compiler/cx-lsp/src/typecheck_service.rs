@@ -4,13 +4,13 @@
 //! into LSP diagnostics format.
 
 use cx_pipeline::{LSPErrorSpan, LSPErrors};
+use cx_tokens::token::Token;
+use cx_typechecker::log::TypeError;
 use std::collections::HashMap;
 use std::path::Path;
-use cx_tokens::token::Token;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Position, Range, Url,
 };
-use cx_typechecker::log::TypeError;
 
 fn byte_index_to_position(file_contents: &str, index: usize) -> Position {
     let mut remaining = index.min(file_contents.len());
@@ -37,7 +37,12 @@ fn byte_index_to_position(file_contents: &str, index: usize) -> Position {
     }
 }
 
-fn token_range(file_contents: &str, tokens: &[Token], token_start: usize, token_end: usize) -> Range {
+fn token_range(
+    file_contents: &str,
+    tokens: &[Token],
+    token_start: usize,
+    token_end: usize,
+) -> Range {
     let start_token_index = token_start.min(tokens.len().saturating_sub(1));
     let end_token_index = token_end
         .saturating_sub(1)
@@ -91,7 +96,11 @@ fn fallback_range(file_contents: &str, line: Option<usize>) -> Range {
     }
 }
 
-fn related_information(uri: &Url, range: Range, notes: &[String]) -> Option<Vec<DiagnosticRelatedInformation>> {
+fn related_information(
+    uri: &Url,
+    range: Range,
+    notes: &[String],
+) -> Option<Vec<DiagnosticRelatedInformation>> {
     if notes.is_empty() {
         return None;
     }
@@ -164,7 +173,11 @@ pub fn lsp_error_to_diagnostic(error: &LSPErrors) -> Diagnostic {
                 ..Default::default()
             }
         }
-        LSPErrors::FatalError { compilation_unit, message, line } => {
+        LSPErrors::FatalError {
+            compilation_unit,
+            message,
+            line,
+        } => {
             let file_contents = std::fs::read_to_string(compilation_unit).unwrap_or_default();
 
             Diagnostic {
@@ -188,8 +201,12 @@ pub fn group_diagnostics_by_file(errors: &[LSPErrors]) -> HashMap<Url, Vec<Diagn
     for error in errors {
         let compilation_unit = match error {
             LSPErrors::TypeError(e) => &e.compilation_unit,
-            LSPErrors::SpannedError { compilation_unit, .. } => compilation_unit,
-            LSPErrors::FatalError { compilation_unit, .. } => compilation_unit,
+            LSPErrors::SpannedError {
+                compilation_unit, ..
+            } => compilation_unit,
+            LSPErrors::FatalError {
+                compilation_unit, ..
+            } => compilation_unit,
         };
 
         let uri = match Url::from_file_path(Path::new(compilation_unit)) {

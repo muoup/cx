@@ -1,10 +1,10 @@
 use crate::internal_storage::{retrieve_data, store_data};
 use crate::{CompilationUnit, GlobalCompilationContext};
-use cx_ast::ast::CXAST;
 use cx_ast::PreparseContents;
-use cx_tokens::token::Token;
+use cx_ast::ast::CXAST;
 use cx_lmir::LMIRUnit;
 use cx_mir::mir::program::{MIRBaseMappings, MIRUnit};
+use cx_tokens::token::Token;
 use speedy::{LittleEndian, Readable, Writable};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -20,7 +20,7 @@ pub struct ModuleData {
 
     pub naive_ast: ModuleMap<CXAST>,
     pub base_mappings: ModuleMap<MIRBaseMappings>,
-    
+
     pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
@@ -124,7 +124,8 @@ impl<'a, Data> ModuleMap<Data> {
             .unwrap_or_else(|| {
                 println!(
                     "Data with suffix {} does not contain information for unit: {}",
-                    self.storage_extension, unit.identifier()
+                    self.storage_extension,
+                    unit.identifier()
                 );
                 println!("Keys: {:?}", lock.keys().collect::<Vec<_>>());
                 panic!("Data not found in the module map")

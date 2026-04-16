@@ -6,15 +6,16 @@ use cx_mir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_mir_lowering::generate_lmir;
 use cx_parsing::ParseErrorLog;
 use cx_parsing::parse::parse_ast;
-use cx_parsing::preparse::{preparse, PreparseConfig};
+use cx_parsing::preparse::{PreparseConfig, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::directories::internal_directory;
-use cx_util::module_path::ModulePath;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data, retrieve_text, store_text};
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
-use cx_pipeline_data::{CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext};
+use cx_pipeline_data::{
+    CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
+};
 use cx_safe_analyzer::FMIRContext;
 use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
@@ -22,6 +23,7 @@ use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
 use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
 use cx_util::format::dump_data;
+use cx_util::module_path::ModulePath;
 use cx_util::{CXError, CXErrorTrait, CXResult};
 use fs2::FileExt;
 use speedy::{LittleEndian, Readable, Writable};
@@ -159,14 +161,12 @@ pub(crate) fn handle_job(
             })
             .collect::<Vec<_>>();
 
-        Ok(
-            [CompilationJob::new(
-                new_requirements,
-                new_step,
-                job.unit.clone(),
-            )]
-            .into(),
-        )
+        Ok([CompilationJob::new(
+            new_requirements,
+            new_step,
+            job.unit.clone(),
+        )]
+        .into())
     };
 
     match perform_job(context, &job, retain_lmir)? {
@@ -261,9 +261,11 @@ pub(crate) fn perform_job(
             output.module = job.unit.to_string();
 
             if !job.unit.is_std_lib() {
-                output
-                    .imports
-                    .extend(INTRINSIC_IMPORTS.iter().map(|s| ModulePath::from_source_path(s)));
+                output.imports.extend(
+                    INTRINSIC_IMPORTS
+                        .iter()
+                        .map(|s| ModulePath::from_source_path(s)),
+                );
             }
 
             context
@@ -360,8 +362,7 @@ pub(crate) fn perform_job(
             }
 
             if context.config.analysis {
-                fmir_context
-                    .apply_standard_analysis_passes(job.unit.as_path())?;
+                fmir_context.apply_standard_analysis_passes(job.unit.as_path())?;
             }
 
             context.module_db.mir.insert(job.unit.clone(), mir);

@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use cx_util::CXErrorTrait;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct TypeError {
@@ -20,11 +20,11 @@ impl CXErrorTrait for TypeError {
             self.token_end,
         );
     }
-    
+
     fn error_prefix(&self) -> String {
         "TYPE ERROR".to_string()
     }
-    
+
     fn error_content(&self) -> String {
         self.message.clone()
     }
@@ -54,7 +54,7 @@ impl CXErrorTrait for TypeError {
 macro_rules! log_typecheck_error {
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
-            let message = format!("TYPE ERROR: {}", format!($($arg)*));
+            let message = format!($($arg)*);
             let range: &cx_tokens::TokenRange = $range;
 
             let compilation_unit = if range.file_origin.is_empty() {

@@ -1,15 +1,15 @@
 //! Binary and unary operation lowering
 
 use cx_lmir::{
-    LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
     types::{LMIRIntegerType, LMIRType},
+    LMIRFloatBinOp, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_mir::mir::{
+    data::{MIRType, MIRTypeKind},
     expression::{
         MIRBinOp, MIRExpression, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
         MIRUnOp,
     },
-    data::{MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 

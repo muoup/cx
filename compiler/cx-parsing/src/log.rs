@@ -15,11 +15,11 @@ impl CXErrorTrait for ParseErrorLog {
     fn pretty_print(&self) {
         cx_log::pretty_point_error(&self.message, &self.file, &self.token);
     }
-    
+
     fn error_prefix(&self) -> String {
         "PARSER ERROR".to_string()
     }
-    
+
     fn error_content(&self) -> String {
         self.message.clone()
     }
@@ -46,7 +46,7 @@ macro_rules! log_parse_error {
     ($data:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
-            
+
             // if cfg!(debug_assertions) {
             //     panic!();
             // }
@@ -66,13 +66,13 @@ macro_rules! log_preparse_error {
     ($toks:expr, $($arg:tt)*) => {
         {
             let message = format!("{}", format!($($arg)*));
-            
+
             Err(Box::new($crate::log::ParseErrorLog {
                 message,
                 file: $toks.file.clone(),
                 token: $toks.peek().unwrap().clone(),
                 previous_token: $toks.prev().cloned(),
             }) as Box<dyn cx_util::CXErrorTrait>)
-        } 
+        }
     };
 }

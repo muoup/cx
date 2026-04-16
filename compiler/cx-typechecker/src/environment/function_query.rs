@@ -3,9 +3,9 @@ use cx_ast::{
     data::{CXFunctionKey, CXTemplateInput},
 };
 use cx_mir::mir::{
+    data::{MIRFunctionPrototype, MIRType},
     name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
     program::MIRBaseMappings,
-    data::{MIRFunctionPrototype, MIRType},
 };
 use cx_util::{CXResult, identifier::CXIdent};
 
@@ -34,7 +34,8 @@ pub(crate) fn deduce_function(
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                "Template argument deduction not yet implemented",
+                "Templated function '{}' requires explicit template arguments in this context",
+                key,
             );
         };
 

@@ -1,6 +1,5 @@
 use crate::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 
-
 pub fn is_intrinsic_type(name: &str) -> bool {
     for (intrinsic_name, _) in INTRINSIC_TYPES.iter() {
         if intrinsic_name == &name {
@@ -10,13 +9,17 @@ pub fn is_intrinsic_type(name: &str) -> bool {
     false
 }
 
-pub const INTRINSIC_IMPORTS: &[&str] = &[
-    "std/intrinsic/assertion.cx",
-];
+pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
 
 pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
     ("void", MIRTypeKind::Unit),
-    ("bool", MIRTypeKind::Integer { signed: false, _type: MIRIntegerType::I1 }),
+    (
+        "bool",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I1,
+        },
+    ),
     (
         "i8",
         MIRTypeKind::Integer {

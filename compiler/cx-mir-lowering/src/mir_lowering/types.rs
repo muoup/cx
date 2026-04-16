@@ -113,10 +113,7 @@ fn convert_linkage(linkage: CXLinkageMode) -> LinkageType {
     }
 }
 
-pub(crate) fn convert_type_kind(
-    cx_type: &MIRType,
-    definitions: &MIRTypeContext,
-) -> LMIRTypeKind {
+pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRTypeContext) -> LMIRTypeKind {
     match &cx_type.kind {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
 
@@ -127,12 +124,10 @@ pub(crate) fn convert_type_kind(
 
         MIRTypeKind::Float { _type } => LMIRTypeKind::Float(convert_float_type(_type)),
 
-        MIRTypeKind::Function { .. } => {
-            LMIRTypeKind::Pointer {
-                nullable: true,
-                dereferenceable: 0,
-            }
-        }
+        MIRTypeKind::Function { .. } => LMIRTypeKind::Pointer {
+            nullable: true,
+            dereferenceable: 0,
+        },
 
         MIRTypeKind::PointerTo { .. } => LMIRTypeKind::Pointer {
             nullable: false,

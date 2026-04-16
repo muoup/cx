@@ -6,21 +6,16 @@ use cx_pipeline_data::config::find_and_load_config;
 use cx_pipeline_data::{CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
 use std::path::{Path, PathBuf};
 
-fn default_backend() -> CompilerBackend {
-    #[cfg(feature = "backend-llvm")]
-    {
-        CompilerBackend::LLVM
-    }
-    #[cfg(not(feature = "backend-llvm"))]
-    {
-        CompilerBackend::Cranelift
-    }
-}
-
 fn parse_backend(s: &str) -> Result<CompilerBackend, String> {
     match s {
         "cranelift" => Ok(CompilerBackend::Cranelift),
+        #[cfg(feature = "backend-llvm")]
         "llvm" => Ok(CompilerBackend::LLVM),
+        #[cfg(not(feature = "backend-llvm"))]
+        "llvm" => Err(
+            "LLVM backend is not enabled in this build. Recompile cx with the `backend-llvm` feature to use backend = \"llvm\"."
+                .to_string(),
+        ),
         other => Err(format!("Unknown backend in cx.toml: '{}'", other)),
     }
 }
@@ -33,7 +28,10 @@ fn parse_optimization(s: &str) -> Result<OptimizationLevel, String> {
         "O3" => Ok(OptimizationLevel::O3),
         "Osize" => Ok(OptimizationLevel::Osize),
         "Ofast" => Ok(OptimizationLevel::Ofast),
-        other => Err(format!("Unknown optimization level in cx.toml: '{}'", other)),
+        other => Err(format!(
+            "Unknown optimization level in cx.toml: '{}'",
+            other
+        )),
     }
 }
 
@@ -102,20 +100,30 @@ fn run_build_mode(args: args::BuildArgs) {
     let backend = args.backend.unwrap_or_else(|| {
         build_section
             .and_then(|b| b.backend.as_ref())
-            .map(|s| parse_backend(s).unwrap_or_else(|e| { eprintln!("Error: {e}"); std::process::exit(1); }))
-            .unwrap_or_else(default_backend)
+            .map(|s| {
+                parse_backend(s).unwrap_or_else(|e| {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                })
+            })
+            .unwrap_or_else(args::default_backend)
     });
 
     let optimization_level = args.optimization_level.unwrap_or_else(|| {
         build_section
             .and_then(|b| b.optimization.as_ref())
-            .map(|s| parse_optimization(s).unwrap_or_else(|e| { eprintln!("Error: {e}"); std::process::exit(1); }))
+            .map(|s| {
+                parse_optimization(s).unwrap_or_else(|e| {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                })
+            })
             .unwrap_or_default()
     });
 
-    let analysis = args.analysis.unwrap_or_else(|| {
-        build_section.and_then(|b| b.analysis).unwrap_or(false)
-    });
+    let analysis = args
+        .analysis
+        .unwrap_or_else(|| build_section.and_then(|b| b.analysis).unwrap_or(false));
 
     let internal_directory = setup_internal_directory(&project_root);
 
@@ -153,7 +161,10 @@ fn run_init_mode(args: args::InitArgs) {
     }
 
     std::fs::create_dir_all(project_dir).unwrap_or_else(|e| {
-        eprintln!("Error: Failed to create directory '{}': {}", args.project_name, e);
+        eprintln!(
+            "Error: Failed to create directory '{}': {}",
+            args.project_name, e
+        );
         std::process::exit(1);
     });
 
@@ -162,7 +173,7 @@ fn run_init_mode(args: args::InitArgs) {
 name = "{name}"
 
 [build]
-backend = "cranelift"
+backend = "{backend}"
 optimization = "O0"
 
 [workspace.targets.default]
@@ -170,7 +181,8 @@ binaries = [
   {{ name = "{name}", entry = "main.cx" }},
 ]
 "#,
-        name = args.project_name
+        name = args.project_name,
+        backend = args::default_backend_name(),
     );
 
     let main_cx = r#"import std::io;

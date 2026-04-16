@@ -1,8 +1,8 @@
 use cx_ast::{ast::CXExpr, data::CXFunctionKind};
 use cx_mir::mir::{
+    data::MIRType,
     name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
     program::MIRBaseMappings,
-    data::MIRType,
 };
 use cx_util::CXResult;
 

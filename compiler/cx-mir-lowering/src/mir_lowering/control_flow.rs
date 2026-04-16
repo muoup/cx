@@ -5,8 +5,8 @@ use cx_lmir::{
     LMIRInstructionKind, LMIRValue,
 };
 use cx_mir::mir::{
-    expression::{MIRExpression, MIRExpressionKind},
     data::MIRType,
+    expression::{MIRExpression, MIRExpressionKind},
 };
 use cx_util::CXResult;
 
@@ -47,11 +47,11 @@ pub fn lower_if(
 
     // Then branch
     builder.set_current_block(then_block_id.clone());
-    
+
     builder.push_scope(None, None);
     lower_expression(builder, then_branch)?;
     builder.pop_scope()?;
-    
+
     builder.add_new_instruction(
         LMIRInstructionKind::Jump {
             target: merge_block_id.clone(),
@@ -255,12 +255,14 @@ pub fn lower_cswitch(
 
     for (i, (_, case_body)) in cases.iter().enumerate() {
         builder.set_current_block(case_blocks[i].clone());
-        
+
         builder.push_scope(None, None);
         lower_expression(builder, case_body)?;
         builder.pop_scope()?;
         builder.add_new_instruction(
-            LMIRInstructionKind::Jump { target: exit_block_id.clone() },
+            LMIRInstructionKind::Jump {
+                target: exit_block_id.clone(),
+            },
             LMIRType::unit(),
             false,
         )?;
@@ -268,7 +270,7 @@ pub fn lower_cswitch(
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
-        
+
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
@@ -348,7 +350,7 @@ pub fn lower_match(
 
     for (i, (_, arm_body)) in arms.iter().enumerate() {
         builder.set_current_block(arm_blocks[i].clone());
-        
+
         builder.push_scope(None, None);
         lower_expression(builder, arm_body)?;
         builder.pop_scope()?;
@@ -363,7 +365,7 @@ pub fn lower_match(
 
     if let Some(default_expr) = default {
         builder.set_current_block(default_block_id);
-        
+
         builder.push_scope(None, None);
         lower_expression(builder, default_expr)?;
         builder.pop_scope()?;
@@ -384,7 +386,12 @@ pub fn lower_match(
 
 /// Lower a return statement
 pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>) -> CXResult<LMIRValue> {
-    if let Some(postcondition) = &builder.current_mir_prototype().contract.postcondition.clone() {
+    if let Some(postcondition) = &builder
+        .current_mir_prototype()
+        .contract
+        .postcondition
+        .clone()
+    {
         builder.push_scope(None, None);
 
         if let Some(ret_name) = &postcondition.0 {
@@ -399,7 +406,7 @@ pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>) -> C
         lower_contract_assertion(builder, &postcondition.1, "postcondition failed")?;
         builder.pop_scope()?;
     }
-    
+
     let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
 
     if has_return_buffer {

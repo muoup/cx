@@ -3,10 +3,10 @@ use crate::environment::name_mangling::base_mangle_fn_name;
 use crate::type_checking::binary_ops::typecheck_contract;
 use cx_ast::ast::CXExpr;
 use cx_ast::data::{CXFunctionPrototype, CXParameter, CXReceiverMode, CXTemplateInput, CXTypeKind};
-use cx_mir::mir::program::MIRBaseMappings;
 use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRParameter, MIRTemplateInput, MIRType, MIRTypeKind,
 };
+use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 

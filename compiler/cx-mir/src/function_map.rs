@@ -46,7 +46,8 @@ impl CXFnData {
     }
 
     pub fn get_template(
-        &self, name: &CXFunctionKey,
+        &self,
+        name: &CXFunctionKey,
     ) -> Option<&ModuleResource<CXFunctionTemplate>> {
         self.templates.get(name)
     }

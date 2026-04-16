@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cx_util::{unsafe_float::FloatWrapper, identifier::CXIdent, module_path::ModulePath};
 use cx_tokens::TokenRange;
+use cx_util::{identifier::CXIdent, module_path::ModulePath, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 use uuid::Uuid;
 
 use crate::{
-    data::{CXFunctionPrototype, CXTemplateInput, CXTemplatePrototype, CXType, ModuleResource}, type_map::{CXFnMap, CXTypeMap}
+    data::{CXFunctionPrototype, CXTemplateInput, CXTemplatePrototype, CXType, ModuleResource},
+    type_map::{CXFnMap, CXTypeMap},
 };
 
 #[derive(Debug, Default)]
@@ -211,7 +212,7 @@ pub enum CXExprKind {
     SizeOfType {
         _type: CXType,
     },
-    
+
     VarDeclaration {
         _type: CXType,
         name: CXIdent,
@@ -277,7 +278,12 @@ impl CXExprKind {
         }
     }
 
-    pub fn into_expr_with_origin(self, start_index: usize, end_index: usize, file_origin: Arc<str>) -> CXExpr {
+    pub fn into_expr_with_origin(
+        self,
+        start_index: usize,
+        end_index: usize,
+        file_origin: Arc<str>,
+    ) -> CXExpr {
         let (start_index, end_index) = if start_index > end_index {
             (0, 0)
         } else {

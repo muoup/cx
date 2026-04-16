@@ -3,9 +3,9 @@ use cx_ast::{
     data::{CXTypeKind, PredeclarationType},
 };
 use cx_mir::mir::{
+    data::{MIRType, MIRTypeKind},
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
-    data::{MIRType, MIRTypeKind},
 };
 use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent};
@@ -109,7 +109,7 @@ pub fn typecheck_initializer_list(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Initializer lists must have an explicit type"
+            "Initializer lists must have an explicit type"
         );
     };
 
@@ -135,8 +135,7 @@ pub fn typecheck_initializer_list(
         }
 
         MIRTypeKind::PointerTo {
-            inner_type: inner,
-            ..
+            inner_type: inner, ..
         } => {
             let inner_type = env
                 .generated_types
@@ -153,7 +152,7 @@ pub fn typecheck_initializer_list(
         _ => log_typecheck_error!(
             env,
             expr.token_range(),
-            " Cannot coerce initializer to type {to_type}"
+            "Cannot coerce initializer to type {to_type}"
         ),
     }
 }
@@ -223,7 +222,7 @@ fn typecheck_structured_initializer(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Expected structured type for initializer, found: {to_type}"
+            "Expected a structured type for initializer, found {to_type}"
         );
     };
     let fields = fields.clone();
@@ -242,7 +241,7 @@ fn typecheck_structured_initializer(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Structured initializer has unexpected field: {name}"
+                    "Structured initializer has unexpected field: {name}"
                 );
             };
             counter = found_index;
@@ -275,7 +274,7 @@ fn typecheck_structured_initializer(
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Could not find field '{}' in type {}",
+                "Could not find field '{}' in type {}",
                 field_name,
                 to_type
             );

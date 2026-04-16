@@ -252,8 +252,7 @@ impl LanguageServer for Backend {
         let Some(text) = self.document_map.get(&uri) else {
             return Ok(None);
         };
-        let tokens = lex(&text)
-            .map_err(|_| tower_lsp::jsonrpc::Error::internal_error())?;
+        let tokens = lex(&text).map_err(|_| tower_lsp::jsonrpc::Error::internal_error())?;
         let mut semantic_tokens = Vec::new();
         let mut last_line = 0;
         let mut last_start = 0;

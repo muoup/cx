@@ -25,8 +25,7 @@ pub fn get_error_loc(file_contents: &str, index: usize) -> (usize, usize) {
     panic!("Index out of bounds");
 }
 
-fn error_exit() {
-}
+fn error_exit() {}
 
 fn annotation_failure(message: &str) {
     println!("{message}");
@@ -52,9 +51,9 @@ pub fn pretty_underline_error_with_notes(
 ) {
     let tokens = cx_lexer::lex(
         &std::fs::read_to_string(file_path)
-            .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy()))
+            .unwrap_or_else(|_| panic!("Failed to read file: {}", file_path.to_string_lossy())),
     );
-    
+
     let Ok(tokens) = tokens else {
         panic!("No tokens provided for error reporting");
     };
@@ -73,7 +72,7 @@ pub fn pretty_underline_error_with_notes(
         annotation_failure(message);
         return;
     }
-    
+
     let start_index = start_token.start_index;
     let end_index = end_token.end_index;
 
@@ -116,7 +115,7 @@ pub fn pretty_underline_error_with_notes(
             break;
         }
     }
-    
+
     error_exit();
 }
 

@@ -3,13 +3,13 @@ use cx_lmir::{
     LMIRInstructionKind, LMIRValue,
 };
 use cx_mir::mir::{
-    expression::MIRExpression,
     data::{MIRType, MIRTypeKind},
+    expression::MIRExpression,
 };
 use cx_util::CXResult;
 
-use crate::builder::LMIRBuilder;
 use super::expressions::lower_expression;
+use crate::builder::LMIRBuilder;
 
 /// Lower getting the tag from a tagged union
 pub fn get_tagged_union_tag(

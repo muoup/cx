@@ -1,5 +1,5 @@
-use cx_util::identifier::CXIdent;
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
 use crate::ast::{CXExpr, VisibilityMode};

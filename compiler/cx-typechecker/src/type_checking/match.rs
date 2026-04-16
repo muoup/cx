@@ -8,9 +8,9 @@ use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
 use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
+    data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
     program::MIRBaseMappings,
-    data::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_util::CXResult;
 

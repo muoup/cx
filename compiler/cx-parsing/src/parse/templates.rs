@@ -1,10 +1,8 @@
-use cx_tokens::{identifier, operator, TokenIter};
-use cx_ast::data::{
-    CXTemplateInput, CXType, CXTypeKind, CXTemplatePrototype, PredeclarationType,
-};
 use crate::parse::ParserData;
+use cx_ast::data::{CXTemplateInput, CXTemplatePrototype, CXType, CXTypeKind, PredeclarationType};
 use cx_ast::{assert_token_matches, peek_kind, try_next};
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_tokens::{identifier, operator, TokenIter};
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::types::parse_initializer;
 
@@ -76,9 +74,7 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
     Ok(CXTemplatePrototype { types: type_decls })
 }
 
-pub(crate) fn convert_template_proto_to_args(
-    prototype: CXTemplatePrototype,
-) -> CXTemplateInput {
+pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> CXTemplateInput {
     let params = prototype
         .types
         .into_iter()

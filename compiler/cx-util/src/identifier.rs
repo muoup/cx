@@ -57,12 +57,16 @@ impl CXIdent {
 
 impl From<String> for CXIdent {
     fn from(value: String) -> Self {
-        CXIdent { data: Arc::from(value) }
+        CXIdent {
+            data: Arc::from(value),
+        }
     }
 }
 
 impl From<&str> for CXIdent {
     fn from(value: &str) -> Self {
-        CXIdent { data: Arc::from(value) }
+        CXIdent {
+            data: Arc::from(value),
+        }
     }
 }

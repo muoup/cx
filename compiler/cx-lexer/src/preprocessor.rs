@@ -1,5 +1,5 @@
 use crate::unified_lexer::Lexer;
-use cx_util::{CXError, CXResult, char_iter::CharIter, module_path::stdlib_directory};
+use cx_util::{CXResult, char_iter::CharIter, module_path::stdlib_directory};
 use std::path::PathBuf;
 
 pub(crate) fn generate_lexable_slice<'a>(lexer: &mut Lexer<'a>) -> Option<CharIter<'a>> {
@@ -73,7 +73,7 @@ fn resolve_include_path(lexer: &Lexer, file_name: &str) -> Option<PathBuf> {
     let is_angled = file_name.starts_with('<') && file_name.ends_with('>');
 
     if !is_quoted && !is_angled {
-        panic!("Invalid include statement: {file_name}");
+        return None;
     }
 
     let inner = &file_name[1..file_name.len() - 1];
@@ -89,30 +89,92 @@ fn resolve_include_path(lexer: &Lexer, file_name: &str) -> Option<PathBuf> {
 }
 
 pub(crate) fn handle_directive(lexer: &mut Lexer) -> CXResult<()> {
-    match lexer.char_iter.next_word().unwrap() {
-        "#include" => {
-            let file_name = lexer.char_iter.next_word().unwrap().to_string();
-            let path = resolve_include_path(lexer, &file_name).ok_or(CXError::create_boxed(
-                format!("Included file not found: {file_name}"),
-            ))?;
+    let directive_start = lexer.char_iter.current_iter;
+    let Some(directive) = lexer.char_iter.next_word() else {
+        return log_lexer_error!(
+            lexer.file_path.as_path(),
+            lexer.source,
+            directive_start,
+            lexer.char_iter.current_iter,
+            "Expected preprocessor directive"
+        );
+    };
+    let directive = directive.to_string();
+    let directive_end = lexer.char_iter.current_iter;
 
-            let string = std::fs::read_to_string(path.as_path()).map_err(|e| {
-                CXError::create_boxed(format!(
-                    "Failed to read included file {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
+    match directive.as_str() {
+        "#include" => {
+            lexer.char_iter.skip_whitespace();
+            let file_name_start = lexer.char_iter.current_iter;
+            let Some(file_name) = lexer.char_iter.next_word() else {
+                return log_lexer_error!(
+                    lexer.file_path.as_path(),
+                    lexer.source,
+                    directive_start,
+                    directive_end,
+                    "#include requires a file path"
+                );
+            };
+            let file_name = file_name.to_string();
+            let file_name_end = lexer.char_iter.current_iter;
+
+            let path = match resolve_include_path(lexer, &file_name) {
+                Some(path) => path,
+                None if !(file_name.starts_with('"') && file_name.ends_with('"'))
+                    && !(file_name.starts_with('<') && file_name.ends_with('>')) =>
+                {
+                    return log_lexer_error!(
+                        lexer.file_path.as_path(),
+                        lexer.source,
+                        file_name_start,
+                        file_name_end,
+                        "Invalid include path '{}': expected \"...\" or <...>",
+                        file_name
+                    );
+                }
+                None => {
+                    return log_lexer_error!(
+                        lexer.file_path.as_path(),
+                        lexer.source,
+                        file_name_start,
+                        file_name_end,
+                        "Included file not found: {file_name}"
+                    );
+                }
+            };
+
+            let string = match std::fs::read_to_string(path.as_path()) {
+                Ok(string) => string,
+                Err(e) => {
+                    return log_lexer_error!(
+                        lexer.file_path.as_path(),
+                        lexer.source,
+                        file_name_start,
+                        file_name_end,
+                        "Failed to read included file {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            };
 
             let tokens = lexer.independent_lex(&string, path.as_path())?;
-
             lexer.tokens.extend(tokens);
         }
 
         "#define" => {
-            let name = lexer.char_iter.next_word().unwrap().to_string();
-
             lexer.char_iter.skip_whitespace();
+            let Some(name) = lexer.char_iter.next_word() else {
+                return log_lexer_error!(
+                    lexer.file_path.as_path(),
+                    lexer.source,
+                    directive_start,
+                    directive_end,
+                    "#define requires a macro name"
+                );
+            };
+            let name = name.to_string();
+
             let rest_of_line = lexer.char_iter.rest_of_line().to_string();
 
             let file_path = lexer.file_path.clone();
@@ -121,7 +183,16 @@ pub(crate) fn handle_directive(lexer: &mut Lexer) -> CXResult<()> {
             lexer.macros.insert(name, tokens.into_boxed_slice());
         }
 
-        dir => todo!("Preprocessor directive not implemented: {dir}"),
+        dir => {
+            return log_lexer_error!(
+                lexer.file_path.as_path(),
+                lexer.source,
+                directive_start,
+                directive_end,
+                "Preprocessor directive '{}' is not yet implemented",
+                dir
+            );
+        }
     }
 
     Ok(())

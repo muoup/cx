@@ -1,7 +1,7 @@
+use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::cell::RefCell;
 use std::sync::Mutex;
 
 thread_local! {

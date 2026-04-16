@@ -9,7 +9,7 @@ impl LMIRType {
             kind: LMIRTypeKind::Unit,
         }
     }
-    
+
     pub fn bool() -> Self {
         LMIRType {
             kind: LMIRTypeKind::Integer(LMIRIntegerType::I1),
@@ -47,10 +47,10 @@ pub enum LMIRTypeKind {
     Opaque {
         bytes: usize,
     },
-    
+
     Integer(LMIRIntegerType),
     Float(LMIRFloatType),
-    
+
     Pointer {
         nullable: bool,
         dereferenceable: u32,
@@ -68,7 +68,7 @@ pub enum LMIRTypeKind {
         name: String,
         fields: Vec<(String, LMIRType)>,
     },
-    
+
     Unit,
 }
 
@@ -104,11 +104,9 @@ impl LMIRType {
 
                 current_size
             }
-            LMIRTypeKind::Union { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.size())
-                .max()
-                .unwrap(),
+            LMIRTypeKind::Union { fields, .. } => {
+                fields.iter().map(|(_, field)| field.size()).max().unwrap()
+            }
 
             LMIRTypeKind::Unit => 0,
         }

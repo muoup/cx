@@ -2,13 +2,13 @@ use crate::mir_lowering::types::convert_cx_prototype;
 use crate::{LMIRResult, LMIRUnit};
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::*;
-use cx_mir::mir::program::MIRUnit;
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRTypeContext};
-use cx_util::CXResult;
+use cx_mir::mir::program::MIRUnit;
 use cx_util::format::dump_all;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 use cx_util::unsafe_float::FloatWrapper;
+use cx_util::CXResult;
 
 #[derive(Debug)]
 pub struct LMIRBuilder {

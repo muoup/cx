@@ -179,14 +179,14 @@ pub enum FMIRNodeBody {
         condition: FRc<FMIRNode>,
         body: FRc<FMIRNode>,
     },
-    
+
     /// _cloop :: [(a, CMonad a)] -> CMonad a -> a -> CMonad a
     Match {
         condition: FRc<FMIRNode>,
         arms: Vec<(FRc<FMIRNode>, FRc<FMIRNode>)>,
         default: FRc<FMIRNode>,
     },
-    
+
     // _aggregate_initialization :: [(field_name, value)] -> CMonad T
     AggregateInitialization {
         fields: Vec<(usize, FRc<FMIRNode>)>,
@@ -207,7 +207,7 @@ pub enum FMIRNodeBody {
     VariableAlias {
         name: String,
     },
-    
+
     // Identity function for reinterpreting a value semantically as a different type, use sparingly as I am still
     // investigating if there are more sound ways to map things like tagged union accesses
     Transmute {

@@ -10,9 +10,9 @@ use crate::type_checking::binary_ops::{
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_ast::data::{CX_CONST, CXLinkageMode};
+use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
 use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -82,14 +82,14 @@ pub(crate) fn ensure_binding_available(
             log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Identifier '{}' has been moved",
+                "Identifier '{}' has been moved",
                 name
             )
         }
         BindingMoveState::ConditionallyMoved => log_typecheck_error!(
             env,
             expr.token_range(),
-            " Identifier '{}' was conditionally moved across a control-flow join",
+            "Identifier '{}' was conditionally moved across a control-flow join",
             name
         ),
     }
@@ -248,9 +248,9 @@ pub fn typecheck_expr_inner(
                 },
             );
 
-            let str_ref_type = env.generated_types.mem_ref_to(
-                &MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST),
-            );
+            let str_ref_type = env
+                .generated_types
+                .mem_ref_to(&MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST));
 
             TypecheckResult::expr2(MIRExpression {
                 token_range: None,
@@ -268,7 +268,7 @@ pub fn typecheck_expr_inner(
                 let err: CXResult<()> = log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Failed to resolve type for variable '{}'\n {}",
+                    "Failed to resolve type for variable '{}'\n{}",
                     name,
                     err.error_content()
                 );
@@ -528,7 +528,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " 'break' used outside of a loop or switch context"
+                    "'break' used outside of a loop or switch context"
                 );
             };
             enqueue_jump_arrow(
@@ -554,7 +554,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " 'continue' used outside of a loop context"
+                    "'continue' used outside of a loop context"
                 );
             };
             enqueue_jump_arrow(
@@ -615,7 +615,7 @@ pub fn typecheck_expr_inner(
                     return log_typecheck_error!(
                         env,
                         expr.token_range(),
-                        " Cannot return from function {} with a void return type",
+                        "Cannot return from function {} with a void return type",
                         env.current_function()
                     );
                 }
@@ -624,7 +624,7 @@ pub fn typecheck_expr_inner(
                     return log_typecheck_error!(
                         env,
                         expr.token_range(),
-                        " Function {} expects a return value, but none was provided",
+                        "Function {} expects a return value, but none was provided",
                         env.current_function()
                     );
                 }
@@ -664,7 +664,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " @leak is unsafe and must be wrapped in @unsafe in safe functions"
+                    "@leak is unsafe and must be wrapped in @unsafe in safe functions"
                 );
             }
 
@@ -672,7 +672,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " @leak currently requires a local identifier"
+                    "@leak currently requires a local identifier"
                 );
             };
 
@@ -680,7 +680,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Identifier '{}' not found",
+                    "Identifier '{}' not found",
                     ident
                 );
             };
@@ -690,7 +690,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " @leak requires a stack local value"
+                    "@leak requires a stack local value"
                 );
             };
 
@@ -719,11 +719,12 @@ pub fn typecheck_expr_inner(
                         typecheck_expr(env, base_data, operand, None)?.into_expression();
                     let operand_type = operand_val.get_type();
 
-                    let Some(inner) = env.generated_types.mem_ref_inner(&operand_type).cloned() else {
+                    let Some(inner) = env.generated_types.mem_ref_inner(&operand_type).cloned()
+                    else {
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
-                            " Cannot apply pre-increment to a non-reference {}",
+                            "Cannot apply pre-increment to non-reference type {}",
                             operand_type
                         );
                     };
@@ -753,7 +754,7 @@ pub fn typecheck_expr_inner(
                             return log_typecheck_error!(
                                 env,
                                 operand.token_range(),
-                                " Pre-increment operator requires an integer or pointer type, found {}",
+                                "Pre-increment operator requires an integer or pointer type, found {}",
                                 inner
                             );
                         }
@@ -769,7 +770,7 @@ pub fn typecheck_expr_inner(
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
-                            " Logical NOT operator requires an integer type, found {}",
+                            "Logical NOT operator requires an integer type, found {}",
                             loaded_operand_type
                         );
                     }
@@ -794,7 +795,7 @@ pub fn typecheck_expr_inner(
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
-                            " Bitwise NOT operator requires an integer type, found {}",
+                            "Bitwise NOT operator requires an integer type, found {}",
                             loaded_op_type
                         );
                     }
@@ -838,7 +839,7 @@ pub fn typecheck_expr_inner(
                             return log_typecheck_error!(
                                 env,
                                 operand.token_range(),
-                                " Negation operator requires an integer or float type, found {}",
+                                "Negation operator requires an integer or float type, found {}",
                                 loaded_op_type
                             );
                         }
@@ -854,11 +855,12 @@ pub fn typecheck_expr_inner(
                 CXUnOp::AddressOf => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let operand_type = operand_val.get_type();
-                    let Some(inner) = env.generated_types.mem_ref_inner(&operand_type).cloned() else {
+                    let Some(inner) = env.generated_types.mem_ref_inner(&operand_type).cloned()
+                    else {
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
-                            " Cannot take address of a non-reference type"
+                            "Cannot take the address of a non-reference type"
                         );
                     };
 
@@ -876,11 +878,12 @@ pub fn typecheck_expr_inner(
                         .and_then(|v| coerce_value(env, expr, v.into_expression()))?;
                     let loaded_operand_type = loaded_operand.get_type();
 
-                    let Some(inner) = env.generated_types.ptr_inner(&loaded_operand_type).cloned() else {
+                    let Some(inner) = env.generated_types.ptr_inner(&loaded_operand_type).cloned()
+                    else {
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
-                            " Cannot dereference a non-pointer type {}",
+                            "Cannot dereference non-pointer type {}",
                             loaded_operand_type
                         );
                     };
@@ -933,7 +936,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Cannot assign to non-reference type {}",
+                    "Cannot assign to non-reference type {}",
                     lhs_type
                 );
             };
@@ -942,7 +945,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Cannot assign through immutable reference"
+                    "Cannot assign through an immutable reference"
                 );
             }
 
@@ -959,7 +962,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Cannot assign to a const type"
+                    "Cannot assign to a const type"
                 );
             }
 
@@ -1021,7 +1024,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Identifier '{}' not found",
+                    "Identifier '{}' not found",
                     ident
                 );
             };
@@ -1036,7 +1039,8 @@ pub fn typecheck_expr_inner(
                 );
             }
 
-            let Some(inner_type) = env.generated_types.mem_ref_inner(&inner_val._type).cloned() else {
+            let Some(inner_type) = env.generated_types.mem_ref_inner(&inner_val._type).cloned()
+            else {
                 unreachable!()
             };
 
@@ -1069,7 +1073,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Unknown type: {}",
+                    "Unknown type: {}",
                     type_name
                 );
             };
@@ -1084,7 +1088,7 @@ pub fn typecheck_expr_inner(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Variant '{}' not found in tagged union type {}",
+                    "Variant '{}' not found in tagged union type {}",
                     name,
                     type_name
                 );
@@ -1230,7 +1234,7 @@ pub(crate) fn global_expr(
                         return log_typecheck_error!(
                             env,
                             init_expr.token_range(),
-                            " CX currently only supports integer initializers for global variable initialization"
+                            "CX currently only supports integer initializers for global variables"
                         );
                     };
 
@@ -1253,7 +1257,10 @@ pub(crate) fn global_expr(
                 },
             );
 
-            tcglobal_expr(env.realized_globals.get(ident).unwrap(), &mut env.generated_types)
+            tcglobal_expr(
+                env.realized_globals.get(ident).unwrap(),
+                &mut env.generated_types,
+            )
         }
     }
 }

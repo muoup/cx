@@ -4,8 +4,8 @@ use cx_ast::ast::{CXExpr, VisibilityMode};
 use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
 use cx_mir::mir::data::{MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
+use cx_util::identifier::CXIdent;
 
 use crate::log_typecheck_error;
 use crate::type_completion::complete_type;
@@ -176,7 +176,8 @@ where
     F: Fn(Vec<(String, MIRTypeId)>) -> MIRTypeKind,
 {
     let type_id = env.get_or_create_named_type_id(name.as_str());
-    env.generated_types.register_identifier(name.clone(), type_id);
+    env.generated_types
+        .register_identifier(name.clone(), type_id);
 
     let provisional = make_named_type(
         ty,
@@ -353,11 +354,16 @@ pub(crate) fn _complete_type(
                 return Ok(completed.with_specifier(ty.specifiers));
             }
 
-            if base_data.type_data.get_template(&name.as_string()).is_some() {
+            if base_data
+                .type_data
+                .get_template(&name.as_string())
+                .is_some()
+            {
                 return log_typecheck_error!(
                     env,
                     &expr.range,
-                    "Template deduction is not yet implemented!"
+                    "Template type '{}' requires explicit template arguments",
+                    name,
                 );
             }
 

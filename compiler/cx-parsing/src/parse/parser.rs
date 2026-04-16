@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
+use cx_ast::ast::VisibilityMode;
 use cx_ast::{
     ast::{CXFunctionStmt, CXGlobalVariable, CXAST},
     data::{
-        CXFunctionTemplate, CXLinkageMode, CXFunctionPrototype, CXType, CXTemplatePrototype,
+        CXFunctionPrototype, CXFunctionTemplate, CXLinkageMode, CXTemplatePrototype, CXType,
         CXTypeTemplate, ModuleResource,
     },
     PreparseContents,
 };
 use cx_tokens::TokenIter;
-use cx_ast::ast::VisibilityMode;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
@@ -42,7 +42,7 @@ impl<'a> ParserData<'a> {
         self.tokens.back();
         self
     }
-    
+
     pub fn change_comma_mode(&mut self, expr_comma: bool) {
         self.expr_commas.push(expr_comma);
     }

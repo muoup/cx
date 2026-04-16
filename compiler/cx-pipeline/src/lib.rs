@@ -1,8 +1,8 @@
+mod backends;
 mod linker;
+pub mod progress;
 mod scheduler;
 mod template_realizing;
-mod backends;
-pub mod progress;
 
 use crate::linker::{link, link_relocatable};
 use crate::progress::ProgressReporter;
@@ -12,7 +12,9 @@ use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
-use cx_pipeline_data::{CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext};
+use cx_pipeline_data::{
+    CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
+};
 use cx_util::CXError;
 use cx_util::CXResult;
 use cx_util::format::with_dump_directory;
@@ -32,15 +34,13 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str()
+    let base_file_str = base_file
+        .to_str()
         .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
-    let entry_unit = CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+    let entry_unit =
+        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
 
-    let initial_job = CompilationJob::new(
-        vec![],
-        CompilationStep::PreParse,
-        entry_unit.clone(),
-    );
+    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
     let mut reporter = ProgressReporter::new(verbose);
 
@@ -52,11 +52,13 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
             CompilationMode::Object => {
                 let object_path = resource_path(&compiler_context, &entry_unit, ".o");
                 if let Some(parent) = compiler_context.config.output.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| CXError::create_boxed(format!(
-                        "Failed to create object output directory {}: {}",
-                        parent.display(),
-                        e
-                    )))?;
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        CXError::create_boxed(format!(
+                            "Failed to create object output directory {}: {}",
+                            parent.display(),
+                            e
+                        ))
+                    })?;
                 }
                 std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
                     CXError::create_boxed(format!(
@@ -67,7 +69,9 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
                 })?;
                 Ok(())
             }
-            CompilationMode::Library => unreachable!("standard_compilation does not support library mode"),
+            CompilationMode::Library => {
+                unreachable!("standard_compilation does not support library mode")
+            }
         }
     });
 
@@ -81,7 +85,10 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     Ok(())
 }
 
-pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<cx_lmir::LMIRUnit> {
+pub fn library_compilation(
+    config: CompilerConfig,
+    base_file: &Path,
+) -> CXResult<cx_lmir::LMIRUnit> {
     let verbose = config.verbose;
     let compiler_context = GlobalCompilationContext {
         module_mode: config.module_mode,
@@ -90,16 +97,14 @@ pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult
         linking_files: Mutex::new(HashSet::new()),
     };
 
-    let base_file_str = base_file.to_str()
+    let base_file_str = base_file
+        .to_str()
         .ok_or(CXError::create_boxed("Base file path is not valid UTF-8"))?;
 
-    let entry_unit = CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
+    let entry_unit =
+        CompilationUnit::from_rooted(base_file_str, &compiler_context.config.working_directory);
 
-    let initial_job = CompilationJob::new(
-        vec![],
-        CompilationStep::PreParse,
-        entry_unit.clone(),
-    );
+    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 
     let mut reporter = ProgressReporter::new(verbose);
 
@@ -108,7 +113,9 @@ pub fn library_compilation(config: CompilerConfig, base_file: &Path) -> CXResult
 
         // Extract exported symbol names from the entry file's LMIR to use as GC roots
         let entry_lmir = compiler_context.module_db.lmir.get(&entry_unit);
-        let exported_symbols: Vec<String> = entry_lmir.fn_defs.iter()
+        let exported_symbols: Vec<String> = entry_lmir
+            .fn_defs
+            .iter()
             .filter(|f| {
                 f.prototype.linkage != cx_lmir::LinkageType::Static
                     && f.prototype.linkage != cx_lmir::LinkageType::External
@@ -137,13 +144,20 @@ pub fn project_compilation(
     project_config: &CXProjectConfig,
     target_filter: Option<&str>,
 ) -> CXResult<()> {
-    let workspace = project_config.workspace.as_ref()
+    let workspace = project_config
+        .workspace
+        .as_ref()
         .ok_or(CXError::create_boxed("cx.toml has no [workspace] section"))?;
 
     let filter_name;
     let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
-        let target = workspace.targets.get(filter)
-            .ok_or(CXError::create_boxed(format!("Target '{}' not found in cx.toml", filter)))?;
+        let target = workspace
+            .targets
+            .get(filter)
+            .ok_or(CXError::create_boxed(format!(
+                "Target '{}' not found in cx.toml",
+                filter
+            )))?;
         filter_name = filter.to_string();
         vec![(&filter_name, target)]
     } else {
@@ -181,11 +195,17 @@ pub fn project_compilation(
             })
             .collect::<Vec<_>>();
 
-        let output_dir = base_config.internal_directory.join("output").join(target_name);
-        std::fs::create_dir_all(&output_dir)
-            .map_err(|e| CXError::create_boxed(format!(
-                "Failed to create output directory {}: {}", output_dir.display(), e
-            )))?;
+        let output_dir = base_config
+            .internal_directory
+            .join("output")
+            .join(target_name);
+        std::fs::create_dir_all(&output_dir).map_err(|e| {
+            CXError::create_boxed(format!(
+                "Failed to create output directory {}: {}",
+                output_dir.display(),
+                e
+            ))
+        })?;
 
         // Build binaries
         if let Some(binaries) = &target_config.binaries {
@@ -198,7 +218,10 @@ pub fn project_compilation(
                 config.native_objects = native_objects.clone();
                 config.include_dirs = include_dirs.clone();
 
-                eprintln!("Building binary '{}' (target: {})", binary.name, target_name);
+                eprintln!(
+                    "Building binary '{}' (target: {})",
+                    binary.name, target_name
+                );
                 standard_compilation(config, Path::new(&binary.entry))?;
             }
         }
@@ -213,23 +236,35 @@ pub fn project_compilation(
                 config.include_dirs = include_dirs.clone();
                 config.output = output_dir.join(format!("{}.o", library.name));
 
-                eprintln!("Building library '{}' (target: {})", library.name, target_name);
+                eprintln!(
+                    "Building library '{}' (target: {})",
+                    library.name, target_name
+                );
 
                 let entry_lmir = library_compilation(config.clone(), Path::new(&library.entry))?;
 
                 eprintln!("  Linked {}", config.output.display());
 
                 // Generate .h header from LMIR
-                let Ok(header) = cx_c_header::generate_header(&library.name, &entry_lmir, &link_entries) else {
-                    eprintln!("Warning: Failed to generate header for library '{}': {}", library.name, "Header generation is best-effort and will not fail the build");
+                let Ok(header) =
+                    cx_c_header::generate_header(&library.name, &entry_lmir, &link_entries)
+                else {
+                    eprintln!(
+                        "Warning: Failed to generate header for library '{}': {}",
+                        library.name,
+                        "Header generation is best-effort and will not fail the build"
+                    );
                     continue;
                 };
-                
+
                 let header_path = output_dir.join(format!("{}.h", library.name));
-                std::fs::write(&header_path, header)
-                    .map_err(|e| CXError::create_boxed(format!(
-                        "Failed to write header {}: {}", header_path.display(), e
-                    )))?;
+                std::fs::write(&header_path, header).map_err(|e| {
+                    CXError::create_boxed(format!(
+                        "Failed to write header {}: {}",
+                        header_path.display(),
+                        e
+                    ))
+                })?;
 
                 eprintln!("  Generated {}", header_path.display());
             }
@@ -246,11 +281,7 @@ pub fn typecheck_only_lsp(
 ) -> Vec<LSPErrors> {
     let mut errors = Vec::new();
 
-    let initial_job = CompilationJob::new(
-        vec![],
-        CompilationStep::PreParse,
-        initial_file.clone(),
-    );
+    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, initial_file.clone());
 
     scheduling_loop_collect_errors(context, initial_job, &mut errors);
     errors

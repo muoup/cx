@@ -11,7 +11,7 @@ enum FailureStage {
     Parse,
     Typecheck,
     Analysis,
-    Linking
+    Linking,
 }
 
 struct TestTempDir {
@@ -21,12 +21,14 @@ struct TestTempDir {
 impl TestTempDir {
     fn new(test_name: &str) -> Self {
         let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join("cx-end-to-end-tests").join(format!(
-            "{}-{}-{}",
-            sanitize_name(test_name),
-            std::process::id(),
-            unique_id
-        ));
+        let path = std::env::temp_dir()
+            .join("cx-end-to-end-tests")
+            .join(format!(
+                "{}-{}-{}",
+                sanitize_name(test_name),
+                std::process::id(),
+                unique_id
+            ));
 
         std::fs::create_dir_all(&path).expect("Failed to create temp test directory");
         Self { path }
@@ -87,14 +89,11 @@ fn compiler_config(
 }
 
 fn classify_failure_stage(message: &str) -> Option<FailureStage> {
-    if message.starts_with("PARSER ERROR")
-    {
+    if message.starts_with("PARSER ERROR") {
         Some(FailureStage::Parse)
-    } else if message.starts_with("TYPE ERROR")
-    {
+    } else if message.starts_with("TYPE ERROR") {
         Some(FailureStage::Typecheck)
-    } else if message.starts_with("ANALYSIS ERROR")
-    {
+    } else if message.starts_with("ANALYSIS ERROR") {
         Some(FailureStage::Analysis)
     } else if message.contains("Linking failed") {
         Some(FailureStage::Linking)
@@ -124,11 +123,10 @@ fn expect_compile_success(input: &Path, analysis: bool) {
         analysis,
     );
 
-    standard_compilation(config, base_file_name(input))
-        .unwrap_or_else(|err| {
-            err.pretty_print();
-            std::process::exit(1);
-        });
+    standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
+        err.pretty_print();
+        std::process::exit(1);
+    });
 }
 
 fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
@@ -157,15 +155,18 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         Err(err) => Some(err.error_message()),
     };
 
-    let actual_stage = message.as_ref()
+    let actual_stage = message
+        .as_ref()
         .map(|msg| classify_failure_stage(msg))
         .flatten();
-    
+
     if actual_stage != Some(expected_stage) {
         panic!(
             "\nExpected failure stage: {}\nActual failure stage: {}\n\nMessage: {}",
             format!("{:?}", expected_stage),
-            actual_stage.map(|s| format!("{:?}", s)).unwrap_or("UNKNOWN STAGE".to_string()),
+            actual_stage
+                .map(|s| format!("{:?}", s))
+                .unwrap_or("UNKNOWN STAGE".to_string()),
             message.unwrap_or("No error message".to_string())
         );
     }
@@ -214,11 +215,10 @@ fn run_end_to_end_test(input: &Path) {
         false,
     );
 
-    standard_compilation(cranelift_config, base_file_name(input))
-        .unwrap_or_else(|err| {
-            err.pretty_print();
-            std::process::exit(1);
-        });
+    standard_compilation(cranelift_config, base_file_name(input)).unwrap_or_else(|err| {
+        err.pretty_print();
+        std::process::exit(1);
+    });
     assert_eq!(
         expected_output,
         run_binary(&cranelift_output),
@@ -239,11 +239,10 @@ fn run_end_to_end_test(input: &Path) {
             false,
         );
 
-        standard_compilation(llvm_config, base_file_name(input))
-            .unwrap_or_else(|err| {
-                err.pretty_print();
-                std::process::exit(1);
-            });
+        standard_compilation(llvm_config, base_file_name(input)).unwrap_or_else(|err| {
+            err.pretty_print();
+            std::process::exit(1);
+        });
         assert_eq!(
             expected_output,
             run_binary(&llvm_output),

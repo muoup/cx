@@ -1,13 +1,13 @@
-use cx_tokens::{identifier, keyword, operator, punctuator, TokenRange};
 use cx_ast::{
     assert_token_matches,
     data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionTypeIdent, CXParameter, CXFunctionPrototype,
+        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXParameter,
         CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
         PredeclarationType,
     },
     peek_next_kind, try_next,
 };
+use cx_tokens::{identifier, keyword, operator, punctuator, TokenRange};
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
@@ -89,7 +89,7 @@ pub fn try_function_parse(
             let method_name = name.clone();
             let template_prototype = try_parse_template(&mut data.tokens)?;
             let params = parse_params(data)?;
-            
+
             let kind = if let Some(receiver) = params.receiver {
                 CXFunctionKind::MemberFunction {
                     member_type: CXFunctionTypeIdent::from_type(&_type).unwrap(),
@@ -132,7 +132,7 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         precondition: None,
         postcondition: None,
     };
-    
+
     if !try_next!(data.tokens, keyword!(Where)) {
         return Ok(contract);
     }
@@ -228,19 +228,17 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
         data.tokens.index = receiver_start;
     }
 
-    if receiver.is_some()
+    if receiver.is_some() && !try_next!(data.tokens, operator!(Comma)) {
+        assert_token_matches!(data.tokens, punctuator!(CloseParen));
+        let contract = parse_function_contract(data)?;
 
-        && !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
-            let contract = parse_function_contract(data)?;
-
-            return Ok(ParseParamsResult {
-                params,
-                var_args: false,
-                receiver,
-                contract,
-            });
-        }
+        return Ok(ParseParamsResult {
+            params,
+            var_args: false,
+            receiver,
+            contract,
+        });
+    }
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {

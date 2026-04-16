@@ -38,9 +38,21 @@ impl ProgressReporter {
 
     pub fn start_step(&mut self, step_name: &str, unit_name: &str) {
         if self.verbose {
-            eprintln!("[{}/{}] {} {}", self.completed + 1, self.total, step_name, unit_name);
+            eprintln!(
+                "[{}/{}] {} {}",
+                self.completed + 1,
+                self.total,
+                step_name,
+                unit_name
+            );
         } else {
-            let line = format!("[{}/{}] {} {}...", self.completed + 1, self.total, step_name, unit_name);
+            let line = format!(
+                "[{}/{}] {} {}...",
+                self.completed + 1,
+                self.total,
+                step_name,
+                unit_name
+            );
             let pad_width = self.last_line_len.max(line.len());
             eprint!("\r{:<width$}", line, width = pad_width);
             self.last_line_len = line.len();
@@ -57,7 +69,12 @@ impl ProgressReporter {
 
     pub fn skip_step(&self, unit_name: &str) {
         if self.verbose {
-            eprintln!("[{}/{}] Skipping {} (cached)", self.completed + 1, self.total, unit_name);
+            eprintln!(
+                "[{}/{}] Skipping {} (cached)",
+                self.completed + 1,
+                self.total,
+                unit_name
+            );
         }
     }
 

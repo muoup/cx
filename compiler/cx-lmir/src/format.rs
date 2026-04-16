@@ -1,8 +1,8 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use crate::{
-    LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype, LMIRGlobalType,
-    LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRRegister, LMIRUnit,
-    LMIRValue,
+    LMIRBasicBlock, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction, LMIRFunctionPrototype,
+    LMIRGlobalType, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRRegister, LMIRUnit, LMIRValue,
 };
 use std::fmt::{Display, Formatter};
 

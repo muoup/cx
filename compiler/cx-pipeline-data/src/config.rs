@@ -74,6 +74,5 @@ pub fn find_and_load_config(start_dir: &Path) -> Option<(PathBuf, CXProjectConfi
 pub fn load_config(path: &Path) -> Result<CXProjectConfig, String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    toml::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    toml::from_str(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
 }

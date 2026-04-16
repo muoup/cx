@@ -3,13 +3,13 @@
 //! This module handles lowering of MIRExpression (AST-style IR) to LMIR.
 
 use cx_lmir::{
-    LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
+    LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_mir::mir::{
+    data::MIRTypeKind,
     expression::{MIRExpression, MIRExpressionKind, StructInitialization},
     program::MIRFunction,
-    data::MIRTypeKind,
 };
 use cx_util::CXResult;
 

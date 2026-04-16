@@ -1,12 +1,12 @@
 use cx_mir::mir::{
+    data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{
         MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
         MIRPtrBinOp, MIRPtrDiffBinOp, MIRUnOp,
     },
-    data::{MIRIntegerType, MIRType, MIRTypeKind},
 };
 use cx_safe_ir::{ast::*, intrinsic::*};
-use cx_util::{identifier::CXIdent, CXError, CXResult};
+use cx_util::{CXError, CXResult, identifier::CXIdent};
 
 use crate::{
     log_analysis_error,
@@ -216,7 +216,7 @@ pub fn coercion_intrinsic(
                 env,
                 expr,
                 "Converting from char* to _str& is an unsafe coercion",
-            )
+            );
         }
     })
 }
@@ -362,7 +362,11 @@ pub(crate) fn convert_increment(
     is_pre: bool,
 ) -> CXResult<FMIRNode> {
     let pointer_node = convert_expression(env, operand_expr)?;
-    let Some(value_type) = env.type_definitions.mem_ref_inner(&operand_expr._type).cloned() else {
+    let Some(value_type) = env
+        .type_definitions
+        .mem_ref_inner(&operand_expr._type)
+        .cloned()
+    else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
             operand_expr._type

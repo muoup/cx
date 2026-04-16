@@ -4,7 +4,11 @@ use cx_pipeline_data::config::LinkEntry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-pub fn generate_header(_lib_name: &str, lmir_unit: &LMIRUnit, link_entries: &[LinkEntry]) -> Result<String, std::fmt::Error> {
+pub fn generate_header(
+    _lib_name: &str,
+    lmir_unit: &LMIRUnit,
+    link_entries: &[LinkEntry],
+) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
 
     writeln!(output, "#pragma once")?;
@@ -134,29 +138,49 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
                 LMIRIntegerType::I64 => "int64_t",
                 LMIRIntegerType::I128 => "__int128",
             };
-            if name.is_empty() { base.to_string() } else { format!("{base} {name}") }
+            if name.is_empty() {
+                base.to_string()
+            } else {
+                format!("{base} {name}")
+            }
         }
         LMIRTypeKind::Float(float_ty) => {
             let base = match float_ty {
                 LMIRFloatType::F32 => "float",
                 LMIRFloatType::F64 => "double",
             };
-            if name.is_empty() { base.to_string() } else { format!("{base} {name}") }
+            if name.is_empty() {
+                base.to_string()
+            } else {
+                format!("{base} {name}")
+            }
         }
         LMIRTypeKind::Pointer { .. } => {
-            if name.is_empty() { "void*".to_string() } else { format!("void* {name}") }
+            if name.is_empty() {
+                "void*".to_string()
+            } else {
+                format!("void* {name}")
+            }
         }
         LMIRTypeKind::Unit => {
-            if name.is_empty() { "void".to_string() } else { format!("void {name}") }
+            if name.is_empty() {
+                "void".to_string()
+            } else {
+                format!("void {name}")
+            }
         }
-        LMIRTypeKind::Struct { name: struct_name, .. } => {
+        LMIRTypeKind::Struct {
+            name: struct_name, ..
+        } => {
             if name.is_empty() {
                 format!("struct {struct_name}")
             } else {
                 format!("struct {struct_name} {name}")
             }
         }
-        LMIRTypeKind::Union { name: union_name, .. } => {
+        LMIRTypeKind::Union {
+            name: union_name, ..
+        } => {
             if name.is_empty() {
                 format!("union {union_name}")
             } else {
@@ -189,12 +213,15 @@ fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
         lmir_type_to_c(&proto.return_type, None)
     };
 
-    let params: Vec<String> = proto.params.iter().enumerate()
-        .filter(|(i, _)| {
-            !(proto.temp_buffer.is_some() && *i == 0)
-        })
+    let params: Vec<String> = proto
+        .params
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !(proto.temp_buffer.is_some() && *i == 0))
         .map(|(i, param)| {
-            let name = param.name.as_deref()
+            let name = param
+                .name
+                .as_deref()
                 .unwrap_or(&format!("arg{i}"))
                 .to_string();
             lmir_type_to_c(&param._type, Some(&name))

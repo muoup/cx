@@ -6,8 +6,8 @@ use speedy::{Readable, Writable};
 
 use crate::mir::expression::MIRFunctionContract;
 pub use crate::mir::r#type::{
-    same_type, same_types, MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType,
-    MIRTypeContext, MIRTypeId, MIRTypeKind,
+    MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeContext, MIRTypeId,
+    MIRTypeKind, same_type, same_types,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]

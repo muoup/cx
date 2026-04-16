@@ -1,16 +1,17 @@
 //! Type conversion and coercion lowering
 
 use cx_lmir::{
-    LMIRCoercionType, LMIRInstructionKind, LMIRValue, types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind}
+    types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind},
+    LMIRCoercionType, LMIRInstructionKind, LMIRValue,
 };
 use cx_mir::mir::{
-    expression::{MIRCoercion, MIRExpression},
     data::MIRType,
+    expression::{MIRCoercion, MIRExpression},
 };
 use cx_util::CXResult;
 
-use crate::builder::LMIRBuilder;
 use super::expressions::lower_expression;
+use crate::builder::LMIRBuilder;
 
 /// Lower a type conversion expression
 pub fn lower_type_conversion(
@@ -21,24 +22,29 @@ pub fn lower_type_conversion(
 ) -> CXResult<LMIRValue> {
     let bc_operand = lower_expression(builder, operand)?;
     let bc_result_type = builder.convert_cx_type(result_type);
-    
-    let std_coercion = |builder: &mut LMIRBuilder, bc_operand: LMIRValue, coercion_type: LMIRCoercionType| {
-        builder.add_new_instruction(
-            LMIRInstructionKind::Coercion {
-                value: bc_operand,
-                coercion_type,
-            },
-            bc_result_type.clone(),
-            true
-        )
-    };
+
+    let std_coercion =
+        |builder: &mut LMIRBuilder, bc_operand: LMIRValue, coercion_type: LMIRCoercionType| {
+            builder.add_new_instruction(
+                LMIRInstructionKind::Coercion {
+                    value: bc_operand,
+                    coercion_type,
+                },
+                bc_result_type.clone(),
+                true,
+            )
+        };
 
     match &coercion {
-        MIRCoercion::ReinterpretBits => std_coercion(builder, bc_operand, LMIRCoercionType::BitCast),
-        MIRCoercion::IntToBool => {
-            std_coercion(builder, bc_operand, LMIRCoercionType::Trunc)
+        MIRCoercion::ReinterpretBits => {
+            std_coercion(builder, bc_operand, LMIRCoercionType::BitCast)
         }
-        MIRCoercion::Integral { sextend, from_type, to_type } => {
+        MIRCoercion::IntToBool => std_coercion(builder, bc_operand, LMIRCoercionType::Trunc),
+        MIRCoercion::Integral {
+            sextend,
+            from_type,
+            to_type,
+        } => {
             if from_type.bytes() > to_type.bytes() {
                 std_coercion(builder, bc_operand, LMIRCoercionType::Trunc)
             } else if *sextend {
@@ -59,7 +65,11 @@ pub fn lower_type_conversion(
                 }
                 _ => LMIRFloatType::F64,
             };
-            std_coercion(builder, bc_operand, LMIRCoercionType::FloatCast { from: from_type })
+            std_coercion(
+                builder,
+                bc_operand,
+                LMIRCoercionType::FloatCast { from: from_type },
+            )
         }
         MIRCoercion::IntToFloat { sextend, .. } => {
             let from_type = match &bc_operand {
@@ -73,12 +83,18 @@ pub fn lower_type_conversion(
                 }
                 _ => LMIRIntegerType::I64,
             };
-            std_coercion(builder, bc_operand, LMIRCoercionType::IntToFloat {
-                from: from_type,
-                sextend: *sextend,
-            })
+            std_coercion(
+                builder,
+                bc_operand,
+                LMIRCoercionType::IntToFloat {
+                    from: from_type,
+                    sextend: *sextend,
+                },
+            )
         }
-        MIRCoercion::PtrToInt { .. } => std_coercion(builder, bc_operand, LMIRCoercionType::PtrToInt),
+        MIRCoercion::PtrToInt { .. } => {
+            std_coercion(builder, bc_operand, LMIRCoercionType::PtrToInt)
+        }
         MIRCoercion::IntToPtr { sextend } => {
             let from_type = match &bc_operand {
                 LMIRValue::IntImmediate { _type, .. } => *_type,
@@ -91,10 +107,14 @@ pub fn lower_type_conversion(
                 }
                 _ => LMIRIntegerType::I64,
             };
-            std_coercion(builder, bc_operand, LMIRCoercionType::IntToPtr {
-                from: from_type,
-                sextend: *sextend,
-            })
+            std_coercion(
+                builder,
+                bc_operand,
+                LMIRCoercionType::IntToPtr {
+                    from: from_type,
+                    sextend: *sextend,
+                },
+            )
         }
         MIRCoercion::FloatToInt { sextend, .. } => {
             let from_type = match &bc_operand {
@@ -108,24 +128,28 @@ pub fn lower_type_conversion(
                 }
                 _ => LMIRFloatType::F64,
             };
-            std_coercion(builder, bc_operand, LMIRCoercionType::FloatToInt {
-                from: from_type,
-                sextend: *sextend,
-            })
-        },
+            std_coercion(
+                builder,
+                bc_operand,
+                LMIRCoercionType::FloatToInt {
+                    from: from_type,
+                    sextend: *sextend,
+                },
+            )
+        }
         MIRCoercion::CStrToStr => Ok(bc_operand),
         MIRCoercion::GetFnPtr => {
             let LMIRValue::FunctionRef(func) = &bc_operand else {
                 unreachable!("GetFnPtr coercion applied to non-function value");
             };
-            
+
             builder.add_new_instruction(
-                LMIRInstructionKind::GetFunctionAddr { 
-                    func: func.to_string()
+                LMIRInstructionKind::GetFunctionAddr {
+                    func: func.to_string(),
                 },
                 LMIRType::default_pointer(),
-                true
+                true,
             )
-        },
+        }
     }
 }

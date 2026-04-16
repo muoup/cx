@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use speedy::{Readable, Writable};
 
 use crate::data::{
-    CXFunctionKey, CXFunctionTemplate, CXFunctionPrototype, CXType, CXTypeKey, CXTypeTemplate,
+    CXFunctionKey, CXFunctionPrototype, CXFunctionTemplate, CXType, CXTypeKey, CXTypeTemplate,
     ModuleResource,
 };
 
@@ -63,7 +63,7 @@ where
     {
         self.templates.remove_entry(name)
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.standard.is_empty() && self.templates.is_empty()
     }

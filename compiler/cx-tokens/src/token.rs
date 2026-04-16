@@ -27,7 +27,7 @@ impl TokenRange {
             file_origin,
         }
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.start_token == 0 && self.end_token == 0
     }

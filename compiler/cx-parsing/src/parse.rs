@@ -210,7 +210,11 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
             body.push(stmt);
         }
 
-        Ok(CXExprKind::Block { exprs: body }.into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone()))
+        Ok(CXExprKind::Block { exprs: body }.into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin.clone(),
+        ))
     } else {
         let body = parse_expr(data)?;
 

@@ -1,7 +1,7 @@
 use crate::inst_calling::prepare_function_sig;
 use crate::FunctionState;
 use cranelift_module::{FuncId, Linkage, Module};
-use cx_lmir::{LinkageType, LMIRFunctionPrototype};
+use cx_lmir::{LMIRFunctionPrototype, LinkageType};
 
 pub fn get_function(
     context: &mut FunctionState,

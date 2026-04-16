@@ -24,12 +24,8 @@ pub fn internal_directory(context: &GlobalCompilationContext, unit: &Compilation
     complete_path.set_extension("cx");
 
     let parent = complete_path.parent().unwrap_or(&complete_path);
-    std::fs::create_dir_all(parent).unwrap_or_else(|_| {
-        panic!(
-            "Failed to create internal directory: {}",
-            parent.display()
-        )
-    });
+    std::fs::create_dir_all(parent)
+        .unwrap_or_else(|_| panic!("Failed to create internal directory: {}", parent.display()));
 
     complete_path
 }

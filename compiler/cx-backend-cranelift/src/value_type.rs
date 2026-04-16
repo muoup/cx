@@ -18,7 +18,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> ir::Type {
         LMIRTypeKind::Float(LMIRFloatType::F32) => ir::types::F32,
         LMIRTypeKind::Float(LMIRFloatType::F64) => ir::types::F64,
         // LMIRTypeKind::Float { bytes: 16 } => ir::types::F128,
-        // 
+        //
         LMIRTypeKind::Union { .. }
         | LMIRTypeKind::Struct { .. }
         | LMIRTypeKind::Pointer { .. }

@@ -6,8 +6,8 @@ use crate::{ast::CXAST, data::ModuleResource};
 pub mod ast;
 pub mod data;
 
-pub mod type_map;
 pub mod macros;
+pub mod type_map;
 
 mod format;
 

@@ -92,7 +92,7 @@ pub struct LMIRFunctionPrototype {
     pub params: Vec<LMIRParameter>,
     pub var_args: bool,
     pub linkage: LinkageType,
-    pub temp_buffer: Option<LMIRType>
+    pub temp_buffer: Option<LMIRType>,
 }
 
 #[derive(Debug, Clone)]
@@ -138,7 +138,7 @@ pub enum LMIRInstructionKind {
         value: LMIRValue,
         _type: LMIRType,
     },
-    
+
     Memcpy {
         dest: LMIRValue,
         src: LMIRValue,
@@ -231,7 +231,7 @@ pub enum LMIRInstructionKind {
     },
 
     CompilerAssumption {
-        condition: LMIRValue
+        condition: LMIRValue,
     },
 }
 
@@ -325,10 +325,21 @@ pub enum LMIRCoercionType {
     ZExtend,
     SExtend,
     Trunc,
-    FloatCast { from: LMIRFloatType },
-    IntToPtr { from: LMIRIntegerType, sextend: bool },
-    IntToFloat { from: LMIRIntegerType, sextend: bool },
-    FloatToInt { from: LMIRFloatType, sextend: bool },
+    FloatCast {
+        from: LMIRFloatType,
+    },
+    IntToPtr {
+        from: LMIRIntegerType,
+        sextend: bool,
+    },
+    IntToFloat {
+        from: LMIRIntegerType,
+        sextend: bool,
+    },
+    FloatToInt {
+        from: LMIRFloatType,
+        sextend: bool,
+    },
     PtrToInt,
     BitCast,
 }

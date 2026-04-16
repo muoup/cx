@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use cx_tokens::punctuator;
 use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
-use cx_util::char_iter::CharIter;
+use cx_util::{CXResult, char_iter::CharIter};
 
 pub(crate) struct LineLexer<'a> {
     last_consume: usize,
@@ -12,10 +12,13 @@ pub(crate) struct LineLexer<'a> {
     pub tokens: Vec<Token>,
 }
 
-pub(crate) fn lex_line<'a>(iter: &'a mut CharIter<'a>, file_origin: String) -> Vec<Token> {
+pub(crate) fn lex_line<'a>(
+    iter: &'a mut CharIter<'a>,
+    file_origin: String,
+) -> CXResult<Vec<Token>> {
     let mut line_lexer = LineLexer::new(iter, file_origin);
-    line_lexer.generate_tokens();
-    line_lexer.tokens
+    line_lexer.generate_tokens()?;
+    Ok(line_lexer.tokens)
 }
 
 impl<'a> LineLexer<'a> {
@@ -30,13 +33,14 @@ impl<'a> LineLexer<'a> {
         })
     }
 
-    pub(crate) fn generate_tokens(&mut self) {
+    pub(crate) fn generate_tokens(&mut self) -> CXResult<()> {
         while self.iter.has_next() && self.iter.peek() != Some('\n') {
             if self.last_consume == self.iter.current_iter
-                && let Some(token) = self.pre_ident_lex() {
-                    self.add_token(token);
-                    self.last_consume = self.iter.current_iter;
-                }
+                && let Some(token) = self.pre_ident_lex()?
+            {
+                self.add_token(token);
+                self.last_consume = self.iter.current_iter;
+            }
 
             let previous_lex = self.iter.current_iter;
 
@@ -59,11 +63,12 @@ impl<'a> LineLexer<'a> {
         }
 
         self.consume(self.iter.current_iter);
+        Ok(())
     }
 
     fn new(iter: &'a mut CharIter<'a>, file_origin: String) -> LineLexer<'a> {
         let last_consume = iter.current_iter;
-        
+
         LineLexer {
             iter,
             last_consume,
@@ -85,17 +90,17 @@ impl<'a> LineLexer<'a> {
         self.last_consume = self.iter.current_iter;
     }
 
-    fn pre_ident_lex(&mut self) -> Option<TokenKind> {
-        match self.iter.peek()? {
-            '0'..='9' => number_lex(self.iter),
-            '"' => string_lex(self.iter),
-            '\'' => char_lex(self.iter),
-            _ => None,
+    fn pre_ident_lex(&mut self) -> CXResult<Option<TokenKind>> {
+        match self.iter.peek() {
+            Some('0'..='9') => number_lex(self.iter, self.file_origin.as_ref()).map(Some),
+            Some('"') => Ok(string_lex(self.iter)),
+            Some('\'') => char_lex(self.iter, self.file_origin.as_ref()).map(Some),
+            _ => Ok(None),
         }
     }
 }
 
-fn number_lex(iter: &mut CharIter) -> Option<TokenKind> {
+fn number_lex(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
     let start_index = iter.current_iter;
     let mut dot = false;
     while let Some(c) = iter.peek() {
@@ -109,12 +114,27 @@ fn number_lex(iter: &mut CharIter) -> Option<TokenKind> {
     let num = &iter.source[start_index..iter.current_iter];
 
     if dot {
-        Some(TokenKind::FloatLiteral(num.parse().unwrap()))
+        match num.parse() {
+            Ok(value) => Ok(TokenKind::FloatLiteral(value)),
+            Err(_) => log_lexer_error!(
+                file_origin,
+                iter.source,
+                start_index,
+                iter.current_iter,
+                "Invalid numeric literal: {num}"
+            ),
+        }
     } else {
-        Some(TokenKind::IntLiteral(
-            num.parse()
-                .unwrap_or_else(|_| panic!("Invalid number: {num}\n")),
-        ))
+        match num.parse() {
+            Ok(value) => Ok(TokenKind::IntLiteral(value)),
+            Err(_) => log_lexer_error!(
+                file_origin,
+                iter.source,
+                start_index,
+                iter.current_iter,
+                "Invalid numeric literal: {num}"
+            ),
+        }
     }
 }
 
@@ -140,34 +160,44 @@ fn string_lex(iter: &mut CharIter) -> Option<TokenKind> {
     Some(TokenKind::StringLiteral(string))
 }
 
-fn char_lex(iter: &mut CharIter) -> Option<TokenKind> {
+fn char_lex(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
+    let start_index = iter.current_iter;
     assert_eq!(iter.next(), Some('\''));
-    let c = iter.next()?;
 
-    Some(match iter.next()? {
-        '\'' => TokenKind::IntLiteral(c as i64),
-        '0' => {
-            assert_eq!(c, '\\');
-            assert_eq!(iter.next(), Some('\''));
-            TokenKind::IntLiteral(0)
+    let Some(c) = iter.next() else {
+        return log_lexer_error!(
+            file_origin,
+            iter.source,
+            start_index,
+            iter.current_iter,
+            "Unterminated character literal"
+        );
+    };
+
+    let Some(kind) = (match iter.next() {
+        Some('\'') => Some(TokenKind::IntLiteral(c as i64)),
+        Some('0') if c == '\\' && iter.next() == Some('\'') => Some(TokenKind::IntLiteral(0)),
+        Some('n') if c == '\\' && iter.next() == Some('\'') => {
+            Some(TokenKind::IntLiteral('\n' as i64))
         }
-        'n' => {
-            assert_eq!(c, '\\');
-            assert_eq!(iter.next(), Some('\''));
-            TokenKind::IntLiteral('\n' as i64)
+        Some('t') if c == '\\' && iter.next() == Some('\'') => {
+            Some(TokenKind::IntLiteral('\t' as i64))
         }
-        't' => {
-            assert_eq!(c, '\\');
-            assert_eq!(iter.next(), Some('\''));
-            TokenKind::IntLiteral('\t' as i64)
+        Some('r') if c == '\\' && iter.next() == Some('\'') => {
+            Some(TokenKind::IntLiteral('\r' as i64))
         }
-        'r' => {
-            assert_eq!(c, '\\');
-            assert_eq!(iter.next(), Some('\''));
-            TokenKind::IntLiteral('\r' as i64)
-        }
-        _ => panic!("Invalid character literal: '{c}'"),
-    })
+        _ => None,
+    }) else {
+        return log_lexer_error!(
+            file_origin,
+            iter.source,
+            start_index,
+            iter.current_iter,
+            "Invalid character literal"
+        );
+    };
+
+    Ok(kind)
 }
 
 fn operator_lex(iter: &mut CharIter) -> Option<TokenKind> {

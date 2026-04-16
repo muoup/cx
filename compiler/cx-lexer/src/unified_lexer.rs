@@ -32,7 +32,7 @@ impl<'a> Lexer<'a> {
 
         while self.char_iter.has_next() {
             if let Some(mut lexable_iter) = self.interpret_directive_line()? {
-                let tokens_in_line = lex_line(&mut lexable_iter, source.clone());
+                let tokens_in_line = lex_line(&mut lexable_iter, source.clone())?;
 
                 self.tokens.extend(self.expand_macros(tokens_in_line));
             } else {
@@ -43,7 +43,11 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    pub(crate) fn independent_lex(&mut self, str: &str, source_path: &Path) -> CXResult<Vec<Token>> {
+    pub(crate) fn independent_lex(
+        &mut self,
+        str: &str,
+        source_path: &Path,
+    ) -> CXResult<Vec<Token>> {
         let mut sublexer = Lexer::new(str, source_path, &self.include_dirs);
         std::mem::swap(&mut sublexer.macros, &mut self.macros);
         sublexer.lex_source()?;
@@ -84,25 +88,26 @@ impl<'a> Lexer<'a> {
             .into_iter()
             .flat_map(|token| {
                 if let TokenKind::Identifier(name) = &token.kind
-                    && let Some(macro_body) = self.macros.get(name) {
-                        // This is a macro. Expand it.
-                        let expansion_start = token.start_index;
-                        let expansion_end = token.end_index;
-                        let expansion_line = token.line;
+                    && let Some(macro_body) = self.macros.get(name)
+                {
+                    // This is a macro. Expand it.
+                    let expansion_start = token.start_index;
+                    let expansion_end = token.end_index;
+                    let expansion_line = token.line;
 
-                        return macro_body
-                            .clone()
-                            .into_iter()
-                            .map(|mut t| {
-                                // Overwrite the location info of each token in the expansion
-                                // with the location of the macro identifier itself.
-                                t.start_index = expansion_start;
-                                t.end_index = expansion_end;
-                                t.line = expansion_line;
-                                t
-                            })
-                            .collect::<Vec<_>>();
-                    }
+                    return macro_body
+                        .clone()
+                        .into_iter()
+                        .map(|mut t| {
+                            // Overwrite the location info of each token in the expansion
+                            // with the location of the macro identifier itself.
+                            t.start_index = expansion_start;
+                            t.end_index = expansion_end;
+                            t.line = expansion_line;
+                            t
+                        })
+                        .collect::<Vec<_>>();
+                }
 
                 // Not an identifier or not a macro, just return the token as is.
                 vec![token]

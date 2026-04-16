@@ -12,8 +12,8 @@ use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntBinOp,
-    LMIRIntUnOp, LMIRPtrBinOp,
+    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
+    LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp,
 };
 use std::ops::IndexMut;
 
@@ -282,10 +282,11 @@ pub(crate) fn codegen_instruction(
                 LMIRIntBinOp::BXOR => context.builder.ins().bxor(left, right),
 
                 LMIRIntBinOp::LAND => {
-                    let left = context
-                        .builder
-                        .ins()
-                        .icmp_imm(ir::condcodes::IntCC::NotEqual, left, 0);
+                    let left =
+                        context
+                            .builder
+                            .ins()
+                            .icmp_imm(ir::condcodes::IntCC::NotEqual, left, 0);
                     let right =
                         context
                             .builder

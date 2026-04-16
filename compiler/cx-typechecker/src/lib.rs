@@ -1,6 +1,6 @@
 use cx_ast::ast::VisibilityMode;
-use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_mir::mir::program::MIRBaseMappings;
+use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::CXResult;
 
 pub mod log;
@@ -13,17 +13,18 @@ pub use type_checking::{
     complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
 };
 
-pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
-    let ast = context
-        .module_db
-        .naive_ast
-        .get(unit);
+pub fn gather_interface(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> CXResult<()> {
+    let ast = context.module_db.naive_ast.get(unit);
     let mut base_type_map = ast.type_data.clone();
     let mut base_fn_map = ast.function_data.clone();
     let mut base_globals = ast.global_variables.clone();
 
     for import in ast.imports.iter() {
-        let unit = CompilationUnit::from_module_path(import.clone(), &context.config.working_directory);
+        let unit =
+            CompilationUnit::from_module_path(import.clone(), &context.config.working_directory);
         let ast = context.module_db.naive_ast.get(&unit);
 
         for (type_name, cx_type) in ast.type_data.standard_iter() {
@@ -58,25 +59,25 @@ pub fn gather_interface(context: &GlobalCompilationContext, unit: &CompilationUn
 
             base_fn_map.insert_template(fn_template_name.clone(), fn_template.transfer(import));
         }
-        
+
         for (global_name, global_var) in ast.global_variables.iter() {
             if global_var.visibility != VisibilityMode::Public {
                 continue;
             };
-            
+
             base_globals.insert(global_name.clone(), global_var.transfer(import));
         }
     }
 
-    context
-        .module_db
-        .base_mappings
-        .insert(unit.clone(), MIRBaseMappings {
+    context.module_db.base_mappings.insert(
+        unit.clone(),
+        MIRBaseMappings {
             unit: unit.as_str().to_owned(),
             type_data: base_type_map,
             fn_data: base_fn_map,
             global_variables: base_globals,
-        });
+        },
+    );
 
     Ok(())
 }

@@ -81,40 +81,38 @@ impl Display for FMIRType {
                 write!(f, "{}", mir_type)
             }
 
-            FMIRType::CMonad { inner, operation } => {
-                match operation {
-                    CVMOperation::Unsafe => {
-                        write!(f, "Effect<Unsafe, {}>", inner)
-                    }
-                    CVMOperation::Access { reads, writes } => {
-                        write!(f, "Effect<Access{{")?;
-                        if !reads.is_empty() {
-                            write!(f, " reads: [")?;
-                            for (i, r) in reads.iter().enumerate() {
-                                if i > 0 {
-                                    write!(f, ", ")?;
-                                }
-                                write!(f, "{}", r)?;
-                            }
-                            write!(f, "]")?;
-                        }
-                        if !writes.is_empty() {
-                            if !reads.is_empty() {
-                                write!(f, ",")?;
-                            }
-                            write!(f, " writes: [")?;
-                            for (i, w) in writes.iter().enumerate() {
-                                if i > 0 {
-                                    write!(f, ", ")?;
-                                }
-                                write!(f, "{}", w)?;
-                            }
-                            write!(f, "]")?;
-                        }
-                        write!(f, " }}, {}>", inner)
-                    }
+            FMIRType::CMonad { inner, operation } => match operation {
+                CVMOperation::Unsafe => {
+                    write!(f, "Effect<Unsafe, {}>", inner)
                 }
-            }
+                CVMOperation::Access { reads, writes } => {
+                    write!(f, "Effect<Access{{")?;
+                    if !reads.is_empty() {
+                        write!(f, " reads: [")?;
+                        for (i, r) in reads.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{}", r)?;
+                        }
+                        write!(f, "]")?;
+                    }
+                    if !writes.is_empty() {
+                        if !reads.is_empty() {
+                            write!(f, ",")?;
+                        }
+                        write!(f, " writes: [")?;
+                        for (i, w) in writes.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{}", w)?;
+                        }
+                        write!(f, "]")?;
+                    }
+                    write!(f, " }}, {}>", inner)
+                }
+            },
 
             FMIRType::Mapping {
                 from_type: parameter,
@@ -158,7 +156,7 @@ impl Display for FMIRIntrinsicKind {
 impl Display for FMIRUnaryIntrinsic {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRUnaryIntrinsic::NEG  => write!(f, "neg"),
+            FMIRUnaryIntrinsic::NEG => write!(f, "neg"),
             FMIRUnaryIntrinsic::INEG => write!(f, "ineg"),
             FMIRUnaryIntrinsic::FNEG => write!(f, "fneg"),
             FMIRUnaryIntrinsic::BNOT => write!(f, "bnot"),
@@ -181,28 +179,28 @@ impl Display for FMIRBinaryIntrinsic {
 impl Display for FMIRIntrinsicIBinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FMIRIntrinsicIBinOp::ADD  => write!(f, "add"),
-            FMIRIntrinsicIBinOp::SUB  => write!(f, "sub"),
-            FMIRIntrinsicIBinOp::MUL  => write!(f, "mul"),
-            FMIRIntrinsicIBinOp::DIV  => write!(f, "div"),
-            FMIRIntrinsicIBinOp::MOD  => write!(f, "mod"),
+            FMIRIntrinsicIBinOp::ADD => write!(f, "add"),
+            FMIRIntrinsicIBinOp::SUB => write!(f, "sub"),
+            FMIRIntrinsicIBinOp::MUL => write!(f, "mul"),
+            FMIRIntrinsicIBinOp::DIV => write!(f, "div"),
+            FMIRIntrinsicIBinOp::MOD => write!(f, "mod"),
             FMIRIntrinsicIBinOp::IMUL => write!(f, "imul"),
             FMIRIntrinsicIBinOp::IDIV => write!(f, "idiv"),
             FMIRIntrinsicIBinOp::IMOD => write!(f, "imod"),
-            FMIRIntrinsicIBinOp::EQ   => write!(f, "eq"),
-            FMIRIntrinsicIBinOp::NE   => write!(f, "ne"),
-            FMIRIntrinsicIBinOp::LT   => write!(f, "lt"),
-            FMIRIntrinsicIBinOp::LE   => write!(f, "le"),
-            FMIRIntrinsicIBinOp::GT   => write!(f, "gt"),
-            FMIRIntrinsicIBinOp::GE   => write!(f, "ge"),
-            FMIRIntrinsicIBinOp::ILT  => write!(f, "ilt"),
-            FMIRIntrinsicIBinOp::ILE  => write!(f, "ile"),
-            FMIRIntrinsicIBinOp::IGT  => write!(f, "igt"),
-            FMIRIntrinsicIBinOp::IGE  => write!(f, "ige"),
+            FMIRIntrinsicIBinOp::EQ => write!(f, "eq"),
+            FMIRIntrinsicIBinOp::NE => write!(f, "ne"),
+            FMIRIntrinsicIBinOp::LT => write!(f, "lt"),
+            FMIRIntrinsicIBinOp::LE => write!(f, "le"),
+            FMIRIntrinsicIBinOp::GT => write!(f, "gt"),
+            FMIRIntrinsicIBinOp::GE => write!(f, "ge"),
+            FMIRIntrinsicIBinOp::ILT => write!(f, "ilt"),
+            FMIRIntrinsicIBinOp::ILE => write!(f, "ile"),
+            FMIRIntrinsicIBinOp::IGT => write!(f, "igt"),
+            FMIRIntrinsicIBinOp::IGE => write!(f, "ige"),
             FMIRIntrinsicIBinOp::LAND => write!(f, "land"),
-            FMIRIntrinsicIBinOp::LOR  => write!(f, "lor"),
+            FMIRIntrinsicIBinOp::LOR => write!(f, "lor"),
             FMIRIntrinsicIBinOp::BAND => write!(f, "band"),
-            FMIRIntrinsicIBinOp::BOR  => write!(f, "bor"),
+            FMIRIntrinsicIBinOp::BOR => write!(f, "bor"),
             FMIRIntrinsicIBinOp::BXOR => write!(f, "bxor"),
         }
     }
@@ -251,7 +249,11 @@ impl Display for FMIRCastIntrinsic {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             FMIRCastIntrinsic::Integral { sextend, to_bits } => {
-                write!(f, "integral.to_i{to_bits}.sx{}", if *sextend { 1 } else { 0 })
+                write!(
+                    f,
+                    "integral.to_i{to_bits}.sx{}",
+                    if *sextend { 1 } else { 0 }
+                )
             }
             FMIRCastIntrinsic::FloatCast { to_bits } => write!(f, "float.to_f{to_bits}"),
             FMIRCastIntrinsic::PtrToInt { to_bits } => write!(f, "ptr.to_i{to_bits}"),
@@ -289,12 +291,12 @@ impl FMIRNodeBody {
             FMIRNodeBody::UnsafeBlock => {
                 write!(f, "_unsafe_block")
             }
-            
+
             FMIRNodeBody::CompilerAssert { condition, message } => {
                 write!(f, "_compiler_assert (")?;
                 condition.fmt_with_indent(f, indent)?;
                 write!(f, ") \"{}\"", message)
-            },
+            }
 
             FMIRNodeBody::DeclareAccess { reads, writes } => {
                 write!(f, "_declare_access{{")?;
@@ -328,7 +330,7 @@ impl FMIRNodeBody {
                 write!(f, "_load $ {pointer}")
             }
 
-            FMIRNodeBody::Store { pointer, value }=> {
+            FMIRNodeBody::Store { pointer, value } => {
                 write!(f, "_store $ {pointer} $ {value}")
             }
 
@@ -339,10 +341,10 @@ impl FMIRNodeBody {
             FMIRNodeBody::Pure => {
                 write!(f, "_pure")
             }
-            
+
             FMIRNodeBody::VariableAlias { name } => {
                 write!(f, "{}", name)
-            },
+            }
 
             FMIRNodeBody::CLoop { condition, body } => {
                 write!(f, "_cloop (")?;
@@ -355,7 +357,11 @@ impl FMIRNodeBody {
                 body.fmt_with_indent(f, &nested)
             }
 
-            FMIRNodeBody::Bind { monad, capture, function } => {
+            FMIRNodeBody::Bind {
+                monad,
+                capture,
+                function,
+            } => {
                 monad.fmt_with_indent(f, indent)?;
                 write!(f, " >>= \\{capture} ->")?;
                 let nested = indent.push();
@@ -370,7 +376,7 @@ impl FMIRNodeBody {
                 write!(f, "{}>> ", indent)?;
                 second.fmt_with_indent(f, indent)
             }
-            
+
             FMIRNodeBody::AggregateInitialization { fields } => {
                 write!(f, "_aggregate_initialization {{")?;
                 let nested = indent.push();
@@ -386,7 +392,7 @@ impl FMIRNodeBody {
                 writeln!(f)?;
                 indent.fmt(f)?;
                 write!(f, "}}")
-            },
+            }
 
             FMIRNodeBody::If {
                 condition,
@@ -405,11 +411,11 @@ impl FMIRNodeBody {
                 write!(f, "else ")?;
                 else_branch.fmt_with_indent(f, &nested)
             }
-            
+
             FMIRNodeBody::Match {
                 condition,
                 arms,
-                default
+                default,
             } => {
                 write!(f, "match ")?;
                 condition.fmt_with_indent(f, indent)?;
@@ -425,13 +431,13 @@ impl FMIRNodeBody {
                 write!(f, "| _ -> ")?;
                 default.fmt_with_indent(f, &nested)?;
                 Ok(())
-            },
-            
+            }
+
             FMIRNodeBody::Transmute { value, target_type } => {
                 write!(f, "_transmute (")?;
                 value.fmt_with_indent(f, indent)?;
                 write!(f, ") :: {}", target_type)
-            },
+            }
 
             FMIRNodeBody::CReturn { value } => {
                 write!(f, "_creturn {}", value)

@@ -1,11 +1,11 @@
-use cx_pipeline_data::CompilerConfig;
-use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
     data::{CXLinkageMode, ModuleResource},
     next_kind, try_next, PreparseContents,
 };
+use cx_pipeline_data::CompilerConfig;
+use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
 
 use crate::parse::parse_std_ident;

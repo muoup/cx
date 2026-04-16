@@ -83,11 +83,8 @@ impl FunctionState<'_> {
 
             LMIRValue::FunctionRef(name) => {
                 let (_func_id, func_ref) = self.get_function(name.as_str())?;
-                let as_value = self
-                    .builder
-                    .ins()
-                    .func_addr(self.pointer_type, func_ref);
-                
+                let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
+
                 Some(CodegenValue::Value(as_value))
             }
 

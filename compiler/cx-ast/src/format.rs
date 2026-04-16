@@ -2,9 +2,10 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::{
-    ast::{CXAST, CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex},
+    ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
     data::{
-        CX_CONST, CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode, CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind
+        CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode,
+        CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
     },
 };
 
@@ -118,9 +119,17 @@ impl Display for CXFunctionStmt {
                 writeln!(f, "}}")
             }
 
-            CXFunctionStmt::TemplatedFunction { prototype, template_prototype, body } => {
+            CXFunctionStmt::TemplatedFunction {
+                prototype,
+                template_prototype,
+                body,
+            } => {
                 writeln!(f, "TemplatedFunction {prototype} {{ ")?;
-                writeln!(f, "Template Prototype: {}", template_prototype.types.join(", "))?;
+                writeln!(
+                    f,
+                    "Template Prototype: {}",
+                    template_prototype.types.join(", ")
+                )?;
                 write!(f, "{}", CXExprFormatter::new(body, 1))?;
                 writeln!(f, "}}")
             }
@@ -166,16 +175,16 @@ impl<'a> Display for CXExprFormatter<'a> {
                 initial_value,
             } => {
                 writeln!(f, "VarDeclaration {name}: {_type}")?;
-                
+
                 self.indent_plus_one(f)?;
-                
+
                 if let Some(init) = initial_value {
                     writeln!(f, "InitialValue:")?;
                     CXExprFormatter::new(init, self.depth + 2).fmt(f)?;
                 } else {
                     writeln!(f, "No initial value")?;
                 }
-                
+
                 Ok(())
             }
             CXExprKind::IntLiteral { val, .. } => writeln!(f, "IntLiteral {}", val),
@@ -491,15 +500,13 @@ impl Display for CXFunctionPrototype {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut params = Vec::new();
 
-        params.extend(self.params
-            .iter()
-            .map(|param| {
-                format!(
-                    "{}: {}",
-                    param.name.as_ref().unwrap_or(&CXIdent::new("_")),
-                    param._type
-                )
-            }));
+        params.extend(self.params.iter().map(|param| {
+            format!(
+                "{}: {}",
+                param.name.as_ref().unwrap_or(&CXIdent::new("_")),
+                param._type
+            )
+        }));
 
         let params_str = params.join(", ");
         write!(f, "{} {}({})", self.return_type, self.kind, params_str)
@@ -542,21 +549,33 @@ impl Display for CXFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKind::Standard(name) => write!(f, "{name}"),
-            CXFunctionKind::MemberFunction { member_type, name, receiver } => {
+            CXFunctionKind::MemberFunction {
+                member_type,
+                name,
+                receiver,
+            } => {
                 write!(f, "{member_type}::{name}")?;
-                
+
                 match receiver.mode {
                     CXReceiverMode::ByRef => {
                         let is_const = (receiver.specifiers & CX_CONST) != 0;
-                        
-                        write!(f, " (receiver: {}*this)", if is_const { "const " } else { "" })
+
+                        write!(
+                            f,
+                            " (receiver: {}*this)",
+                            if is_const { "const " } else { "" }
+                        )
                     }
                     CXReceiverMode::ByMove => {
                         let is_const = (receiver.specifiers & CX_CONST) != 0;
-                        
-                        write!(f, " (receiver: {}this)", if is_const { "const " } else { "" })
+
+                        write!(
+                            f,
+                            " (receiver: {}this)",
+                            if is_const { "const " } else { "" }
+                        )
                     }
-                    CXReceiverMode::None => Ok(())
+                    CXReceiverMode::None => Ok(()),
                 }
             }
             CXFunctionKind::StaticMemberFunction { member_type, name } => {
@@ -570,10 +589,16 @@ impl Display for CXFunctionKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CXFunctionKey::Standard(name) => write!(f, "{name}"),
-            CXFunctionKey::MemberFunction { type_base_name, name } => {
+            CXFunctionKey::MemberFunction {
+                type_base_name,
+                name,
+            } => {
                 write!(f, "(member) {type_base_name}::{name}")
             }
-            CXFunctionKey::StaticMemberFunction { type_base_name, name } => {
+            CXFunctionKey::StaticMemberFunction {
+                type_base_name,
+                name,
+            } => {
                 write!(f, "(static) {type_base_name}::{name}")
             }
         }

@@ -1,17 +1,17 @@
-use crate::environment::function_query::query_static_member_function;
 use crate::environment::BindingMoveState;
 use crate::environment::TypeEnvironment;
+use crate::environment::function_query::query_static_member_function;
 use crate::log_typecheck_error;
 use crate::type_checking::accumulation::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
-    deconstruct_type_constructor, TypeConstructor,
+    TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr};
 use crate::type_completion::templates::deduce_function_template;
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_ast::data::CXReceiverMode;
-use cx_ast::data::{CXFunctionKey, CXFunctionPrototype, CXTypeKind, CX_CONST};
+use cx_ast::data::{CX_CONST, CXFunctionKey, CXFunctionPrototype, CXTypeKind};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{
     MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
@@ -19,8 +19,8 @@ use cx_mir::mir::expression::{
 };
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 use cx_util::CXResult;
+use cx_util::identifier::CXIdent;
 
 fn resolve_access_base(
     env: &mut TypeEnvironment,
@@ -81,7 +81,7 @@ fn resolve_access_base(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Expected struct or union type for access expression LHS, found {}",
+            "Expected a struct or union type on the left-hand side of an access expression, found {}",
             lhs_inner
         );
     }
@@ -124,7 +124,7 @@ fn finish_function_call<'a>(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Method {} expects {} arguments, found {}",
+            "Call to {} expects {} arguments, found {}",
             prototype,
             prototype.params.len(),
             tc_args.len()
@@ -135,7 +135,7 @@ fn finish_function_call<'a>(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Method {} expects at least {} arguments, found {}",
+            "Call to {} expects at least {} arguments, found {}",
             prototype,
             prototype.params.len(),
             tc_args.len()
@@ -186,7 +186,7 @@ fn finish_function_call<'a>(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Cannot coerce value {} for varargs, expected intrinsic type or pointer!",
+                    "Cannot pass {} to varargs: expected an intrinsic type or pointer",
                     arg_type
                 );
             }
@@ -243,7 +243,7 @@ pub(crate) fn typecheck_access(
                         return log_typecheck_error!(
                             env,
                             expr.token_range(),
-                            " Union type {} has no field named {}",
+                            "Union type {} has no field named {}",
                             lhs_inner,
                             name
                         );
@@ -306,7 +306,7 @@ pub(crate) fn typecheck_access(
         _ => log_typecheck_error!(
             env,
             expr.token_range(),
-            " Invalid rhs for access expression, found {:?}",
+            "Invalid right-hand side for access expression, found {:?}",
             rhs
         ),
     }
@@ -347,7 +347,7 @@ fn build_member_receiver_argument(
                     return log_typecheck_error!(
                         env,
                         expr.token_range(),
-                        " Consuming member calls currently require a named binding or owned struct rvalue"
+                        "Consuming member calls currently require a named binding or owned struct rvalue"
                     );
                 };
 
@@ -585,7 +585,7 @@ pub(crate) fn typecheck_method_call(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Attempted to call non-function type {}",
+            "Attempted to call value of non-function type {}",
             loaded_lhs_type
         );
     };
@@ -617,7 +617,7 @@ fn typecheck_type_constructor(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " Variant '{}' not found in tagged union type {}",
+            "Variant '{}' not found in tagged union type {}",
             name,
             union_name
         );
@@ -664,7 +664,7 @@ pub(crate) fn typecheck_scoped_call(
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Expected type identifier before scope resolution operator, found {:?}",
+                "Expected a type identifier before scope resolution operator, found {:?}",
                 type_expr
             );
         }
@@ -765,7 +765,7 @@ pub(crate) fn typecheck_is(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " 'is' operator requires a tagged union on the left-hand side, found {}",
+            "'is' operator requires a tagged union on the left-hand side, found {}",
             union_type
         );
     };
@@ -783,7 +783,7 @@ pub(crate) fn typecheck_is(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " 'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
+            "'is' operator left-hand side tagged union type {} does not match right-hand side tagged union type {}",
             expected_union_name,
             union_name
         );
@@ -793,7 +793,7 @@ pub(crate) fn typecheck_is(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " 'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
+            "'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
             union_type,
             union_name
         );
@@ -808,7 +808,7 @@ pub(crate) fn typecheck_is(
         return log_typecheck_error!(
             env,
             expr.token_range(),
-            " 'is' operator variant name '{}' not found in tagged union {}",
+            "'is' operator variant name '{}' not found in tagged union {}",
             variant_name,
             union_name
         );
@@ -823,7 +823,7 @@ pub(crate) fn typecheck_is(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " 'is' operator inner expression must be an identifier or unit, found {:?}",
+                    "'is' operator inner expression must be an identifier or unit, found {:?}",
                     inner
                 );
             };
@@ -929,7 +929,7 @@ pub(crate) fn typecheck_binop_mir_vals(
             log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Invalid binary operation {op} for types {} and {}",
+                "Invalid binary operation {op} for types {} and {}",
                 mir_lhs._type,
                 mir_rhs._type
             )
@@ -1018,7 +1018,7 @@ pub(crate) fn typecheck_float_float_binop(
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Invalid float binary operation {op} for types {} and {}",
+                "Invalid float binary operation {op} for types {} and {}",
                 lhs_type,
                 rhs_type
             );
@@ -1128,7 +1128,7 @@ pub(crate) fn typecheck_int_int_binop(
                 return log_typecheck_error!(
                     env,
                     expr.token_range(),
-                    " Invalid integer binary operation {op} for types {} and {}",
+                    "Invalid integer binary operation {op} for types {} and {}",
                     lhs_type,
                     rhs_type
                 );
@@ -1191,7 +1191,7 @@ pub(crate) fn typecheck_int_int_binop(
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Invalid integer binary operation {op} for types {} and {}",
+                "Invalid integer binary operation {op} for types {} and {}",
                 lhs_type,
                 rhs_type
             );
@@ -1219,7 +1219,7 @@ pub(crate) fn typecheck_int_ptr_binop(
         return log_typecheck_error!(
             env,
             &TokenRange::default(),
-            " Invalid operation [integer] - [pointer] for types {} and {}",
+            "Invalid operation [integer] - [pointer] for types {} and {}",
             non_pointer.get_type(),
             pointer.get_type()
         );
@@ -1351,7 +1351,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                " Invalid binary operation {op} for pointer types",
+                "Invalid binary operation {op} for pointer types",
             );
         }
     };

@@ -357,14 +357,14 @@ pub enum MIRCoercion {
 
     // Any integer type to a boolean (i1)
     IntToBool,
-    
+
     // Conversion from a const char* to a _str& -- a no-op but is unsafe
     CStrToStr,
 
     // Conversions between equally sized types that do not change the bit representation,
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     ReinterpretBits,
-    
+
     GetFnPtr,
 }
 
@@ -388,7 +388,7 @@ impl MIRExpression {
                     _type: itype,
                     signed: is_signed,
                 },
-                
+
                 ..Default::default()
             },
             token_range: None,
