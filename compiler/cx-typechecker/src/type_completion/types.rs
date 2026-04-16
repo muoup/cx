@@ -432,7 +432,7 @@ pub(crate) fn _complete_type(
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Function {
-                    prototype: Box::new(prototype),
+                    signature: Box::new(prototype.signature()),
                 },
             ))
         }

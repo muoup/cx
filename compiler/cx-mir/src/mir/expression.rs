@@ -41,9 +41,9 @@ pub enum MIRExpressionKind {
         parent_function: CXIdent,
     },
 
-    // The prototype is implicitly stored in the expression's type
+    // The callable signature is stored in the expression's type
     FunctionReference {
-        implicit_variables: Vec<MIRExpression>,
+        name: CXIdent,
     },
 
     // Arithmetic & Logic

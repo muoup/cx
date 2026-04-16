@@ -92,13 +92,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             }
         }
 
-        MIRExpressionKind::FunctionReference { .. } => {
-            let MIRTypeKind::Function { prototype } = &expr._type.kind else {
-                unreachable!("FunctionReference must have function type");
-            };
-
-            Ok(LMIRValue::FunctionRef(prototype.name.clone()))
-        }
+        MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
 
         // ===== Arithmetic & Logic =====
         MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
@@ -492,15 +486,15 @@ fn lower_call(
         .map(|arg| lower_expression(builder, arg))
         .collect::<CXResult<Vec<LMIRValue>>>()?;
 
-    let prototype = match &function._type.kind {
-        MIRTypeKind::Function { prototype } => prototype.as_ref().clone(),
+    let signature = match &function._type.kind {
+        MIRTypeKind::Function { signature } => signature.as_ref().clone(),
         MIRTypeKind::PointerTo { inner_type, .. } => {
             let inner_type = builder
                 .type_definitions
                 .get(*inner_type.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
-            if let MIRTypeKind::Function { prototype } = &inner_type.kind {
-                prototype.as_ref().clone()
+            if let MIRTypeKind::Function { signature } = &inner_type.kind {
+                signature.as_ref().clone()
             } else {
                 unreachable!("Call expression function pointer must point to function type")
             }
@@ -509,12 +503,12 @@ fn lower_call(
         _ => unreachable!("Call expression function must have function type"),
     };
 
-    let bc_prototype = builder.convert_cx_prototype(&prototype);
+    let bc_signature = builder.convert_cx_signature(&signature);
 
-    if let Some(precondition) = &prototype.contract.precondition {
+    if let Some(precondition) = &signature.contract.precondition {
         builder.push_scope(None, None);
 
-        for (arg_expr, param) in args.iter().cloned().zip(prototype.params.iter()) {
+        for (arg_expr, param) in args.iter().cloned().zip(signature.params.iter()) {
             if let Some(name) = &param.name {
                 builder.insert_symbol((*name).clone(), arg_expr);
             }
@@ -526,13 +520,13 @@ fn lower_call(
     }
 
     // Capture args for postcondition binding before adding return buffer
-    let args_cloned = if prototype.contract.postcondition.is_some() {
+    let args_cloned = if signature.contract.postcondition.is_some() {
         args.clone()
     } else {
         vec![]
     };
 
-    let return_buffer = if prototype.return_type.is_memory_resident() {
+    let return_buffer = if signature.return_type.is_memory_resident() {
         let buffer = builder.add_new_instruction(
             LMIRInstructionKind::Allocate {
                 alignment: return_type.alignment(),
@@ -547,11 +541,12 @@ fn lower_call(
         None
     };
 
-    let value = if let LMIRValue::FunctionRef(_) = &fn_val {
+    let value = if let LMIRValue::FunctionRef(func) = &fn_val {
         builder.add_new_instruction(
             LMIRInstructionKind::DirectCall {
+                func: func.clone(),
                 args,
-                method_sig: bc_prototype,
+                method_sig: bc_signature.clone(),
             },
             if return_buffer.is_some() {
                 LMIRType::default_pointer()
@@ -563,7 +558,7 @@ fn lower_call(
     } else {
         builder.add_new_instruction(
             LMIRInstructionKind::IndirectCall {
-                method_sig: bc_prototype,
+                method_sig: bc_signature,
                 func_ptr: fn_val,
                 args,
             },
@@ -576,10 +571,10 @@ fn lower_call(
         )?
     };
 
-    if let Some((ret_name, postcondition)) = &prototype.contract.postcondition {
+    if let Some((ret_name, postcondition)) = &signature.contract.postcondition {
         builder.push_scope(None, None);
 
-        for (arg_expr, param) in args_cloned.into_iter().zip(prototype.params.iter()) {
+        for (arg_expr, param) in args_cloned.into_iter().zip(signature.params.iter()) {
             if let Some(name) = &param.name {
                 builder.insert_symbol((*name).clone(), arg_expr);
             }
@@ -620,8 +615,9 @@ pub(crate) fn lower_contract_assertion(
 
     builder.add_new_instruction(
         LMIRInstructionKind::DirectCall {
+            func: cx_util::identifier::CXIdent::from("__compiler_assert"),
             args: vec![condition_val, message_global],
-            method_sig: assert_prototype,
+            method_sig: assert_prototype.signature(),
         },
         LMIRType::unit(),
         false,

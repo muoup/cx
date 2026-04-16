@@ -330,10 +330,10 @@ pub fn typecheck_expr_inner(
                 TypecheckResult::expr2(MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::FunctionReference {
-                        implicit_variables: vec![],
+                        name: function_type.name.clone(),
                     },
                     _type: MIRType::from(MIRTypeKind::Function {
-                        prototype: Box::new(function_type),
+                        signature: Box::new(function_type.signature()),
                     }),
                 })
             } else if env.in_safe_context()
@@ -369,10 +369,10 @@ pub fn typecheck_expr_inner(
             TypecheckResult::expr2(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::FunctionReference {
-                    implicit_variables: vec![],
+                    name: function.name.clone(),
                 },
                 _type: MIRType::from(MIRTypeKind::Function {
-                    prototype: Box::new(function),
+                    signature: Box::new(function.signature()),
                 }),
             })
         }
@@ -899,15 +899,10 @@ pub fn typecheck_expr_inner(
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, expr, to_type)?;
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
+                    let (operand_expr, implicit_parameters) = operand_val.into_parts();
 
-                    TypecheckResult {
-                        expression: explicit_cast(
-                            env,
-                            expr,
-                            operand_val.into_expression(),
-                            &to_type,
-                        )?,
-                    }
+                    TypecheckResult::expr2(explicit_cast(env, expr, operand_expr, &to_type)?)
+                        .with_implicit_parameters(implicit_parameters)
                 }
             }
         }

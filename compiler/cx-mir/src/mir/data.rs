@@ -17,6 +17,32 @@ pub struct MIRParameter {
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
+pub struct MIRFunctionSignature {
+    pub return_type: MIRType,
+    pub params: Vec<MIRParameter>,
+    pub var_args: bool,
+    pub contract: MIRFunctionContract,
+}
+
+impl PartialEq for MIRFunctionSignature {
+    fn eq(&self, other: &Self) -> bool {
+        self.return_type == other.return_type
+            && self.params == other.params
+            && self.var_args == other.var_args
+    }
+}
+
+impl Eq for MIRFunctionSignature {}
+
+impl Hash for MIRFunctionSignature {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.return_type.hash(state);
+        self.params.hash(state);
+        self.var_args.hash(state);
+    }
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRFunctionPrototype {
     pub name: CXIdent,
     pub source_prototype: CXFunctionPrototype,
@@ -24,6 +50,17 @@ pub struct MIRFunctionPrototype {
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
     pub contract: MIRFunctionContract,
+}
+
+impl MIRFunctionPrototype {
+    pub fn signature(&self) -> MIRFunctionSignature {
+        MIRFunctionSignature {
+            return_type: self.return_type.clone(),
+            params: self.params.clone(),
+            var_args: self.var_args,
+            contract: self.contract.clone(),
+        }
+    }
 }
 
 impl PartialEq for MIRFunctionPrototype {

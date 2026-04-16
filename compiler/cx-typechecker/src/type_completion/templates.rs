@@ -11,7 +11,8 @@ use cx_ast::data::{
     CXTemplatePrototype, CXType, CXTypeKind, ModuleResource,
 };
 use cx_mir::mir::data::{
-    MIRFunctionPrototype, MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeKind, same_type,
+    MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRTemplateInput, MIRType,
+    MIRTypeKind, same_type,
 };
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
@@ -513,20 +514,20 @@ fn deduce_from_cx_type(
 
         CXTypeKind::FunctionPointer { prototype } => {
             let MIRTypeKind::Function {
-                prototype: actual_prototype,
+                signature: actual_signature,
             } = &actual.kind
             else {
                 return concrete_type_mismatch(formal, actual);
             };
 
-            deduce_from_function_prototype(
+            deduce_from_function_signature(
                 env,
                 base_data,
                 external_module,
                 template_prototype,
                 bindings,
                 prototype,
-                actual_prototype,
+                actual_signature,
             )
         }
 
@@ -542,14 +543,14 @@ fn deduce_from_cx_type(
     }
 }
 
-fn deduce_from_function_prototype(
+fn deduce_from_function_signature(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
     template_prototype: &CXTemplatePrototype,
     bindings: &mut TemplateBindings,
     formal: &CXFunctionPrototype,
-    actual: &MIRFunctionPrototype,
+    actual: &MIRFunctionSignature,
 ) -> CXResult<()> {
     if formal.var_args != actual.var_args {
         return CXError::create_result(format!(

@@ -86,6 +86,13 @@ pub struct LMIRParameter {
 }
 
 #[derive(Debug, Clone)]
+pub struct LMIRFunctionSignature {
+    pub return_type: LMIRType,
+    pub params: Vec<LMIRParameter>,
+    pub var_args: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
     pub name: String,
     pub return_type: LMIRType,
@@ -93,6 +100,16 @@ pub struct LMIRFunctionPrototype {
     pub var_args: bool,
     pub linkage: LinkageType,
     pub temp_buffer: Option<LMIRType>,
+}
+
+impl LMIRFunctionPrototype {
+    pub fn signature(&self) -> LMIRFunctionSignature {
+        LMIRFunctionSignature {
+            return_type: self.return_type.clone(),
+            params: self.params.clone(),
+            var_args: self.var_args,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -196,14 +213,15 @@ pub enum LMIRInstructionKind {
     },
 
     DirectCall {
+        func: CXIdent,
         args: Vec<LMIRValue>,
-        method_sig: LMIRFunctionPrototype,
+        method_sig: LMIRFunctionSignature,
     },
 
     IndirectCall {
         func_ptr: LMIRValue,
         args: Vec<LMIRValue>,
-        method_sig: LMIRFunctionPrototype,
+        method_sig: LMIRFunctionSignature,
     },
 
     GetFunctionAddr {

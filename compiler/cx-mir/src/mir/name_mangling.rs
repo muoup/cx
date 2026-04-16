@@ -51,13 +51,13 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             mangled.push_str(&type_mangle(definitions, inner_type));
         }
-        MIRTypeKind::Function { prototype } => {
+        MIRTypeKind::Function { signature } => {
             mangled.push('F');
-            mangled.push_str(&type_mangle(definitions, &prototype.return_type));
-            for param in &prototype.params {
+            mangled.push_str(&type_mangle(definitions, &signature.return_type));
+            for param in &signature.params {
                 mangled.push_str(&type_mangle(definitions, &param._type));
             }
-            mangled.push(if prototype.var_args { 'V' } else { 'v' });
+            mangled.push(if signature.var_args { 'V' } else { 'v' });
         }
         MIRTypeKind::Structured { fields } => {
             mangled.push('S');

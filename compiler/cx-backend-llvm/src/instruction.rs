@@ -1,7 +1,7 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::attributes::attr_noundef;
 use crate::routines::get_function;
-use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_prototype, bc_llvm_type};
+use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntUnOp,
@@ -54,9 +54,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::Value(inst)
         }
 
-        LMIRInstructionKind::DirectCall { args, method_sig } => {
-            let Some(function_val) = get_function(global_state, method_sig) else {
-                log_error!("Function not found in module: {}", method_sig.name);
+        LMIRInstructionKind::DirectCall {
+            func,
+            args,
+            method_sig,
+        } => {
+            let Some(function_val) = get_function(global_state, func.as_str(), method_sig) else {
+                log_error!("Function not found in module: {}", func);
             };
 
             let arg_vals = args
@@ -94,7 +98,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
             method_sig,
         } => {
             let ptr = function_state.get_value(func_ptr)?.get_value();
-            let fn_type = bc_llvm_prototype(global_state, method_sig).unwrap();
+            let fn_type = bc_llvm_signature(global_state, method_sig).unwrap();
             let args = args
                 .iter()
                 .map(|arg| {

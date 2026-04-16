@@ -10,44 +10,83 @@ use cx_mir::mir::{
 use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::{
-    environment::TypeEnvironment, log_typecheck_error,
-    type_completion::templates::instantiate_function_template,
+    environment::TypeEnvironment,
+    log_typecheck_error,
+    type_completion::templates::{deduce_function_template, instantiate_function_template},
 };
 
-pub(crate) fn deduce_function(
+enum FunctionResolution<'a> {
+    Explicit(Option<&'a CXTemplateInput>),
+    Deduced {
+        owner_type: Option<&'a MIRType>,
+        arg_types: &'a [MIRType],
+    },
+}
+
+fn query_function_by_key(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpr,
     key: &CXFunctionKey,
-    templated_input: Option<&CXTemplateInput>,
-) -> CXResult<MIRFunctionPrototype> {
+    resolution: FunctionResolution<'_>,
+) -> CXResult<Option<MIRFunctionPrototype>> {
     if let Some(standard) = base_data.fn_data.get_standard(key) {
-        return env.complete_prototype(
-            base_data,
-            standard.external_module.as_ref(),
-            &standard.resource,
-        );
+        return env
+            .complete_prototype(
+                base_data,
+                standard.external_module.as_ref(),
+                &standard.resource,
+            )
+            .map(Some);
     }
 
     if let Some(template) = base_data.fn_data.get_template(key) {
-        let Some(templated_input) = templated_input else {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Templated function '{}' requires explicit template arguments in this context",
-                key,
-            );
-        };
+        let prototype = match resolution {
+            FunctionResolution::Explicit(Some(template_input)) => {
+                instantiate_function_template(env, base_data, template, template_input)
+            }
+            FunctionResolution::Explicit(None) => {
+                return log_typecheck_error!(
+                    env,
+                    expr.token_range(),
+                    "Templated function '{}' requires explicit template arguments in this context",
+                    key,
+                );
+            }
+            FunctionResolution::Deduced {
+                owner_type,
+                arg_types,
+            } => match deduce_function_template(env, base_data, template, owner_type, arg_types) {
+                Ok(prototype) => Ok(prototype),
+                Err(err) => {
+                    log_typecheck_error!(env, expr.token_range(), "{}", err.error_content())
+                }
+            },
+        }?;
 
-        return instantiate_function_template(env, base_data, template, templated_input);
+        return Ok(Some(prototype));
     }
 
-    log_typecheck_error!(
-        env,
-        expr.token_range(),
-        "Function with key {} not found in base mappings",
-        key,
-    )
+    Ok(None)
+}
+
+fn require_function_by_key(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    key: &CXFunctionKey,
+    resolution: FunctionResolution<'_>,
+) -> CXResult<MIRFunctionPrototype> {
+    let Some(prototype) = query_function_by_key(env, base_data, expr, key, resolution)? else {
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            "Function with key {} not found in base mappings",
+            key,
+        );
+    };
+
+    Ok(prototype)
 }
 
 pub fn query_member_function(
@@ -81,7 +120,42 @@ pub fn query_member_function(
         name: name.clone(),
     };
 
-    deduce_function(env, base_data, expr, &key, template_input)
+    require_function_by_key(
+        env,
+        base_data,
+        expr,
+        &key,
+        FunctionResolution::Explicit(template_input),
+    )
+}
+
+pub fn query_deduced_member_function(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    member_type: &MIRType,
+    name: &CXIdent,
+    arg_types: &[MIRType],
+) -> CXResult<Option<MIRFunctionPrototype>> {
+    let Some(base_name) = member_type.get_base_identifier() else {
+        return Ok(None);
+    };
+
+    let key = CXFunctionKey::MemberFunction {
+        type_base_name: base_name.clone(),
+        name: name.clone(),
+    };
+
+    query_function_by_key(
+        env,
+        base_data,
+        expr,
+        &key,
+        FunctionResolution::Deduced {
+            owner_type: Some(member_type),
+            arg_types,
+        },
+    )
 }
 
 pub fn query_static_member_function(
@@ -116,7 +190,42 @@ pub fn query_static_member_function(
         name: name.clone(),
     };
 
-    deduce_function(env, base_data, expr, &key, template_input)
+    require_function_by_key(
+        env,
+        base_data,
+        expr,
+        &key,
+        FunctionResolution::Explicit(template_input),
+    )
+}
+
+pub fn query_deduced_static_member_function(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    member_type: &MIRType,
+    name: &CXIdent,
+    arg_types: &[MIRType],
+) -> CXResult<Option<MIRFunctionPrototype>> {
+    let Some(base_name) = member_type.get_base_identifier() else {
+        return Ok(None);
+    };
+
+    let key = CXFunctionKey::StaticMemberFunction {
+        type_base_name: base_name.clone(),
+        name: name.clone(),
+    };
+
+    query_function_by_key(
+        env,
+        base_data,
+        expr,
+        &key,
+        FunctionResolution::Deduced {
+            owner_type: Some(member_type),
+            arg_types,
+        },
+    )
 }
 
 pub fn query_standard_function(
@@ -136,5 +245,32 @@ pub fn query_standard_function(
 
     let key = CXFunctionKey::Standard(name.clone());
 
-    deduce_function(env, base_data, expr, &key, template_input)
+    require_function_by_key(
+        env,
+        base_data,
+        expr,
+        &key,
+        FunctionResolution::Explicit(template_input),
+    )
+}
+
+pub fn query_deduced_standard_function(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpr,
+    name: &CXIdent,
+    arg_types: &[MIRType],
+) -> CXResult<Option<MIRFunctionPrototype>> {
+    let key = CXFunctionKey::Standard(name.clone());
+
+    query_function_by_key(
+        env,
+        base_data,
+        expr,
+        &key,
+        FunctionResolution::Deduced {
+            owner_type: None,
+            arg_types,
+        },
+    )
 }

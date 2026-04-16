@@ -3,7 +3,7 @@ use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
 use crate::mir::{
-    data::{MIRFunctionPrototype, MIRTemplateInput, TemplateInfo},
+    data::{MIRFunctionSignature, MIRTemplateInput, TemplateInfo},
     name_mangling::type_mangle,
 };
 
@@ -63,7 +63,7 @@ pub enum MIRTypeKind {
         inner_type: Box<MIRTypeId>,
     },
     Function {
-        prototype: Box<MIRFunctionPrototype>,
+        signature: Box<MIRFunctionSignature>,
     },
     Opaque {
         size: usize,
@@ -544,9 +544,9 @@ impl MIRType {
         self.template_info.as_deref()
     }
 
-    pub fn get_fn_name(&self) -> Option<&CXIdent> {
+    pub fn function_signature(&self) -> Option<&MIRFunctionSignature> {
         match &self.kind {
-            MIRTypeKind::Function { prototype } => Some(&prototype.name),
+            MIRTypeKind::Function { signature } => Some(signature),
             _ => None,
         }
     }
@@ -661,22 +661,7 @@ impl MIRType {
 
     pub fn internal_function() -> Self {
         MIRType::from(MIRTypeKind::Function {
-            prototype: Box::new(MIRFunctionPrototype {
-                name: CXIdent::from("__internal_function"),
-                source_prototype: cx_ast::data::CXFunctionPrototype {
-                    kind: cx_ast::data::CXFunctionKind::Standard(CXIdent::from(
-                        "__internal_function",
-                    )),
-                    params: vec![],
-                    return_type: cx_ast::data::CXTypeKind::Identifier {
-                        name: CXIdent::from("void"),
-                        predeclaration: cx_ast::data::PredeclarationType::None,
-                    }
-                    .to_type(),
-                    var_args: false,
-                    contract: cx_ast::data::CXFunctionContract::default(),
-                    range: cx_tokens::TokenRange::default(),
-                },
+            signature: Box::new(MIRFunctionSignature {
                 return_type: MIRType::unit(),
                 params: vec![],
                 var_args: false,
@@ -704,17 +689,17 @@ pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
     match (&t1.kind, &t2.kind) {
         (
             MIRTypeKind::Function {
-                prototype: prototype1,
+                signature: signature1,
             },
             MIRTypeKind::Function {
-                prototype: prototype2,
+                signature: signature2,
             },
         ) => {
-            prototype1.var_args == prototype2.var_args
-                && same_type(&prototype1.return_type, &prototype2.return_type)
+            signature1.var_args == signature2.var_args
+                && same_type(&signature1.return_type, &signature2.return_type)
                 && same_types(
-                    prototype1.params.iter().map(|param| param._type.clone()),
-                    prototype2.params.iter().map(|param| param._type.clone()),
+                    signature1.params.iter().map(|param| param._type.clone()),
+                    signature2.params.iter().map(|param| param._type.clone()),
                 )
         }
         _ => t1 == t2,

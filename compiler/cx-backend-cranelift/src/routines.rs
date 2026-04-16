@@ -1,30 +1,31 @@
 use crate::inst_calling::prepare_function_sig;
 use crate::FunctionState;
 use cranelift_module::{FuncId, Linkage, Module};
-use cx_lmir::{LMIRFunctionPrototype, LinkageType};
+use cx_lmir::{LMIRFunctionSignature, LinkageType};
 
 pub fn get_function(
     context: &mut FunctionState,
-    prototype: &LMIRFunctionPrototype,
+    name: &str,
+    signature: &LMIRFunctionSignature,
 ) -> Option<FuncId> {
-    if let Some(func_id) = context.function_ids.get(&prototype.name) {
+    if let Some(func_id) = context.function_ids.get(name) {
         return Some(*func_id);
     }
 
-    let Some(signature) = prepare_function_sig(context.object_module, prototype) else {
+    let Some(signature) = prepare_function_sig(context.object_module, signature) else {
         panic!(
             "Failed to prepare function signature for function: {:?}",
-            prototype.name
+            name
         );
     };
-    let linkage = convert_linkage(prototype.linkage);
+    let linkage = convert_linkage(LinkageType::External);
 
     let func_id = context
         .object_module
-        .declare_function(prototype.name.as_str(), linkage, &signature)
+        .declare_function(name, linkage, &signature)
         .unwrap();
 
-    context.function_ids.insert(prototype.name.clone(), func_id);
+    context.function_ids.insert(name.to_string(), func_id);
 
     Some(func_id)
 }

@@ -1,6 +1,6 @@
 use crate::GlobalState;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRFunctionPrototype, LinkageType};
+use cx_lmir::{LMIRFunctionPrototype, LMIRFunctionSignature, LinkageType};
 use inkwell::AddressSpace;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
@@ -109,11 +109,11 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
     })
 }
 
-pub(crate) fn bc_llvm_prototype<'a>(
+pub(crate) fn bc_llvm_signature<'a>(
     state: &GlobalState<'a>,
-    prototype: &LMIRFunctionPrototype,
+    signature: &LMIRFunctionSignature,
 ) -> Option<FunctionType<'a>> {
-    let args = prototype
+    let args = signature
         .params
         .iter()
         .map(|arg| {
@@ -127,21 +127,28 @@ pub(crate) fn bc_llvm_prototype<'a>(
         .collect::<Option<Vec<_>>>()?;
 
     Some(
-        match bc_llvm_type(state.context, &prototype.return_type).unwrap() {
-            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), prototype.var_args),
+        match bc_llvm_type(state.context, &signature.return_type).unwrap() {
+            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), signature.var_args),
             AnyTypeEnum::FloatType(float_type) => {
-                float_type.fn_type(args.as_slice(), prototype.var_args)
+                float_type.fn_type(args.as_slice(), signature.var_args)
             }
             AnyTypeEnum::PointerType(ptr_type) => {
-                ptr_type.fn_type(args.as_slice(), prototype.var_args)
+                ptr_type.fn_type(args.as_slice(), signature.var_args)
             }
             AnyTypeEnum::VoidType(void_type) => {
-                void_type.fn_type(args.as_slice(), prototype.var_args)
+                void_type.fn_type(args.as_slice(), signature.var_args)
             }
 
             _ty => panic!("Invalid return type, found: {_ty:?}"),
         },
     )
+}
+
+pub(crate) fn bc_llvm_prototype<'a>(
+    state: &GlobalState<'a>,
+    prototype: &LMIRFunctionPrototype,
+) -> Option<FunctionType<'a>> {
+    bc_llvm_signature(state, &prototype.signature())
 }
 
 pub(crate) fn convert_linkage(linkage: LinkageType) -> Linkage {

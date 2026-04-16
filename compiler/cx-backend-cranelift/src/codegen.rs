@@ -15,7 +15,7 @@ pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
     prototype: &LMIRFunctionPrototype,
 ) -> Option<()> {
-    let sig = prepare_function_sig(&mut global_state.object_module, prototype)?;
+    let sig = prepare_function_sig(&mut global_state.object_module, &prototype.signature())?;
     let linkage = convert_linkage(prototype.linkage);
 
     let id = global_state

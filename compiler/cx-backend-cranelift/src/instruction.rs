@@ -39,24 +39,20 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::DirectCall {
-            args, method_sig, ..
+            func,
+            args,
+            method_sig,
         } => {
-            let Some(id) = get_function(context, method_sig) else {
-                panic!("Failed to call function {}", &method_sig.name);
+            let Some(id) = get_function(context, func.as_str(), method_sig) else {
+                panic!("Failed to call function {}", func);
             };
 
             let Some(params) = prepare_parameters(context, args) else {
-                panic!(
-                    "Failed to prepare parameters for DirectCall: {}",
-                    method_sig.name
-                );
+                panic!("Failed to prepare parameters for DirectCall: {}", func);
             };
 
             let Some(fn_ref) = get_func_ref(context, id, method_sig, params.as_slice()) else {
-                panic!(
-                    "Failed to get function reference for DirectCall: {}",
-                    method_sig.name
-                );
+                panic!("Failed to get function reference for DirectCall: {}", func);
             };
 
             let inst = context.builder.ins().call(fn_ref, params.as_slice());

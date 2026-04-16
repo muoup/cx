@@ -1,4 +1,4 @@
-use crate::mir::data::{MIRFunctionPrototype, MIRParameter};
+use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeId, MIRTypeKind};
@@ -35,9 +35,9 @@ impl Display for MIRFunction {
     }
 }
 
-impl Display for MIRFunctionPrototype {
+impl Display for MIRFunctionSignature {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fn {}(", self.name)?;
+        write!(f, "fn(")?;
         for (i, param) in self.params.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -67,6 +67,12 @@ impl Display for MIRFunctionPrototype {
         }
 
         Ok(())
+    }
+}
+
+impl Display for MIRFunctionPrototype {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.name, self.signature())
     }
 }
 
@@ -185,12 +191,8 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     self.expr._type
                 )
             }
-            MIRExpressionKind::FunctionReference { implicit_variables } => {
-                writeln!(f, "FunctionReference <'{}>", self.expr._type)?;
-                for var in implicit_variables {
-                    MIRExpressionFormatter::new(var, self.depth + 1).fmt(f)?;
-                }
-                Ok(())
+            MIRExpressionKind::FunctionReference { name } => {
+                writeln!(f, "FunctionReference {name} <'{}>", self.expr._type)
             }
             MIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
                 writeln!(f, "BinaryOperation {} <'{}>", op, self.expr._type)?;
@@ -621,18 +623,7 @@ impl Display for MIRTypeKind {
             MIRTypeKind::Opaque { size, .. } => write!(f, "opaque({})", size),
             MIRTypeKind::Undefined => write!(f, "undefined"),
             MIRTypeKind::Str => write!(f, "_str"),
-            MIRTypeKind::Function { prototype } => write!(
-                f,
-                "fn({}{}) -> {}",
-                prototype
-                    .params
-                    .iter()
-                    .map(|arg| arg.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                if prototype.var_args { ", ..." } else { "" },
-                prototype.return_type
-            ),
+            MIRTypeKind::Function { signature } => write!(f, "{signature}"),
         }
     }
 }

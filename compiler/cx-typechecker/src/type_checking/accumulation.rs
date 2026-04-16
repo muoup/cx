@@ -8,11 +8,16 @@ use cx_mir::mir::expression::{
 pub struct TypecheckResult {
     /// The accumulated expression
     pub expression: MIRExpression,
+    /// Implicit parameters carried upward for call sites (e.g. member receivers)
+    pub implicit_parameters: Vec<MIRExpression>,
 }
 
 impl TypecheckResult {
     pub fn expr2(expression: MIRExpression) -> Self {
-        Self { expression }
+        Self {
+            expression,
+            implicit_parameters: Vec::new(),
+        }
     }
 
     pub fn expr(_type: MIRType, kind: MIRExpressionKind) -> Self {
@@ -22,7 +27,17 @@ impl TypecheckResult {
                 kind,
                 _type,
             },
+            implicit_parameters: Vec::new(),
         }
+    }
+
+    pub fn with_implicit_parameters(mut self, implicit_parameters: Vec<MIRExpression>) -> Self {
+        self.implicit_parameters = implicit_parameters;
+        self
+    }
+
+    pub fn into_parts(self) -> (MIRExpression, Vec<MIRExpression>) {
+        (self.expression, self.implicit_parameters)
     }
 
     pub fn chain(self, other: TypecheckResult) -> TypecheckResult {
@@ -57,6 +72,7 @@ impl TypecheckResult {
     {
         TypecheckResult {
             expression: f(&self.expression),
+            implicit_parameters: self.implicit_parameters.clone(),
         }
     }
 
@@ -71,6 +87,7 @@ impl TypecheckResult {
                 kind: f(self.expression.kind),
                 _type: self.expression._type,
             },
+            implicit_parameters: self.implicit_parameters,
         }
     }
 
@@ -177,11 +194,17 @@ impl TypecheckResult {
         result_type: MIRType,
         _contract: MIRFunctionContract,
     ) -> Self {
+        let (function, implicit_parameters) = function.into_parts();
+        let arguments = implicit_parameters
+            .into_iter()
+            .chain(arguments.into_iter().map(|a| a.expression))
+            .collect();
+
         TypecheckResult::expr(
             result_type,
             MIRExpressionKind::CallFunction {
-                function: Box::new(function.expression),
-                arguments: arguments.into_iter().map(|a| a.expression).collect(),
+                function: Box::new(function),
+                arguments,
             },
         )
     }

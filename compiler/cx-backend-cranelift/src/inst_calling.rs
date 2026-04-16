@@ -5,20 +5,20 @@ use cranelift::codegen::ir::{FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_lmir::{LMIRFunctionPrototype, LMIRParameter, LMIRValue};
+use cx_lmir::{LMIRFunctionSignature, LMIRParameter, LMIRValue};
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
-    prototype: &LMIRFunctionPrototype,
+    signature: &LMIRFunctionSignature,
 ) -> Option<Signature> {
     let mut sig = Signature::new(object_module.target_config().default_call_conv);
 
-    if !prototype.return_type.is_void() {
+    if !signature.return_type.is_void() {
         sig.returns
-            .push(get_cranelift_abi_type(&prototype.return_type));
+            .push(get_cranelift_abi_type(&signature.return_type));
     }
 
-    for LMIRParameter { _type, .. } in prototype.params.iter() {
+    for LMIRParameter { _type, .. } in signature.params.iter() {
         sig.params.push(get_cranelift_abi_type(_type));
     }
 
@@ -56,10 +56,10 @@ pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> Option<C
 pub(crate) fn get_func_ref(
     context: &mut FunctionState,
     func_id: FuncId,
-    prototype: &LMIRFunctionPrototype,
+    signature: &LMIRFunctionSignature,
     args: &[Value],
 ) -> Option<FuncRef> {
-    if !prototype.var_args || args.len() == prototype.params.len() {
+    if !signature.var_args || args.len() == signature.params.len() {
         return Some(
             context
                 .object_module
@@ -67,9 +67,9 @@ pub(crate) fn get_func_ref(
         );
     }
 
-    let mut sig = prepare_function_sig(context.object_module, prototype)?;
+    let mut sig = prepare_function_sig(context.object_module, signature)?;
 
-    for i in prototype.params.len()..args.len() {
+    for i in signature.params.len()..args.len() {
         let arg_type = context.builder.func.dfg.value_type(args[i]);
 
         sig.params.push(ir::AbiParam::new(arg_type));

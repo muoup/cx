@@ -7,7 +7,7 @@ use cx_safe_ir::{
     ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRType, FRc, MemoryLocation},
     intrinsic::FMIRIntrinsicKind,
 };
-use cx_util::{CXError, CXResult, identifier::CXIdent};
+use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::mir_conversion::environment::FMIREnvironment;
 
@@ -303,33 +303,26 @@ pub fn convert_expression(
             })
         }
 
-        MIRExpressionKind::FunctionReference { .. } => {
-            let MIRTypeKind::Function { prototype } = &mir_expr._type.kind else {
+        MIRExpressionKind::FunctionReference { name } => {
+            let MIRTypeKind::Function { signature } = &mir_expr._type.kind else {
                 unreachable!(
                     "FMIR conversion expected function type in function reference expression"
                 )
             };
 
-            if !prototype.contract.safe {
+            if !signature.contract.safe {
                 return log_analysis_error!(
                     env,
                     mir_expr,
                     "References to unsafe function `{}` may not be used in safe contexts",
-                    prototype.name
+                    name
                 );
             }
-
-            let Some(function_name) = mir_expr._type.get_fn_name() else {
-                return CXError::create_result(format!(
-                    "FMIR conversion expected function reference type in function '{}'",
-                    env.current_mir_prototype().name
-                ));
-            };
 
             Ok(FMIRNode {
                 token_range: None,
                 body: FMIRNodeBody::VariableAlias {
-                    name: function_name.as_string(),
+                    name: name.as_string(),
                 },
                 _type: FMIRType::pure(mir_expr._type.clone()),
             })
