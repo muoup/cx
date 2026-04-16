@@ -11,8 +11,8 @@ use cx_util::CXResult;
 use crate::{
     environment::TypeEnvironment,
     type_completion::{
-        prototypes::_complete_fn_prototype,
-        types::{_complete_type, base_data_from_module},
+        prototypes::int_complete_fn_prototype,
+        types::{int_complete_type, base_data_from_module},
     },
 };
 
@@ -28,7 +28,7 @@ pub fn complete_prototype_no_insert(
 ) -> CXResult<MIRFunctionPrototype> {
     let (_, base_data) = base_data_from_module(env, base_data, external_module);
 
-    _complete_fn_prototype(env, base_data, prototype)
+    int_complete_fn_prototype(env, base_data, prototype)
 }
 
 pub fn complete_type(
@@ -40,5 +40,5 @@ pub fn complete_type(
 ) -> CXResult<MIRType> {
     let (_, base_data) = base_data_from_module(env, base_data, external_module);
 
-    _complete_type(env, base_data, expr, _type)
+    int_complete_type(env, base_data, expr, _type)
 }

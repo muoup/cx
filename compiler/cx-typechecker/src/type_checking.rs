@@ -20,8 +20,10 @@ use crate::{
     type_completion::templates::{add_templated_types, restore_template_overwrites},
 };
 
-pub mod typecheck_result;
+pub mod result;
 pub mod binary_ops;
+pub mod coercion;
+pub mod arith;
 pub mod casting;
 pub mod r#match;
 pub mod structured_initialization;
@@ -45,7 +47,7 @@ fn typecheck_function(
         let Some(name) = name else {
             continue;
         };
-        let ref_type = env.generated_types.mem_ref_to(_type);
+        let ref_type = env.type_context.mem_ref_to(_type.clone());
 
         env.insert_symbol(
             name.as_string(),

@@ -5,7 +5,8 @@ use crate::environment::function_query::{
     query_deduced_static_member_function, query_static_member_function,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::typecheck_result::TypecheckResult;
+use crate::type_checking::coercion::implicit::standard_expr_rval_transform;
+use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
@@ -38,10 +39,10 @@ fn resolve_access_base(
     let lhs_inner = loop {
         let lhs_type = lhs._type.clone();
 
-        if let Some(inner_type) = env.generated_types.mem_ref_inner(&lhs_type).cloned() {
+        if let Some(inner_type) = env.type_context.mem_ref_inner(&lhs_type).cloned() {
             lhs_ref_const |= inner_type.get_specifier(CX_CONST);
 
-            if let Some(ptr_inner) = env.generated_types.ptr_inner(&inner_type).cloned() {
+            if let Some(ptr_inner) = env.type_context.ptr_inner(&inner_type).cloned() {
                 lhs_ref_const |= ptr_inner.get_specifier(CX_CONST);
 
                 lhs = MIRExpression {
@@ -49,13 +50,13 @@ fn resolve_access_base(
                     kind: MIRExpressionKind::MemoryRead {
                         source: Box::new(lhs),
                     },
-                    _type: env.generated_types.pointer_to(&ptr_inner),
+                    _type: env.type_context.pointer_to(ptr_inner.clone()),
                 };
 
                 break ptr_inner;
             }
 
-            if env.generated_types.mem_ref_inner(&inner_type).is_some() {
+            if env.type_context.mem_ref_inner(&inner_type).is_some() {
                 lhs = MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::MemoryRead {
@@ -66,7 +67,7 @@ fn resolve_access_base(
             } else {
                 break inner_type;
             }
-        } else if let Some(inner_type) = env.generated_types.ptr_inner(&lhs_type).cloned() {
+        } else if let Some(inner_type) = env.type_context.ptr_inner(&lhs_type).cloned() {
             lhs_ref_const |= inner_type.get_specifier(CX_CONST);
             break inner_type;
         } else {
@@ -121,7 +122,7 @@ fn finish_function_call<'a>(
     let loaded_function = coerce_value(env, callee_expr, function)?;
     let loaded_function_type = loaded_function.get_type();
     let loaded_function_type = env
-        .generated_types
+        .type_context
         .ptr_inner(&loaded_function_type)
         .cloned()
         .unwrap_or(loaded_function_type);
@@ -231,11 +232,11 @@ pub(crate) fn typecheck_access(
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
             if let Some(struct_field) =
-                struct_field(&lhs_inner, &env.generated_types, name.as_str())
+                struct_field(&lhs_inner, &env.type_context, name.as_str())
             {
                 return Ok(TypecheckResult::new_base(
-                    env.generated_types.mem_ref_to(
-                        &struct_field
+                    env.type_context.mem_ref_to(
+                        struct_field
                             .field_type
                             .clone()
                             .with_specifier(if lhs_ref_const { CX_CONST } else { 0 }),
@@ -249,7 +250,7 @@ pub(crate) fn typecheck_access(
                 ));
             }
 
-            if let Some(variants) = lhs_inner.aggregate_fields(&env.generated_types) {
+            if let Some(variants) = lhs_inner.aggregate_fields(&env.type_context) {
                 if matches!(lhs_inner.kind, MIRTypeKind::Union { .. }) {
                     let Some((_, field_type)) = variants
                         .iter()
@@ -265,8 +266,8 @@ pub(crate) fn typecheck_access(
                     };
 
                     return Ok(TypecheckResult::new_base(
-                        env.generated_types.mem_ref_to(
-                            &field_type.clone().with_specifier(if lhs_ref_const {
+                        env.type_context.mem_ref_to(
+                            field_type.clone().with_specifier(if lhs_ref_const {
                                 CX_CONST
                             } else {
                                 0
@@ -346,11 +347,11 @@ fn build_member_receiver_argument(
                 operand: Box::new(lhs),
                 conversion: MIRCoercion::ReinterpretBits,
             },
-            _type: env.generated_types.mem_ref_to(lhs_inner),
+            _type: env.type_context.mem_ref_to(lhs_inner.clone()),
         }),
         Some(CXReceiverMode::ByMove) => {
             if let Some(inner_type) = env
-                .generated_types
+                .type_context
                 .mem_ref_inner(&lhs_source._type)
                 .cloned()
             {
@@ -449,13 +450,13 @@ fn deduced_callee(
             let (receiver_root, receiver_value, receiver_type, _) =
                 resolve_access_base(env, expr, receiver_source)?;
 
-            if struct_field(&receiver_type, &env.generated_types, name.as_str()).is_some() {
+            if struct_field(&receiver_type, &env.type_context, name.as_str()).is_some() {
                 return Ok(None);
             }
 
             if matches!(receiver_type.kind, MIRTypeKind::Union { .. })
                 && receiver_type
-                    .aggregate_fields(&env.generated_types)
+                    .aggregate_fields(&env.type_context)
                     .map(|fields| {
                         fields
                             .iter()
@@ -538,7 +539,7 @@ fn typecheck_type_constructor(
     name: &CXIdent,
     inner: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let Some(variants) = union_type.aggregate_fields(&env.generated_types) else {
+    let Some(variants) = union_type.aggregate_fields(&env.type_context) else {
         unreachable!()
     };
     let variants = variants.clone();
@@ -673,18 +674,18 @@ pub(crate) fn typecheck_is(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let tc_lhs = typecheck_expr(env, base_data, lhs, None)
+    let tc_lhs : MIRExpression = typecheck_expr(env, base_data, lhs, None)
         .and_then(|v| coerce_value(env, lhs, v.into_expression()))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
-    let union_type = if let Some(inner) = env.generated_types.mem_ref_inner(&tc_type) {
+    let union_type = if let Some(inner) = env.type_context.mem_ref_inner(&tc_type) {
         owned_union_type = inner.clone();
         &owned_union_type
     } else {
         &tc_type
     };
 
-    let Some(variants) = union_type.aggregate_fields(&env.generated_types) else {
+    let Some(variants) = union_type.aggregate_fields(&env.type_context) else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
@@ -751,7 +752,7 @@ pub(crate) fn typecheck_is(
                 );
             };
 
-            let variant_ref_type = env.generated_types.mem_ref_to(&variant_type);
+            let variant_ref_type = env.type_context.mem_ref_to(variant_type.clone());
             env.insert_symbol(
                 name.as_string(),
                 MIRExpression {
@@ -797,18 +798,18 @@ fn binop_coerce_value(
 ) -> CXResult<MIRExpression> {
     let val_type = val.get_type();
 
-    let Some(inner) = env.generated_types.mem_ref_inner(&val_type) else {
+    let Some(inner) = env.type_context.mem_ref_inner(&val_type) else {
         return Ok(val);
     };
 
     match &inner.kind {
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
-                .generated_types
+                .type_context
                 .get(*inner_type.as_ref())
                 .unwrap()
                 .clone();
-            let pointer_type = env.generated_types.pointer_to(&inner_type);
+            let pointer_type = env.type_context.pointer_to(inner_type.clone());
             implicit_cast(env, expr, val, &pointer_type)
         }
 
@@ -823,11 +824,11 @@ pub(crate) fn typecheck_binop_mir_vals(
     rhs: MIRExpression,
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let mir_lhs = binop_coerce_value(env, expr, lhs)?;
-    let mir_rhs = binop_coerce_value(env, expr, rhs)?;
+    let mir_lhs = standard_expr_rval_transform(env, lhs)?;
+    let mir_rhs = standard_expr_rval_transform(env, rhs)?;
 
-    let lhs_ptr_inner = env.generated_types.ptr_inner(&mir_lhs._type).cloned();
-    let rhs_ptr_inner = env.generated_types.ptr_inner(&mir_rhs._type).cloned();
+    let lhs_ptr_inner = env.type_context.ptr_inner(&mir_lhs._type).cloned();
+    let rhs_ptr_inner = env.type_context.ptr_inner(&mir_rhs._type).cloned();
 
     match (
         &lhs_ptr_inner,
@@ -1190,9 +1191,9 @@ pub(crate) fn typecheck_ptr_int_binop(
             };
 
             let return_type = match op {
-                CXBinOp::ArrayIndex => env.generated_types.mem_ref_to(pointer_inner),
+                CXBinOp::ArrayIndex => env.type_context.mem_ref_to(pointer_inner.clone()),
 
-                _ => env.generated_types.pointer_to(pointer_inner),
+                _ => env.type_context.pointer_to(pointer_inner.clone()),
             };
 
             Ok(TypecheckResult::new_base(

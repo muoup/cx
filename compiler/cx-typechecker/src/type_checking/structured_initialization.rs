@@ -14,7 +14,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        typecheck_result::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
+        result::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
         typechecker::typecheck_expr,
     },
 };
@@ -114,7 +114,7 @@ pub fn typecheck_initializer_list(
     };
 
     let owned_inner;
-    let to_type = if let Some(inner_type) = env.generated_types.mem_ref_inner(to_type) {
+    let to_type = if let Some(inner_type) = env.type_context.mem_ref_inner(to_type) {
         owned_inner = inner_type.clone();
         &owned_inner
     } else {
@@ -127,7 +127,7 @@ pub fn typecheck_initializer_list(
             size,
         } => {
             let inner_type = env
-                .generated_types
+                .type_context
                 .get(*_type.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
                 .clone();
@@ -138,7 +138,7 @@ pub fn typecheck_initializer_list(
             inner_type: inner, ..
         } => {
             let inner_type = env
-                .generated_types
+                .type_context
                 .get(*inner.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
                 .clone();
@@ -218,7 +218,7 @@ fn typecheck_structured_initializer(
     indices: &[CXInitIndex],
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
-    let Some(fields) = to_type.aggregate_fields(&env.generated_types) else {
+    let Some(fields) = to_type.aggregate_fields(&env.type_context) else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
@@ -269,7 +269,7 @@ fn typecheck_structured_initializer(
             .and_then(|v| implicit_cast(env, &index.value, v.into_expression(), field_type))?;
 
         let Some(struct_field_info) =
-            struct_field(to_type, &env.generated_types, field_name.as_str())
+            struct_field(to_type, &env.type_context, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,

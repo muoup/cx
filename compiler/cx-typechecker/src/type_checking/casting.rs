@@ -7,7 +7,7 @@ use cx_mir::mir::{
 use cx_util::CXResult;
 
 use crate::{
-    environment::TypeEnvironment, log_typecheck_error, type_checking::typecheck_result::TypecheckResult,
+    environment::TypeEnvironment, log_typecheck_error, type_checking::result::TypecheckResult,
 };
 
 pub(crate) fn coerce_value(
@@ -16,7 +16,7 @@ pub(crate) fn coerce_value(
     value: MIRExpression,
 ) -> CXResult<MIRExpression> {
     let value_type = value.get_type();
-    let mem_ref_inner = env.generated_types.mem_ref_inner(&value_type).cloned();
+    let mem_ref_inner = env.type_context.mem_ref_inner(&value_type).cloned();
 
     let Some(mem_ref_inner) = mem_ref_inner else {
         return Ok(value);
@@ -105,7 +105,7 @@ pub(crate) fn explicit_cast(
                 inner_type: str_inner,
             },
         ) if matches!(
-            env.generated_types
+            env.type_context
                 .get(*ptr_inner.as_ref())
                 .map(|ty| &ty.kind),
             Some(MIRTypeKind::Integer {
@@ -113,7 +113,7 @@ pub(crate) fn explicit_cast(
                 ..
             })
         ) && matches!(
-            env.generated_types
+            env.type_context
                 .get(*str_inner.as_ref())
                 .map(|ty| &ty.kind),
             Some(MIRTypeKind::Str)
@@ -124,7 +124,7 @@ pub(crate) fn explicit_cast(
 
         (MIRTypeKind::MemoryReference { inner_type }, _) => {
             let inner_type = env
-                .generated_types
+                .type_context
                 .get(*inner_type.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                 .clone();
@@ -233,9 +233,9 @@ pub fn implicit_cast(
                 inner_type: to_inner,
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*from_inner.as_ref())
-            .zip(env.generated_types.get(*to_inner.as_ref()))
+            .zip(env.type_context.get(*to_inner.as_ref()))
             .map(|(from_inner, to_inner)| same_type(from_inner, to_inner))
             .unwrap_or(false) =>
         {
@@ -250,8 +250,8 @@ pub fn implicit_cast(
                 inner_type: to_inner,
             },
         ) if {
-            let from_inner = env.generated_types.get(*from_inner.as_ref()).unwrap();
-            let to_inner = env.generated_types.get(*to_inner.as_ref()).unwrap();
+            let from_inner = env.type_context.get(*from_inner.as_ref()).unwrap();
+            let to_inner = env.type_context.get(*to_inner.as_ref()).unwrap();
             let from_unconst = from_inner.without_specifier(CX_CONST);
             let to_unconst = to_inner.without_specifier(CX_CONST);
 
@@ -271,9 +271,9 @@ pub fn implicit_cast(
                 inner_type: inner2, ..
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*inner1.as_ref())
-            .zip(env.generated_types.get(*inner2.as_ref()))
+            .zip(env.type_context.get(*inner2.as_ref()))
             .map(|(inner1, inner2)| same_type(inner1, inner2))
             .unwrap_or(false) =>
         {
@@ -288,19 +288,19 @@ pub fn implicit_cast(
                 inner_type: inner2, ..
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*inner1.as_ref())
             .map(|ty| ty.is_array())
             .unwrap_or(false) =>
         {
             let inner1_inner = env
-                .generated_types
+                .type_context
                 .get(*inner1.as_ref())
-                .and_then(|ty| env.generated_types.array_inner(ty))
+                .and_then(|ty| env.type_context.array_inner(ty))
                 .unwrap();
 
             if env
-                .generated_types
+                .type_context
                 .get(*inner2.as_ref())
                 .map(|inner2| same_type(inner1_inner, inner2))
                 .unwrap_or(false)
@@ -328,12 +328,12 @@ pub fn implicit_cast(
                 ..
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*from_inner.as_ref())
             .map(|ty| ty.is_str())
             .unwrap_or(false)
             && matches!(
-                env.generated_types
+                env.type_context
                     .get(*to_inner.as_ref())
                     .map(|ty| &ty.kind),
                 Some(MIRTypeKind::Integer {
@@ -352,7 +352,7 @@ pub fn implicit_cast(
             _,
         ) => {
             let inner = env
-                .generated_types
+                .type_context
                 .get(*inner.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
                 .clone();
@@ -371,7 +371,7 @@ pub fn implicit_cast(
                 inner_type: inner, ..
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*inner.as_ref())
             .map(|inner| same_type(inner, &from_type))
             .unwrap_or(false)
@@ -388,14 +388,14 @@ pub fn implicit_cast(
                 inner_type: inner, ..
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*_type.as_ref())
-            .zip(env.generated_types.get(*inner.as_ref()))
+            .zip(env.type_context.get(*inner.as_ref()))
             .map(|(lhs, rhs)| same_type(lhs, rhs))
             .unwrap_or(false) =>
         {
             // Array to pointer decay: access element 0
-            let inner_type = env.generated_types.get(*inner.as_ref()).unwrap().clone();
+            let inner_type = env.type_context.get(*inner.as_ref()).unwrap().clone();
             Ok(TypecheckResult::array_access(
                 TypecheckResult::from(value),
                 TypecheckResult::from(MIRExpression::int_literal(0, MIRIntegerType::I64, false)),
@@ -411,7 +411,7 @@ pub fn implicit_cast(
                 inner_type: inner, ..
             },
         ) if env
-            .generated_types
+            .type_context
             .get(*inner.as_ref())
             .map(|inner| same_type(inner, &from_type))
             .unwrap_or(false) =>

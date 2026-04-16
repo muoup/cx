@@ -214,8 +214,8 @@ impl MIRTypeContext {
             .map(|(idx, _)| MIRTypeId(idx as u64 + 1))
     }
 
-    pub fn pointer_to(&mut self, inner_type: &MIRType) -> MIRType {
-        let inner_id = self.intern(inner_type.clone());
+    pub fn pointer_to(&mut self, inner_type: MIRType) -> MIRType {
+        let inner_id = self.intern(inner_type);
         MIRType {
             kind: MIRTypeKind::PointerTo {
                 inner_type: Box::new(inner_id),
@@ -224,8 +224,8 @@ impl MIRTypeContext {
         }
     }
 
-    pub fn mem_ref_to(&mut self, inner_type: &MIRType) -> MIRType {
-        let inner_id = self.intern(inner_type.clone());
+    pub fn mem_ref_to(&mut self, inner_type: MIRType) -> MIRType {
+        let inner_id = self.intern(inner_type);
         MIRType {
             kind: MIRTypeKind::MemoryReference {
                 inner_type: Box::new(inner_id),

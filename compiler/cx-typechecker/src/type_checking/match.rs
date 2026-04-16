@@ -5,7 +5,7 @@ use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
-use crate::type_checking::{typecheck_result::TypecheckResult, casting::coerce_value};
+use crate::type_checking::{result::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -152,7 +152,7 @@ pub fn typecheck_match(
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
 
-    if let Some(inner) = env.generated_types.mem_ref_inner(&expr_type) {
+    if let Some(inner) = env.type_context.mem_ref_inner(&expr_type) {
         expr_type = inner.clone();
 
         if !expr_type.is_memory_resident() {
@@ -226,7 +226,7 @@ pub fn typecheck_match(
         MIRTypeKind::TaggedUnion { .. } => {
             let expected_union_name = expr_type.get_name().unwrap();
             let variants = expr_type
-                .aggregate_fields(&env.generated_types)
+                .aggregate_fields(&env.type_context)
                 .expect("Tagged union match requires completed variants")
                 .clone();
             // Tagged union matching: each arm has a type constructor pattern
@@ -280,7 +280,7 @@ pub fn typecheck_match(
                     if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
                         variant_type.clone()
                     } else {
-                        env.generated_types.mem_ref_to(&variant_type)
+                        env.type_context.mem_ref_to(variant_type.clone())
                     };
 
                 // Extract the variant value and bind it

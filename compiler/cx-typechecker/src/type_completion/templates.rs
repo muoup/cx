@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::environment::name_mangling::mangle_templated_fn_name;
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use crate::type_completion::types::base_data_from_module;
-use crate::type_completion::types::{_complete_template_input, _complete_type};
+use crate::type_completion::types::{_complete_template_input, int_complete_type};
 use crate::type_completion::{complete_prototype_no_insert, complete_type};
 use cx_ast::ast::CXExpr;
 use cx_ast::data::{
@@ -56,7 +56,7 @@ pub fn mangle_template_name(env: &TypeEnvironment, name: &str, input: &MIRTempla
     let mut mangled_name = String::from("_t");
 
     for arg in &input.args {
-        mangled_name.push_str(&env.generated_types.mangle(arg));
+        mangled_name.push_str(&env.type_context.mangle(arg));
     }
 
     mangled_name.push('_');
@@ -137,12 +137,12 @@ pub(crate) fn instantiate_type_template(
             _ => unreachable!("Templated named type must be an aggregate"),
         };
 
-        env.generated_types
+        env.type_context
             .register_identifier(CXIdent::new(base_name.clone()), template_type_id);
         previous_named_type = env.realized_types.insert(base_name.clone(), provisional);
     }
 
-    let cx_type = _complete_type(env, base_data, &CXExpr::default(), shell);
+    let cx_type = int_complete_type(env, base_data, &CXExpr::default(), shell);
     if let Some(base_name) = aggregate_base_name.as_ref() {
         match previous_named_type {
             Some(previous) => {
@@ -308,7 +308,7 @@ fn deduce_from_cx_type(
         && !matches!(formal.kind, CXTypeKind::MemoryReference { .. })
     {
         let inner_type = env
-            .generated_types
+            .type_context
             .get(*inner_type.as_ref())
             .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
             .clone();
@@ -396,7 +396,7 @@ fn deduce_from_cx_type(
             }
 
             let actual_inner = env
-                .generated_types
+                .type_context
                 .get(*inner_type.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                 .clone();
@@ -414,7 +414,7 @@ fn deduce_from_cx_type(
         CXTypeKind::ImplicitSizedArray(inner) => match &actual.kind {
             MIRTypeKind::PointerTo { inner_type } | MIRTypeKind::Array { inner_type, .. } => {
                 let actual_inner = env
-                    .generated_types
+                    .type_context
                     .get(*inner_type.as_ref())
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                     .clone();
@@ -440,7 +440,7 @@ fn deduce_from_cx_type(
             };
 
             let actual_inner = env
-                .generated_types
+                .type_context
                 .get(*actual_inner.as_ref())
                 .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                 .clone();
@@ -463,7 +463,7 @@ fn deduce_from_cx_type(
                 inner_type: actual_inner,
             } => {
                 let actual_inner = env
-                    .generated_types
+                    .type_context
                     .get(*actual_inner.as_ref())
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                     .clone();
@@ -482,7 +482,7 @@ fn deduce_from_cx_type(
                 ..
             } => {
                 let actual_inner = env
-                    .generated_types
+                    .type_context
                     .get(*actual_inner.as_ref())
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                     .clone();

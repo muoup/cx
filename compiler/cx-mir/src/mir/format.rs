@@ -231,8 +231,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 if let Some(init) = initial_value {
                     MIRExpressionFormatter::new(init, self.depth + 1).fmt(f)?;
                 } else {
-                    self.indent(f)?;
-                    writeln!(f, "(no initializer)")?;
+                    MIRExpressionFormatter::new(&MIRExpression::default(), self.depth + 1).fmt(f)?;
                 }
 
                 Ok(())

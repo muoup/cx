@@ -58,7 +58,7 @@ pub struct TypeEnvironment<'a> {
 
     pub in_external_templated_function: bool,
 
-    pub generated_types: MIRTypeContext,
+    pub type_context: MIRTypeContext,
     pub generated_functions: Vec<MIRFunction>,
 }
 
@@ -185,7 +185,7 @@ impl TypeEnvironment<'_> {
 
             realized_types,
             named_type_ids,
-            generated_types,
+            type_context: generated_types,
             currently_defining_types: HashSet::new(),
             definition_stack: Vec::new(),
             next_type_id,
@@ -467,11 +467,11 @@ impl TypeEnvironment<'_> {
             return *id;
         }
 
-        let next_available = self.generated_types.types.len() as u64 + 1;
+        let next_available = self.type_context.types.len() as u64 + 1;
         let id = MIRTypeId(self.next_type_id.max(next_available));
         self.next_type_id = id.0 + 1;
         self.named_type_ids.insert(name.to_string(), id);
-        self.generated_types.insert(
+        self.type_context.insert(
             id,
             MIRType {
                 strong_identifier: Some(CXIdent::new(name)),
@@ -507,7 +507,7 @@ impl TypeEnvironment<'_> {
             self.definition_stack.remove(index);
         }
 
-        self.generated_types.insert(id, definition)
+        self.type_context.insert(id, definition)
     }
 
     pub fn is_type_defining(&self, id: MIRTypeId) -> bool {
@@ -528,31 +528,31 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn has_complete_named_type_definition(&self, id: MIRTypeId) -> bool {
-        self.generated_types
+        self.type_context
             .get(id)
             .map(|definition| !matches!(definition.kind, MIRTypeKind::Undefined))
             .unwrap_or(false)
     }
 
     pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.generated_types.get(id)
+        self.type_context.get(id)
     }
 
     pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeId {
         if let Some(name) = ty.get_name()
             && let Some(id) = self.named_type_ids.get(name.as_str()).copied()
         {
-            self.generated_types.register_identifier(name.clone(), id);
-            if self.generated_types.get(id).is_none() {
-                self.generated_types.insert(id, ty);
+            self.type_context.register_identifier(name.clone(), id);
+            if self.type_context.get(id).is_none() {
+                self.type_context.insert(id, ty);
             }
 
             return id;
         }
 
-        let id = self.generated_types.intern(ty.clone());
+        let id = self.type_context.intern(ty.clone());
         if let Some(name) = ty.get_name() {
-            self.generated_types.register_identifier(name.clone(), id);
+            self.type_context.register_identifier(name.clone(), id);
         }
         id
     }
@@ -563,13 +563,13 @@ impl TypeEnvironment<'_> {
         new_name: CXIdent,
         template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     ) {
-        let Some(existing) = self.generated_types.get_mut(id) else {
+        let Some(existing) = self.type_context.get_mut(id) else {
             return;
         };
 
         existing.strong_identifier = Some(new_name.clone());
         existing.template_info = template_info.clone();
-        self.generated_types.register_identifier(new_name, id);
+        self.type_context.register_identifier(new_name, id);
     }
 
     pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
@@ -748,7 +748,7 @@ impl TypeEnvironment<'_> {
             functions: self.generated_functions,
             prototypes: self.realized_fns.into_values().collect(),
             global_variables: self.realized_globals.into_values().collect(),
-            type_definitions: self.generated_types,
+            type_definitions: self.type_context,
 
             source_path: self.compilation_unit.as_path().to_owned(),
         })
