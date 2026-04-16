@@ -5,7 +5,7 @@ use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
-use crate::type_checking::{accumulation::TypecheckResult, casting::coerce_value};
+use crate::type_checking::{typecheck_result::TypecheckResult, casting::coerce_value};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -125,7 +125,7 @@ pub fn typecheck_switch(
     env.pop_scope()?;
 
     // Build the match expression
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         MIRType::unit(),
         MIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),
@@ -285,7 +285,7 @@ pub fn typecheck_match(
 
                 // Extract the variant value and bind it
                 let variant_value_expr = TypecheckResult::tagged_union_get(
-                    TypecheckResult::expr2(expr_value.clone()),
+                    TypecheckResult::from(expr_value.clone()),
                     variant_type.clone(),
                     variant_get_type,
                 )
@@ -380,7 +380,7 @@ pub fn typecheck_match(
     env.pop_scope()?;
 
     // Build the match expression
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         MIRType::unit(),
         MIRExpressionKind::Match {
             condition: Box::new(expr_value),

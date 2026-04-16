@@ -5,7 +5,7 @@ use crate::environment::function_query::{
     query_deduced_static_member_function, query_static_member_function,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::accumulation::TypecheckResult;
+use crate::type_checking::typecheck_result::TypecheckResult;
 use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
@@ -210,7 +210,7 @@ fn finish_function_call<'a>(
 
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         signature.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(loaded_function),
@@ -233,7 +233,7 @@ pub(crate) fn typecheck_access(
             if let Some(struct_field) =
                 struct_field(&lhs_inner, &env.generated_types, name.as_str())
             {
-                return Ok(TypecheckResult::expr(
+                return Ok(TypecheckResult::new_base(
                     env.generated_types.mem_ref_to(
                         &struct_field
                             .field_type
@@ -264,7 +264,7 @@ pub(crate) fn typecheck_access(
                         );
                     };
 
-                    return Ok(TypecheckResult::expr(
+                    return Ok(TypecheckResult::new_base(
                         env.generated_types.mem_ref_to(
                             &field_type.clone().with_specifier(if lhs_ref_const {
                                 CX_CONST
@@ -291,7 +291,7 @@ pub(crate) fn typecheck_access(
                 &prototype,
             )?;
 
-            Ok(TypecheckResult::expr2(build_function_reference(&prototype))
+            Ok(TypecheckResult::from(build_function_reference(&prototype))
                 .with_implicit_parameters(vec![receiver]))
         }
 
@@ -310,7 +310,7 @@ pub(crate) fn typecheck_access(
                 &prototype,
             )?;
 
-            Ok(TypecheckResult::expr2(build_function_reference(&prototype))
+            Ok(TypecheckResult::from(build_function_reference(&prototype))
                 .with_implicit_parameters(vec![receiver]))
         }
 
@@ -430,7 +430,7 @@ fn deduced_callee(
                 return Ok(None);
             };
 
-            Ok(Some(TypecheckResult::expr2(build_function_reference(
+            Ok(Some(TypecheckResult::from(build_function_reference(
                 &prototype,
             ))))
         }
@@ -488,7 +488,7 @@ fn deduced_callee(
             )?;
 
             Ok(Some(
-                TypecheckResult::expr2(build_function_reference(&prototype))
+                TypecheckResult::from(build_function_reference(&prototype))
                     .with_implicit_parameters(vec![receiver]),
             ))
         }
@@ -562,7 +562,7 @@ fn typecheck_type_constructor(
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
         .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         union_type.clone(),
         MIRExpressionKind::ConstructTaggedUnion {
             value: Box::new(inner),
@@ -662,7 +662,7 @@ pub(crate) fn typecheck_scoped_call(
         query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
     };
 
-    let function = TypecheckResult::expr2(build_function_reference(&prototype));
+    let function = TypecheckResult::from(build_function_reference(&prototype));
     finish_function_call(env, expr, expr, function, tc_args)
 }
 
@@ -765,7 +765,7 @@ pub(crate) fn typecheck_is(
         }
     };
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         MIRType::bool(),
         MIRExpressionKind::PatternIs {
             lhs: Box::new(tc_lhs),
@@ -948,7 +948,7 @@ pub(crate) fn typecheck_float_float_binop(
         }
     };
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         result_type,
         MIRExpressionKind::BinaryOperation {
             op: MIRBinOp::Float { ftype, op: fp_op },
@@ -1121,7 +1121,7 @@ pub(crate) fn typecheck_int_int_binop(
         }
     };
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         result_type,
         MIRExpressionKind::BinaryOperation {
             op: operator,
@@ -1195,7 +1195,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 _ => env.generated_types.pointer_to(pointer_inner),
             };
 
-            Ok(TypecheckResult::expr(
+            Ok(TypecheckResult::new_base(
                 return_type.clone(),
                 MIRExpressionKind::BinaryOperation {
                     op: operation,
@@ -1237,7 +1237,7 @@ pub(crate) fn typecheck_ptr_int_binop(
                 .into(),
             )?;
 
-            Ok(TypecheckResult::expr(
+            Ok(TypecheckResult::new_base(
                 MIRTypeKind::Integer {
                     _type: MIRIntegerType::I1,
                     signed: false,
@@ -1279,7 +1279,7 @@ pub(crate) fn typecheck_ptr_ptr_binop(
         }
     };
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         MIRTypeKind::Integer {
             _type: MIRIntegerType::I1,
             signed: false,

@@ -14,7 +14,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        accumulation::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
+        typecheck_result::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
         typechecker::typecheck_expr,
     },
 };
@@ -202,7 +202,7 @@ fn typecheck_array_initializer(
         })
         .collect::<CXResult<_>>()?;
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         array_type,
         MIRExpressionKind::ArrayInitializer {
             elements,
@@ -292,7 +292,7 @@ fn typecheck_structured_initializer(
         }
     }
 
-    Ok(TypecheckResult::expr(
+    Ok(TypecheckResult::new_base(
         to_type.clone(),
         MIRExpressionKind::StructInitializer {
             struct_type: to_type.clone(),

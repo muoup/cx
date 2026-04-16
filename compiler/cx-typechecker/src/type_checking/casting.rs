@@ -7,7 +7,7 @@ use cx_mir::mir::{
 use cx_util::CXResult;
 
 use crate::{
-    environment::TypeEnvironment, log_typecheck_error, type_checking::accumulation::TypecheckResult,
+    environment::TypeEnvironment, log_typecheck_error, type_checking::typecheck_result::TypecheckResult,
 };
 
 pub(crate) fn coerce_value(
@@ -71,7 +71,7 @@ pub(crate) fn explicit_cast(
 
     let coerce = |coercion_type: MIRCoercion| -> CXResult<MIRExpression> {
         Ok(TypecheckResult::type_conversion(
-            TypecheckResult::expr2(value.clone()),
+            TypecheckResult::from(value.clone()),
             coercion_type,
             to_type.clone(),
         )
@@ -181,8 +181,8 @@ pub fn implicit_cast(
             // Convert integer to boolean by comparing with 0
             let zero = MIRExpression::int_literal(0, *_type, false);
             Ok(TypecheckResult::binary_op(
-                TypecheckResult::expr2(value),
-                TypecheckResult::expr2(zero),
+                TypecheckResult::from(value),
+                TypecheckResult::from(zero),
                 MIRBinOp::Integer {
                     itype: *_type,
                     op: MIRIntegerBinOp::NE,
@@ -397,8 +397,8 @@ pub fn implicit_cast(
             // Array to pointer decay: access element 0
             let inner_type = env.generated_types.get(*inner.as_ref()).unwrap().clone();
             Ok(TypecheckResult::array_access(
-                TypecheckResult::expr2(value),
-                TypecheckResult::expr2(MIRExpression::int_literal(0, MIRIntegerType::I64, false)),
+                TypecheckResult::from(value),
+                TypecheckResult::from(MIRExpression::int_literal(0, MIRIntegerType::I64, false)),
                 inner_type,
                 to_type.clone(),
             )
@@ -453,12 +453,12 @@ where
 
     if inner_type.is_memory_resident() {
         let copied =
-            TypecheckResult::copy_region(TypecheckResult::expr2(value.clone()), inner_type.clone());
+            TypecheckResult::copy_region(TypecheckResult::from(value.clone()), inner_type.clone());
         cast(env, expr, copied.into_expression(), to_type)
     } else {
         // Need to read from memory reference and then cast
         let loaded =
-            TypecheckResult::memory_read(TypecheckResult::expr2(value.clone()), inner_type.clone());
+            TypecheckResult::memory_read(TypecheckResult::from(value.clone()), inner_type.clone());
         cast(env, expr, loaded.into_expression(), to_type)
     }
 }
