@@ -4,7 +4,8 @@ use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{
-    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind, LMIRIntUnOp,
+    LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
+    LMIRIntUnOp,
 };
 use cx_util::log_error;
 use inkwell::AddressSpace;

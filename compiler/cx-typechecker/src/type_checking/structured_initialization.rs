@@ -14,7 +14,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        result::TypecheckResult, binary_ops::struct_field, casting::implicit_cast,
+        binary_ops::struct_field, casting::implicit_cast, result::TypecheckResult,
         typechecker::typecheck_expr,
     },
 };
@@ -268,8 +268,7 @@ fn typecheck_structured_initializer(
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
             .and_then(|v| implicit_cast(env, &index.value, v.into_expression(), field_type))?;
 
-        let Some(struct_field_info) =
-            struct_field(to_type, &env.type_context, field_name.as_str())
+        let Some(struct_field_info) = struct_field(to_type, &env.type_context, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,

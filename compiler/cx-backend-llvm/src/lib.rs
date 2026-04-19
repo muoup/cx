@@ -2,8 +2,8 @@ use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRUnit, LMIRValue,
-    ElementID,
+    ElementID, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
+    LMIRUnit, LMIRValue,
 };
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;

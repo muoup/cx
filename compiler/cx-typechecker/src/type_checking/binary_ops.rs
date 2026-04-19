@@ -5,9 +5,9 @@ use crate::environment::function_query::{
     query_deduced_static_member_function, query_static_member_function,
 };
 use crate::log_typecheck_error;
+use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::coercion::implicit::standard_expr_rval_transform;
 use crate::type_checking::result::TypecheckResult;
-use crate::type_checking::casting::{coerce_value, implicit_cast};
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
@@ -231,9 +231,7 @@ pub(crate) fn typecheck_access(
 
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
-            if let Some(struct_field) =
-                struct_field(&lhs_inner, &env.type_context, name.as_str())
-            {
+            if let Some(struct_field) = struct_field(&lhs_inner, &env.type_context, name.as_str()) {
                 return Ok(TypecheckResult::new_base(
                     env.type_context.mem_ref_to(
                         struct_field
@@ -350,11 +348,7 @@ fn build_member_receiver_argument(
             _type: env.type_context.mem_ref_to(lhs_inner.clone()),
         }),
         Some(CXReceiverMode::ByMove) => {
-            if let Some(inner_type) = env
-                .type_context
-                .mem_ref_inner(&lhs_source._type)
-                .cloned()
-            {
+            if let Some(inner_type) = env.type_context.mem_ref_inner(&lhs_source._type).cloned() {
                 let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
                     return log_typecheck_error!(
                         env,
@@ -674,7 +668,7 @@ pub(crate) fn typecheck_is(
     rhs: &CXExpr,
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let tc_lhs : MIRExpression = typecheck_expr(env, base_data, lhs, None)
+    let tc_lhs: MIRExpression = typecheck_expr(env, base_data, lhs, None)
         .and_then(|v| coerce_value(env, lhs, v.into_expression()))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
@@ -804,11 +798,7 @@ fn binop_coerce_value(
 
     match &inner.kind {
         MIRTypeKind::Array { inner_type, .. } => {
-            let inner_type = env
-                .type_context
-                .get(*inner_type.as_ref())
-                .unwrap()
-                .clone();
+            let inner_type = env.type_context.get(*inner_type.as_ref()).unwrap().clone();
             let pointer_type = env.type_context.pointer_to(inner_type.clone());
             implicit_cast(env, expr, val, &pointer_type)
         }

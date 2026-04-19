@@ -176,8 +176,7 @@ where
     F: Fn(Vec<(String, MIRTypeId)>) -> MIRTypeKind,
 {
     let type_id = env.get_or_create_named_type_id(name.as_str());
-    env.type_context
-        .register_identifier(name.clone(), type_id);
+    env.type_context.register_identifier(name.clone(), type_id);
 
     let provisional = make_named_type(
         ty,

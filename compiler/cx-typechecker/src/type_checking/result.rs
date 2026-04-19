@@ -6,10 +6,10 @@ use cx_mir::mir::expression::{
 /// Richer representation of a typechecking result. Useful for edge cases where we need to carry implicit behavior
 /// not representable by the type system due to move semantics. We want to model CXExpr -> MIRExpr typechecking as
 /// immutable after evaluation, so we must contain all mutable state within a meta structure over the typecheck.
-/// 
+///
 /// For instance, when evaluating a member function, it is modeled as a free function with an 'implicit parameter'.
 /// The implicit parameter is an MIRExpression that could be embedded in the type of a function, however that would
-/// require either moving out of said type when constructing the parameter list (breaks mutability rule), cloning the 
+/// require either moving out of said type when constructing the parameter list (breaks mutability rule), cloning the
 /// expression (expensive), or having the rules around 'implicit parameters' be handled every time we reason about a
 /// method call (leaky).  
 #[derive(Debug, Clone)]

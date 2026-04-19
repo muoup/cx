@@ -1,6 +1,6 @@
 use crate::GlobalState;
 use crate::typing::{any_to_basic_type, bc_llvm_type};
-use cx_lmir::{LinkageType, LMIRGlobalType, LMIRGlobalValue};
+use cx_lmir::{LMIRGlobalType, LMIRGlobalValue, LinkageType};
 use inkwell::module::Linkage;
 use std::sync::atomic::AtomicUsize;
 

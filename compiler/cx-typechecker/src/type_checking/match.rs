@@ -5,7 +5,7 @@ use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
-use crate::type_checking::{result::TypecheckResult, casting::coerce_value};
+use crate::type_checking::{casting::coerce_value, result::TypecheckResult};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},

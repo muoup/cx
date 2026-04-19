@@ -2,12 +2,12 @@ use crate::environment::{
     BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::binary_ops::{
     typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
     typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
+use crate::type_checking::result::TypecheckResult;
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_ast::data::{CX_CONST, CXLinkageMode};
 use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
@@ -719,8 +719,7 @@ pub fn typecheck_expr_inner(
                         typecheck_expr(env, base_data, operand, None)?.into_expression();
                     let operand_type = operand_val.get_type();
 
-                    let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned()
-                    else {
+                    let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned() else {
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
@@ -855,8 +854,7 @@ pub fn typecheck_expr_inner(
                 CXUnOp::AddressOf => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let operand_type = operand_val.get_type();
-                    let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned()
-                    else {
+                    let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned() else {
                         return log_typecheck_error!(
                             env,
                             operand.token_range(),
@@ -1034,8 +1032,7 @@ pub fn typecheck_expr_inner(
                 );
             }
 
-            let Some(inner_type) = env.type_context.mem_ref_inner(&inner_val._type).cloned()
-            else {
+            let Some(inner_type) = env.type_context.mem_ref_inner(&inner_val._type).cloned() else {
                 unreachable!()
             };
 

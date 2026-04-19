@@ -17,5 +17,8 @@ pub(crate) fn get_function<'a>(
         log_error!("Failed to get LLVM prototype for function: {}", name);
     };
 
-    global_state.module.add_function(name, llvm_prototype, None).into()
+    global_state
+        .module
+        .add_function(name, llvm_prototype, None)
+        .into()
 }

@@ -20,12 +20,12 @@ use crate::{
     type_completion::templates::{add_templated_types, restore_template_overwrites},
 };
 
-pub mod result;
-pub mod binary_ops;
-pub mod coercion;
 pub mod arith;
+pub mod binary_ops;
 pub mod casting;
+pub mod coercion;
 pub mod r#match;
+pub mod result;
 pub mod structured_initialization;
 pub mod typechecker;
 

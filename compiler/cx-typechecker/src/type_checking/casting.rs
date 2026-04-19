@@ -105,17 +105,13 @@ pub(crate) fn explicit_cast(
                 inner_type: str_inner,
             },
         ) if matches!(
-            env.type_context
-                .get(*ptr_inner.as_ref())
-                .map(|ty| &ty.kind),
+            env.type_context.get(*ptr_inner.as_ref()).map(|ty| &ty.kind),
             Some(MIRTypeKind::Integer {
                 _type: MIRIntegerType::I8,
                 ..
             })
         ) && matches!(
-            env.type_context
-                .get(*str_inner.as_ref())
-                .map(|ty| &ty.kind),
+            env.type_context.get(*str_inner.as_ref()).map(|ty| &ty.kind),
             Some(MIRTypeKind::Str)
         ) =>
         {
@@ -333,9 +329,7 @@ pub fn implicit_cast(
             .map(|ty| ty.is_str())
             .unwrap_or(false)
             && matches!(
-                env.type_context
-                    .get(*to_inner.as_ref())
-                    .map(|ty| &ty.kind),
+                env.type_context.get(*to_inner.as_ref()).map(|ty| &ty.kind),
                 Some(MIRTypeKind::Integer {
                     _type: MIRIntegerType::I8,
                     ..

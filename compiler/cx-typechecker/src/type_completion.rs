@@ -12,7 +12,7 @@ use crate::{
     environment::TypeEnvironment,
     type_completion::{
         prototypes::int_complete_fn_prototype,
-        types::{int_complete_type, base_data_from_module},
+        types::{base_data_from_module, int_complete_type},
     },
 };
 

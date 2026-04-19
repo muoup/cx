@@ -22,7 +22,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> Coercio
     let Some(mem_inner) = env.type_context.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::none(expr);
     };
-    
+
     if mem_inner.is_array() {
         return CoercionResult::none(expr);
     }

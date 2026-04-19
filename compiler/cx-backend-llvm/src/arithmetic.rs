@@ -1,5 +1,5 @@
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_lmir::{LMIRPtrBinOp, LMIRIntBinOp};
+use cx_lmir::{LMIRIntBinOp, LMIRPtrBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
 
 pub(crate) fn generate_ptr_binop<'a, 'b>(
@@ -17,7 +17,8 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .builder
                 .build_int_mul(
                     right_value.into_int_value(),
-                    global_state.context
+                    global_state
+                        .context
                         .i64_type()
                         .const_int(type_padded_size, false),
                     crate::instruction::inst_num().as_str(),
@@ -45,12 +46,13 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 )
                 .ok()?
                 .as_any_value_enum();
-            
+
             let scaled_right = function_state
                 .builder
                 .build_int_mul(
                     negative.into_int_value(),
-                    global_state.context
+                    global_state
+                        .context
                         .i64_type()
                         .const_int(type_padded_size, false),
                     crate::instruction::inst_num().as_str(),
@@ -138,7 +140,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     left_value: IntValue<'a>,
     right_value: IntValue<'a>,
-    op: LMIRIntBinOp
+    op: LMIRIntBinOp,
 ) -> Option<CodegenValue<'a>> {
     let inst_return = match op {
         // LMIRIntBinOp::ADD if signed => function_state
