@@ -3,11 +3,12 @@ use crate::environment::{
 };
 use crate::log_typecheck_error;
 use crate::type_checking::binary_ops::{
-    typecheck_access, typecheck_binop, typecheck_binop_mir_vals, typecheck_is,
+    typecheck_access, typecheck_is,
     typecheck_method_call,
 };
-use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
+use crate::type_checking::casting::{coerce_value, explicit_cast, implicit_cast};
 use crate::type_checking::coercion::implicit::std_rval_promotion;
+use crate::type_checking::op::typecheck_binop;
 use crate::type_checking::result::TypecheckResult;
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_ast::data::{CX_CONST, CXLinkageMode};
@@ -383,8 +384,10 @@ pub fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            let condition_result = typecheck_expr(env, base_data, condition, None)
-                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let condition_result = std_rval_promotion(
+                env,
+                typecheck_expr(env, base_data, condition, None)?.into_expression(),
+            )?;
             env.push_scope(false, false);
             env.configure_merge_scope(expr, "if join", None, false);
             let join_scope_idx = env.current_scope_index();
@@ -450,8 +453,10 @@ pub fn typecheck_expr_inner(
                 env.current_snapshot(),
             );
 
-            let condition_result = typecheck_expr(env, base_data, condition, None)
-                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let condition_result = std_rval_promotion(
+                env,
+                typecheck_expr(env, base_data, condition, None)?.into_expression(),
+            )?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 base_data,
@@ -493,8 +498,10 @@ pub fn typecheck_expr_inner(
                 env.current_snapshot(),
             );
 
-            let condition_result = typecheck_expr(env, base_data, condition, None)
-                .and_then(|c| coerce_condition(env, expr, c.into_expression()))?;
+            let condition_result = std_rval_promotion(
+                env,
+                typecheck_expr(env, base_data, condition, None)?.into_expression(),
+            )?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 base_data,
@@ -906,7 +913,7 @@ pub fn typecheck_expr_inner(
             let Some(inner) = env.type_context.mem_ref_inner(&lhs_type).cloned() else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Cannot assign to non-reference type {}",
                     lhs_type
                 );
@@ -915,7 +922,7 @@ pub fn typecheck_expr_inner(
             if !env.type_context.is_mutable_memory_reference(&lhs_type) {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Cannot assign through an immutable reference"
                 );
             }
@@ -926,7 +933,7 @@ pub fn typecheck_expr_inner(
                 let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
                 let loaded_rhs = coerce_value(env, expr, rhs_val.into_expression())?;
 
-                rhs_val = typecheck_binop_mir_vals(env, *op.clone(), loaded_lhs, loaded_rhs, expr)?;
+                rhs_val = typecheck_binop(env, op, loaded_lhs, loaded_rhs)?;
             }
 
             if inner.get_specifier(CX_CONST) {
@@ -937,7 +944,7 @@ pub fn typecheck_expr_inner(
                 );
             }
 
-            let coerced_rhs_val = implicit_cast(env, expr, rhs_val.into_expression(), &inner)?;
+            let coerced_rhs_val = implicit_cast(env, rhs_val.into_expression(), &inner)?;
 
             if op.is_none()
                 && let CXExprKind::Identifier(name) = &lhs.kind
@@ -977,7 +984,10 @@ pub fn typecheck_expr_inner(
         } => typecheck_method_call(env, base_data, lhs, rhs, expr)?,
 
         CXExprKind::BinOp { op, lhs, rhs } => {
-            typecheck_binop(env, base_data, op.clone(), lhs, rhs, expr)?
+            let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression();
+            let rhs = typecheck_expr(env, base_data, rhs, None)?.into_expression();
+            
+            typecheck_binop(env, op, lhs, rhs)?
         }
 
         CXExprKind::Move {
@@ -1018,7 +1028,7 @@ pub fn typecheck_expr_inner(
                 ensure_binding_available(env, inner_expr, ident)?;
                 env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
             } else {
-                inner_val = implicit_cast(env, expr, inner_val, &inner_type)?;
+                inner_val = implicit_cast(env, inner_val, &inner_type)?;
             }
 
             TypecheckResult::new_base(
@@ -1065,7 +1075,7 @@ pub fn typecheck_expr_inner(
             };
 
             let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-                .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
+                .and_then(|v| implicit_cast(env, v.into_expression(), &variant_type))?;
 
             let allocation = TypecheckResult::new_base(
                 union_type.clone(),
