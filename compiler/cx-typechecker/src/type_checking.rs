@@ -20,7 +20,7 @@ use crate::{
     type_completion::templates::{add_templated_types, restore_template_overwrites},
 };
 
-pub mod arith;
+pub mod op;
 pub mod binary_ops;
 pub mod casting;
 pub mod coercion;

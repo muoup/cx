@@ -103,23 +103,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             lower_unary_op(builder, operand, op, &expr._type)
         }
 
-        MIRExpressionKind::MemoryRead { source } => {
-            let bc_source = lower_expression(builder, source)?;
-            let bc_type = builder.convert_cx_type(&expr._type);
-
-            builder.add_new_instruction(
-                LMIRInstructionKind::Load {
-                    memory: bc_source,
-                    _type: bc_type,
-                },
-                builder.convert_cx_type(&expr._type),
-                true,
-            )
-        }
-
         MIRExpressionKind::Typechange(inner) => lower_expression(builder, inner),
 
-        MIRExpressionKind::CreateStackVariable {
+        MIRExpressionKind::RegionCreate {
             name,
             _type,
             initial_value,
@@ -212,9 +198,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             }
         }
 
-        MIRExpressionKind::Move { source } => lower_expression(builder, source),
+        MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
 
-        MIRExpressionKind::CopyRegion { source, _type } => {
+        MIRExpressionKind::RegionDuplicate { source, _type } => {
             let new_region = builder.add_new_instruction(
                 LMIRInstructionKind::Allocate {
                     alignment: builder.convert_cx_type(_type).alignment(),

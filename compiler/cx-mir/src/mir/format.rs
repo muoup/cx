@@ -885,17 +885,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            MIRExpressionKind::MemoryRead { source } => {
-                write!(f, "MemoryRead <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: source,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
             MIRExpressionKind::MemoryWrite { target, value } => {
                 write!(f, "MemoryWrite <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -924,7 +913,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            MIRExpressionKind::CreateStackVariable {
+            MIRExpressionKind::RegionCreate {
                 name,
                 _type,
                 initial_value,
@@ -950,7 +939,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 
                 Ok(())
             }
-            MIRExpressionKind::CopyRegion { source, _type } => {
+            MIRExpressionKind::RegionDuplicate { source, _type } => {
                 write!(f, "CopyRegion [")?;
                 self.write_type(f, _type)?;
                 write!(f, "] <'")?;
@@ -1431,7 +1420,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            MIRExpressionKind::Move { source } => {
+            MIRExpressionKind::RegionMove { source } => {
                 write!(f, "Move <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;

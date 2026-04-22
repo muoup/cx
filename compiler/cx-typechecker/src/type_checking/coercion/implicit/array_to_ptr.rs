@@ -26,12 +26,12 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> Coercio
     let coerced = MIRExpression {
         token_range: expr.token_range.clone(),
 
-        _type: new_type.clone(),
+        _type: new_type,
         kind: MIRExpressionKind::TypeConversion {
             operand: Box::new(expr),
             conversion: MIRCoercion::ReinterpretBits,
         },
     };
 
-    CoercionResult::some(coerced, new_type)
+    CoercionResult::some(coerced)
 }

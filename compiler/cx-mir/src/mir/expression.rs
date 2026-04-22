@@ -58,24 +58,21 @@ pub enum MIRExpressionKind {
     },
 
     // Memory Operations
-    Move {
-        source: Box<MIRExpression>,
+    RegionCreate {
+        name: Option<CXIdent>,
+        _type: MIRType,
+        initial_value: Option<Box<MIRExpression>>,
     },
-    MemoryRead {
+    RegionDuplicate {
+        source: Box<MIRExpression>,
+        _type: MIRType,
+    },
+    RegionMove {
         source: Box<MIRExpression>,
     },
     MemoryWrite {
         target: Box<MIRExpression>,
         value: Box<MIRExpression>,
-    },
-    CreateStackVariable {
-        name: Option<CXIdent>,
-        _type: MIRType,
-        initial_value: Option<Box<MIRExpression>>,
-    },
-    CopyRegion {
-        source: Box<MIRExpression>,
-        _type: MIRType,
     },
 
     // Represents a no-op used to change the type of an expression with no added semantics

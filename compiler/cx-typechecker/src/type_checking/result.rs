@@ -174,7 +174,7 @@ impl TypecheckResult {
     pub fn copy_region(source: Self, _type: MIRType) -> Self {
         TypecheckResult::new_base(
             _type.clone(),
-            MIRExpressionKind::CopyRegion {
+            MIRExpressionKind::RegionDuplicate {
                 source: Box::new(source.expression),
                 _type,
             },

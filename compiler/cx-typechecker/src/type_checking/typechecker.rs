@@ -7,6 +7,7 @@ use crate::type_checking::binary_ops::{
     typecheck_method_call,
 };
 use crate::type_checking::casting::{coerce_condition, coerce_value, explicit_cast, implicit_cast};
+use crate::type_checking::coercion::implicit::std_rval_promotion;
 use crate::type_checking::result::TypecheckResult;
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
 use cx_ast::data::{CX_CONST, CXLinkageMode};
@@ -267,7 +268,7 @@ pub fn typecheck_expr_inner(
             let _type = env.complete_type(base_data, expr, _type).map_err(|err| {
                 let err: CXResult<()> = log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Failed to resolve type for variable '{}'\n{}",
                     name,
                     err.error_content()
@@ -279,7 +280,7 @@ pub fn typecheck_expr_inner(
             if _type.is_str() {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Cannot create a variable of unsized type 'str'; use '&str' instead"
                 );
             }
@@ -290,7 +291,7 @@ pub fn typecheck_expr_inner(
             let mir_initial_value = match initial_value {
                 Some(init_expr) => {
                     let init_tc = typecheck_expr(env, base_data, init_expr, Some(&_type))?;
-                    let init_tc = implicit_cast(env, expr, init_tc.into_expression(), &_type)?;
+                    let init_tc = implicit_cast(env, init_tc.into_expression(), &_type)?;
                     Some(Box::new(init_tc))
                 }
                 None => None,
@@ -298,7 +299,7 @@ pub fn typecheck_expr_inner(
 
             let allocation = MIRExpression {
                 token_range: None,
-                kind: MIRExpressionKind::CreateStackVariable {
+                kind: MIRExpressionKind::RegionCreate {
                     name: Some(name.clone()),
                     _type: _type.clone(),
                     initial_value: mir_initial_value,
@@ -603,7 +604,6 @@ pub fn typecheck_expr_inner(
 
                     Some(Box::new(implicit_cast(
                         env,
-                        expr,
                         some_value.into_expression(),
                         return_type,
                     )?))
@@ -763,16 +763,8 @@ pub fn typecheck_expr_inner(
                 CXUnOp::LNot => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let loaded_operand = coerce_value(env, expr, operand_val.into_expression())?;
-                    let loaded_operand_type = loaded_operand.get_type();
-
-                    if !loaded_operand_type.is_integer() {
-                        return log_typecheck_error!(
-                            env,
-                            operand.token_range(),
-                            "Logical NOT operator requires an integer type, found {}",
-                            loaded_operand_type
-                        );
-                    }
+                    let loaded_operand =
+                        implicit_cast(env, loaded_operand, &MIRType::bool())?;
 
                     TypecheckResult::unary_op(
                         TypecheckResult::from(loaded_operand),
@@ -786,8 +778,9 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::BNot => {
-                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let mut loaded_op_val = coerce_value(env, expr, operand_val.into_expression())?;
+                    let operand_val =
+                        typecheck_expr(env, base_data, operand, None)?.into_expression();
+                    let loaded_op_val = std_rval_promotion(env, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     if !loaded_op_type.is_integer() {
@@ -797,23 +790,6 @@ pub fn typecheck_expr_inner(
                             "Bitwise NOT operator requires an integer type, found {}",
                             loaded_op_type
                         );
-                    }
-
-                    // If the type is I1 (boolean), we must promote to I32 first
-                    if let MIRTypeKind::Integer {
-                        _type: MIRIntegerType::I1,
-                        ..
-                    } = loaded_op_type.kind
-                    {
-                        loaded_op_val = implicit_cast(
-                            env,
-                            expr,
-                            loaded_op_val.clone(),
-                            &MIRType::from(MIRTypeKind::Integer {
-                                _type: MIRIntegerType::I32,
-                                signed: true,
-                            }),
-                        )?;
                     }
 
                     let result_type = loaded_op_val.get_type();
@@ -826,8 +802,9 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::Negative => {
-                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let loaded_op_val = coerce_value(env, expr, operand_val.into_expression())?;
+                    let operand_val =
+                        typecheck_expr(env, base_data, operand, None)?.into_expression();
+                    let loaded_op_val = std_rval_promotion(env, operand_val)?;
                     let loaded_op_type = loaded_op_val.get_type();
 
                     let operator = match &loaded_op_type.kind {
@@ -843,11 +820,12 @@ pub fn typecheck_expr_inner(
                             );
                         }
                     };
+                    let result_type = loaded_op_val.get_type();
 
                     TypecheckResult::unary_op(
                         TypecheckResult::from(loaded_op_val),
                         operator,
-                        loaded_op_type,
+                        result_type,
                     )
                 }
 
@@ -873,14 +851,14 @@ pub fn typecheck_expr_inner(
                 CXUnOp::Dereference => {
                     // If the operand is a memory reference of a pointer type, we need to load the value first
                     let loaded_operand = typecheck_expr(env, base_data, operand, None)
-                        .and_then(|v| coerce_value(env, expr, v.into_expression()))?;
+                        .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
                     let loaded_operand_type = loaded_operand.get_type();
 
                     let Some(inner) = env.type_context.ptr_inner(&loaded_operand_type).cloned()
                     else {
                         return log_typecheck_error!(
                             env,
-                            operand.token_range(),
+                            loaded_operand.token_range,
                             "Cannot dereference non-pointer type {}",
                             loaded_operand_type
                         );
@@ -1045,7 +1023,7 @@ pub fn typecheck_expr_inner(
 
             TypecheckResult::new_base(
                 inner_type,
-                MIRExpressionKind::Move {
+                MIRExpressionKind::RegionMove {
                     source: Box::new(inner_val),
                 },
             )
@@ -1091,7 +1069,7 @@ pub fn typecheck_expr_inner(
 
             let allocation = TypecheckResult::new_base(
                 union_type.clone(),
-                MIRExpressionKind::CreateStackVariable {
+                MIRExpressionKind::RegionCreate {
                     name: None,
                     _type: union_type.clone(),
                     initial_value: None,

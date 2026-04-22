@@ -89,6 +89,17 @@ pub enum MIRFloatType {
 }
 
 impl MIRIntegerType {
+    pub const fn rank(&self) -> u8 {
+        match self {
+            MIRIntegerType::I1 => 0,
+            MIRIntegerType::I8 => 1,
+            MIRIntegerType::I16 => 2,
+            MIRIntegerType::I32 => 3,
+            MIRIntegerType::I64 => 4,
+            MIRIntegerType::I128 => 5,
+        }
+    }
+    
     pub const fn bytes(&self) -> usize {
         match self {
             MIRIntegerType::I1 => 1,

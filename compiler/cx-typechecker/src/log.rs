@@ -55,18 +55,22 @@ macro_rules! log_typecheck_error {
     ($env:expr, $range:expr, $($arg:tt)*) => {
         {
             let message = format!($($arg)*);
-            let range: &cx_tokens::TokenRange = $range;
 
-            let compilation_unit = if range.file_origin.is_empty() {
-                $env.compilation_unit.as_path().to_owned()
+            let compilation_unit = match $range {
+                None => $env.compilation_unit.as_path().to_owned(),
+                Some(range) => std::path::PathBuf::from(range.file_origin.as_ref())
+            };
+            
+            let (start_token, end_token) = if let Some(range) = $range {
+                (range.start_token, range.end_token)
             } else {
-                std::path::PathBuf::from(range.file_origin.as_ref())
+                (0, 0)
             };
 
             Err(Box::new($crate::log::TypeError {
                 message,
-                token_start: range.start_token,
-                token_end: range.end_token,
+                token_start: start_token,
+                token_end: end_token,
                 compilation_unit,
                 notes: Vec::new(),
             }) as Box<dyn cx_util::CXErrorTrait>)

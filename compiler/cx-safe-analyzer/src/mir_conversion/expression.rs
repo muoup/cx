@@ -55,7 +55,7 @@ pub fn convert_expression(
             Ok(chain_statements(nodes))
         }
 
-        MIRExpressionKind::CreateStackVariable {
+        MIRExpressionKind::RegionCreate {
             name,
             _type,
             initial_value,
@@ -418,31 +418,6 @@ pub fn convert_expression(
             })
         }
 
-        MIRExpressionKind::MemoryRead { source } => {
-            if let MIRExpressionKind::Variable(name)
-            | MIRExpressionKind::ContractVariable { name, .. } = &source.kind
-                && let Some(mut known) = env.query_known_value(name)
-            {
-                if let Some(location) = env.query_memory_location(name) {
-                    let access =
-                        FMIRType::access(known._type.inner_type().clone(), vec![location], vec![]);
-                    known._type = known
-                        ._type
-                        .union(&access)
-                        .apply(known._type.inner_type().clone());
-                }
-
-                return Ok(known);
-            }
-
-            let source_node = convert_expression(env, source)?;
-            Ok(load_node(
-                source_node,
-                &mir_expr._type,
-                read_operation_for_expr(env, source),
-            ))
-        }
-
         MIRExpressionKind::MemoryWrite { target, value } => {
             let target_node = convert_expression(env, target)?;
             let value_node = convert_expression(env, value)?;
@@ -461,7 +436,7 @@ pub fn convert_expression(
             ))
         }
 
-        MIRExpressionKind::Move { source } => convert_expression(env, source),
+        MIRExpressionKind::RegionMove { source } => convert_expression(env, source),
 
         MIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {
