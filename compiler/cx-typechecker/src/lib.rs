@@ -6,8 +6,7 @@ use cx_util::CXResult;
 pub mod log;
 
 pub mod environment;
-pub mod type_checking;
-pub mod type_completion;
+mod type_checking;
 
 pub use type_checking::{
     complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
@@ -17,6 +16,19 @@ pub fn gather_interface(
     context: &GlobalCompilationContext,
     unit: &CompilationUnit,
 ) -> CXResult<()> {
+    let interface = build_interface(context, unit)?;
+    context
+        .module_db
+        .base_mappings
+        .insert(unit.clone(), interface);
+
+    Ok(())
+}
+
+pub fn build_interface(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> CXResult<MIRBaseMappings> {
     let ast = context.module_db.naive_ast.get(unit);
     let mut base_type_map = ast.type_data.clone();
     let mut base_fn_map = ast.function_data.clone();
@@ -69,15 +81,10 @@ pub fn gather_interface(
         }
     }
 
-    context.module_db.base_mappings.insert(
-        unit.clone(),
-        MIRBaseMappings {
-            unit: unit.as_str().to_owned(),
-            type_data: base_type_map,
-            fn_data: base_fn_map,
-            global_variables: base_globals,
-        },
-    );
-
-    Ok(())
+    Ok(MIRBaseMappings {
+        unit: unit.as_str().to_owned(),
+        type_data: base_type_map,
+        fn_data: base_fn_map,
+        global_variables: base_globals,
+    })
 }

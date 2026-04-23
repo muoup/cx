@@ -119,7 +119,7 @@ pub fn typecheck_initializer_list(
     };
 
     let owned_inner;
-    let to_type = if let Some(inner_type) = env.types.context.mem_ref_inner(to_type) {
+    let to_type = if let Some(inner_type) = env.symbols.context.mem_ref_inner(to_type) {
         owned_inner = inner_type.clone();
         &owned_inner
     } else {
@@ -132,7 +132,7 @@ pub fn typecheck_initializer_list(
             length: size,
         } => {
             let inner_type = env
-                .types
+                .symbols
                 .context
                 .get(*_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
@@ -144,7 +144,7 @@ pub fn typecheck_initializer_list(
             inner_type: inner, ..
         } => {
             let inner_type = env
-                .types
+                .symbols
                 .context
                 .get(*inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
@@ -224,7 +224,7 @@ fn typecheck_structured_initializer(
     indices: &[CXInitIndex],
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
-    let Some(fields) = to_type.aggregate_fields(&env.types.context) else {
+    let Some(fields) = to_type.aggregate_fields(&env.symbols.context) else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -276,7 +276,7 @@ fn typecheck_structured_initializer(
             .and_then(|expr| implicit_cast(env, expr, field_type))?;
 
         let Some(struct_field_info) =
-            struct_field(to_type, &env.types.context, field_name.as_str())
+            struct_field(to_type, &env.symbols.context, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,

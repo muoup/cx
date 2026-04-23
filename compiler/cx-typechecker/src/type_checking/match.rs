@@ -156,7 +156,7 @@ pub fn typecheck_match(
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
 
-    if let Some(inner) = env.types.context.mem_ref_inner(&expr_type) {
+    if let Some(inner) = env.symbols.context.mem_ref_inner(&expr_type) {
         expr_type = inner.clone();
 
         expr_value = MIRExpression {
@@ -228,7 +228,7 @@ pub fn typecheck_match(
         MIRTypeKind::TaggedUnion { .. } => {
             let expected_union_name = expr_type.get_name().unwrap();
             let variants = expr_type
-                .aggregate_fields(&env.types.context)
+                .aggregate_fields(&env.symbols.context)
                 .expect("Tagged union match requires completed variants")
                 .clone();
             // Tagged union matching: each arm has a type constructor pattern
@@ -282,7 +282,7 @@ pub fn typecheck_match(
                     if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
                         variant_type.clone()
                     } else {
-                        env.types.context.mem_ref_to(variant_type.clone())
+                        env.symbols.context.mem_ref_to(variant_type.clone())
                     };
 
                 // Extract the variant value and bind it

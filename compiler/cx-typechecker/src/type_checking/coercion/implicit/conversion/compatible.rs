@@ -29,8 +29,8 @@ pub fn compatible_types(
                 inner_type: inner2, ..
             },
         ) => {
-            let inner1 = env.types.context.get(*inner1).cloned().unwrap();
-            let inner2 = env.types.context.get(*inner2).cloned().unwrap();
+            let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
+            let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
 
             compatible_types(env, &inner1, &inner2)
         }
@@ -49,8 +49,8 @@ pub fn compatible_types(
                 return Ok(false);
             }
 
-            let inner1 = env.types.context.get(*inner1).cloned().unwrap();
-            let inner2 = env.types.context.get(*inner2).cloned().unwrap();
+            let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
+            let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
 
             compatible_types(env, &inner1, &inner2)
         }
@@ -96,8 +96,8 @@ pub fn compatible_types(
 
             return Ok(fields1.iter().zip(fields2.iter()).all(
                 |((_, field_type1), (_, field_type2))| {
-                    let field_type1 = env.types.context.get(*field_type1).cloned().unwrap();
-                    let field_type2 = env.types.context.get(*field_type2).cloned().unwrap();
+                    let field_type1 = env.symbols.context.get(*field_type1).cloned().unwrap();
+                    let field_type2 = env.symbols.context.get(*field_type2).cloned().unwrap();
 
                     compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
                 },

@@ -13,7 +13,7 @@ use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResul
 ///
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.types.context.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.symbols.context.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
@@ -21,9 +21,9 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
         return CoercionResult::unapplied(expr);
     }
 
-    let array_inner = env.types.context.array_inner(&mem_inner).unwrap().clone();
+    let array_inner = env.symbols.context.array_inner(&mem_inner).unwrap().clone();
 
-    let new_type = env.types.context.pointer_to(array_inner);
+    let new_type = env.symbols.context.pointer_to(array_inner);
     let coerced = MIRExpression {
         token_range: expr.token_range.clone(),
 

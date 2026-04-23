@@ -11,8 +11,8 @@ use cx_util::{CXResult, identifier::CXIdent};
 
 use crate::{
     environment::TypeEnvironment,
+    environment::symbols::templates::{deduce_function_template, instantiate_function_template},
     log_typecheck_error,
-    type_completion::templates::{deduce_function_template, instantiate_function_template},
 };
 
 enum FunctionResolution<'a> {
@@ -108,7 +108,7 @@ pub fn query_member_function(
     };
 
     if template_input.is_none() {
-        let mangled_name = base_mangle_member(&env.types.context, name.as_str(), member_type);
+        let mangled_name = base_mangle_member(&env.symbols.context, name.as_str(), member_type);
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
             return Ok(func_proto);
@@ -168,7 +168,7 @@ pub fn query_static_member_function(
 ) -> CXResult<MIRFunctionPrototype> {
     if template_input.is_none() {
         let mangled_name =
-            base_mangle_static_member(&env.types.context, name.as_str(), member_type);
+            base_mangle_static_member(&env.symbols.context, name.as_str(), member_type);
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
             return Ok(func_proto);

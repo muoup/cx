@@ -1,14 +1,42 @@
 use crate::environment::TypeEnvironment;
-use crate::environment::name_mangling::base_mangle_fn_name;
+use crate::environment::functions::mangling::base_mangle_fn_name;
+use crate::environment::symbols::completion::{base_data_from_module, int_complete_type};
 use crate::type_checking::binary_ops::typecheck_contract;
 use cx_ast::ast::CXExpr;
-use cx_ast::data::{CXFunctionPrototype, CXParameter, CXReceiverMode, CXTemplateInput, CXTypeKind};
+use cx_ast::data::{
+    CXFunctionPrototype, CXParameter, CXReceiverMode, CXTemplateInput, CXType, CXTypeKind,
+};
 use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRParameter, MIRTemplateInput, MIRType, MIRTypeKind,
 };
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
+
+pub fn complete_prototype_no_insert(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    external_module: Option<&String>,
+    prototype: &CXFunctionPrototype,
+) -> CXResult<MIRFunctionPrototype> {
+    let base_data_ref = base_data_from_module(env, base_data, external_module);
+    let base_data = base_data_ref.as_ref();
+
+    int_complete_fn_prototype(env, base_data, prototype)
+}
+
+pub fn complete_type(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    external_module: Option<&String>,
+    expr: &CXExpr,
+    ty: &CXType,
+) -> CXResult<MIRType> {
+    let base_data_ref = base_data_from_module(env, base_data, external_module);
+    let base_data = base_data_ref.as_ref();
+
+    int_complete_type(env, base_data, expr, ty)
+}
 
 pub(crate) fn apply_implicit_fn_attr(mut proto: CXFunctionPrototype) -> CXFunctionPrototype {
     if let Some(implicit_member) = proto.kind.implicit_member() {
@@ -62,7 +90,7 @@ fn require_complete_prototype_type(
     if ty.is_memory_resident()
         && let Some(name) = ty.get_name()
         && let Some(id) = env.get_named_type_id(name.as_str())
-        && !env.types.context.contains(id)
+        && !env.symbols.context.contains(id)
     {
         return CXError::create_result(format!(
             "Invalid {} type '{}' in function prototype: incomplete aggregate used by value",

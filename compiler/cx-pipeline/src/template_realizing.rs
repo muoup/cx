@@ -9,7 +9,7 @@ use std::collections::HashSet;
 pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment) -> CXResult<()> {
     let mut requests_fulfilled = HashSet::new();
 
-    while let Some(request) = env.requests.pop() {
+    while let Some(request) = env.pop_function_generation_request() {
         match request {
             MIRFunctionGenRequest::Template {
                 module_origin,

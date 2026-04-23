@@ -25,7 +25,7 @@ use crate::{
 ///
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.types.context.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.symbols.context.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 

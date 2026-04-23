@@ -209,7 +209,7 @@ fn coerce_pointer_binop(
     *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
 
     let ptr_type = pointer._type.clone();
-    let ptr_inner = Box::new(env.types.context.ptr_inner(&ptr_type).cloned().unwrap());
+    let ptr_inner = Box::new(env.symbols.context.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
         CXBinOp::Add | CXBinOp::ArrayIndex => (

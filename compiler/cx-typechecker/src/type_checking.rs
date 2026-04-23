@@ -1,6 +1,6 @@
 use crate::{
+    environment::symbols::templates::complete_function_template,
     type_checking::typechecker::add_implicit_return,
-    type_completion::templates::complete_function_template,
 };
 use cx_ast::{
     ast::{CXAST, CXExpr, CXFunctionStmt},
@@ -16,8 +16,8 @@ use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
+    environment::symbols::templates::{add_templated_types, restore_template_overwrites},
     type_checking::typechecker::{global_expr, typecheck_expr},
-    type_completion::templates::{add_templated_types, restore_template_overwrites},
 };
 
 pub mod binary_ops;
@@ -35,16 +35,16 @@ fn typecheck_function(
     prototype: MIRFunctionPrototype,
     body: &CXExpr,
 ) -> CXResult<()> {
+    env.begin_function(prototype.clone());
     env.push_scope(false, false);
     env.set_scope_anchor(body);
     env.configure_merge_scope(body, "function exit", Some("fallthrough"), true);
-    env.begin_function(prototype.clone());
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
             continue;
         };
-        let ref_type = env.types.context.mem_ref_to(_type.clone());
+        let ref_type = env.symbols.context.mem_ref_to(_type.clone());
 
         env.insert_symbol(
             name.as_string(),

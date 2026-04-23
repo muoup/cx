@@ -233,7 +233,7 @@ pub fn typecheck_expr_inner(
             );
 
             let str_ref_type = env
-                .types
+                .symbols
                 .context
                 .mem_ref_to(MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST));
 
@@ -269,7 +269,7 @@ pub fn typecheck_expr_inner(
                 );
             }
 
-            let mem_type = env.types.context.mem_ref_to(_type.clone());
+            let mem_type = env.symbols.context.mem_ref_to(_type.clone());
 
             // Typecheck initial value if present
             let mir_initial_value = match initial_value {
@@ -574,7 +574,7 @@ pub fn typecheck_expr_inner(
                     // of the implicit cast behavior here so instead of creating a temporary buffer to copy
                     // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
                     // so we will induce in effect just a direct memcpy from the source T to the return buffer.
-                    if let Some(inner) = env.types.context.mem_ref_inner(&_ty).cloned()
+                    if let Some(inner) = env.symbols.context.mem_ref_inner(&_ty).cloned()
                         && env.is_copyable(&inner)
                         && return_type.is_memory_resident()
                     {
@@ -668,7 +668,7 @@ pub fn typecheck_expr_inner(
             };
             let value = value.clone();
 
-            let Some(inner_type) = env.types.context.mem_ref_inner(&value._type) else {
+            let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type) else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -701,7 +701,7 @@ pub fn typecheck_expr_inner(
                         typecheck_expr(env, base_data, operand, None)?.into_expression();
                     let operand_type = operand_val.get_type();
 
-                    let Some(inner) = env.types.context.mem_ref_inner(&operand_type).cloned()
+                    let Some(inner) = env.symbols.context.mem_ref_inner(&operand_type).cloned()
                     else {
                         return log_typecheck_error!(
                             env,
@@ -815,7 +815,7 @@ pub fn typecheck_expr_inner(
                 CXUnOp::AddressOf => {
                     let operand_val = typecheck_expr(env, base_data, operand, None)?;
                     let operand_type = operand_val.get_type();
-                    let Some(inner) = env.types.context.mem_ref_inner(&operand_type).cloned()
+                    let Some(inner) = env.symbols.context.mem_ref_inner(&operand_type).cloned()
                     else {
                         return log_typecheck_error!(
                             env,
@@ -828,7 +828,7 @@ pub fn typecheck_expr_inner(
                     TypecheckResult::from(MIRExpression {
                         token_range: None,
                         kind: operand_val.into_expression().kind,
-                        _type: env.types.context.pointer_to(inner.clone()),
+                        _type: env.symbols.context.pointer_to(inner.clone()),
                     })
                 }
 
@@ -838,7 +838,7 @@ pub fn typecheck_expr_inner(
                         .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
                     let loaded_operand_type = loaded_operand.get_type();
 
-                    let Some(inner) = env.types.context.ptr_inner(&loaded_operand_type).cloned()
+                    let Some(inner) = env.symbols.context.ptr_inner(&loaded_operand_type).cloned()
                     else {
                         return log_typecheck_error!(
                             env,
@@ -852,7 +852,7 @@ pub fn typecheck_expr_inner(
                     TypecheckResult::from(MIRExpression {
                         token_range: None,
                         kind: MIRExpressionKind::Typechange(Box::new(loaded_operand)),
-                        _type: env.types.context.mem_ref_to(inner),
+                        _type: env.symbols.context.mem_ref_to(inner),
                     })
                 }
 
@@ -887,7 +887,7 @@ pub fn typecheck_expr_inner(
             };
             let lhs_type = lhs_val.get_type();
 
-            let Some(inner) = env.types.context.mem_ref_inner(&lhs_type).cloned() else {
+            let Some(inner) = env.symbols.context.mem_ref_inner(&lhs_type).cloned() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -896,7 +896,7 @@ pub fn typecheck_expr_inner(
                 );
             };
 
-            if !env.types.context.is_mutable_memory_reference(&lhs_type) {
+            if !env.symbols.context.is_mutable_memory_reference(&lhs_type) {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -997,7 +997,7 @@ pub fn typecheck_expr_inner(
                 );
             }
 
-            let Some(inner_type) = env.types.context.mem_ref_inner(&inner_val._type).cloned()
+            let Some(inner_type) = env.symbols.context.mem_ref_inner(&inner_val._type).cloned()
             else {
                 unreachable!()
             };
@@ -1027,7 +1027,7 @@ pub fn typecheck_expr_inner(
             inner,
         } => {
             let union_type = env.get_type(base_data, expr, type_name.as_str())?;
-            let Some(variants) = union_type.aggregate_fields(&env.types.context) else {
+            let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -1065,7 +1065,7 @@ pub fn typecheck_expr_inner(
             );
 
             TypecheckResult::new_base(
-                env.types.context.mem_ref_to(union_type.clone()),
+                env.symbols.context.mem_ref_to(union_type.clone()),
                 MIRExpressionKind::TaggedUnionSet {
                     target: Box::new(allocation.into_expression()),
                     variant_index: i,
@@ -1087,7 +1087,7 @@ pub fn typecheck_expr_inner(
             TypecheckResult::from(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::IntLiteral(
-                    tc_type.type_size(&env.types.context) as i64,
+                    tc_type.type_size(&env.symbols.context) as i64,
                     MIRIntegerType::I64,
                     false,
                 ),
@@ -1105,7 +1105,7 @@ pub fn typecheck_expr_inner(
             TypecheckResult::from(MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::IntLiteral(
-                    tc_type.type_size(&env.types.context) as i64,
+                    tc_type.type_size(&env.symbols.context) as i64,
                     MIRIntegerType::I64,
                     false,
                 ),
@@ -1154,7 +1154,7 @@ pub(crate) fn global_expr(
     ident: &str,
 ) -> CXResult<MIRExpression> {
     if let Some(global) = env.items.realized_globals.get(ident) {
-        return tcglobal_expr(global, &mut env.types.context);
+        return tcglobal_expr(global, &mut env.symbols.context);
     }
 
     let Some(module_res) = base_data.global_variables.get(ident) else {
@@ -1217,7 +1217,7 @@ pub(crate) fn global_expr(
 
             tcglobal_expr(
                 env.items.realized_globals.get(ident).unwrap(),
-                &mut env.types.context,
+                &mut env.symbols.context,
             )
         }
     }

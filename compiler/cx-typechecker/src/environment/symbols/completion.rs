@@ -7,10 +7,9 @@ use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
+use crate::environment::functions::completion::{complete_type, int_complete_fn_prototype};
+use crate::environment::symbols::templates::instantiate_type_template;
 use crate::log_typecheck_error;
-use crate::type_completion::complete_type;
-use crate::type_completion::prototypes::int_complete_fn_prototype;
-use crate::type_completion::templates::instantiate_type_template;
 use crate::{environment::TypeEnvironment, log::TypeError};
 
 pub(crate) enum ResolvedBaseData<'a> {
@@ -107,7 +106,7 @@ fn named_predeclaration_type(
     _predeclaration: PredeclarationType,
 ) -> MIRType {
     let id = env.get_or_create_named_type_id(name.as_str());
-    env.types.context.register_identifier(name.clone(), id);
+    env.symbols.context.register_identifier(name.clone(), id);
 
     let mir_type = MIRType {
         visibility: VisibilityMode::Private,
@@ -146,7 +145,7 @@ fn ensure_complete_value_type(
         ),
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
-                .types
+                .symbols
                 .context
                 .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
@@ -190,7 +189,9 @@ where
     F: Fn(Vec<(String, MIRTypeId)>) -> MIRTypeKind,
 {
     let type_id = env.get_or_create_named_type_id(name.as_str());
-    env.types.context.register_identifier(name.clone(), type_id);
+    env.symbols
+        .context
+        .register_identifier(name.clone(), type_id);
 
     let provisional = make_named_type(
         ty,
@@ -220,7 +221,7 @@ where
             .map(|(field_name, field_type)| {
                 let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
                 let resolved_field_type = env
-                    .types
+                    .symbols
                     .context
                     .get(field_type_id)
                     .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
@@ -396,7 +397,7 @@ pub(crate) fn int_complete_type(
         CXTypeKind::ExplicitSizedArray(inner, size) => {
             let inner_type_id = complete_type_id(env, base_data, expr, inner)?;
             let inner_type = env
-                .types
+                .symbols
                 .context
                 .get(inner_type_id)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type_id.0))
@@ -482,7 +483,7 @@ pub(crate) fn int_complete_type(
                 .map(|(field_name, field_type)| {
                     let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
                     let resolved_field_type = env
-                        .types
+                        .symbols
                         .context
                         .get(field_type_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
@@ -534,7 +535,7 @@ pub(crate) fn int_complete_type(
                 .map(|(field_name, field_type)| {
                     let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
                     let resolved_field_type = env
-                        .types
+                        .symbols
                         .context
                         .get(field_type_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
@@ -604,7 +605,7 @@ fn validate_linear_hierarchy(
 
     for (member_name, member_id) in members {
         let member_type = env
-            .types
+            .symbols
             .context
             .get(*member_id)
             .unwrap_or_else(|| panic!("Unknown type id {}", member_id.0));

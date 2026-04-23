@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use crate::environment::name_mangling::mangle_templated_fn_name;
+use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
+use crate::environment::functions::mangling::mangle_templated_fn_name;
+use crate::environment::symbols::completion::{
+    _complete_template_input, base_data_from_module, int_complete_type,
+};
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
-use crate::type_completion::types::base_data_from_module;
-use crate::type_completion::types::{_complete_template_input, int_complete_type};
-use crate::type_completion::{complete_prototype_no_insert, complete_type};
 use cx_ast::ast::CXExpr;
 use cx_ast::data::{
     CXFunctionKind, CXFunctionPrototype, CXFunctionTemplate, CXStructAttributes, CXTemplateInput,
@@ -18,7 +19,7 @@ use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
-pub(crate) type Overwrites = crate::environment::types::TemplateBindingFrame;
+pub(crate) type Overwrites = crate::environment::symbols::TemplateBindingFrame;
 type TemplateBindings = HashMap<String, MIRType>;
 
 pub(crate) fn add_templated_types(
@@ -38,7 +39,7 @@ pub fn mangle_template_name(env: &TypeEnvironment, name: &str, input: &MIRTempla
     let mut mangled_name = String::from("_t");
 
     for arg in &input.args {
-        mangled_name.push_str(&env.types.context.mangle(arg));
+        mangled_name.push_str(&env.symbols.context.mangle(arg));
     }
 
     mangled_name.push('_');
@@ -83,7 +84,7 @@ pub(crate) fn instantiate_type_template(
     if let Some(base_name) = aggregate_base_name.as_ref() {
         let template_type_id = env.get_or_create_named_type_id(template_name.as_str());
         previous_named_id = env
-            .types
+            .symbols
             .named_type_ids
             .insert(base_name.clone(), template_type_id);
 
@@ -121,11 +122,11 @@ pub(crate) fn instantiate_type_template(
             _ => unreachable!("Templated named type must be an aggregate"),
         };
 
-        env.types
+        env.symbols
             .context
             .register_identifier(CXIdent::new(base_name.clone()), template_type_id);
         previous_named_type = env
-            .types
+            .symbols
             .realized_types
             .insert(base_name.clone(), provisional);
     }
@@ -134,19 +135,23 @@ pub(crate) fn instantiate_type_template(
     if let Some(base_name) = aggregate_base_name.as_ref() {
         match previous_named_type {
             Some(previous) => {
-                env.types.realized_types.insert(base_name.clone(), previous);
+                env.symbols
+                    .realized_types
+                    .insert(base_name.clone(), previous);
             }
             None => {
-                env.types.realized_types.remove(base_name);
+                env.symbols.realized_types.remove(base_name);
             }
         }
 
         match previous_named_id {
             Some(previous) => {
-                env.types.named_type_ids.insert(base_name.clone(), previous);
+                env.symbols
+                    .named_type_ids
+                    .insert(base_name.clone(), previous);
             }
             None => {
-                env.types.named_type_ids.remove(base_name);
+                env.symbols.named_type_ids.remove(base_name);
             }
         }
     }
@@ -296,7 +301,7 @@ fn deduce_from_cx_type(
         && !matches!(formal.kind, CXTypeKind::MemoryReference { .. })
     {
         let inner_type = env
-            .types
+            .symbols
             .context
             .get(*inner_type)
             .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
@@ -385,7 +390,7 @@ fn deduce_from_cx_type(
             }
 
             let actual_inner = env
-                .types
+                .symbols
                 .context
                 .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
@@ -404,7 +409,7 @@ fn deduce_from_cx_type(
         CXTypeKind::ImplicitSizedArray(inner) => match &actual.kind {
             MIRTypeKind::PointerTo { inner_type } | MIRTypeKind::Array { inner_type, .. } => {
                 let actual_inner = env
-                    .types
+                    .symbols
                     .context
                     .get(*inner_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
@@ -431,7 +436,7 @@ fn deduce_from_cx_type(
             };
 
             let actual_inner = env
-                .types
+                .symbols
                 .context
                 .get(*actual_inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
@@ -455,7 +460,7 @@ fn deduce_from_cx_type(
                 inner_type: actual_inner,
             } => {
                 let actual_inner = env
-                    .types
+                    .symbols
                     .context
                     .get(*actual_inner)
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
@@ -475,7 +480,7 @@ fn deduce_from_cx_type(
                 ..
             } => {
                 let actual_inner = env
-                    .types
+                    .symbols
                     .context
                     .get(*actual_inner)
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
@@ -657,7 +662,7 @@ fn instantiate_function_template_with_input(
         env.items
             .realized_fns
             .insert(instantiated.name.to_string(), instantiated.clone());
-        env.items.requests.push(MIRFunctionGenRequest::Template {
+        env.request_function_generation(MIRFunctionGenRequest::Template {
             module_origin: module_origin.clone(),
             kind: template.resource.shell.kind.clone(),
             input: completed_input.clone(),
