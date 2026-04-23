@@ -14,6 +14,7 @@ pub fn std_rval_promotion(
 ) -> CXResult<MIRExpression> {
     match array_to_ptr::try_conversion(env, expr)?
         .or_else(|expr| fn_to_ptr::try_conversion(env, expr))?
+        .or_else(|expr| integer::try_promotion(env, expr))?
         .or_else(|expr| lvalue::try_conversion(env, expr))?
     {
         // If we successfully transformed the value, we should try to apply the same transformation again

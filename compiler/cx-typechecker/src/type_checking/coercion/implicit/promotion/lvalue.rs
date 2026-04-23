@@ -33,7 +33,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
         return CoercionResult::unapplied(expr);
     }
 
-    if !env.is_copyable(&mem_inner) {
+    if !env.symbols.is_copyable(&mem_inner) {
         return CoercionResult::tried_application(expr, CoercionObstacle::Uncopyable);
     }
 

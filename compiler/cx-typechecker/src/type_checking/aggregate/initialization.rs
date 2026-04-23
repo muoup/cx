@@ -1,107 +1,22 @@
-use cx_ast::{
-    ast::{CXBinOp, CXExpr, CXExprKind, CXInitIndex},
-    data::{CXTypeKind, PredeclarationType},
-};
+use cx_ast::ast::{CXExpr, CXInitIndex};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpressionKind, StructInitialization},
     program::MIRBaseMappings,
 };
 use cx_tokens::TokenRange;
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        binary_ops::struct_field, casting::implicit_cast,
-        coercion::implicit::promotion::std_rval_promotion, result::TypecheckResult,
+        aggregate::fields::struct_field,
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        result::TypecheckResult,
         typechecker::typecheck_expr,
     },
 };
-
-pub struct TypeConstructor<'a> {
-    pub union_type: MIRType,
-    pub variant_name: CXIdent,
-    pub inner: Option<&'a CXExpr>,
-}
-
-pub fn deconstruct_type_constructor<'a>(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    pattern: &'a CXExpr,
-) -> CXResult<TypeConstructor<'a>> {
-    let (constructor, inner) = match &pattern.kind {
-        CXExprKind::BinOp {
-            op: CXBinOp::MethodCall,
-            lhs,
-            rhs: inner,
-        } => (lhs.as_ref(), Some(inner.as_ref())),
-
-        // T::Variant with no inner value can be written without parentheses, so we also allow that form for patterns with no inner value
-        _ => (pattern, None),
-    };
-
-    let CXExprKind::BinOp {
-        op: CXBinOp::ScopeRes,
-        lhs: union,
-        rhs: variant,
-    } = &constructor.kind
-    else {
-        return log_typecheck_error!(
-            env,
-            Some(pattern.token_range()),
-            "Expected type constructor"
-        );
-    };
-
-    let union_name = match &union.kind {
-        CXExprKind::Identifier(union_name) => {
-            let as_type = CXTypeKind::Identifier {
-                predeclaration: PredeclarationType::None,
-                name: union_name.clone(),
-            }
-            .to_type();
-
-            env.complete_type(base_data, union, &as_type)?
-        }
-
-        CXExprKind::TemplatedIdentifier {
-            name,
-            template_input,
-        } => {
-            let as_type = CXTypeKind::TemplatedIdentifier {
-                name: name.clone(),
-                input: template_input.clone(),
-            }
-            .to_type();
-
-            env.complete_type(base_data, union, &as_type)?
-        }
-
-        _ => {
-            return log_typecheck_error!(
-                env,
-                Some(union.token_range()),
-                "Expected union name in type constructor pattern"
-            );
-        }
-    };
-
-    let CXExprKind::Identifier(variant_name) = &variant.kind else {
-        return log_typecheck_error!(
-            env,
-            Some(variant.token_range()),
-            "Expected variant name in type constructor pattern"
-        );
-    };
-
-    Ok(TypeConstructor {
-        union_type: union_name,
-        variant_name: variant_name.clone(),
-        inner,
-    })
-}
 
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,

@@ -2,164 +2,39 @@ use crate::environment::{
     BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::binary_ops::{typecheck_access, typecheck_is, typecheck_method_call};
-use crate::type_checking::casting::{explicit_cast, implicit_cast};
+use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
+use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::coercion::{explicit::explicit_cast, implicit::implicit_cast};
+use crate::type_checking::control_flow::{
+    enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
+    typecheck_fallthrough_scope,
+};
+use crate::type_checking::op::binop::access::typecheck_access;
+use crate::type_checking::op::binop::calls::typecheck_method_call;
+use crate::type_checking::op::binop::is::typecheck_is;
 use crate::type_checking::op::typecheck_binop;
 use crate::type_checking::result::TypecheckResult;
-use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
-use cx_ast::data::{CX_CONST, CXLinkageMode};
-use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
+use crate::type_checking::value::{
+    identifiers::{typecheck_identifier, typecheck_templated_identifier},
+    literals::{
+        typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
+    },
+    locals::typecheck_var_declaration,
+    moves::{typecheck_leak, typecheck_move},
+    sizeof::{typecheck_sizeof_expr, typecheck_sizeof_type},
+    unsafe_ops::typecheck_unsafe,
+};
+use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
+use cx_ast::data::CX_CONST;
+use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
-use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_util::identifier::CXIdent;
-use cx_util::{CXError, CXResult};
+use cx_mir::mir::program::MIRBaseMappings;
+use cx_util::CXResult;
 
-fn anonymous_name_gen() -> String {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("__anon_{id}")
-}
-
-use crate::type_checking::r#match::{typecheck_match, typecheck_switch};
-use crate::type_checking::structured_initialization::typecheck_initializer_list;
+use crate::type_checking::control_flow::r#match::typecheck_match;
+use crate::type_checking::control_flow::switch::typecheck_switch;
 use cx_mir::mir::data::MIRType;
-
-pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
-    match &expr.kind {
-        MIRExpressionKind::Return { .. }
-        | MIRExpressionKind::Break { .. }
-        | MIRExpressionKind::Continue { .. } => false,
-        MIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
-        MIRExpressionKind::Block { statements } => {
-            statements.last().map(expr_may_fall_through).unwrap_or(true)
-        }
-        MIRExpressionKind::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            expr_may_fall_through(then_branch)
-                || else_branch
-                    .as_ref()
-                    .map(|branch| expr_may_fall_through(branch))
-                    .unwrap_or(true)
-        }
-        MIRExpressionKind::CSwitch { cases, default, .. }
-        | MIRExpressionKind::Match {
-            arms: cases,
-            default,
-            ..
-        } => {
-            cases
-                .iter()
-                .any(|(_, branch)| expr_may_fall_through(branch))
-                || default
-                    .as_ref()
-                    .map(|branch| expr_may_fall_through(branch))
-                    .unwrap_or(true)
-        }
-        _ => true,
-    }
-}
-
-pub(crate) fn ensure_binding_available(
-    env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    name: &CXIdent,
-) -> CXResult<()> {
-    let Some(binding) = env.tracked_binding(name.as_str()) else {
-        return Ok(());
-    };
-
-    match binding.state {
-        BindingMoveState::Available => Ok(()),
-        BindingMoveState::Moved => {
-            log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Identifier '{}' has been moved",
-                name
-            )
-        }
-        BindingMoveState::ConditionallyMoved => log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Identifier '{}' was conditionally moved across a control-flow join",
-            name
-        ),
-    }
-}
-
-fn enqueue_jump_arrow(env: &mut TypeEnvironment, target: &ScopeExitTarget) {
-    let snapshot = env.current_snapshot();
-    env.enqueue_scope_arrow(target, snapshot);
-
-    if env.current_scope_index() == target.target_scope {
-        env.mark_current_scope_unreachable();
-    } else {
-        env.mark_jump_unreachable(target.target_scope);
-    }
-}
-
-pub(crate) fn typecheck_fallthrough_scope(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpr,
-    target_scope: ScopeId,
-    sink: ScopeArrowSink,
-    label: &str,
-) -> CXResult<MIRExpression> {
-    env.push_scope(false, false);
-    env.set_scope_anchor(expr);
-    env.set_scope_fallthrough_target(ScopeExitTarget {
-        target_scope,
-        sink,
-        label: label.to_string(),
-    });
-    let result = typecheck_expr(env, base_data, expr, None)?.into_expression();
-    env.pop_scope()?;
-    Ok(result)
-}
-
-fn process_for_increment_arrows(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    loop_scope_idx: ScopeId,
-    increment: &CXExpr,
-) -> CXResult<()> {
-    let pending_arrows = env.take_pending_increment_arrows(loop_scope_idx);
-    if pending_arrows.is_empty() {
-        return Ok(());
-    }
-
-    let loop_entry_snapshot = env.loop_entry_snapshot(loop_scope_idx);
-
-    for arrow in pending_arrows {
-        env.restore_snapshot(&arrow.snapshot);
-        env.set_scope_reachable(loop_scope_idx, true);
-
-        let _ = typecheck_expr(env, base_data, increment, None)?;
-
-        if env.is_scope_reachable(loop_scope_idx) {
-            env.enqueue_scope_arrow(
-                &ScopeExitTarget {
-                    target_scope: loop_scope_idx,
-                    sink: ScopeArrowSink::LoopContinue,
-                    label: arrow.label,
-                },
-                env.current_snapshot(),
-            );
-        }
-    }
-
-    env.restore_snapshot(&loop_entry_snapshot);
-    env.set_scope_reachable(loop_scope_idx, true);
-
-    Ok(())
-}
 
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
@@ -183,7 +58,7 @@ pub fn typecheck_expr_inner(
             for statement in exprs {
                 block.push(typecheck_expr(env, base_data, statement, None)?.expression);
 
-                if !env.is_current_scope_reachable() {
+                if !env.function.is_current_scope_reachable() {
                     break;
                 }
             }
@@ -195,172 +70,24 @@ pub fn typecheck_expr_inner(
             })
         }
 
-        CXExprKind::IntLiteral { val, bytes } => TypecheckResult::from(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::IntLiteral(
-                *val,
-                MIRIntegerType::from_bytes(*bytes).unwrap(),
-                true,
-            ),
-            _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::from_bytes(*bytes).unwrap(),
-                signed: true,
-            }),
-        }),
+        CXExprKind::IntLiteral { val, bytes } => typecheck_int_literal(*val, *bytes),
 
-        CXExprKind::FloatLiteral { val, bytes } => TypecheckResult::from(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::FloatLiteral(*val, MIRFloatType::from_bytes(*bytes).unwrap()),
-            _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Float {
-                _type: MIRFloatType::from_bytes(*bytes).unwrap(),
-            }),
-        }),
+        CXExprKind::FloatLiteral { val, bytes } => typecheck_float_literal(*val, *bytes),
 
-        CXExprKind::StringLiteral { val } => {
-            let anonymous_name = anonymous_name_gen();
-            let name_ident = CXIdent::new(anonymous_name.clone());
-
-            env.items.realized_globals.insert(
-                anonymous_name.clone(),
-                MIRGlobalVariable {
-                    kind: MIRGlobalVarKind::StringLiteral {
-                        name: name_ident.clone(),
-                        value: val.clone(),
-                    },
-                    is_mutable: false,
-                    linkage: CXLinkageMode::Static,
-                },
-            );
-
-            let str_ref_type = env
-                .symbols
-                .context
-                .mem_ref_to(MIRType::from(MIRTypeKind::Str).add_specifier(CX_CONST));
-
-            TypecheckResult::from(MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::Variable(name_ident),
-                _type: str_ref_type,
-            })
-        }
+        CXExprKind::StringLiteral { val } => typecheck_string_literal(env, val),
 
         CXExprKind::VarDeclaration {
             _type,
             name,
             initial_value,
-        } => {
-            let _type = env.complete_type(base_data, expr, _type).map_err(|err| {
-                let err: CXResult<()> = log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Failed to resolve type for variable '{}'\n{}",
-                    name,
-                    err.error_content()
-                );
+        } => typecheck_var_declaration(env, base_data, expr, _type, name, initial_value.as_ref())?,
 
-                err.err().unwrap()
-            })?;
-
-            if _type.is_str() {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Cannot create a variable of unsized type 'str'; use '&str' instead"
-                );
-            }
-
-            let mem_type = env.symbols.context.mem_ref_to(_type.clone());
-
-            // Typecheck initial value if present
-            let mir_initial_value = match initial_value {
-                Some(init_expr) => {
-                    let init_tc = typecheck_expr(env, base_data, init_expr, Some(&_type))?;
-                    let init_tc = implicit_cast(env, init_tc.into_expression(), &_type)?;
-                    Some(Box::new(init_tc))
-                }
-                None => None,
-            };
-
-            let allocation = MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::RegionCreate {
-                    name: Some(name.clone()),
-                    _type: _type.clone(),
-                    initial_value: mir_initial_value,
-                },
-                _type: mem_type.clone(),
-            };
-
-            env.insert_symbol(
-                name.as_string(),
-                MIRExpression {
-                    token_range: None,
-                    kind: MIRExpressionKind::Variable(name.clone()),
-                    _type: mem_type,
-                },
-            );
-
-            env.track_binding(name.as_string(), &_type);
-
-            TypecheckResult::from(allocation)
-        }
-
-        CXExprKind::Identifier(name) => {
-            if let Some(symbol_val) = env.symbol_value(name.as_str()) {
-                let symbol_val = symbol_val.clone();
-                ensure_binding_available(env, expr, name)?;
-                TypecheckResult::from(symbol_val)
-            } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None)
-            {
-                TypecheckResult::from(MIRExpression {
-                    token_range: None,
-                    kind: MIRExpressionKind::FunctionReference {
-                        name: function_type.name.clone(),
-                    },
-                    _type: MIRType::from(MIRTypeKind::Function {
-                        signature: Box::new(function_type.signature()),
-                    }),
-                })
-            } else if env.in_safe_context()
-                && base_data.global_variables.contains_key(name.as_str())
-            {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Safe functions may not access global variables"
-                );
-            } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
-                TypecheckResult::from(global)
-            } else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Identifier '{}' not found",
-                    name
-                );
-            }
-        }
+        CXExprKind::Identifier(name) => typecheck_identifier(env, base_data, expr, name)?,
 
         CXExprKind::TemplatedIdentifier {
             name,
             template_input,
-        } => {
-            // These [for now], are only for functions, as templated type identifiers can only appear
-            // in CXType contexts.
-
-            let function =
-                env.get_standard_function(base_data, expr, name, Some(template_input))?;
-
-            TypecheckResult::from(MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::FunctionReference {
-                    name: function.name.clone(),
-                },
-                _type: MIRType::from(MIRTypeKind::Function {
-                    signature: Box::new(function.signature()),
-                }),
-            })
-        }
+        } => typecheck_templated_identifier(env, base_data, expr, name, template_input)?,
 
         CXExprKind::If {
             condition,
@@ -369,9 +96,10 @@ pub fn typecheck_expr_inner(
         } => {
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
-            env.push_scope(false, false);
-            env.configure_merge_scope(expr, "if join", None, false);
-            let join_scope_idx = env.current_scope_index();
+            env.function.push_scope(false, false);
+            env.function
+                .configure_merge_scope(expr, "if join", None, false);
+            let join_scope_idx = env.function.current_scope_index();
 
             let then_result = typecheck_fallthrough_scope(
                 env,
@@ -392,18 +120,19 @@ pub fn typecheck_expr_inner(
                     "else",
                 )?)
             } else {
-                env.enqueue_scope_arrow(
+                env.function.enqueue_scope_arrow(
                     &ScopeExitTarget {
                         target_scope: join_scope_idx,
                         sink: ScopeArrowSink::Merge,
                         label: "else".to_string(),
                     },
-                    env.current_snapshot(),
+                    env.function.current_snapshot(),
                 );
                 None
             };
 
-            env.pop_scope()?;
+            env.function
+                .pop_scope(env.source.compilation_unit.as_path())?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -421,17 +150,18 @@ pub fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            env.push_scope(true, true);
-            env.set_scope_anchor(expr);
-            env.configure_loop_scope(expr, LoopScopeKind::While);
-            let loop_scope_idx = env.current_scope_index();
-            env.enqueue_scope_arrow(
+            env.function.push_scope(true, true);
+            env.function.set_scope_anchor(expr);
+            env.function
+                .configure_loop_scope(expr, LoopScopeKind::While);
+            let loop_scope_idx = env.function.current_scope_index();
+            env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
                     target_scope: loop_scope_idx,
                     sink: ScopeArrowSink::LoopExit,
                     label: "zero iterations".to_string(),
                 },
-                env.current_snapshot(),
+                env.function.current_snapshot(),
             );
 
             let condition_result = typecheck_expr(env, base_data, condition, None)
@@ -444,7 +174,8 @@ pub fn typecheck_expr_inner(
                 ScopeArrowSink::LoopContinue,
                 "loop fallthrough",
             )?;
-            env.pop_scope()?;
+            env.function
+                .pop_scope(env.source.compilation_unit.as_path())?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -463,18 +194,18 @@ pub fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            env.push_scope(true, true);
-            env.set_scope_anchor(expr);
+            env.function.push_scope(true, true);
+            env.function.set_scope_anchor(expr);
             let init_result = typecheck_expr(env, base_data, init, None)?.into_expression();
-            env.configure_loop_scope(expr, LoopScopeKind::For);
-            let loop_scope_idx = env.current_scope_index();
-            env.enqueue_scope_arrow(
+            env.function.configure_loop_scope(expr, LoopScopeKind::For);
+            let loop_scope_idx = env.function.current_scope_index();
+            env.function.enqueue_scope_arrow(
                 &ScopeExitTarget {
                     target_scope: loop_scope_idx,
                     sink: ScopeArrowSink::LoopExit,
                     label: "zero iterations".to_string(),
                 },
-                env.current_snapshot(),
+                env.function.current_snapshot(),
             );
 
             let condition_result = typecheck_expr(env, base_data, condition, None)
@@ -490,9 +221,11 @@ pub fn typecheck_expr_inner(
             process_for_increment_arrows(env, base_data, loop_scope_idx, increment)?;
             let increment_result =
                 typecheck_expr(env, base_data, increment, None)?.into_expression();
-            env.restore_snapshot(&env.loop_entry_snapshot(loop_scope_idx));
-            env.set_scope_reachable(loop_scope_idx, true);
-            env.pop_scope()?;
+            env.function
+                .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
+            env.function.set_scope_reachable(loop_scope_idx, true);
+            env.function
+                .pop_scope(env.source.compilation_unit.as_path())?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -507,7 +240,7 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Break => {
-            let Some(scope_idx) = env.nearest_break_scope() else {
+            let Some(scope_idx) = env.function.nearest_break_scope() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -518,7 +251,7 @@ pub fn typecheck_expr_inner(
                 env,
                 &ScopeExitTarget {
                     target_scope: scope_idx,
-                    sink: env.break_arrow_sink(scope_idx),
+                    sink: env.function.break_arrow_sink(scope_idx),
                     label: "break".to_string(),
                 },
             );
@@ -533,7 +266,7 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Continue => {
-            let Some(scope_idx) = env.nearest_continue_scope() else {
+            let Some(scope_idx) = env.function.nearest_continue_scope() else {
                 return log_typecheck_error!(
                     env,
                     Some(expr.token_range()),
@@ -544,7 +277,7 @@ pub fn typecheck_expr_inner(
                 env,
                 &ScopeExitTarget {
                     target_scope: scope_idx,
-                    sink: env.continue_arrow_sink(scope_idx),
+                    sink: env.function.continue_arrow_sink(scope_idx),
                     label: "continue".to_string(),
                 },
             );
@@ -575,7 +308,7 @@ pub fn typecheck_expr_inner(
                     // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
                     // so we will induce in effect just a direct memcpy from the source T to the return buffer.
                     if let Some(inner) = env.symbols.context.mem_ref_inner(&_ty).cloned()
-                        && env.is_copyable(&inner)
+                        && env.symbols.is_copyable(&inner)
                         && return_type.is_memory_resident()
                     {
                         some_value = TypecheckResult::new_base(
@@ -628,70 +361,10 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Unsafe { expr: inner } => {
-            env.push_unsafe();
-            let inner_result = typecheck_expr(env, base_data, inner, expected_type)?;
-            env.pop_unsafe();
-
-            TypecheckResult::from(MIRExpression {
-                token_range: None,
-                _type: inner_result.get_type(),
-                kind: MIRExpressionKind::Unsafe {
-                    expression: Box::new(inner_result.into_expression()),
-                },
-            })
+            typecheck_unsafe(env, base_data, inner, expected_type)?
         }
 
-        CXExprKind::Leak { expr: inner } => {
-            if env.in_safe_context() {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "@leak is unsafe and must be wrapped in @unsafe in safe functions"
-                );
-            }
-
-            let CXExprKind::Identifier(ident) = &inner.kind else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "@leak currently requires a local identifier"
-                );
-            };
-
-            let Some(value) = env.symbol_value(ident.as_str()) else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Identifier '{}' not found",
-                    ident
-                );
-            };
-            let value = value.clone();
-
-            let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type) else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "@leak requires a stack local value"
-                );
-            };
-
-            if !env.is_nodrop(inner_type) {
-                // For templated implementations, it is far more convenient for @leak calls on non-@nodrop types to
-                // be treated as a no-op rather than a type error.
-                return Ok(TypecheckResult::from(value));
-            }
-
-            ensure_binding_available(env, inner, ident)?;
-            env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
-
-            TypecheckResult::new_base(
-                MIRType::unit(),
-                MIRExpressionKind::LeakLifetime {
-                    expression: Box::new(value),
-                },
-            )
-        }
+        CXExprKind::Leak { expr: inner } => typecheck_leak(env, expr, inner)?,
 
         CXExprKind::UnOp { operator, operand } => {
             match operator {
@@ -874,7 +547,7 @@ pub fn typecheck_expr_inner(
         } => {
             let lhs_val = if op.is_none() {
                 if let CXExprKind::Identifier(name) = &lhs.kind {
-                    if let Some(symbol_val) = env.symbol_value(name.as_str()) {
+                    if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
                         symbol_val.clone()
                     } else {
                         typecheck_expr(env, base_data, lhs, None)?.into_expression()
@@ -926,7 +599,8 @@ pub fn typecheck_expr_inner(
             if op.is_none()
                 && let CXExprKind::Identifier(name) = &lhs.kind
             {
-                env.set_tracked_binding_state(name.as_str(), BindingMoveState::Available);
+                env.function
+                    .set_tracked_binding_state(name.as_str(), BindingMoveState::Available);
             }
 
             TypecheckResult::new_base(
@@ -969,53 +643,7 @@ pub fn typecheck_expr_inner(
 
         CXExprKind::Move {
             expr: inner_expr, ..
-        } => {
-            let CXExprKind::Identifier(ident) = &inner_expr.kind else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Move expressions can currently only be applied to stack variable identifiers"
-                );
-            };
-
-            let Some(inner_val) = env.symbol_value(ident.as_str()) else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Identifier '{}' not found",
-                    ident
-                );
-            };
-            let mut inner_val = inner_val.clone();
-
-            if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Move expressions can currently only be applied to stack variable identifiers, found {:?}",
-                    inner_val.kind
-                );
-            }
-
-            let Some(inner_type) = env.symbols.context.mem_ref_inner(&inner_val._type).cloned()
-            else {
-                unreachable!()
-            };
-
-            if env.is_nocopy(&inner_type) {
-                ensure_binding_available(env, inner_expr, ident)?;
-                env.set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
-            } else {
-                inner_val = implicit_cast(env, inner_val, &inner_type)?;
-            }
-
-            TypecheckResult::new_base(
-                inner_type,
-                MIRExpressionKind::RegionMove {
-                    source: Box::new(inner_val),
-                },
-            )
-        }
+        } => typecheck_move(env, expr, inner_expr)?,
 
         CXExprKind::InitializerList { indices } => {
             typecheck_initializer_list(env, base_data, expr, indices, expected_type)?
@@ -1025,96 +653,13 @@ pub fn typecheck_expr_inner(
             union_name: type_name,
             variant_name: name,
             inner,
-        } => {
-            let union_type = env.get_type(base_data, expr, type_name.as_str())?;
-            let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Unknown type: {}",
-                    type_name
-                );
-            };
-            let variants = variants.clone();
+        } => typecheck_type_constructor_expr(env, base_data, expr, type_name, name, inner)?,
 
-            let Some((i, variant_type)) = variants
-                .iter()
-                .enumerate()
-                .find(|(_, (variant_name, _))| variant_name == name.as_str())
-                .map(|(i, (_, variant_type))| (i, variant_type.clone()))
-            else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Variant '{}' not found in tagged union type {}",
-                    name,
-                    type_name
-                );
-            };
+        CXExprKind::Unit => typecheck_unit(),
 
-            let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-                .and_then(|v| implicit_cast(env, v.into_expression(), &variant_type))?;
+        CXExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, base_data, expr, _type)?,
 
-            let allocation = TypecheckResult::new_base(
-                union_type.clone(),
-                MIRExpressionKind::RegionCreate {
-                    name: None,
-                    _type: union_type.clone(),
-                    initial_value: None,
-                },
-            );
-
-            TypecheckResult::new_base(
-                env.symbols.context.mem_ref_to(union_type.clone()),
-                MIRExpressionKind::TaggedUnionSet {
-                    target: Box::new(allocation.into_expression()),
-                    variant_index: i,
-                    inner_value: Box::new(inner),
-                    sum_type: union_type,
-                },
-            )
-        }
-
-        CXExprKind::Unit => TypecheckResult::from(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::Unit,
-            _type: cx_mir::mir::data::MIRType::unit(),
-        }),
-
-        CXExprKind::SizeOfType { _type } => {
-            let tc_type = env.complete_type(base_data, expr, _type)?;
-
-            TypecheckResult::from(MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::IntLiteral(
-                    tc_type.type_size(&env.symbols.context) as i64,
-                    MIRIntegerType::I64,
-                    false,
-                ),
-                _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Integer {
-                    _type: MIRIntegerType::I64,
-                    signed: false,
-                }),
-            })
-        }
-
-        CXExprKind::SizeOfExpr { expr } => {
-            let tc_expr = typecheck_expr(env, base_data, expr, None)?;
-            let tc_type = tc_expr.get_type();
-
-            TypecheckResult::from(MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::IntLiteral(
-                    tc_type.type_size(&env.symbols.context) as i64,
-                    MIRIntegerType::I64,
-                    false,
-                ),
-                _type: cx_mir::mir::data::MIRType::from(MIRTypeKind::Integer {
-                    _type: MIRIntegerType::I64,
-                    signed: false,
-                }),
-            })
-        }
+        CXExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, base_data, expr)?,
 
         CXExprKind::Switch {
             condition,
@@ -1146,98 +691,6 @@ pub fn typecheck_expr_inner(
     }
 
     Ok(result)
-}
-
-pub(crate) fn global_expr(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    ident: &str,
-) -> CXResult<MIRExpression> {
-    if let Some(global) = env.items.realized_globals.get(ident) {
-        return tcglobal_expr(global, &mut env.symbols.context);
-    }
-
-    let Some(module_res) = base_data.global_variables.get(ident) else {
-        return CXError::create_result(format!("Global variable '{}' not found", ident));
-    };
-
-    let module_res = match env.items.in_external_templated_function {
-        true => module_res.clone().transfer(""),
-        false => module_res.clone(),
-    };
-
-    match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Ok(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::IntLiteral(
-                *val as i64,
-                MIRIntegerType::from_bytes(8).unwrap(),
-                true,
-            ),
-            _type: MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::from_bytes(8).unwrap(),
-                signed: true,
-            }),
-        }),
-
-        CXGlobalVariable::Standard {
-            _type,
-            initializer,
-            is_mutable,
-        } => {
-            let _type = env.complete_type(base_data, &CXExpr::default(), _type)?;
-            let _initializer = match initializer.as_ref() {
-                Some(init_expr) => {
-                    let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
-                        return log_typecheck_error!(
-                            env,
-                            Some(init_expr.token_range()),
-                            "CX currently only supports integer initializers for global variables"
-                        );
-                    };
-
-                    Some(*val)
-                }
-
-                None => None,
-            };
-
-            env.items.realized_globals.insert(
-                ident.to_string(),
-                MIRGlobalVariable {
-                    kind: MIRGlobalVarKind::Variable {
-                        name: CXIdent::new(ident.to_string()),
-                        initializer: _initializer,
-                        _type,
-                    },
-                    is_mutable: *is_mutable,
-                    linkage: module_res.linkage,
-                },
-            );
-
-            tcglobal_expr(
-                env.items.realized_globals.get(ident).unwrap(),
-                &mut env.symbols.context,
-            )
-        }
-    }
-}
-
-fn tcglobal_expr(
-    global: &MIRGlobalVariable,
-    definitions: &mut cx_mir::mir::data::MIRTypeContext,
-) -> CXResult<MIRExpression> {
-    match &global.kind {
-        MIRGlobalVarKind::Variable { name, _type, .. } => Ok(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::Variable(name.clone()),
-            _type: definitions.mem_ref_to(_type.clone()),
-        }),
-
-        MIRGlobalVarKind::StringLiteral { .. } => {
-            unreachable!("String literals cannot be referenced via an identifier")
-        }
-    }
 }
 
 pub fn add_implicit_return(

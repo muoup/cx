@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use cx_ast::ast::CXExpr;
 use cx_ast::data::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
-use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId};
-use cx_mir::mir::expression::MIRExpression;
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId};
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
 use cx_pipeline_data::CompilationUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -57,111 +56,6 @@ impl TypeEnvironment<'_> {
 
     pub fn resolve_compilation_unit(&self, module: &str) -> CompilationUnit {
         self.source.resolve_compilation_unit(module)
-    }
-
-    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
-        self.function
-            .push_scope(has_break_merge, has_continue_merge);
-    }
-
-    pub fn pop_scope(&mut self) -> CXResult<()> {
-        self.function
-            .pop_scope(self.source.compilation_unit.as_path())
-    }
-
-    pub fn insert_symbol(&mut self, name: String, value: MIRExpression) {
-        self.function.insert_symbol(name, value);
-    }
-
-    pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
-        self.function.symbol_value(name)
-    }
-
-    pub fn current_snapshot(&self) -> ControlFlowSnapshot {
-        self.function.current_snapshot()
-    }
-
-    pub fn restore_snapshot(&mut self, snapshot: &ControlFlowSnapshot) {
-        self.function.restore_snapshot(snapshot);
-    }
-
-    pub fn current_scope_index(&self) -> ScopeId {
-        self.function.current_scope_index()
-    }
-
-    pub fn set_scope_anchor(&mut self, expr: &CXExpr) {
-        self.function.set_scope_anchor(expr);
-    }
-
-    pub fn configure_merge_scope(
-        &mut self,
-        expr: &CXExpr,
-        join_name: impl Into<String>,
-        include_current_snapshot: Option<&str>,
-        require_nodrop_discharge: bool,
-    ) {
-        self.function.configure_merge_scope(
-            expr,
-            join_name,
-            include_current_snapshot,
-            require_nodrop_discharge,
-        );
-    }
-
-    pub fn configure_loop_scope(&mut self, expr: &CXExpr, loop_kind: LoopScopeKind) {
-        self.function.configure_loop_scope(expr, loop_kind);
-    }
-
-    pub fn set_scope_fallthrough_target(&mut self, target: ScopeExitTarget) {
-        self.function.set_scope_fallthrough_target(target);
-    }
-
-    pub fn enqueue_scope_arrow(&mut self, target: &ScopeExitTarget, snapshot: ControlFlowSnapshot) {
-        self.function.enqueue_scope_arrow(target, snapshot);
-    }
-
-    pub fn take_pending_increment_arrows(&mut self, scope: ScopeId) -> Vec<ControlFlowArrow> {
-        self.function.take_pending_increment_arrows(scope)
-    }
-
-    pub fn loop_entry_snapshot(&self, scope: ScopeId) -> ControlFlowSnapshot {
-        self.function.loop_entry_snapshot(scope)
-    }
-
-    pub fn nearest_break_scope(&self) -> Option<ScopeId> {
-        self.function.nearest_break_scope()
-    }
-
-    pub fn nearest_continue_scope(&self) -> Option<ScopeId> {
-        self.function.nearest_continue_scope()
-    }
-
-    pub fn break_arrow_sink(&self, scope: ScopeId) -> ScopeArrowSink {
-        self.function.break_arrow_sink(scope)
-    }
-
-    pub fn continue_arrow_sink(&self, scope: ScopeId) -> ScopeArrowSink {
-        self.function.continue_arrow_sink(scope)
-    }
-
-    pub fn mark_jump_unreachable(&mut self, target_scope: ScopeId) {
-        self.function.mark_jump_unreachable(target_scope);
-    }
-
-    pub fn mark_current_scope_unreachable(&mut self) {
-        self.function.mark_current_scope_unreachable();
-    }
-
-    pub fn set_scope_reachable(&mut self, scope: ScopeId, reachable: bool) {
-        self.function.set_scope_reachable(scope, reachable);
-    }
-
-    pub fn is_scope_reachable(&self, scope: ScopeId) -> bool {
-        self.function.is_scope_reachable(scope)
-    }
-
-    pub fn is_current_scope_reachable(&self) -> bool {
-        self.function.is_current_scope_reachable()
     }
 
     pub fn add_type(&mut self, name: String, _type: MIRType) -> Option<MIRType> {
@@ -257,14 +151,6 @@ impl TypeEnvironment<'_> {
         self.function.current_function()
     }
 
-    pub fn begin_function(&mut self, prototype: MIRFunctionPrototype) {
-        self.function.begin_function(prototype);
-    }
-
-    pub fn end_function(&mut self) {
-        self.function.end_function();
-    }
-
     pub fn complete_type(
         &mut self,
         base_data: &MIRBaseMappings,
@@ -287,56 +173,6 @@ impl TypeEnvironment<'_> {
                     .insert(prototype.name.to_string(), prototype.clone());
             },
         )
-    }
-
-    pub fn type_context(&self) -> &MIRTypeContext {
-        &self.symbols.context
-    }
-
-    pub fn type_context_mut(&mut self) -> &mut MIRTypeContext {
-        &mut self.symbols.context
-    }
-
-    pub fn is_copyable(&self, ty: &MIRType) -> bool {
-        self.symbols.is_copyable(ty)
-    }
-
-    pub fn is_nocopy(&self, ty: &MIRType) -> bool {
-        self.symbols.is_nocopy(ty)
-    }
-
-    pub fn is_nodrop(&self, ty: &MIRType) -> bool {
-        self.symbols.is_nodrop(ty)
-    }
-
-    pub fn in_safe_context(&self) -> bool {
-        self.function.in_safe_context()
-    }
-
-    pub fn track_binding(&mut self, name: String, ty: &MIRType) {
-        if !self.is_nocopy(ty) {
-            return;
-        }
-
-        self.function.track_binding(name, self.is_nodrop(ty));
-    }
-
-    pub fn tracked_binding(&self, name: &str) -> Option<&TrackedBindingState> {
-        self.function.tracked_binding(name)
-    }
-
-    pub fn set_tracked_binding_state(&mut self, name: &str, state: BindingMoveState) {
-        self.function.set_tracked_binding_state(name, state);
-    }
-
-    pub fn tracked_bindings_snapshot(
-        &self,
-    ) -> std::collections::HashMap<String, TrackedBindingState> {
-        self.function.tracked_bindings_snapshot()
-    }
-
-    pub fn nodrop_bindings_in_nonfinal_state(&self) -> Vec<String> {
-        self.function.nodrop_bindings_in_nonfinal_state()
     }
 
     pub fn get_standard_function(

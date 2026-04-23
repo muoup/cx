@@ -1,0 +1,25 @@
+use crate::{
+    environment::TypeEnvironment, type_checking::result::TypecheckResult,
+    type_checking::typechecker::typecheck_expr,
+};
+use cx_ast::ast::CXExpr;
+use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind, program::MIRBaseMappings};
+use cx_util::CXResult;
+
+pub(crate) fn typecheck_unsafe(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    inner: &CXExpr,
+    expected_type: Option<&MIRType>,
+) -> CXResult<TypecheckResult> {
+    env.push_unsafe();
+    let inner_result = typecheck_expr(env, base_data, inner, expected_type)?;
+    env.pop_unsafe();
+
+    Ok(TypecheckResult::new_base(
+        inner_result.get_type(),
+        MIRExpressionKind::Unsafe {
+            expression: Box::new(inner_result.into_expression()),
+        },
+    ))
+}

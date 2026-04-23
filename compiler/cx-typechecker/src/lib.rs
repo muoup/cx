@@ -1,4 +1,4 @@
-use cx_ast::ast::VisibilityMode;
+use cx_ast::ast::{CXAST, CXFunctionStmt, VisibilityMode};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use cx_util::CXResult;
@@ -9,8 +9,25 @@ pub mod environment;
 mod type_checking;
 
 pub use type_checking::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation, typecheck,
+    complete_base_functions, complete_base_globals, realize_fn_implementation,
 };
+
+use crate::{environment::TypeEnvironment, type_checking::functions::typecheck_function};
+
+pub fn typecheck(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    ast: &CXAST,
+) -> CXResult<()> {
+    for stmt in ast.function_stmts.iter() {
+        if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
+            let prototype = env.complete_prototype(base_data, None, prototype)?;
+            typecheck_function(env, base_data, prototype.clone(), body)?;
+        }
+    }
+
+    Ok(())
+}
 
 pub fn gather_interface(
     context: &GlobalCompilationContext,

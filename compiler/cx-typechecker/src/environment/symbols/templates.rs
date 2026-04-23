@@ -307,7 +307,7 @@ fn deduce_from_cx_type(
             .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
             .clone();
 
-        if env.is_copyable(&inner_type) {
+        if env.symbols.is_copyable(&inner_type) {
             return deduce_from_cx_type(
                 env,
                 base_data,

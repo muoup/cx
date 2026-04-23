@@ -12,10 +12,15 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        casting::implicit_cast, coercion::implicit::promotion::std_rval_promotion,
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::TypecheckResult,
     },
 };
+
+pub(crate) mod access;
+pub(crate) mod calls;
+pub(crate) mod is;
+pub(crate) mod scoped_calls;
 
 pub(crate) fn dispatch(
     env: &mut TypeEnvironment,

@@ -15,9 +15,9 @@ pub fn typecheck_binop(
 }
 
 pub fn typecheck_unop(
-    env: &mut TypeEnvironment,
-    op: MIRUnOp,
-    operand: MIRExpression,
+    _env: &mut TypeEnvironment,
+    _op: MIRUnOp,
+    _operand: MIRExpression,
 ) -> CXResult<TypecheckResult> {
     todo!()
 }

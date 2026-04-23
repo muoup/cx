@@ -1,7 +1,7 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::functions::mangling::base_mangle_fn_name;
 use crate::environment::symbols::completion::{base_data_from_module, int_complete_type};
-use crate::type_checking::binary_ops::typecheck_contract;
+use crate::type_checking::contracts::typecheck_contract;
 use cx_ast::ast::CXExpr;
 use cx_ast::data::{
     CXFunctionPrototype, CXParameter, CXReceiverMode, CXTemplateInput, CXType, CXTypeKind,
