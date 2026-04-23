@@ -64,11 +64,10 @@ pub enum MIRExpressionKind {
         initial_value: Option<Box<MIRExpression>>,
     },
     RegionDuplicate {
-        source: Box<MIRExpression>,
-        _type: MIRType,
+        source: Box<MIRExpression>
     },
     RegionMove {
-        source: Box<MIRExpression>,
+        source: Box<MIRExpression>
     },
     MemoryWrite {
         target: Box<MIRExpression>,
@@ -352,17 +351,16 @@ pub enum MIRCoercion {
         sextend: bool,
     },
 
-    // Any integer type to a boolean (i1)
-    IntToBool,
-
-    // Conversion from a const char* to a _str& -- a no-op but is unsafe
-    CStrToStr,
-
-    // Conversions between equally sized types that do not change the bit representation,
-    // in assembly, this is typically a no-op, but proves useful for type checking and verification
-    ReinterpretBits,
-
+    // Decay of function designator to a pointer value
     GetFnPtr,
+    
+    // Conversions between types that have the same semantic meaning
+    // in assembly, this is typically a no-op, but proves useful for type checking and verification
+    Typechange,
+    
+    // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
+    // meaning of the bits, such as converting from an f32 to an i32
+    ReinterpretBits,   
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

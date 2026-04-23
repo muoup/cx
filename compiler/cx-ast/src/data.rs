@@ -53,7 +53,7 @@ pub enum CXReceiverMode {
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXReceiverData {
     pub mode: CXReceiverMode,
-    pub specifiers: CXTypeSpecifier,
+    pub specifiers: CXTypeQualifiers,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
@@ -126,13 +126,13 @@ pub struct CXTemplate<Shell> {
 
 pub type CXTypeTemplate = CXTemplate<CXType>;
 pub type CXFunctionTemplate = CXTemplate<CXFunctionPrototype>;
-pub type CXTypeSpecifier = u8;
+pub type CXTypeQualifiers = u8;
 
-pub const CX_CONST: CXTypeSpecifier = 1 << 0;
-pub const CX_VOLATILE: CXTypeSpecifier = 1 << 1;
-pub const CX_RESTRICT: CXTypeSpecifier = 1 << 2;
-pub const CX_THREAD_LOCAL: CXTypeSpecifier = 1 << 3;
-pub const CX_UNION: CXTypeSpecifier = 1 << 4;
+pub const CX_CONST: CXTypeQualifiers = 1 << 0;
+pub const CX_VOLATILE: CXTypeQualifiers = 1 << 1;
+pub const CX_RESTRICT: CXTypeQualifiers = 1 << 2;
+pub const CX_THREAD_LOCAL: CXTypeQualifiers = 1 << 3;
+pub const CX_UNION: CXTypeQualifiers = 1 << 4;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXTemplateInput {
@@ -142,7 +142,7 @@ pub struct CXTemplateInput {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub struct CXType {
     pub kind: CXTypeKind,
-    pub specifiers: CXTypeSpecifier,
+    pub specifiers: CXTypeQualifiers,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -188,11 +188,11 @@ pub enum CXTypeKind {
 }
 
 impl CXType {
-    pub fn new(specifiers: CXTypeSpecifier, kind: CXTypeKind) -> Self {
+    pub fn new(specifiers: CXTypeQualifiers, kind: CXTypeKind) -> Self {
         Self { kind, specifiers }
     }
 
-    pub fn pointer_to(self, weak: bool, specifier: CXTypeSpecifier) -> Self {
+    pub fn pointer_to(self, weak: bool, specifier: CXTypeQualifiers) -> Self {
         Self::new(
             specifier,
             CXTypeKind::PointerTo {
@@ -202,7 +202,7 @@ impl CXType {
         )
     }
 
-    pub fn add_specifier(mut self, specifier: CXTypeSpecifier) -> Self {
+    pub fn add_specifier(mut self, specifier: CXTypeQualifiers) -> Self {
         self.specifiers |= specifier;
         self
     }

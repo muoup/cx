@@ -1,4 +1,4 @@
-use cx_ast::{ast::VisibilityMode, data::CXTypeSpecifier};
+use cx_ast::{ast::VisibilityMode, data::CXTypeQualifiers};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -19,7 +19,7 @@ pub struct MIRTypeId(pub u64);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct MIRType {
     pub visibility: VisibilityMode,
-    pub specifiers: CXTypeSpecifier,
+    pub specifiers: CXTypeQualifiers,
     pub move_attributes: MIRMoveAttributes,
     pub strong_identifier: Option<CXIdent>,
 
@@ -53,14 +53,14 @@ pub enum MIRTypeKind {
         variants: Vec<(String, MIRTypeId)>,
     },
     PointerTo {
-        inner_type: Box<MIRTypeId>,
+        inner_type: MIRTypeId,
     },
     MemoryReference {
-        inner_type: Box<MIRTypeId>,
+        inner_type: MIRTypeId,
     },
     Array {
-        size: usize,
-        inner_type: Box<MIRTypeId>,
+        length: usize,
+        inner_type: MIRTypeId,
     },
     Function {
         signature: Box<MIRFunctionSignature>,
@@ -229,7 +229,7 @@ impl MIRTypeContext {
         let inner_id = self.intern(inner_type);
         MIRType {
             kind: MIRTypeKind::PointerTo {
-                inner_type: Box::new(inner_id),
+                inner_type: inner_id,
             },
             ..Default::default()
         }
@@ -239,7 +239,7 @@ impl MIRTypeContext {
         let inner_id = self.intern(inner_type);
         MIRType {
             kind: MIRTypeKind::MemoryReference {
-                inner_type: Box::new(inner_id),
+                inner_type: inner_id,
             },
             ..Default::default()
         }
@@ -250,7 +250,7 @@ impl MIRTypeContext {
             return None;
         };
 
-        Some(*inner_type.as_ref())
+        Some(*inner_type)
     }
 
     pub fn array_inner_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
@@ -258,7 +258,7 @@ impl MIRTypeContext {
             return None;
         };
 
-        Some(*inner_type.as_ref())
+        Some(*inner_type)
     }
 
     pub fn ptr_inner_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
@@ -266,7 +266,7 @@ impl MIRTypeContext {
             return None;
         };
 
-        Some(*inner_type.as_ref())
+        Some(*inner_type)
     }
 
     pub fn mem_ref_inner<'a>(&'a self, ty: &MIRType) -> Option<&'a MIRType> {
@@ -342,9 +342,9 @@ impl MIRTypeContext {
                 })
                 .max()
                 .unwrap_or(0),
-            MIRTypeKind::Array { size, inner_type } => {
+            MIRTypeKind::Array { length: size, inner_type } => {
                 let inner_type = self
-                    .get(*inner_type.as_ref())
+                    .get(*inner_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
                 size * self.padded_size(inner_type)
             }
@@ -404,7 +404,7 @@ impl MIRTypeContext {
                 .unwrap_or(8),
             MIRTypeKind::Array { inner_type, .. } => {
                 let inner_type = self
-                    .get(*inner_type.as_ref())
+                    .get(*inner_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
                 self.type_alignment(inner_type)
             }
@@ -419,7 +419,7 @@ impl Default for MIRType {
     fn default() -> Self {
         MIRType {
             visibility: VisibilityMode::Private,
-            specifiers: CXTypeSpecifier::default(),
+            specifiers: CXTypeQualifiers::default(),
             move_attributes: MIRMoveAttributes::default(),
             strong_identifier: None,
             template_info: None,
@@ -453,27 +453,27 @@ impl MIRType {
         self
     }
 
-    pub fn add_specifier(mut self, specifier: CXTypeSpecifier) -> Self {
+    pub fn add_specifier(mut self, specifier: CXTypeQualifiers) -> Self {
         self.specifiers |= specifier;
         self
     }
 
-    pub fn with_specifier(&self, specifier: CXTypeSpecifier) -> Self {
+    pub fn with_specifier(&self, specifier: CXTypeQualifiers) -> Self {
         self.clone().add_specifier(specifier)
     }
 
-    pub fn remove_specifier(&mut self, specifier: CXTypeSpecifier) -> &mut Self {
+    pub fn remove_specifier(&mut self, specifier: CXTypeQualifiers) -> &mut Self {
         self.specifiers &= !specifier;
         self
     }
 
-    pub fn without_specifier(&self, specifier: CXTypeSpecifier) -> Self {
+    pub fn without_specifier(&self, specifier: CXTypeQualifiers) -> Self {
         let mut clone = self.clone();
         clone.remove_specifier(specifier);
         clone
     }
 
-    pub fn get_specifier(&self, specifier: CXTypeSpecifier) -> bool {
+    pub fn get_specifier(&self, specifier: CXTypeQualifiers) -> bool {
         self.specifiers & specifier == specifier
     }
 
@@ -501,6 +501,14 @@ impl MIRType {
 
     pub fn is_tagged_union(&self) -> bool {
         matches!(self.kind, MIRTypeKind::TaggedUnion { .. })
+    }
+    
+    pub fn is_c_union(&self) -> bool {
+        matches!(self.kind, MIRTypeKind::Union { .. })
+    }
+    
+    pub fn is_union(&self) -> bool {
+        self.is_tagged_union() || self.is_c_union()
     }
 
     pub fn is_str(&self) -> bool {
@@ -689,30 +697,5 @@ impl From<MIRTypeKind> for MIRType {
             kind,
             ..Default::default()
         }
-    }
-}
-
-pub fn same_types(t1: impl Iterator<Item = MIRType>, t2: impl Iterator<Item = MIRType>) -> bool {
-    t1.eq(t2)
-}
-
-pub fn same_type(t1: &MIRType, t2: &MIRType) -> bool {
-    match (&t1.kind, &t2.kind) {
-        (
-            MIRTypeKind::Function {
-                signature: signature1,
-            },
-            MIRTypeKind::Function {
-                signature: signature2,
-            },
-        ) => {
-            signature1.var_args == signature2.var_args
-                && same_type(&signature1.return_type, &signature2.return_type)
-                && same_types(
-                    signature1.params.iter().map(|param| param._type.clone()),
-                    signature2.params.iter().map(|param| param._type.clone()),
-                )
-        }
-        _ => t1 == t2,
     }
 }

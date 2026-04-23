@@ -6,7 +6,7 @@ use crate::type_checking::binary_ops::{
     typecheck_access, typecheck_is,
     typecheck_method_call,
 };
-use crate::type_checking::casting::{coerce_value, explicit_cast, implicit_cast};
+use crate::type_checking::casting::{explicit_cast, implicit_cast};
 use crate::type_checking::coercion::implicit::std_rval_promotion;
 use crate::type_checking::op::typecheck_binop;
 use crate::type_checking::result::TypecheckResult;
@@ -722,14 +722,14 @@ pub fn typecheck_expr_inner(
             match operator {
                 CXUnOp::PreIncrement(increment_amount)
                 | CXUnOp::PostIncrement(increment_amount) => {
-                    let operand_val =
-                        typecheck_expr(env, base_data, operand, None)?.into_expression();
+                    let operand_val = typecheck_expr(env, base_data, operand, None)?
+                        .into_expression();
                     let operand_type = operand_val.get_type();
 
                     let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned() else {
                         return log_typecheck_error!(
                             env,
-                            operand.token_range(),
+                            operand_val.token_range.as_ref(),
                             "Cannot apply pre-increment to non-reference type {}",
                             operand_type
                         );
@@ -759,7 +759,7 @@ pub fn typecheck_expr_inner(
                         _ => {
                             return log_typecheck_error!(
                                 env,
-                                operand.token_range(),
+                                operand_val.token_range.as_ref(),
                                 "Pre-increment operator requires an integer or pointer type, found {}",
                                 inner
                             );
@@ -768,71 +768,71 @@ pub fn typecheck_expr_inner(
                 }
 
                 CXUnOp::LNot => {
-                    let operand_val = typecheck_expr(env, base_data, operand, None)?;
-                    let loaded_operand = coerce_value(env, expr, operand_val.into_expression())?;
-                    let loaded_operand =
-                        implicit_cast(env, loaded_operand, &MIRType::bool())?;
+                    let operand_val = typecheck_expr(env, base_data, operand, None)
+                        .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                        .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
 
-                    TypecheckResult::unary_op(
-                        TypecheckResult::from(loaded_operand),
-                        MIRUnOp::LNOT,
+                    TypecheckResult::new_base(
                         MIRTypeKind::Integer {
                             _type: MIRIntegerType::I1,
                             signed: false,
                         }
                         .into(),
+                        MIRExpressionKind::UnaryOperation {
+                            operand: Box::new(operand_val),
+                            op: MIRUnOp::LNOT,
+                        }
                     )
                 }
 
                 CXUnOp::BNot => {
-                    let operand_val =
-                        typecheck_expr(env, base_data, operand, None)?.into_expression();
-                    let loaded_op_val = std_rval_promotion(env, operand_val)?;
-                    let loaded_op_type = loaded_op_val.get_type();
+                    let operand_val = typecheck_expr(env, base_data, operand, None)
+                        .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+                    let op_type = operand_val.get_type();
 
-                    if !loaded_op_type.is_integer() {
+                    if !op_type.is_integer() {
                         return log_typecheck_error!(
                             env,
-                            operand.token_range(),
+                            operand_val.token_range.as_ref(),
                             "Bitwise NOT operator requires an integer type, found {}",
-                            loaded_op_type
+                            op_type
                         );
                     }
 
-                    let result_type = loaded_op_val.get_type();
-
-                    TypecheckResult::unary_op(
-                        TypecheckResult::from(loaded_op_val),
-                        MIRUnOp::BNOT,
-                        result_type,
+                    TypecheckResult::new_base(                       
+                        op_type,
+                        MIRExpressionKind::UnaryOperation {
+                            operand: Box::new(operand_val),
+                            op: MIRUnOp::BNOT,
+                        }
                     )
                 }
 
                 CXUnOp::Negative => {
-                    let operand_val =
-                        typecheck_expr(env, base_data, operand, None)?.into_expression();
-                    let loaded_op_val = std_rval_promotion(env, operand_val)?;
-                    let loaded_op_type = loaded_op_val.get_type();
+                    let operand_val = typecheck_expr(env, base_data, operand, None)
+                        .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+                    let operand_type = operand_val.get_type();
 
-                    let operator = match &loaded_op_type.kind {
+                    let operator = match &operand_type.kind {
                         MIRTypeKind::Integer { .. } => MIRUnOp::NEG,
                         MIRTypeKind::Float { .. } => MIRUnOp::FNEG,
 
                         _ => {
                             return log_typecheck_error!(
                                 env,
-                                operand.token_range(),
+                                operand_val.token_range.as_ref(),
                                 "Negation operator requires an integer or float type, found {}",
-                                loaded_op_type
+                                operand_val
                             );
                         }
                     };
-                    let result_type = loaded_op_val.get_type();
 
-                    TypecheckResult::unary_op(
-                        TypecheckResult::from(loaded_op_val),
-                        operator,
-                        result_type,
+                    TypecheckResult::new_base(
+                        operand_type,
+                        MIRExpressionKind::UnaryOperation {
+                             operand: Box::new(operand_val),
+                             op: operator,
+                        }
                     )
                 }
 
@@ -884,7 +884,7 @@ pub fn typecheck_expr_inner(
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
                     let (operand_expr, implicit_parameters) = operand_val.into_parts();
 
-                    TypecheckResult::from(explicit_cast(env, expr, operand_expr, &to_type)?)
+                    TypecheckResult::from(explicit_cast(env, operand_expr, &to_type)?)
                         .with_implicit_parameters(implicit_parameters)
                 }
             }
@@ -930,8 +930,8 @@ pub fn typecheck_expr_inner(
             let mut rhs_val = typecheck_expr(env, base_data, rhs, Some(&inner))?;
 
             if let Some(op) = op {
-                let loaded_lhs = coerce_value(env, expr, lhs_val.clone())?;
-                let loaded_rhs = coerce_value(env, expr, rhs_val.into_expression())?;
+                let loaded_lhs = std_rval_promotion(env, lhs_val.clone())?;
+                let loaded_rhs = std_rval_promotion(env, rhs_val.into_expression())?;
 
                 rhs_val = typecheck_binop(env, op, loaded_lhs, loaded_rhs)?;
             }
@@ -939,7 +939,7 @@ pub fn typecheck_expr_inner(
             if inner.get_specifier(CX_CONST) {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Cannot assign to a const type"
                 );
             }

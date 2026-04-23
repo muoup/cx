@@ -390,7 +390,7 @@ pub(crate) fn int_complete_type(
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Array {
-                    size: *size,
+                    length: *size,
                     inner_type: Box::new(inner_type_id),
                 },
             ))

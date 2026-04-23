@@ -969,4 +969,9 @@ impl TypeEnvironment<'_> {
             BindingMoveState::ConditionallyMoved => "conditionally moved",
         }
     }
+    
+    pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
+        // Implementation for checking if two types are equal
+        todo!()
+    }
 }

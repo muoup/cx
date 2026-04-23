@@ -36,10 +36,10 @@ pub fn lower_type_conversion(
         };
 
     match &coercion {
+        MIRCoercion::Typechange => Ok(bc_operand),
         MIRCoercion::ReinterpretBits => {
             std_coercion(builder, bc_operand, LMIRCoercionType::BitCast)
         }
-        MIRCoercion::IntToBool => std_coercion(builder, bc_operand, LMIRCoercionType::Trunc),
         MIRCoercion::Integral {
             sextend,
             from_type,
@@ -137,7 +137,6 @@ pub fn lower_type_conversion(
                 },
             )
         }
-        MIRCoercion::CStrToStr => Ok(bc_operand),
         MIRCoercion::GetFnPtr => {
             let LMIRValue::FunctionRef(func) = &bc_operand else {
                 unreachable!("GetFnPtr coercion applied to non-function value");

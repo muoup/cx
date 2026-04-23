@@ -267,7 +267,7 @@ pub fn lower_unary_op(
                 MIRTypeKind::PointerTo { inner_type, .. } => {
                     let inner_type = builder
                         .type_definitions
-                        .get(*inner_type.as_ref())
+                        .get(*inner_type)
                         .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
                     let bc_inner_type = builder.convert_cx_type(inner_type);
 

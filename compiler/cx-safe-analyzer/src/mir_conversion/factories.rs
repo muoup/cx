@@ -181,8 +181,8 @@ pub fn binary_op_intrinsic(op: &MIRBinOp) -> FMIRBinaryIntrinsic {
 }
 
 pub fn coercion_intrinsic(
-    env: &FMIREnvironment,
-    expr: &MIRExpression,
+    _env: &FMIREnvironment,
+    _expr: &MIRExpression,
     coercion: &MIRCoercion,
 ) -> CXResult<FMIRCastIntrinsic> {
     Ok(match coercion {
@@ -207,17 +207,9 @@ pub fn coercion_intrinsic(
             to_bits: to_type.bytes() * 8,
             sextend: *sextend,
         },
-        MIRCoercion::IntToBool => FMIRCastIntrinsic::IntToBool,
+        MIRCoercion::Typechange |
         MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
-        MIRCoercion::GetFnPtr => FMIRCastIntrinsic::ReinterpretBits,
-
-        MIRCoercion::CStrToStr => {
-            return log_analysis_error!(
-                env,
-                expr,
-                "Converting from char* to _str& is an unsafe coercion",
-            );
-        }
+        MIRCoercion::GetFnPtr => todo!()
     })
 }
 

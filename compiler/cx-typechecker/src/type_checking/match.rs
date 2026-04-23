@@ -1,11 +1,11 @@
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
+use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
 };
 use crate::type_checking::typechecker::{expr_may_fall_through, typecheck_expr};
-use crate::type_checking::{casting::coerce_value, result::TypecheckResult};
 use cx_ast::ast::{CXExpr, CXExprKind};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
@@ -25,9 +25,10 @@ pub fn typecheck_switch(
     env.push_scope(true, false);
     env.set_scope_anchor(condition);
     env.configure_merge_scope(condition, "switch join", None, false);
+    
     let join_scope_idx = env.current_scope_index();
     let condition_value = typecheck_expr(env, base_data, condition, None)
-        .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
+        .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
     let base_snapshot = env.current_snapshot();
 
     // Build match arms from the cases
@@ -39,7 +40,7 @@ pub fn typecheck_switch(
         let Some(case_expr) = block.get(*case_index as usize) else {
             return log_typecheck_error!(
                 env,
-                condition.token_range(),
+                condition_value.token_range.as_ref(),
                 "Switch case index {} out of bounds (block has {} expressions)",
                 *case_index,
                 block.len()
@@ -64,7 +65,7 @@ pub fn typecheck_switch(
         let MIRTypeKind::Integer { _type, signed } = &condition_value.get_type().kind else {
             return log_typecheck_error!(
                 env,
-                condition.token_range(),
+                condition_value.token_range.as_ref(),
                 "Switch condition must be an integer type, found {}",
                 condition_value.get_type()
             );
@@ -88,7 +89,7 @@ pub fn typecheck_switch(
             let Some(expr) = block.get(idx) else {
                 return log_typecheck_error!(
                     env,
-                    condition.token_range(),
+                    condition_value.token_range.as_ref(),
                     "Switch default case index {} out of bounds (block has {} expressions)",
                     idx,
                     block.len()
@@ -144,7 +145,7 @@ pub fn typecheck_match(
     default: Option<&Box<CXExpr>>,
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, base_data, condition, None)
-        .and_then(|val| coerce_value(env, condition, val.into_expression()))?;
+        .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
     let mut expr_type = expr_value.get_type();
     env.push_scope(false, false);
     env.set_scope_anchor(condition);
@@ -155,14 +156,12 @@ pub fn typecheck_match(
     if let Some(inner) = env.type_context.mem_ref_inner(&expr_type) {
         expr_type = inner.clone();
 
-        if !expr_type.is_memory_resident() {
-            expr_value = MIRExpression {
-                token_range: None,
-                kind: MIRExpressionKind::MemoryRead {
-                    source: Box::new(expr_value),
-                },
-                _type: expr_type.clone(),
-            }
+        expr_value = MIRExpression {
+            token_range: None,
+            kind: MIRExpressionKind::RegionDuplicate {
+                source: Box::new(expr_value),
+            },
+            _type: expr_type.clone(),
         }
     }
 
@@ -284,10 +283,12 @@ pub fn typecheck_match(
                     };
 
                 // Extract the variant value and bind it
-                let variant_value_expr = TypecheckResult::tagged_union_get(
-                    TypecheckResult::from(expr_value.clone()),
-                    variant_type.clone(),
+                let variant_value_expr = TypecheckResult::new_base(
                     variant_get_type,
+                    MIRExpressionKind::TaggedUnionGet {
+                        value: Box::new(expr_value),
+                        variant_type: variant_type.clone(),
+                    }
                 )
                 .into_expression();
 
@@ -295,7 +296,7 @@ pub fn typecheck_match(
                     let CXExprKind::Identifier(name) = &inner.kind else {
                         return log_typecheck_error!(
                             env,
-                            inner.token_range(),
+                            variant_value_expr.token_range.as_ref(),
                             "Tagged union variant pattern must bind to an identifier"
                         );
                     };
@@ -339,7 +340,7 @@ pub fn typecheck_match(
         _ => {
             return log_typecheck_error!(
                 env,
-                condition.token_range(),
+                Some(condition.token_range()),
                 "Match condition must be an integer or tagged union type, found {}",
                 expr_type
             );

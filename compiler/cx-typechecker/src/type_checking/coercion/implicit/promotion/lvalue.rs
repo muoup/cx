@@ -41,15 +41,8 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> Coercio
     let loaded = MIRExpression {
         token_range,
         _type: result_type.clone(),
-        kind: if mem_inner.is_memory_resident() {
-            MIRExpressionKind::RegionDuplicate {
-                source: Box::new(expr),
-                _type: result_type
-            }
-        } else {
-            MIRExpressionKind::MemoryRead {
-                source: Box::new(expr),
-            }
+        kind: MIRExpressionKind::RegionDuplicate {
+            source: Box::new(expr),
         },
     };
 

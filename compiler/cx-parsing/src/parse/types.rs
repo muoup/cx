@@ -2,7 +2,7 @@ use crate::parse::ParserData;
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
     CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
-    CXTypeKind, CXTypeSpecifier, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
+    CXTypeKind, CXTypeQualifiers, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
@@ -298,8 +298,8 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
     )
 }
 
-pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeSpecifier {
-    let mut spec_acc: CXTypeSpecifier = 0;
+pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeQualifiers {
+    let mut spec_acc: CXTypeQualifiers = 0;
 
     while let Ok(TokenKind::Specifier(spec)) = next_kind!(tokens) {
         match spec {

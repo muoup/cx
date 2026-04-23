@@ -27,14 +27,14 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
         MIRTypeKind::PointerTo { inner_type } => {
             mangled.push('P');
             let inner_type = definitions
-                .get(*inner_type.as_ref())
+                .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             mangled.push_str(&type_mangle(definitions, inner_type));
         }
         MIRTypeKind::MemoryReference { inner_type } => {
             mangled.push('R');
             let inner_type = definitions
-                .get(*inner_type.as_ref())
+                .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             mangled.push_str(&type_mangle(definitions, inner_type));
         }
@@ -42,12 +42,12 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
             mangled.push('O');
             mangled.push_str(&size.to_string());
         }
-        MIRTypeKind::Array { size, inner_type } => {
+        MIRTypeKind::Array { length: size, inner_type } => {
             mangled.push('A');
             mangled.push_str(&size.to_string());
             mangled.push('_');
             let inner_type = definitions
-                .get(*inner_type.as_ref())
+                .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             mangled.push_str(&type_mangle(definitions, inner_type));
         }

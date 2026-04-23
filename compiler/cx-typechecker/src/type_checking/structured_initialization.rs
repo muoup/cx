@@ -14,8 +14,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        binary_ops::struct_field, casting::implicit_cast, result::TypecheckResult,
-        typechecker::typecheck_expr,
+        binary_ops::struct_field, casting::implicit_cast, coercion::implicit::std_rval_promotion, result::TypecheckResult, typechecker::typecheck_expr
     },
 };
 
@@ -124,7 +123,7 @@ pub fn typecheck_initializer_list(
     match &to_type.kind {
         MIRTypeKind::Array {
             inner_type: _type,
-            size,
+            length: size,
         } => {
             let inner_type = env
                 .type_context
@@ -191,7 +190,7 @@ fn typecheck_array_initializer(
     let inner_type_id = env.intern_type(inner_type.clone());
     let array_type = MIRType::from(MIRTypeKind::Array {
         inner_type: Box::new(inner_type_id),
-        size: array_size,
+        length: array_size,
     });
 
     let elements = indices
@@ -221,7 +220,7 @@ fn typecheck_structured_initializer(
     let Some(fields) = to_type.aggregate_fields(&env.type_context) else {
         return log_typecheck_error!(
             env,
-            expr.token_range(),
+            Some(expr.token_range()),
             "Expected a structured type for initializer, found {to_type}"
         );
     };
@@ -240,7 +239,7 @@ fn typecheck_structured_initializer(
             else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Structured initializer has unexpected field: {name}"
                 );
             };
@@ -250,7 +249,7 @@ fn typecheck_structured_initializer(
         if counter >= fields.len() {
             return log_typecheck_error!(
                 env,
-                expr.token_range(),
+                Some(expr.token_range()),
                 "Too many elements in struct initializer"
             );
         }
@@ -258,7 +257,7 @@ fn typecheck_structured_initializer(
         if initialized_fields[counter] {
             return log_typecheck_error!(
                 env,
-                expr.token_range(),
+                Some(expr.token_range()),
                 "Field '{}' initialized more than once",
                 fields[counter].0
             );
@@ -266,13 +265,14 @@ fn typecheck_structured_initializer(
 
         let (field_name, field_type) = &fields[counter];
         let value = typecheck_expr(env, base_data, &index.value, Some(field_type))
-            .and_then(|v| implicit_cast(env, &index.value, v.into_expression(), field_type))?;
+            .and_then(|expr| std_rval_promotion(env, expr.into_expression()))
+            .and_then(|expr| implicit_cast(env, expr, field_type))?;
 
         let Some(struct_field_info) = struct_field(to_type, &env.type_context, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,
-                expr.token_range(),
+                value.token_range.as_ref(),
                 "Could not find field '{}' in type {}",
                 field_name,
                 to_type

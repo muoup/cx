@@ -381,7 +381,7 @@ fn deduce_from_cx_type(
 
         CXTypeKind::ExplicitSizedArray(inner, size) => {
             let MIRTypeKind::Array {
-                size: actual_size,
+                length: actual_size,
                 inner_type,
             } = &actual.kind
             else {

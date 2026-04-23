@@ -186,11 +186,11 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRTypeContext)
 
         MIRTypeKind::Array {
             inner_type: _type,
-            size,
+            length: size,
         } => LMIRTypeKind::Array {
             element: Box::new(convert_type(
                 definitions
-                    .get(*_type.as_ref())
+                    .get(*_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", _type.0)),
                 definitions,
             )),

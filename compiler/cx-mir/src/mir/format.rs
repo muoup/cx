@@ -340,7 +340,7 @@ fn write_type_body(
             write_type_id(
                 f,
                 definitions,
-                *inner_type.as_ref(),
+                *inner_type,
                 TypeRenderMode::Inline,
                 state,
             )?;
@@ -350,18 +350,18 @@ fn write_type_body(
             write_type_id(
                 f,
                 definitions,
-                *inner_type.as_ref(),
+                *inner_type,
                 TypeRenderMode::Inline,
                 state,
             )?;
             write!(f, "&")
         }
-        MIRTypeKind::Array { size, inner_type } => {
+        MIRTypeKind::Array { length: size, inner_type } => {
             write!(f, "[")?;
             write_type_id(
                 f,
                 definitions,
-                *inner_type.as_ref(),
+                *inner_type,
                 TypeRenderMode::Inline,
                 state,
             )?;
@@ -761,43 +761,6 @@ impl<'a> MIRExpressionFormatter<'a> {
             MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
     }
-
-    fn write_coercion(&self, f: &mut Formatter<'_>, coercion: &MIRCoercion) -> std::fmt::Result {
-        match coercion {
-            MIRCoercion::Integral {
-                sextend,
-                from_type,
-                to_type,
-            } => write!(
-                f,
-                "integral({}, {} -> {})",
-                from_type,
-                if *sextend { "sext" } else { "zext" },
-                to_type
-            ),
-            MIRCoercion::FloatCast { to_type } => write!(f, "fp_integral(to: {})", to_type),
-            MIRCoercion::PtrToInt { to_type } => write!(f, "ptr_to_int(to: {})", to_type),
-            MIRCoercion::IntToPtr { sextend } => {
-                write!(f, "int_to_ptr({})", if *sextend { "sext" } else { "zext" })
-            }
-            MIRCoercion::IntToFloat { to_type, sextend } => write!(
-                f,
-                "int_to_float({}, to: {})",
-                if *sextend { "sext" } else { "zext" },
-                to_type
-            ),
-            MIRCoercion::FloatToInt { sextend, to_type } => write!(
-                f,
-                "float_to_int({}, to: {})",
-                if *sextend { "sext" } else { "zext" },
-                to_type
-            ),
-            MIRCoercion::IntToBool => write!(f, "int_to_bool"),
-            MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
-            MIRCoercion::GetFnPtr => write!(f, "get_fn_ptr"),
-            MIRCoercion::CStrToStr => write!(f, "cstr_to_str"),
-        }
-    }
 }
 
 impl Display for MIRExpression {
@@ -939,10 +902,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 
                 Ok(())
             }
-            MIRExpressionKind::RegionDuplicate { source, _type } => {
-                write!(f, "CopyRegion [")?;
-                self.write_type(f, _type)?;
-                write!(f, "] <'")?;
+            MIRExpressionKind::RegionDuplicate { source } => {
+                write!(f, "CopyRegion")?;
+                write!(f, " <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
@@ -1361,8 +1323,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 operand,
                 conversion,
             } => {
-                write!(f, "TypeConversion ")?;
-                self.write_coercion(f, conversion)?;
+                write!(f, "TypeConversion {}", conversion)?;
                 write!(f, " <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
@@ -1511,10 +1472,10 @@ impl Display for MIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            MIRCoercion::IntToBool => write!(f, "int_to_bool"),
-            MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
             MIRCoercion::GetFnPtr => write!(f, "get_fn_ptr"),
-            MIRCoercion::CStrToStr => write!(f, "cstr_to_str"),
+            
+            MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
+            MIRCoercion::Typechange => write!(f, "typechange"),
         }
     }
 }
@@ -1538,7 +1499,7 @@ impl Display for MIRTypeKind {
             MIRTypeKind::Unit => write!(f, "()"),
             MIRTypeKind::PointerTo { inner_type } => write!(f, "{inner_type}*"),
             MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
-            MIRTypeKind::Array { size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
+            MIRTypeKind::Array { length: size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
             MIRTypeKind::Opaque { size } => write!(f, "opaque({size})"),
             MIRTypeKind::Undefined => write!(f, "undefined"),
             MIRTypeKind::Str => write!(f, "_str"),

@@ -12,9 +12,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        casting::implicit_cast,
-        coercion::implicit::std_rval_promotion,
-        result::TypecheckResult,
+        casting::implicit_cast, coercion::implicit::promotion::std_rval_promotion, result::TypecheckResult
     },
 };
 

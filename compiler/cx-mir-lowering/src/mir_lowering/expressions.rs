@@ -200,10 +200,12 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
 
-        MIRExpressionKind::RegionDuplicate { source, _type } => {
+        MIRExpressionKind::RegionDuplicate { source } => {
+            let _type = &source._type;
+            
             let new_region = builder.add_new_instruction(
                 LMIRInstructionKind::Allocate {
-                    alignment: builder.convert_cx_type(_type).alignment(),
+                    alignment: _type.type_alignment(&builder.type_definitions) as u8,
                     _type: builder.convert_cx_type(_type),
                 },
                 LMIRType::default_pointer(),
@@ -477,7 +479,7 @@ fn lower_call(
         MIRTypeKind::PointerTo { inner_type, .. } => {
             let inner_type = builder
                 .type_definitions
-                .get(*inner_type.as_ref())
+                .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             if let MIRTypeKind::Function { signature } = &inner_type.kind {
                 signature.as_ref().clone()

@@ -5,8 +5,9 @@ use crate::environment::function_query::{
     query_deduced_static_member_function, query_static_member_function,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::casting::{coerce_value, implicit_cast};
-use crate::type_checking::coercion::implicit::{integer, std_rval_promotion};
+use crate::type_checking::casting::implicit_cast;
+use crate::type_checking::coercion::implicit::promotion::lvalue;
+use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
@@ -15,13 +16,9 @@ use crate::type_checking::typechecker::{ensure_binding_available, typecheck_expr
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
 use cx_ast::data::CXReceiverMode;
 use cx_ast::data::{CX_CONST, CXFunctionPrototype, CXTypeKind};
-use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeKind};
-use cx_mir::mir::expression::{
-    MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRFunctionContract,
-    MIRIntegerBinOp, MIRPtrBinOp, MIRPtrDiffBinOp,
-};
+use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
+use cx_mir::mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind, MIRFunctionContract};
 use cx_mir::mir::program::MIRBaseMappings;
-use cx_tokens::TokenRange;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
@@ -47,7 +44,7 @@ fn resolve_access_base(
 
                 lhs = MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::MemoryRead {
+                    kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },
                     _type: env.type_context.pointer_to(ptr_inner.clone()),
@@ -59,7 +56,7 @@ fn resolve_access_base(
             if env.type_context.mem_ref_inner(&inner_type).is_some() {
                 lhs = MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::MemoryRead {
+                    kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },
                     _type: inner_type.clone(),
@@ -119,7 +116,9 @@ fn finish_function_call<'a>(
         .chain(tc_args)
         .collect();
 
-    let loaded_function = coerce_value(env, callee_expr, function)?;
+    let loaded_function = lvalue::try_conversion(env, function).catch_err(|expr, msg| {
+        log_typecheck_error!(env, expr.token_range.as_ref(), "Unreachable: {}", msg)
+    })?;
     let loaded_function_type = loaded_function.get_type();
     let loaded_function_type = env
         .type_context
@@ -161,23 +160,22 @@ fn finish_function_call<'a>(
     let canon_params = signature.params.len();
 
     for ((arg_expr, val), param) in tc_args.iter_mut().zip(signature.params.iter()) {
-        *val = implicit_cast(env, arg_expr, std::mem::take(val), &param._type)?;
+        *val = implicit_cast(env, std::mem::take(val), &param._type)?;
     }
 
     for (arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
         *val = std_rval_promotion(env, std::mem::take(val))?;
-        
+
         let arg_type = val._type.clone();
-        
+
         match &arg_type.kind {
             MIRTypeKind::PointerTo { .. } => {}
-            MIRTypeKind::Integer { .. } => {},
+            MIRTypeKind::Integer { .. } => {}
             MIRTypeKind::Float {
                 _type: MIRFloatType::F32,
             } => {
                 *val = implicit_cast(
                     env,
-                    arg_expr,
                     std::mem::take(val),
                     &MIRTypeKind::Float {
                         _type: MIRFloatType::F64,
@@ -537,7 +535,7 @@ fn typecheck_type_constructor(
     else {
         return log_typecheck_error!(
             env,
-            expr.token_range(),
+            Some(expr.token_range()),
             "Variant '{}' not found in tagged union type {}",
             name,
             union_name
@@ -545,7 +543,8 @@ fn typecheck_type_constructor(
     };
 
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-        .and_then(|v| implicit_cast(env, expr, v.into_expression(), &variant_type))?;
+        .and_then(|v| std_rval_promotion(env, v.into_expression()))
+        .and_then(|v| implicit_cast(env, v, &variant_type))?;
 
     Ok(TypecheckResult::new_base(
         union_type.clone(),
@@ -659,7 +658,7 @@ pub(crate) fn typecheck_is(
     expr: &CXExpr,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs: MIRExpression = typecheck_expr(env, base_data, lhs, None)
-        .and_then(|v| coerce_value(env, lhs, v.into_expression()))?;
+        .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
     let union_type = if let Some(inner) = env.type_context.mem_ref_inner(&tc_type) {
@@ -860,8 +859,8 @@ pub(crate) fn typecheck_contract(
 
     let precondition = if let Some(pre_expr) = &naive_contract.precondition {
         let tc_pre = typecheck_expr(env, base_data, pre_expr, Some(&MIRType::bool()))
-            .and_then(|v| coerce_value(env, pre_expr, v.into_expression()))
-            .and_then(|v| implicit_cast(env, pre_expr, v, &MIRType::bool()))?;
+            .and_then(|v| std_rval_promotion(env, v.into_expression()))
+            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
         Some(Box::new(tc_pre))
     } else {
         None
@@ -882,8 +881,8 @@ pub(crate) fn typecheck_contract(
         }
 
         let tc_post = typecheck_expr(env, base_data, post_expr, Some(&MIRType::bool()))
-            .and_then(|v| coerce_value(env, post_expr, v.into_expression()))
-            .and_then(|v| implicit_cast(env, post_expr, v, &MIRType::bool()))?;
+            .and_then(|v| std_rval_promotion(env, v.into_expression()))
+            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
         Some((ret_name.clone(), Box::new(tc_post)))
     } else {
         None
