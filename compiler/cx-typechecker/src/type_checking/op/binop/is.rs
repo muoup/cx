@@ -4,7 +4,7 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExpr, CXExprKind};
+use cx_ast::ast::{CXExpression, CXExprKind};
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::MIRBaseMappings;
@@ -13,9 +13,9 @@ use cx_util::{CXResult, identifier::CXIdent};
 pub(crate) fn typecheck_is(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    lhs: &CXExpr,
-    rhs: &CXExpr,
-    expr: &CXExpr,
+    lhs: &CXExpression,
+    rhs: &CXExpression,
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let tc_lhs: MIRExpression = typecheck_expr(env, base_data, lhs, None)
         .and_then(|v| std_rval_promotion(env, v.into_expression()))?;

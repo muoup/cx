@@ -601,20 +601,6 @@ fn write_signature_with_context(
         state,
     )?;
 
-    if signature.contract.safe {
-        write!(f, " [safe]")?;
-    }
-
-    if let Some(precondition) = &signature.contract.precondition {
-        writeln!(f, "\nPrecondition:")?;
-        MIRExpressionFormatter::with_definitions(precondition, 2, definitions).fmt(f)?;
-    }
-
-    if let Some((_, postcondition)) = &signature.contract.postcondition {
-        writeln!(f, "\nPostcondition:")?;
-        MIRExpressionFormatter::with_definitions(postcondition, 2, definitions).fmt(f)?;
-    }
-
     Ok(())
 }
 
@@ -634,20 +620,6 @@ impl Display for MIRFunctionSignature {
             write!(f, "...")?;
         }
         write!(f, ") -> {}", self.return_type)?;
-
-        if self.contract.safe {
-            write!(f, " [safe]")?;
-        }
-
-        if let Some(precondition) = &self.contract.precondition {
-            writeln!(f, "\nPrecondition:")?;
-            MIRExpressionFormatter::new(precondition, 2).fmt(f)?;
-        }
-
-        if let Some((_, postcondition)) = &self.contract.postcondition {
-            writeln!(f, "\nPostcondition:")?;
-            MIRExpressionFormatter::new(postcondition, 2).fmt(f)?;
-        }
 
         Ok(())
     }
@@ -1267,13 +1239,21 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
-            MIRExpressionKind::Return { value } => {
+            MIRExpressionKind::Return { value, postcondition } => {
                 write!(f, "Return <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
                         expr: value,
+                        depth: self.depth + 1,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                if let Some(postcondition) = postcondition {
+                    MIRExpressionFormatter {
+                        expr: postcondition,
                         depth: self.depth + 1,
                         definitions: self.definitions,
                     }
@@ -1299,6 +1279,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             MIRExpressionKind::CallFunction {
                 function,
                 arguments,
+                contract: _
             } => {
                 write!(f, "CallFunction <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -1350,17 +1331,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             MIRExpressionKind::LeakLifetime { expression } => {
                 write!(f, "LeakLifetime <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: expression,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            MIRExpressionKind::Defer { expression } => {
-                write!(f, "Defer <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {

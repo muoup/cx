@@ -13,7 +13,6 @@ const KEYWORDS = [
     "const",
     "continue",
     "default",
-    "defer",
     "do",
     "else",
     "enum",

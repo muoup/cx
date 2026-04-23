@@ -1,4 +1,4 @@
-use cx_ast::{ast::CXExpr, data::CXFunctionKind};
+use cx_ast::{ast::CXExpression, data::CXFunctionKind};
 use cx_mir::mir::{
     data::MIRType,
     name_mangling::{base_mangle_member, base_mangle_standard, base_mangle_static_member},
@@ -20,13 +20,13 @@ pub fn base_mangle_fn_name(
             name, member_type, ..
         } => {
             let member_type =
-                env.complete_type(base_data, &CXExpr::default(), &member_type.as_type())?;
+                env.complete_type(base_data, &CXExpression::default(), &member_type.as_type())?;
             base_mangle_member(&env.symbols.context, name.as_str(), &member_type)
         }
 
         CXFunctionKind::StaticMemberFunction { name, member_type } => {
             let member_type =
-                env.complete_type(base_data, &CXExpr::default(), &member_type.as_type())?;
+                env.complete_type(base_data, &CXExpression::default(), &member_type.as_type())?;
             base_mangle_static_member(&env.symbols.context, name.as_str(), &member_type)
         }
     })

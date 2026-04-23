@@ -2,7 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_ast::data::CXFunctionPrototype;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
@@ -22,7 +22,7 @@ pub(crate) fn typecheck_contract(
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
-            let mir_type = env.complete_type(base_data, &CXExpr::default(), &param._type)?;
+            let mir_type = env.complete_type(base_data, &CXExpression::default(), &param._type)?;
             env.function.insert_symbol(
                 name.to_string(),
                 MIRExpression {
@@ -49,7 +49,7 @@ pub(crate) fn typecheck_contract(
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
             let mir_type =
-                env.complete_type(base_data, &CXExpr::default(), &prototype.return_type)?;
+                env.complete_type(base_data, &CXExpression::default(), &prototype.return_type)?;
             env.function.insert_symbol(
                 ret_name.to_string(),
                 MIRExpression {

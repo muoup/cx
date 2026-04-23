@@ -6,7 +6,7 @@ use crate::{
         coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
     },
 };
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_ast::data::CXType;
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
@@ -16,7 +16,7 @@ use cx_util::{CXResult, identifier::CXIdent};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
-    expr: &CXExpr,
+    expr: &CXExpression,
     name: &CXIdent,
 ) -> CXResult<()> {
     let Some(binding) = env.function.tracked_binding(name.as_str()) else {
@@ -45,10 +45,10 @@ pub(crate) fn ensure_binding_available(
 pub(crate) fn typecheck_var_declaration(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     ty: &CXType,
     name: &CXIdent,
-    initial_value: Option<&Box<CXExpr>>,
+    initial_value: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
     let ty = env.complete_type(base_data, expr, ty).map_err(|err| {
         let err: CXResult<()> = log_typecheck_error!(

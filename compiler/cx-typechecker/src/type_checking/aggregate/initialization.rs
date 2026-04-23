@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXExpr, CXInitIndex};
+use cx_ast::ast::{CXExpression, CXInitIndex};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpressionKind, StructInitialization},
@@ -21,7 +21,7 @@ use crate::{
 pub fn typecheck_initializer_list(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     indices: &[CXInitIndex],
     to_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
@@ -135,7 +135,7 @@ fn typecheck_array_initializer(
 fn typecheck_structured_initializer(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     indices: &[CXInitIndex],
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {

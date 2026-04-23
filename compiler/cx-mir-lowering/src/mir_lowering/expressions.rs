@@ -2,14 +2,17 @@
 //!
 //! This module handles lowering of MIRExpression (AST-style IR) to LMIR.
 
+use std::ops::Deref;
+
 use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
 };
 use cx_mir::mir::{
     data::MIRTypeKind,
-    expression::{MIRExpression, MIRExpressionKind, StructInitialization},
+    expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
     program::MIRFunction,
+    r#type::MIRType,
 };
 use cx_util::CXResult;
 
@@ -202,7 +205,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::RegionDuplicate { source } => {
             let _type = &source._type;
-            
+
             let new_region = builder.add_new_instruction(
                 LMIRInstructionKind::Allocate {
                     alignment: _type.type_alignment(&builder.type_definitions) as u8,
@@ -256,12 +259,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             body,
         } => lower_for(builder, init, condition, increment, body),
 
-        MIRExpressionKind::Return { value } => {
+        MIRExpressionKind::Return {
+            value,
+            postcondition,
+        } => {
             let val = value
                 .as_ref()
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
-            lower_return(builder, val)
+            lower_return(builder, val, postcondition.as_ref().map(Box::deref))
         }
 
         MIRExpressionKind::Block { statements } => {
@@ -275,7 +281,8 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::CallFunction {
             function,
             arguments,
-        } => lower_call(builder, function, arguments, &expr._type),
+            contract,
+        } => lower_call(builder, function, contract, arguments, &expr._type),
 
         MIRExpressionKind::TypeConversion {
             operand,
@@ -453,18 +460,15 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             arms,
             default,
         } => lower_match(builder, condition, arms, default.as_deref()),
-
-        MIRExpressionKind::Defer { .. } => {
-            todo!("Defer lowering - to be implemented")
-        }
     }
 }
 
 fn lower_call(
     builder: &mut LMIRBuilder,
     function: &MIRExpression,
+    contract: &MIRFunctionContract,
     arguments: &[MIRExpression],
-    result_type: &cx_mir::mir::data::MIRType,
+    result_type: &MIRType,
 ) -> CXResult<LMIRValue> {
     let return_type = builder.convert_cx_type(result_type);
 
@@ -493,7 +497,7 @@ fn lower_call(
 
     let bc_signature = builder.convert_cx_signature(&signature);
 
-    if let Some(precondition) = &signature.contract.precondition {
+    if let Some(precondition) = &contract.precondition {
         builder.push_scope(None, None);
 
         for (arg_expr, param) in args.iter().cloned().zip(signature.params.iter()) {
@@ -508,7 +512,7 @@ fn lower_call(
     }
 
     // Capture args for postcondition binding before adding return buffer
-    let args_cloned = if signature.contract.postcondition.is_some() {
+    let args_cloned = if contract.postcondition.is_some() {
         args.clone()
     } else {
         vec![]
@@ -559,7 +563,7 @@ fn lower_call(
         )?
     };
 
-    if let Some((ret_name, postcondition)) = &signature.contract.postcondition {
+    if let Some((ret_name, postcondition)) = &contract.postcondition {
         builder.push_scope(None, None);
 
         for (arg_expr, param) in args_cloned.into_iter().zip(signature.params.iter()) {
@@ -822,19 +826,10 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
         builder.current_block_last_inst().map(|i| &i.kind),
         Some(LMIRInstructionKind::Return { .. })
     ) {
-        if mir_fn.prototype.name.as_str() == "main" {
-            lower_return(
-                builder,
-                Some(LMIRValue::IntImmediate {
-                    val: 0,
-                    _type: LMIRIntegerType::I32,
-                }),
-            )?;
-        } else if mir_fn.prototype.return_type.is_unit() {
-            lower_return(builder, None)?;
-        } else {
-            // Possible and fine, means that the end of the function is unreachable (e.g. diverging function or infinite loop)
-        }
+        unreachable!(
+            "Function '{}' does not end with a return instruction. Ensure all control flow paths return properly.",
+            builder.current_function_name().unwrap_or(&"<unknown>".to_string())
+        );
     }
 
     builder.finish_function()?;

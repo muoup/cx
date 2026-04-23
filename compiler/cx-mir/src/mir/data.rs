@@ -1,10 +1,9 @@
 use std::hash::{Hash, Hasher};
 
-use cx_ast::data::CXFunctionPrototype;
+use cx_ast::data::{CXFunctionContract, CXFunctionPrototype};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::mir::expression::MIRFunctionContract;
 pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeContext, MIRTypeId,
     MIRTypeKind,
@@ -21,7 +20,7 @@ pub struct MIRFunctionSignature {
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
-    pub contract: MIRFunctionContract,
+    pub contract: CXFunctionContract
 }
 
 impl PartialEq for MIRFunctionSignature {
@@ -42,6 +41,17 @@ impl Hash for MIRFunctionSignature {
     }
 }
 
+impl Default for MIRFunctionSignature {
+    fn default() -> Self {
+        Self {
+            return_type: MIRTypeKind::Unit.into(),
+            params: Vec::new(),
+            var_args: false,
+            contract: CXFunctionContract::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRFunctionPrototype {
     pub name: CXIdent,
@@ -49,7 +59,7 @@ pub struct MIRFunctionPrototype {
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
-    pub contract: MIRFunctionContract,
+    pub contract: CXFunctionContract,
 }
 
 impl MIRFunctionPrototype {
@@ -58,7 +68,7 @@ impl MIRFunctionPrototype {
             return_type: self.return_type.clone(),
             params: self.params.clone(),
             var_args: self.var_args,
-            contract: self.contract.clone(),
+            contract: self.contract.clone()
         }
     }
 }

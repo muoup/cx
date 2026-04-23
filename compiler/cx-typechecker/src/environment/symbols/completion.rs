@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cx_ast::ast::{CXExpr, VisibilityMode};
+use cx_ast::ast::{CXExpression, VisibilityMode};
 use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
 use cx_mir::mir::data::{MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
@@ -49,7 +49,7 @@ pub(crate) fn _complete_template_input(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
-    expr: &CXExpr,
+    expr: &CXExpression,
     input: &CXTemplateInput,
 ) -> CXResult<MIRTemplateInput> {
     let _ty = input
@@ -75,7 +75,7 @@ fn construct_type(ty: &CXType, kind: MIRTypeKind) -> MIRType {
 fn complete_type_id(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<MIRTypeId> {
     let completed = int_complete_type(env, base_data, expr, ty)?;
@@ -123,7 +123,7 @@ fn named_predeclaration_type(
 
 fn ensure_complete_value_type(
     env: &mut TypeEnvironment,
-    expr: &CXExpr,
+    expr: &CXExpression,
     field_name: &str,
     field_type: &MIRType,
 ) -> CXResult<()> {
@@ -176,7 +176,7 @@ fn ensure_complete_value_type(
 fn complete_named_aggregate<F>(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     ty: &CXType,
     name: CXIdent,
     template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
@@ -259,7 +259,7 @@ where
 fn ensure_named_identifier_completed(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     ty: &CXType,
     name: &CXIdent,
 ) -> CXResult<Option<MIRType>> {
@@ -343,7 +343,7 @@ fn ensure_named_identifier_completed(
 pub(crate) fn int_complete_type(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     ty: &CXType,
 ) -> CXResult<MIRType> {
     match &ty.kind {

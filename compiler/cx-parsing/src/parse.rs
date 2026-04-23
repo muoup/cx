@@ -1,7 +1,7 @@
 use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
-    ast::{CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
+    ast::{CXExpression, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
     data::{CXFunctionPrototype, CXTemplatePrototype},
     next_kind, peek_next_kind, try_next, PreparseContents,
 };
@@ -195,7 +195,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_body(data: &mut ParserData) -> CXResult<CXExpr> {
+fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
     if try_next!(data.tokens, punctuator!(OpenBrace)) {
         let start_index = data.tokens.index - 1;
         let mut body = Vec::new();

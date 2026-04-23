@@ -170,6 +170,7 @@ pub enum MIRExpressionKind {
     },
 
     Return {
+        postcondition: Option<Box<MIRExpression>>,
         value: Option<Box<MIRExpression>>,
     },
 
@@ -182,6 +183,7 @@ pub enum MIRExpressionKind {
     CallFunction {
         function: Box<MIRExpression>,
         arguments: Vec<MIRExpression>,
+        contract: MIRFunctionContract
     },
 
     // Type Conversion
@@ -203,10 +205,6 @@ pub enum MIRExpressionKind {
         expression: Box<MIRExpression>,
     },
 
-    // Defer (TODO: Refactor to proper scoped chains)
-    Defer {
-        expression: Box<MIRExpression>,
-    },
     Unsafe {
         expression: Box<MIRExpression>,
     },

@@ -10,7 +10,7 @@ use crate::type_checking::op::binop::calls::{
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExpr, CXExprKind};
+use cx_ast::ast::{CXExpression, CXExprKind};
 use cx_ast::data::CXTypeKind;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::MIRExpressionKind;
@@ -20,10 +20,10 @@ use cx_util::{CXResult, identifier::CXIdent};
 pub(crate) fn typecheck_type_constructor(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     union_type: &MIRType,
     name: &CXIdent,
-    inner: &CXExpr,
+    inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {
         unreachable!()
@@ -63,10 +63,10 @@ pub(crate) fn typecheck_type_constructor(
 pub(crate) fn typecheck_scoped_call(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    type_expr: &CXExpr,
-    method_expr: &CXExpr,
-    args_expr: &CXExpr,
-    expr: &CXExpr,
+    type_expr: &CXExpression,
+    method_expr: &CXExpression,
+    args_expr: &CXExpression,
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let mir_type = match &type_expr.kind {
         CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, name.as_str())?,

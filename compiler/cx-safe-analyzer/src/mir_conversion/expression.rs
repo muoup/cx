@@ -7,7 +7,7 @@ use cx_safe_ir::{
     ast::{CVMOperation, FMIRNode, FMIRNodeBody, FMIRType, FRc, MemoryLocation},
     intrinsic::FMIRIntrinsicKind,
 };
-use cx_util::{CXResult, identifier::CXIdent};
+use cx_util::CXResult;
 
 use crate::mir_conversion::environment::FMIREnvironment;
 
@@ -237,7 +237,7 @@ pub fn convert_expression(
             Ok(then_node(init_node, loop_node))
         }
 
-        MIRExpressionKind::Return { value } => {
+        MIRExpressionKind::Return { value, postcondition } => {
             let return_value = value
                 .as_ref()
                 .map(|expr| convert_expression(env, expr))
@@ -252,27 +252,12 @@ pub fn convert_expression(
                 },
             };
 
-            let postcondition = env.current_mir_prototype().contract.postcondition.clone();
-            let Some((ret_name, postcondition_expr)) = postcondition else {
-                return Ok(return_node);
-            };
-
             env.push_scope();
-            let ret_binding = ret_name.unwrap_or_else(|| CXIdent::from("ret"));
-            env.insert_variable(
-                ret_binding.clone(),
-                return_value._type.inner_type().clone(),
-                MemoryLocation::Stack {
-                    name: ret_binding.as_string(),
-                    depth: 0,
-                },
-                Some(FMIRNode {
-                    token_range: None,
-                    _type: return_value._type.inner_type().clone(),
-                    body: return_value.body.clone(),
-                }),
-            );
-            let postcondition_node = convert_expression(env, postcondition_expr.as_ref())?;
+            let postcondition_node = postcondition
+                .as_ref()
+                .map(|expr| convert_expression(env, expr))
+                .transpose()?
+                .unwrap_or(FMIRNode::unit());
             env.pop_scope();
 
             let assert_node = FMIRNode {
@@ -280,7 +265,7 @@ pub fn convert_expression(
                 _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CompilerAssert {
                     condition: FRc::new(postcondition_node),
-                    message: format!("postcondition failed:{}", ret_binding),
+                    message: format!("postcondition failed")
                 },
             };
 
@@ -453,6 +438,7 @@ pub fn convert_expression(
         MIRExpressionKind::CallFunction {
             function,
             arguments,
+            contract: _
         } => {
             let function_node = convert_expression(env, function)?;
             let argument_nodes = arguments
@@ -478,6 +464,8 @@ pub fn convert_expression(
             effect = effect.union(&FMIRType::unsafe_effect(FMIRType::pure(
                 mir_expr._type.clone(),
             )));
+            
+            // TODO: Contract enforcement
 
             Ok(FMIRNode {
                 token_range: None,

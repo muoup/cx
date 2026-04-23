@@ -1,5 +1,5 @@
 use cx_ast::{
-    ast::CXExpr,
+    ast::CXExpression,
     data::{CXFunctionKey, CXTemplateInput},
 };
 use cx_mir::mir::{
@@ -26,7 +26,7 @@ enum FunctionResolution<'a> {
 fn query_function_by_key(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     key: &CXFunctionKey,
     resolution: FunctionResolution<'_>,
 ) -> CXResult<Option<MIRFunctionPrototype>> {
@@ -73,7 +73,7 @@ fn query_function_by_key(
 fn require_function_by_key(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     key: &CXFunctionKey,
     resolution: FunctionResolution<'_>,
 ) -> CXResult<MIRFunctionPrototype> {
@@ -92,7 +92,7 @@ fn require_function_by_key(
 pub fn query_member_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     member_type: &MIRType,
     name: &CXIdent,
     template_input: Option<&CXTemplateInput>,
@@ -132,7 +132,7 @@ pub fn query_member_function(
 pub fn query_deduced_member_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     member_type: &MIRType,
     name: &CXIdent,
     arg_types: &[MIRType],
@@ -161,7 +161,7 @@ pub fn query_deduced_member_function(
 pub fn query_static_member_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     member_type: &MIRType,
     name: &CXIdent,
     template_input: Option<&CXTemplateInput>,
@@ -202,7 +202,7 @@ pub fn query_static_member_function(
 pub fn query_deduced_static_member_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     member_type: &MIRType,
     name: &CXIdent,
     arg_types: &[MIRType],
@@ -231,7 +231,7 @@ pub fn query_deduced_static_member_function(
 pub fn query_standard_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     name: &CXIdent,
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<MIRFunctionPrototype> {
@@ -257,7 +257,7 @@ pub fn query_standard_function(
 pub fn query_deduced_standard_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     name: &CXIdent,
     arg_types: &[MIRType],
 ) -> CXResult<Option<MIRFunctionPrototype>> {

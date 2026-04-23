@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_mir::mir::expression::MIRExpression;
 use cx_tokens::TokenRange;
 use cx_util::CXResult;
@@ -207,7 +207,7 @@ impl ControlFlow {
         ScopeId(self.scope_stack.len() - 1)
     }
 
-    pub fn set_scope_anchor(&mut self, expr: &CXExpr) {
+    pub fn set_scope_anchor(&mut self, expr: &CXExpression) {
         if let Some(scope) = self.scope_stack.last_mut() {
             scope.anchor_range = Some(expr.token_range().clone());
         }
@@ -215,7 +215,7 @@ impl ControlFlow {
 
     pub fn configure_merge_scope(
         &mut self,
-        expr: &CXExpr,
+        expr: &CXExpression,
         join_name: impl Into<String>,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
@@ -238,7 +238,7 @@ impl ControlFlow {
         });
     }
 
-    pub fn configure_loop_scope(&mut self, expr: &CXExpr, loop_kind: LoopScopeKind) {
+    pub fn configure_loop_scope(&mut self, expr: &CXExpression, loop_kind: LoopScopeKind) {
         let entry_snapshot = self.current_snapshot();
         let range = expr.token_range().clone();
 

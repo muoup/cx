@@ -1,5 +1,5 @@
 use cx_mir::mir::data::MIRType;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
 
 /// Richer representation of a typechecking result. Useful for edge cases where we need to carry implicit behavior
 /// not representable by the type system due to move semantics. We want to model CXExpr -> MIRExpr typechecking as
@@ -16,6 +16,7 @@ pub struct TypecheckResult {
     pub expression: MIRExpression,
     /// Implicit parameters carried upward for call sites (e.g. member receivers)
     pub implicit_parameters: Vec<MIRExpression>,
+    pub contract: Option<MIRFunctionContract>,
 }
 
 impl From<MIRExpression> for TypecheckResult {
@@ -23,6 +24,7 @@ impl From<MIRExpression> for TypecheckResult {
         Self {
             expression,
             implicit_parameters: Vec::new(),
+            contract: None
         }
     }
 }
@@ -36,6 +38,7 @@ impl TypecheckResult {
                 _type,
             },
             implicit_parameters: Vec::new(),
+            contract: None
         }
     }
 
@@ -43,19 +46,14 @@ impl TypecheckResult {
         self.implicit_parameters = implicit_parameters;
         self
     }
-
-    pub fn into_parts(self) -> (MIRExpression, Vec<MIRExpression>) {
-        (self.expression, self.implicit_parameters)
+    
+    pub fn with_contract(mut self, contract: Option<MIRFunctionContract>) -> Self {
+        self.contract = contract;
+        self
     }
 
-    pub fn chain(self, other: TypecheckResult) -> TypecheckResult {
-        TypecheckResult::from(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::Block {
-                statements: vec![self.expression, other.expression],
-            },
-            _type: MIRType::unit(),
-        })
+    pub fn decompose_function_expr(self) -> (MIRExpression, Vec<MIRExpression>, Option<MIRFunctionContract>) {
+        (self.expression, self.implicit_parameters, self.contract)
     }
 
     /// Get the type of this typecheck result's expression
@@ -81,6 +79,7 @@ impl TypecheckResult {
         TypecheckResult {
             expression: f(&self.expression),
             implicit_parameters: self.implicit_parameters.clone(),
+            contract: self.contract.clone()
         }
     }
 
@@ -96,6 +95,7 @@ impl TypecheckResult {
                 _type: self.expression._type,
             },
             implicit_parameters: self.implicit_parameters,
+            contract: self.contract
         }
     }
 }

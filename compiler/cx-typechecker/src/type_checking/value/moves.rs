@@ -6,14 +6,14 @@ use crate::{
         value::locals::ensure_binding_available,
     },
 };
-use cx_ast::ast::{CXExpr, CXExprKind};
+use cx_ast::ast::{CXExpression, CXExprKind};
 use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind};
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    inner_expr: &CXExpr,
+    expr: &CXExpression,
+    inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let CXExprKind::Identifier(ident) = &inner_expr.kind else {
         return log_typecheck_error!(
@@ -64,8 +64,8 @@ pub(crate) fn typecheck_move(
 
 pub(crate) fn typecheck_leak(
     env: &mut TypeEnvironment,
-    expr: &CXExpr,
-    inner: &CXExpr,
+    expr: &CXExpression,
+    inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     if env.function.in_safe_context() {
         return log_typecheck_error!(

@@ -36,13 +36,13 @@ pub enum CXFunctionStmt {
 
     FunctionDefinition {
         prototype: CXFunctionPrototype,
-        body: Box<CXExpr>,
+        body: Box<CXExpression>,
     },
 
     TemplatedFunction {
         prototype: CXFunctionPrototype,
         template_prototype: CXTemplatePrototype,
-        body: Box<CXExpr>,
+        body: Box<CXExpression>,
     },
 }
 
@@ -105,7 +105,7 @@ pub enum CXBinOp {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct CXInitIndex {
     pub name: Option<String>,
-    pub value: CXExpr,
+    pub value: CXExpression,
     pub index: usize,
 }
 
@@ -116,20 +116,20 @@ pub enum CXGlobalVariable {
     Standard {
         _type: CXType,
         is_mutable: bool,
-        initializer: Option<CXExpr>,
+        initializer: Option<CXExpression>,
     },
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Readable, Writable)]
-pub struct CXExpr {
+pub struct CXExpression {
     pub uuid: u64,
     pub kind: CXExprKind,
     pub range: TokenRange,
 }
 
-impl Clone for CXExpr {
+impl Clone for CXExpression {
     fn clone(&self) -> Self {
-        CXExpr {
+        CXExpression {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self.kind.clone(),
             range: self.range.clone(),
@@ -137,9 +137,9 @@ impl Clone for CXExpr {
     }
 }
 
-impl Default for CXExpr {
+impl Default for CXExpression {
     fn default() -> Self {
-        CXExpr {
+        CXExpression {
             uuid: 0,
             kind: CXExprKind::Taken,
             range: TokenRange::default(),
@@ -147,7 +147,7 @@ impl Default for CXExpr {
     }
 }
 
-impl CXExpr {
+impl CXExpression {
     pub fn token_range(&self) -> &TokenRange {
         &self.range
     }
@@ -177,37 +177,37 @@ pub enum CXExprKind {
     },
 
     If {
-        condition: Box<CXExpr>,
-        then_branch: Box<CXExpr>,
-        else_branch: Option<Box<CXExpr>>,
+        condition: Box<CXExpression>,
+        then_branch: Box<CXExpression>,
+        else_branch: Option<Box<CXExpression>>,
     },
     While {
-        condition: Box<CXExpr>,
-        body: Box<CXExpr>,
+        condition: Box<CXExpression>,
+        body: Box<CXExpression>,
         pre_eval: bool,
     },
     For {
-        init: Box<CXExpr>,
-        condition: Box<CXExpr>,
-        increment: Box<CXExpr>,
-        body: Box<CXExpr>,
+        init: Box<CXExpression>,
+        condition: Box<CXExpression>,
+        increment: Box<CXExpression>,
+        body: Box<CXExpression>,
     },
 
     Match {
-        condition: Box<CXExpr>,
-        arms: Vec<(CXExpr, CXExpr)>, // (value, block)
-        default: Option<Box<CXExpr>>,
+        condition: Box<CXExpression>,
+        arms: Vec<(CXExpression, CXExpression)>, // (value, block)
+        default: Option<Box<CXExpression>>,
     },
 
     Switch {
-        condition: Box<CXExpr>,
-        block: Vec<CXExpr>,
+        condition: Box<CXExpression>,
+        block: Vec<CXExpression>,
         cases: Vec<(u64, usize)>, // (block index, value)
         default_case: Option<usize>,
     },
 
     SizeOfExpr {
-        expr: Box<CXExpr>,
+        expr: Box<CXExpression>,
     },
     SizeOfType {
         _type: CXType,
@@ -216,46 +216,44 @@ pub enum CXExprKind {
     VarDeclaration {
         _type: CXType,
         name: CXIdent,
-        initial_value: Option<Box<CXExpr>>,
+        initial_value: Option<Box<CXExpression>>,
     },
     TypeConstructor {
         union_name: CXIdent,
         variant_name: CXIdent,
-        inner: Box<CXExpr>,
+        inner: Box<CXExpression>,
     },
     BinOp {
-        lhs: Box<CXExpr>,
-        rhs: Box<CXExpr>,
+        lhs: Box<CXExpression>,
+        rhs: Box<CXExpression>,
         op: CXBinOp,
     },
     UnOp {
-        operand: Box<CXExpr>,
+        operand: Box<CXExpression>,
         operator: CXUnOp,
     },
 
     Block {
-        exprs: Vec<CXExpr>,
+        exprs: Vec<CXExpression>,
     },
 
     Break,
     Continue,
 
     Return {
-        value: Option<Box<CXExpr>>,
+        value: Option<Box<CXExpression>>,
     },
 
-    Defer {
-        expr: Box<CXExpr>,
-    },
+
     Unsafe {
-        expr: Box<CXExpr>,
+        expr: Box<CXExpression>,
     },
     Leak {
-        expr: Box<CXExpr>,
+        expr: Box<CXExpression>,
     },
 
     Move {
-        expr: Box<CXExpr>,
+        expr: Box<CXExpression>,
     },
 
     InitializerList {
@@ -264,14 +262,14 @@ pub enum CXExprKind {
 }
 
 impl CXExprKind {
-    pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpr {
+    pub fn into_expr(self, start_index: usize, end_index: usize) -> CXExpression {
         let (start_index, end_index) = if start_index > end_index {
             (0, 0)
         } else {
             (start_index, end_index)
         };
 
-        CXExpr {
+        CXExpression {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
             range: TokenRange::new(start_index, end_index, Arc::from("")),
@@ -283,14 +281,14 @@ impl CXExprKind {
         start_index: usize,
         end_index: usize,
         file_origin: Arc<str>,
-    ) -> CXExpr {
+    ) -> CXExpression {
         let (start_index, end_index) = if start_index > end_index {
             (0, 0)
         } else {
             (start_index, end_index)
         };
 
-        CXExpr {
+        CXExpression {
             uuid: Uuid::new_v4().as_u128() as u64,
             kind: self,
             range: TokenRange::new(start_index, end_index, file_origin),

@@ -680,12 +680,7 @@ impl MIRType {
 
     pub fn internal_function() -> Self {
         MIRType::from(MIRTypeKind::Function {
-            signature: Box::new(MIRFunctionSignature {
-                return_type: MIRType::unit(),
-                params: vec![],
-                var_args: false,
-                contract: crate::mir::expression::MIRFunctionContract::default(),
-            }),
+            signature: Box::new(MIRFunctionSignature::default()),
         })
         .with_name(CXIdent::from("__internal_function"))
     }

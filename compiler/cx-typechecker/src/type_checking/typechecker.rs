@@ -1,11 +1,12 @@
 use crate::environment::{
-    BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment,
+    BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
 };
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::coercion::{explicit::explicit_cast, implicit::implicit_cast};
+use crate::type_checking::control_flow::r#return::typecheck_return;
 use crate::type_checking::control_flow::{
     enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
     typecheck_fallthrough_scope,
@@ -25,7 +26,7 @@ use crate::type_checking::value::{
     sizeof::{typecheck_sizeof_expr, typecheck_sizeof_type},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXUnOp};
+use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXUnOp};
 use cx_ast::data::CX_CONST;
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
@@ -39,7 +40,7 @@ use cx_mir::mir::data::MIRType;
 pub fn typecheck_expr(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     typecheck_expr_inner(env, base_data, expr, expected_type)
@@ -48,7 +49,7 @@ pub fn typecheck_expr(
 pub fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
@@ -292,72 +293,11 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Return { value } => {
-            let return_type = env.current_function().return_type.clone();
-
-            let value_tc = value
+            let value = value
                 .as_ref()
-                .map(|v| typecheck_expr(env, base_data, v, Some(&return_type)))
+                .map(|v| Ok(typecheck_expr(env, base_data, v, None)?.into_expression()))
                 .transpose()?;
-
-            let value = match (value_tc, &return_type) {
-                (Some(mut some_value), return_type) if !return_type.is_unit() => {
-                    let mut _ty = some_value.expression._type.clone();
-
-                    // If we are returning a copyable struct T, and we are given a &T, we can inline a bit
-                    // of the implicit cast behavior here so instead of creating a temporary buffer to copy
-                    // into, and then memcpy from that buffer, we can just "unsafely" coerce the &T to a T
-                    // so we will induce in effect just a direct memcpy from the source T to the return buffer.
-                    if let Some(inner) = env.symbols.context.mem_ref_inner(&_ty).cloned()
-                        && env.symbols.is_copyable(&inner)
-                        && return_type.is_memory_resident()
-                    {
-                        some_value = TypecheckResult::new_base(
-                            inner,
-                            MIRExpressionKind::Typechange(Box::new(some_value.into_expression())),
-                        );
-                    }
-
-                    Some(Box::new(implicit_cast(
-                        env,
-                        some_value.into_expression(),
-                        return_type,
-                    )?))
-                }
-
-                (None, _) if return_type.is_unit() => None,
-
-                (Some(_), _) => {
-                    return log_typecheck_error!(
-                        env,
-                        Some(expr.token_range()),
-                        "Cannot return from function {} with a void return type",
-                        env.current_function()
-                    );
-                }
-
-                (None, _) => {
-                    return log_typecheck_error!(
-                        env,
-                        Some(expr.token_range()),
-                        "Function {} expects a return value, but none was provided",
-                        env.current_function()
-                    );
-                }
-            };
-
-            enqueue_jump_arrow(
-                env,
-                &ScopeExitTarget {
-                    target_scope: ScopeId::new(0),
-                    sink: ScopeArrowSink::Merge,
-                    label: "return".to_string(),
-                },
-            );
-            TypecheckResult::new_base(MIRType::unit(), MIRExpressionKind::Return { value })
-        }
-
-        CXExprKind::Defer { expr: _ } => {
-            todo!()
+            typecheck_return(env, base_data, value)?
         }
 
         CXExprKind::Unsafe { expr: inner } => {
@@ -532,10 +472,12 @@ pub fn typecheck_expr_inner(
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, expr, to_type)?;
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
-                    let (operand_expr, implicit_parameters) = operand_val.into_parts();
+                    let (operand_expr, implicit_parameters, contract) =
+                        operand_val.decompose_function_expr();
 
                     TypecheckResult::from(explicit_cast(env, operand_expr, &to_type)?)
                         .with_implicit_parameters(implicit_parameters)
+                        .with_contract(contract)
                 }
             }
         }
@@ -695,6 +637,7 @@ pub fn typecheck_expr_inner(
 
 pub fn add_implicit_return(
     env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     expr: MIRExpression,
 ) -> CXResult<MIRExpression> {
     if !expr_may_fall_through(&expr) {
@@ -723,19 +666,13 @@ pub fn add_implicit_return(
         );
     };
 
+    let ret = typecheck_return(env, base_data, implicit_value.map(|v| *v))?
+        .into_expression();
+
     Ok(MIRExpression {
         token_range: None,
         kind: MIRExpressionKind::Block {
-            statements: vec![
-                expr,
-                MIRExpression {
-                    token_range: None,
-                    kind: MIRExpressionKind::Return {
-                        value: implicit_value,
-                    },
-                    _type: MIRType::unit(),
-                },
-            ],
+            statements: vec![expr, ret],
         },
         _type: MIRType::unit(),
     })

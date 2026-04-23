@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXBinOp, CXExpr};
+use cx_ast::ast::{CXBinOp, CXExpression};
 use cx_mir::mir::{
     expression::{
         MIRBinOp, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp,
@@ -350,7 +350,7 @@ pub(crate) fn typecheck_float_float_binop(
     op: CXBinOp,
     mut lhs: MIRExpression,
     mut rhs: MIRExpression,
-    expr: &CXExpr,
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let lhs_type = lhs.get_type();
     let rhs_type = rhs.get_type();

@@ -2,14 +2,14 @@ use crate::{
     environment::TypeEnvironment, type_checking::result::TypecheckResult,
     type_checking::typechecker::typecheck_expr,
 };
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind, program::MIRBaseMappings};
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_unsafe(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    inner: &CXExpr,
+    inner: &CXExpression,
     expected_type: Option<&MIRType>,
 ) -> CXResult<TypecheckResult> {
     env.push_unsafe();

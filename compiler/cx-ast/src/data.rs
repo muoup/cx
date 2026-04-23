@@ -2,7 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
-use crate::ast::{CXExpr, VisibilityMode};
+use crate::ast::{CXExpression, VisibilityMode};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXFunctionTypeIdent {
@@ -93,8 +93,8 @@ pub struct CXStructAttributes {
 pub struct CXFunctionContract {
     pub safe: bool,
 
-    pub precondition: Option<CXExpr>,
-    pub postcondition: Option<(Option<CXIdent>, CXExpr)>,
+    pub precondition: Option<CXExpression>,
+    pub postcondition: Option<(Option<CXIdent>, CXExpression)>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]

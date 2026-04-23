@@ -2,7 +2,7 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::{
-    ast::{CXBinOp, CXExpr, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
+    ast::{CXBinOp, CXExpression, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
     data::{
         CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode,
         CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,
@@ -11,12 +11,12 @@ use crate::{
 
 // Helper struct for indented formatting of CXExpr
 struct CXExprFormatter<'a> {
-    expr: &'a CXExpr,
+    expr: &'a CXExpression,
     depth: usize,
 }
 
 impl<'a> CXExprFormatter<'a> {
-    fn new(expr: &'a CXExpr, depth: usize) -> Self {
+    fn new(expr: &'a CXExpression, depth: usize) -> Self {
         Self { expr, depth }
     }
 
@@ -137,7 +137,7 @@ impl Display for CXFunctionStmt {
     }
 }
 
-impl Display for CXExpr {
+impl Display for CXExpression {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         CXExprFormatter::new(self, 0).fmt(f)
     }
@@ -254,10 +254,7 @@ impl<'a> Display for CXExprFormatter<'a> {
                 CXExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
             }
-            CXExprKind::Defer { expr } => {
-                writeln!(f, "Defer")?;
-                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
+
             CXExprKind::Unsafe { expr } => {
                 writeln!(f, "Unsafe")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)

@@ -7,7 +7,7 @@ use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExpr, CXExprKind};
+use cx_ast::ast::{CXExpression, CXExprKind};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
@@ -18,9 +18,9 @@ use cx_util::CXResult;
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    condition: &CXExpr,
-    arms: &[(CXExpr, CXExpr)],
-    default: Option<&Box<CXExpr>>,
+    condition: &CXExpression,
+    arms: &[(CXExpression, CXExpression)],
+    default: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
     let mut expr_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| std_rval_promotion(env, val.into_expression()))?;

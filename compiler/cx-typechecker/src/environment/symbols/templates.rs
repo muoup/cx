@@ -6,7 +6,7 @@ use crate::environment::symbols::completion::{
     _complete_template_input, base_data_from_module, int_complete_type,
 };
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_ast::data::{
     CXFunctionKind, CXFunctionPrototype, CXFunctionTemplate, CXStructAttributes, CXTemplateInput,
     CXTemplatePrototype, CXType, CXTypeKind, ModuleResource,
@@ -57,7 +57,7 @@ pub(crate) fn instantiate_type_template(
     let base_data_ref = base_data_from_module(env, base_data, None);
     let base_data = base_data_ref.as_ref();
     let completed_input =
-        _complete_template_input(env, base_data, None, &CXExpr::default(), input)?;
+        _complete_template_input(env, base_data, None, &CXExpression::default(), input)?;
     let template_name = mangle_template_name(env, name, &completed_input);
 
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
@@ -131,7 +131,7 @@ pub(crate) fn instantiate_type_template(
             .insert(base_name.clone(), provisional);
     }
 
-    let cx_type = int_complete_type(env, base_data, &CXExpr::default(), shell);
+    let cx_type = int_complete_type(env, base_data, &CXExpression::default(), shell);
     if let Some(base_name) = aggregate_base_name.as_ref() {
         match previous_named_type {
             Some(previous) => {
@@ -532,7 +532,7 @@ fn deduce_from_cx_type(
 
         _ => {
             let completed_formal =
-                complete_type(env, base_data, external_module, &CXExpr::default(), formal)?;
+                complete_type(env, base_data, external_module, &CXExpression::default(), formal)?;
             if env.type_eq(&completed_formal, actual) {
                 Ok(())
             } else {
@@ -629,7 +629,7 @@ pub(crate) fn instantiate_function_template(
         env,
         base_data,
         template.external_module.as_ref(),
-        &CXExpr::default(),
+        &CXExpression::default(),
         input,
     )?;
 

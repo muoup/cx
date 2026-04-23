@@ -1,6 +1,6 @@
 use crate::environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment};
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::MIRBaseMappings,
@@ -9,6 +9,7 @@ use cx_util::CXResult;
 
 pub(crate) mod r#match;
 pub(crate) mod switch;
+pub(crate) mod r#return;
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {
@@ -62,7 +63,7 @@ pub(crate) fn enqueue_jump_arrow(env: &mut TypeEnvironment, target: &ScopeExitTa
 pub(crate) fn typecheck_fallthrough_scope(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     target_scope: ScopeId,
     sink: ScopeArrowSink,
     label: &str,
@@ -84,7 +85,7 @@ pub(crate) fn process_for_increment_arrows(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     loop_scope_idx: ScopeId,
-    increment: &CXExpr,
+    increment: &CXExpression,
 ) -> CXResult<()> {
     let pending_arrows = env.function.take_pending_increment_arrows(loop_scope_idx);
     if pending_arrows.is_empty() {

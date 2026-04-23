@@ -5,17 +5,17 @@ use crate::{
         coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
     },
 };
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_mir::mir::{expression::MIRExpressionKind, program::MIRBaseMappings};
 use cx_util::{CXResult, identifier::CXIdent};
 
 pub(crate) fn typecheck_type_constructor_expr(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     type_name: &CXIdent,
     variant_name: &CXIdent,
-    inner: &CXExpr,
+    inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let union_type = env.get_type(base_data, expr, type_name.as_str())?;
     let Some(variants) = union_type.aggregate_fields(&env.symbols.context) else {

@@ -5,7 +5,7 @@ use crate::{
         globals::global_expr, result::TypecheckResult, value::locals::ensure_binding_available,
     },
 };
-use cx_ast::{ast::CXExpr, data::CXTemplateInput};
+use cx_ast::{ast::CXExpression, data::CXTemplateInput};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
@@ -16,7 +16,7 @@ use cx_util::{CXResult, identifier::CXIdent};
 pub(crate) fn typecheck_identifier(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     name: &CXIdent,
 ) -> CXResult<TypecheckResult> {
     if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
@@ -56,7 +56,7 @@ pub(crate) fn typecheck_identifier(
 pub(crate) fn typecheck_templated_identifier(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &CXExpr,
+    expr: &CXExpression,
     name: &CXIdent,
     template_input: &CXTemplateInput,
 ) -> CXResult<TypecheckResult> {

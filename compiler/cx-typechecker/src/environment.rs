@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_ast::data::{CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRType, MIRTypeId};
 use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
@@ -131,7 +131,7 @@ impl TypeEnvironment<'_> {
     pub fn get_type(
         &mut self,
         base_data: &MIRBaseMappings,
-        expr: &CXExpr,
+        expr: &CXExpression,
         name: &str,
     ) -> CXResult<MIRType> {
         let as_cx_type = CXTypeKind::Identifier {
@@ -154,7 +154,7 @@ impl TypeEnvironment<'_> {
     pub fn complete_type(
         &mut self,
         base_data: &MIRBaseMappings,
-        expr: &CXExpr,
+        expr: &CXExpression,
         _type: &CXType,
     ) -> CXResult<MIRType> {
         complete_type(self, base_data, None, expr, _type)
@@ -178,7 +178,7 @@ impl TypeEnvironment<'_> {
     pub fn get_standard_function(
         &mut self,
         base_data: &MIRBaseMappings,
-        expr: &CXExpr,
+        expr: &CXExpression,
         key: &CXIdent,
         template_input: Option<&CXTemplateInput>,
     ) -> CXResult<MIRFunctionPrototype> {
@@ -188,7 +188,7 @@ impl TypeEnvironment<'_> {
     pub fn get_member_function(
         &mut self,
         base_data: &MIRBaseMappings,
-        expr: &CXExpr,
+        expr: &CXExpression,
         member_type: &MIRType,
         name: &CXIdent,
         template_input: Option<&CXTemplateInput>,

@@ -4,7 +4,7 @@ use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::locals::ensure_binding_available;
-use cx_ast::ast::{CXExpr, CXExprKind};
+use cx_ast::ast::{CXExpression, CXExprKind};
 use cx_ast::data::{CX_CONST, CXReceiverMode};
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind};
@@ -13,7 +13,7 @@ use cx_util::CXResult;
 
 pub(crate) fn resolve_access_base(
     env: &mut TypeEnvironment,
-    expr: &CXExpr,
+    expr: &CXExpression,
     lhs: MIRExpression,
 ) -> CXResult<(MIRExpression, MIRExpression, MIRType, bool)> {
     let lhs_source = lhs.clone();
@@ -82,8 +82,8 @@ pub(crate) fn typecheck_access(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     lhs: MIRExpression,
-    rhs: &CXExpr,
-    expr: &CXExpr,
+    rhs: &CXExpression,
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let (lhs_source, lhs, lhs_inner, lhs_ref_const) = resolve_access_base(env, expr, lhs)?;
 
@@ -184,7 +184,7 @@ pub(crate) fn typecheck_access(
 
 pub(crate) fn build_member_receiver_argument(
     env: &mut TypeEnvironment,
-    expr: &CXExpr,
+    expr: &CXExpression,
     lhs_source: &MIRExpression,
     lhs: MIRExpression,
     lhs_inner: &MIRType,

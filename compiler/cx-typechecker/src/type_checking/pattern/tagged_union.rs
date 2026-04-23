@@ -1,5 +1,5 @@
 use cx_ast::{
-    ast::{CXBinOp, CXExpr, CXExprKind},
+    ast::{CXBinOp, CXExpression, CXExprKind},
     data::{CXTypeKind, PredeclarationType},
 };
 use cx_mir::mir::{data::MIRType, program::MIRBaseMappings};
@@ -10,13 +10,13 @@ use crate::{environment::TypeEnvironment, log_typecheck_error};
 pub struct TypeConstructor<'a> {
     pub union_type: MIRType,
     pub variant_name: CXIdent,
-    pub inner: Option<&'a CXExpr>,
+    pub inner: Option<&'a CXExpression>,
 }
 
 pub fn deconstruct_type_constructor<'a>(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    pattern: &'a CXExpr,
+    pattern: &'a CXExpression,
 ) -> CXResult<TypeConstructor<'a>> {
     let (constructor, inner) = match &pattern.kind {
         CXExprKind::BinOp {

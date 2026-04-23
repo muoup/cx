@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use cx_ast::{
-    ast::{CXExpr, CXFunctionStmt},
+    ast::{CXExpression, CXFunctionStmt},
     data::CXFunctionKind,
 };
 use cx_mir::mir::{
@@ -24,7 +24,7 @@ pub fn typecheck_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     prototype: MIRFunctionPrototype,
-    body: &CXExpr,
+    body: &CXExpression,
 ) -> CXResult<()> {
     env.function.begin_function(prototype.clone());
     env.function.push_scope(false, false);
@@ -52,7 +52,7 @@ pub fn typecheck_function(
     }
 
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
-    let with_implicit_return = add_implicit_return(env, body_expr)?;
+    let with_implicit_return = add_implicit_return(env, base_data, body_expr)?;
 
     env.function.pop_scope(env.source.compilation_unit.as_path())?;
     env.function.end_function();

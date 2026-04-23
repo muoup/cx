@@ -13,7 +13,7 @@ use crate::type_checking::op::binop::access::{
 use crate::type_checking::op::binop::scoped_calls::typecheck_scoped_call;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind};
+use cx_ast::ast::{CXBinOp, CXExpression, CXExprKind};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::MIRBaseMappings;
@@ -34,12 +34,12 @@ pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRE
 
 pub(crate) fn finish_function_call<'a>(
     env: &mut TypeEnvironment,
-    _callee_expr: &'a CXExpr,
-    expr: &'a CXExpr,
+    _callee_expr: &'a CXExpression,
+    expr: &'a CXExpression,
     function: TypecheckResult,
-    mut tc_args: Vec<(&'a CXExpr, MIRExpression)>,
+    mut tc_args: Vec<(&'a CXExpression, MIRExpression)>,
 ) -> CXResult<TypecheckResult> {
-    let (function, implicit_parameters) = function.into_parts();
+    let (function, implicit_parameters, contract) = function.decompose_function_expr();
     tc_args = implicit_parameters
         .iter()
         .map(|val| (expr, val.clone()))
@@ -140,6 +140,7 @@ pub(crate) fn finish_function_call<'a>(
         MIRExpressionKind::CallFunction {
             function: Box::new(loaded_function),
             arguments: args,
+            contract: contract.unwrap_or_default()
         },
     ))
 }
@@ -147,8 +148,8 @@ pub(crate) fn finish_function_call<'a>(
 pub(crate) fn comma_separated<'a>(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    expr: &'a CXExpr,
-) -> CXResult<Vec<(&'a CXExpr, MIRExpression)>> {
+    expr: &'a CXExpression,
+) -> CXResult<Vec<(&'a CXExpression, MIRExpression)>> {
     let mut expr_iter = expr;
     let mut exprs = Vec::new();
 
@@ -177,8 +178,8 @@ pub(crate) fn comma_separated<'a>(
 pub(crate) fn deduced_callee(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    lhs: &CXExpr,
-    expr: &CXExpr,
+    lhs: &CXExpression,
+    expr: &CXExpression,
     arg_types: &[MIRType],
 ) -> CXResult<Option<TypecheckResult>> {
     match &lhs.kind {
@@ -263,9 +264,9 @@ pub(crate) fn deduced_callee(
 pub(crate) fn typecheck_method_call(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    lhs: &CXExpr,
-    rhs: &CXExpr,
-    expr: &CXExpr,
+    lhs: &CXExpression,
+    rhs: &CXExpression,
+    expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     if let CXExprKind::BinOp {
         op: CXBinOp::ScopeRes,

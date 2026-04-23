@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::mir::expression::MIRExpression;
 use cx_util::CXResult;
@@ -89,13 +89,13 @@ impl FunctionContext {
         self.flow().current_scope_index()
     }
 
-    pub fn set_scope_anchor(&mut self, expr: &CXExpr) {
+    pub fn set_scope_anchor(&mut self, expr: &CXExpression) {
         self.flow_mut().set_scope_anchor(expr);
     }
 
     pub fn configure_merge_scope(
         &mut self,
-        expr: &CXExpr,
+        expr: &CXExpression,
         join_name: impl Into<String>,
         include_current_snapshot: Option<&str>,
         require_nodrop_discharge: bool,
@@ -108,7 +108,7 @@ impl FunctionContext {
         );
     }
 
-    pub fn configure_loop_scope(&mut self, expr: &CXExpr, loop_kind: LoopScopeKind) {
+    pub fn configure_loop_scope(&mut self, expr: &CXExpression, loop_kind: LoopScopeKind) {
         self.flow_mut().configure_loop_scope(expr, loop_kind);
     }
 

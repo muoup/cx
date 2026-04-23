@@ -4,7 +4,7 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::CXExpr;
+use cx_ast::ast::CXExpression;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
@@ -15,8 +15,8 @@ use cx_util::CXResult;
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    condition: &CXExpr,
-    block: &[CXExpr],
+    condition: &CXExpression,
+    block: &[CXExpression],
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
