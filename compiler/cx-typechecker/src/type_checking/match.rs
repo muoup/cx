@@ -53,7 +53,7 @@ pub fn typecheck_switch(
         if expr_may_fall_through(&case_body_expr) {
             env.enqueue_scope_arrow(
                 &ScopeExitTarget {
-                    target_scope_idx: join_scope_idx,
+                    target_scope: join_scope_idx,
                     sink: crate::environment::ScopeArrowSink::Merge,
                     label: format!("case {}", case_value),
                 },
@@ -101,7 +101,7 @@ pub fn typecheck_switch(
             if expr_may_fall_through(&body_expr) {
                 env.enqueue_scope_arrow(
                     &ScopeExitTarget {
-                        target_scope_idx: join_scope_idx,
+                        target_scope: join_scope_idx,
                         sink: crate::environment::ScopeArrowSink::Merge,
                         label: "default".to_string(),
                     },
@@ -117,7 +117,7 @@ pub fn typecheck_switch(
     if default_case.is_none() {
         env.enqueue_scope_arrow(
             &ScopeExitTarget {
-                target_scope_idx: join_scope_idx,
+                target_scope: join_scope_idx,
                 sink: crate::environment::ScopeArrowSink::Merge,
                 label: "no case matched".to_string(),
             },
@@ -148,15 +148,15 @@ pub fn typecheck_match(
     let mut expr_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
     let mut expr_type = expr_value.get_type();
-    
+
     env.push_scope(false, false);
     env.set_scope_anchor(condition);
     env.configure_merge_scope(condition, "match join", None, false);
-    
+
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
 
-    if let Some(inner) = env.type_context.mem_ref_inner(&expr_type) {
+    if let Some(inner) = env.types.context.mem_ref_inner(&expr_type) {
         expr_type = inner.clone();
 
         expr_value = MIRExpression {
@@ -210,7 +210,7 @@ pub fn typecheck_match(
                 if expr_may_fall_through(&body_expr) {
                     env.enqueue_scope_arrow(
                         &ScopeExitTarget {
-                            target_scope_idx: join_scope_idx,
+                            target_scope: join_scope_idx,
                             sink: crate::environment::ScopeArrowSink::Merge,
                             label: "arm".to_string(),
                         },
@@ -228,7 +228,7 @@ pub fn typecheck_match(
         MIRTypeKind::TaggedUnion { .. } => {
             let expected_union_name = expr_type.get_name().unwrap();
             let variants = expr_type
-                .aggregate_fields(&env.type_context)
+                .aggregate_fields(&env.types.context)
                 .expect("Tagged union match requires completed variants")
                 .clone();
             // Tagged union matching: each arm has a type constructor pattern
@@ -282,7 +282,7 @@ pub fn typecheck_match(
                     if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
                         variant_type.clone()
                     } else {
-                        env.type_context.mem_ref_to(variant_type.clone())
+                        env.types.context.mem_ref_to(variant_type.clone())
                     };
 
                 // Extract the variant value and bind it
@@ -310,7 +310,7 @@ pub fn typecheck_match(
                     if expr_may_fall_through(&body_expr) {
                         env.enqueue_scope_arrow(
                             &ScopeExitTarget {
-                                target_scope_idx: join_scope_idx,
+                                target_scope: join_scope_idx,
                                 sink: crate::environment::ScopeArrowSink::Merge,
                                 label: "arm".to_string(),
                             },
@@ -324,7 +324,7 @@ pub fn typecheck_match(
                     if expr_may_fall_through(&body_expr) {
                         env.enqueue_scope_arrow(
                             &ScopeExitTarget {
-                                target_scope_idx: join_scope_idx,
+                                target_scope: join_scope_idx,
                                 sink: crate::environment::ScopeArrowSink::Merge,
                                 label: "arm".to_string(),
                             },
@@ -357,7 +357,7 @@ pub fn typecheck_match(
             if expr_may_fall_through(&body) {
                 env.enqueue_scope_arrow(
                     &ScopeExitTarget {
-                        target_scope_idx: join_scope_idx,
+                        target_scope: join_scope_idx,
                         sink: ScopeArrowSink::Merge,
                         label: "default".to_string(),
                     },
@@ -373,7 +373,7 @@ pub fn typecheck_match(
     if default.is_none() {
         env.enqueue_scope_arrow(
             &ScopeExitTarget {
-                target_scope_idx: join_scope_idx,
+                target_scope: join_scope_idx,
                 sink: ScopeArrowSink::Merge,
                 label: "default".to_string(),
             },

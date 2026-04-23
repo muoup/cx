@@ -62,7 +62,7 @@ fn require_complete_prototype_type(
     if ty.is_memory_resident()
         && let Some(name) = ty.get_name()
         && let Some(id) = env.get_named_type_id(name.as_str())
-        && !env.type_context.contains(id)
+        && !env.types.context.contains(id)
     {
         return CXError::create_result(format!(
             "Invalid {} type '{}' in function prototype: incomplete aggregate used by value",

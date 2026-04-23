@@ -26,7 +26,8 @@ pub fn complete_prototype_no_insert(
     external_module: Option<&String>,
     prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionPrototype> {
-    let (_, base_data) = base_data_from_module(env, base_data, external_module);
+    let base_data_ref = base_data_from_module(env, base_data, external_module);
+    let base_data = base_data_ref.as_ref();
 
     int_complete_fn_prototype(env, base_data, prototype)
 }
@@ -38,7 +39,8 @@ pub fn complete_type(
     expr: &CXExpr,
     _type: &CXType,
 ) -> CXResult<MIRType> {
-    let (_, base_data) = base_data_from_module(env, base_data, external_module);
+    let base_data_ref = base_data_from_module(env, base_data, external_module);
+    let base_data = base_data_ref.as_ref();
 
     int_complete_type(env, base_data, expr, _type)
 }

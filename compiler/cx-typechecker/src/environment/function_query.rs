@@ -108,7 +108,7 @@ pub fn query_member_function(
     };
 
     if template_input.is_none() {
-        let mangled_name = base_mangle_member(&env.type_context, name.as_str(), member_type);
+        let mangled_name = base_mangle_member(&env.types.context, name.as_str(), member_type);
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
             return Ok(func_proto);
@@ -167,7 +167,8 @@ pub fn query_static_member_function(
     template_input: Option<&CXTemplateInput>,
 ) -> CXResult<MIRFunctionPrototype> {
     if template_input.is_none() {
-        let mangled_name = base_mangle_static_member(&env.type_context, name.as_str(), member_type);
+        let mangled_name =
+            base_mangle_static_member(&env.types.context, name.as_str(), member_type);
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
             return Ok(func_proto);

@@ -20,11 +20,11 @@ use crate::{
     type_completion::templates::{add_templated_types, restore_template_overwrites},
 };
 
-pub mod op;
 pub mod binary_ops;
 pub mod casting;
 pub mod coercion;
 pub mod r#match;
+pub mod op;
 pub mod result;
 pub mod structured_initialization;
 pub mod typechecker;
@@ -38,16 +38,13 @@ fn typecheck_function(
     env.push_scope(false, false);
     env.set_scope_anchor(body);
     env.configure_merge_scope(body, "function exit", Some("fallthrough"), true);
-    env.current_function = Some(prototype.clone());
-    env.safe_mode = prototype.contract.safe;
-    env.contract_pure_mode = false;
-    env.unsafe_depth = 0;
+    env.begin_function(prototype.clone());
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
             continue;
         };
-        let ref_type = env.type_context.mem_ref_to(_type.clone());
+        let ref_type = env.types.context.mem_ref_to(_type.clone());
 
         env.insert_symbol(
             name.as_string(),
@@ -63,13 +60,10 @@ fn typecheck_function(
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
     let with_implicit_return = add_implicit_return(env, body_expr)?;
 
-    env.current_function = None;
     env.pop_scope()?;
-    env.safe_mode = false;
-    env.contract_pure_mode = false;
-    env.unsafe_depth = 0;
+    env.end_function();
 
-    env.generated_functions.push(MIRFunction {
+    env.push_generated_function(MIRFunction {
         prototype,
         body: with_implicit_return,
     });
@@ -98,8 +92,8 @@ pub fn realize_fn_implementation(
     template_kind: &CXFunctionKind,
     input: &MIRTemplateInput,
 ) -> CXResult<()> {
-    let base_ast = env.module_data.naive_ast.get(origin);
-    let base_data = env.module_data.base_mappings.get(origin);
+    let base_ast = env.source.module_data.naive_ast.get(origin);
+    let base_data = env.source.module_data.base_mappings.get(origin);
 
     let template = &base_data
         .fn_data
@@ -119,9 +113,9 @@ pub fn realize_fn_implementation(
     let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
-    env.in_external_templated_function = true;
+    env.set_external_templated_function(true);
     typecheck_function(env, base_data.as_ref(), prototype.clone(), body)?;
-    env.in_external_templated_function = false;
+    env.set_external_templated_function(false);
 
     restore_template_overwrites(env, overwrites);
     Ok(())

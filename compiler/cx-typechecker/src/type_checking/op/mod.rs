@@ -1,7 +1,7 @@
+use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
 use cx_ast::ast::CXBinOp;
 use cx_mir::mir::expression::{MIRExpression, MIRUnOp};
 use cx_util::CXResult;
-use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
 
 pub mod binop;
 

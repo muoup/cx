@@ -13,23 +13,36 @@ use crate::type_completion::prototypes::int_complete_fn_prototype;
 use crate::type_completion::templates::instantiate_type_template;
 use crate::{environment::TypeEnvironment, log::TypeError};
 
+pub(crate) enum ResolvedBaseData<'a> {
+    Local(&'a MIRBaseMappings),
+    External(Arc<MIRBaseMappings>),
+}
+
+impl<'a> ResolvedBaseData<'a> {
+    pub fn as_ref(&self) -> &MIRBaseMappings {
+        match self {
+            ResolvedBaseData::Local(base_data) => base_data,
+            ResolvedBaseData::External(base_data) => base_data.as_ref(),
+        }
+    }
+}
+
 pub(crate) fn base_data_from_module<'a>(
     env: &mut TypeEnvironment,
     base_data: &'a MIRBaseMappings,
     external_module: Option<&String>,
-) -> (Option<Arc<MIRBaseMappings>>, &'a MIRBaseMappings) {
+) -> ResolvedBaseData<'a> {
     match external_module {
         Some(module) => {
             let arc = env
+                .source
                 .module_data
                 .base_mappings
                 .get(&env.resolve_compilation_unit(module));
 
-            (Some(arc.clone()), unsafe {
-                std::mem::transmute(arc.as_ref())
-            })
+            ResolvedBaseData::External(arc.clone())
         }
-        None => (None, base_data),
+        None => ResolvedBaseData::Local(base_data),
     }
 }
 
@@ -94,7 +107,7 @@ fn named_predeclaration_type(
     _predeclaration: PredeclarationType,
 ) -> MIRType {
     let id = env.get_or_create_named_type_id(name.as_str());
-    env.type_context.register_identifier(name.clone(), id);
+    env.types.context.register_identifier(name.clone(), id);
 
     let mir_type = MIRType {
         visibility: VisibilityMode::Private,
@@ -133,7 +146,8 @@ fn ensure_complete_value_type(
         ),
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
-                .type_context
+                .types
+                .context
                 .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                 .clone();
@@ -176,7 +190,7 @@ where
     F: Fn(Vec<(String, MIRTypeId)>) -> MIRTypeKind,
 {
     let type_id = env.get_or_create_named_type_id(name.as_str());
-    env.type_context.register_identifier(name.clone(), type_id);
+    env.types.context.register_identifier(name.clone(), type_id);
 
     let provisional = make_named_type(
         ty,
@@ -206,7 +220,8 @@ where
             .map(|(field_name, field_type)| {
                 let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
                 let resolved_field_type = env
-                    .type_context
+                    .types
+                    .context
                     .get(field_type_id)
                     .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
                     .clone();
@@ -381,7 +396,8 @@ pub(crate) fn int_complete_type(
         CXTypeKind::ExplicitSizedArray(inner, size) => {
             let inner_type_id = complete_type_id(env, base_data, expr, inner)?;
             let inner_type = env
-                .type_context
+                .types
+                .context
                 .get(inner_type_id)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type_id.0))
                 .clone();
@@ -466,7 +482,8 @@ pub(crate) fn int_complete_type(
                 .map(|(field_name, field_type)| {
                     let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
                     let resolved_field_type = env
-                        .type_context
+                        .types
+                        .context
                         .get(field_type_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
                         .clone();
@@ -517,7 +534,8 @@ pub(crate) fn int_complete_type(
                 .map(|(field_name, field_type)| {
                     let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
                     let resolved_field_type = env
-                        .type_context
+                        .types
+                        .context
                         .get(field_type_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
                         .clone();
@@ -586,7 +604,8 @@ fn validate_linear_hierarchy(
 
     for (member_name, member_id) in members {
         let member_type = env
-            .type_context
+            .types
+            .context
             .get(*member_id)
             .unwrap_or_else(|| panic!("Unknown type id {}", member_id.0));
         let Some(member_attributes) = member_type.struct_attributes() else {
@@ -595,7 +614,7 @@ fn validate_linear_hierarchy(
 
         if member_attributes.nodrop && !attributes.nodrop {
             return Err(Box::new(TypeError {
-                compilation_unit: env.compilation_unit.as_path().to_owned(),
+                compilation_unit: env.source.compilation_unit.as_path().to_owned(),
                 token_start: 0,
                 token_end: 0,
                 message: format!(
@@ -608,7 +627,7 @@ fn validate_linear_hierarchy(
 
         if member_attributes.nocopy && !aggregate_is_nocopy {
             return Err(Box::new(TypeError {
-                compilation_unit: env.compilation_unit.as_path().to_owned(),
+                compilation_unit: env.source.compilation_unit.as_path().to_owned(),
                 token_start: 0,
                 token_end: 0,
                 message: format!(

@@ -48,7 +48,11 @@ pub fn deconstruct_type_constructor<'a>(
         rhs: variant,
     } = &constructor.kind
     else {
-        return log_typecheck_error!(env, Some(pattern.token_range()), "Expected type constructor");
+        return log_typecheck_error!(
+            env,
+            Some(pattern.token_range()),
+            "Expected type constructor"
+        );
     };
 
     let union_name = match &union.kind {
@@ -115,7 +119,7 @@ pub fn typecheck_initializer_list(
     };
 
     let owned_inner;
-    let to_type = if let Some(inner_type) = env.type_context.mem_ref_inner(to_type) {
+    let to_type = if let Some(inner_type) = env.types.context.mem_ref_inner(to_type) {
         owned_inner = inner_type.clone();
         &owned_inner
     } else {
@@ -128,7 +132,8 @@ pub fn typecheck_initializer_list(
             length: size,
         } => {
             let inner_type = env
-                .type_context
+                .types
+                .context
                 .get(*_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
                 .clone();
@@ -139,7 +144,8 @@ pub fn typecheck_initializer_list(
             inner_type: inner, ..
         } => {
             let inner_type = env
-                .type_context
+                .types
+                .context
                 .get(*inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
                 .clone();
@@ -218,7 +224,7 @@ fn typecheck_structured_initializer(
     indices: &[CXInitIndex],
     to_type: &MIRType,
 ) -> CXResult<TypecheckResult> {
-    let Some(fields) = to_type.aggregate_fields(&env.type_context) else {
+    let Some(fields) = to_type.aggregate_fields(&env.types.context) else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -269,7 +275,8 @@ fn typecheck_structured_initializer(
             .and_then(|expr| std_rval_promotion(env, expr.into_expression()))
             .and_then(|expr| implicit_cast(env, expr, field_type))?;
 
-        let Some(struct_field_info) = struct_field(to_type, &env.type_context, field_name.as_str())
+        let Some(struct_field_info) =
+            struct_field(to_type, &env.types.context, field_name.as_str())
         else {
             return log_typecheck_error!(
                 env,

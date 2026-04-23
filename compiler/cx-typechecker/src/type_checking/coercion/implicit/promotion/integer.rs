@@ -4,7 +4,10 @@ use cx_mir::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, type_checking::coercion::{CoercionResult, implicit::coercion_expr}};
+use crate::{
+    environment::TypeEnvironment,
+    type_checking::coercion::{CoercionResult, implicit::coercion_expr},
+};
 
 pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
     let MIRTypeKind::Integer {
@@ -62,7 +65,7 @@ pub fn try_conversion(
 
             return CoercionResult::success(coerced);
         }
-        
+
         return coercion_expr(expr, to_type.clone(), MIRCoercion::ReinterpretBits);
     }
 

@@ -11,7 +11,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
         return CoercionResult::unapplied(expr);
     }
 
-    let new_type = env.type_context.pointer_to(expr._type.clone());
+    let new_type = env.types.context.pointer_to(expr._type.clone());
 
     let coerced = MIRExpression {
         token_range: expr.token_range.clone(),

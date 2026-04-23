@@ -1,9 +1,7 @@
 use cx_mir::mir::expression::MIRExpression;
 use cx_util::CXResult;
 
-use crate::{
-    environment::TypeEnvironment, type_checking::coercion::CoercionResult,
-};
+use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
 
 pub mod array_to_ptr;
 pub mod fn_to_ptr;

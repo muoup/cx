@@ -18,7 +18,7 @@ use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
-pub(crate) type Overwrites = Vec<(String, MIRType)>;
+pub(crate) type Overwrites = crate::environment::types::TemplateBindingFrame;
 type TemplateBindings = HashMap<String, MIRType>;
 
 pub(crate) fn add_templated_types(
@@ -26,37 +26,19 @@ pub(crate) fn add_templated_types(
     args: &CXTemplatePrototype,
     input: &MIRTemplateInput,
 ) -> CXResult<Overwrites> {
-    if args.types.len() != input.args.len() {
-        return CXError::create_result(format!(
-            "Template argument count mismatch: expected {}, got {}",
-            args.types.len(),
-            input.args.len()
-        ));
-    }
-
-    Ok(args
-        .types
-        .iter()
-        .zip(input.args.iter())
-        .filter_map(|(ident, arg_type)| {
-            env.realized_types
-                .insert(ident.clone(), arg_type.clone())
-                .map(|existing| (ident.clone(), existing))
-        })
-        .collect())
+    env.bind_template_types(&args.types, &input.args)
+        .map_err(CXError::create_boxed)
 }
 
 pub(crate) fn restore_template_overwrites(env: &mut TypeEnvironment, overwrites: Overwrites) {
-    for (ident, arg_type) in overwrites.into_iter() {
-        env.realized_types.insert(ident, arg_type);
-    }
+    env.restore_template_types(overwrites);
 }
 
 pub fn mangle_template_name(env: &TypeEnvironment, name: &str, input: &MIRTemplateInput) -> String {
     let mut mangled_name = String::from("_t");
 
     for arg in &input.args {
-        mangled_name.push_str(&env.type_context.mangle(arg));
+        mangled_name.push_str(&env.types.context.mangle(arg));
     }
 
     mangled_name.push('_');
@@ -71,7 +53,8 @@ pub(crate) fn instantiate_type_template(
     input: &CXTemplateInput,
     name: &str,
 ) -> CXResult<MIRType> {
-    let (_, base_data) = base_data_from_module(env, base_data, None);
+    let base_data_ref = base_data_from_module(env, base_data, None);
+    let base_data = base_data_ref.as_ref();
     let completed_input =
         _complete_template_input(env, base_data, None, &CXExpr::default(), input)?;
     let template_name = mangle_template_name(env, name, &completed_input);
@@ -100,6 +83,7 @@ pub(crate) fn instantiate_type_template(
     if let Some(base_name) = aggregate_base_name.as_ref() {
         let template_type_id = env.get_or_create_named_type_id(template_name.as_str());
         previous_named_id = env
+            .types
             .named_type_ids
             .insert(base_name.clone(), template_type_id);
 
@@ -137,28 +121,32 @@ pub(crate) fn instantiate_type_template(
             _ => unreachable!("Templated named type must be an aggregate"),
         };
 
-        env.type_context
+        env.types
+            .context
             .register_identifier(CXIdent::new(base_name.clone()), template_type_id);
-        previous_named_type = env.realized_types.insert(base_name.clone(), provisional);
+        previous_named_type = env
+            .types
+            .realized_types
+            .insert(base_name.clone(), provisional);
     }
 
     let cx_type = int_complete_type(env, base_data, &CXExpr::default(), shell);
     if let Some(base_name) = aggregate_base_name.as_ref() {
         match previous_named_type {
             Some(previous) => {
-                env.realized_types.insert(base_name.clone(), previous);
+                env.types.realized_types.insert(base_name.clone(), previous);
             }
             None => {
-                env.realized_types.remove(base_name);
+                env.types.realized_types.remove(base_name);
             }
         }
 
         match previous_named_id {
             Some(previous) => {
-                env.named_type_ids.insert(base_name.clone(), previous);
+                env.types.named_type_ids.insert(base_name.clone(), previous);
             }
             None => {
-                env.named_type_ids.remove(base_name);
+                env.types.named_type_ids.remove(base_name);
             }
         }
     }
@@ -308,7 +296,8 @@ fn deduce_from_cx_type(
         && !matches!(formal.kind, CXTypeKind::MemoryReference { .. })
     {
         let inner_type = env
-            .type_context
+            .types
+            .context
             .get(*inner_type)
             .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
             .clone();
@@ -396,7 +385,8 @@ fn deduce_from_cx_type(
             }
 
             let actual_inner = env
-                .type_context
+                .types
+                .context
                 .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                 .clone();
@@ -414,7 +404,8 @@ fn deduce_from_cx_type(
         CXTypeKind::ImplicitSizedArray(inner) => match &actual.kind {
             MIRTypeKind::PointerTo { inner_type } | MIRTypeKind::Array { inner_type, .. } => {
                 let actual_inner = env
-                    .type_context
+                    .types
+                    .context
                     .get(*inner_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                     .clone();
@@ -440,7 +431,8 @@ fn deduce_from_cx_type(
             };
 
             let actual_inner = env
-                .type_context
+                .types
+                .context
                 .get(*actual_inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                 .clone();
@@ -463,7 +455,8 @@ fn deduce_from_cx_type(
                 inner_type: actual_inner,
             } => {
                 let actual_inner = env
-                    .type_context
+                    .types
+                    .context
                     .get(*actual_inner)
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                     .clone();
@@ -482,7 +475,8 @@ fn deduce_from_cx_type(
                 ..
             } => {
                 let actual_inner = env
-                    .type_context
+                    .types
+                    .context
                     .get(*actual_inner)
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                     .clone();
@@ -660,9 +654,10 @@ fn instantiate_function_template_with_input(
     let result = if let Some(generated) = env.get_realized_func(instantiated.name.as_str()) {
         Ok(generated)
     } else {
-        env.realized_fns
+        env.items
+            .realized_fns
             .insert(instantiated.name.to_string(), instantiated.clone());
-        env.requests.push(MIRFunctionGenRequest::Template {
+        env.items.requests.push(MIRFunctionGenRequest::Template {
             module_origin: module_origin.clone(),
             kind: template.resource.shell.kind.clone(),
             input: completed_input.clone(),

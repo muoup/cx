@@ -12,7 +12,8 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        casting::implicit_cast, coercion::implicit::promotion::std_rval_promotion, result::TypecheckResult
+        casting::implicit_cast, coercion::implicit::promotion::std_rval_promotion,
+        result::TypecheckResult,
     },
 };
 
@@ -45,7 +46,7 @@ pub(crate) fn resolve_logical(
             rhs._type
         );
     }
-    
+
     let lhs = implicit_cast(env, lhs, &MIRType::bool())?;
     let rhs = implicit_cast(env, rhs, &MIRType::bool())?;
 
@@ -208,7 +209,7 @@ fn coerce_pointer_binop(
     *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
 
     let ptr_type = pointer._type.clone();
-    let ptr_inner = Box::new(env.type_context.ptr_inner(&ptr_type).cloned().unwrap());
+    let ptr_inner = Box::new(env.types.context.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
         CXBinOp::Add | CXBinOp::ArrayIndex => (
@@ -464,7 +465,7 @@ fn lower_int_binop(op: &CXBinOp, signed: bool) -> Option<MIRIntegerBinOp> {
         CXBinOp::BitAnd => MIRIntegerBinOp::BAND,
         CXBinOp::BitOr => MIRIntegerBinOp::BOR,
         CXBinOp::BitXor => MIRIntegerBinOp::BXOR,
-        
-        _ => return None
+
+        _ => return None,
     })
 }

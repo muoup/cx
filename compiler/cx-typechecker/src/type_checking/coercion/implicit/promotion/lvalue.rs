@@ -2,7 +2,10 @@ use cx_ast::data::CX_CONST;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, type_checking::coercion::{CoercionObstacle, CoercionResult}};
+use crate::{
+    environment::TypeEnvironment,
+    type_checking::coercion::{CoercionObstacle, CoercionResult},
+};
 
 ///
 /// NOTE: We can safely assume that an lvalue type = memory reference to type. All values in MIR are abstracted
@@ -22,7 +25,7 @@ use crate::{environment::TypeEnvironment, type_checking::coercion::{CoercionObst
 ///
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.type_context.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.types.context.mem_ref_inner(&expr._type).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 

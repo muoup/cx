@@ -36,10 +36,10 @@ fn resolve_access_base(
     let lhs_inner = loop {
         let lhs_type = lhs._type.clone();
 
-        if let Some(inner_type) = env.type_context.mem_ref_inner(&lhs_type).cloned() {
+        if let Some(inner_type) = env.types.context.mem_ref_inner(&lhs_type).cloned() {
             lhs_ref_const |= inner_type.get_specifier(CX_CONST);
 
-            if let Some(ptr_inner) = env.type_context.ptr_inner(&inner_type).cloned() {
+            if let Some(ptr_inner) = env.types.context.ptr_inner(&inner_type).cloned() {
                 lhs_ref_const |= ptr_inner.get_specifier(CX_CONST);
 
                 lhs = MIRExpression {
@@ -47,13 +47,13 @@ fn resolve_access_base(
                     kind: MIRExpressionKind::RegionDuplicate {
                         source: Box::new(lhs),
                     },
-                    _type: env.type_context.pointer_to(ptr_inner.clone()),
+                    _type: env.types.context.pointer_to(ptr_inner.clone()),
                 };
 
                 break ptr_inner;
             }
 
-            if env.type_context.mem_ref_inner(&inner_type).is_some() {
+            if env.types.context.mem_ref_inner(&inner_type).is_some() {
                 lhs = MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::RegionDuplicate {
@@ -64,7 +64,7 @@ fn resolve_access_base(
             } else {
                 break inner_type;
             }
-        } else if let Some(inner_type) = env.type_context.ptr_inner(&lhs_type).cloned() {
+        } else if let Some(inner_type) = env.types.context.ptr_inner(&lhs_type).cloned() {
             lhs_ref_const |= inner_type.get_specifier(CX_CONST);
             break inner_type;
         } else {
@@ -121,7 +121,8 @@ fn finish_function_call<'a>(
     })?;
     let loaded_function_type = loaded_function.get_type();
     let loaded_function_type = env
-        .type_context
+        .types
+        .context
         .ptr_inner(&loaded_function_type)
         .cloned()
         .unwrap_or(loaded_function_type);
@@ -219,9 +220,10 @@ pub(crate) fn typecheck_access(
 
     match &rhs.kind {
         CXExprKind::Identifier(name) => {
-            if let Some(struct_field) = struct_field(&lhs_inner, &env.type_context, name.as_str()) {
+            if let Some(struct_field) = struct_field(&lhs_inner, &env.types.context, name.as_str())
+            {
                 return Ok(TypecheckResult::new_base(
-                    env.type_context.mem_ref_to(
+                    env.types.context.mem_ref_to(
                         struct_field
                             .field_type
                             .clone()
@@ -236,7 +238,7 @@ pub(crate) fn typecheck_access(
                 ));
             }
 
-            if let Some(variants) = lhs_inner.aggregate_fields(&env.type_context) {
+            if let Some(variants) = lhs_inner.aggregate_fields(&env.types.context) {
                 if matches!(lhs_inner.kind, MIRTypeKind::Union { .. }) {
                     let Some((_, field_type)) = variants
                         .iter()
@@ -252,7 +254,7 @@ pub(crate) fn typecheck_access(
                     };
 
                     return Ok(TypecheckResult::new_base(
-                        env.type_context.mem_ref_to(
+                        env.types.context.mem_ref_to(
                             field_type.clone().with_specifier(if lhs_ref_const {
                                 CX_CONST
                             } else {
@@ -333,10 +335,10 @@ fn build_member_receiver_argument(
                 operand: Box::new(lhs),
                 conversion: MIRCoercion::ReinterpretBits,
             },
-            _type: env.type_context.mem_ref_to(lhs_inner.clone()),
+            _type: env.types.context.mem_ref_to(lhs_inner.clone()),
         }),
         Some(CXReceiverMode::ByMove) => {
-            if let Some(inner_type) = env.type_context.mem_ref_inner(&lhs_source._type).cloned() {
+            if let Some(inner_type) = env.types.context.mem_ref_inner(&lhs_source._type).cloned() {
                 let MIRExpressionKind::Variable(name) = &lhs_source.kind else {
                     return log_typecheck_error!(
                         env,
@@ -432,13 +434,13 @@ fn deduced_callee(
             let (receiver_root, receiver_value, receiver_type, _) =
                 resolve_access_base(env, expr, receiver_source)?;
 
-            if struct_field(&receiver_type, &env.type_context, name.as_str()).is_some() {
+            if struct_field(&receiver_type, &env.types.context, name.as_str()).is_some() {
                 return Ok(None);
             }
 
             if matches!(receiver_type.kind, MIRTypeKind::Union { .. })
                 && receiver_type
-                    .aggregate_fields(&env.type_context)
+                    .aggregate_fields(&env.types.context)
                     .map(|fields| {
                         fields
                             .iter()
@@ -521,7 +523,7 @@ fn typecheck_type_constructor(
     name: &CXIdent,
     inner: &CXExpr,
 ) -> CXResult<TypecheckResult> {
-    let Some(variants) = union_type.aggregate_fields(&env.type_context) else {
+    let Some(variants) = union_type.aggregate_fields(&env.types.context) else {
         unreachable!()
     };
     let variants = variants.clone();
@@ -661,14 +663,14 @@ pub(crate) fn typecheck_is(
         .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
     let tc_type = tc_lhs.get_type();
     let owned_union_type;
-    let union_type = if let Some(inner) = env.type_context.mem_ref_inner(&tc_type) {
+    let union_type = if let Some(inner) = env.types.context.mem_ref_inner(&tc_type) {
         owned_union_type = inner.clone();
         &owned_union_type
     } else {
         &tc_type
     };
 
-    let Some(variants) = union_type.aggregate_fields(&env.type_context) else {
+    let Some(variants) = union_type.aggregate_fields(&env.types.context) else {
         return log_typecheck_error!(
             env,
             expr.token_range(),
@@ -735,7 +737,7 @@ pub(crate) fn typecheck_is(
                 );
             };
 
-            let variant_ref_type = env.type_context.mem_ref_to(variant_type.clone());
+            let variant_ref_type = env.types.context.mem_ref_to(variant_type.clone());
             env.insert_symbol(
                 name.as_string(),
                 MIRExpression {
@@ -830,13 +832,7 @@ pub(crate) fn typecheck_contract(
     prototype: &CXFunctionPrototype,
 ) -> CXResult<MIRFunctionContract> {
     let naive_contract = &prototype.contract;
-    let previous_safe_mode = env.safe_mode;
-    let previous_contract_pure_mode = env.contract_pure_mode;
-    let previous_unsafe_depth = env.unsafe_depth;
-
-    env.safe_mode = naive_contract.safe;
-    env.contract_pure_mode = naive_contract.safe;
-    env.unsafe_depth = 0;
+    let previous_mode = env.push_contract_mode(naive_contract.safe);
 
     env.push_scope(false, false);
 
@@ -889,9 +885,7 @@ pub(crate) fn typecheck_contract(
     };
 
     env.pop_scope()?;
-    env.safe_mode = previous_safe_mode;
-    env.contract_pure_mode = previous_contract_pure_mode;
-    env.unsafe_depth = previous_unsafe_depth;
+    env.restore_function_mode(previous_mode);
 
     Ok(MIRFunctionContract {
         safe: naive_contract.safe,

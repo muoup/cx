@@ -1,74 +1,12 @@
+use std::path::Path;
+
 use cx_ast::ast::CXExpr;
-use cx_ast::data::{
-    CXFunctionKind, CXFunctionPrototype, CXTemplateInput, CXType, CXTypeKind, PredeclarationType,
-};
-use cx_mir::CXTypeMap;
-use cx_mir::function_map::CXFnMap;
-use cx_mir::intrinsic_types::INTRINSIC_TYPES;
-use cx_mir::mir::data::{
-    MIRFunctionPrototype, MIRTemplateInput, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
-};
 use cx_mir::mir::expression::MIRExpression;
-use cx_mir::mir::program::{MIRBaseMappings, MIRFunction, MIRGlobalVariable, MIRUnit};
-use cx_pipeline_data::CompilationUnit;
-use cx_pipeline_data::db::ModuleData;
 use cx_tokens::TokenRange;
-use cx_tokens::token::Token;
 use cx_util::CXResult;
-use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
-use crate::environment::function_query::{query_member_function, query_standard_function};
 use crate::log::TypeError;
-use crate::type_completion::{complete_prototype_no_insert, complete_type};
-
-pub(crate) mod function_query;
-pub(crate) mod name_mangling;
-
-pub const DEFER_ACCUMULATION_REGISTER: &str = "__defer_accumulation_register";
-
-pub struct TypeEnvironment<'a> {
-    pub tokens: &'a [Token],
-    pub compilation_unit: CompilationUnit,
-    pub working_directory: PathBuf,
-
-    pub module_data: &'a ModuleData,
-
-    pub named_type_ids: HashMap<String, MIRTypeId>,
-    pub currently_defining_types: HashSet<MIRTypeId>,
-    pub definition_stack: Vec<MIRTypeId>,
-    pub next_type_id: u64,
-
-    pub realized_types: CXTypeMap,
-    pub realized_fns: CXFnMap,
-    pub realized_globals: HashMap<String, MIRGlobalVariable>,
-
-    pub requests: Vec<MIRFunctionGenRequest>,
-    pub current_function: Option<MIRFunctionPrototype>,
-    pub arg_vals: Vec<MIRExpression>,
-
-    pub symbol_table: ScopedMap<MIRExpression>,
-    pub tracked_bindings: ScopedMap<TrackedBindingState>,
-    pub scope_stack: Vec<Scope>,
-    pub safe_mode: bool,
-    pub contract_pure_mode: bool,
-    pub unsafe_depth: usize,
-
-    pub in_external_templated_function: bool,
-
-    pub type_context: MIRTypeContext,
-    pub generated_functions: Vec<MIRFunction>,
-}
-
-pub enum MIRFunctionGenRequest {
-    Template {
-        module_origin: Option<String>,
-        kind: CXFunctionKind,
-        input: MIRTemplateInput,
-    },
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingMoveState {
@@ -96,6 +34,19 @@ pub struct ControlFlowArrow {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopeId(usize);
+
+impl ScopeId {
+    pub fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScopeArrowSink {
     Merge,
     LoopContinue,
@@ -105,7 +56,7 @@ pub enum ScopeArrowSink {
 
 #[derive(Clone)]
 pub struct ScopeExitTarget {
-    pub target_scope_idx: usize,
+    pub target_scope: ScopeId,
     pub sink: ScopeArrowSink,
     pub label: String,
 }
@@ -153,64 +104,19 @@ pub struct Scope {
     pub flow_kind: ScopeFlowKind,
 }
 
-impl TypeEnvironment<'_> {
-    pub fn new<'a>(
-        tokens: &'a [Token],
-        compilation_unit: CompilationUnit,
-        working_directory: PathBuf,
-        module_data: &'a ModuleData,
-    ) -> TypeEnvironment<'a> {
-        let mut realized_types = HashMap::new();
-        let mut generated_types = MIRTypeContext::default();
-        let mut named_type_ids = HashMap::new();
-        let mut next_type_id = 1u64;
+pub struct ControlFlow {
+    symbol_table: ScopedMap<MIRExpression>,
+    tracked_bindings: ScopedMap<TrackedBindingState>,
+    scope_stack: Vec<Scope>,
+}
 
-        for (name, ty_kind) in INTRINSIC_TYPES {
-            let ty: MIRType = ty_kind.clone().into();
-            let id = MIRTypeId(next_type_id);
-            next_type_id += 1;
-
-            generated_types.insert(id, ty.clone());
-            generated_types.register_identifier(CXIdent::new(*name), id);
-            named_type_ids.insert((*name).to_string(), id);
-            realized_types.insert((*name).to_string(), ty);
-        }
-
-        TypeEnvironment {
-            tokens,
-            compilation_unit,
-            working_directory,
-
-            module_data,
-
-            realized_types,
-            named_type_ids,
-            type_context: generated_types,
-            currently_defining_types: HashSet::new(),
-            definition_stack: Vec::new(),
-            next_type_id,
-            realized_fns: HashMap::new(),
-            realized_globals: HashMap::new(),
-
-            current_function: None,
-
-            scope_stack: Vec::new(),
-            requests: Vec::new(),
+impl ControlFlow {
+    pub fn new() -> Self {
+        Self {
             symbol_table: ScopedMap::new(),
             tracked_bindings: ScopedMap::new(),
-
-            arg_vals: Vec::new(),
-
-            in_external_templated_function: false,
-            generated_functions: Vec::new(),
-            safe_mode: false,
-            contract_pure_mode: false,
-            unsafe_depth: 0,
+            scope_stack: Vec::new(),
         }
-    }
-
-    pub fn resolve_compilation_unit(&self, module: &str) -> CompilationUnit {
-        CompilationUnit::from_rooted(module, &self.working_directory)
     }
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
@@ -226,7 +132,7 @@ impl TypeEnvironment<'_> {
         });
     }
 
-    pub fn pop_scope(&mut self) -> CXResult<()> {
+    pub fn pop_scope(&mut self, compilation_unit: &Path) -> CXResult<()> {
         let Some(scope) = self.scope_stack.last().cloned() else {
             panic!("Scope stack has uneven push/pop");
         };
@@ -237,7 +143,8 @@ impl TypeEnvironment<'_> {
         self.tracked_bindings.pop_scope();
         self.scope_stack.pop().unwrap();
 
-        let outgoing_snapshot = self.resolve_scope_flow(&scope, current_snapshot.as_ref())?;
+        let outgoing_snapshot =
+            self.resolve_scope_flow(compilation_unit, &scope, current_snapshot.as_ref())?;
         let final_reachable = outgoing_snapshot.is_some();
 
         if final_reachable
@@ -252,7 +159,8 @@ impl TypeEnvironment<'_> {
                 .collect::<Vec<_>>();
 
             if let Some(range) = scope.anchor_range.as_ref() {
-                return self.type_error_at_range(
+                return Self::type_error_at_range(
+                    compilation_unit,
                     range,
                     format!(
                         "nodrop local(s) reach scope end without move or @leak: {}",
@@ -279,6 +187,10 @@ impl TypeEnvironment<'_> {
         self.symbol_table.insert(name, value);
     }
 
+    pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
+        self.symbol_table.get(name)
+    }
+
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
         ControlFlowSnapshot {
             symbol_table: self.symbol_table.clone(),
@@ -291,8 +203,8 @@ impl TypeEnvironment<'_> {
         self.tracked_bindings = snapshot.tracked_bindings.clone();
     }
 
-    pub fn current_scope_index(&self) -> usize {
-        self.scope_stack.len() - 1
+    pub fn current_scope_index(&self) -> ScopeId {
+        ScopeId(self.scope_stack.len() - 1)
     }
 
     pub fn set_scope_anchor(&mut self, expr: &CXExpr) {
@@ -360,7 +272,7 @@ impl TypeEnvironment<'_> {
         };
         let scope = self
             .scope_stack
-            .get_mut(target.target_scope_idx)
+            .get_mut(target.target_scope.index())
             .expect("Invalid target scope for control-flow arrow");
 
         match (&mut scope.flow_kind, target.sink) {
@@ -378,10 +290,10 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn take_pending_increment_arrows(&mut self, scope_idx: usize) -> Vec<ControlFlowArrow> {
+    pub fn take_pending_increment_arrows(&mut self, scope: ScopeId) -> Vec<ControlFlowArrow> {
         let scope = self
             .scope_stack
-            .get_mut(scope_idx)
+            .get_mut(scope.index())
             .expect("Invalid loop scope for pending increment arrows");
 
         match &mut scope.flow_kind {
@@ -390,10 +302,10 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn loop_entry_snapshot(&self, scope_idx: usize) -> ControlFlowSnapshot {
+    pub fn loop_entry_snapshot(&self, scope: ScopeId) -> ControlFlowSnapshot {
         let scope = self
             .scope_stack
-            .get(scope_idx)
+            .get(scope.index())
             .expect("Invalid loop scope for entry snapshot");
 
         match &scope.flow_kind {
@@ -402,22 +314,24 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn nearest_break_scope(&self) -> Option<usize> {
+    pub fn nearest_break_scope(&self) -> Option<ScopeId> {
         self.scope_stack
             .iter()
             .rposition(|scope| scope.has_break_merge)
+            .map(ScopeId)
     }
 
-    pub fn nearest_continue_scope(&self) -> Option<usize> {
+    pub fn nearest_continue_scope(&self) -> Option<ScopeId> {
         self.scope_stack
             .iter()
             .rposition(|scope| scope.has_continue_merge)
+            .map(ScopeId)
     }
 
-    pub fn break_arrow_sink(&self, scope_idx: usize) -> ScopeArrowSink {
+    pub fn break_arrow_sink(&self, scope: ScopeId) -> ScopeArrowSink {
         match self
             .scope_stack
-            .get(scope_idx)
+            .get(scope.index())
             .map(|scope| &scope.flow_kind)
         {
             Some(ScopeFlowKind::Loop(_)) => ScopeArrowSink::LoopExit,
@@ -425,10 +339,10 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn continue_arrow_sink(&self, scope_idx: usize) -> ScopeArrowSink {
+    pub fn continue_arrow_sink(&self, scope: ScopeId) -> ScopeArrowSink {
         match self
             .scope_stack
-            .get(scope_idx)
+            .get(scope.index())
             .map(|scope| &scope.flow_kind)
         {
             Some(ScopeFlowKind::Loop(state)) if state.loop_kind == LoopScopeKind::For => {
@@ -439,8 +353,8 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn mark_jump_unreachable(&mut self, target_scope_idx: usize) {
-        for idx in (target_scope_idx + 1..self.scope_stack.len()).rev() {
+    pub fn mark_jump_unreachable(&mut self, target_scope: ScopeId) {
+        for idx in (target_scope.index() + 1..self.scope_stack.len()).rev() {
             let scope = &mut self.scope_stack[idx];
             scope.reachable = false;
 
@@ -456,216 +370,32 @@ impl TypeEnvironment<'_> {
         }
     }
 
-    pub fn add_type(&mut self, name: String, _type: MIRType) -> Option<MIRType> {
-        let old = self.realized_types.remove(&name);
-        self.realized_types.insert(name.clone(), _type.clone());
-        old
-    }
-
-    pub fn get_or_create_named_type_id(&mut self, name: &str) -> MIRTypeId {
-        if let Some(id) = self.named_type_ids.get(name) {
-            return *id;
-        }
-
-        let next_available = self.type_context.types.len() as u64 + 1;
-        let id = MIRTypeId(self.next_type_id.max(next_available));
-        self.next_type_id = id.0 + 1;
-        self.named_type_ids.insert(name.to_string(), id);
-        self.type_context.insert(
-            id,
-            MIRType {
-                strong_identifier: Some(CXIdent::new(name)),
-                kind: MIRTypeKind::Undefined,
-                ..Default::default()
-            },
-        );
-        id
-    }
-
-    pub fn get_named_type_id(&self, name: &str) -> Option<MIRTypeId> {
-        self.named_type_ids.get(name).copied()
-    }
-
-    pub fn mark_type_defining(&mut self, id: MIRTypeId) {
-        self.currently_defining_types.insert(id);
-        self.definition_stack.push(id);
-    }
-
-    pub fn finish_type_definition(
-        &mut self,
-        id: MIRTypeId,
-        definition: MIRType,
-    ) -> Option<MIRType> {
-        self.currently_defining_types.remove(&id);
-        if self.definition_stack.last().copied() == Some(id) {
-            self.definition_stack.pop();
-        } else if let Some(index) = self
-            .definition_stack
-            .iter()
-            .rposition(|stack_id| *stack_id == id)
-        {
-            self.definition_stack.remove(index);
-        }
-
-        self.type_context.insert(id, definition)
-    }
-
-    pub fn is_type_defining(&self, id: MIRTypeId) -> bool {
-        self.currently_defining_types.contains(&id)
-    }
-
-    pub fn abort_type_definition(&mut self, id: MIRTypeId) {
-        self.currently_defining_types.remove(&id);
-        if self.definition_stack.last().copied() == Some(id) {
-            self.definition_stack.pop();
-        } else if let Some(index) = self
-            .definition_stack
-            .iter()
-            .rposition(|stack_id| *stack_id == id)
-        {
-            self.definition_stack.remove(index);
+    pub fn set_scope_reachable(&mut self, scope: ScopeId, reachable: bool) {
+        if let Some(scope) = self.scope_stack.get_mut(scope.index()) {
+            scope.reachable = reachable;
         }
     }
 
-    pub fn has_complete_named_type_definition(&self, id: MIRTypeId) -> bool {
-        self.type_context
-            .get(id)
-            .map(|definition| !matches!(definition.kind, MIRTypeKind::Undefined))
+    pub fn is_scope_reachable(&self, scope: ScopeId) -> bool {
+        self.scope_stack
+            .get(scope.index())
+            .map(|scope| scope.reachable)
             .unwrap_or(false)
     }
 
-    pub fn get_named_type_definition(&self, id: MIRTypeId) -> Option<&MIRType> {
-        self.type_context.get(id)
+    pub fn is_current_scope_reachable(&self) -> bool {
+        self.scope_stack
+            .last()
+            .map(|scope| scope.reachable)
+            .unwrap_or(true)
     }
 
-    pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeId {
-        if let Some(name) = ty.get_name()
-            && let Some(id) = self.named_type_ids.get(name.as_str()).copied()
-        {
-            self.type_context.register_identifier(name.clone(), id);
-            if self.type_context.get(id).is_none() {
-                self.type_context.insert(id, ty);
-            }
-
-            return id;
-        }
-
-        let id = self.type_context.intern(ty.clone());
-        if let Some(name) = ty.get_name() {
-            self.type_context.register_identifier(name.clone(), id);
-        }
-        id
-    }
-
-    pub fn update_named_type_metadata(
-        &mut self,
-        id: MIRTypeId,
-        new_name: CXIdent,
-        template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
-    ) {
-        let Some(existing) = self.type_context.get_mut(id) else {
-            return;
-        };
-
-        existing.strong_identifier = Some(new_name.clone());
-        existing.template_info = template_info.clone();
-        self.type_context.register_identifier(new_name, id);
-    }
-
-    pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
-        self.symbol_table.get(name)
-    }
-
-    pub fn get_realized_func(&self, name: &str) -> Option<MIRFunctionPrototype> {
-        self.realized_fns.get(name).cloned()
-    }
-
-    pub fn get_type(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        expr: &CXExpr,
-        name: &str,
-    ) -> CXResult<MIRType> {
-        let as_cx_type = CXTypeKind::Identifier {
-            predeclaration: PredeclarationType::None,
-            name: CXIdent::new(name),
-        }
-        .to_type();
-
-        self.complete_type(base_data, expr, &as_cx_type)
-    }
-
-    pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
-        if let Some(id) = self.get_named_type_id(name)
-            && let Some(definition) = self.get_named_type_definition(id)
-            && definition
-                .get_name()
-                .map(|ident| ident.as_str() == name)
-                .unwrap_or(false)
-        {
-            return Some(definition.clone());
-        }
-
-        self.realized_types.get(name).cloned()
-    }
-
-    pub fn current_function(&self) -> &MIRFunctionPrototype {
-        self.current_function.as_ref().unwrap()
-    }
-
-    pub fn complete_type(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        expr: &CXExpr,
-        _type: &CXType,
-    ) -> CXResult<MIRType> {
-        complete_type(self, base_data, None, expr, _type)
-    }
-
-    pub fn complete_prototype(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        external_module: Option<&String>,
-        prototype: &CXFunctionPrototype,
-    ) -> CXResult<MIRFunctionPrototype> {
-        complete_prototype_no_insert(self, base_data, external_module, prototype).inspect(
-            |prototype| {
-                self.realized_fns
-                    .insert(prototype.name.to_string(), prototype.clone());
-            },
-        )
-    }
-
-    pub fn is_copyable(&mut self, ty: &MIRType) -> bool {
-        !self.is_nocopy(ty)
-    }
-
-    pub fn is_nocopy(&self, ty: &MIRType) -> bool {
-        ty.struct_attributes()
-            .map(|attributes| attributes.nocopy || attributes.nodrop)
-            .unwrap_or(false)
-    }
-
-    pub fn is_nodrop(&self, ty: &MIRType) -> bool {
-        ty.struct_attributes()
-            .map(|attributes| attributes.nodrop)
-            .unwrap_or(false)
-    }
-
-    pub fn in_safe_context(&self) -> bool {
-        self.safe_mode && self.unsafe_depth == 0
-    }
-
-    pub fn track_binding(&mut self, name: String, ty: &MIRType) {
-        if !self.is_nocopy(ty) {
-            return;
-        }
-
+    pub fn track_binding(&mut self, name: String, nodrop: bool) {
         self.tracked_bindings.insert(
             name,
             TrackedBindingState {
                 state: BindingMoveState::Available,
-                nodrop: self.is_nodrop(ty),
+                nodrop,
             },
         );
     }
@@ -683,19 +413,9 @@ impl TypeEnvironment<'_> {
             .insert(name.to_string(), TrackedBindingState { state, ..binding });
     }
 
-    pub fn current_scope_nodrop_bindings(&self) -> Vec<(String, TrackedBindingState)> {
-        if self.scope_stack.is_empty() {
-            return Vec::new();
-        }
-
-        self.tracked_bindings
-            .get_all_at_level(self.tracked_bindings.scope_depth())
-            .filter(|(_, binding)| binding.nodrop)
-            .map(|(name, binding)| (name.clone(), binding.clone()))
-            .collect()
-    }
-
-    pub fn tracked_bindings_snapshot(&self) -> HashMap<String, TrackedBindingState> {
+    pub fn tracked_bindings_snapshot(
+        &self,
+    ) -> std::collections::HashMap<String, TrackedBindingState> {
         self.tracked_bindings
             .iter()
             .map(|(name, binding)| (name.clone(), binding.clone()))
@@ -710,54 +430,21 @@ impl TypeEnvironment<'_> {
             .collect()
     }
 
-    pub fn get_standard_function(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        expr: &CXExpr,
-        key: &CXIdent,
-        template_input: Option<&CXTemplateInput>,
-    ) -> CXResult<MIRFunctionPrototype> {
-        query_standard_function(self, base_data, expr, key, template_input)
+    fn current_scope_nodrop_bindings(&self) -> Vec<(String, TrackedBindingState)> {
+        if self.scope_stack.is_empty() {
+            return Vec::new();
+        }
+
+        self.tracked_bindings
+            .get_all_at_level(self.tracked_bindings.scope_depth())
+            .filter(|(_, binding)| binding.nodrop)
+            .map(|(name, binding)| (name.clone(), binding.clone()))
+            .collect()
     }
 
-    pub fn get_member_function(
-        &mut self,
-        base_data: &MIRBaseMappings,
-        expr: &CXExpr,
-        member_type: &MIRType,
-        name: &CXIdent,
-        template_input: Option<&CXTemplateInput>,
-    ) -> CXResult<MIRFunctionPrototype> {
-        query_member_function(self, base_data, expr, member_type, name, template_input)
-    }
-
-    #[allow(dead_code)]
-    fn start_defer(&mut self) {
-        todo!()
-    }
-
-    pub fn in_defer<F, T>(&mut self, _: F) -> CXResult<T>
-    where
-        F: FnOnce(&mut Self) -> CXResult<T>,
-    {
-        todo!()
-    }
-
-    pub fn finish_mir_unit(self) -> CXResult<MIRUnit> {
-        Ok(MIRUnit {
-            functions: self.generated_functions,
-            prototypes: self.realized_fns.into_values().collect(),
-            global_variables: self.realized_globals.into_values().collect(),
-            type_definitions: self.type_context,
-
-            source_path: self.compilation_unit.as_path().to_owned(),
-        })
-    }
-}
-
-impl TypeEnvironment<'_> {
     fn resolve_scope_flow(
         &mut self,
+        compilation_unit: &Path,
         scope: &Scope,
         current_snapshot: Option<&ControlFlowSnapshot>,
     ) -> CXResult<Option<ControlFlowSnapshot>> {
@@ -774,7 +461,8 @@ impl TypeEnvironment<'_> {
                     });
                 }
 
-                let Some(merged_bindings) = self.merge_binding_states(
+                let Some(merged_bindings) = Self::merge_binding_states(
+                    compilation_unit,
                     &state.entry_snapshot,
                     &arrows,
                     &state.join_range,
@@ -794,7 +482,8 @@ impl TypeEnvironment<'_> {
                         .collect::<Vec<_>>();
 
                     if !live.is_empty() {
-                        return self.type_error_at_range(
+                        return Self::type_error_at_range(
+                            compilation_unit,
                             &state.join_range,
                             format!(
                                 "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
@@ -815,15 +504,16 @@ impl TypeEnvironment<'_> {
                 }];
                 continue_arrows.extend(state.continue_arrows.clone());
 
-                let continue_range = state.join_range.clone();
-                let Some(loop_carried_bindings) = self.merge_binding_states(
+                let Some(loop_carried_bindings) = Self::merge_binding_states(
+                    compilation_unit,
                     &state.entry_snapshot,
                     &continue_arrows,
-                    &continue_range,
+                    &state.join_range,
                     "loop continue join",
                 )?
                 else {
-                    let Some(exit_bindings) = self.merge_binding_states(
+                    let Some(exit_bindings) = Self::merge_binding_states(
+                        compilation_unit,
                         &state.entry_snapshot,
                         &state.exit_arrows,
                         &state.join_range,
@@ -837,11 +527,7 @@ impl TypeEnvironment<'_> {
                     return Ok(Some(self.current_snapshot()));
                 };
 
-                let loop_exit_snapshot = ControlFlowSnapshot {
-                    symbol_table: self.symbol_table.clone(),
-                    tracked_bindings: self.tracked_bindings.clone(),
-                };
-                let mut loop_exit_snapshot = loop_exit_snapshot;
+                let mut loop_exit_snapshot = self.current_snapshot();
                 for (name, binding) in &loop_carried_bindings {
                     loop_exit_snapshot
                         .tracked_bindings
@@ -854,7 +540,8 @@ impl TypeEnvironment<'_> {
                     snapshot: loop_exit_snapshot,
                 });
 
-                let Some(exit_bindings) = self.merge_binding_states(
+                let Some(exit_bindings) = Self::merge_binding_states(
+                    compilation_unit,
                     &state.entry_snapshot,
                     &exit_arrows,
                     &state.join_range,
@@ -871,7 +558,7 @@ impl TypeEnvironment<'_> {
     }
 
     fn merge_binding_states(
-        &mut self,
+        compilation_unit: &Path,
         entry_snapshot: &ControlFlowSnapshot,
         arrows: &[ControlFlowArrow],
         join_range: &TokenRange,
@@ -932,7 +619,8 @@ impl TypeEnvironment<'_> {
             .iter()
             .map(|note| format!("conflict: {note}"))
             .collect::<Vec<_>>();
-        self.type_error_at_range::<Option<Vec<(String, TrackedBindingState)>>>(
+        Self::type_error_at_range::<Option<Vec<(String, TrackedBindingState)>>>(
+            compilation_unit,
             join_range,
             format!("nocopy binding(s) have inconsistent move state at {join_name}"),
             notes,
@@ -948,13 +636,13 @@ impl TypeEnvironment<'_> {
     }
 
     fn type_error_at_range<T>(
-        &self,
+        compilation_unit: &Path,
         range: &TokenRange,
         message: String,
         notes: Vec<String>,
     ) -> CXResult<T> {
         Err(Box::new(TypeError {
-            compilation_unit: self.compilation_unit.as_path().to_owned(),
+            compilation_unit: compilation_unit.to_owned(),
             token_start: range.start_token,
             token_end: range.end_token,
             message,
@@ -968,10 +656,5 @@ impl TypeEnvironment<'_> {
             BindingMoveState::Moved => "moved",
             BindingMoveState::ConditionallyMoved => "conditionally moved",
         }
-    }
-    
-    pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
-        // Implementation for checking if two types are equal
-        todo!()
     }
 }

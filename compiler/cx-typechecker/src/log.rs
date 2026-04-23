@@ -1,6 +1,8 @@
 use cx_util::CXErrorTrait;
 use std::path::PathBuf;
 
+use cx_tokens::TokenRange;
+
 #[derive(Clone, Debug)]
 pub struct TypeError {
     pub compilation_unit: PathBuf,
@@ -8,6 +10,28 @@ pub struct TypeError {
     pub token_end: usize,
     pub message: String,
     pub notes: Vec<String>,
+}
+
+pub trait TypeErrorRangeArg {
+    fn to_range(&self) -> Option<TokenRange>;
+}
+
+impl TypeErrorRangeArg for &TokenRange {
+    fn to_range(&self) -> Option<TokenRange> {
+        Some((*self).clone())
+    }
+}
+
+impl TypeErrorRangeArg for Option<&TokenRange> {
+    fn to_range(&self) -> Option<TokenRange> {
+        self.cloned()
+    }
+}
+
+impl TypeErrorRangeArg for Option<TokenRange> {
+    fn to_range(&self) -> Option<TokenRange> {
+        self.clone()
+    }
 }
 
 impl CXErrorTrait for TypeError {
@@ -56,12 +80,14 @@ macro_rules! log_typecheck_error {
         {
             let message = format!($($arg)*);
 
-            let compilation_unit = match $range {
-                None => $env.compilation_unit.as_path().to_owned(),
+            let range = $crate::log::TypeErrorRangeArg::to_range(&$range);
+
+            let compilation_unit = match range.as_ref() {
+                None => $env.source.compilation_unit.as_path().to_owned(),
                 Some(range) => std::path::PathBuf::from(range.file_origin.as_ref())
             };
-            
-            let (start_token, end_token) = if let Some(range) = $range {
+
+            let (start_token, end_token) = if let Some(range) = range.as_ref() {
                 (range.start_token, range.end_token)
             } else {
                 (0, 0)
