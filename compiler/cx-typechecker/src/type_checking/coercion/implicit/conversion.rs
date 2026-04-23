@@ -16,18 +16,18 @@ pub fn try_implicit_coercion(
     let from_type = expr.get_type();
 
     if env.type_eq(&from_type, target_type) {
-        return Ok(CoercionResult::none(expr));
+        return CoercionResult::unapplied(expr);
     }
 
     if compatible::compatible_types(env, &expr._type, target_type)? {
-        return Ok(CoercionResult::some(MIRExpression {
+        return CoercionResult::success(MIRExpression {
             token_range: expr.token_range.clone(),
             kind: MIRExpressionKind::TypeConversion {
                 conversion: MIRCoercion::Typechange,
                 operand: Box::new(expr),
             },
             _type: target_type.clone(),
-        }));
+        });
     }
 
     todo!()

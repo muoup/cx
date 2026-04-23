@@ -16,97 +16,102 @@ pub fn try_explicit_cast(
     expr: MIRExpression,
     target_type: &MIRType,
 ) -> CXResult<CoercionResult> {
-    Ok(
-        try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
-            let from_type = expr.get_type();
-            let coerced = |conversion: MIRCoercion| {
-                let coerced = MIRExpression {
-                    token_range: expr.token_range.clone(),
-                    _type: target_type.clone(),
-                    kind: MIRExpressionKind::TypeConversion {
-                        operand: Box::new(expr.clone()),
-                        conversion,
-                    },
-                };
-
-                CoercionResult::some(coerced)
+    try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
+        let from_type = expr.get_type();
+        let coerced = |conversion: MIRCoercion| {
+            let coerced = MIRExpression {
+                token_range: expr.token_range.clone(),
+                _type: target_type.clone(),
+                kind: MIRExpressionKind::TypeConversion {
+                    operand: Box::new(expr.clone()),
+                    conversion,
+                },
             };
 
-            match (&from_type.kind, &target_type.kind) {
-                (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
-                    coerced(MIRCoercion::ReinterpretBits)
-                }
+            CoercionResult::success(coerced)
+        };
 
-                (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
-                    coerced(MIRCoercion::PtrToInt { to_type: *_type })
-                }
-
-                (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::PointerTo { .. }) => {
-                    coerced(MIRCoercion::IntToPtr { sextend: *signed })
-                }
-
-                _ => CoercionResult::none(expr),
+        match (&from_type.kind, &target_type.kind) {
+            (MIRTypeKind::PointerTo { .. }, MIRTypeKind::PointerTo { .. }) => {
+                coerced(MIRCoercion::ReinterpretBits)
             }
-        }),
-    )
+
+            (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
+                coerced(MIRCoercion::PtrToInt { to_type: *_type })
+            }
+
+            (MIRTypeKind::Integer { signed, .. }, MIRTypeKind::PointerTo { .. }) => {
+                coerced(MIRCoercion::IntToPtr { sextend: *signed })
+            }
+
+            _ => CoercionResult::unapplied(expr),
+        }
+    })
+}
+
+pub enum CoercionObstacle {
+    NoValidCoercion,
+    Uncopyable,
 }
 
 pub enum CoercionResult {
-    CastNotFound(MIRExpression),
-
     Success {
         expr: MIRExpression,
     },
 
-    Error {
-        message: String,
+    Unapplied {
         expr: MIRExpression,
+        cause: Option<CoercionObstacle>,
     },
 }
 
 impl CoercionResult {
-    pub fn or_else<F>(self, f: F) -> Self
+    pub fn or_else<F>(self, f: F) -> CXResult<Self>
     where
-        F: FnOnce(MIRExpression) -> Self,
+        F: FnOnce(MIRExpression) -> CXResult<Self>,
     {
-        match self {
-            CoercionResult::CastNotFound(expr) => f(expr),
+        Ok(match self {
+            CoercionResult::Unapplied {
+                expr,
+                cause: base_cause,
+            } => match f(expr)? {
+                CoercionResult::Unapplied {
+                    expr,
+                    cause: new_cause,
+                } => CoercionResult::Unapplied {
+                    expr,
+                    cause: new_cause.or(base_cause),
+                },
+
+                misc => misc,
+            },
 
             _ => self,
-        }
+        })
     }
 
-    pub fn some(expr: MIRExpression) -> Self {
-        CoercionResult::Success { expr }
+    pub fn success(expr: MIRExpression) -> CXResult<Self> {
+        Ok(CoercionResult::Success { expr })
     }
 
-    pub fn none(expr: MIRExpression) -> Self {
-        CoercionResult::CastNotFound(expr)
+    pub fn unapplied(expr: MIRExpression) -> CXResult<Self> {
+        Ok(CoercionResult::Unapplied { expr, cause: None })
     }
 
-    pub fn error(message: String, expr: MIRExpression) -> Self {
-        CoercionResult::Error { message, expr }
+    pub fn tried_application(expr: MIRExpression, cause: CoercionObstacle) -> CXResult<Self> {
+        Ok(CoercionResult::Unapplied {
+            expr,
+            cause: Some(cause),
+        })
     }
 
-    pub fn catch_err<F>(self, on_err: F) -> CXResult<MIRExpression>
-    where
-        F: FnOnce(MIRExpression, String) -> CXResult<MIRExpression>,
-    {
-        match self {
-            CoercionResult::Success { expr } => Ok(expr),
-            CoercionResult::CastNotFound(expr) => Ok(expr),
-            CoercionResult::Error { message, expr } => on_err(expr, message),
-        }
-    }
-
-    pub fn assert_cast<F>(self, on_uncasted: F) -> CXResult<MIRExpression>
+    pub fn catch_incomplete<F>(self, on_uncasted: F) -> CXResult<MIRExpression>
     where
         F: FnOnce(MIRExpression, Option<String>) -> CXResult<MIRExpression>,
     {
         match self {
             CoercionResult::Success { expr } => Ok(expr),
-            CoercionResult::CastNotFound(expr) => on_uncasted(expr, None),
-            CoercionResult::Error { message, expr } => on_uncasted(expr, Some(message)),
+            CoercionResult::IncompleteCast(expr) => on_uncasted(expr, None),
         }
     }
 }

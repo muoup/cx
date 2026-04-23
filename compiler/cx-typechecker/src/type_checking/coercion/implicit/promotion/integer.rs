@@ -2,15 +2,16 @@ use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
 };
+use cx_util::CXResult;
 
 use crate::{environment::TypeEnvironment, type_checking::coercion::{CoercionResult, implicit::coercion_expr}};
 
-pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CoercionResult {
+pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
     let MIRTypeKind::Integer {
         _type: self_int, ..
     } = expr._type.kind
     else {
-        return CoercionResult::none(expr);
+        return CoercionResult::unapplied(expr);
     };
 
     let integer_type = env
@@ -25,7 +26,7 @@ pub fn try_promotion(env: &mut TypeEnvironment, expr: MIRExpression) -> Coercion
     let self_rank = self_int.rank();
 
     if self_rank >= integer_rank {
-        return CoercionResult::none(expr);
+        return CoercionResult::unapplied(expr);
     }
 
     try_conversion(env, expr, &integer_type)
@@ -35,20 +36,20 @@ pub fn try_conversion(
     _env: &mut TypeEnvironment,
     expr: MIRExpression,
     to_type: &MIRType,
-) -> CoercionResult {
+) -> CXResult<CoercionResult> {
     let MIRTypeKind::Integer {
         _type: from_int,
         signed: from_signed,
     } = expr._type.kind
     else {
-        return CoercionResult::none(expr);
+        return CoercionResult::unapplied(expr);
     };
     let MIRTypeKind::Integer {
         _type: to_int,
         signed: to_signed,
     } = to_type.kind
     else {
-        return CoercionResult::none(expr);
+        return CoercionResult::unapplied(expr);
     };
 
     if from_int == to_int {
@@ -59,7 +60,7 @@ pub fn try_conversion(
                 kind: MIRExpressionKind::Typechange(Box::new(expr)),
             };
 
-            return CoercionResult::some(coerced);
+            return CoercionResult::success(coerced);
         }
         
         return coercion_expr(expr, to_type.clone(), MIRCoercion::ReinterpretBits);

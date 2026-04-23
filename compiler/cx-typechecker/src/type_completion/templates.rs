@@ -12,7 +12,7 @@ use cx_ast::data::{
 };
 use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRFunctionSignature, MIRMoveAttributes, MIRTemplateInput, MIRType,
-    MIRTypeKind, same_type,
+    MIRTypeKind,
 };
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
@@ -309,7 +309,7 @@ fn deduce_from_cx_type(
     {
         let inner_type = env
             .type_context
-            .get(*inner_type.as_ref())
+            .get(*inner_type)
             .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
             .clone();
 
@@ -333,7 +333,7 @@ fn deduce_from_cx_type(
                 .iter()
                 .any(|param| param == name.as_str()) =>
         {
-            bind_template_argument(bindings, name.as_str(), actual)
+            bind_template_argument(env, bindings, name.as_str(), actual)
         }
 
         CXTypeKind::TemplatedIdentifier { name, input } => {
@@ -397,7 +397,7 @@ fn deduce_from_cx_type(
 
             let actual_inner = env
                 .type_context
-                .get(*inner_type.as_ref())
+                .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                 .clone();
             deduce_from_cx_type(
@@ -415,7 +415,7 @@ fn deduce_from_cx_type(
             MIRTypeKind::PointerTo { inner_type } | MIRTypeKind::Array { inner_type, .. } => {
                 let actual_inner = env
                     .type_context
-                    .get(*inner_type.as_ref())
+                    .get(*inner_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                     .clone();
                 deduce_from_cx_type(
@@ -441,7 +441,7 @@ fn deduce_from_cx_type(
 
             let actual_inner = env
                 .type_context
-                .get(*actual_inner.as_ref())
+                .get(*actual_inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                 .clone();
             deduce_from_cx_type(
@@ -464,7 +464,7 @@ fn deduce_from_cx_type(
             } => {
                 let actual_inner = env
                     .type_context
-                    .get(*actual_inner.as_ref())
+                    .get(*actual_inner)
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                     .clone();
                 deduce_from_cx_type(
@@ -483,7 +483,7 @@ fn deduce_from_cx_type(
             } => {
                 let actual_inner = env
                     .type_context
-                    .get(*actual_inner.as_ref())
+                    .get(*actual_inner)
                     .unwrap_or_else(|| panic!("Unknown type id {}", actual_inner.0))
                     .clone();
                 deduce_from_cx_type(
@@ -534,7 +534,7 @@ fn deduce_from_cx_type(
         _ => {
             let completed_formal =
                 complete_type(env, base_data, external_module, &CXExpr::default(), formal)?;
-            if same_type(&completed_formal, actual) {
+            if env.type_eq(&completed_formal, actual) {
                 Ok(())
             } else {
                 concrete_type_mismatch(formal, actual)
@@ -593,12 +593,13 @@ fn deduce_from_function_signature(
 }
 
 fn bind_template_argument(
+    env: &mut TypeEnvironment,
     bindings: &mut TemplateBindings,
     name: &str,
     actual: &MIRType,
 ) -> CXResult<()> {
     if let Some(existing) = bindings.get(name) {
-        if same_type(existing, actual) {
+        if env.type_eq(existing, actual) {
             return Ok(());
         }
 

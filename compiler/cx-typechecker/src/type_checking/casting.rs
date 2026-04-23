@@ -21,7 +21,7 @@ pub(crate) fn explicit_cast(
         CoercionResult::Error { message, expr } => {
             log_typecheck_error!(env, expr.token_range.as_ref(), "{message}")
         }
-        CoercionResult::CastNotFound(expr) => log_typecheck_error!(
+        CoercionResult::IncompleteCast(expr) => log_typecheck_error!(
             env,
             expr.token_range.as_ref(),
             "No explicit cast from {} to {}",
@@ -44,7 +44,7 @@ pub fn implicit_cast(
 
     match try_implicit_coercion(env, value, to_type)? {
         CoercionResult::Success { expr, .. } => Ok(expr),
-        CoercionResult::CastNotFound(expr) => log_typecheck_error!(
+        CoercionResult::IncompleteCast(expr) => log_typecheck_error!(
             env,
             expr.token_range.as_ref(),
             "No implicit cast from {} to {}",

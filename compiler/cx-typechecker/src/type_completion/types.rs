@@ -126,7 +126,7 @@ fn ensure_complete_value_type(
         | MIRTypeKind::Str => Ok(()),
         MIRTypeKind::Undefined => log_typecheck_error!(
             env,
-            expr.token_range(),
+            Some(expr.token_range()),
             "Field '{}' uses incomplete type {} by value",
             field_name,
             field_type
@@ -134,7 +134,7 @@ fn ensure_complete_value_type(
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
                 .type_context
-                .get(*inner_type.as_ref())
+                .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
                 .clone();
             ensure_complete_value_type(env, expr, field_name, &inner_type)
@@ -148,7 +148,7 @@ fn ensure_complete_value_type(
             {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Field '{}' uses incomplete type {} by value",
                     field_name,
                     field_type
@@ -360,7 +360,7 @@ pub(crate) fn int_complete_type(
             {
                 return log_typecheck_error!(
                     env,
-                    &expr.range,
+                    Some(expr.token_range()),
                     "Template type '{}' requires explicit template arguments",
                     name,
                 );
@@ -370,7 +370,7 @@ pub(crate) fn int_complete_type(
                 return Ok(named_predeclaration_type(env, ty, name, *predeclaration));
             }
 
-            log_typecheck_error!(env, &expr.range, "Type not found: {name}")
+            log_typecheck_error!(env, Some(expr.token_range()), "Type not found: {name}")
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {
@@ -391,7 +391,7 @@ pub(crate) fn int_complete_type(
                 ty,
                 MIRTypeKind::Array {
                     length: *size,
-                    inner_type: Box::new(inner_type_id),
+                    inner_type: inner_type_id,
                 },
             ))
         }
@@ -401,7 +401,7 @@ pub(crate) fn int_complete_type(
             Ok(construct_type(
                 ty,
                 MIRTypeKind::PointerTo {
-                    inner_type: Box::new(inner_type_id),
+                    inner_type: inner_type_id,
                 },
             ))
         }
@@ -411,7 +411,7 @@ pub(crate) fn int_complete_type(
             Ok(construct_type(
                 ty,
                 MIRTypeKind::MemoryReference {
-                    inner_type: Box::new(inner_type_id),
+                    inner_type: inner_type_id,
                 },
             ))
         }
@@ -421,7 +421,7 @@ pub(crate) fn int_complete_type(
             Ok(construct_type(
                 ty,
                 MIRTypeKind::PointerTo {
-                    inner_type: Box::new(inner_type_id),
+                    inner_type: inner_type_id,
                 },
             ))
         }

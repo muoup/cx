@@ -1,6 +1,8 @@
+use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
 use crate::log_typecheck_error;
+use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::structured_initialization::{
     TypeConstructor, deconstruct_type_constructor,
@@ -25,7 +27,7 @@ pub fn typecheck_switch(
     env.push_scope(true, false);
     env.set_scope_anchor(condition);
     env.configure_merge_scope(condition, "switch join", None, false);
-    
+
     let join_scope_idx = env.current_scope_index();
     let condition_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
@@ -139,7 +141,6 @@ pub fn typecheck_switch(
 pub fn typecheck_match(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
-    _: &CXExpr,
     condition: &CXExpr,
     arms: &[(CXExpr, CXExpr)],
     default: Option<&Box<CXExpr>>,
@@ -147,9 +148,11 @@ pub fn typecheck_match(
     let mut expr_value = typecheck_expr(env, base_data, condition, None)
         .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
     let mut expr_type = expr_value.get_type();
+    
     env.push_scope(false, false);
     env.set_scope_anchor(condition);
     env.configure_merge_scope(condition, "match join", None, false);
+    
     let join_scope_idx = env.current_scope_index();
     let base_snapshot = env.current_snapshot();
 
@@ -174,7 +177,7 @@ pub fn typecheck_match(
             let MIRTypeKind::Integer { _type, signed } = &expr_type.kind else {
                 return log_typecheck_error!(
                     env,
-                    condition.token_range(),
+                    Some(condition.token_range()),
                     "Match condition must be an integer type, found {}",
                     expr_type
                 );
@@ -187,7 +190,7 @@ pub fn typecheck_match(
                 else {
                     return log_typecheck_error!(
                         env,
-                        pattern.token_range(),
+                        Some(pattern.token_range()),
                         "Match pattern must be an integer literal"
                     );
                 };
@@ -241,7 +244,7 @@ pub fn typecheck_match(
                 if union_type.get_name().unwrap().as_str() != expected_union_name.as_str() {
                     return log_typecheck_error!(
                         env,
-                        pattern.token_range(),
+                        Some(pattern.token_range()),
                         "Tagged union variant does not match the type being matched"
                     );
                 }
@@ -254,7 +257,7 @@ pub fn typecheck_match(
                 else {
                     return log_typecheck_error!(
                         env,
-                        pattern.token_range(),
+                        Some(pattern.token_range()),
                         "Variant '{}' not found in tagged union '{}'",
                         variant_name,
                         expected_union_name
@@ -288,7 +291,7 @@ pub fn typecheck_match(
                     MIRExpressionKind::TaggedUnionGet {
                         value: Box::new(expr_value),
                         variant_type: variant_type.clone(),
-                    }
+                    },
                 )
                 .into_expression();
 
@@ -355,7 +358,7 @@ pub fn typecheck_match(
                 env.enqueue_scope_arrow(
                     &ScopeExitTarget {
                         target_scope_idx: join_scope_idx,
-                        sink: crate::environment::ScopeArrowSink::Merge,
+                        sink: ScopeArrowSink::Merge,
                         label: "default".to_string(),
                     },
                     env.current_snapshot(),
@@ -371,7 +374,7 @@ pub fn typecheck_match(
         env.enqueue_scope_arrow(
             &ScopeExitTarget {
                 target_scope_idx: join_scope_idx,
-                sink: crate::environment::ScopeArrowSink::Merge,
+                sink: ScopeArrowSink::Merge,
                 label: "default".to_string(),
             },
             env.current_snapshot(),

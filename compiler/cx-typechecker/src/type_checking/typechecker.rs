@@ -2,12 +2,9 @@ use crate::environment::{
     BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::binary_ops::{
-    typecheck_access, typecheck_is,
-    typecheck_method_call,
-};
+use crate::type_checking::binary_ops::{typecheck_access, typecheck_is, typecheck_method_call};
 use crate::type_checking::casting::{explicit_cast, implicit_cast};
-use crate::type_checking::coercion::implicit::std_rval_promotion;
+use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::op::typecheck_binop;
 use crate::type_checking::result::TypecheckResult;
 use cx_ast::ast::{CXBinOp, CXExpr, CXExprKind, CXGlobalVariable, CXUnOp};
@@ -15,7 +12,6 @@ use cx_ast::data::{CX_CONST, CXLinkageMode};
 use cx_mir::mir::data::{MIRFloatType, MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
 use cx_mir::mir::program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable};
-use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
 
@@ -83,14 +79,14 @@ pub(crate) fn ensure_binding_available(
         BindingMoveState::Moved => {
             log_typecheck_error!(
                 env,
-                expr.token_range(),
+                Some(expr.token_range()),
                 "Identifier '{}' has been moved",
                 name
             )
         }
         BindingMoveState::ConditionallyMoved => log_typecheck_error!(
             env,
-            expr.token_range(),
+            Some(expr.token_range()),
             "Identifier '{}' was conditionally moved across a control-flow join",
             name
         ),
@@ -343,7 +339,7 @@ pub fn typecheck_expr_inner(
             {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Safe functions may not access global variables"
                 );
             } else if let Ok(global) = global_expr(env, base_data, name.as_str()) {
@@ -351,7 +347,7 @@ pub fn typecheck_expr_inner(
             } else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Identifier '{}' not found",
                     name
                 );
@@ -384,10 +380,8 @@ pub fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
-            let condition_result = std_rval_promotion(
-                env,
-                typecheck_expr(env, base_data, condition, None)?.into_expression(),
-            )?;
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
             env.push_scope(false, false);
             env.configure_merge_scope(expr, "if join", None, false);
             let join_scope_idx = env.current_scope_index();
@@ -453,10 +447,8 @@ pub fn typecheck_expr_inner(
                 env.current_snapshot(),
             );
 
-            let condition_result = std_rval_promotion(
-                env,
-                typecheck_expr(env, base_data, condition, None)?.into_expression(),
-            )?;
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 base_data,
@@ -498,10 +490,8 @@ pub fn typecheck_expr_inner(
                 env.current_snapshot(),
             );
 
-            let condition_result = std_rval_promotion(
-                env,
-                typecheck_expr(env, base_data, condition, None)?.into_expression(),
-            )?;
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
             let body_result = typecheck_fallthrough_scope(
                 env,
                 base_data,
@@ -535,7 +525,7 @@ pub fn typecheck_expr_inner(
             let Some(scope_idx) = env.nearest_break_scope() else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "'break' used outside of a loop or switch context"
                 );
             };
@@ -561,7 +551,7 @@ pub fn typecheck_expr_inner(
             let Some(scope_idx) = env.nearest_continue_scope() else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "'continue' used outside of a loop context"
                 );
             };
@@ -621,7 +611,7 @@ pub fn typecheck_expr_inner(
                 (Some(_), _) => {
                     return log_typecheck_error!(
                         env,
-                        expr.token_range(),
+                        Some(expr.token_range()),
                         "Cannot return from function {} with a void return type",
                         env.current_function()
                     );
@@ -630,7 +620,7 @@ pub fn typecheck_expr_inner(
                 (None, _) => {
                     return log_typecheck_error!(
                         env,
-                        expr.token_range(),
+                        Some(expr.token_range()),
                         "Function {} expects a return value, but none was provided",
                         env.current_function()
                     );
@@ -670,7 +660,7 @@ pub fn typecheck_expr_inner(
             if env.in_safe_context() {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "@leak is unsafe and must be wrapped in @unsafe in safe functions"
                 );
             }
@@ -678,7 +668,7 @@ pub fn typecheck_expr_inner(
             let CXExprKind::Identifier(ident) = &inner.kind else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "@leak currently requires a local identifier"
                 );
             };
@@ -686,7 +676,7 @@ pub fn typecheck_expr_inner(
             let Some(value) = env.symbol_value(ident.as_str()) else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Identifier '{}' not found",
                     ident
                 );
@@ -696,7 +686,7 @@ pub fn typecheck_expr_inner(
             let Some(inner_type) = env.type_context.mem_ref_inner(&value._type) else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "@leak requires a stack local value"
                 );
             };
@@ -722,8 +712,8 @@ pub fn typecheck_expr_inner(
             match operator {
                 CXUnOp::PreIncrement(increment_amount)
                 | CXUnOp::PostIncrement(increment_amount) => {
-                    let operand_val = typecheck_expr(env, base_data, operand, None)?
-                        .into_expression();
+                    let operand_val =
+                        typecheck_expr(env, base_data, operand, None)?.into_expression();
                     let operand_type = operand_val.get_type();
 
                     let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned() else {
@@ -781,7 +771,7 @@ pub fn typecheck_expr_inner(
                         MIRExpressionKind::UnaryOperation {
                             operand: Box::new(operand_val),
                             op: MIRUnOp::LNOT,
-                        }
+                        },
                     )
                 }
 
@@ -799,12 +789,12 @@ pub fn typecheck_expr_inner(
                         );
                     }
 
-                    TypecheckResult::new_base(                       
+                    TypecheckResult::new_base(
                         op_type,
                         MIRExpressionKind::UnaryOperation {
                             operand: Box::new(operand_val),
                             op: MIRUnOp::BNOT,
-                        }
+                        },
                     )
                 }
 
@@ -830,9 +820,9 @@ pub fn typecheck_expr_inner(
                     TypecheckResult::new_base(
                         operand_type,
                         MIRExpressionKind::UnaryOperation {
-                             operand: Box::new(operand_val),
-                             op: operator,
-                        }
+                            operand: Box::new(operand_val),
+                            op: operator,
+                        },
                     )
                 }
 
@@ -842,7 +832,7 @@ pub fn typecheck_expr_inner(
                     let Some(inner) = env.type_context.mem_ref_inner(&operand_type).cloned() else {
                         return log_typecheck_error!(
                             env,
-                            operand.token_range(),
+                            Some(operand.token_range()),
                             "Cannot take the address of a non-reference type"
                         );
                     };
@@ -865,7 +855,7 @@ pub fn typecheck_expr_inner(
                     else {
                         return log_typecheck_error!(
                             env,
-                            loaded_operand.token_range,
+                            loaded_operand.token_range.as_ref(),
                             "Cannot dereference non-pointer type {}",
                             loaded_operand_type
                         );
@@ -986,7 +976,7 @@ pub fn typecheck_expr_inner(
         CXExprKind::BinOp { op, lhs, rhs } => {
             let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression();
             let rhs = typecheck_expr(env, base_data, rhs, None)?.into_expression();
-            
+
             typecheck_binop(env, op, lhs, rhs)?
         }
 
@@ -996,7 +986,7 @@ pub fn typecheck_expr_inner(
             let CXExprKind::Identifier(ident) = &inner_expr.kind else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Move expressions can currently only be applied to stack variable identifiers"
                 );
             };
@@ -1004,7 +994,7 @@ pub fn typecheck_expr_inner(
             let Some(inner_val) = env.symbol_table.get(ident.as_str()) else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Identifier '{}' not found",
                     ident
                 );
@@ -1014,7 +1004,7 @@ pub fn typecheck_expr_inner(
             if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Move expressions can currently only be applied to stack variable identifiers, found {:?}",
                     inner_val.kind
                 );
@@ -1052,7 +1042,7 @@ pub fn typecheck_expr_inner(
             let Some(variants) = union_type.aggregate_fields(&env.type_context) else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Unknown type: {}",
                     type_name
                 );
@@ -1067,7 +1057,7 @@ pub fn typecheck_expr_inner(
             else {
                 return log_typecheck_error!(
                     env,
-                    expr.token_range(),
+                    Some(expr.token_range()),
                     "Variant '{}' not found in tagged union type {}",
                     name,
                     type_name
@@ -1156,7 +1146,7 @@ pub fn typecheck_expr_inner(
             condition,
             arms,
             default,
-        } => typecheck_match(env, base_data, expr, condition, arms, default.as_ref())?,
+        } => typecheck_match(env, base_data, condition, arms, default.as_ref())?,
 
         CXExprKind::Taken => {
             unreachable!("Taken expressions should not be present in the typechecker")
@@ -1213,7 +1203,7 @@ pub(crate) fn global_expr(
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
                         return log_typecheck_error!(
                             env,
-                            init_expr.token_range(),
+                            Some(init_expr.token_range()),
                             "CX currently only supports integer initializers for global variables"
                         );
                     };
@@ -1284,11 +1274,9 @@ pub fn add_implicit_return(
     } else if func.return_type.is_unit() {
         None
     } else {
-        let default_range = TokenRange::default();
-        let range = expr.token_range.as_ref().unwrap_or(&default_range);
         return log_typecheck_error!(
             env,
-            range,
+            expr.token_range.as_ref(),
             "Function '{}' with non-void return type must have an explicit return statement",
             func.name
         );

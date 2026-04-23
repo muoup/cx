@@ -23,18 +23,29 @@ pub(crate) fn dispatch(
     rhs: MIRExpression,
 ) -> CXResult<TypecheckResult> {
     match &op {
-        CXBinOp::LOr | CXBinOp::LAnd => check_logical(env, op, lhs, rhs),
+        CXBinOp::LOr | CXBinOp::LAnd => resolve_logical(env, op, lhs, rhs),
 
-        _ => check_std_arithmetic(env, op, lhs, rhs),
+        _ => resolve_std_arithmetic(env, op, lhs, rhs),
     }
 }
 
-pub(crate) fn check_logical(
+pub(crate) fn resolve_logical(
     env: &mut TypeEnvironment,
     op: &CXBinOp,
     lhs: MIRExpression,
     rhs: MIRExpression,
 ) -> CXResult<TypecheckResult> {
+    if !lhs._type.is_integer() || !rhs._type.is_integer() {
+        return log_typecheck_error!(
+            env,
+            lhs.token_range.as_ref(),
+            "Invalid operands to logical operation {:?}, {} and {}",
+            op,
+            lhs._type,
+            rhs._type
+        );
+    }
+    
     let lhs = implicit_cast(env, lhs, &MIRType::bool())?;
     let rhs = implicit_cast(env, rhs, &MIRType::bool())?;
 
@@ -57,7 +68,7 @@ pub(crate) fn check_logical(
     ))
 }
 
-pub(crate) fn check_std_arithmetic(
+pub(crate) fn resolve_std_arithmetic(
     env: &mut TypeEnvironment,
     op: &CXBinOp,
     mut lhs: MIRExpression,

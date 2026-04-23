@@ -14,7 +14,9 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        binary_ops::struct_field, casting::implicit_cast, coercion::implicit::std_rval_promotion, result::TypecheckResult, typechecker::typecheck_expr
+        binary_ops::struct_field, casting::implicit_cast,
+        coercion::implicit::promotion::std_rval_promotion, result::TypecheckResult,
+        typechecker::typecheck_expr,
     },
 };
 
@@ -46,7 +48,7 @@ pub fn deconstruct_type_constructor<'a>(
         rhs: variant,
     } = &constructor.kind
     else {
-        return log_typecheck_error!(env, pattern.token_range(), "Expected type constructor");
+        return log_typecheck_error!(env, Some(pattern.token_range()), "Expected type constructor");
     };
 
     let union_name = match &union.kind {
@@ -76,7 +78,7 @@ pub fn deconstruct_type_constructor<'a>(
         _ => {
             return log_typecheck_error!(
                 env,
-                union.token_range(),
+                Some(union.token_range()),
                 "Expected union name in type constructor pattern"
             );
         }
@@ -85,7 +87,7 @@ pub fn deconstruct_type_constructor<'a>(
     let CXExprKind::Identifier(variant_name) = &variant.kind else {
         return log_typecheck_error!(
             env,
-            variant.token_range(),
+            Some(variant.token_range()),
             "Expected variant name in type constructor pattern"
         );
     };
@@ -107,7 +109,7 @@ pub fn typecheck_initializer_list(
     let Some(to_type) = to_type else {
         return log_typecheck_error!(
             env,
-            expr.token_range(),
+            Some(expr.token_range()),
             "Initializer lists must have an explicit type"
         );
     };
@@ -127,7 +129,7 @@ pub fn typecheck_initializer_list(
         } => {
             let inner_type = env
                 .type_context
-                .get(*_type.as_ref())
+                .get(*_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", _type.0))
                 .clone();
             typecheck_array_initializer(env, base_data, indices, &inner_type, Some(*size), to_type)
@@ -138,7 +140,7 @@ pub fn typecheck_initializer_list(
         } => {
             let inner_type = env
                 .type_context
-                .get(*inner.as_ref())
+                .get(*inner)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner.0))
                 .clone();
             typecheck_array_initializer(env, base_data, indices, &inner_type, None, to_type)
@@ -150,7 +152,7 @@ pub fn typecheck_initializer_list(
 
         _ => log_typecheck_error!(
             env,
-            expr.token_range(),
+            Some(expr.token_range()),
             "Cannot coerce initializer to type {to_type}"
         ),
     }
@@ -168,7 +170,7 @@ fn typecheck_array_initializer(
         if let Some(name) = &index.name {
             return log_typecheck_error!(
                 env,
-                &TokenRange::default(),
+                Some(&TokenRange::default()),
                 "Array initializer cannot have named indices, found: {name}"
             );
         }
@@ -179,7 +181,7 @@ fn typecheck_array_initializer(
     {
         return log_typecheck_error!(
             env,
-            &TokenRange::default(),
+            Some(&TokenRange::default()),
             "Too many elements in array initializer (expected {}, found {})",
             size,
             indices.len()
@@ -187,9 +189,8 @@ fn typecheck_array_initializer(
     }
 
     let array_size = size.unwrap_or(indices.len());
-    let inner_type_id = env.intern_type(inner_type.clone());
     let array_type = MIRType::from(MIRTypeKind::Array {
-        inner_type: Box::new(inner_type_id),
+        inner_type: env.intern_type(inner_type.clone()),
         length: array_size,
     });
 

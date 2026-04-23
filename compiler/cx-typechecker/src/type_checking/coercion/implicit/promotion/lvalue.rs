@@ -1,7 +1,8 @@
 use cx_ast::data::CX_CONST;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
+use crate::{environment::TypeEnvironment, type_checking::coercion::{CoercionObstacle, CoercionResult}};
 
 ///
 /// NOTE: We can safely assume that an lvalue type = memory reference to type. All values in MIR are abstracted
@@ -20,20 +21,17 @@ use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResul
 /// loses its memory reference wrapper, meaning this conversion will be skipped.
 ///
 
-pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CoercionResult {
+pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResult<CoercionResult> {
     let Some(mem_inner) = env.type_context.mem_ref_inner(&expr._type).cloned() else {
-        return CoercionResult::none(expr);
+        return CoercionResult::unapplied(expr);
     };
 
     if mem_inner.is_array() || mem_inner.is_str() {
-        return CoercionResult::none(expr);
+        return CoercionResult::unapplied(expr);
     }
 
     if !env.is_copyable(&mem_inner) {
-        return CoercionResult::error(
-            format!("Cannot implicitly copy value of type {}", mem_inner),
-            expr,
-        );
+        return CoercionResult::tried_application(expr, CoercionObstacle::Uncopyable);
     }
 
     let token_range = expr.token_range.clone();
@@ -46,5 +44,5 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> Coercio
         },
     };
 
-    CoercionResult::some(loaded)
+    CoercionResult::success(loaded)
 }
