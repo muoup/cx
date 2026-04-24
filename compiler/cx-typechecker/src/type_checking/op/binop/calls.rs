@@ -205,8 +205,9 @@ pub(crate) fn deduced_callee(
                 return Ok(None);
             };
 
-            let receiver_source =
-                typecheck_expr(env, base_data, receiver_expr, None)?.into_expression();
+            let receiver_result = typecheck_expr(env, base_data, receiver_expr, None)?;
+            let receiver_binding = receiver_result.binding.clone();
+            let receiver_source = receiver_result.into_expression();
             let (receiver_root, receiver_value, receiver_type, _) =
                 resolve_access_base(env, expr, receiver_source)?;
 
@@ -243,6 +244,7 @@ pub(crate) fn deduced_callee(
                 env,
                 expr,
                 &receiver_root,
+                receiver_binding.as_ref(),
                 receiver_value,
                 &receiver_type,
                 &prototype,

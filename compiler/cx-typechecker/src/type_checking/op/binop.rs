@@ -292,10 +292,10 @@ fn coerce_pointer_binop(
             ptr_type,
             MIRBinOp::PtrDiff {
                 op: MIRPtrDiffBinOp::ADD,
-                ptr_inner
-            }
+                ptr_inner,
+            },
         ),
-        
+
         CXBinOp::ArrayIndex => (
             env.symbols.context.mem_ref_to(ptr_inner.as_ref().clone()),
             MIRBinOp::PtrDiff {

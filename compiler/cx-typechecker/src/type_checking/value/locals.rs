@@ -3,7 +3,7 @@ use crate::{
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
-        result::TypecheckResult,
+        result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
     },
 };
@@ -13,11 +13,20 @@ use cx_mir::mir::{
     expression::{MIRExpression, MIRExpressionKind},
     program::MIRBaseMappings,
 };
+use cx_tokens::TokenRange;
 use cx_util::{CXResult, identifier::CXIdent};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
     expr: &CXExpression,
+    name: &CXIdent,
+) -> CXResult<()> {
+    ensure_binding_available_at(env, Some(expr.token_range().clone()), name)
+}
+
+pub(crate) fn ensure_binding_available_at(
+    env: &mut TypeEnvironment,
+    range: Option<TokenRange>,
     name: &CXIdent,
 ) -> CXResult<()> {
     let Some(binding) = env.function.tracked_binding(name.as_str()) else {
@@ -27,19 +36,46 @@ pub(crate) fn ensure_binding_available(
     match binding.state {
         BindingMoveState::Available => Ok(()),
         BindingMoveState::Moved => {
-            log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Identifier '{}' has been moved",
-                name
-            )
+            log_typecheck_error!(env, range, "Identifier '{}' has been moved", name)
         }
         BindingMoveState::ConditionallyMoved => log_typecheck_error!(
             env,
-            Some(expr.token_range()),
+            range,
             "Identifier '{}' was conditionally moved across a control-flow join",
             name
         ),
+    }
+}
+
+pub(crate) fn ensure_place_available(
+    env: &mut TypeEnvironment,
+    range: Option<TokenRange>,
+    binding: &TypecheckedBinding,
+) -> CXResult<()> {
+    ensure_binding_available_at(env, range, &binding.root)
+}
+
+pub(crate) fn mark_local_place_available(env: &mut TypeEnvironment, binding: &TypecheckedBinding) {
+    if binding.kind == BindingPlaceKind::Local
+        && env
+            .function
+            .tracked_binding(binding.root.as_str())
+            .is_some()
+    {
+        env.function
+            .set_tracked_binding_state(binding.root.as_str(), BindingMoveState::Available);
+    }
+}
+
+pub(crate) fn mark_local_place_moved(env: &mut TypeEnvironment, binding: &TypecheckedBinding) {
+    if binding.kind == BindingPlaceKind::Local
+        && env
+            .function
+            .tracked_binding(binding.root.as_str())
+            .is_some()
+    {
+        env.function
+            .set_tracked_binding_state(binding.root.as_str(), BindingMoveState::Moved);
     }
 }
 

@@ -1,5 +1,38 @@
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_util::identifier::CXIdent;
+
+#[derive(Debug, Clone)]
+pub struct TypecheckedBinding {
+    pub root: CXIdent,
+    pub kind: BindingPlaceKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindingPlaceKind {
+    Local,
+    Projection,
+}
+
+impl TypecheckedBinding {
+    pub fn local(root: CXIdent) -> Self {
+        Self {
+            root,
+            kind: BindingPlaceKind::Local,
+        }
+    }
+
+    pub fn projection(root: CXIdent) -> Self {
+        Self {
+            root,
+            kind: BindingPlaceKind::Projection,
+        }
+    }
+
+    pub fn project(&self) -> Self {
+        Self::projection(self.root.clone())
+    }
+}
 
 /// Richer representation of a typechecking result. Useful for edge cases where we need to carry implicit behavior
 /// not representable by the type system due to move semantics. We want to model CXExpr -> MIRExpr typechecking as
@@ -16,6 +49,8 @@ pub struct TypecheckResult {
     pub expression: MIRExpression,
     /// Implicit parameters carried upward for call sites (e.g. member receivers)
     pub implicit_parameters: Vec<MIRExpression>,
+    /// Binding/place information for expressions that still denote a local place.
+    pub binding: Option<TypecheckedBinding>,
 }
 
 impl From<MIRExpression> for TypecheckResult {
@@ -23,6 +58,7 @@ impl From<MIRExpression> for TypecheckResult {
         Self {
             expression,
             implicit_parameters: Vec::new(),
+            binding: None,
         }
     }
 }
@@ -36,11 +72,17 @@ impl TypecheckResult {
                 _type,
             },
             implicit_parameters: Vec::new(),
+            binding: None,
         }
     }
 
     pub fn with_implicit_parameters(mut self, implicit_parameters: Vec<MIRExpression>) -> Self {
         self.implicit_parameters = implicit_parameters;
+        self
+    }
+
+    pub fn with_binding(mut self, binding: TypecheckedBinding) -> Self {
+        self.binding = Some(binding);
         self
     }
 

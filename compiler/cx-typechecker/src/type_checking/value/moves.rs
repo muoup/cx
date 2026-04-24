@@ -1,21 +1,25 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
+    environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::implicit_cast, result::TypecheckResult,
-        value::locals::ensure_binding_available,
+        coercion::implicit::implicit_cast,
+        result::{BindingPlaceKind, TypecheckResult},
+        typechecker::typecheck_place_expr,
+        value::locals::{ensure_place_available, mark_local_place_moved},
     },
 };
-use cx_ast::ast::{CXExprKind, CXExpression};
-use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind};
+use cx_ast::ast::CXExpression;
+use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind, program::MIRBaseMappings};
 use cx_util::CXResult;
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     expr: &CXExpression,
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let CXExprKind::Identifier(ident) = &inner_expr.kind else {
+    let inner = typecheck_place_expr(env, base_data, inner_expr)?;
+    let Some(binding) = inner.binding.clone() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -23,15 +27,15 @@ pub(crate) fn typecheck_move(
         );
     };
 
-    let Some(inner_val) = env.function.symbol_value(ident.as_str()) else {
+    if binding.kind != BindingPlaceKind::Local {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "Identifier '{}' not found",
-            ident
+            "Moving out of aggregate fields or projections is not implemented"
         );
     };
-    let mut inner_val = inner_val.clone();
+
+    let mut inner_val = inner.into_expression();
 
     if !matches!(inner_val.kind, MIRExpressionKind::Variable(_)) {
         return log_typecheck_error!(
@@ -47,9 +51,8 @@ pub(crate) fn typecheck_move(
     };
 
     if env.symbols.is_nocopy(&inner_type) {
-        ensure_binding_available(env, inner_expr, ident)?;
-        env.function
-            .set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
+        ensure_place_available(env, Some(inner_expr.token_range().clone()), &binding)?;
+        mark_local_place_moved(env, &binding);
     } else {
         inner_val = implicit_cast(env, inner_val, &inner_type)?;
     }
@@ -64,6 +67,7 @@ pub(crate) fn typecheck_move(
 
 pub(crate) fn typecheck_leak(
     env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
     expr: &CXExpression,
     inner: &CXExpression,
 ) -> CXResult<TypecheckResult> {
@@ -75,7 +79,8 @@ pub(crate) fn typecheck_leak(
         );
     }
 
-    let CXExprKind::Identifier(ident) = &inner.kind else {
+    let value = typecheck_place_expr(env, base_data, inner)?;
+    let Some(binding) = value.binding.clone() else {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -83,15 +88,15 @@ pub(crate) fn typecheck_leak(
         );
     };
 
-    let Some(value) = env.function.symbol_value(ident.as_str()) else {
+    if binding.kind != BindingPlaceKind::Local {
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "Identifier '{}' not found",
-            ident
+            "@leak on aggregate fields or projections is not implemented"
         );
     };
-    let value = value.clone();
+
+    let value = value.into_expression();
 
     let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
         return log_typecheck_error!(
@@ -105,9 +110,8 @@ pub(crate) fn typecheck_leak(
         return Ok(TypecheckResult::from(value));
     }
 
-    ensure_binding_available(env, inner, ident)?;
-    env.function
-        .set_tracked_binding_state(ident.as_str(), BindingMoveState::Moved);
+    ensure_place_available(env, Some(inner.token_range().clone()), &binding)?;
+    mark_local_place_moved(env, &binding);
 
     Ok(TypecheckResult::new_base(
         MIRType::unit(),
