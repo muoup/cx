@@ -1,6 +1,10 @@
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
+use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
+
+use crate::environment::TypeEnvironment;
+use crate::type_checking::value::locals::ensure_binding_available;
 
 #[derive(Debug, Clone)]
 pub struct TypecheckedBinding {
@@ -88,6 +92,14 @@ impl TypecheckResult {
 
     pub fn decompose_function_expr(self) -> (MIRExpression, Vec<MIRExpression>) {
         (self.expression, self.implicit_parameters)
+    }
+
+    pub fn ensure_available(self, env: &mut TypeEnvironment) -> CXResult<Self> {
+        if let Some(binding) = &self.binding {
+            ensure_binding_available(env, self.expression.token_range.clone(), &binding.root)?
+        }
+
+        Ok(self)
     }
 
     /// Get the type of this typecheck result's expression

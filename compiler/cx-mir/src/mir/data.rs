@@ -73,7 +73,7 @@ impl MIRFunctionSignature {
                 .params
                 .iter()
                 .zip(other.params.iter())
-                .all(|(left, right)| left.contextual_eq_with_state(right, definitions, state))
+                .all(|(left, right)| left._type.contextual_eq(&right._type, definitions))
     }
 }
 

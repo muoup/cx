@@ -3,13 +3,13 @@ use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_util::CXResult;
 
 use crate::{
-    environment::TypeEnvironment,
+    environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         op::typecheck_binop,
         result::{BindingPlaceKind, TypecheckResult},
-        value::locals::{ensure_place_available, mark_local_place_available},
+        value::locals::{ensure_binding_available, mark_binding},
     },
 };
 
@@ -36,7 +36,7 @@ pub fn typecheck_assignment(
 
     if let Some(op) = op {
         if let Some(binding) = binding.as_ref() {
-            ensure_place_available(env, lhs.token_range.clone(), binding)?;
+            ensure_binding_available(env, lhs.token_range.clone(), &binding.root)?;
         }
 
         let loaded_lhs = std_rval_promotion(env, lhs.clone())?;
@@ -70,7 +70,7 @@ pub fn typecheck_assignment(
     rhs = implicit_cast(env, rhs, &inner)?;
 
     if let Some(binding) = binding.as_ref() {
-        mark_local_place_available(env, binding);
+        mark_binding(env, binding, BindingMoveState::Available);
     }
 
     Ok(TypecheckResult::new_base(

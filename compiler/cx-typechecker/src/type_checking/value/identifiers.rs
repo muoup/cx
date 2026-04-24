@@ -23,7 +23,6 @@ pub(crate) fn typecheck_identifier(
 ) -> CXResult<TypecheckResult> {
     if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
         let symbol_val = symbol_val.clone();
-        ensure_binding_available_at(env, expr, name)?;
         Ok(TypecheckResult::from(symbol_val).with_binding(TypecheckedBinding::local(name.clone())))
     } else if let Some(function_type) = env
         .get_realized_func(&base_mangle_standard(name.as_str()))
@@ -64,20 +63,6 @@ pub(crate) fn typecheck_identifier(
             "Identifier '{}' not found",
             name
         )
-    }
-}
-
-pub(crate) fn typecheck_identifier_place(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-    name: &CXIdent,
-) -> CXResult<TypecheckResult> {
-    if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
-        let symbol_val = symbol_val.clone();
-        Ok(TypecheckResult::from(symbol_val).with_binding(TypecheckedBinding::local(name.clone())))
-    } else {
-        typecheck_identifier(env, base_data, expr, name)
     }
 }
 

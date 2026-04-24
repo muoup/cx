@@ -18,9 +18,7 @@ use crate::type_checking::op::binop::is::typecheck_is;
 use crate::type_checking::op::typecheck_binop;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{
-    identifiers::{
-        typecheck_identifier, typecheck_identifier_place, typecheck_templated_identifier,
-    },
+    identifiers::{typecheck_identifier, typecheck_templated_identifier},
     literals::{
         typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
     },
@@ -48,32 +46,7 @@ pub fn typecheck_expr(
     typecheck_expr_inner(env, base_data, expr, expected_type)
 }
 
-pub fn typecheck_place_expr(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-) -> CXResult<TypecheckResult> {
-    let mut result = match &expr.kind {
-        CXExprKind::Identifier(name) => typecheck_identifier_place(env, base_data, expr, name)?,
-        CXExprKind::BinOp {
-            op: CXBinOp::Access,
-            lhs,
-            rhs,
-        } => {
-            let lhs = typecheck_place_expr(env, base_data, lhs)?;
-            typecheck_access(env, base_data, lhs, rhs, expr)?
-        }
-        _ => typecheck_expr(env, base_data, expr, None)?,
-    };
-
-    if result.expression.token_range.is_none() {
-        result.expression.token_range = Some(expr.range.clone());
-    }
-
-    Ok(result)
-}
-
-pub fn typecheck_expr_inner(
+fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     expr: &CXExpression,
@@ -514,8 +487,10 @@ pub fn typecheck_expr_inner(
             lhs,
             rhs,
         } => {
-            let lhs = typecheck_place_expr(env, base_data, lhs)?;
-            let rhs = typecheck_expr(env, base_data, rhs, None)?.into_expression();
+            let lhs = typecheck_expr(env, base_data, lhs, None)?;
+            let rhs = typecheck_expr(env, base_data, rhs, None)?
+                .ensure_available(env)?
+                .into_expression();
 
             typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref))?
         }
@@ -524,14 +499,14 @@ pub fn typecheck_expr_inner(
             op: CXBinOp::Is,
             lhs,
             rhs,
-        } => typecheck_is(env, base_data, lhs, rhs, expr)?,
+        } => typecheck_is(env, base_data, lhs, rhs, expr)?.ensure_available(env)?,
 
         CXExprKind::BinOp {
             op: CXBinOp::Access,
             lhs,
             rhs,
         } => {
-            let lhs = typecheck_expr(env, base_data, lhs, None)?;
+            let lhs = typecheck_expr_inner(env, base_data, lhs, None)?;
 
             typecheck_access(env, base_data, lhs, rhs, expr)?
         }

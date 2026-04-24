@@ -1,3 +1,5 @@
+use cx_util::identifier::CXIdent;
+
 use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
@@ -553,9 +555,11 @@ fn write_signature_with_context(
         if i > 0 {
             write!(f, ", ")?;
         }
-        if let Some(name) = &param.name {
-            write!(f, "{name}: ")?;
-        }
+        write!(
+            f,
+            "{}: ",
+            param.name.as_ref().map(CXIdent::as_str).unwrap_or("_")
+        )?;
         write_type_value(f, definitions, &param._type, TypeRenderMode::Inline, state)?;
     }
     if signature.var_args {

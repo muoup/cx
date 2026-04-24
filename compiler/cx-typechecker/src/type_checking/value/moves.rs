@@ -1,11 +1,11 @@
 use crate::{
-    environment::TypeEnvironment,
+    environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::implicit_cast,
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::{BindingPlaceKind, TypecheckResult},
-        typechecker::typecheck_place_expr,
-        value::locals::{ensure_place_available, mark_local_place_moved},
+        typechecker::typecheck_expr,
+        value::locals::{ensure_binding_available, mark_binding},
     },
 };
 use cx_ast::ast::CXExpression;
@@ -18,8 +18,8 @@ pub(crate) fn typecheck_move(
     expr: &CXExpression,
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let inner = typecheck_place_expr(env, base_data, inner_expr)?;
-    
+    let inner = typecheck_expr(env, base_data, inner_expr, None)?;
+
     let Some(binding) = inner.binding.clone() else {
         return log_typecheck_error!(
             env,
@@ -52,10 +52,11 @@ pub(crate) fn typecheck_move(
     };
 
     if env.symbols.is_nocopy(&inner_type) {
-        ensure_place_available(env, Some(inner_expr.token_range().clone()), &binding)?;
-        mark_local_place_moved(env, &binding);
+        ensure_binding_available(env, Some(inner_expr.token_range().clone()), &binding.root)?;
+        mark_binding(env, &binding, BindingMoveState::Moved);
     } else {
-        inner_val = implicit_cast(env, inner_val, &inner_type)?;
+        inner_val = std_rval_promotion(env, inner_val)
+            .and_then(|inner_val| implicit_cast(env, inner_val, &inner_type))?;
     }
 
     Ok(TypecheckResult::new_base(
@@ -80,7 +81,8 @@ pub(crate) fn typecheck_leak(
         );
     }
 
-    let value = typecheck_place_expr(env, base_data, inner)?;
+    let value = typecheck_expr(env, base_data, inner, None)?;
+
     let Some(binding) = value.binding.clone() else {
         return log_typecheck_error!(
             env,
@@ -111,8 +113,8 @@ pub(crate) fn typecheck_leak(
         return Ok(TypecheckResult::from(value));
     }
 
-    ensure_place_available(env, Some(inner.token_range().clone()), &binding)?;
-    mark_local_place_moved(env, &binding);
+    ensure_binding_available(env, Some(inner.token_range().clone()), &binding.root)?;
+    mark_binding(env, &binding, BindingMoveState::Moved);
 
     Ok(TypecheckResult::new_base(
         MIRType::unit(),

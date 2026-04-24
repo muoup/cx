@@ -41,6 +41,7 @@ pub(crate) fn finish_function_call<'a>(
     mut tc_args: Vec<(&'a CXExpression, MIRExpression)>,
 ) -> CXResult<TypecheckResult> {
     let (function, implicit_parameters) = function.decompose_function_expr();
+    let implicit_arg_count = implicit_parameters.len();
     tc_args = implicit_parameters
         .iter()
         .map(|val| (expr, val.clone()))
@@ -89,7 +90,7 @@ pub(crate) fn finish_function_call<'a>(
 
     let canon_params = signature.params.len();
 
-    for (_, val) in tc_args.iter_mut() {
+    for (_, val) in tc_args.iter_mut().skip(implicit_arg_count) {
         *val = std_rval_promotion(env, std::mem::take(val))?;
     }
 

@@ -18,14 +18,6 @@ use cx_util::{CXResult, identifier::CXIdent};
 
 pub(crate) fn ensure_binding_available(
     env: &mut TypeEnvironment,
-    expr: &CXExpression,
-    name: &CXIdent,
-) -> CXResult<()> {
-    ensure_binding_available_at(env, Some(expr.token_range().clone()), name)
-}
-
-pub(crate) fn ensure_binding_available_at(
-    env: &mut TypeEnvironment,
     range: Option<TokenRange>,
     name: &CXIdent,
 ) -> CXResult<()> {
@@ -47,15 +39,11 @@ pub(crate) fn ensure_binding_available_at(
     }
 }
 
-pub(crate) fn ensure_place_available(
+pub(crate) fn mark_binding(
     env: &mut TypeEnvironment,
-    range: Option<TokenRange>,
     binding: &TypecheckedBinding,
-) -> CXResult<()> {
-    ensure_binding_available_at(env, range, &binding.root)
-}
-
-pub(crate) fn mark_local_place_available(env: &mut TypeEnvironment, binding: &TypecheckedBinding) {
+    state: BindingMoveState,
+) {
     if binding.kind == BindingPlaceKind::Local
         && env
             .function
@@ -63,19 +51,7 @@ pub(crate) fn mark_local_place_available(env: &mut TypeEnvironment, binding: &Ty
             .is_some()
     {
         env.function
-            .set_tracked_binding_state(binding.root.as_str(), BindingMoveState::Available);
-    }
-}
-
-pub(crate) fn mark_local_place_moved(env: &mut TypeEnvironment, binding: &TypecheckedBinding) {
-    if binding.kind == BindingPlaceKind::Local
-        && env
-            .function
-            .tracked_binding(binding.root.as_str())
-            .is_some()
-    {
-        env.function
-            .set_tracked_binding_state(binding.root.as_str(), BindingMoveState::Moved);
+            .set_tracked_binding_state(binding.root.as_str(), state);
     }
 }
 

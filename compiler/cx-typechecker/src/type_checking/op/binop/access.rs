@@ -1,9 +1,9 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{BindingMoveState, TypeEnvironment};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
 use crate::type_checking::result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding};
-use crate::type_checking::value::locals::{ensure_place_available, mark_local_place_moved};
+use crate::type_checking::value::locals::{ensure_binding_available, mark_binding};
 use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_ast::data::{CX_CONST, CXReceiverMode};
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
@@ -216,14 +216,20 @@ pub(crate) fn build_member_receiver_argument(
         None | Some(CXReceiverMode::None) => {
             unreachable!("member function reference missing receiver mode")
         }
-        Some(CXReceiverMode::ByRef) => Ok(MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::TypeConversion {
-                operand: Box::new(lhs),
-                conversion: MIRCoercion::ReinterpretBits,
-            },
-            _type: env.symbols.context.mem_ref_to(lhs_inner.clone()),
-        }),
+        Some(CXReceiverMode::ByRef) => {
+            if let Some(binding) = lhs_binding {
+                ensure_binding_available(env, Some(expr.token_range().clone()), &binding.root)?;
+            }
+
+            Ok(MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::TypeConversion {
+                    operand: Box::new(lhs),
+                    conversion: MIRCoercion::ReinterpretBits,
+                },
+                _type: env.symbols.context.mem_ref_to(lhs_inner.clone()),
+            })
+        }
         Some(CXReceiverMode::ByMove) => {
             if let Some(inner_type) = env
                 .symbols
@@ -247,9 +253,9 @@ pub(crate) fn build_member_receiver_argument(
                     );
                 }
 
-                ensure_place_available(env, Some(expr.token_range().clone()), binding)?;
+                ensure_binding_available(env, Some(expr.token_range().clone()), &binding.root)?;
                 if env.symbols.is_nocopy(&inner_type) {
-                    mark_local_place_moved(env, binding);
+                    mark_binding(env, binding, BindingMoveState::Moved);
                 }
 
                 Ok(MIRExpression {
