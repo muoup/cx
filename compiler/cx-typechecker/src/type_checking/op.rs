@@ -1,9 +1,10 @@
 use crate::{environment::TypeEnvironment, type_checking::result::TypecheckResult};
-use cx_ast::ast::CXBinOp;
-use cx_mir::mir::expression::{MIRExpression, MIRUnOp};
+use cx_ast::ast::{CXBinOp, CXExpression, CXUnOp};
+use cx_mir::mir::{expression::MIRExpression, program::MIRBaseMappings};
 use cx_util::CXResult;
 
 pub mod binop;
+pub mod unop;
 
 pub fn typecheck_binop(
     env: &mut TypeEnvironment,
@@ -15,9 +16,10 @@ pub fn typecheck_binop(
 }
 
 pub fn typecheck_unop(
-    _env: &mut TypeEnvironment,
-    _op: MIRUnOp,
-    _operand: MIRExpression,
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    op: &CXUnOp,
+    operand: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    todo!()
+    unop::dispatch(env, base_data, op, operand)
 }
