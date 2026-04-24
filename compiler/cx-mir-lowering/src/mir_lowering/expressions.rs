@@ -65,20 +65,24 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
 
         MIRExpressionKind::ContractVariable { name, force_param } => {
             if *force_param {
-                let idx = builder.current_prototype()
+                let idx = builder
+                    .current_prototype()
                     .params
                     .iter()
-                    .position(|param| param.name.as_ref().map(String::as_str) == Some(name.as_str()))
-                    .expect("Contract variable not found in function parameters") as u32;
-                
+                    .position(|param| {
+                        param.name.as_ref().map(String::as_str) == Some(name.as_str())
+                    })
+                    .expect("Contract variable not found in function parameters")
+                    as u32;
+
                 Ok(LMIRValue::ParameterRef(idx))
             } else {
                 let Some(local_value) = builder.get_symbol(name) else {
                     unreachable!("Contract variable '{}' not found in symbol table", name);
                 };
-    
+
                 Ok(local_value)
-            }   
+            }
         }
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
@@ -263,7 +267,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 .as_ref()
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
-            
+
             if let Some((binding, postcondition)) = postcondition {
                 builder.push_scope(None, None);
                 if let Some(binding) = binding {
@@ -271,9 +275,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                         builder.insert_symbol(binding.clone(), val);
                     }
                 }
-                
+
                 let result = lower_return(builder, val, Some(postcondition.as_ref()));
-                builder.pop_scope()?; 
+                builder.pop_scope()?;
                 result
             } else {
                 lower_return(builder, val, None)

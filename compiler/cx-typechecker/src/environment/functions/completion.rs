@@ -2,12 +2,8 @@ use crate::environment::TypeEnvironment;
 use crate::environment::functions::mangling::base_mangle_fn_name;
 use crate::environment::symbols::completion::{base_data_from_module, int_complete_type};
 use cx_ast::ast::CXExpression;
-use cx_ast::data::{
-    CXFunctionPrototype, CXParameter, CXReceiverMode, CXTemplateInput, CXType, CXTypeKind,
-};
-use cx_mir::mir::data::{
-    MIRFunctionPrototype, MIRParameter, MIRTemplateInput, MIRType, MIRTypeKind,
-};
+use cx_ast::data::{CXFunctionPrototype, CXParameter, CXReceiverMode, CXType, CXTypeKind};
+use cx_mir::mir::data::{MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::identifier::CXIdent;
 use cx_util::{CXError, CXResult};
@@ -61,20 +57,6 @@ pub(crate) fn apply_implicit_fn_attr(mut proto: CXFunctionPrototype) -> CXFuncti
     }
 
     proto
-}
-
-pub fn complete_template_args(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    template_args: &CXTemplateInput,
-) -> CXResult<MIRTemplateInput> {
-    let args = template_args
-        .params
-        .iter()
-        .map(|arg| env.complete_type(base_data, &CXExpression::default(), arg))
-        .collect::<CXResult<Vec<_>>>()?;
-
-    Ok(MIRTemplateInput { args })
 }
 
 pub(crate) fn valid_prototype_type(_ty: &MIRType) -> bool {

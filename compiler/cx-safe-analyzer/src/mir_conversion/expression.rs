@@ -237,7 +237,10 @@ pub fn convert_expression(
             Ok(then_node(init_node, loop_node))
         }
 
-        MIRExpressionKind::Return { value, postcondition } => {
+        MIRExpressionKind::Return {
+            value,
+            postcondition,
+        } => {
             let return_value = value
                 .as_ref()
                 .map(|expr| convert_expression(env, expr))
@@ -267,7 +270,7 @@ pub fn convert_expression(
                             Some(return_value.clone()),
                         );
                     }
-                    
+
                     convert_expression(env, expr)
                 })
                 .transpose()?
@@ -279,7 +282,7 @@ pub fn convert_expression(
                 _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CompilerAssert {
                     condition: FRc::new(postcondition_node),
-                    message: format!("postcondition failed")
+                    message: format!("postcondition failed"),
                 },
             };
 
@@ -288,7 +291,7 @@ pub fn convert_expression(
 
         MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
             // TODO: Force param
-            
+
             if !mir_expr._type.is_memory_reference()
                 && let Some(known) = env.query_known_value(name)
             {
@@ -454,7 +457,7 @@ pub fn convert_expression(
         MIRExpressionKind::CallFunction {
             function,
             arguments,
-            contract: _
+            contract: _,
         } => {
             let function_node = convert_expression(env, function)?;
             let argument_nodes = arguments
@@ -480,7 +483,7 @@ pub fn convert_expression(
             effect = effect.union(&FMIRType::unsafe_effect(FMIRType::pure(
                 mir_expr._type.clone(),
             )));
-            
+
             // TODO: Contract enforcement
 
             Ok(FMIRNode {

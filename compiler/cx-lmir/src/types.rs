@@ -142,7 +142,7 @@ impl LMIRType {
     pub fn is_structure(&self) -> bool {
         matches!(self.kind, LMIRTypeKind::Struct { .. })
     }
-    
+
     pub fn is_memory_resident(&self) -> bool {
         match self.kind {
             LMIRTypeKind::Opaque { .. } => true,

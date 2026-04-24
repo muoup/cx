@@ -25,9 +25,9 @@ pub(crate) fn typecheck_contract(
                 name.to_string(),
                 MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::ContractVariable { 
+                    kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
-                        force_param: false
+                        force_param: false,
                     },
                     _type: param._type.clone(),
                 },
@@ -52,9 +52,9 @@ pub(crate) fn typecheck_contract(
                 ret_name.to_string(),
                 MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::ContractVariable { 
+                    kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
-                        force_param: false 
+                        force_param: false,
                     },
                     _type: prototype.return_type.clone(),
                 },

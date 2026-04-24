@@ -1,7 +1,7 @@
 use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
-    ast::{CXExpression, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXAST},
+    ast::{CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXAST},
     data::{CXFunctionPrototype, CXTemplatePrototype},
     next_kind, peek_next_kind, try_next, PreparseContents,
 };

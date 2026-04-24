@@ -19,6 +19,7 @@ pub(crate) fn typecheck_move(
     inner_expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
     let inner = typecheck_place_expr(env, base_data, inner_expr)?;
+    
     let Some(binding) = inner.binding.clone() else {
         return log_typecheck_error!(
             env,

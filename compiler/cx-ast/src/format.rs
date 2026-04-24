@@ -2,7 +2,9 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::{
-    ast::{CXBinOp, CXExpression, CXExprKind, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST},
+    ast::{
+        CXBinOp, CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXInitIndex, CXAST,
+    },
     data::{
         CXFunctionKey, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXLinkageMode,
         CXReceiverMode, CXTemplate, CXTemplateInput, CXType, CXTypeKind, CX_CONST,

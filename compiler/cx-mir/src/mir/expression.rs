@@ -36,9 +36,9 @@ pub enum MIRExpressionKind {
 
     // Variables
     Variable(CXIdent),
-    ContractVariable { 
+    ContractVariable {
         name: CXIdent,
-        force_param: bool
+        force_param: bool,
     },
 
     // The callable signature is stored in the expression's type
@@ -64,10 +64,10 @@ pub enum MIRExpressionKind {
         initial_value: Option<Box<MIRExpression>>,
     },
     RegionDuplicate {
-        source: Box<MIRExpression>
+        source: Box<MIRExpression>,
     },
     RegionMove {
-        source: Box<MIRExpression>
+        source: Box<MIRExpression>,
     },
     MemoryWrite {
         target: Box<MIRExpression>,
@@ -183,7 +183,7 @@ pub enum MIRExpressionKind {
     CallFunction {
         function: Box<MIRExpression>,
         arguments: Vec<MIRExpression>,
-        contract: MIRFunctionContract
+        contract: MIRFunctionContract,
     },
 
     // Type Conversion
@@ -351,14 +351,14 @@ pub enum MIRCoercion {
 
     // Decay of function designator to a pointer value
     GetFnPtr,
-    
+
     // Conversions between types that have the same semantic meaning
     // in assembly, this is typically a no-op, but proves useful for type checking and verification
     Typechange,
-    
+
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
-    ReinterpretBits,   
+    ReinterpretBits,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

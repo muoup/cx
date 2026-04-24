@@ -110,10 +110,7 @@ impl FMIRNode {
 }
 
 impl FMIRFunction {
-    pub fn display_with<'a>(
-        &'a self,
-        definitions: &'a MIRTypeContext,
-    ) -> FMIRFunctionDisplay<'a> {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRFunctionDisplay<'a> {
         FMIRFunctionDisplay {
             function: self,
             definitions,
@@ -130,7 +127,11 @@ impl Display for FMIRTypeDisplay<'_> {
 
             FMIRType::CMonad { inner, operation } => match operation {
                 CVMOperation::Unsafe => {
-                    write!(f, "Effect<Unsafe, {}>", inner.display_with(self.definitions))
+                    write!(
+                        f,
+                        "Effect<Unsafe, {}>",
+                        inner.display_with(self.definitions)
+                    )
                 }
                 CVMOperation::Access { reads, writes } => {
                     write!(f, "Effect<Access{{")?;

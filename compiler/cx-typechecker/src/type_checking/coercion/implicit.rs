@@ -37,10 +37,6 @@ pub fn implicit_cast(
 ) -> CXResult<MIRExpression> {
     let from_type = value.get_type();
 
-    if env.type_eq(&from_type, to_type) {
-        return Ok(value);
-    }
-
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
         log_typecheck_error!(
             env,

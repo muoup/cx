@@ -311,6 +311,7 @@ impl SymbolRegistry {
         };
 
         existing.strong_identifier = Some(new_name.clone());
+        existing.debug_name.get_or_insert_with(|| new_name.clone());
         existing.template_info = template_info.clone();
         self.context.register_identifier(new_name, id);
     }
@@ -346,7 +347,7 @@ impl SymbolRegistry {
     }
 
     pub fn type_eq(&self, type1: &MIRType, type2: &MIRType) -> bool {
-        type1 == type2
+        self.context.type_eq(type1, type2)
     }
 
     pub fn apply_qualifiers(mut ty: MIRType, specifiers: CXTypeQualifiers) -> MIRType {

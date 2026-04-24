@@ -4,7 +4,6 @@ use crate::{
     type_checking::{
         globals::global_expr,
         result::{TypecheckResult, TypecheckedBinding},
-        value::locals::ensure_binding_available,
     },
 };
 use cx_ast::{ast::CXExpression, data::CXTemplateInput};
@@ -24,7 +23,7 @@ pub(crate) fn typecheck_identifier(
 ) -> CXResult<TypecheckResult> {
     if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
         let symbol_val = symbol_val.clone();
-        ensure_binding_available(env, expr, name)?;
+        ensure_binding_available_at(env, expr, name)?;
         Ok(TypecheckResult::from(symbol_val).with_binding(TypecheckedBinding::local(name.clone())))
     } else if let Some(function_type) = env
         .get_realized_func(&base_mangle_standard(name.as_str()))

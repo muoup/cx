@@ -67,6 +67,7 @@ fn construct_type(ty: &CXType, kind: MIRTypeKind) -> MIRType {
         specifiers: ty.specifiers,
         move_attributes: MIRMoveAttributes::default(),
         strong_identifier: None,
+        debug_name: None,
         template_info: None,
         kind,
     }
@@ -94,6 +95,7 @@ fn make_named_type(
         specifiers: ty.specifiers,
         move_attributes: attributes,
         strong_identifier: Some(name),
+        debug_name: None,
         template_info,
         kind,
     }
@@ -113,6 +115,7 @@ fn named_predeclaration_type(
         specifiers: ty.specifiers,
         move_attributes: MIRMoveAttributes::default(),
         strong_identifier: Some(name.clone()),
+        debug_name: None,
         template_info: None,
         kind: MIRTypeKind::Undefined,
     };
@@ -506,6 +509,7 @@ pub(crate) fn int_complete_type(
                 specifiers: ty.specifiers,
                 move_attributes: MIRMoveAttributes { nocopy, nodrop },
                 strong_identifier: None,
+                debug_name: None,
                 template_info: None,
                 kind: MIRTypeKind::Structured {
                     fields: completed_fields,
@@ -550,6 +554,7 @@ pub(crate) fn int_complete_type(
                 specifiers: ty.specifiers,
                 move_attributes: MIRMoveAttributes::default(),
                 strong_identifier: None,
+                debug_name: None,
                 template_info: None,
                 kind: MIRTypeKind::Union {
                     variants: completed_fields,

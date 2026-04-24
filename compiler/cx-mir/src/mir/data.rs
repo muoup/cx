@@ -1,18 +1,36 @@
-use std::hash::{Hash, Hasher};
-
 use cx_ast::data::{CXFunctionContract, CXFunctionPrototype};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
+use crate::mir::r#type::TypeComparisonState;
 pub use crate::mir::r#type::{
     MIRFloatType, MIRIntegerType, MIRMoveAttributes, MIRType, MIRTypeContext, MIRTypeId,
     MIRTypeKind,
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRParameter {
     pub name: Option<CXIdent>,
     pub _type: MIRType,
+}
+
+impl MIRParameter {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        self.name == other.name
+            && self
+                ._type
+                .contextual_eq_with_state(&other._type, definitions, state)
+    }
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
@@ -20,25 +38,7 @@ pub struct MIRFunctionSignature {
     pub return_type: MIRType,
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
-    pub contract: CXFunctionContract
-}
-
-impl PartialEq for MIRFunctionSignature {
-    fn eq(&self, other: &Self) -> bool {
-        self.return_type == other.return_type
-            && self.params == other.params
-            && self.var_args == other.var_args
-    }
-}
-
-impl Eq for MIRFunctionSignature {}
-
-impl Hash for MIRFunctionSignature {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.return_type.hash(state);
-        self.params.hash(state);
-        self.var_args.hash(state);
-    }
+    pub contract: CXFunctionContract,
 }
 
 impl Default for MIRFunctionSignature {
@@ -47,8 +47,33 @@ impl Default for MIRFunctionSignature {
             return_type: MIRTypeKind::Unit.into(),
             params: Vec::new(),
             var_args: false,
-            contract: CXFunctionContract::default()
+            contract: CXFunctionContract::default(),
         }
+    }
+}
+
+impl MIRFunctionSignature {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        self.var_args == other.var_args
+            && self
+                .return_type
+                .contextual_eq_with_state(&other.return_type, definitions, state)
+            && self.params.len() == other.params.len()
+            && self
+                .params
+                .iter()
+                .zip(other.params.iter())
+                .all(|(left, right)| left.contextual_eq_with_state(right, definitions, state))
     }
 }
 
@@ -68,38 +93,84 @@ impl MIRFunctionPrototype {
             return_type: self.return_type.clone(),
             params: self.params.clone(),
             var_args: self.var_args,
-            contract: self.contract.clone()
+            contract: self.contract.clone(),
         }
     }
-}
 
-impl PartialEq for MIRFunctionPrototype {
-    fn eq(&self, other: &Self) -> bool {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
         self.name == other.name
-            && self.return_type == other.return_type
-            && self.params == other.params
             && self.var_args == other.var_args
+            && self
+                .return_type
+                .contextual_eq_with_state(&other.return_type, definitions, state)
+            && self.params.len() == other.params.len()
+            && self
+                .params
+                .iter()
+                .zip(other.params.iter())
+                .all(|(left, right)| left.contextual_eq_with_state(right, definitions, state))
     }
 }
 
-impl Eq for MIRFunctionPrototype {}
-
-impl Hash for MIRFunctionPrototype {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.return_type.hash(state);
-        self.params.hash(state);
-        self.var_args.hash(state);
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRTemplateInput {
     pub args: Vec<MIRType>,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+impl MIRTemplateInput {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        self.args.len() == other.args.len()
+            && self
+                .args
+                .iter()
+                .zip(other.args.iter())
+                .all(|(left, right)| left.contextual_eq_with_state(right, definitions, state))
+    }
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct TemplateInfo {
     pub base_name: CXIdent,
     pub template_input: MIRTemplateInput,
+}
+
+impl TemplateInfo {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        self.base_name == other.base_name
+            && self.template_input.contextual_eq_with_state(
+                &other.template_input,
+                definitions,
+                state,
+            )
+    }
 }

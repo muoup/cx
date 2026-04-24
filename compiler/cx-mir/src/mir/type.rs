@@ -1,9 +1,11 @@
+use std::collections::HashSet;
+
 use cx_ast::{ast::VisibilityMode, data::CXTypeQualifiers};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
 use crate::mir::{
-    data::{MIRFunctionSignature, MIRTemplateInput, TemplateInfo},
+    data::{MIRFunctionSignature, TemplateInfo},
     name_mangling::type_mangle,
 };
 
@@ -16,12 +18,13 @@ pub struct MIRTypeContext {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
 pub struct MIRTypeId(pub u64);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub struct MIRType {
     pub visibility: VisibilityMode,
     pub specifiers: CXTypeQualifiers,
     pub move_attributes: MIRMoveAttributes,
     pub strong_identifier: Option<CXIdent>,
+    pub debug_name: Option<CXIdent>,
 
     pub template_info: Option<Box<TemplateInfo>>,
     pub kind: MIRTypeKind,
@@ -33,7 +36,7 @@ pub struct MIRMoveAttributes {
     pub nodrop: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum MIRTypeKind {
     Unit,
     Integer {
@@ -86,6 +89,63 @@ pub enum MIRIntegerType {
 pub enum MIRFloatType {
     F32,
     F64,
+}
+
+#[derive(Default)]
+pub(crate) struct TypeComparisonState {
+    compared_ids: HashSet<TypeIdPair>,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct TypeIdPair {
+    left: MIRTypeId,
+    right: MIRTypeId,
+}
+
+impl TypeIdPair {
+    fn new(left: MIRTypeId, right: MIRTypeId) -> Self {
+        if left <= right {
+            Self { left, right }
+        } else {
+            Self {
+                left: right,
+                right: left,
+            }
+        }
+    }
+}
+
+impl MIRTypeId {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        if self == other {
+            return true;
+        }
+
+        let pair = TypeIdPair::new(*self, *other);
+        if state.compared_ids.contains(&pair) {
+            return true;
+        }
+
+        let Some(left) = definitions.get(*self) else {
+            return false;
+        };
+        let Some(right) = definitions.get(*other) else {
+            return false;
+        };
+
+        state.compared_ids.insert(pair);
+        left.contextual_eq_with_state(right, definitions, state)
+    }
 }
 
 impl MIRIntegerType {
@@ -174,7 +234,7 @@ impl MIRTypeContext {
             .types
             .iter()
             .enumerate()
-            .find(|(_, existing)| *existing == &ty)
+            .find(|(_, existing)| self.type_eq(existing, &ty))
         {
             return MIRTypeId(idx as u64 + 1);
         }
@@ -221,8 +281,12 @@ impl MIRTypeContext {
         self.types
             .iter()
             .enumerate()
-            .find(|(_, existing)| *existing == ty)
+            .find(|(_, existing)| self.type_eq(existing, ty))
             .map(|(idx, _)| MIRTypeId(idx as u64 + 1))
+    }
+
+    pub fn type_eq(&self, left: &MIRType, right: &MIRType) -> bool {
+        left.contextual_eq(right, self)
     }
 
     pub fn pointer_to(&mut self, inner_type: MIRType) -> MIRType {
@@ -291,15 +355,21 @@ impl MIRTypeContext {
         if let Some(inner) = self.mem_ref_inner(ty) {
             return matches!(inner.kind, MIRTypeKind::Str);
         }
-        
+
         return false;
     }
 
     pub fn is_c_str(&self, ty: &MIRType) -> bool {
         if let Some(inner) = self.ptr_inner(ty) {
-            return matches!(inner.kind, MIRTypeKind::Integer { _type: MIRIntegerType::I8, signed: false });
+            return matches!(
+                inner.kind,
+                MIRTypeKind::Integer {
+                    _type: MIRIntegerType::I8,
+                    signed: false
+                }
+            );
         }
-        
+
         return false;
     }
 
@@ -433,6 +503,7 @@ impl Default for MIRType {
             specifiers: CXTypeQualifiers::default(),
             move_attributes: MIRMoveAttributes::default(),
             strong_identifier: None,
+            debug_name: None,
             template_info: None,
             kind: MIRTypeKind::Unit,
         }
@@ -440,6 +511,58 @@ impl Default for MIRType {
 }
 
 impl MIRType {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        if self.specifiers != other.specifiers || self.move_attributes != other.move_attributes {
+            return false;
+        }
+
+        match (&self.strong_identifier, &other.strong_identifier) {
+            (Some(left), Some(right)) => return left == right,
+            (Some(_), None) | (None, Some(_)) => return false,
+            (None, None) => {}
+        }
+
+        match (
+            self.named_type_id(definitions),
+            other.named_type_id(definitions),
+        ) {
+            (Some(left_id), Some(right_id)) => {
+                if left_id == right_id {
+                    return true;
+                }
+
+                return left_id.contextual_eq_with_state(&right_id, definitions, state);
+            }
+            _ => {}
+        }
+
+        match (
+            self.template_info.as_deref(),
+            other.template_info.as_deref(),
+        ) {
+            (Some(left), Some(right)) => {
+                if !left.contextual_eq_with_state(right, definitions, state) {
+                    return false;
+                }
+            }
+            (None, None) => {}
+            _ => return false,
+        }
+
+        self.kind
+            .contextual_eq_with_state(&other.kind, definitions, state)
+    }
+
     pub fn unit() -> Self {
         Self::default()
     }
@@ -456,6 +579,11 @@ impl MIRType {
 
     pub fn with_name(mut self, name: CXIdent) -> MIRType {
         self.strong_identifier = Some(name);
+        self
+    }
+
+    pub fn with_debug_name(mut self, name: CXIdent) -> MIRType {
+        self.debug_name = Some(name);
         self
     }
 
@@ -563,6 +691,14 @@ impl MIRType {
         self.strong_identifier.as_ref()
     }
 
+    pub fn strong_identifier(&self) -> Option<&CXIdent> {
+        self.strong_identifier.as_ref()
+    }
+
+    pub fn debug_name(&self) -> Option<&CXIdent> {
+        self.debug_name.as_ref()
+    }
+
     pub fn get_base_identifier(&self) -> Option<&CXIdent> {
         self.template_info
             .as_ref()
@@ -581,24 +717,16 @@ impl MIRType {
         }
     }
 
-    pub fn add_template_info(&mut self, new_name: CXIdent, template_input: MIRTemplateInput) {
-        let old_name = self
-            .strong_identifier
-            .clone()
-            .unwrap_or_else(|| new_name.clone());
-        self.strong_identifier = Some(new_name);
-        self.template_info = Some(Box::new(TemplateInfo {
-            base_name: old_name,
-            template_input,
-        }));
-    }
-
     pub fn was_template_instantiated(&self) -> bool {
         self.template_info.is_some()
     }
 
     pub fn set_name(&mut self, new_name: CXIdent) {
         self.strong_identifier = Some(new_name);
+    }
+
+    pub fn set_debug_name(&mut self, new_name: CXIdent) {
+        self.debug_name = Some(new_name);
     }
 
     pub fn named_struct(
@@ -609,6 +737,7 @@ impl MIRType {
     ) -> Self {
         MIRType {
             strong_identifier: Some(name),
+            debug_name: None,
             template_info,
             move_attributes: attributes,
             kind: MIRTypeKind::Structured { fields: vec![] },
@@ -619,6 +748,7 @@ impl MIRType {
     pub fn named_union(name: CXIdent, _type_id: MIRTypeId) -> Self {
         MIRType {
             strong_identifier: Some(name),
+            debug_name: None,
             kind: MIRTypeKind::Union { variants: vec![] },
             ..Default::default()
         }
@@ -632,6 +762,7 @@ impl MIRType {
     ) -> Self {
         MIRType {
             strong_identifier: Some(name),
+            debug_name: None,
             template_info,
             move_attributes: attributes,
             kind: MIRTypeKind::TaggedUnion { variants: vec![] },
@@ -674,6 +805,7 @@ impl MIRType {
         template_info: &Option<Box<TemplateInfo>>,
     ) {
         self.strong_identifier = Some(new_name.clone());
+        self.debug_name.get_or_insert_with(|| new_name.clone());
         self.template_info = template_info.clone();
     }
 
@@ -704,4 +836,91 @@ impl From<MIRTypeKind> for MIRType {
             ..Default::default()
         }
     }
+}
+
+impl MIRTypeKind {
+    pub fn contextual_eq(&self, other: &Self, definitions: &MIRTypeContext) -> bool {
+        let mut state = TypeComparisonState::default();
+        self.contextual_eq_with_state(other, definitions, &mut state)
+    }
+
+    pub(crate) fn contextual_eq_with_state(
+        &self,
+        other: &Self,
+        definitions: &MIRTypeContext,
+        state: &mut TypeComparisonState,
+    ) -> bool {
+        match (self, other) {
+            (MIRTypeKind::Unit, MIRTypeKind::Unit)
+            | (MIRTypeKind::Undefined, MIRTypeKind::Undefined)
+            | (MIRTypeKind::Str, MIRTypeKind::Str) => true,
+            (
+                MIRTypeKind::Integer {
+                    _type: left_type,
+                    signed: left_signed,
+                },
+                MIRTypeKind::Integer {
+                    _type: right_type,
+                    signed: right_signed,
+                },
+            ) => left_type == right_type && left_signed == right_signed,
+            (MIRTypeKind::Float { _type: left_type }, MIRTypeKind::Float { _type: right_type }) => {
+                left_type == right_type
+            }
+            (
+                MIRTypeKind::Structured { fields: left },
+                MIRTypeKind::Structured { fields: right },
+            )
+            | (MIRTypeKind::Union { variants: left }, MIRTypeKind::Union { variants: right })
+            | (
+                MIRTypeKind::TaggedUnion { variants: left },
+                MIRTypeKind::TaggedUnion { variants: right },
+            ) => named_type_fields_contextual_eq(left, right, definitions, state),
+            (
+                MIRTypeKind::PointerTo { inner_type: left },
+                MIRTypeKind::PointerTo { inner_type: right },
+            )
+            | (
+                MIRTypeKind::MemoryReference { inner_type: left },
+                MIRTypeKind::MemoryReference { inner_type: right },
+            ) => left.contextual_eq_with_state(right, definitions, state),
+            (
+                MIRTypeKind::Array {
+                    length: left_len,
+                    inner_type: left_inner,
+                },
+                MIRTypeKind::Array {
+                    length: right_len,
+                    inner_type: right_inner,
+                },
+            ) => {
+                left_len == right_len
+                    && left_inner.contextual_eq_with_state(right_inner, definitions, state)
+            }
+            (
+                MIRTypeKind::Function { signature: left },
+                MIRTypeKind::Function { signature: right },
+            ) => left.contextual_eq_with_state(right, definitions, state),
+            (MIRTypeKind::Opaque { size: left }, MIRTypeKind::Opaque { size: right }) => {
+                left == right
+            }
+            _ => false,
+        }
+    }
+}
+
+fn named_type_fields_contextual_eq(
+    left: &[(String, MIRTypeId)],
+    right: &[(String, MIRTypeId)],
+    definitions: &MIRTypeContext,
+    state: &mut TypeComparisonState,
+) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|((left_name, left_id), (right_name, right_id))| {
+                left_name == right_name
+                    && left_id.contextual_eq_with_state(right_id, definitions, state)
+            })
 }

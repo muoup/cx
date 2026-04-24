@@ -71,13 +71,7 @@ pub(crate) fn instantiate_type_template(
     let shell = &template.resource.shell;
 
     let overwrites = add_templated_types(env, &template.resource.prototype, &completed_input)?;
-    let aggregate_base_name = match &shell.kind {
-        CXTypeKind::Structured { name, .. } | CXTypeKind::Union { name, .. } => {
-            name.as_ref().map(|name| name.as_string())
-        }
-        CXTypeKind::TaggedUnion { name, .. } => Some(name.as_string()),
-        _ => None,
-    };
+    let aggregate_base_name = templated_aggregate_base_name(shell);
     let mut previous_named_type = None;
     let mut previous_named_id = None;
 
@@ -88,40 +82,7 @@ pub(crate) fn instantiate_type_template(
             .named_type_ids
             .insert(base_name.clone(), template_type_id);
 
-        let provisional = match &shell.kind {
-            CXTypeKind::Structured { attributes, .. } => {
-                let attrs = resolve_template_attributes(env, attributes);
-                MIRType {
-                    visibility: cx_ast::ast::VisibilityMode::Private,
-                    specifiers: 0,
-                    move_attributes: attrs,
-                    strong_identifier: Some(CXIdent::new(base_name.clone())),
-                    template_info: None,
-                    kind: cx_mir::mir::data::MIRTypeKind::Structured { fields: vec![] },
-                }
-            }
-            CXTypeKind::Union { .. } => MIRType {
-                visibility: cx_ast::ast::VisibilityMode::Private,
-                specifiers: 0,
-                move_attributes: MIRMoveAttributes::default(),
-                strong_identifier: Some(CXIdent::new(base_name.clone())),
-                template_info: None,
-                kind: cx_mir::mir::data::MIRTypeKind::Union { variants: vec![] },
-            },
-            CXTypeKind::TaggedUnion { attributes, .. } => {
-                let attrs = resolve_template_attributes(env, attributes);
-                MIRType {
-                    visibility: cx_ast::ast::VisibilityMode::Private,
-                    specifiers: 0,
-                    move_attributes: attrs,
-                    strong_identifier: Some(CXIdent::new(base_name.clone())),
-                    template_info: None,
-                    kind: cx_mir::mir::data::MIRTypeKind::TaggedUnion { variants: vec![] },
-                }
-            }
-            _ => unreachable!("Templated named type must be an aggregate"),
-        };
-
+        let provisional = templated_aggregate_provisional(env, shell, base_name);
         env.symbols
             .context
             .register_identifier(CXIdent::new(base_name.clone()), template_type_id);
@@ -132,6 +93,7 @@ pub(crate) fn instantiate_type_template(
     }
 
     let cx_type = int_complete_type(env, base_data, &CXExpression::default(), shell);
+
     if let Some(base_name) = aggregate_base_name.as_ref() {
         match previous_named_type {
             Some(previous) => {
@@ -155,29 +117,76 @@ pub(crate) fn instantiate_type_template(
             }
         }
     }
+
     restore_template_overwrites(env, overwrites);
 
     let mut cx_type = cx_type?;
-    cx_type.add_template_info(
-        CXIdent::new(template_name.as_str()),
-        completed_input.clone(),
-    );
-    cx_type.set_name(CXIdent::new(template_name.clone()));
 
-    if let Some(type_id) = cx_type
-        .get_name()
-        .and_then(|name| env.get_named_type_id(name.as_str()))
-    {
-        let template_info = cx_type
-            .get_template_data()
-            .map(|info| Box::new(info.clone()));
-        let renamed = CXIdent::new(template_name.clone());
-        env.update_named_type_metadata(type_id, renamed, template_info);
+    if let Some(base_name) = aggregate_base_name {
+        let template_info = Some(Box::new(cx_mir::mir::data::TemplateInfo {
+            base_name: CXIdent::new(base_name.clone()),
+            template_input: completed_input.clone(),
+        }));
+        let type_id = env.get_or_create_named_type_id(template_name.as_str());
+        cx_type.strong_identifier = Some(CXIdent::new(template_name.clone()));
+        cx_type.debug_name = Some(CXIdent::new(base_name));
+        cx_type.template_info = template_info.clone();
+        env.finish_type_definition(type_id, cx_type.clone());
+        env.update_named_type_metadata(type_id, CXIdent::new(template_name.clone()), template_info);
     }
 
     env.add_type(template_name, cx_type.clone());
 
     Ok(cx_type)
+}
+
+fn templated_aggregate_base_name(shell: &CXType) -> Option<String> {
+    match &shell.kind {
+        CXTypeKind::Structured { name, .. } | CXTypeKind::Union { name, .. } => {
+            name.as_ref().map(|name| name.as_string())
+        }
+        CXTypeKind::TaggedUnion { name, .. } => Some(name.as_string()),
+        _ => None,
+    }
+}
+
+fn templated_aggregate_provisional(
+    env: &TypeEnvironment,
+    shell: &CXType,
+    base_name: &str,
+) -> MIRType {
+    let name = CXIdent::new(base_name);
+
+    match &shell.kind {
+        CXTypeKind::Structured { attributes, .. } => MIRType {
+            visibility: cx_ast::ast::VisibilityMode::Private,
+            specifiers: shell.specifiers,
+            move_attributes: resolve_template_attributes(env, attributes),
+            strong_identifier: Some(name.clone()),
+            debug_name: Some(name),
+            template_info: None,
+            kind: MIRTypeKind::Structured { fields: vec![] },
+        },
+        CXTypeKind::Union { .. } => MIRType {
+            visibility: cx_ast::ast::VisibilityMode::Private,
+            specifiers: shell.specifiers,
+            move_attributes: MIRMoveAttributes::default(),
+            strong_identifier: Some(name.clone()),
+            debug_name: Some(name),
+            template_info: None,
+            kind: MIRTypeKind::Union { variants: vec![] },
+        },
+        CXTypeKind::TaggedUnion { attributes, .. } => MIRType {
+            visibility: cx_ast::ast::VisibilityMode::Private,
+            specifiers: shell.specifiers,
+            move_attributes: resolve_template_attributes(env, attributes),
+            strong_identifier: Some(name.clone()),
+            debug_name: Some(name),
+            template_info: None,
+            kind: MIRTypeKind::TaggedUnion { variants: vec![] },
+        },
+        _ => unreachable!("Templated named type must be an aggregate"),
+    }
 }
 
 fn resolve_template_attributes(
@@ -187,13 +196,12 @@ fn resolve_template_attributes(
     let mut nocopy = attributes.nocopy || attributes.nodrop;
     let mut nodrop = attributes.nodrop;
 
-    if let Some(param_name) = &attributes.copy_traits {
-        if let Some(resolved_type) = env.get_realized_type(param_name) {
-            if let Some(src_attrs) = resolved_type.struct_attributes() {
-                nocopy = nocopy || src_attrs.nocopy;
-                nodrop = nodrop || src_attrs.nodrop;
-            }
-        }
+    if let Some(param_name) = &attributes.copy_traits
+        && let Some(resolved_type) = env.get_realized_type(param_name)
+        && let Some(src_attrs) = resolved_type.struct_attributes()
+    {
+        nocopy = nocopy || src_attrs.nocopy;
+        nodrop = nodrop || src_attrs.nodrop;
     }
 
     MIRMoveAttributes { nocopy, nodrop }

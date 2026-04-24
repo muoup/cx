@@ -42,7 +42,10 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
             mangled.push('O');
             mangled.push_str(&size.to_string());
         }
-        MIRTypeKind::Array { length: size, inner_type } => {
+        MIRTypeKind::Array {
+            length: size,
+            inner_type,
+        } => {
             mangled.push('A');
             mangled.push_str(&size.to_string());
             mangled.push('_');

@@ -201,7 +201,7 @@ fn write_type_reference(
     ty: &MIRType,
     id: Option<MIRTypeId>,
 ) -> std::fmt::Result {
-    if let Some(name) = ty.get_name() {
+    if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
         write!(f, "{name}")
     } else if let Some(id) = id {
         write!(f, "{id}")
@@ -221,7 +221,7 @@ fn write_recursive_reference(
     ty: &MIRType,
     id: MIRTypeId,
 ) -> std::fmt::Result {
-    if let Some(name) = ty.get_name() {
+    if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
         write!(f, "{name}")
     } else {
         write!(f, "{id}<recursive>")
@@ -289,7 +289,7 @@ fn write_aggregate(
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     write!(f, "{keyword}")?;
-    if let Some(name) = ty.get_name() {
+    if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
         write!(f, " {name}")?;
     }
     write!(f, " {{")?;
@@ -337,41 +337,26 @@ fn write_type_body(
         }
         MIRTypeKind::Unit => write!(f, "()"),
         MIRTypeKind::PointerTo { inner_type } => {
-            write_type_id(
-                f,
-                definitions,
-                *inner_type,
-                TypeRenderMode::Inline,
-                state,
-            )?;
+            write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
             write!(f, "*")
         }
         MIRTypeKind::MemoryReference { inner_type } => {
-            write_type_id(
-                f,
-                definitions,
-                *inner_type,
-                TypeRenderMode::Inline,
-                state,
-            )?;
+            write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
             write!(f, "&")
         }
-        MIRTypeKind::Array { length: size, inner_type } => {
+        MIRTypeKind::Array {
+            length: size,
+            inner_type,
+        } => {
             write!(f, "[")?;
-            write_type_id(
-                f,
-                definitions,
-                *inner_type,
-                TypeRenderMode::Inline,
-                state,
-            )?;
+            write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
             write!(f, "; {size}]")
         }
         MIRTypeKind::Opaque { size } => write!(f, "opaque({size})"),
         MIRTypeKind::Undefined => {
             if matches!(mode, TypeRenderMode::Definition) {
                 write!(f, "undefined")?;
-                if let Some(name) = ty.get_name() {
+                if let Some(name) = ty.debug_name().or_else(|| ty.get_name()) {
                     write!(f, " {name}")?;
                 }
                 Ok(())
@@ -1130,7 +1115,10 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 Ok(())
             }
-            MIRExpressionKind::Return { value, postcondition } => {
+            MIRExpressionKind::Return {
+                value,
+                postcondition,
+            } => {
                 write!(f, "Return <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
@@ -1145,13 +1133,13 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 if let Some((name, postcondition)) = postcondition {
                     self.indent(f)?;
                     write!(f, " ++ Postcondition")?;
-                    
+
                     if let Some(name) = name {
                         write!(f, "({})", name)?;
                     }
-                    
+
                     writeln!(f, ":")?;
-                    
+
                     MIRExpressionFormatter {
                         expr: postcondition,
                         depth: self.depth + 2,
@@ -1179,7 +1167,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             MIRExpressionKind::CallFunction {
                 function,
                 arguments,
-                contract
+                contract,
             } => {
                 write!(f, "CallFunction <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -1198,7 +1186,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     }
                     .fmt(f)?;
                 }
-                
+
                 if let Some(precondition) = contract.precondition.as_ref() {
                     self.indent(f)?;
                     writeln!(f, "Precondition:")?;
@@ -1209,18 +1197,18 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     }
                     .fmt(f)?;
                 }
-                
+
                 if let Some((binding, postcondition)) = contract.postcondition.as_ref() {
                     self.indent(f)?;
                     write!(f, " ++ Postcondition")?;
-                    
+
                     if let Some(binding) = binding {
                         self.indent(f)?;
                         write!(f, "(binding: {binding})")?;
                     }
-                    
+
                     writeln!(f, ":")?;
-                    
+
                     MIRExpressionFormatter {
                         expr: postcondition,
                         depth: self.depth + 2,
@@ -1228,7 +1216,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     }
                     .fmt(f)?;
                 }
-                
+
                 Ok(())
             }
             MIRExpressionKind::TypeConversion {
@@ -1353,7 +1341,7 @@ impl Display for MIRCoercion {
                 to_type
             ),
             MIRCoercion::GetFnPtr => write!(f, "get_fn_ptr"),
-            
+
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
             MIRCoercion::Typechange => write!(f, "typechange"),
         }

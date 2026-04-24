@@ -244,7 +244,6 @@ pub enum CXExprKind {
         value: Option<Box<CXExpression>>,
     },
 
-
     Unsafe {
         expr: Box<CXExpression>,
     },

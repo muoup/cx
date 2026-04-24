@@ -207,9 +207,10 @@ pub fn coercion_intrinsic(
             to_bits: to_type.bytes() * 8,
             sextend: *sextend,
         },
-        MIRCoercion::Typechange |
-        MIRCoercion::ReinterpretBits => FMIRCastIntrinsic::ReinterpretBits,
-        MIRCoercion::GetFnPtr => todo!()
+        MIRCoercion::Typechange | MIRCoercion::ReinterpretBits => {
+            FMIRCastIntrinsic::ReinterpretBits
+        }
+        MIRCoercion::GetFnPtr => todo!(),
     })
 }
 

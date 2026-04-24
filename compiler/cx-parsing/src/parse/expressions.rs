@@ -1,5 +1,5 @@
 use crate::parse::ParserData;
-use cx_ast::ast::{CXBinOp, CXExpression, CXExprKind, CXInitIndex};
+use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex};
 use cx_ast::data::CXTypeKind;
 use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
