@@ -68,7 +68,7 @@ impl Display for LMIRFunctionSignature {
 
 impl Display for LMIRFunctionPrototype {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fn {} {}", self.name, self.signature())
+        write!(f, "{} :: {}", self.name, self.signature())
     }
 }
 

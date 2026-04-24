@@ -2,8 +2,6 @@
 //!
 //! This module handles lowering of MIRExpression (AST-style IR) to LMIR.
 
-use std::ops::Deref;
-
 use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
     LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp, LMIRValue,
@@ -65,12 +63,22 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             unreachable!("Variable '{}' not found in symbol table", name);
         }
 
-        MIRExpressionKind::ContractVariable(name) => {
-            let Some(local_value) = builder.get_symbol(name) else {
-                unreachable!("Contract variable '{}' not found in symbol table", name);
-            };
-
-            Ok(local_value)
+        MIRExpressionKind::ContractVariable { name, force_param } => {
+            if *force_param {
+                let idx = builder.current_prototype()
+                    .params
+                    .iter()
+                    .position(|param| param.name.as_ref().map(String::as_str) == Some(name.as_str()))
+                    .expect("Contract variable not found in function parameters") as u32;
+                
+                Ok(LMIRValue::ParameterRef(idx))
+            } else {
+                let Some(local_value) = builder.get_symbol(name) else {
+                    unreachable!("Contract variable '{}' not found in symbol table", name);
+                };
+    
+                Ok(local_value)
+            }   
         }
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
@@ -255,7 +263,21 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                 .as_ref()
                 .map(|v| lower_expression(builder, v))
                 .transpose()?;
-            lower_return(builder, val, postcondition.as_ref().map(Box::deref))
+            
+            if let Some((binding, postcondition)) = postcondition {
+                builder.push_scope(None, None);
+                if let Some(binding) = binding {
+                    if let Some(val) = val.clone() {
+                        builder.insert_symbol(binding.clone(), val);
+                    }
+                }
+                
+                let result = lower_return(builder, val, Some(postcondition.as_ref()));
+                builder.pop_scope()?; 
+                result
+            } else {
+                lower_return(builder, val, None)
+            }
         }
 
         MIRExpressionKind::Block { statements } => {
@@ -809,16 +831,6 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
         1,
         "Scope should be at function base before finishing function"
     );
-
-    if !matches!(
-        builder.current_block_last_inst().map(|i| &i.kind),
-        Some(LMIRInstructionKind::Return { .. })
-    ) {
-        unreachable!(
-            "Function '{}' does not end with a return instruction. Ensure all control flow paths return properly.",
-            builder.current_function_name().unwrap_or(&"<unknown>".to_string())
-        );
-    }
 
     builder.finish_function()?;
     Ok(())

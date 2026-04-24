@@ -501,11 +501,10 @@ pub fn typecheck_expr_inner(
 
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, expr, to_type)?;
-                    let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
-                    let (operand_expr, implicit_parameters) = operand_val.decompose_function_expr();
+                    let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))
+                        .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
 
-                    TypecheckResult::from(explicit_cast(env, operand_expr, &to_type)?)
-                        .with_implicit_parameters(implicit_parameters)
+                    TypecheckResult::from(explicit_cast(env, operand_val, &to_type)?)
                 }
             }
         }

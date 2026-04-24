@@ -671,7 +671,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::ContractVariable(name) => {
+            MIRExpressionKind::ContractVariable { name, .. } => {
                 write!(f, "ContractVariable \"{name}\" <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
@@ -1142,10 +1142,19 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     }
                     .fmt(f)?;
                 }
-                if let Some(postcondition) = postcondition {
+                if let Some((name, postcondition)) = postcondition {
+                    self.indent(f)?;
+                    write!(f, " ++ Postcondition")?;
+                    
+                    if let Some(name) = name {
+                        write!(f, "({})", name)?;
+                    }
+                    
+                    writeln!(f, ":")?;
+                    
                     MIRExpressionFormatter {
                         expr: postcondition,
-                        depth: self.depth + 1,
+                        depth: self.depth + 2,
                         definitions: self.definitions,
                     }
                     .fmt(f)?;
@@ -1170,7 +1179,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             MIRExpressionKind::CallFunction {
                 function,
                 arguments,
-                contract: _
+                contract
             } => {
                 write!(f, "CallFunction <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -1189,6 +1198,37 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     }
                     .fmt(f)?;
                 }
+                
+                if let Some(precondition) = contract.precondition.as_ref() {
+                    self.indent(f)?;
+                    writeln!(f, "Precondition:")?;
+                    MIRExpressionFormatter {
+                        expr: precondition,
+                        depth: self.depth + 2,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                
+                if let Some((binding, postcondition)) = contract.postcondition.as_ref() {
+                    self.indent(f)?;
+                    write!(f, " ++ Postcondition")?;
+                    
+                    if let Some(binding) = binding {
+                        self.indent(f)?;
+                        write!(f, "(binding: {binding})")?;
+                    }
+                    
+                    writeln!(f, ":")?;
+                    
+                    MIRExpressionFormatter {
+                        expr: postcondition,
+                        depth: self.depth + 2,
+                        definitions: self.definitions,
+                    }
+                    .fmt(f)?;
+                }
+                
                 Ok(())
             }
             MIRExpressionKind::TypeConversion {

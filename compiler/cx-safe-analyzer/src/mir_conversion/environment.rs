@@ -68,6 +68,10 @@ impl FMIREnvironment {
     pub fn pop_scope(&mut self) {
         self.region_table.pop_scope();
     }
+    
+    pub fn current_depth(&self) -> usize {
+        self.region_table.scope_depth()
+    }
 
     pub fn insert_variable(
         &mut self,

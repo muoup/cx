@@ -36,7 +36,10 @@ pub enum MIRExpressionKind {
 
     // Variables
     Variable(CXIdent),
-    ContractVariable(CXIdent),
+    ContractVariable { 
+        name: CXIdent,
+        force_param: bool
+    },
 
     // The callable signature is stored in the expression's type
     FunctionReference {
@@ -167,7 +170,7 @@ pub enum MIRExpressionKind {
     },
 
     Return {
-        postcondition: Option<Box<MIRExpression>>,
+        postcondition: Option<(Option<CXIdent>, Box<MIRExpression>)>,
         value: Option<Box<MIRExpression>>,
     },
 

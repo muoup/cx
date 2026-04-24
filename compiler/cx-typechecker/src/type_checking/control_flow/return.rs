@@ -24,7 +24,7 @@ pub fn typecheck_return(
 ) -> CXResult<TypecheckResult> {
     let return_type = env.current_function().return_type.clone();
 
-    let value = match (value, &return_type) {
+    let return_value = match (value, &return_type) {
         (Some(mut some_value), return_type) if !return_type.is_unit() => {
             let mut _ty = some_value._type.clone();
 
@@ -78,20 +78,16 @@ pub fn typecheck_return(
         },
     );
 
-    if let Some((Some(ret_name), ret_contract)) =
-        env.current_function().contract.postcondition.clone()
-    {
-        env.function.push_scope(false, false);
+    if let Some((ret_name, ret_contract)) = env.current_function().contract.postcondition.clone() {
+        if ret_name.is_some() && return_type.is_unit() {
+            return log_typecheck_error!(
+                env,
+                Option::<TokenRange>::None,
+                "Cannot have a named return variable in a function with void return type"
+            );
+        }
 
-        let ret_val = MIRExpression {
-            _type: env.symbols.context.mem_ref_to(return_type.clone()),
-            token_range: None,
-            kind: MIRExpressionKind::RegionCreate {
-                name: Some(ret_name.clone()),
-                _type: return_type.clone(),
-                initial_value: value,
-            },
-        };
+        env.function.push_scope(false, false);
 
         for param in env.current_function().params.clone() {
             let Some(name) = param.name else {
@@ -101,23 +97,32 @@ pub fn typecheck_return(
             env.function.insert_symbol(
                 name.as_string(),
                 MIRExpression {
-                    kind: MIRExpressionKind::ContractVariable(name.clone()),
+                    kind: MIRExpressionKind::ContractVariable {
+                        name: name.clone(),
+                        force_param: true,
+                    },
                     token_range: None,
-                    _type: param._type,
+                    _type: param._type.clone(),
                 },
             );
         }
 
-        env.function.insert_symbol(
-            ret_name.as_string(),
-            MIRExpression {
-                kind: MIRExpressionKind::Variable(ret_name.clone()),
-                token_range: None,
-                _type: ret_val._type.clone(),
-            },
-        );
+        if let Some(ret_name) = ret_name.as_ref() {
+            env.function.insert_symbol(
+                ret_name.as_string(),
+                MIRExpression {
+                    kind: MIRExpressionKind::ContractVariable {
+                        name: ret_name.clone(),
+                        force_param: false,
+                    },
+                    token_range: None,
+                    _type: return_type.clone(),
+                },
+            );
+        }
 
-        let postcondition = typecheck_expr(env, base_data, &ret_contract, None)?.into_expression();
+        let postcondition = typecheck_expr(env, base_data, &ret_contract, None)
+            .and_then(|v| implicit_cast(env, v.into_expression(), &MIRType::bool()))?;
 
         env.function
             .pop_scope(env.source.compilation_unit.as_path())?;
@@ -125,15 +130,15 @@ pub fn typecheck_return(
         Ok(TypecheckResult::new_base(
             MIRType::unit(),
             MIRExpressionKind::Return {
-                value: Some(Box::new(ret_val)),
-                postcondition: Some(Box::new(postcondition)),
+                value: return_value,
+                postcondition: Some((ret_name.clone(), Box::new(postcondition))),
             },
         ))
     } else {
         Ok(TypecheckResult::new_base(
             MIRType::unit(),
             MIRExpressionKind::Return {
-                value,
+                value: return_value,
                 postcondition: None,
             },
         ))

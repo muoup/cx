@@ -255,7 +255,21 @@ pub fn convert_expression(
             env.push_scope();
             let postcondition_node = postcondition
                 .as_ref()
-                .map(|expr| convert_expression(env, expr))
+                .map(|(binding, expr)| {
+                    if let Some(binding) = binding {
+                        env.insert_variable(
+                            binding.clone(),
+                            return_value._type.clone(),
+                            MemoryLocation::Stack {
+                                name: binding.as_string(),
+                                depth: env.current_depth(),
+                            },
+                            Some(return_value.clone()),
+                        );
+                    }
+                    
+                    convert_expression(env, expr)
+                })
                 .transpose()?
                 .unwrap_or(FMIRNode::unit());
             env.pop_scope();
@@ -272,7 +286,9 @@ pub fn convert_expression(
             Ok(then_node(assert_node, return_node))
         }
 
-        MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable(name) => {
+        MIRExpressionKind::Variable(name) | MIRExpressionKind::ContractVariable { name, .. } => {
+            // TODO: Force param
+            
             if !mir_expr._type.is_memory_reference()
                 && let Some(known) = env.query_known_value(name)
             {

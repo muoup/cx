@@ -19,25 +19,32 @@ pub(crate) fn typecheck_contract(
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
+            let _ty = env.symbols.context.mem_ref_to(param._type.clone());
+
             env.function.insert_symbol(
                 name.to_string(),
                 MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::ContractVariable(name.clone()),
+                    kind: MIRExpressionKind::ContractVariable { 
+                        name: name.clone(),
+                        force_param: false
+                    },
                     _type: param._type.clone(),
                 },
             );
         }
     }
 
-    let precondition = if let Some(pre_expr) = &naive_contract.precondition {
-        let tc_pre = typecheck_expr(env, base_data, pre_expr, Some(&MIRType::bool()))
-            .and_then(|v| std_rval_promotion(env, v.into_expression()))
-            .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
-        Some(Box::new(tc_pre))
-    } else {
-        None
-    };
+    let precondition = naive_contract
+        .precondition
+        .as_ref()
+        .map(|pre_expr| {
+            let tc_pre = typecheck_expr(env, base_data, pre_expr, Some(&MIRType::bool()))
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+            Ok(Box::new(tc_pre))
+        })
+        .transpose()?;
 
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
@@ -45,7 +52,10 @@ pub(crate) fn typecheck_contract(
                 ret_name.to_string(),
                 MIRExpression {
                     token_range: None,
-                    kind: MIRExpressionKind::Variable(ret_name.clone()),
+                    kind: MIRExpressionKind::ContractVariable { 
+                        name: ret_name.clone(),
+                        force_param: false 
+                    },
                     _type: prototype.return_type.clone(),
                 },
             );

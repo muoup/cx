@@ -40,6 +40,13 @@ pub fn try_explicit_cast(
                 coerced(MIRCoercion::ReinterpretBits)
             }
 
+            (MIRTypeKind::PointerTo { .. }, MIRTypeKind::MemoryReference { .. })
+                if env.symbols.context.is_c_str(&from_type)
+                    && env.symbols.context.is_cx_str(&target_type) =>
+            {
+                coerced(MIRCoercion::ReinterpretBits)
+            }
+
             (MIRTypeKind::PointerTo { .. }, MIRTypeKind::Integer { _type, .. }) => {
                 coerced(MIRCoercion::PtrToInt { to_type: *_type })
             }
