@@ -46,7 +46,7 @@ pub fn typecheck_assignment(
     }
 
     rhs = implicit_cast(env, rhs, &inner)?;
-    
+
     Ok(TypecheckResult::new_base(
         lhs_type,
         MIRExpressionKind::MemoryWrite {

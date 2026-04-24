@@ -1,5 +1,5 @@
 use crate::{environment::TypeEnvironment, log_typecheck_error};
-use cx_ast::ast::{CXExpression, CXExprKind, CXGlobalVariable};
+use cx_ast::ast::{CXExprKind, CXExpression, CXGlobalVariable};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},

@@ -10,8 +10,10 @@ use crate::{
     environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::implicit_cast, control_flow::enqueue_jump_arrow,
-        result::TypecheckResult, typechecker::typecheck_expr,
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        control_flow::enqueue_jump_arrow,
+        result::TypecheckResult,
+        typechecker::typecheck_expr,
     },
 };
 
@@ -39,6 +41,8 @@ pub fn typecheck_return(
                     token_range: some_value.token_range.clone(),
                     kind: MIRExpressionKind::Typechange(Box::new(some_value)),
                 };
+            } else if env.symbols.context.mem_ref_inner(return_type).is_none() {
+                some_value = std_rval_promotion(env, some_value)?;
             }
 
             Some(Box::new(implicit_cast(env, some_value, return_type)?))
@@ -51,8 +55,7 @@ pub fn typecheck_return(
                 env,
                 value.token_range.as_ref(),
                 "Cannot return from function {} with a void return type",
-                env.current_function()
-                    .display_with(&env.symbols.context)
+                env.current_function().display_with(&env.symbols.context)
             );
         }
 
@@ -61,8 +64,7 @@ pub fn typecheck_return(
                 env,
                 Option::<TokenRange>::None,
                 "Function {} expects a return value, but none was provided",
-                env.current_function()
-                    .display_with(&env.symbols.context)
+                env.current_function().display_with(&env.symbols.context)
             );
         }
     };

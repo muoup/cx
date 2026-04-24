@@ -10,7 +10,7 @@ use crate::type_checking::op::binop::calls::{
 };
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExpression, CXExprKind};
+use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_ast::data::CXTypeKind;
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::MIRExpressionKind;

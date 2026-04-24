@@ -1,5 +1,5 @@
 use cx_ast::{
-    ast::{CXBinOp, CXExpression, CXExprKind},
+    ast::{CXBinOp, CXExprKind, CXExpression},
     data::{CXTypeKind, PredeclarationType},
 };
 use cx_mir::mir::{data::MIRType, program::MIRBaseMappings};

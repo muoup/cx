@@ -80,6 +80,8 @@ macro_rules! log_typecheck_error {
         {
             let message = format!($($arg)*);
 
+            // panic!("{}", message);
+
             let range = $crate::log::TypeErrorRangeArg::to_range(&$range);
 
             let compilation_unit = match range.as_ref() {

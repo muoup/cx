@@ -1,8 +1,8 @@
 use cx_ast::ast::CXBinOp;
 use cx_mir::mir::{
     expression::{
-        MIRBinOp, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp,
-        MIRPtrDiffBinOp,
+        MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp,
+        MIRPtrBinOp, MIRPtrDiffBinOp,
     },
     r#type::{MIRIntegerType, MIRType, MIRTypeKind},
 };
@@ -39,10 +39,17 @@ pub(crate) fn dispatch(
 pub(crate) fn resolve_logical(
     env: &mut TypeEnvironment,
     op: &CXBinOp,
-    lhs: MIRExpression,
-    rhs: MIRExpression,
+    mut lhs: MIRExpression,
+    mut rhs: MIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if !lhs._type.is_integer() || !rhs._type.is_integer() {
+    lhs = std_rval_promotion(env, lhs)?;
+    rhs = std_rval_promotion(env, rhs)?;
+
+    let valid_logical_operand = |expr: &MIRExpression| {
+        expr._type.is_integer() || expr._type.is_float() || expr._type.is_pointer()
+    };
+
+    if !valid_logical_operand(&lhs) || !valid_logical_operand(&rhs) {
         return log_typecheck_error!(
             env,
             lhs.token_range.as_ref(),
@@ -53,8 +60,8 @@ pub(crate) fn resolve_logical(
         );
     }
 
-    let lhs = implicit_cast(env, lhs, &MIRType::bool())?;
-    let rhs = implicit_cast(env, rhs, &MIRType::bool())?;
+    let lhs = coerce_scalar_to_bool(env, lhs)?;
+    let rhs = coerce_scalar_to_bool(env, rhs)?;
 
     let operator = MIRBinOp::Integer {
         itype: MIRIntegerType::I1,
@@ -73,6 +80,69 @@ pub(crate) fn resolve_logical(
             rhs: Box::new(rhs),
         },
     ))
+}
+
+fn coerce_scalar_to_bool(
+    env: &mut TypeEnvironment,
+    expr: MIRExpression,
+) -> CXResult<MIRExpression> {
+    if expr._type.is_integer() {
+        return implicit_cast(env, expr, &MIRType::bool());
+    }
+
+    match &expr._type.kind {
+        MIRTypeKind::Float { _type } => {
+            let zero = MIRExpression {
+                token_range: expr.token_range.clone(),
+                kind: MIRExpressionKind::FloatLiteral(0.0.into(), *_type),
+                _type: expr._type.clone(),
+            };
+
+            Ok(MIRExpression {
+                token_range: expr.token_range.clone(),
+                kind: MIRExpressionKind::BinaryOperation {
+                    op: MIRBinOp::Float {
+                        ftype: *_type,
+                        op: MIRFloatBinOp::FNE,
+                    },
+                    lhs: Box::new(expr),
+                    rhs: Box::new(zero),
+                },
+                _type: MIRType::bool(),
+            })
+        }
+        MIRTypeKind::PointerTo { .. } => {
+            let zero = MIRExpression {
+                token_range: expr.token_range.clone(),
+                kind: MIRExpressionKind::TypeConversion {
+                    conversion: MIRCoercion::IntToPtr { sextend: false },
+                    operand: Box::new(MIRExpression {
+                        token_range: expr.token_range.clone(),
+                        kind: MIRExpressionKind::IntLiteral(0, MIRIntegerType::I64, false),
+                        _type: MIRTypeKind::Integer {
+                            _type: MIRIntegerType::I64,
+                            signed: false,
+                        }
+                        .into(),
+                    }),
+                },
+                _type: expr._type.clone(),
+            };
+
+            Ok(MIRExpression {
+                token_range: expr.token_range.clone(),
+                kind: MIRExpressionKind::BinaryOperation {
+                    op: MIRBinOp::Pointer {
+                        op: MIRPtrBinOp::NE,
+                    },
+                    lhs: Box::new(expr),
+                    rhs: Box::new(zero),
+                },
+                _type: MIRType::bool(),
+            })
+        }
+        _ => unreachable!("logical operands should already be scalar"),
+    }
 }
 
 pub(crate) fn resolve_std_arithmetic(
@@ -218,8 +288,16 @@ fn coerce_pointer_binop(
     let ptr_inner = Box::new(env.symbols.context.ptr_inner(&ptr_type).cloned().unwrap());
 
     let (return_type, op) = match op {
-        CXBinOp::Add | CXBinOp::ArrayIndex => (
+        CXBinOp::Add => (
             ptr_type,
+            MIRBinOp::PtrDiff {
+                op: MIRPtrDiffBinOp::ADD,
+                ptr_inner
+            }
+        ),
+        
+        CXBinOp::ArrayIndex => (
+            env.symbols.context.mem_ref_to(ptr_inner.as_ref().clone()),
             MIRBinOp::PtrDiff {
                 op: MIRPtrDiffBinOp::ADD,
                 ptr_inner,

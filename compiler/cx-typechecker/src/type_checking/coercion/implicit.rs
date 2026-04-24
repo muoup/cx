@@ -41,14 +41,13 @@ pub fn implicit_cast(
         return Ok(value);
     }
 
-    try_implicit_coercion(env, value, to_type)?
-        .catch_unapplied(|expr, _|
-            log_typecheck_error!(
-                env,
-                expr.token_range.as_ref(),
-                "No implicit cast from {} to {}",
-                from_type.display_with(&env.symbols.context),
-                to_type.display_with(&env.symbols.context)
-            )
+    try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
+        log_typecheck_error!(
+            env,
+            expr.token_range.as_ref(),
+            "No implicit cast from {} to {}",
+            from_type.display_with(&env.symbols.context),
+            to_type.display_with(&env.symbols.context)
         )
+    })
 }

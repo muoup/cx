@@ -1,8 +1,6 @@
 use std::ops::Deref;
 
-use crate::environment::{
-    LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
-};
+use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
@@ -295,9 +293,12 @@ pub fn typecheck_expr_inner(
         }
 
         CXExprKind::Return { value } => {
+            let return_type = env.current_function().return_type.clone();
             let value = value
                 .as_ref()
-                .map(|v| Ok(typecheck_expr(env, base_data, v, None)?.into_expression()))
+                .map(|v| {
+                    Ok(typecheck_expr(env, base_data, v, Some(&return_type))?.into_expression())
+                })
                 .transpose()?;
             typecheck_return(env, base_data, value)?
         }
@@ -474,8 +475,7 @@ pub fn typecheck_expr_inner(
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, expr, to_type)?;
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
-                    let (operand_expr, implicit_parameters) =
-                        operand_val.decompose_function_expr();
+                    let (operand_expr, implicit_parameters) = operand_val.decompose_function_expr();
 
                     TypecheckResult::from(explicit_cast(env, operand_expr, &to_type)?)
                         .with_implicit_parameters(implicit_parameters)
@@ -490,10 +490,10 @@ pub fn typecheck_expr_inner(
         } => {
             let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression();
             let rhs = typecheck_expr(env, base_data, rhs, None)?.into_expression();
-            
+
             typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref))?
-        },
-        
+        }
+
         CXExprKind::BinOp {
             op: CXBinOp::Is,
             lhs,

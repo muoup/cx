@@ -7,7 +7,7 @@ use crate::type_checking::control_flow::expr_may_fall_through;
 use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExpression, CXExprKind};
+use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},

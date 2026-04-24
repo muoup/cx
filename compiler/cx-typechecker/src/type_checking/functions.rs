@@ -29,7 +29,8 @@ pub fn typecheck_function(
     env.function.begin_function(prototype.clone());
     env.function.push_scope(false, false);
     env.function.set_scope_anchor(body);
-    env.function.configure_merge_scope(body, "function exit", Some("fallthrough"), true);
+    env.function
+        .configure_merge_scope(body, "function exit", Some("fallthrough"), true);
 
     for MIRParameter { name, _type } in prototype.params.iter() {
         let Some(name) = name else {
@@ -54,7 +55,8 @@ pub fn typecheck_function(
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
     let with_implicit_return = add_implicit_return(env, base_data, body_expr)?;
 
-    env.function.pop_scope(env.source.compilation_unit.as_path())?;
+    env.function
+        .pop_scope(env.source.compilation_unit.as_path())?;
     env.function.end_function();
 
     env.push_generated_function(MIRFunction {

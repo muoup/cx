@@ -10,6 +10,4 @@ pub mod result;
 pub mod typechecker;
 pub mod value;
 
-pub use functions::{
-    complete_base_functions, complete_base_globals, realize_fn_implementation,
-};
+pub use functions::{complete_base_functions, complete_base_globals, realize_fn_implementation};

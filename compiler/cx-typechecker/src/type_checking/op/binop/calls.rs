@@ -92,7 +92,7 @@ pub(crate) fn finish_function_call<'a>(
     for (_, val) in tc_args.iter_mut() {
         *val = std_rval_promotion(env, std::mem::take(val))?;
     }
-    
+
     for ((_arg_expr, val), param) in tc_args.iter_mut().zip(signature.params.iter()) {
         *val = implicit_cast(env, std::mem::take(val), &param._type)?;
     }
@@ -280,12 +280,9 @@ pub(crate) fn typecheck_method_call(
         .map(|(_, val)| val.get_type())
         .collect::<Vec<_>>();
 
-    let function = match typecheck_expr(env, base_data, lhs, None) {
-        Ok(function) => function,
-        Err(err) => match deduced_callee(env, base_data, lhs, expr, &arg_types)? {
-            Some(function) => function,
-            None => return Err(err),
-        },
+    let function = match deduced_callee(env, base_data, lhs, expr, arg_types)? {
+        Some(function) => function,
+        None => typecheck_expr(env, base_data, lhs, None)?,
     };
 
     finish_function_call(env, base_data, expr, function, tc_args)

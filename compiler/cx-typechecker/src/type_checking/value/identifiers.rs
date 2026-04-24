@@ -9,6 +9,7 @@ use cx_ast::{ast::CXExpression, data::CXTemplateInput};
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
+    name_mangling::base_mangle_standard,
     program::MIRBaseMappings,
 };
 use cx_util::{CXResult, identifier::CXIdent};
@@ -23,7 +24,19 @@ pub(crate) fn typecheck_identifier(
         let symbol_val = symbol_val.clone();
         ensure_binding_available(env, expr, name)?;
         Ok(TypecheckResult::from(symbol_val))
-    } else if let Ok(function_type) = env.get_standard_function(base_data, expr, name, None) {
+    } else if let Some(function_type) = env
+        .get_realized_func(&base_mangle_standard(name.as_str()))
+        .map(Ok)
+        .or_else(|| {
+            let key = cx_ast::data::CXFunctionKey::Standard(name.clone());
+            if base_data.fn_data.is_key_any(&key) {
+                Some(env.get_standard_function(base_data, expr, name, None))
+            } else {
+                None
+            }
+        })
+        .transpose()?
+    {
         Ok(TypecheckResult::from(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::FunctionReference {

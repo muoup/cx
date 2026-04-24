@@ -2,7 +2,9 @@ use crate::{
     environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion}, result::TypecheckResult, typechecker::typecheck_expr,
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        result::TypecheckResult,
+        typechecker::typecheck_expr,
     },
 };
 use cx_ast::ast::CXExpression;

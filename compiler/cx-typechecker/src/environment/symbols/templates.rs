@@ -532,8 +532,13 @@ fn deduce_from_cx_type(
         }
 
         _ => {
-            let completed_formal =
-                complete_type(env, base_data, external_module, &CXExpression::default(), formal)?;
+            let completed_formal = complete_type(
+                env,
+                base_data,
+                external_module,
+                &CXExpression::default(),
+                formal,
+            )?;
             if env.type_eq(&completed_formal, actual) {
                 Ok(())
             } else {
@@ -615,7 +620,11 @@ fn bind_template_argument(
     Ok(())
 }
 
-fn concrete_type_mismatch(env: &TypeEnvironment, formal: &CXType, actual: &MIRType) -> CXResult<()> {
+fn concrete_type_mismatch(
+    env: &TypeEnvironment,
+    formal: &CXType,
+    actual: &MIRType,
+) -> CXResult<()> {
     CXError::create_result(format!(
         "Template deduction mismatch: expected {}, found {}",
         formal,

@@ -8,8 +8,8 @@ use cx_mir::mir::{
 use cx_util::CXResult;
 
 pub(crate) mod r#match;
-pub(crate) mod switch;
 pub(crate) mod r#return;
+pub(crate) mod switch;
 
 pub(crate) fn expr_may_fall_through(expr: &MIRExpression) -> bool {
     match &expr.kind {

@@ -45,6 +45,10 @@ pub fn compatible_types(
             let inner1 = env.symbols.context.get(*inner1).cloned().unwrap();
             let inner2 = env.symbols.context.get(*inner2).cloned().unwrap();
 
+            if inner1.is_unit() || inner2.is_unit() {
+                return Ok(true);
+            }
+
             compatible_types(env, &inner1, &inner2)
         }
 

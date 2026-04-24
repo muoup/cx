@@ -144,7 +144,7 @@ pub fn int_complete_fn_prototype(
         return_type,
         params: parameters,
         var_args: normalized_prototype.var_args,
-        contract: prototype.contract.clone()
+        contract: prototype.contract.clone(),
     };
 
     Ok(prototype)

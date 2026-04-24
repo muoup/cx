@@ -4,7 +4,7 @@ use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::op::binop::calls::build_function_reference;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::locals::ensure_binding_available;
-use cx_ast::ast::{CXExpression, CXExprKind};
+use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_ast::data::{CX_CONST, CXReceiverMode};
 use cx_mir::mir::data::{MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRCoercion, MIRExpression, MIRExpressionKind};

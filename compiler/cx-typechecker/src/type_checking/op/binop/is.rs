@@ -4,7 +4,7 @@ use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXExpression, CXExprKind};
+use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::MIRBaseMappings;

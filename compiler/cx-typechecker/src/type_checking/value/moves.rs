@@ -6,7 +6,7 @@ use crate::{
         value::locals::ensure_binding_available,
     },
 };
-use cx_ast::ast::{CXExpression, CXExprKind};
+use cx_ast::ast::{CXExprKind, CXExpression};
 use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind};
 use cx_util::CXResult;
 
