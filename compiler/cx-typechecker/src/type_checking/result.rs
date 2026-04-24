@@ -1,5 +1,5 @@
 use cx_mir::mir::data::MIRType;
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 
 /// Richer representation of a typechecking result. Useful for edge cases where we need to carry implicit behavior
 /// not representable by the type system due to move semantics. We want to model CXExpr -> MIRExpr typechecking as
@@ -16,7 +16,6 @@ pub struct TypecheckResult {
     pub expression: MIRExpression,
     /// Implicit parameters carried upward for call sites (e.g. member receivers)
     pub implicit_parameters: Vec<MIRExpression>,
-    pub contract: Option<MIRFunctionContract>,
 }
 
 impl From<MIRExpression> for TypecheckResult {
@@ -24,7 +23,6 @@ impl From<MIRExpression> for TypecheckResult {
         Self {
             expression,
             implicit_parameters: Vec::new(),
-            contract: None
         }
     }
 }
@@ -38,7 +36,6 @@ impl TypecheckResult {
                 _type,
             },
             implicit_parameters: Vec::new(),
-            contract: None
         }
     }
 
@@ -46,14 +43,9 @@ impl TypecheckResult {
         self.implicit_parameters = implicit_parameters;
         self
     }
-    
-    pub fn with_contract(mut self, contract: Option<MIRFunctionContract>) -> Self {
-        self.contract = contract;
-        self
-    }
 
-    pub fn decompose_function_expr(self) -> (MIRExpression, Vec<MIRExpression>, Option<MIRFunctionContract>) {
-        (self.expression, self.implicit_parameters, self.contract)
+    pub fn decompose_function_expr(self) -> (MIRExpression, Vec<MIRExpression>) {
+        (self.expression, self.implicit_parameters)
     }
 
     /// Get the type of this typecheck result's expression
@@ -64,38 +56,5 @@ impl TypecheckResult {
     /// Extract the inner MIRExpression
     pub fn into_expression(self) -> MIRExpression {
         self.expression
-    }
-
-    /// Extract the inner MIRExpressionKind
-    pub fn into_kind(self) -> MIRExpressionKind {
-        self.expression.kind
-    }
-
-    /// Map expression using a transformation function
-    pub fn expression_map<F>(&self, f: F) -> TypecheckResult
-    where
-        F: FnOnce(&MIRExpression) -> MIRExpression,
-    {
-        TypecheckResult {
-            expression: f(&self.expression),
-            implicit_parameters: self.implicit_parameters.clone(),
-            contract: self.contract.clone()
-        }
-    }
-
-    /// Map expression kind using a transformation function
-    pub fn map_kind<F>(self, f: F) -> TypecheckResult
-    where
-        F: FnOnce(MIRExpressionKind) -> MIRExpressionKind,
-    {
-        TypecheckResult {
-            expression: MIRExpression {
-                token_range: None,
-                kind: f(self.expression.kind),
-                _type: self.expression._type,
-            },
-            implicit_parameters: self.implicit_parameters,
-            contract: self.contract
-        }
     }
 }

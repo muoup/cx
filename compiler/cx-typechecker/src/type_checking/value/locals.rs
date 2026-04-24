@@ -1,9 +1,8 @@
 use crate::{
-    environment::BindingMoveState,
-    environment::TypeEnvironment,
+    environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
+        coercion::implicit::{implicit_cast, promotion::std_rval_promotion}, result::TypecheckResult, typechecker::typecheck_expr,
     },
 };
 use cx_ast::ast::CXExpression;
@@ -73,8 +72,9 @@ pub(crate) fn typecheck_var_declaration(
     let mem_type = env.symbols.context.mem_ref_to(ty.clone());
     let mir_initial_value = match initial_value {
         Some(init_expr) => {
-            let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))?;
-            let init_tc = implicit_cast(env, init_tc.into_expression(), &ty)?;
+            let init_tc = typecheck_expr(env, base_data, init_expr, Some(&ty))
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                .and_then(|v| implicit_cast(env, v, &ty))?;
             Some(Box::new(init_tc))
         }
         None => None,

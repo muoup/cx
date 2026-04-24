@@ -1,12 +1,11 @@
 //! Type conversion and coercion lowering
 
 use cx_lmir::{
-    types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind},
-    LMIRCoercionType, LMIRInstructionKind, LMIRValue,
+    LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRValue, types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind}
 };
 use cx_mir::mir::{
     data::MIRType,
-    expression::{MIRCoercion, MIRExpression},
+    expression::{MIRCoercion, MIRExpression}, r#type::MIRIntegerType,
 };
 use cx_util::CXResult;
 
@@ -45,7 +44,19 @@ pub fn lower_type_conversion(
             from_type,
             to_type,
         } => {
-            if from_type.bytes() > to_type.bytes() {
+            if matches!(to_type, MIRIntegerType::I1) {
+                let from = builder.convert_integer_type(from_type);
+                let zero = builder.int_const(0, from);
+                builder.add_new_instruction(
+                    LMIRInstructionKind::IntegerBinOp {
+                        left: bc_operand,
+                        right: zero,
+                        op: LMIRIntBinOp::NE
+                    },
+                    LMIRType::bool(),
+                    true
+                )
+            } else if from_type.bytes() > to_type.bytes() {
                 std_coercion(builder, bc_operand, LMIRCoercionType::Trunc)
             } else if *sextend {
                 std_coercion(builder, bc_operand, LMIRCoercionType::SExtend)

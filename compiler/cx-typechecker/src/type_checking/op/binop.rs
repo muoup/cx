@@ -1,4 +1,4 @@
-use cx_ast::ast::{CXBinOp, CXExpression};
+use cx_ast::ast::CXBinOp;
 use cx_mir::mir::{
     expression::{
         MIRBinOp, MIRExpression, MIRExpressionKind, MIRFloatBinOp, MIRIntegerBinOp, MIRPtrBinOp,
@@ -18,6 +18,7 @@ use crate::{
 };
 
 pub(crate) mod access;
+pub(crate) mod assign;
 pub(crate) mod calls;
 pub(crate) mod is;
 pub(crate) mod scoped_calls;
@@ -339,105 +340,6 @@ fn coerce_integral_binop(
                 },
                 op,
             },
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        },
-    ))
-}
-
-pub(crate) fn typecheck_float_float_binop(
-    env: &mut TypeEnvironment,
-    op: CXBinOp,
-    mut lhs: MIRExpression,
-    mut rhs: MIRExpression,
-    expr: &CXExpression,
-) -> CXResult<TypecheckResult> {
-    let lhs_type = lhs.get_type();
-    let rhs_type = rhs.get_type();
-
-    let ftype = match (&lhs_type.kind, &rhs_type.kind) {
-        (MIRTypeKind::Float { _type: lhs_ftype }, MIRTypeKind::Float { _type: rhs_ftype }) => {
-            if rhs_ftype.bytes() > lhs_ftype.bytes() {
-                *rhs_ftype
-            } else {
-                *lhs_ftype
-            }
-        }
-
-        (MIRTypeKind::Float { _type }, MIRTypeKind::Integer { .. }) => *_type,
-        (MIRTypeKind::Integer { .. }, MIRTypeKind::Float { _type }) => *_type,
-
-        _ => unreachable!("Expected arithmetic types for floating-point binop"),
-    };
-    let common_type = MIRType::from(MIRTypeKind::Float { _type: ftype });
-
-    lhs = implicit_cast(env, lhs, &common_type)?;
-    rhs = implicit_cast(env, rhs, &common_type)?;
-
-    let (result_type, fp_op) = match op {
-        CXBinOp::Add => (common_type.clone(), MIRFloatBinOp::FADD),
-        CXBinOp::Subtract => (common_type.clone(), MIRFloatBinOp::FSUB),
-        CXBinOp::Multiply => (common_type.clone(), MIRFloatBinOp::FMUL),
-        CXBinOp::Divide => (common_type.clone(), MIRFloatBinOp::FDIV),
-
-        CXBinOp::Equal => (
-            MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I1,
-                signed: false,
-            }),
-            MIRFloatBinOp::FEQ,
-        ),
-        CXBinOp::NotEqual => (
-            MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I1,
-                signed: false,
-            }),
-            MIRFloatBinOp::FNE,
-        ),
-        CXBinOp::Less => (
-            MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I1,
-                signed: false,
-            }),
-            MIRFloatBinOp::FLT,
-        ),
-        CXBinOp::Greater => (
-            MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I1,
-                signed: false,
-            }),
-            MIRFloatBinOp::FGT,
-        ),
-        CXBinOp::LessEqual => (
-            MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I1,
-                signed: false,
-            }),
-            MIRFloatBinOp::FLE,
-        ),
-        CXBinOp::GreaterEqual => (
-            MIRType::from(MIRTypeKind::Integer {
-                _type: MIRIntegerType::I1,
-                signed: false,
-            }),
-            MIRFloatBinOp::FGE,
-        ),
-
-        _ => {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Invalid float binary operation {op} for types {} and {}",
-                lhs.get_type(),
-                rhs.get_type()
-            );
-        }
-    };
-
-    Ok(TypecheckResult::new_base(
-        result_type,
-        MIRExpressionKind::BinaryOperation {
-            op: MIRBinOp::Float { ftype, op: fp_op },
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         },

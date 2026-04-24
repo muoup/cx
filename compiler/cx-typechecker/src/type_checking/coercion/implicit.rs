@@ -41,14 +41,14 @@ pub fn implicit_cast(
         return Ok(value);
     }
 
-    match try_implicit_coercion(env, value, to_type)? {
-        CoercionResult::Success { expr, .. } => Ok(expr),
-        CoercionResult::Unapplied { expr, .. } => log_typecheck_error!(
-            env,
-            expr.token_range.as_ref(),
-            "No implicit cast from {} to {}",
-            from_type,
-            to_type
-        ),
-    }
+    try_implicit_coercion(env, value, to_type)?
+        .catch_unapplied(|expr, _|
+            log_typecheck_error!(
+                env,
+                expr.token_range.as_ref(),
+                "No implicit cast from {} to {}",
+                from_type,
+                to_type
+            )
+        )
 }

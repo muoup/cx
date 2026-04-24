@@ -65,34 +65,12 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             unreachable!("Variable '{}' not found in symbol table", name);
         }
 
-        MIRExpressionKind::ContractVariable {
-            name,
-            parent_function,
-        } => {
-            // If we are currently in  the parent function, our contract variables are lvalues (the parameters)
-            // therefore we need to load them
-            if builder.current_function_name().unwrap() == parent_function.as_str() {
-                let Some(parameter_index) = builder
-                    .current_prototype()
-                    .params
-                    .iter()
-                    .position(|p| p.name.as_deref() == Some(name.as_str()))
-                else {
-                    unreachable!(
-                        "Contract variable '{}' not found in parameters of function '{}'",
-                        name, parent_function
-                    );
-                };
+        MIRExpressionKind::ContractVariable(name) => {
+            let Some(local_value) = builder.get_symbol(name) else {
+                unreachable!("Contract variable '{}' not found in symbol table", name);
+            };
 
-                Ok(LMIRValue::ParameterRef(parameter_index as u32))
-            } else {
-                let Some(local_value) = builder.get_symbol(name) else {
-                    unreachable!("Contract variable '{}' not found in symbol table", name);
-                };
-
-                // Otherwise, they are rvalues (the arguments passed to the contract)
-                Ok(local_value)
-            }
+            Ok(local_value)
         }
 
         MIRExpressionKind::FunctionReference { name } => Ok(LMIRValue::FunctionRef(name.clone())),
@@ -204,34 +182,44 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
 
         MIRExpressionKind::RegionDuplicate { source } => {
-            let _type = &source._type;
+            let _type = builder.convert_cx_type(&expr._type);
+            let val = lower_expression(builder, source)?;
 
-            let new_region = builder.add_new_instruction(
-                LMIRInstructionKind::Allocate {
-                    alignment: _type.type_alignment(&builder.type_definitions) as u8,
-                    _type: builder.convert_cx_type(_type),
-                },
-                LMIRType::default_pointer(),
-                true,
-            )?;
-
-            let bc_source = lower_expression(builder, source)?;
-
-            builder.add_new_instruction(
-                LMIRInstructionKind::Memcpy {
-                    dest: new_region.clone(),
-                    src: bc_source.clone(),
-                    size: LMIRValue::IntImmediate {
-                        val: builder.convert_cx_type(_type).size() as i64,
-                        _type: LMIRIntegerType::I64,
+            if _type.is_memory_resident() {
+                let new_region = builder.add_new_instruction(
+                    LMIRInstructionKind::Allocate {
+                        alignment: _type.alignment(),
+                        _type: _type.clone(),
                     },
-                    alignment: builder.convert_cx_type(_type).alignment(),
-                },
-                LMIRType::unit(),
-                false,
-            )?;
+                    LMIRType::default_pointer(),
+                    true,
+                )?;
 
-            Ok(new_region)
+                let bc_source = lower_expression(builder, source)?;
+                let literal = builder.int_const(_type.size() as i32, LMIRIntegerType::I64);
+
+                builder.add_new_instruction(
+                    LMIRInstructionKind::Memcpy {
+                        dest: new_region.clone(),
+                        src: bc_source.clone(),
+                        size: literal,
+                        alignment: _type.alignment(),
+                    },
+                    LMIRType::unit(),
+                    false,
+                )?;
+
+                Ok(new_region)
+            } else {
+                builder.add_new_instruction(
+                    LMIRInstructionKind::Load {
+                        memory: val,
+                        _type: _type.clone(),
+                    },
+                    _type,
+                    true,
+                )
+            }
         }
 
         MIRExpressionKind::If {

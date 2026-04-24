@@ -99,7 +99,7 @@ impl MIRIntegerType {
             MIRIntegerType::I128 => 5,
         }
     }
-    
+
     pub const fn bytes(&self) -> usize {
         match self {
             MIRIntegerType::I1 => 1,
@@ -287,12 +287,20 @@ impl MIRTypeContext {
             .unwrap_or(ty)
     }
 
-    pub fn is_mutable_memory_reference(&self, ty: &MIRType) -> bool {
-        let Some(inner_type) = self.mem_ref_inner(ty) else {
-            return false;
-        };
+    pub fn is_cx_str(&self, ty: &MIRType) -> bool {
+        if let Some(inner) = self.mem_ref_inner(ty) {
+            return matches!(inner.kind, MIRTypeKind::Str);
+        }
+        
+        return false;
+    }
 
-        !inner_type.get_specifier(cx_ast::data::CX_CONST)
+    pub fn is_c_str(&self, ty: &MIRType) -> bool {
+        if let Some(inner) = self.ptr_inner(ty) {
+            return matches!(inner.kind, MIRTypeKind::Integer { _type: MIRIntegerType::I8, signed: false });
+        }
+        
+        return false;
     }
 
     pub fn aggregate_fields<'a>(&'a self, ty: &'a MIRType) -> Option<&'a Vec<(String, MIRTypeId)>> {
@@ -342,7 +350,10 @@ impl MIRTypeContext {
                 })
                 .max()
                 .unwrap_or(0),
-            MIRTypeKind::Array { length: size, inner_type } => {
+            MIRTypeKind::Array {
+                length: size,
+                inner_type,
+            } => {
                 let inner_type = self
                     .get(*inner_type)
                     .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
@@ -502,11 +513,11 @@ impl MIRType {
     pub fn is_tagged_union(&self) -> bool {
         matches!(self.kind, MIRTypeKind::TaggedUnion { .. })
     }
-    
+
     pub fn is_c_union(&self) -> bool {
         matches!(self.kind, MIRTypeKind::Union { .. })
     }
-    
+
     pub fn is_union(&self) -> bool {
         self.is_tagged_union() || self.is_c_union()
     }

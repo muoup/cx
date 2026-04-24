@@ -151,5 +151,5 @@ pub(crate) fn typecheck_scoped_call(
     };
 
     let function = TypecheckResult::from(build_function_reference(&prototype));
-    finish_function_call(env, expr, expr, function, tc_args)
+    finish_function_call(env, base_data, expr, function, tc_args)
 }

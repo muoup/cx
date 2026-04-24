@@ -34,7 +34,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: MIRExpression) -> CXResul
     }
 
     if !env.symbols.is_copyable(&mem_inner) {
-        return CoercionResult::tried_application(expr, CoercionObstacle::Uncopyable);
+        return CoercionResult::unapplied_with_obstacle(expr, CoercionObstacle::Uncopyable);
     }
 
     let token_range = expr.token_range.clone();

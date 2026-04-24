@@ -777,11 +777,8 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
-            MIRExpressionKind::ContractVariable {
-                name,
-                parent_function,
-            } => {
-                write!(f, "ContractVariable \"{name}\" of {parent_function} <'")?;
+            MIRExpressionKind::ContractVariable(name) => {
+                write!(f, "ContractVariable \"{name}\" <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")
             }
@@ -875,7 +872,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 Ok(())
             }
             MIRExpressionKind::RegionDuplicate { source } => {
-                write!(f, "CopyRegion")?;
+                write!(f, "RegionDuplicate")?;
                 write!(f, " <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;

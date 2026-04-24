@@ -4,7 +4,7 @@ use cx_mir::mir::{
 };
 use cx_util::CXResult;
 
-use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
+use crate::{environment::TypeEnvironment, type_checking::coercion::{CoercionResult, implicit::promotion::integer}};
 
 pub mod compatible;
 
@@ -30,5 +30,9 @@ pub fn try_implicit_coercion(
         });
     }
 
-    todo!()
+    if expr._type.is_integer() {
+        return integer::try_conversion(env, expr, target_type);
+    }
+    
+    CoercionResult::unapplied(expr)
 }

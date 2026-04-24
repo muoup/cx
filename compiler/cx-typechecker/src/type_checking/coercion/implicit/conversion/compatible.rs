@@ -22,6 +22,19 @@ pub fn compatible_types(
 
     match (&type1.kind, &type2.kind) {
         (
+            MIRTypeKind::MemoryReference {
+                inner_type: ref_inner,
+                ..
+            },
+            MIRTypeKind::PointerTo {
+                inner_type: ptr_inner,
+                ..
+            },
+        ) if env.symbols.context.is_cx_str(type1) && env.symbols.context.is_c_str(type2) => {
+            Ok(true)
+        }
+
+        (
             MIRTypeKind::PointerTo {
                 inner_type: inner1, ..
             },
@@ -104,6 +117,6 @@ pub fn compatible_types(
             ));
         }
 
-        _ => todo!(),
+        _ => Ok(false),
     }
 }

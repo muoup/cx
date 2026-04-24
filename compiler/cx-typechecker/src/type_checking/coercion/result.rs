@@ -48,12 +48,18 @@ impl CoercionResult {
     pub fn unapplied(expr: MIRExpression) -> CXResult<Self> {
         Ok(CoercionResult::Unapplied { expr, cause: None })
     }
-
-    pub fn tried_application(expr: MIRExpression, cause: CoercionObstacle) -> CXResult<Self> {
+    
+    pub fn unapplied_with_obstacle(expr: MIRExpression, cause: CoercionObstacle) -> CXResult<Self> {
         Ok(CoercionResult::Unapplied {
             expr,
             cause: Some(cause),
         })
+    }
+    
+    pub fn expr(self) -> MIRExpression {
+        match self {
+            CoercionResult::Success { expr } | CoercionResult::Unapplied { expr, .. } => expr,
+        }
     }
 
     pub fn catch_unapplied<F>(self, on_unapplied: F) -> CXResult<MIRExpression>

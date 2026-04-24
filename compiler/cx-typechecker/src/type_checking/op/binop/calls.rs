@@ -7,13 +7,14 @@ use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::op::binop::access::{
     build_member_receiver_argument, resolve_access_base,
 };
 use crate::type_checking::op::binop::scoped_calls::typecheck_scoped_call;
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_ast::ast::{CXBinOp, CXExpression, CXExprKind};
+use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRFloatType, MIRFunctionPrototype, MIRType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::MIRBaseMappings;
@@ -22,38 +23,31 @@ use cx_util::CXResult;
 pub(crate) fn build_function_reference(prototype: &MIRFunctionPrototype) -> MIRExpression {
     MIRExpression {
         token_range: None,
-        kind: MIRExpressionKind::FunctionReference {
-            name: prototype.name.clone(),
-        },
         _type: MIRTypeKind::Function {
             signature: Box::new(prototype.signature()),
         }
         .into(),
+        kind: MIRExpressionKind::FunctionReference {
+            name: prototype.name.clone(),
+        },
     }
 }
 
 pub(crate) fn finish_function_call<'a>(
     env: &mut TypeEnvironment,
-    _callee_expr: &'a CXExpression,
+    base_data: &MIRBaseMappings,
     expr: &'a CXExpression,
     function: TypecheckResult,
     mut tc_args: Vec<(&'a CXExpression, MIRExpression)>,
 ) -> CXResult<TypecheckResult> {
-    let (function, implicit_parameters, contract) = function.decompose_function_expr();
+    let (function, implicit_parameters) = function.decompose_function_expr();
     tc_args = implicit_parameters
         .iter()
         .map(|val| (expr, val.clone()))
         .chain(tc_args)
         .collect();
 
-    let loaded_function =
-        lvalue::try_conversion(env, function)?.catch_unapplied(|expr, _cause| {
-            log_typecheck_error!(
-                env,
-                expr.token_range.as_ref(),
-                "Attempted to call value that cannot be loaded as a function"
-            )
-        })?;
+    let loaded_function = lvalue::try_conversion(env, function)?.expr();
     let loaded_function_type = loaded_function.get_type();
     let loaded_function_type = env
         .symbols
@@ -95,13 +89,15 @@ pub(crate) fn finish_function_call<'a>(
 
     let canon_params = signature.params.len();
 
+    for (_, val) in tc_args.iter_mut() {
+        *val = std_rval_promotion(env, std::mem::take(val))?;
+    }
+    
     for ((_arg_expr, val), param) in tc_args.iter_mut().zip(signature.params.iter()) {
         *val = implicit_cast(env, std::mem::take(val), &param._type)?;
     }
 
     for (_arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
-        *val = std_rval_promotion(env, std::mem::take(val))?;
-
         let arg_type = val._type.clone();
 
         match &arg_type.kind {
@@ -134,13 +130,14 @@ pub(crate) fn finish_function_call<'a>(
     }
 
     let args = tc_args.into_iter().map(|(_, val)| val).collect::<Vec<_>>();
+    let contract = typecheck_contract(env, base_data, signature)?;
 
     Ok(TypecheckResult::new_base(
         signature.return_type.clone(),
         MIRExpressionKind::CallFunction {
             function: Box::new(loaded_function),
             arguments: args,
-            contract: contract.unwrap_or_default()
+            contract,
         },
     ))
 }
@@ -291,5 +288,5 @@ pub(crate) fn typecheck_method_call(
         },
     };
 
-    finish_function_call(env, lhs, expr, function, tc_args)
+    finish_function_call(env, base_data, expr, function, tc_args)
 }

@@ -385,10 +385,31 @@ pub fn lower_match(
 }
 
 /// Lower a return statement
-pub fn lower_return(builder: &mut LMIRBuilder, bc_value: Option<LMIRValue>, postcondition: Option<&MIRExpression>) -> CXResult<LMIRValue> {
-    if let Some(postcondition) = postcondition
-    {
+pub fn lower_return(
+    builder: &mut LMIRBuilder,
+    bc_value: Option<LMIRValue>,
+    postcondition: Option<&MIRExpression>,
+) -> CXResult<LMIRValue> {
+    if let Some(postcondition) = postcondition {
         builder.push_scope(None, None);
+
+        let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
+        let param_offset = if has_return_buffer { 1 } else { 0 };
+        for (i, param) in builder
+            .current_mir_prototype()
+            .params
+            .clone()
+            .iter()
+            .enumerate()
+        {
+            if let Some(name) = &param.name {
+                builder.insert_symbol(
+                    name.clone(),
+                    LMIRValue::ParameterRef((i + param_offset) as u32),
+                );
+            }
+        }
+
         lower_contract_assertion(builder, postcondition, "postcondition failed")?;
         builder.pop_scope()?;
     }

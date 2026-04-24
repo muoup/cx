@@ -142,6 +142,19 @@ impl LMIRType {
     pub fn is_structure(&self) -> bool {
         matches!(self.kind, LMIRTypeKind::Struct { .. })
     }
+    
+    pub fn is_memory_resident(&self) -> bool {
+        match self.kind {
+            LMIRTypeKind::Opaque { .. } => true,
+            LMIRTypeKind::Integer(_) => false,
+            LMIRTypeKind::Float(_) => false,
+            LMIRTypeKind::Pointer { .. } => false,
+            LMIRTypeKind::Array { .. } => true,
+            LMIRTypeKind::Struct { .. } => true,
+            LMIRTypeKind::Union { .. } => true,
+            LMIRTypeKind::Unit => false,
+        }
+    }
 }
 
 impl LMIRIntegerType {

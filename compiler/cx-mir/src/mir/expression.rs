@@ -36,10 +36,7 @@ pub enum MIRExpressionKind {
 
     // Variables
     Variable(CXIdent),
-    ContractVariable {
-        name: CXIdent,
-        parent_function: CXIdent,
-    },
+    ContractVariable(CXIdent),
 
     // The callable signature is stored in the expression's type
     FunctionReference {

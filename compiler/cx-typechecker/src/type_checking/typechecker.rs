@@ -1,5 +1,7 @@
+use std::ops::Deref;
+
 use crate::environment::{
-    BindingMoveState, LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
+    LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnvironment,
 };
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
@@ -12,6 +14,7 @@ use crate::type_checking::control_flow::{
     typecheck_fallthrough_scope,
 };
 use crate::type_checking::op::binop::access::typecheck_access;
+use crate::type_checking::op::binop::assign::typecheck_assignment;
 use crate::type_checking::op::binop::calls::typecheck_method_call;
 use crate::type_checking::op::binop::is::typecheck_is;
 use crate::type_checking::op::typecheck_binop;
@@ -27,7 +30,6 @@ use crate::type_checking::value::{
     unsafe_ops::typecheck_unsafe,
 };
 use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXUnOp};
-use cx_ast::data::CX_CONST;
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
 use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
 use cx_mir::mir::program::MIRBaseMappings;
@@ -472,12 +474,11 @@ pub fn typecheck_expr_inner(
                 CXUnOp::ExplicitCast(to_type) => {
                     let to_type = env.complete_type(base_data, expr, to_type)?;
                     let operand_val = typecheck_expr(env, base_data, operand, Some(&to_type))?;
-                    let (operand_expr, implicit_parameters, contract) =
+                    let (operand_expr, implicit_parameters) =
                         operand_val.decompose_function_expr();
 
                     TypecheckResult::from(explicit_cast(env, operand_expr, &to_type)?)
                         .with_implicit_parameters(implicit_parameters)
-                        .with_contract(contract)
                 }
             }
         }
@@ -487,73 +488,12 @@ pub fn typecheck_expr_inner(
             lhs,
             rhs,
         } => {
-            let lhs_val = if op.is_none() {
-                if let CXExprKind::Identifier(name) = &lhs.kind {
-                    if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
-                        symbol_val.clone()
-                    } else {
-                        typecheck_expr(env, base_data, lhs, None)?.into_expression()
-                    }
-                } else {
-                    typecheck_expr(env, base_data, lhs, None)?.into_expression()
-                }
-            } else {
-                typecheck_expr(env, base_data, lhs, None)?.into_expression()
-            };
-            let lhs_type = lhs_val.get_type();
-
-            let Some(inner) = env.symbols.context.mem_ref_inner(&lhs_type).cloned() else {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Cannot assign to non-reference type {}",
-                    lhs_type
-                );
-            };
-
-            if !env.symbols.context.is_mutable_memory_reference(&lhs_type) {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Cannot assign through an immutable reference"
-                );
-            }
-
-            let mut rhs_val = typecheck_expr(env, base_data, rhs, Some(&inner))?;
-
-            if let Some(op) = op {
-                let loaded_lhs = std_rval_promotion(env, lhs_val.clone())?;
-                let loaded_rhs = std_rval_promotion(env, rhs_val.into_expression())?;
-
-                rhs_val = typecheck_binop(env, op, loaded_lhs, loaded_rhs)?;
-            }
-
-            if inner.get_specifier(CX_CONST) {
-                return log_typecheck_error!(
-                    env,
-                    Some(expr.token_range()),
-                    "Cannot assign to a const type"
-                );
-            }
-
-            let coerced_rhs_val = implicit_cast(env, rhs_val.into_expression(), &inner)?;
-
-            if op.is_none()
-                && let CXExprKind::Identifier(name) = &lhs.kind
-            {
-                env.function
-                    .set_tracked_binding_state(name.as_str(), BindingMoveState::Available);
-            }
-
-            TypecheckResult::new_base(
-                lhs_val.get_type(),
-                MIRExpressionKind::MemoryWrite {
-                    target: Box::new(lhs_val),
-                    value: Box::new(coerced_rhs_val),
-                },
-            )
-        }
-
+            let lhs = typecheck_expr(env, base_data, lhs, None)?.into_expression();
+            let rhs = typecheck_expr(env, base_data, rhs, None)?.into_expression();
+            
+            typecheck_assignment(env, lhs, rhs, op.as_ref().map(Box::deref))?
+        },
+        
         CXExprKind::BinOp {
             op: CXBinOp::Is,
             lhs,
@@ -666,8 +606,7 @@ pub fn add_implicit_return(
         );
     };
 
-    let ret = typecheck_return(env, base_data, implicit_value.map(|v| *v))?
-        .into_expression();
+    let ret = typecheck_return(env, base_data, implicit_value.map(|v| *v))?.into_expression();
 
     Ok(MIRExpression {
         token_range: None,

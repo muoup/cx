@@ -1,8 +1,19 @@
-use cx_mir::mir::{expression::{MIRExpression, MIRExpressionKind}, program::MIRBaseMappings, r#type::MIRType};
+use cx_mir::mir::{
+    expression::{MIRExpression, MIRExpressionKind},
+    program::MIRBaseMappings,
+    r#type::MIRType,
+};
 use cx_tokens::TokenRange;
 use cx_util::CXResult;
 
-use crate::{environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment}, log_typecheck_error, type_checking::{coercion::implicit::implicit_cast, control_flow::enqueue_jump_arrow, result::TypecheckResult, typechecker::typecheck_expr}};
+use crate::{
+    environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
+    log_typecheck_error,
+    type_checking::{
+        coercion::implicit::implicit_cast, control_flow::enqueue_jump_arrow,
+        result::TypecheckResult, typechecker::typecheck_expr,
+    },
+};
 
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
@@ -30,11 +41,7 @@ pub fn typecheck_return(
                 };
             }
 
-            Some(Box::new(implicit_cast(
-                env,
-                some_value,
-                return_type,
-            )?))
+            Some(Box::new(implicit_cast(env, some_value, return_type)?))
         }
 
         (None, _) if return_type.is_unit() => None,
@@ -81,6 +88,21 @@ pub fn typecheck_return(
                 initial_value: value,
             },
         };
+
+        for param in env.current_function().params.clone() {
+            let Some(name) = param.name else {
+                continue;
+            };
+
+            env.function.insert_symbol(
+                name.as_string(),
+                MIRExpression {
+                    kind: MIRExpressionKind::ContractVariable(name.clone()),
+                    token_range: None,
+                    _type: param._type,
+                },
+            );
+        }
 
         env.function.insert_symbol(
             ret_name.as_string(),
