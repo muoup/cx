@@ -103,7 +103,7 @@ pub fn query_member_function(
             expr.token_range(),
             "Cannot query member function '{}' on non-identifiable type '{}'",
             name,
-            member_type,
+            member_type.display_with(&env.symbols.context),
         );
     };
 
@@ -181,7 +181,7 @@ pub fn query_static_member_function(
             expr.token_range(),
             "Cannot query static member function '{}' on non-identifiable type '{}'",
             name,
-            member_type,
+            member_type.display_with(&env.symbols.context),
         );
     };
 

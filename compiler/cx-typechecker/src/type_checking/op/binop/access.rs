@@ -71,7 +71,7 @@ pub(crate) fn resolve_access_base(
             env,
             expr.token_range(),
             "Expected a struct or union type on the left-hand side of an access expression, found {}",
-            lhs_inner
+            lhs_inner.display_with(&env.symbols.context)
         );
     }
 
@@ -118,7 +118,7 @@ pub(crate) fn typecheck_access(
                             env,
                             Some(expr.token_range()),
                             "Union type {} has no field named {}",
-                            lhs_inner,
+                            lhs_inner.display_with(&env.symbols.context),
                             name
                         );
                     };

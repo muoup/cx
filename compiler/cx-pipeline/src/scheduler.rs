@@ -350,7 +350,7 @@ pub(crate) fn perform_job(
 
             let mir = env.finish_mir_unit()?;
             if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&mir);
+                dump_data(&mir.display_pretty());
             }
 
             // There is likely a better way to do this, but for now, we unconditionally generate FMIR no matter if analysis

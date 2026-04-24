@@ -48,8 +48,8 @@ pub(crate) fn resolve_logical(
             lhs.token_range.as_ref(),
             "Invalid operands to logical operation {:?}, {} and {}",
             op,
-            lhs._type,
-            rhs._type
+            lhs._type.display_with(&env.symbols.context),
+            rhs._type.display_with(&env.symbols.context)
         );
     }
 
@@ -95,8 +95,8 @@ pub(crate) fn resolve_std_arithmetic(
             env,
             lhs.token_range.as_ref(),
             "Invalid binary operation {op} for types {} and {}",
-            lhs.get_type(),
-            rhs.get_type()
+            lhs.get_type().display_with(&env.symbols.context),
+            rhs.get_type().display_with(&env.symbols.context)
         );
     }
 }
@@ -145,8 +145,8 @@ fn coerce_float_binop(
                 env,
                 lhs.token_range.as_ref(),
                 "Invalid float binary operation {op} for types {} and {}",
-                lhs.get_type(),
-                rhs.get_type()
+                lhs.get_type().display_with(&env.symbols.context),
+                rhs.get_type().display_with(&env.symbols.context)
             );
         }
     };
@@ -314,8 +314,8 @@ fn coerce_integral_binop(
                 env,
                 lhs.token_range.as_ref(),
                 "Invalid integer binary operation {op} for types {} and {}",
-                lhs.get_type(),
-                rhs.get_type()
+                lhs.get_type().display_with(&env.symbols.context),
+                rhs.get_type().display_with(&env.symbols.context)
             );
         }
     };
@@ -325,8 +325,8 @@ fn coerce_integral_binop(
             env,
             lhs.token_range.as_ref(),
             "Invalid integer binary operation {op} for types {} and {}",
-            lhs.get_type(),
-            rhs.get_type()
+            lhs.get_type().display_with(&env.symbols.context),
+            rhs.get_type().display_with(&env.symbols.context)
         );
     };
 

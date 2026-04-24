@@ -93,7 +93,8 @@ fn require_complete_prototype_type(
     {
         return CXError::create_result(format!(
             "Invalid {} type '{}' in function prototype: incomplete aggregate used by value",
-            context, ty
+            context,
+            ty.display_with(&env.symbols.context)
         ));
     }
 
@@ -124,7 +125,7 @@ pub fn int_complete_fn_prototype(
             if !valid_prototype_type(&param_type) {
                 return CXError::create_result(format!(
                     "Invalid parameter type '{}' in function prototype",
-                    param_type
+                    param_type.display_with(&env.symbols.context)
                 ));
             }
 

@@ -16,7 +16,10 @@ pub fn struct_field_offset(
         return None;
     }
     let Some(fields) = struct_type.aggregate_fields(definitions) else {
-        unreachable!("Invalid type for struct_field_offset: {}", struct_type);
+        unreachable!(
+            "Invalid type for struct_field_offset: {}",
+            struct_type.display_with(definitions)
+        );
     };
 
     let mut field_offset = 0;

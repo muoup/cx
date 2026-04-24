@@ -329,11 +329,15 @@ pub(crate) fn store_node(pointer: FMIRNode, value: FMIRNode, operation: CVMOpera
     }
 }
 
-pub(crate) fn increment_amount_node(value: i64, mir_type: &MIRType) -> CXResult<FMIRNode> {
+pub(crate) fn increment_amount_node(
+    env: &FMIREnvironment,
+    value: i64,
+    mir_type: &MIRType,
+) -> CXResult<FMIRNode> {
     let MIRTypeKind::Integer { _type, signed } = &mir_type.kind else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected integer type, found '{}'",
-            mir_type
+            mir_type.display_with(&env.type_definitions)
         ));
     };
 
@@ -361,7 +365,7 @@ pub(crate) fn convert_increment(
     else {
         return CXError::create_result(format!(
             "FMIR increment desugaring expected memory reference operand, found '{}'",
-            operand_expr._type
+            operand_expr._type.display_with(&env.type_definitions)
         ));
     };
 
@@ -386,7 +390,7 @@ pub(crate) fn convert_increment(
                 bits: _type.bytes() * 8,
                 op: FMIRIntrinsicIBinOp::ADD,
             }),
-            increment_amount_node(i64::from(amount), &value_type)?,
+            increment_amount_node(env, i64::from(amount), &value_type)?,
         ),
         MIRTypeKind::PointerTo { .. } => {
             let op = if amount < 0 {
@@ -400,13 +404,13 @@ pub(crate) fn convert_increment(
             });
             (
                 FMIRIntrinsicKind::Binary(FMIRBinaryIntrinsic::PointerDiff { op }),
-                increment_amount_node(i64::from(amount).abs(), &delta_type)?,
+                increment_amount_node(env, i64::from(amount).abs(), &delta_type)?,
             )
         }
         _ => {
             return CXError::create_result(format!(
                 "FMIR increment desugaring requires integer or pointer inner type, found '{}'",
-                value_type
+                value_type.display_with(&env.type_definitions)
             ));
         }
     };

@@ -182,7 +182,11 @@ impl Display for FMIRContext {
         writeln!(f, "FMIR Context:")?;
         for name in names {
             if let Some(function) = self.functions.get(&name) {
-                writeln!(f, "{function}")?;
+                writeln!(
+                    f,
+                    "{}",
+                    function.display_with(&self.env.type_definitions)
+                )?;
             }
         }
 

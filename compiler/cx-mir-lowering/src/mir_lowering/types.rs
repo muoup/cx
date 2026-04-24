@@ -231,7 +231,10 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRTypeContext)
 
         // Str is unsized; behind a reference it's just i8 for pointer element purposes
         MIRTypeKind::Undefined { .. } => {
-            unreachable!("Cannot lower incomplete type {}", cx_type)
+            unreachable!(
+                "Cannot lower incomplete type {}",
+                cx_type.display_with(definitions)
+            )
         }
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
     }

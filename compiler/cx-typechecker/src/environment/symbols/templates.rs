@@ -334,7 +334,8 @@ fn deduce_from_cx_type(
             let Some(template_info) = actual.get_template_data() else {
                 return CXError::create_result(format!(
                     "Expected realized template type '{}' while deducing, found {}",
-                    name, actual
+                    name,
+                    actual.display_with(&env.symbols.context)
                 ));
             };
 
@@ -379,7 +380,7 @@ fn deduce_from_cx_type(
                 inner_type,
             } = &actual.kind
             else {
-                return concrete_type_mismatch(formal, actual);
+                return concrete_type_mismatch(env, formal, actual);
             };
 
             if size != actual_size {
@@ -424,7 +425,7 @@ fn deduce_from_cx_type(
                     &actual_inner,
                 )
             }
-            _ => concrete_type_mismatch(formal, actual),
+            _ => concrete_type_mismatch(env, formal, actual),
         },
 
         CXTypeKind::MemoryReference { inner_type } => {
@@ -432,7 +433,7 @@ fn deduce_from_cx_type(
                 inner_type: actual_inner,
             } = &actual.kind
             else {
-                return concrete_type_mismatch(formal, actual);
+                return concrete_type_mismatch(env, formal, actual);
             };
 
             let actual_inner = env
@@ -508,7 +509,7 @@ fn deduce_from_cx_type(
                     actual,
                 )
             }
-            _ => concrete_type_mismatch(formal, actual),
+            _ => concrete_type_mismatch(env, formal, actual),
         },
 
         CXTypeKind::FunctionPointer { prototype } => {
@@ -516,7 +517,7 @@ fn deduce_from_cx_type(
                 signature: actual_signature,
             } = &actual.kind
             else {
-                return concrete_type_mismatch(formal, actual);
+                return concrete_type_mismatch(env, formal, actual);
             };
 
             deduce_from_function_signature(
@@ -536,7 +537,7 @@ fn deduce_from_cx_type(
             if env.type_eq(&completed_formal, actual) {
                 Ok(())
             } else {
-                concrete_type_mismatch(formal, actual)
+                concrete_type_mismatch(env, formal, actual)
             }
         }
     }
@@ -604,7 +605,9 @@ fn bind_template_argument(
 
         return CXError::create_result(format!(
             "Conflicting deductions for template argument '{}': {} vs {}",
-            name, existing, actual
+            name,
+            existing.display_with(&env.symbols.context),
+            actual.display_with(&env.symbols.context)
         ));
     }
 
@@ -612,10 +615,11 @@ fn bind_template_argument(
     Ok(())
 }
 
-fn concrete_type_mismatch(formal: &CXType, actual: &MIRType) -> CXResult<()> {
+fn concrete_type_mismatch(env: &TypeEnvironment, formal: &CXType, actual: &MIRType) -> CXResult<()> {
     CXError::create_result(format!(
         "Template deduction mismatch: expected {}, found {}",
-        formal, actual
+        formal,
+        actual.display_with(&env.symbols.context)
     ))
 }
 

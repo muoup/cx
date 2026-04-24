@@ -47,8 +47,8 @@ pub fn implicit_cast(
                 env,
                 expr.token_range.as_ref(),
                 "No implicit cast from {} to {}",
-                from_type,
-                to_type
+                from_type.display_with(&env.symbols.context),
+                to_type.display_with(&env.symbols.context)
             )
         )
 }

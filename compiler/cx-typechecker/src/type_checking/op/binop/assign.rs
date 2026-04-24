@@ -25,7 +25,7 @@ pub fn typecheck_assignment(
             env,
             lhs.token_range.as_ref(),
             "Cannot assign to non-reference type {}",
-            lhs_type
+            lhs_type.display_with(&env.symbols.context)
         );
     };
 

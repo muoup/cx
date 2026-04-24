@@ -57,7 +57,7 @@ pub fn typecheck_match(
                     env,
                     Some(condition.token_range()),
                     "Match condition must be an integer type, found {}",
-                    expr_type
+                    expr_type.display_with(&env.symbols.context)
                 );
             };
 
@@ -224,7 +224,7 @@ pub fn typecheck_match(
                 env,
                 Some(condition.token_range()),
                 "Match condition must be an integer or tagged union type, found {}",
-                expr_type
+                expr_type.display_with(&env.symbols.context)
             );
         }
     };

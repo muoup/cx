@@ -33,7 +33,7 @@ pub(crate) fn typecheck_is(
             env,
             expr.token_range(),
             "'is' operator requires a tagged union on the left-hand side, found {}",
-            union_type
+            union_type.display_with(&env.symbols.context)
         );
     };
     let variants = variants.clone();
@@ -61,7 +61,7 @@ pub(crate) fn typecheck_is(
             env,
             expr.token_range(),
             "'is' operator left-hand side type {} does not match right-hand side tagged union type {}",
-            union_type,
+            union_type.display_with(&env.symbols.context),
             union_name
         );
     }

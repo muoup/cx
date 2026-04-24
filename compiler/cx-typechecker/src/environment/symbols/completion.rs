@@ -141,7 +141,7 @@ fn ensure_complete_value_type(
             Some(expr.token_range()),
             "Field '{}' uses incomplete type {} by value",
             field_name,
-            field_type
+            field_type.display_with(&env.symbols.context)
         ),
         MIRTypeKind::Array { inner_type, .. } => {
             let inner_type = env
@@ -164,7 +164,7 @@ fn ensure_complete_value_type(
                     Some(expr.token_range()),
                     "Field '{}' uses incomplete type {} by value",
                     field_name,
-                    field_type
+                    field_type.display_with(&env.symbols.context)
                 );
             }
 
@@ -620,7 +620,9 @@ fn validate_linear_hierarchy(
                 token_end: 0,
                 message: format!(
                     "{} must be declared @nodrop because member '{}' has type {}",
-                    aggregate_kind, member_name, member_type
+                    aggregate_kind,
+                    member_name,
+                    member_type.display_with(&env.symbols.context)
                 ),
                 notes: Vec::new(),
             }));
@@ -633,7 +635,9 @@ fn validate_linear_hierarchy(
                 token_end: 0,
                 message: format!(
                     "{} must be declared @nocopy because member '{}' has type {}",
-                    aggregate_kind, member_name, member_type
+                    aggregate_kind,
+                    member_name,
+                    member_type.display_with(&env.symbols.context)
                 ),
                 notes: Vec::new(),
             }));

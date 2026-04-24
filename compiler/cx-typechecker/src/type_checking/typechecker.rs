@@ -322,7 +322,7 @@ pub fn typecheck_expr_inner(
                             env,
                             operand_val.token_range.as_ref(),
                             "Cannot apply pre-increment to non-reference type {}",
-                            operand_type
+                            operand_type.display_with(&env.symbols.context)
                         );
                     };
 
@@ -352,7 +352,7 @@ pub fn typecheck_expr_inner(
                                 env,
                                 operand_val.token_range.as_ref(),
                                 "Pre-increment operator requires an integer or pointer type, found {}",
-                                inner
+                                inner.display_with(&env.symbols.context)
                             );
                         }
                     }
@@ -386,7 +386,7 @@ pub fn typecheck_expr_inner(
                             env,
                             operand_val.token_range.as_ref(),
                             "Bitwise NOT operator requires an integer type, found {}",
-                            op_type
+                            op_type.display_with(&env.symbols.context)
                         );
                     }
 
@@ -413,7 +413,7 @@ pub fn typecheck_expr_inner(
                                 env,
                                 operand_val.token_range.as_ref(),
                                 "Negation operator requires an integer or float type, found {}",
-                                operand_val
+                                operand_val.display_with(&env.symbols.context)
                             );
                         }
                     };
@@ -459,7 +459,7 @@ pub fn typecheck_expr_inner(
                             env,
                             loaded_operand.token_range.as_ref(),
                             "Cannot dereference non-pointer type {}",
-                            loaded_operand_type
+                            loaded_operand_type.display_with(&env.symbols.context)
                         );
                     };
 

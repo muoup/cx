@@ -557,19 +557,6 @@ impl Display for MIRUnitDisplay<'_> {
     }
 }
 
-impl Display for MIRUnit {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.display_pretty().fmt(f)
-    }
-}
-
-impl Display for MIRFunction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}\nBody:", self.prototype)?;
-        MIRExpressionFormatter::new(&self.body, 1).fmt(f)
-    }
-}
-
 fn write_signature_with_context(
     f: &mut Formatter<'_>,
     signature: &MIRFunctionSignature,
@@ -604,92 +591,13 @@ fn write_signature_with_context(
     Ok(())
 }
 
-impl Display for MIRFunctionSignature {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fn(")?;
-        for (i, param) in self.params.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{param}")?;
-        }
-        if self.var_args {
-            if !self.params.is_empty() {
-                write!(f, ", ")?;
-            }
-            write!(f, "...")?;
-        }
-        write!(f, ") -> {}", self.return_type)?;
-
-        Ok(())
-    }
-}
-
-impl Display for MIRFunctionPrototype {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.name, self.signature())
-    }
-}
-
-impl Display for MIRGlobalVariable {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "global {} ", self.linkage)?;
-        write!(f, "{}", self.kind)?;
-        write!(
-            f,
-            " [{}]",
-            if self.is_mutable {
-                "mutable"
-            } else {
-                "immutable"
-            }
-        )?;
-        Ok(())
-    }
-}
-
-impl Display for MIRGlobalVarKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MIRGlobalVarKind::StringLiteral { name, value } => {
-                let escaped_value = value
-                    .replace('\\', "\\\\")
-                    .replace('\n', "\\n")
-                    .replace('\t', "\\t")
-                    .replace('\"', "\\\"");
-
-                write!(f, "string {} = \"{}\"", name, escaped_value)
-            }
-            MIRGlobalVarKind::Variable {
-                name,
-                _type,
-                initializer,
-            } => {
-                if let Some(init) = initializer {
-                    write!(f, "{} {} = {}", _type, name, init)
-                } else {
-                    write!(f, "{} {}", _type, name)
-                }
-            }
-        }
-    }
-}
-
 struct MIRExpressionFormatter<'a> {
     expr: &'a MIRExpression,
     depth: usize,
-    definitions: Option<&'a MIRTypeContext>,
+    definitions: &'a MIRTypeContext,
 }
 
 impl<'a> MIRExpressionFormatter<'a> {
-    fn new(expr: &'a MIRExpression, depth: usize) -> Self {
-        Self {
-            expr,
-            depth,
-            definitions: None,
-        }
-    }
-
     fn with_definitions(
         expr: &'a MIRExpression,
         depth: usize,
@@ -698,7 +606,7 @@ impl<'a> MIRExpressionFormatter<'a> {
         Self {
             expr,
             depth,
-            definitions: Some(definitions),
+            definitions,
         }
     }
 
@@ -707,11 +615,7 @@ impl<'a> MIRExpressionFormatter<'a> {
     }
 
     fn write_type(&self, f: &mut Formatter<'_>, ty: &MIRType) -> std::fmt::Result {
-        if let Some(definitions) = self.definitions {
-            write!(f, "{}", ty.display_with(definitions))
-        } else {
-            write!(f, "{ty}")
-        }
+        write!(f, "{}", ty.display_with(self.definitions))
     }
 
     fn write_bin_op(&self, f: &mut Formatter<'_>, op: &MIRBinOp) -> std::fmt::Result {
@@ -719,25 +623,15 @@ impl<'a> MIRExpressionFormatter<'a> {
             MIRBinOp::Float { ftype, op } => write!(f, "f{} {:?}", ftype.bytes() * 8, op),
             MIRBinOp::Integer { itype, op } => write!(f, "i{} {:?}", itype.bytes() * 8, op),
             MIRBinOp::PtrDiff { ptr_inner, op } => {
-                if let Some(definitions) = self.definitions {
-                    write!(
-                        f,
-                        "ptrdiff<{}> {:?}",
-                        ptr_inner.display_with(definitions),
-                        op
-                    )
-                } else {
-                    write!(f, "ptrdiff<{}> {:?}", ptr_inner, op)
-                }
+                write!(
+                    f,
+                    "ptrdiff<{}> {:?}",
+                    ptr_inner.display_with(self.definitions),
+                    op
+                )
             }
             MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
-    }
-}
-
-impl Display for MIRExpression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        MIRExpressionFormatter::new(self, 0).fmt(f)
     }
 }
 
@@ -1373,27 +1267,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
     }
 }
 
-impl Display for MIRParameter {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(name) = &self.name {
-            write!(f, "{name}: {}", self._type)
-        } else {
-            write!(f, "{}", self._type)
-        }
-    }
-}
-
-impl Display for MIRBinOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MIRBinOp::Float { ftype, op } => write!(f, "f{} {:?}", ftype.bytes() * 8, op),
-            MIRBinOp::Integer { itype, op } => write!(f, "i{} {:?}", itype.bytes() * 8, op),
-            MIRBinOp::PtrDiff { ptr_inner, op } => write!(f, "ptrdiff<{}> {:?}", ptr_inner, op),
-            MIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
-        }
-    }
-}
-
 impl Display for MIRUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1443,34 +1316,6 @@ impl Display for MIRCoercion {
             
             MIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
             MIRCoercion::Typechange => write!(f, "typechange"),
-        }
-    }
-}
-
-impl Display for MIRType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
-impl Display for MIRTypeKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MIRTypeKind::Integer { _type, signed } => {
-                write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
-            }
-            MIRTypeKind::Float { _type } => write!(f, "{_type}"),
-            MIRTypeKind::Structured { .. } => write!(f, "struct"),
-            MIRTypeKind::Union { .. } => write!(f, "union"),
-            MIRTypeKind::TaggedUnion { .. } => write!(f, "tagged_union"),
-            MIRTypeKind::Unit => write!(f, "()"),
-            MIRTypeKind::PointerTo { inner_type } => write!(f, "{inner_type}*"),
-            MIRTypeKind::MemoryReference { inner_type } => write!(f, "{inner_type}&"),
-            MIRTypeKind::Array { length: size, inner_type } => write!(f, "[{}; {}]", inner_type, size),
-            MIRTypeKind::Opaque { size } => write!(f, "opaque({size})"),
-            MIRTypeKind::Undefined => write!(f, "undefined"),
-            MIRTypeKind::Str => write!(f, "_str"),
-            MIRTypeKind::Function { signature } => write!(f, "{signature}"),
         }
     }
 }

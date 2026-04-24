@@ -74,7 +74,8 @@ pub fn typecheck_initializer_list(
         _ => log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "Cannot coerce initializer to type {to_type}"
+            "Cannot coerce initializer to type {}",
+            to_type.display_with(&env.symbols.context)
         ),
     }
 }
@@ -143,7 +144,8 @@ fn typecheck_structured_initializer(
         return log_typecheck_error!(
             env,
             Some(expr.token_range()),
-            "Expected a structured type for initializer, found {to_type}"
+            "Expected a structured type for initializer, found {}",
+            to_type.display_with(&env.symbols.context)
         );
     };
     let fields = fields.clone();
@@ -198,7 +200,7 @@ fn typecheck_structured_initializer(
                 value.token_range.as_ref(),
                 "Could not find field '{}' in type {}",
                 field_name,
-                to_type
+                to_type.display_with(&env.symbols.context)
             );
         };
 

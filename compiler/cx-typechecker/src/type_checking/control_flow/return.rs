@@ -52,6 +52,7 @@ pub fn typecheck_return(
                 value.token_range.as_ref(),
                 "Cannot return from function {} with a void return type",
                 env.current_function()
+                    .display_with(&env.symbols.context)
             );
         }
 
@@ -61,6 +62,7 @@ pub fn typecheck_return(
                 Option::<TokenRange>::None,
                 "Function {} expects a return value, but none was provided",
                 env.current_function()
+                    .display_with(&env.symbols.context)
             );
         }
     };

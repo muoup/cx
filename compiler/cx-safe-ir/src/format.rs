@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 
+use cx_mir::mir::r#type::MIRTypeContext;
+
 use crate::ast::*;
 use crate::intrinsic::*;
 
@@ -74,16 +76,61 @@ impl Display for Indent {
     }
 }
 
-impl Display for FMIRType {
+pub struct FMIRTypeDisplay<'a> {
+    ty: &'a FMIRType,
+    definitions: &'a MIRTypeContext,
+}
+
+pub struct FMIRNodeDisplay<'a> {
+    node: &'a FMIRNode,
+    definitions: &'a MIRTypeContext,
+}
+
+pub struct FMIRFunctionDisplay<'a> {
+    function: &'a FMIRFunction,
+    definitions: &'a MIRTypeContext,
+}
+
+impl FMIRType {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRTypeDisplay<'a> {
+        FMIRTypeDisplay {
+            ty: self,
+            definitions,
+        }
+    }
+}
+
+impl FMIRNode {
+    pub fn display_with<'a>(&'a self, definitions: &'a MIRTypeContext) -> FMIRNodeDisplay<'a> {
+        FMIRNodeDisplay {
+            node: self,
+            definitions,
+        }
+    }
+}
+
+impl FMIRFunction {
+    pub fn display_with<'a>(
+        &'a self,
+        definitions: &'a MIRTypeContext,
+    ) -> FMIRFunctionDisplay<'a> {
+        FMIRFunctionDisplay {
+            function: self,
+            definitions,
+        }
+    }
+}
+
+impl Display for FMIRTypeDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
+        match self.ty {
             FMIRType::Pure { mir_type } => {
-                write!(f, "{}", mir_type)
+                write!(f, "{}", mir_type.display_with(self.definitions))
             }
 
             FMIRType::CMonad { inner, operation } => match operation {
                 CVMOperation::Unsafe => {
-                    write!(f, "Effect<Unsafe, {}>", inner)
+                    write!(f, "Effect<Unsafe, {}>", inner.display_with(self.definitions))
                 }
                 CVMOperation::Access { reads, writes } => {
                     write!(f, "Effect<Access{{")?;
@@ -110,7 +157,7 @@ impl Display for FMIRType {
                         }
                         write!(f, "]")?;
                     }
-                    write!(f, " }}, {}>", inner)
+                    write!(f, " }}, {}>", inner.display_with(self.definitions))
                 }
             },
 
@@ -119,21 +166,32 @@ impl Display for FMIRType {
                 to_type: return_type,
                 ..
             } => {
-                write!(f, "{} -> {}", parameter, return_type)
+                write!(
+                    f,
+                    "{} -> {}",
+                    parameter.display_with(self.definitions),
+                    return_type.display_with(self.definitions)
+                )
             }
         }
     }
 }
 
-impl Display for FMIRNode {
+impl Display for FMIRNodeDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.fmt_with_indent(f, &Indent::new())
+        self.node
+            .fmt_with_indent(f, &Indent::new(), self.definitions)
     }
 }
 
 impl FMIRNode {
-    fn fmt_with_indent(&self, f: &mut Formatter<'_>, indent: &Indent) -> Result {
-        self.body.fmt_with_indent(f, indent)
+    fn fmt_with_indent(
+        &self,
+        f: &mut Formatter<'_>,
+        indent: &Indent,
+        definitions: &MIRTypeContext,
+    ) -> Result {
+        self.body.fmt_with_indent(f, indent, definitions)
     }
 }
 
@@ -273,14 +331,29 @@ impl Display for FMIRCastIntrinsic {
 }
 
 impl FMIRNodeBody {
-    fn fmt_with_indent(&self, f: &mut Formatter<'_>, indent: &Indent) -> Result {
+    fn fmt_with_indent(
+        &self,
+        f: &mut Formatter<'_>,
+        indent: &Indent,
+        definitions: &MIRTypeContext,
+    ) -> Result {
         match self {
             FMIRNodeBody::Application { function, argument } => match &function.body {
                 FMIRNodeBody::Application { .. } => {
-                    write!(f, "({}) {}", function, argument)
+                    write!(
+                        f,
+                        "({}) {}",
+                        function.display_with(definitions),
+                        argument.display_with(definitions)
+                    )
                 }
                 _ => {
-                    write!(f, "{} {}", function, argument)
+                    write!(
+                        f,
+                        "{} {}",
+                        function.display_with(definitions),
+                        argument.display_with(definitions)
+                    )
                 }
             },
 
@@ -294,7 +367,7 @@ impl FMIRNodeBody {
 
             FMIRNodeBody::CompilerAssert { condition, message } => {
                 write!(f, "_compiler_assert (")?;
-                condition.fmt_with_indent(f, indent)?;
+                condition.fmt_with_indent(f, indent, definitions)?;
                 write!(f, ") \"{}\"", message)
             }
 
@@ -327,11 +400,16 @@ impl FMIRNodeBody {
             }
 
             FMIRNodeBody::Load { pointer } => {
-                write!(f, "_load $ {pointer}")
+                write!(f, "_load $ {}", pointer.display_with(definitions))
             }
 
             FMIRNodeBody::Store { pointer, value } => {
-                write!(f, "_store $ {pointer} $ {value}")
+                write!(
+                    f,
+                    "_store $ {} $ {}",
+                    pointer.display_with(definitions),
+                    value.display_with(definitions)
+                )
             }
 
             FMIRNodeBody::Alloca => {
@@ -348,13 +426,13 @@ impl FMIRNodeBody {
 
             FMIRNodeBody::CLoop { condition, body } => {
                 write!(f, "_cloop (")?;
-                condition.fmt_with_indent(f, indent)?;
+                condition.fmt_with_indent(f, indent, definitions)?;
                 write!(f, ")")?;
                 let nested = indent.push();
                 writeln!(f)?;
                 nested.fmt(f)?;
                 write!(f, "$ ")?;
-                body.fmt_with_indent(f, &nested)
+                body.fmt_with_indent(f, &nested, definitions)
             }
 
             FMIRNodeBody::Bind {
@@ -362,19 +440,19 @@ impl FMIRNodeBody {
                 capture,
                 function,
             } => {
-                monad.fmt_with_indent(f, indent)?;
+                monad.fmt_with_indent(f, indent, definitions)?;
                 write!(f, " >>= \\{capture} ->")?;
                 let nested = indent.push();
                 writeln!(f)?;
                 nested.fmt(f)?;
-                function.fmt_with_indent(f, &nested)
+                function.fmt_with_indent(f, &nested, definitions)
             }
 
             FMIRNodeBody::Then { first, second } => {
-                first.fmt_with_indent(f, indent)?;
+                first.fmt_with_indent(f, indent, definitions)?;
                 writeln!(f)?;
                 write!(f, "{}>> ", indent)?;
-                second.fmt_with_indent(f, indent)
+                second.fmt_with_indent(f, indent, definitions)
             }
 
             FMIRNodeBody::AggregateInitialization { fields } => {
@@ -384,7 +462,7 @@ impl FMIRNodeBody {
                     writeln!(f)?;
                     nested.fmt(f)?;
                     write!(f, "{field_name}: ")?;
-                    value.fmt_with_indent(f, &nested)?;
+                    value.fmt_with_indent(f, &nested, definitions)?;
                     if i < fields.len() - 1 {
                         write!(f, ",")?;
                     }
@@ -400,16 +478,16 @@ impl FMIRNodeBody {
                 else_branch,
             } => {
                 write!(f, "if ")?;
-                condition.fmt_with_indent(f, indent)?;
+                condition.fmt_with_indent(f, indent, definitions)?;
                 let nested = indent.push();
                 writeln!(f)?;
                 nested.fmt(f)?;
                 write!(f, "then ")?;
-                then_branch.fmt_with_indent(f, &nested)?;
+                then_branch.fmt_with_indent(f, &nested, definitions)?;
                 writeln!(f)?;
                 nested.fmt(f)?;
                 write!(f, "else ")?;
-                else_branch.fmt_with_indent(f, &nested)
+                else_branch.fmt_with_indent(f, &nested, definitions)
             }
 
             FMIRNodeBody::Match {
@@ -418,29 +496,29 @@ impl FMIRNodeBody {
                 default,
             } => {
                 write!(f, "match ")?;
-                condition.fmt_with_indent(f, indent)?;
+                condition.fmt_with_indent(f, indent, definitions)?;
                 let nested = indent.push();
                 writeln!(f)?;
                 for (pattern, arm) in arms {
                     nested.fmt(f)?;
-                    write!(f, "| {} -> ", pattern)?;
-                    arm.fmt_with_indent(f, &nested)?;
+                    write!(f, "| {} -> ", pattern.display_with(definitions))?;
+                    arm.fmt_with_indent(f, &nested, definitions)?;
                     writeln!(f)?;
                 }
                 nested.fmt(f)?;
                 write!(f, "| _ -> ")?;
-                default.fmt_with_indent(f, &nested)?;
+                default.fmt_with_indent(f, &nested, definitions)?;
                 Ok(())
             }
 
             FMIRNodeBody::Transmute { value, target_type } => {
                 write!(f, "_transmute (")?;
-                value.fmt_with_indent(f, indent)?;
-                write!(f, ") :: {}", target_type)
+                value.fmt_with_indent(f, indent, definitions)?;
+                write!(f, ") :: {}", target_type.display_with(definitions))
             }
 
             FMIRNodeBody::CReturn { value } => {
-                write!(f, "_creturn {}", value)
+                write!(f, "_creturn {}", value.display_with(definitions))
             }
 
             FMIRNodeBody::IntegerLiteral(n) => {
@@ -462,26 +540,29 @@ impl FMIRNodeBody {
     }
 }
 
-impl Display for FMIRNodeBody {
+impl Display for FMIRFunctionDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.fmt_with_indent(f, &Indent::new())
-    }
-}
+        write!(f, "{} :: ", self.function.prototype.name)?;
 
-impl Display for FMIRFunction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{} :: ", self.prototype.name)?;
-
-        write!(f, "{}", self.prototype.return_type)?;
-        for param in &self.prototype.params {
-            write!(f, " -> {}", param._type)?;
+        write!(
+            f,
+            "{}",
+            self.function
+                .prototype
+                .return_type
+                .display_with(self.definitions)
+        )?;
+        for param in &self.function.prototype.params {
+            write!(f, " -> {}", param._type.display_with(self.definitions))?;
         }
 
         writeln!(f)?;
-        writeln!(f, "{} =", self.prototype.name)?;
+        writeln!(f, "{} =", self.function.prototype.name)?;
         let base_indent = Indent::new().push();
         base_indent.fmt(f)?;
-        self.body.fmt_with_indent(f, &base_indent)?;
+        self.function
+            .body
+            .fmt_with_indent(f, &base_indent, self.definitions)?;
         writeln!(f)?;
 
         Ok(())
