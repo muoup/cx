@@ -11,93 +11,69 @@ pub(crate) mod completion;
 pub(crate) mod templates;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct SymbolId(pub u64);
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum SymbolKind {
-    Value,
-    Function,
-    Type,
-    TypeConstructor,
-    GenericParam,
-}
+struct SymbolId(u64);
 
 #[derive(Clone, Debug)]
-pub enum SemanticSymbol {
+enum SymbolDefinition {
     Type(MIRTypeId),
-    GenericTypeParam { resolved_type: MIRTypeId },
+    TemplateTypeParam { resolved_type: MIRTypeId },
 }
 
 #[derive(Clone, Debug)]
-pub struct Symbol {
-    pub id: SymbolId,
-    pub name: CXIdent,
-    pub kind: SymbolKind,
-    pub semantic: SemanticSymbol,
+struct Symbol {
+    name: CXIdent,
+    definition: SymbolDefinition,
 }
 
-pub struct SymbolStore {
+struct SymbolStore {
     next_id: u64,
     symbols: HashMap<SymbolId, Symbol>,
 }
 
 impl SymbolStore {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             next_id: 1,
             symbols: HashMap::new(),
         }
     }
 
-    pub fn insert(
-        &mut self,
-        name: CXIdent,
-        kind: SymbolKind,
-        semantic: SemanticSymbol,
-    ) -> SymbolId {
+    fn insert(&mut self, name: CXIdent, definition: SymbolDefinition) -> SymbolId {
         let id = SymbolId(self.next_id);
         self.next_id += 1;
-        self.symbols.insert(
-            id,
-            Symbol {
-                id,
-                name,
-                kind,
-                semantic,
-            },
-        );
+        self.symbols.insert(id, Symbol { name, definition });
         id
     }
 
-    pub fn get(&self, id: SymbolId) -> Option<&Symbol> {
+    fn get(&self, id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(&id)
     }
 }
 
-pub struct TemplateScope {
+struct TemplateScope {
     bindings: ScopedMap<SymbolId>,
 }
 
 impl TemplateScope {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             bindings: ScopedMap::new_with_starting_scope(),
         }
     }
 
-    pub fn push_scope(&mut self) {
+    fn push_scope(&mut self) {
         self.bindings.push_scope();
     }
 
-    pub fn pop_scope(&mut self) {
+    fn pop_scope(&mut self) {
         self.bindings.pop_scope();
     }
 
-    pub fn insert(&mut self, name: String, symbol: SymbolId) {
+    fn insert(&mut self, name: String, symbol: SymbolId) {
         self.bindings.insert(name, symbol);
     }
 
-    pub fn get(&self, name: &str) -> Option<SymbolId> {
+    fn get(&self, name: &str) -> Option<SymbolId> {
         self.bindings.get(name).copied()
     }
 }
@@ -134,11 +110,7 @@ impl SymbolRegistry {
             context.register_identifier(CXIdent::new(*name), id);
             named_type_ids.insert((*name).to_string(), id);
             realized_types.insert((*name).to_string(), ty);
-            symbols.insert(
-                CXIdent::new(*name),
-                SymbolKind::Type,
-                SemanticSymbol::Type(id),
-            );
+            symbols.insert(CXIdent::new(*name), SymbolDefinition::Type(id));
         }
 
         Self {
@@ -157,11 +129,8 @@ impl SymbolRegistry {
         let old = self.realized_types.remove(&name);
         self.realized_types.insert(name.clone(), ty.clone());
         if let Some(id) = self.named_type_ids.get(&name).copied() {
-            self.symbols.insert(
-                CXIdent::new(name.as_str()),
-                SymbolKind::Type,
-                SemanticSymbol::Type(id),
-            );
+            self.symbols
+                .insert(CXIdent::new(name.as_str()), SymbolDefinition::Type(id));
         }
         old
     }
@@ -186,8 +155,7 @@ impl SymbolRegistry {
             let type_id = self.intern_type(arg_type.clone());
             let symbol_id = self.symbols.insert(
                 CXIdent::new(name.as_str()),
-                SymbolKind::GenericParam,
-                SemanticSymbol::GenericTypeParam {
+                SymbolDefinition::TemplateTypeParam {
                     resolved_type: type_id,
                 },
             );
@@ -234,11 +202,8 @@ impl SymbolRegistry {
                 ..Default::default()
             },
         );
-        self.symbols.insert(
-            CXIdent::new(name),
-            SymbolKind::Type,
-            SemanticSymbol::Type(id),
-        );
+        self.symbols
+            .insert(CXIdent::new(name), SymbolDefinition::Type(id));
         id
     }
 
@@ -317,6 +282,10 @@ impl SymbolRegistry {
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
+        if let Some(ty) = self.get_template_type_binding(name) {
+            return Some(ty);
+        }
+
         if let Some(id) = self.get_named_type_id(name)
             && let Some(definition) = self.get_named_type_definition(id)
             && definition
@@ -328,6 +297,22 @@ impl SymbolRegistry {
         }
 
         self.realized_types.get(name).cloned()
+    }
+
+    fn get_template_type_binding(&self, name: &str) -> Option<MIRType> {
+        let symbol_id = self.template_scope.get(name)?;
+        let symbol = self.symbols.get(symbol_id)?;
+
+        if symbol.name.as_str() != name {
+            return None;
+        }
+
+        match symbol.definition {
+            SymbolDefinition::TemplateTypeParam { resolved_type } => {
+                self.context.get(resolved_type).cloned()
+            }
+            SymbolDefinition::Type(type_id) => self.context.get(type_id).cloned(),
+        }
     }
 
     pub fn is_copyable(&self, ty: &MIRType) -> bool {

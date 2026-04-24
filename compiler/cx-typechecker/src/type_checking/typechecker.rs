@@ -5,7 +5,6 @@ use crate::log_typecheck_error;
 use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
-use crate::type_checking::coercion::{explicit::explicit_cast, implicit::implicit_cast};
 use crate::type_checking::control_flow::r#return::typecheck_return;
 use crate::type_checking::control_flow::{
     enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
@@ -27,9 +26,9 @@ use crate::type_checking::value::{
     sizeof::{typecheck_sizeof_expr, typecheck_sizeof_type},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXUnOp};
+use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression};
 use cx_mir::mir::data::{MIRIntegerType, MIRTypeKind};
-use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind, MIRUnOp};
+use cx_mir::mir::expression::{MIRExpression, MIRExpressionKind};
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::CXResult;
 
