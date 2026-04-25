@@ -125,7 +125,7 @@ pub fn typecheck_return(
             .and_then(|v| implicit_cast(env, v.into_expression(), &MIRType::bool()))?;
 
         env.function
-            .pop_scope(env.source.compilation_unit.as_path())?;
+            .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
 
         Ok(TypecheckResult::new_base(
             MIRType::unit(),

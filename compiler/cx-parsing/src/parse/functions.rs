@@ -44,7 +44,11 @@ pub fn try_function_parse(
                 params: args.params,
                 var_args: args.var_args,
                 contract: args.contract,
-                range: TokenRange::new(range_start, data.tokens.index, data.file_origin.clone()),
+                range: TokenRange::new(
+                    range_start,
+                    data.tokens.index,
+                    data.file_origin_for_range(range_start, data.tokens.index),
+                ),
             };
 
             if args.receiver.is_some() {
@@ -109,7 +113,11 @@ pub fn try_function_parse(
                 params: params.params,
                 var_args: params.var_args,
                 contract: params.contract,
-                range: TokenRange::new(range_start, data.tokens.index, data.file_origin.clone()),
+                range: TokenRange::new(
+                    range_start,
+                    data.tokens.index,
+                    data.file_origin_for_range(range_start, data.tokens.index),
+                ),
             };
 
             data.add_function(prototype.clone(), template_prototype.clone());
@@ -253,13 +261,10 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
-        if let Ok((name, _type)) = parse_initializer(data) {
-            let name = name;
+        let (name, _type) = parse_initializer(data)?;
+        let name = name;
 
-            params.push(CXParameter { name, _type });
-        } else {
-            return log_parse_error!(data, "Failed to parse parameter in function call");
-        }
+        params.push(CXParameter { name, _type });
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen));

@@ -4,6 +4,7 @@ use std::path::Path;
 use cx_ast::ast::CXExpression;
 use cx_mir::mir::data::MIRFunctionPrototype;
 use cx_mir::mir::expression::MIRExpression;
+use cx_tokens::token::Token;
 use cx_util::CXResult;
 
 use crate::environment::functions::control_flow::{
@@ -65,8 +66,8 @@ impl FunctionContext {
             .push_scope(has_break_merge, has_continue_merge);
     }
 
-    pub fn pop_scope(&mut self, compilation_unit: &Path) -> CXResult<()> {
-        self.flow_mut().pop_scope(compilation_unit)
+    pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
+        self.flow_mut().pop_scope(compilation_unit, tokens)
     }
 
     pub fn insert_symbol(&mut self, name: String, value: MIRExpression) {

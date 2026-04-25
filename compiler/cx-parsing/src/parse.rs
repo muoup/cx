@@ -17,7 +17,7 @@ use crate::parse::{
     functions::try_function_parse,
     parser::ParserData,
     templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
-    types::parse_initializer,
+    types::{parse_initializer, parse_typedef_initializer},
 };
 
 mod expressions;
@@ -45,7 +45,7 @@ fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
         .kind
     {
         keyword!(Import) => data.tokens.goto_statement_end()?,
-        keyword!(Typedef) => parsetype_def(data)?,
+        keyword!(Typedef) => parse_typedef(data)?,
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
@@ -71,7 +71,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     Ok(())
 }
 
-pub(crate) fn parsetype_def(data: &mut ParserData) -> CXResult<()> {
+pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef));
     let start_index = data.tokens.index;
 
@@ -81,7 +81,7 @@ pub(crate) fn parsetype_def(data: &mut ParserData) -> CXResult<()> {
         None
     };
 
-    let (name, _type) = parse_initializer(data)?;
+    let (name, _type) = parse_typedef_initializer(data)?;
 
     let Some(name) = name else {
         return log_preparse_error!(
@@ -213,7 +213,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
         Ok(CXExprKind::Block { exprs: body }.into_expr_with_origin(
             start_index,
             data.tokens.index,
-            data.file_origin.clone(),
+            data.file_origin_for_range(start_index, data.tokens.index),
         ))
     } else {
         let body = parse_expr(data)?;
@@ -230,13 +230,15 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     let mut ss = String::new();
 
     while let Ok(TokenKind::Intrinsic(ident)) = peek_next_kind!(tokens) {
-        ss.push_str(format!("{ident:?}").to_lowercase().as_str());
+        ss.push_str(format!("{ident:?} ").to_lowercase().as_str());
         tokens.next();
     }
 
     if ss.is_empty() {
         return log_preparse_error!(tokens, "Expected intrinsic identifier");
     }
+
+    ss.pop();
 
     Ok(CXIdent::new(ss))
 }

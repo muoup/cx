@@ -125,7 +125,7 @@ pub fn typecheck_switch(
     }
 
     env.function
-        .pop_scope(env.source.compilation_unit.as_path())?;
+        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
 
     // Build the match expression
     Ok(TypecheckResult::new_base(

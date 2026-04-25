@@ -70,7 +70,7 @@ pub(crate) fn typecheck_contract(
     };
 
     env.function
-        .pop_scope(env.source.compilation_unit.as_path())?;
+        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
     env.restore_function_mode(previous_mode);
 
     Ok(MIRFunctionContract {

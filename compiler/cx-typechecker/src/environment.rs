@@ -220,10 +220,27 @@ impl TypeEnvironment<'_> {
         message: String,
         notes: Vec<String>,
     ) -> CXResult<T> {
+        let (byte_start, byte_end) = crate::log::byte_range_for_tokens(
+            self.source.tokens,
+            range.start_token,
+            range.end_token,
+        );
+        let compilation_unit = (!range.file_origin.is_empty())
+            .then(|| PathBuf::from(range.file_origin.as_ref()))
+            .or_else(|| {
+                crate::log::file_origin_for_tokens(
+                    self.source.tokens,
+                    range.start_token,
+                    range.end_token,
+                )
+            })
+            .unwrap_or_else(|| self.source.compilation_unit.as_path().to_owned());
         Err(Box::new(TypeError {
-            compilation_unit: self.source.compilation_unit.as_path().to_owned(),
+            compilation_unit,
             token_start: range.start_token,
             token_end: range.end_token,
+            byte_start,
+            byte_end,
             message,
             notes,
         }))

@@ -1,6 +1,7 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::functions::mangling::base_mangle_fn_name;
 use crate::environment::symbols::completion::{base_data_from_module, int_complete_type};
+use crate::log_typecheck_error;
 use cx_ast::ast::CXExpression;
 use cx_ast::data::{CXFunctionPrototype, CXParameter, CXReceiverMode, CXType, CXTypeKind};
 use cx_mir::mir::data::{MIRFunctionPrototype, MIRParameter, MIRType, MIRTypeKind};
@@ -60,7 +61,7 @@ pub(crate) fn apply_implicit_fn_attr(mut proto: CXFunctionPrototype) -> CXFuncti
 }
 
 pub(crate) fn valid_prototype_type(_ty: &MIRType) -> bool {
-    !matches!(_ty.kind, MIRTypeKind::Str)
+    !matches!(_ty.kind, MIRTypeKind::Function { .. } | MIRTypeKind::Str)
 }
 
 fn require_complete_prototype_type(
@@ -96,6 +97,14 @@ pub fn int_complete_fn_prototype(
         &normalized_prototype.return_type,
     )?;
     require_complete_prototype_type(env, &return_type, "return")?;
+    if !valid_prototype_type(&return_type) {
+        return log_typecheck_error!(
+            env,
+            Some(prototype.range.clone()),
+            "Invalid return type '{}' in function prototype",
+            return_type.display_with(&env.symbols.context)
+        );
+    }
 
     let parameters = normalized_prototype
         .params
@@ -105,10 +114,12 @@ pub fn int_complete_fn_prototype(
             require_complete_prototype_type(env, &param_type, "parameter")?;
 
             if !valid_prototype_type(&param_type) {
-                return CXError::create_result(format!(
+                return log_typecheck_error!(
+                    env,
+                    Some(prototype.range.clone()),
                     "Invalid parameter type '{}' in function prototype",
                     param_type.display_with(&env.symbols.context)
-                ));
+                );
             }
 
             Ok(MIRParameter {

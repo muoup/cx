@@ -40,16 +40,32 @@ impl AnalysisDiagnosticContext {
     }
 
     fn source_text_for_range(&self, range: &TokenRange) -> CXResult<String> {
-        let file_contents = self.file_contents.as_ref().ok_or_else(|| {
-            CXError::create_boxed(format!(
-                "Failed to read source file for analysis diagnostics: {}",
-                self.compilation_unit.display()
-            ))
-        })?;
+        let source_path = if range.file_origin.is_empty() {
+            self.compilation_unit.as_path()
+        } else {
+            Path::new(range.file_origin.as_ref())
+        };
+        let owned_file_contents;
+        let file_contents = if source_path == self.compilation_unit.as_path() {
+            self.file_contents.as_ref().ok_or_else(|| {
+                CXError::create_boxed(format!(
+                    "Failed to read source file for analysis diagnostics: {}",
+                    self.compilation_unit.display()
+                ))
+            })?
+        } else {
+            owned_file_contents = std::fs::read_to_string(source_path).map_err(|_| {
+                CXError::create_boxed(format!(
+                    "Failed to read source file for analysis diagnostics: {}",
+                    source_path.display()
+                ))
+            })?;
+            &owned_file_contents
+        };
         let tokens = cx_lexer::lex(file_contents).map_err(|_| {
             CXError::create_boxed(format!(
                 "Failed to lex source file for analysis diagnostics: {}",
-                self.compilation_unit.display()
+                source_path.display()
             ))
         })?;
 

@@ -197,7 +197,6 @@ pub enum CXTypeKind {
     },
     PointerTo {
         inner_type: Box<CXType>,
-        weak: bool,
     },
 
     Structured {
@@ -225,12 +224,12 @@ impl CXType {
         Self { kind, specifiers }
     }
 
-    pub fn pointer_to(self, weak: bool, specifier: CXTypeQualifiers) -> Self {
+    pub fn pointer_to(self, specifier: CXTypeQualifiers) -> Self {
         Self::new(
             specifier,
             CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
-                weak,
+
             },
         )
     }

@@ -329,6 +329,7 @@ dependencies = [
 name = "cx-lexer"
 version = "0.0.0"
 dependencies = [
+ "cx-log",
  "cx-pipeline-data",
  "cx-tokens",
  "cx-util",
@@ -345,8 +346,6 @@ dependencies = [
 name = "cx-log"
 version = "0.0.0"
 dependencies = [
- "cx-lexer",
- "cx-tokens",
  "cx-util",
 ]
 

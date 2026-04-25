@@ -124,6 +124,13 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         },
     ),
     (
+        "unsigned short",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I32,
+        },
+    ),
+    (
         "signed",
         MIRTypeKind::Integer {
             signed: true,
@@ -169,6 +176,20 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         "long long int",
         MIRTypeKind::Integer {
             signed: true,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
+        "signed long long int",
+        MIRTypeKind::Integer {
+            signed: true,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
+        "unsigned long long int",
+        MIRTypeKind::Integer {
+            signed: false,
             _type: MIRIntegerType::I64,
         },
     ),

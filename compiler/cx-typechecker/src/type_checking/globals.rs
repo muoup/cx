@@ -1,4 +1,7 @@
-use crate::{environment::TypeEnvironment, log_typecheck_error};
+use crate::{
+    environment::TypeEnvironment, log_typecheck_error,
+    type_checking::value::ensure_valid_allocation_type,
+};
 use cx_ast::ast::{CXExprKind, CXExpression, CXGlobalVariable};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind},
@@ -11,9 +14,9 @@ pub(crate) fn global_expr(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     ident: &str,
-) -> CXResult<MIRExpression> {
+) -> CXResult<Option<MIRExpression>> {
     if let Some(global) = env.items.realized_globals.get(ident) {
-        return tcglobal_expr(global, &mut env.symbols.context);
+        return tcglobal_expr(global, &mut env.symbols.context).map(Option::Some);
     }
 
     let Some(module_res) = base_data.global_variables.get(ident) else {
@@ -26,7 +29,7 @@ pub(crate) fn global_expr(
     };
 
     match &module_res.resource {
-        CXGlobalVariable::EnumConstant(val) => Ok(MIRExpression {
+        CXGlobalVariable::EnumConstant(val) => Ok(Some(MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::IntLiteral(
                 *val as i64,
@@ -37,7 +40,7 @@ pub(crate) fn global_expr(
                 _type: MIRIntegerType::from_bytes(8).unwrap(),
                 signed: true,
             }),
-        }),
+        })),
 
         CXGlobalVariable::Standard {
             _type,
@@ -45,6 +48,7 @@ pub(crate) fn global_expr(
             is_mutable,
         } => {
             let _type = env.complete_type(base_data, &CXExpression::default(), _type)?;
+            ensure_valid_allocation_type(env, None, "a global variable", &_type)?;
             let _initializer = match initializer.as_ref() {
                 Some(init_expr) => {
                     let CXExprKind::IntLiteral { val, .. } = &init_expr.kind else {
@@ -78,6 +82,7 @@ pub(crate) fn global_expr(
                 env.items.realized_globals.get(ident).unwrap(),
                 &mut env.symbols.context,
             )
+            .map(Option::Some)
         }
     }
 }

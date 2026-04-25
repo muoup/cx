@@ -18,7 +18,7 @@ impl CXErrorTrait for ParseErrorLog {
         } else {
             PathBuf::from(self.token.file_origin.as_ref())
         };
-        cx_log::pretty_point_error(&self.message, &file, &self.token);
+        cx_log::pretty_point_error(&self.message, &file, self.token.start_index);
     }
 
     fn error_prefix(&self) -> String {

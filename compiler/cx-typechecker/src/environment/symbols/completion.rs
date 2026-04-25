@@ -141,9 +141,14 @@ fn ensure_complete_value_type(
         | MIRTypeKind::Integer { .. }
         | MIRTypeKind::Float { .. }
         | MIRTypeKind::Unit
-        | MIRTypeKind::Opaque { .. }
-        | MIRTypeKind::Function { .. }
-        | MIRTypeKind::Str => Ok(()),
+        | MIRTypeKind::Opaque { .. } => Ok(()),
+        MIRTypeKind::Function { .. } | MIRTypeKind::Str => log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "Field '{}' uses non-allocatable type {} by value",
+            field_name,
+            field_type.display_with(&env.symbols.context)
+        ),
         MIRTypeKind::Undefined => log_typecheck_error!(
             env,
             Some(expr.token_range()),
@@ -468,18 +473,18 @@ pub(crate) fn int_complete_type(
                 .get(inner_type_id)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type_id.0))
                 .clone();
-            
+
             let Some(size) = typecheck_expr(env, base_data, size.as_ref(), None)
                 .and_then(|v| constexpr_evaluate(env, v.into_expression()))?
-                .get_integer() else {
-                
+                .get_integer()
+            else {
                 return log_typecheck_error!(
                     env,
                     Some(size.token_range()),
                     "Invalid size expression, expected integer result"
                 );
             };
-            
+
             ensure_complete_value_type(env, expr, "<array element>", &inner_type)?;
 
             Ok(construct_type(
@@ -682,11 +687,11 @@ fn validate_linear_hierarchy(
                 compilation_unit: env.source.compilation_unit.as_path().to_owned(),
                 token_start: 0,
                 token_end: 0,
+                byte_start: 0,
+                byte_end: 1,
                 message: format!(
-                    "{} must be declared @nodrop because member '{}' has type {}",
-                    aggregate_kind,
-                    member_name,
-                    member_type.display_with(&env.symbols.context)
+                    "{} must be declared @nodrop because member '{}' is of a @nodrop type",
+                    aggregate_kind, member_name
                 ),
                 notes: Vec::new(),
             }));
@@ -697,11 +702,11 @@ fn validate_linear_hierarchy(
                 compilation_unit: env.source.compilation_unit.as_path().to_owned(),
                 token_start: 0,
                 token_end: 0,
+                byte_start: 0,
+                byte_end: 1,
                 message: format!(
-                    "{} must be declared @nocopy because member '{}' has type {}",
-                    aggregate_kind,
-                    member_name,
-                    member_type.display_with(&env.symbols.context)
+                    "{} must be declared @nocopy because member '{}' is of a @nocopy type",
+                    aggregate_kind, member_name
                 ),
                 notes: Vec::new(),
             }));

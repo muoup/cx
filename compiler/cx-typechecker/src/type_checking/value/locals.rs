@@ -5,6 +5,7 @@ use crate::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
         result::{BindingPlaceKind, TypecheckResult, TypecheckedBinding},
         typechecker::typecheck_expr,
+        value::ensure_valid_allocation_type,
     },
 };
 use cx_ast::ast::CXExpression;
@@ -63,25 +64,9 @@ pub(crate) fn typecheck_var_declaration(
     name: &CXIdent,
     initial_value: Option<&Box<CXExpression>>,
 ) -> CXResult<TypecheckResult> {
-    let ty = env.complete_type(base_data, expr, ty).map_err(|err| {
-        let err: CXResult<()> = log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Failed to resolve type for variable '{}'\n{}",
-            name,
-            err.error_content()
-        );
+    let ty = env.complete_type(base_data, expr, ty)?;
 
-        err.err().unwrap()
-    })?;
-
-    if ty.is_str() {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Cannot create a variable of unsized type 'str'; use '&str' instead"
-        );
-    }
+    ensure_valid_allocation_type(env, Some(expr.token_range().clone()), "a variable", &ty)?;
 
     let mem_type = env.symbols.context.mem_ref_to(ty.clone());
     let mir_initial_value = match initial_value {

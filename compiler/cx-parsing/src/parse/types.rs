@@ -1,5 +1,5 @@
-use crate::parse::ParserData;
 use crate::parse::expressions::parse_expr;
+use crate::parse::ParserData;
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
     CXField, CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
@@ -348,7 +348,7 @@ pub(crate) fn parse_type_mods(
                 specs,
                 CXTypeKind::PointerTo {
                     inner_type: Box::new(acc_type),
-                    weak: true,
+
                 },
             );
 
@@ -358,7 +358,7 @@ pub(crate) fn parse_type_mods(
         operator!(Asterisk) => {
             data.tokens.next();
             let specs = parse_specifier(&mut data.tokens);
-            let acc_type = acc_type.pointer_to(false, specs);
+            let acc_type = acc_type.pointer_to(specs);
 
             parse_type_mods(data, acc_type)
         }
@@ -417,7 +417,7 @@ pub(crate) fn parse_type_mods(
                     prototype: Box::new(prototype),
                 }
                 .to_type()
-                .pointer_to(false, 0),
+                .pointer_to(0),
             ))
         }
 
@@ -433,7 +433,10 @@ pub(crate) fn parse_type_mods(
     }
 }
 
-pub(crate) fn parse_type_suffix_mod(data: &mut ParserData, mut acc_type: CXType) -> CXResult<CXType> {
+pub(crate) fn parse_type_suffix_mod(
+    data: &mut ParserData,
+    mut acc_type: CXType,
+) -> CXResult<CXType> {
     let Some(next_tok) = data.tokens.peek() else {
         return Ok(acc_type);
     };
@@ -441,18 +444,17 @@ pub(crate) fn parse_type_suffix_mod(data: &mut ParserData, mut acc_type: CXType)
     match &next_tok.kind {
         punctuator!(OpenBracket) => {
             data.tokens.next();
- 
+
             if try_next!(data.tokens, punctuator!(CloseBracket)) {
-                acc_type = CXTypeKind::ImplicitSizedArray(Box::new(acc_type))
-                    .to_type();
+                acc_type = CXTypeKind::ImplicitSizedArray(Box::new(acc_type)).to_type();
             } else {
-                let inner = parse_expr(data)?;            
+                let inner = parse_expr(data)?;
                 assert_token_matches!(data.tokens, punctuator!(CloseBracket));
-                
-                acc_type = CXTypeKind::ExplicitSizedArray(Box::new(acc_type), Box::new(inner))
-                    .to_type();
+
+                acc_type =
+                    CXTypeKind::ExplicitSizedArray(Box::new(acc_type), Box::new(inner)).to_type();
             }
- 
+
             parse_type_suffix_mod(data, acc_type)
         }
 
@@ -537,4 +539,43 @@ pub(crate) fn parse_initializer(data: &mut ParserData) -> CXResult<(Option<CXIde
     let type_base = parse_type_base(data)?;
 
     parse_base_mods(data, type_base.add_specifier(prefix_specs))
+}
+
+pub(crate) fn parse_typedef_initializer(
+    data: &mut ParserData,
+) -> CXResult<(Option<CXIdent>, CXType)> {
+    let (name, return_type) = parse_initializer(data)?;
+
+    if name.is_none() || !peek_kind!(data.tokens, punctuator!(OpenParen)) {
+        return Ok((name, return_type));
+    }
+
+    let ParseParamsResult {
+        params,
+        var_args,
+        contract,
+        receiver,
+        ..
+    } = parse_params(data)?;
+
+    if receiver.is_some() {
+        return log_parse_error!(data, "Function typedefs may not declare a 'this' receiver");
+    }
+
+    let prototype = CXFunctionPrototype {
+        kind: CXFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
+        return_type,
+        params,
+        var_args,
+        contract,
+        range: TokenRange::default(),
+    };
+
+    Ok((
+        name,
+        CXTypeKind::FunctionPointer {
+            prototype: Box::new(prototype),
+        }
+        .to_type(),
+    ))
 }

@@ -6,6 +6,7 @@ use crate::{
     type_checking::{
         globals::global_expr,
         typechecker::{add_implicit_return, typecheck_expr},
+        value::ensure_valid_allocation_type,
     },
 };
 use cx_ast::{
@@ -36,6 +37,7 @@ pub fn typecheck_function(
         let Some(name) = name else {
             continue;
         };
+        ensure_valid_allocation_type(env, Some(body.token_range().clone()), "a parameter", _type)?;
         let ref_type = env.symbols.context.mem_ref_to(_type.clone());
 
         env.function.insert_symbol(
@@ -56,7 +58,7 @@ pub fn typecheck_function(
     let with_implicit_return = add_implicit_return(env, base_data, body_expr)?;
 
     env.function
-        .pop_scope(env.source.compilation_unit.as_path())?;
+        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
     env.function.end_function();
 
     env.push_generated_function(MIRFunction {

@@ -293,6 +293,8 @@ impl TokenKind {
             "long" => TokenKind::Intrinsic(IntrinsicType::Long),
             "short" => TokenKind::Intrinsic(IntrinsicType::Short),
             "float" => TokenKind::Intrinsic(IntrinsicType::Float),
+            "double" => TokenKind::Intrinsic(IntrinsicType::Double),
+
             "char" => TokenKind::Intrinsic(IntrinsicType::Char),
             "void" => TokenKind::Intrinsic(IntrinsicType::Void),
             "auto" => TokenKind::Intrinsic(IntrinsicType::Auto),

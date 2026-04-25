@@ -3,6 +3,7 @@ use std::path::Path;
 use cx_ast::ast::CXExpression;
 use cx_mir::mir::expression::MIRExpression;
 use cx_tokens::TokenRange;
+use cx_tokens::token::Token;
 use cx_util::CXResult;
 use cx_util::scoped_map::ScopedMap;
 
@@ -132,7 +133,7 @@ impl ControlFlow {
         });
     }
 
-    pub fn pop_scope(&mut self, compilation_unit: &Path) -> CXResult<()> {
+    pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
         let Some(scope) = self.scope_stack.last().cloned() else {
             panic!("Scope stack has uneven push/pop");
         };
@@ -144,7 +145,7 @@ impl ControlFlow {
         self.scope_stack.pop().unwrap();
 
         let outgoing_snapshot =
-            self.resolve_scope_flow(compilation_unit, &scope, current_snapshot.as_ref())?;
+            self.resolve_scope_flow(compilation_unit, tokens, &scope, current_snapshot.as_ref())?;
         let final_reachable = outgoing_snapshot.is_some();
 
         if final_reachable
@@ -161,6 +162,7 @@ impl ControlFlow {
             if let Some(range) = scope.anchor_range.as_ref() {
                 return Self::type_error_at_range(
                     compilation_unit,
+                    tokens,
                     range,
                     format!(
                         "nodrop local(s) reach scope end without move or @leak: {}",
@@ -445,6 +447,7 @@ impl ControlFlow {
     fn resolve_scope_flow(
         &mut self,
         compilation_unit: &Path,
+        tokens: &[Token],
         scope: &Scope,
         current_snapshot: Option<&ControlFlowSnapshot>,
     ) -> CXResult<Option<ControlFlowSnapshot>> {
@@ -463,6 +466,7 @@ impl ControlFlow {
 
                 let Some(merged_bindings) = Self::merge_binding_states(
                     compilation_unit,
+                    tokens,
                     &state.entry_snapshot,
                     &arrows,
                     &state.join_range,
@@ -484,6 +488,7 @@ impl ControlFlow {
                     if !live.is_empty() {
                         return Self::type_error_at_range(
                             compilation_unit,
+                            tokens,
                             &state.join_range,
                             format!(
                                 "nodrop binding(s) must be moved or @leak'ed before function exit: {}",
@@ -506,6 +511,7 @@ impl ControlFlow {
 
                 let Some(loop_carried_bindings) = Self::merge_binding_states(
                     compilation_unit,
+                    tokens,
                     &state.entry_snapshot,
                     &continue_arrows,
                     &state.join_range,
@@ -514,6 +520,7 @@ impl ControlFlow {
                 else {
                     let Some(exit_bindings) = Self::merge_binding_states(
                         compilation_unit,
+                        tokens,
                         &state.entry_snapshot,
                         &state.exit_arrows,
                         &state.join_range,
@@ -542,6 +549,7 @@ impl ControlFlow {
 
                 let Some(exit_bindings) = Self::merge_binding_states(
                     compilation_unit,
+                    tokens,
                     &state.entry_snapshot,
                     &exit_arrows,
                     &state.join_range,
@@ -559,6 +567,7 @@ impl ControlFlow {
 
     fn merge_binding_states(
         compilation_unit: &Path,
+        tokens: &[Token],
         entry_snapshot: &ControlFlowSnapshot,
         arrows: &[ControlFlowArrow],
         join_range: &TokenRange,
@@ -621,6 +630,7 @@ impl ControlFlow {
             .collect::<Vec<_>>();
         Self::type_error_at_range::<Option<Vec<(String, TrackedBindingState)>>>(
             compilation_unit,
+            tokens,
             join_range,
             format!("nocopy binding(s) have inconsistent move state at {join_name}"),
             notes,
@@ -637,14 +647,25 @@ impl ControlFlow {
 
     fn type_error_at_range<T>(
         compilation_unit: &Path,
+        tokens: &[Token],
         range: &TokenRange,
         message: String,
         notes: Vec<String>,
     ) -> CXResult<T> {
+        let (byte_start, byte_end) =
+            crate::log::byte_range_for_tokens(tokens, range.start_token, range.end_token);
+        let compilation_unit = (!range.file_origin.is_empty())
+            .then(|| range.file_origin.as_ref().into())
+            .or_else(|| {
+                crate::log::file_origin_for_tokens(tokens, range.start_token, range.end_token)
+            })
+            .unwrap_or_else(|| compilation_unit.to_owned());
         Err(Box::new(TypeError {
-            compilation_unit: compilation_unit.to_owned(),
+            compilation_unit,
             token_start: range.start_token,
             token_end: range.end_token,
+            byte_start,
+            byte_end,
             message,
             notes,
         }))

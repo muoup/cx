@@ -39,7 +39,7 @@ fn parse_at_intrinsic_expr(
             .into_expr_with_origin(
                 start_index,
                 data.tokens.index,
-                data.file_origin.clone(),
+                data.file_origin_for_range(start_index, data.tokens.index),
             ))
         }
 
@@ -54,11 +54,15 @@ fn parse_at_intrinsic_expr(
             .into_expr_with_origin(
                 start_index,
                 data.tokens.index,
-                data.file_origin.clone(),
+                data.file_origin_for_range(start_index, data.tokens.index),
             ))
         }
 
-        _ => log_parse_error!(data, "Unknown intrinsic expression '{}'", ident),
+        _ => {
+            data.tokens.back();
+
+            log_parse_error!(data, "Unknown intrinsic expression '{}'", ident)
+        }
     }
 }
 
@@ -103,16 +107,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpression> {
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
-    let start_index = data.tokens.index;
-
-    if let Err(err) = parse_expr_val(data, &mut expr_stack, &mut op_stack) {
-        if data.tokens.index == start_index {
-            return Ok(CXExprKind::Unit.into_expr_with_origin(0, 0, data.file_origin.clone()));
-        }
-
-        return Err(err);
-    }
-
+    parse_expr_val(data, &mut expr_stack, &mut op_stack)?;
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
     compress_stack(data, &mut expr_stack, &mut op_stack, 100)?;
@@ -156,9 +151,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
     data.change_comma_mode(false);
 
     loop {
-        let Ok((name, _type)) = parse_base_mods(data, base_type.clone()) else {
-            return log_parse_error!(data, "Failed to parse type declaration");
-        };
+        let (name, _type) = parse_base_mods(data, base_type.clone())?;
 
         if let Some(name) = name {
             // Check for initializer after variable name
@@ -180,7 +173,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                 .into_expr_with_origin(
                     start_index,
                     data.tokens.index,
-                    data.file_origin.clone(),
+                    data.file_origin_for_range(start_index, data.tokens.index),
                 ),
             );
         } else {
@@ -197,7 +190,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                 } => CXExprKind::Identifier(type_name).into_expr_with_origin(
                     start_index,
                     data.tokens.index,
-                    data.file_origin.clone(),
+                    data.file_origin_for_range(start_index, data.tokens.index),
                 ),
                 CXTypeKind::TemplatedIdentifier {
                     name,
@@ -209,7 +202,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                 .into_expr_with_origin(
                     start_index,
                     data.tokens.index,
-                    data.file_origin.clone(),
+                    data.file_origin_for_range(start_index, data.tokens.index),
                 ),
                 _ => {
                     return log_parse_error!(
@@ -233,7 +226,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
             .into_expr_with_origin(
                 start_index,
                 data.tokens.index,
-                data.file_origin.clone(),
+                data.file_origin_for_range(start_index, data.tokens.index),
             );
 
             let method_call_expr = CXExprKind::BinOp {
@@ -244,7 +237,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
             .into_expr_with_origin(
                 start_index,
                 data.tokens.index,
-                data.file_origin.clone(),
+                data.file_origin_for_range(start_index, data.tokens.index),
             );
 
             decls.push(method_call_expr);
@@ -263,7 +256,7 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
         Ok(CXExprKind::Block { exprs: decls }.into_expr_with_origin(
             start_index,
             data.tokens.index,
-            data.file_origin.clone(),
+            data.file_origin_for_range(start_index, data.tokens.index),
         ))
     }
 }
@@ -311,7 +304,11 @@ fn compress_one_expr(
                 operand: Box::new(rhs),
             };
 
-            Ok(acc.into_expr_with_origin(start_index, end_index, data.file_origin.clone()))
+            Ok(acc.into_expr_with_origin(
+                start_index,
+                end_index,
+                data.file_origin_for_range(start_index, end_index),
+            ))
         }
         PrecOperator::BinOp(bin_op) => {
             let rhs = expr_stack.pop().unwrap();
@@ -326,7 +323,11 @@ fn compress_one_expr(
                 op: bin_op,
             };
 
-            Ok(acc.into_expr_with_origin(start_index, end_index, data.file_origin.clone()))
+            Ok(acc.into_expr_with_origin(
+                start_index,
+                end_index,
+                data.file_origin_for_range(start_index, end_index),
+            ))
         }
     }
 }
@@ -415,7 +416,7 @@ pub(crate) fn parse_expr_val(
                 expr_stack.push(CXExprKind::Unit.into_expr_with_origin(
                     0,
                     0,
-                    data.file_origin.clone(),
+                    data.file_origin_for_range(start_index, data.tokens.index),
                 ));
                 return Ok(());
             }
@@ -448,7 +449,7 @@ pub(crate) fn parse_expr_val(
                 expr_stack.push(CXExprKind::Unit.into_expr_with_origin(
                     start_index,
                     data.tokens.index,
-                    data.file_origin.clone(),
+                    data.file_origin_for_range(start_index, data.tokens.index),
                 ));
                 return Ok(());
             }
@@ -467,7 +468,11 @@ pub(crate) fn parse_expr_val(
             return log_parse_error!(data, "Failed to parse expression value");
         }
     }
-    .into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone());
+    .into_expr_with_origin(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    );
 
     expr_stack.push(acc);
 
@@ -489,7 +494,11 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpress
 
     if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
         data.tokens.back();
-        return Ok(CXExprKind::Identifier(ident).into_expr(start_index, data.tokens.index));
+        return Ok(CXExprKind::Identifier(ident).into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        ));
     }
 
     data.tokens.back();
@@ -500,7 +509,11 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpress
         name: ident,
         template_input: args,
     }
-    .into_expr(start_index, data.tokens.index))
+    .into_expr_with_origin(
+        start_index,
+        data.tokens.index,
+        data.file_origin_for_range(start_index, data.tokens.index),
+    ))
 }
 
 pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression> {
@@ -515,19 +528,15 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
 
     match keyword_type {
         KeywordType::Return => {
-            let val = parse_expr(data)?;
+            let value = if try_next!(data.tokens, punctuator!(Semicolon)) {
+                data.tokens.back();
 
-            if matches!(val.kind, CXExprKind::Unit) {
-                return Ok(CXExprKind::Return { value: None }.into_expr_with_origin(
-                    start_index,
-                    data.tokens.index,
-                    data.file_origin.clone(),
-                ));
-            }
+                None
+            } else {
+                Some(Box::new(parse_expr(data)?))
+            };
 
-            Ok(CXExprKind::Return {
-                value: Some(Box::new(val)),
-            })
+            Ok(CXExprKind::Return { value })
         }
         KeywordType::If => {
             assert_token_matches!(
@@ -729,7 +738,13 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
             );
         }
     }
-    .map(|e| e.into_expr_with_origin(start_index, data.tokens.index, data.file_origin.clone()))
+    .map(|e| {
+        e.into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        )
+    })
 }
 
 pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult<CXExpression> {
@@ -775,7 +790,7 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult
         CXExprKind::InitializerList { indices: inits }.into_expr_with_origin(
             init_index,
             data.tokens.index,
-            data.file_origin.clone(),
+            data.file_origin_for_range(init_index, data.tokens.index),
         ),
     )
 }

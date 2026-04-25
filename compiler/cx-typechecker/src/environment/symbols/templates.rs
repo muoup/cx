@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
 use crate::environment::functions::mangling::mangle_templated_fn_name;
 use crate::environment::symbols::completion::{
-    internal_complete_template_input, base_data_from_module, int_complete_type,
+    base_data_from_module, int_complete_type, internal_complete_template_input,
 };
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use cx_ast::ast::CXExpression;
@@ -408,9 +408,9 @@ fn deduce_from_cx_type(
             )
         }
 
-        CXTypeKind::ExplicitSizedArray(inner_type, _) |
-        CXTypeKind::ImplicitSizedArray(inner_type) |
-        CXTypeKind::PointerTo { inner_type, .. } => match &actual.kind {
+        CXTypeKind::ExplicitSizedArray(inner_type, _)
+        | CXTypeKind::ImplicitSizedArray(inner_type)
+        | CXTypeKind::PointerTo { inner_type, .. } => match &actual.kind {
             MIRTypeKind::PointerTo {
                 inner_type: actual_inner,
             }

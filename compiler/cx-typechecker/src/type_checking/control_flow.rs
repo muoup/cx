@@ -77,7 +77,7 @@ pub(crate) fn typecheck_fallthrough_scope(
     });
     let result = typecheck_expr(env, base_data, expr, None)?.into_expression();
     env.function
-        .pop_scope(env.source.compilation_unit.as_path())?;
+        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
     Ok(result)
 }
 

@@ -132,7 +132,7 @@ fn typecheck_expr_inner(
             };
 
             env.function
-                .pop_scope(env.source.compilation_unit.as_path())?;
+                .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -175,7 +175,7 @@ fn typecheck_expr_inner(
                 "loop fallthrough",
             )?;
             env.function
-                .pop_scope(env.source.compilation_unit.as_path())?;
+                .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -225,7 +225,7 @@ fn typecheck_expr_inner(
                 .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
             env.function.set_scope_reachable(loop_scope_idx, true);
             env.function
-                .pop_scope(env.source.compilation_unit.as_path())?;
+                .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,

@@ -1,0 +1,14 @@
+typedef int callback_t(int x);
+
+int add_one(int x) {
+    return x + 1;
+}
+
+int accepts_callback(callback_t* callback) {
+    return callback(2);
+}
+
+int main() {
+    callback_t* callback = add_one;
+    return accepts_callback(callback) - 3;
+}

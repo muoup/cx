@@ -55,6 +55,21 @@ impl<'a> ParserData<'a> {
         self.expr_commas.pop();
     }
 
+    pub fn file_origin_for_range(&self, start_token: usize, end_token: usize) -> Arc<str> {
+        self.tokens
+            .slice
+            .get(start_token)
+            .map(|token| token.file_origin.clone())
+            .or_else(|| {
+                end_token
+                    .checked_sub(1)
+                    .and_then(|index| self.tokens.slice.get(index))
+                    .map(|token| token.file_origin.clone())
+            })
+            .filter(|origin| !origin.is_empty())
+            .unwrap_or_else(|| self.file_origin.clone())
+    }
+
     pub fn get_comma_mode(&self) -> bool {
         *self
             .expr_commas
