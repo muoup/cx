@@ -91,7 +91,7 @@ impl AnalysisDiagnosticContext {
         }
 
         let source_slice = file_contents
-            .get(start_token.start_index..end_token.end_index)
+            .get(start_token.byte_start_index..end_token.byte_end_index)
             .ok_or(CXError::create_boxed(format!(
                 "Invalid source range: token indices {} to {} out of bounds in file {}",
                 range.start_token,

@@ -1,101 +1,116 @@
-use std::sync::Arc;
+use std::{ops::Range, path::Path, sync::Arc};
 
-use cx_tokens::punctuator;
-use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
+use cx_tokens::token::{Token, TokenKind};
 use cx_util::{CXResult, char_iter::CharIter};
 
-pub(crate) struct LineLexer<'a> {
+use crate::new_lexer::preprocessor::Preprocessor;
+
+/// Lexing state machine
+pub(crate) struct Lexer {
+    source_path: Arc<Path>,
+    source_range: Range<usize>,
+
     last_consume: usize,
-    iter: &'a mut CharIter<'a>,
-    file_origin: Arc<str>,
-
-    pub tokens: Vec<Token>,
+    buffer: Vec<char>,
+    tokens: Vec<Token>,
 }
 
-pub(crate) fn lex_line<'a>(
-    iter: &'a mut CharIter<'a>,
-    file_origin: String,
-) -> CXResult<Vec<Token>> {
-    let mut line_lexer = LineLexer::new(iter, file_origin);
-    line_lexer.generate_tokens()?;
-    Ok(line_lexer.tokens)
-}
+impl Lexer {
+    pub fn new(source_path: &Path, source_range: Range<usize>) -> Lexer {
+        Lexer {
+            last_consume: source_range.end,
 
-impl<'a> LineLexer<'a> {
-    fn add_token(&mut self, kind: TokenKind) {
+            source_path: source_path.into(),
+            source_range,
+            buffer: vec![],
+            tokens: vec![],
+        }
+    }
+
+    pub fn process(self, preprocessor: &mut Preprocessor, iter: CharIter) -> Vec<Token> {
+        todo!()
+    }
+
+    fn add_token(&mut self, iter: &CharIter, kind: TokenKind) {
         self.tokens.push(Token {
             kind,
 
             byte_start_index: self.last_consume,
-            byte_end_index: self.iter.current_iter,
-            file_origin: self.file_origin.clone(),
+            byte_end_index: iter.current_iter,
+            file_origin: self.source_path.clone(),
         })
     }
+    
+    fn consume(&mut self, iter: &CharIter) {
+        if self.last_consume == iter.current_iter {
+            
+        }
+    }
+}
 
-    pub(crate) fn generate_tokens(&mut self) -> CXResult<()> {
-        while self.iter.has_next() && self.iter.peek() != Some('\n') {
-            if self.last_consume == self.iter.current_iter
-                && let Some(token) = self.pre_ident_lex()?
-            {
-                self.add_token(token);
-                self.last_consume = self.iter.current_iter;
+pub(crate) fn generate_tokens(processor: &mut Preprocessor, lexer: &mut Lexer, iter: &mut CharIter) -> CXResult<()> {
+    while iter.has_next() && iter.peek() != Some('\n') {
+        if lexer.last_consume == iter.current_iter
+            && let Some(token) = lexer.pre_ident_lex()?
+        {
+            lexer.add_token(iter, token);
+            lexer.last_consume = iter.current_iter;
+        }
+
+        let previous_lex = iter.current_iter;
+
+        if let Some(operator) = operator_lex(iter).or_else(|| punctuator_lex(iter)) {
+            lexer.consume(previous_lex);
+
+            lexer.add_token(iter, operator);
+            lexer.last_consume = iter.current_iter;
+        } else if Some(true) == iter.peek().map(|c| c.is_whitespace()) {
+            lexer.consume(previous_lex);
+
+            while let Some(true) = iter.peek().map(|c| c.is_whitespace()) {
+                iter.next();
             }
 
-            let previous_lex = self.iter.current_iter;
-
-            if let Some(operator) = operator_lex(self.iter).or_else(|| punctuator_lex(self.iter)) {
-                self.consume(previous_lex);
-
-                self.add_token(operator);
-                self.last_consume = self.iter.current_iter;
-            } else if Some(true) == self.iter.peek().map(|c| c.is_whitespace()) {
-                self.consume(previous_lex);
-
-                while let Some(true) = self.iter.peek().map(|c| c.is_whitespace()) {
-                    self.iter.next();
-                }
-
-                self.last_consume = self.iter.current_iter;
-            } else {
-                self.iter.next();
-            }
-        }
-
-        self.consume(self.iter.current_iter);
-        Ok(())
-    }
-
-    fn new(iter: &'a mut CharIter<'a>, file_origin: String) -> LineLexer<'a> {
-        let last_consume = iter.current_iter;
-
-        LineLexer {
-            iter,
-            last_consume,
-            tokens: Vec::new(),
-            file_origin: Arc::from(file_origin),
+            lexer.last_consume = iter.current_iter;
+        } else {
+            iter.next();
         }
     }
 
-    fn consume(&mut self, up_to: usize) {
-        if up_to == self.last_consume {
-            return;
-        }
+    lexer.consume(iter.current_iter);
+    Ok(())
+}
 
-        let str = self.iter.source[self.last_consume..up_to].to_string();
-        if str.chars().any(|c| !c.is_whitespace()) {
-            self.add_token(TokenKind::from_str(str));
-        }
+fn new(iter: &'a mut CharIter<'a>, file_origin: String) -> LineLexer<'a> {
+    let last_consume = iter.current_iter;
 
-        self.last_consume = self.iter.current_iter;
+    LineLexer {
+        iter,
+        last_consume,
+        tokens: Vec::new(),
+        file_origin: Arc::from(file_origin),
+    }
+}
+
+fn consume(&mut self, up_to: usize) {
+    if up_to == self.last_consume {
+        return;
     }
 
-    fn pre_ident_lex(&mut self) -> CXResult<Option<TokenKind>> {
-        match self.iter.peek() {
-            Some('0'..='9') => number_lex(self.iter, self.file_origin.as_ref()).map(Some),
-            Some('"') => Ok(string_lex(self.iter)),
-            Some('\'') => char_lex(self.iter, self.file_origin.as_ref()).map(Some),
-            _ => Ok(None),
-        }
+    let str = self.iter.source[self.last_consume..up_to].to_string();
+    if str.chars().any(|c| !c.is_whitespace()) {
+        self.add_token(TokenKind::from_str(str));
+    }
+
+    self.last_consume = self.iter.current_iter;
+}
+
+fn pre_ident_lex(&mut self) -> CXResult<Option<TokenKind>> {
+    match self.iter.peek() {
+        Some('0'..='9') => number_lex(self.iter, self.file_origin.as_ref()).map(Some),
+        Some('"') => Ok(string_lex(self.iter)),
+        Some('\'') => char_lex(self.iter, self.file_origin.as_ref()).map(Some),
+        _ => Ok(None),
     }
 }
 

@@ -270,13 +270,13 @@ impl LanguageServer for Backend {
                 _ => continue,
             };
 
-            let start = byte_index_to_lsp_position(&text, token.start_index);
-            let end = byte_index_to_lsp_position(&text, token.end_index);
+            let start = byte_index_to_lsp_position(&text, token.byte_start_index);
+            let end = byte_index_to_lsp_position(&text, token.byte_end_index);
             let line = start.line;
             let length = if end.line == start.line {
                 end.character.saturating_sub(start.character)
             } else {
-                text[token.start_index..token.end_index].chars().count() as u32
+                text[token.byte_start_index..token.byte_end_index].chars().count() as u32
             };
 
             let delta_line = line - last_line;

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use speedy::{Context, Readable, Reader, Writable, Writer};
 
@@ -60,10 +60,9 @@ impl<C: Context> Writable<C> for TokenRange {
 pub struct Token {
     pub kind: TokenKind,
 
-    pub line: u32,
-    pub start_index: usize,
-    pub end_index: usize,
-    pub file_origin: Arc<str>,
+    pub byte_start_index: usize,
+    pub byte_end_index: usize,
+    pub file_origin: Arc<Path>,
 }
 
 #[macro_export]

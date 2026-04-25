@@ -457,7 +457,12 @@ pub(crate) fn int_complete_type(
                 return Ok(named_predeclaration_type(env, ty, name, *predeclaration));
             }
 
-            log_typecheck_error!(env, Some(expr.token_range()), "Type not found: {name}")
+            let range = crate::log::identifier_range_for_name(
+                env.source.tokens,
+                expr.token_range(),
+                name.as_str(),
+            );
+            log_typecheck_error!(env, Some(range), "Type not found: {name}")
         }
 
         CXTypeKind::TemplatedIdentifier { name, input, .. } => {

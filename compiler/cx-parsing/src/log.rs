@@ -18,7 +18,7 @@ impl CXErrorTrait for ParseErrorLog {
         } else {
             PathBuf::from(self.token.file_origin.as_ref())
         };
-        cx_log::pretty_point_error(&self.message, &file, self.token.start_index);
+        cx_log::pretty_point_error(&self.message, &file, self.token.byte_start_index);
     }
 
     fn error_prefix(&self) -> String {
@@ -34,11 +34,11 @@ impl CXErrorTrait for ParseErrorLog {
     }
 
     fn token_start(&self) -> Option<usize> {
-        Some(self.token.start_index)
+        Some(self.token.byte_start_index)
     }
 
     fn token_end(&self) -> Option<usize> {
-        Some(self.token.end_index)
+        Some(self.token.byte_end_index)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

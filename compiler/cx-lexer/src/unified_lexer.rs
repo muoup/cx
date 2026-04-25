@@ -208,9 +208,8 @@ fn builtin_macros() -> HashMap<String, Macro> {
         "__const".to_string(),
         Macro::Object(Box::new([Token {
             kind: TokenKind::Specifier(SpecifierType::Const),
-            line: 0,
-            start_index: 0,
-            end_index: 0,
+            byte_start_index: 0,
+            byte_end_index: 0,
             file_origin: "".into(),
         }])),
     );
@@ -230,9 +229,8 @@ fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Tok
     tokens
         .into_iter()
         .map(|mut t| {
-            t.start_index = expansion_site.start_index;
-            t.end_index = expansion_site.end_index;
-            t.line = expansion_site.line;
+            t.byte_start_index = expansion_site.byte_start_index;
+            t.byte_end_index = expansion_site.byte_end_index;
             t.file_origin = expansion_site.file_origin.clone();
             t
         })

@@ -1,4 +1,6 @@
-use cx_mir::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp};
+use cx_mir::mir::expression::{
+    MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRIntegerBinOp,
+};
 use cx_util::CXResult;
 
 use crate::{environment::TypeEnvironment, log_typecheck_error};
@@ -39,11 +41,14 @@ pub fn constexpr_evaluate(
                 _ => todo!(),
             })
         }
-        
-        MIRExpressionKind::TypeConversion { operand, conversion } => match conversion {
+
+        MIRExpressionKind::TypeConversion {
+            operand,
+            conversion,
+        } => match conversion {
             MIRCoercion::Integral { .. } => constexpr_evaluate(env, *operand)?,
-            
-            _ => todo!()
+
+            _ => todo!(),
         },
 
         _ => {

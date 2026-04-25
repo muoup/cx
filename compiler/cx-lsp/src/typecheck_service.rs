@@ -50,11 +50,11 @@ fn token_range(
 
     let start = tokens
         .get(start_token_index)
-        .map(|token| byte_index_to_position(file_contents, token.start_index))
+        .map(|token| byte_index_to_position(file_contents, token.byte_start_index))
         .unwrap_or_default();
     let end = tokens
         .get(end_token_index)
-        .map(|token| byte_index_to_position(file_contents, token.end_index))
+        .map(|token| byte_index_to_position(file_contents, token.byte_end_index))
         .unwrap_or(start);
 
     Range { start, end }

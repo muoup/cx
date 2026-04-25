@@ -1,5 +1,6 @@
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -150,25 +151,21 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         analysis,
     );
 
-    let message = match standard_compilation(config, base_file_name(input)) {
+    let err = match standard_compilation(config, base_file_name(input)) {
         Ok(_) => panic!("Expected compilation failure but got success"),
-        Err(err) => Some(err.error_message()),
+        Err(err) => err,
     };
 
-    let actual_stage = message
-        .as_ref()
-        .map(|msg| classify_failure_stage(msg))
-        .flatten();
+    let message = err.error_message();
+    let actual_stage = classify_failure_stage(message.as_str());
 
     if actual_stage != Some(expected_stage) {
-        panic!(
-            "\nExpected failure stage: {}\nActual failure stage: {}\n\nMessage: {}",
-            format!("{:?}", expected_stage),
-            actual_stage
-                .map(|s| format!("{:?}", s))
-                .unwrap_or("UNKNOWN STAGE".to_string()),
-            message.unwrap_or("No error message".to_string())
+        eprintln!(
+            "\nExpected failure stage: {:?}\nActual failure stage: {:?}\n\n",
+            expected_stage, actual_stage
         );
+        err.pretty_print();
+        panic!();
     }
 }
 

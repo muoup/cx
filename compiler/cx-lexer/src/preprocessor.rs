@@ -208,20 +208,21 @@ pub(crate) fn handle_directive(lexer: &mut Lexer) -> CXResult<()> {
             let file_name = file_name.to_string();
             let file_name_end = lexer.char_iter.current_iter;
 
+            if !(file_name.starts_with('"') && file_name.ends_with('"'))
+                && !(file_name.starts_with('<') && file_name.ends_with('>'))
+            {
+                return log_lexer_error!(
+                    lexer.file_path.as_path(),
+                    lexer.source,
+                    file_name_start,
+                    file_name_end,
+                    "Invalid include path '{}': expected \"...\" or <...>",
+                    file_name
+                );
+            }
+
             let path = match resolve_include_path(lexer, &file_name) {
                 Some(path) => path,
-                None if !(file_name.starts_with('"') && file_name.ends_with('"'))
-                    && !(file_name.starts_with('<') && file_name.ends_with('>')) =>
-                {
-                    return log_lexer_error!(
-                        lexer.file_path.as_path(),
-                        lexer.source,
-                        file_name_start,
-                        file_name_end,
-                        "Invalid include path '{}': expected \"...\" or <...>",
-                        file_name
-                    );
-                }
                 None => {
                     return log_lexer_error!(
                         lexer.file_path.as_path(),

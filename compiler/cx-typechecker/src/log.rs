@@ -2,6 +2,7 @@ use cx_util::CXErrorTrait;
 use std::path::PathBuf;
 
 use cx_tokens::TokenRange;
+use cx_tokens::token::{Token, TokenKind};
 
 #[derive(Clone, Debug)]
 pub struct TypeError {
@@ -77,7 +78,7 @@ impl CXErrorTrait for TypeError {
 }
 
 pub fn byte_range_for_tokens(
-    tokens: &[cx_tokens::token::Token],
+    tokens: &[Token],
     start_token: usize,
     end_token: usize,
 ) -> (usize, usize) {
@@ -86,17 +87,17 @@ pub fn byte_range_for_tokens(
     };
     let end = tokens
         .get(end_token.saturating_sub(1))
-        .map(|token| token.end_index)
-        .unwrap_or(start.end_index);
+        .map(|token| token.byte_end_index)
+        .unwrap_or(start.byte_end_index);
 
     (
-        start.start_index,
-        end.max(start.start_index.saturating_add(1)),
+        start.byte_start_index,
+        end.max(start.byte_start_index.saturating_add(1)),
     )
 }
 
 pub fn file_origin_for_tokens(
-    tokens: &[cx_tokens::token::Token],
+    tokens: &[Token],
     start_token: usize,
     end_token: usize,
 ) -> Option<PathBuf> {
@@ -106,6 +107,27 @@ pub fn file_origin_for_tokens(
         .and_then(|token| {
             (!token.file_origin.is_empty()).then(|| PathBuf::from(token.file_origin.as_ref()))
         })
+}
+
+pub fn identifier_range_for_name(
+    tokens: &[Token],
+    fallback: &TokenRange,
+    name: &str,
+) -> TokenRange {
+    tokens
+        .get(fallback.start_token..fallback.end_token)
+        .and_then(|range_tokens| {
+            range_tokens
+                .iter()
+                .position(|token| matches!(&token.kind, TokenKind::Identifier(identifier) if identifier == name))
+                .map(|offset| fallback.start_token + offset)
+        })
+        .and_then(|index| {
+            tokens.get(index).map(|token| {
+                TokenRange::new(index, index + 1, token.file_origin.clone())
+            })
+        })
+        .unwrap_or_else(|| fallback.clone())
 }
 
 #[macro_export]

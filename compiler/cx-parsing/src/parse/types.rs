@@ -348,7 +348,6 @@ pub(crate) fn parse_type_mods(
                 specs,
                 CXTypeKind::PointerTo {
                     inner_type: Box::new(acc_type),
-
                 },
             );
 

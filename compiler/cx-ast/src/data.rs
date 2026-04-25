@@ -229,7 +229,6 @@ impl CXType {
             specifier,
             CXTypeKind::PointerTo {
                 inner_type: Box::new(self),
-
             },
         )
     }

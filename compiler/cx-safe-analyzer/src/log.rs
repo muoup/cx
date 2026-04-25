@@ -68,12 +68,12 @@ pub fn byte_range_for_source_tokens(
     };
     let end = tokens
         .get(end_token.saturating_sub(1))
-        .map(|token| token.end_index)
-        .unwrap_or(start.end_index);
+        .map(|token| token.byte_end_index)
+        .unwrap_or(start.byte_end_index);
 
     (
-        start.start_index,
-        end.max(start.start_index.saturating_add(1)),
+        start.byte_start_index,
+        end.max(start.byte_start_index.saturating_add(1)),
     )
 }
 

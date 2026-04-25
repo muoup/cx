@@ -564,10 +564,10 @@ fn handle_job_collect_errors(
                 .previous_token
                 .as_ref()
                 .unwrap_or(&parse_error.token);
-            let start = line_content_start_byte(&file_contents, anchor_token.start_index);
+            let start = line_content_start_byte(&file_contents, anchor_token.byte_start_index);
             let end = anchor_token
-                .end_index
-                .max(anchor_token.start_index.saturating_add(1));
+                .byte_end_index
+                .max(anchor_token.byte_start_index.saturating_add(1));
 
             return Some(LSPErrors::SpannedError {
                 compilation_unit: parse_error.file.clone(),
