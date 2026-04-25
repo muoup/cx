@@ -1,10 +1,11 @@
 use crate::parse::ParserData;
+use crate::parse::expressions::parse_expr;
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
-    CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
+    CXField, CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
     CXTypeKind, CXTypeQualifiers, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
 };
-use cx_ast::{assert_token_matches, next_kind, peek_kind, peek_next_kind, try_next};
+use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{identifier, intrinsic, keyword, operator, punctuator, TokenIter, TokenRange};
 use cx_util::identifier::CXIdent;
@@ -43,6 +44,38 @@ fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXS
     }
 
     Ok(attributes)
+}
+
+fn parse_aggregate_field(data: &mut ParserData) -> CXResult<CXField> {
+    let (name, _type) = parse_initializer(data)?;
+
+    if try_next!(data.tokens, punctuator!(Colon)) {
+        let width = match next_kind!(data.tokens)? {
+            TokenKind::IntLiteral(width) if *width >= 0 => *width as usize,
+            _ => {
+                return log_preparse_error!(
+                    data.tokens,
+                    "Expected non-negative integer literal bitfield width"
+                )
+            }
+        };
+
+        return Ok(CXField::Bitfield {
+            name: name.map(|name| name.to_string()),
+            integer_type: _type,
+            width,
+        });
+    }
+
+    let Some(name) = name else {
+        return log_preparse_error!(
+            data.tokens,
+            "UNSUPPORTED: Nameless aggregate member of type {}",
+            _type
+        );
+    };
+
+    Ok(CXField::standard(name.to_string(), _type))
 }
 
 fn predeclaration_type(
@@ -105,17 +138,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     let mut fields = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let (name, _type) = parse_initializer(data)?;
-
-        let Some(name) = name else {
-            return log_preparse_error!(
-                data.tokens,
-                "UNSUPPORTED: Nameless struct member of type {}",
-                _type
-            );
-        };
-
-        fields.push((name.to_string(), _type));
+        fields.push(parse_aggregate_field(data)?);
         assert_token_matches!(data.tokens, punctuator!(Semicolon));
     }
 
@@ -222,7 +245,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 
         match parse_initializer(data) {
             // Success Path = Valid Type + No Name
-            Ok((None, _type)) => variants.push((name.to_string(), _type)),
+            Ok((None, _type)) => variants.push(CXField::standard(name.to_string(), _type)),
 
             Ok((Some(_), _)) => {
                 return log_preparse_error!(
@@ -272,17 +295,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
     let mut fields = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let (name, _type) = parse_initializer(data)?;
-
-        let Some(name) = name else {
-            return log_preparse_error!(
-                data.tokens,
-                "UNSUPPORTED: Nameless union member of type {}",
-                _type
-            );
-        };
-
-        fields.push((name.to_string(), _type));
+        fields.push(parse_aggregate_field(data)?);
         assert_token_matches!(data.tokens, punctuator!(Semicolon));
     }
 
@@ -420,44 +433,34 @@ pub(crate) fn parse_type_mods(
     }
 }
 
-pub(crate) fn parse_suffixtype_mod(tokens: &mut TokenIter, acc_type: CXType) -> CXResult<CXType> {
-    let Some(next_tok) = tokens.peek() else {
+pub(crate) fn parse_type_suffix_mod(data: &mut ParserData, mut acc_type: CXType) -> CXResult<CXType> {
+    let Some(next_tok) = data.tokens.peek() else {
         return Ok(acc_type);
     };
 
     match &next_tok.kind {
         punctuator!(OpenBracket) => {
-            tokens.next();
-
-            let _type = match peek_next_kind!(tokens)? {
-                punctuator!(CloseBracket) => {
-                    CXTypeKind::ImplicitSizedArray(Box::new(acc_type)).to_type()
-                }
-                TokenKind::IntLiteral(size) => {
-                    let size = *size as usize;
-
-                    tokens.next();
-                    CXTypeKind::ExplicitSizedArray(Box::new(acc_type), size).to_type()
-                }
-
-                _ => {
-                    return log_preparse_error!(
-                        tokens,
-                        "Expected array size (integer literal) or ']' for implicit sized array"
-                    )
-                }
-            };
-
-            assert_token_matches!(tokens, punctuator!(CloseBracket));
-
-            parse_suffixtype_mod(tokens, _type)
+            data.tokens.next();
+ 
+            if try_next!(data.tokens, punctuator!(CloseBracket)) {
+                acc_type = CXTypeKind::ImplicitSizedArray(Box::new(acc_type))
+                    .to_type();
+            } else {
+                let inner = parse_expr(data)?;            
+                assert_token_matches!(data.tokens, punctuator!(CloseBracket));
+                
+                acc_type = CXTypeKind::ExplicitSizedArray(Box::new(acc_type), Box::new(inner))
+                    .to_type();
+            }
+ 
+            parse_type_suffix_mod(data, acc_type)
         }
 
         operator!(Ampersand) => {
-            tokens.next();
+            data.tokens.next();
 
-            parse_suffixtype_mod(
-                tokens,
+            parse_type_suffix_mod(
+                data,
                 CXTypeKind::MemoryReference {
                     inner_type: Box::new(acc_type),
                 }
@@ -526,7 +529,7 @@ pub(crate) fn parse_base_mods(
 ) -> CXResult<(Option<CXIdent>, CXType)> {
     let (name, modified_type) = parse_type_mods(data, acc_type)?;
 
-    Ok((name, parse_suffixtype_mod(&mut data.tokens, modified_type)?))
+    Ok((name, parse_type_suffix_mod(data, modified_type)?))
 }
 
 pub(crate) fn parse_initializer(data: &mut ParserData) -> CXResult<(Option<CXIdent>, CXType)> {

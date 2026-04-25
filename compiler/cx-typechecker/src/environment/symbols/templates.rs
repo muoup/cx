@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::environment::functions::completion::{complete_prototype_no_insert, complete_type};
 use crate::environment::functions::mangling::mangle_templated_fn_name;
 use crate::environment::symbols::completion::{
-    _complete_template_input, base_data_from_module, int_complete_type,
+    internal_complete_template_input, base_data_from_module, int_complete_type,
 };
 use crate::environment::{MIRFunctionGenRequest, TypeEnvironment};
 use cx_ast::ast::CXExpression;
@@ -57,7 +57,7 @@ pub(crate) fn instantiate_type_template(
     let base_data_ref = base_data_from_module(env, base_data, None);
     let base_data = base_data_ref.as_ref();
     let completed_input =
-        _complete_template_input(env, base_data, None, &CXExpression::default(), input)?;
+        internal_complete_template_input(env, base_data, None, &CXExpression::default(), input)?;
     let template_name = mangle_template_name(env, name, &completed_input);
 
     if let Some(template) = env.get_realized_type(template_name.as_str()) {
@@ -305,7 +305,7 @@ fn deduce_from_cx_type(
     formal: &CXType,
     actual: &MIRType,
 ) -> CXResult<()> {
-    if let MIRTypeKind::MemoryReference { inner_type } = &actual.kind
+    if let MIRTypeKind::MemoryReference { inner_type, .. } = &actual.kind
         && !matches!(formal.kind, CXTypeKind::MemoryReference { .. })
     {
         let inner_type = env
@@ -382,63 +382,10 @@ fn deduce_from_cx_type(
             Ok(())
         }
 
-        CXTypeKind::ExplicitSizedArray(inner, size) => {
-            let MIRTypeKind::Array {
-                length: actual_size,
-                inner_type,
-            } = &actual.kind
-            else {
-                return concrete_type_mismatch(env, formal, actual);
-            };
-
-            if size != actual_size {
-                return CXError::create_result(format!(
-                    "Array size mismatch during template deduction: expected {}, found {}",
-                    size, actual_size
-                ));
-            }
-
-            let actual_inner = env
-                .symbols
-                .context
-                .get(*inner_type)
-                .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
-                .clone();
-            deduce_from_cx_type(
-                env,
-                base_data,
-                external_module,
-                template_prototype,
-                bindings,
-                inner,
-                &actual_inner,
-            )
-        }
-
-        CXTypeKind::ImplicitSizedArray(inner) => match &actual.kind {
-            MIRTypeKind::PointerTo { inner_type } | MIRTypeKind::Array { inner_type, .. } => {
-                let actual_inner = env
-                    .symbols
-                    .context
-                    .get(*inner_type)
-                    .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0))
-                    .clone();
-                deduce_from_cx_type(
-                    env,
-                    base_data,
-                    external_module,
-                    template_prototype,
-                    bindings,
-                    inner,
-                    &actual_inner,
-                )
-            }
-            _ => concrete_type_mismatch(env, formal, actual),
-        },
-
         CXTypeKind::MemoryReference { inner_type } => {
             let MIRTypeKind::MemoryReference {
                 inner_type: actual_inner,
+                ..
             } = &actual.kind
             else {
                 return concrete_type_mismatch(env, formal, actual);
@@ -461,12 +408,15 @@ fn deduce_from_cx_type(
             )
         }
 
+        CXTypeKind::ExplicitSizedArray(inner_type, _) |
+        CXTypeKind::ImplicitSizedArray(inner_type) |
         CXTypeKind::PointerTo { inner_type, .. } => match &actual.kind {
             MIRTypeKind::PointerTo {
                 inner_type: actual_inner,
             }
             | MIRTypeKind::MemoryReference {
                 inner_type: actual_inner,
+                ..
             } => {
                 let actual_inner = env
                     .symbols
@@ -646,7 +596,7 @@ pub(crate) fn instantiate_function_template(
     template: &ModuleResource<CXFunctionTemplate>,
     input: &CXTemplateInput,
 ) -> CXResult<MIRFunctionPrototype> {
-    let completed_input = _complete_template_input(
+    let completed_input = internal_complete_template_input(
         env,
         base_data,
         template.external_module.as_ref(),

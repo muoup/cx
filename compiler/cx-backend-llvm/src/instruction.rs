@@ -561,8 +561,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
 
         LMIRInstructionKind::StructAccess {
             struct_,
-            struct_type,
-            field_index,
+            field_offset,
             ..
         } => {
             let struct_ptr = function_state
@@ -570,17 +569,25 @@ pub(crate) fn generate_instruction<'a, 'b>(
                 .get_value()
                 .into_pointer_value();
 
-            let struct_type = bc_llvm_type(global_state.context, struct_type)?.into_struct_type();
+            let usize_type = global_state.context.i64_type();
+            let ptr_int = function_state
+                .builder
+                .build_ptr_to_int(struct_ptr, usize_type, inst_num().as_str())
+                .unwrap();
+            let offset = usize_type.const_int(*field_offset as u64, false);
+            let field_int = function_state
+                .builder
+                .build_int_add(ptr_int, offset, inst_num().as_str())
+                .unwrap();
 
             let field_ptr = function_state
                 .builder
-                .build_struct_gep(
-                    struct_type,
-                    struct_ptr,
-                    *field_index as u32,
+                .build_int_to_ptr(
+                    field_int,
+                    global_state.context.ptr_type(inkwell::AddressSpace::from(0)),
                     inst_num().as_str(),
                 )
-                .expect("Failed to build struct GEP");
+                .unwrap();
 
             CodegenValue::Value(field_ptr.as_any_value_enum())
         }

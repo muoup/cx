@@ -26,6 +26,363 @@ use super::tagged_union::{
     lower_tagged_union_set,
 };
 
+enum AggregateMemberLayout {
+    Standard {
+        byte_offset: usize,
+    },
+    Bitfield {
+        storage_byte_offset: usize,
+        bit_offset: usize,
+        bit_width: usize,
+        storage_type: MIRType,
+    },
+}
+
+fn aggregate_member_layout(
+    aggregate_type: &MIRType,
+    definitions: &cx_mir::mir::data::MIRTypeContext,
+    member_index: usize,
+) -> AggregateMemberLayout {
+    let aggregate_type = definitions.memory_resident_type(aggregate_type);
+    match &aggregate_type.kind {
+        MIRTypeKind::Union { .. } => {
+            let fields = definitions
+                .aggregate_fields(aggregate_type)
+                .expect("union type must have fields");
+            let field = fields
+                .get(member_index)
+                .unwrap_or_else(|| panic!("member index {member_index} out of bounds"));
+            match field {
+                cx_mir::mir::r#type::MIRField::Standard { .. } => {
+                    AggregateMemberLayout::Standard { byte_offset: 0 }
+                }
+                cx_mir::mir::r#type::MIRField::Bitfield {
+                    integer_type_id,
+                    width,
+                    ..
+                } => {
+                    let storage_type = definitions
+                        .get(*integer_type_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
+                        .clone();
+                    AggregateMemberLayout::Bitfield {
+                        storage_byte_offset: 0,
+                        bit_offset: 0,
+                        bit_width: *width,
+                        storage_type,
+                    }
+                }
+            }
+        }
+        MIRTypeKind::Structured { .. } => {
+            let fields = definitions
+                .aggregate_fields(aggregate_type)
+                .expect("structured type must have fields");
+            let mut offset = 0usize;
+            let mut active_storage: Option<(MIRType, usize, usize)> = None;
+
+            for (index, field) in fields.iter().enumerate() {
+                match field {
+                    cx_mir::mir::r#type::MIRField::Standard { type_id, .. } => {
+                        if let Some((storage_type, storage_offset, used_bits)) =
+                            active_storage.take()
+                        {
+                            offset = storage_offset
+                                + (used_bits.div_ceil(storage_type.type_size(definitions) * 8))
+                                    * storage_type.type_size(definitions);
+                        }
+
+                        let field_type = definitions
+                            .get(*type_id)
+                            .unwrap_or_else(|| panic!("Unknown type id {}", type_id.0));
+                        let alignment = field_type.type_alignment(definitions);
+                        offset = offset.div_ceil(alignment) * alignment;
+
+                        if index == member_index {
+                            return AggregateMemberLayout::Standard {
+                                byte_offset: offset,
+                            };
+                        }
+
+                        offset += field_type.type_size(definitions);
+                    }
+                    cx_mir::mir::r#type::MIRField::Bitfield {
+                        integer_type_id,
+                        width,
+                        ..
+                    } => {
+                        let storage_type = definitions
+                            .get(*integer_type_id)
+                            .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
+                            .clone();
+                        let storage_bits = storage_type.type_size(definitions) * 8;
+                        let storage_align = storage_type.type_alignment(definitions);
+
+                        if *width == 0 {
+                            active_storage = None;
+                            offset = offset.div_ceil(storage_align) * storage_align;
+                            continue;
+                        }
+
+                        let (storage_offset, bit_offset) = match active_storage.take() {
+                            Some((active_type, storage_offset, used_bits))
+                                if active_type.contextual_eq(&storage_type, definitions)
+                                    && used_bits + *width <= storage_bits =>
+                            {
+                                (storage_offset, used_bits)
+                            }
+                            Some((active_type, storage_offset, used_bits)) => {
+                                offset = storage_offset
+                                    + (used_bits.div_ceil(active_type.type_size(definitions) * 8))
+                                        * active_type.type_size(definitions);
+                                offset = offset.div_ceil(storage_align) * storage_align;
+                                (offset, 0)
+                            }
+                            None => {
+                                offset = offset.div_ceil(storage_align) * storage_align;
+                                (offset, 0)
+                            }
+                        };
+
+                        if index == member_index {
+                            return AggregateMemberLayout::Bitfield {
+                                storage_byte_offset: storage_offset,
+                                bit_offset,
+                                bit_width: *width,
+                                storage_type,
+                            };
+                        }
+
+                        active_storage = Some((storage_type, storage_offset, bit_offset + *width));
+                    }
+                }
+            }
+
+            panic!("member index {member_index} out of bounds");
+        }
+        _ => panic!("member access on non-aggregate type"),
+    }
+}
+
+fn lower_member_storage_address(
+    builder: &mut LMIRBuilder,
+    base: &MIRExpression,
+    aggregate_type: &MIRType,
+    member_index: usize,
+    byte_offset: usize,
+) -> CXResult<LMIRValue> {
+    let bc_base = lower_expression(builder, base)?;
+    if aggregate_type.is_c_union() {
+        return Ok(bc_base);
+    }
+
+    let bc_struct_type = builder.convert_cx_type(aggregate_type);
+    builder.add_new_instruction(
+        LMIRInstructionKind::StructAccess {
+            struct_: bc_base,
+            struct_type: bc_struct_type,
+            field_index: member_index,
+            field_offset: byte_offset,
+        },
+        LMIRType::default_pointer(),
+        true,
+    )
+}
+
+fn integer_lmir_type(ty: &LMIRType) -> LMIRIntegerType {
+    let LMIRTypeKind::Integer(integer_type) = ty.kind else {
+        panic!("bitfield storage type must lower to an integer");
+    };
+    integer_type
+}
+
+fn bit_mask(width: usize) -> i64 {
+    if width >= 63 {
+        -1
+    } else {
+        ((1_i64) << width) - 1
+    }
+}
+
+fn lower_bitfield_read(
+    builder: &mut LMIRBuilder,
+    base: &MIRExpression,
+    aggregate_type: &MIRType,
+    member_index: usize,
+) -> CXResult<Option<LMIRValue>> {
+    let AggregateMemberLayout::Bitfield {
+        storage_byte_offset,
+        bit_offset,
+        bit_width,
+        storage_type,
+    } = aggregate_member_layout(aggregate_type, &builder.type_definitions, member_index)
+    else {
+        return Ok(None);
+    };
+
+    let storage_addr = lower_member_storage_address(
+        builder,
+        base,
+        aggregate_type,
+        member_index,
+        storage_byte_offset,
+    )?;
+    let storage_lmir_type = builder.convert_cx_type(&storage_type);
+    let storage_int_type = integer_lmir_type(&storage_lmir_type);
+    let loaded = builder.add_new_instruction(
+        LMIRInstructionKind::Load {
+            memory: storage_addr,
+            _type: storage_lmir_type.clone(),
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    let shifted = builder.add_new_instruction(
+        LMIRInstructionKind::IntegerBinOp {
+            op: LMIRIntBinOp::LSHR,
+            left: loaded,
+            right: LMIRValue::IntImmediate {
+                val: bit_offset as i64,
+                _type: storage_int_type,
+            },
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    builder
+        .add_new_instruction(
+            LMIRInstructionKind::IntegerBinOp {
+                op: LMIRIntBinOp::BAND,
+                left: shifted,
+                right: LMIRValue::IntImmediate {
+                    val: bit_mask(bit_width),
+                    _type: storage_int_type,
+                },
+            },
+            storage_lmir_type,
+            true,
+        )
+        .map(Some)
+}
+
+fn lower_bitfield_write(
+    builder: &mut LMIRBuilder,
+    target: &MIRExpression,
+    value: &MIRExpression,
+) -> CXResult<Option<LMIRValue>> {
+    let MIRExpressionKind::MemberAccess {
+        base,
+        member_index,
+        aggregate_type,
+    } = &target.kind
+    else {
+        return Ok(None);
+    };
+    let AggregateMemberLayout::Bitfield {
+        storage_byte_offset,
+        bit_offset,
+        bit_width,
+        storage_type,
+    } = aggregate_member_layout(aggregate_type, &builder.type_definitions, *member_index)
+    else {
+        return Ok(None);
+    };
+
+    let storage_addr = lower_member_storage_address(
+        builder,
+        base,
+        aggregate_type,
+        *member_index,
+        storage_byte_offset,
+    )?;
+    lower_bitfield_write_at_address(
+        builder,
+        storage_addr,
+        &storage_type,
+        bit_offset,
+        bit_width,
+        value,
+    )
+    .map(Some)
+}
+
+fn lower_bitfield_write_at_address(
+    builder: &mut LMIRBuilder,
+    storage_addr: LMIRValue,
+    storage_type: &MIRType,
+    bit_offset: usize,
+    bit_width: usize,
+    value: &MIRExpression,
+) -> CXResult<LMIRValue> {
+    let storage_lmir_type = builder.convert_cx_type(&storage_type);
+    let storage_int_type = integer_lmir_type(&storage_lmir_type);
+    let loaded = builder.add_new_instruction(
+        LMIRInstructionKind::Load {
+            memory: storage_addr.clone(),
+            _type: storage_lmir_type.clone(),
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    let value = lower_expression(builder, value)?;
+    let mask = bit_mask(bit_width);
+    let shifted_mask = mask << bit_offset;
+    let cleared = builder.add_new_instruction(
+        LMIRInstructionKind::IntegerBinOp {
+            op: LMIRIntBinOp::BAND,
+            left: loaded,
+            right: LMIRValue::IntImmediate {
+                val: !shifted_mask,
+                _type: storage_int_type,
+            },
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    let masked_value = builder.add_new_instruction(
+        LMIRInstructionKind::IntegerBinOp {
+            op: LMIRIntBinOp::BAND,
+            left: value,
+            right: LMIRValue::IntImmediate {
+                val: mask,
+                _type: storage_int_type,
+            },
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    let shifted_value = builder.add_new_instruction(
+        LMIRInstructionKind::IntegerBinOp {
+            op: LMIRIntBinOp::SHL,
+            left: masked_value,
+            right: LMIRValue::IntImmediate {
+                val: bit_offset as i64,
+                _type: storage_int_type,
+            },
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    let merged = builder.add_new_instruction(
+        LMIRInstructionKind::IntegerBinOp {
+            op: LMIRIntBinOp::BOR,
+            left: cleared,
+            right: shifted_value,
+        },
+        storage_lmir_type.clone(),
+        true,
+    )?;
+    builder.add_new_instruction(
+        LMIRInstructionKind::Store {
+            memory: storage_addr,
+            value: merged,
+            _type: storage_lmir_type,
+        },
+        LMIRType::unit(),
+        false,
+    )
+}
+
 pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXResult<LMIRValue> {
     match &expr.kind {
         MIRExpressionKind::BoolLiteral(value) => Ok(LMIRValue::IntImmediate {
@@ -159,6 +516,10 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::MemoryWrite { target, value } => {
+            if let Some(result) = lower_bitfield_write(builder, target, value)? {
+                return Ok(result);
+            }
+
             let bc_target = lower_expression(builder, target)?;
             let bc_value = lower_expression(builder, value)?;
             let mir_value_type = &value._type;
@@ -194,6 +555,19 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
 
         MIRExpressionKind::RegionDuplicate { source } => {
+            if let MIRExpressionKind::MemberAccess {
+                base,
+                member_index,
+                aggregate_type,
+            } = &source.kind
+            {
+                if let Some(result) =
+                    lower_bitfield_read(builder, base, aggregate_type, *member_index)?
+                {
+                    return Ok(result);
+                }
+            }
+
             let _type = builder.convert_cx_type(&expr._type);
             let val = lower_expression(builder, source)?;
 
@@ -314,33 +688,40 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         MIRExpressionKind::LeakLifetime { expression } => lower_expression(builder, expression),
         MIRExpressionKind::Unsafe { expression } => lower_expression(builder, expression),
 
-        MIRExpressionKind::StructFieldAccess {
+        MIRExpressionKind::MemberAccess {
             base,
-            field_index,
-            field_offset,
-            struct_type,
+            member_index,
+            aggregate_type,
         } => {
             assert!(
-                struct_type.is_structure(),
-                "StructFieldAccess struct_type must be a memory-resident struct"
+                aggregate_type.is_structure() || aggregate_type.is_c_union(),
+                "MemberAccess aggregate_type must be a memory-resident aggregate"
             );
 
             let bc_base = lower_expression(builder, base)?;
-            let bc_struct_type = builder.convert_cx_type(struct_type);
+            if aggregate_type.is_union() {
+                return Ok(bc_base);
+            }
+
+            let bc_struct_type = builder.convert_cx_type(aggregate_type);
+            let AggregateMemberLayout::Standard {
+                byte_offset: field_offset,
+            } = aggregate_member_layout(aggregate_type, &builder.type_definitions, *member_index)
+            else {
+                panic!("bitfield member access must be loaded or stored directly");
+            };
 
             builder.add_new_instruction(
                 LMIRInstructionKind::StructAccess {
                     struct_: bc_base,
                     struct_type: bc_struct_type,
-                    field_index: *field_index,
-                    field_offset: *field_offset,
+                    field_index: *member_index,
+                    field_offset,
                 },
                 LMIRType::default_pointer(),
                 true,
             )
         }
-
-        MIRExpressionKind::UnionAliasAccess { base, .. } => lower_expression(builder, base),
 
         MIRExpressionKind::ArrayAccess {
             array,
@@ -723,6 +1104,42 @@ fn lower_struct_initializer(
     )?;
 
     for initialization in initializations {
+        let layout = aggregate_member_layout(
+            struct_type,
+            &builder.type_definitions,
+            initialization.field_index,
+        );
+
+        let field_offset = match layout {
+            AggregateMemberLayout::Standard { byte_offset } => byte_offset,
+            AggregateMemberLayout::Bitfield {
+                storage_byte_offset,
+                bit_offset,
+                bit_width,
+                storage_type,
+            } => {
+                let storage_addr = builder.add_new_instruction(
+                    LMIRInstructionKind::StructAccess {
+                        struct_: allocation.clone(),
+                        struct_type: bc_struct_type.clone(),
+                        field_index: initialization.field_index,
+                        field_offset: storage_byte_offset,
+                    },
+                    LMIRType::default_pointer(),
+                    true,
+                )?;
+                lower_bitfield_write_at_address(
+                    builder,
+                    storage_addr,
+                    &storage_type,
+                    bit_offset,
+                    bit_width,
+                    &initialization.value,
+                )?;
+                continue;
+            }
+        };
+
         let bc_value = lower_expression(builder, &initialization.value)?;
         let mir_field_type = &initialization.value._type;
         let bc_field_type = builder.convert_cx_type(mir_field_type);
@@ -732,7 +1149,7 @@ fn lower_struct_initializer(
                 struct_: allocation.clone(),
                 struct_type: bc_struct_type.clone(),
                 field_index: initialization.field_index,
-                field_offset: initialization.field_offset,
+                field_offset,
             },
             LMIRType::default_pointer(),
             true,

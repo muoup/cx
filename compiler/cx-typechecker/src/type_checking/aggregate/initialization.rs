@@ -206,7 +206,6 @@ fn typecheck_structured_initializer(
 
         initializations.push(StructInitialization {
             field_index: struct_field_info.index,
-            field_offset: struct_field_info.offset,
             value,
         });
         initialized_fields[counter] = true;

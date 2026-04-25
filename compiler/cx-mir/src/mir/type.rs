@@ -37,6 +37,56 @@ pub struct MIRMoveAttributes {
 }
 
 #[derive(Debug, Clone, Readable, Writable)]
+pub enum MIRField {
+    Standard {
+        name: String,
+        type_id: MIRTypeId,
+    },
+    Bitfield {
+        name: Option<String>,
+        integer_type_id: MIRTypeId,
+        width: usize,
+    },
+}
+
+impl MIRField {
+    pub fn standard(name: String, type_id: MIRTypeId) -> Self {
+        Self::Standard { name, type_id }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            MIRField::Standard { name, .. } => Some(name.as_str()),
+            MIRField::Bitfield { name, .. } => name.as_deref(),
+        }
+    }
+
+    pub fn type_id(&self) -> MIRTypeId {
+        match self {
+            MIRField::Standard { type_id, .. } => *type_id,
+            MIRField::Bitfield {
+                integer_type_id, ..
+            } => *integer_type_id,
+        }
+    }
+
+    pub fn standard_parts(&self) -> Option<(&String, MIRTypeId)> {
+        match self {
+            MIRField::Standard { name, type_id } => Some((name, *type_id)),
+            MIRField::Bitfield { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct MIRBitfieldAccess {
+    pub storage_type: MIRTypeId,
+    pub bit_offset: usize,
+    pub bit_width: usize,
+    pub signed: bool,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
 pub enum MIRTypeKind {
     Unit,
     Integer {
@@ -47,19 +97,20 @@ pub enum MIRTypeKind {
         _type: MIRFloatType,
     },
     Structured {
-        fields: Vec<(String, MIRTypeId)>,
+        fields: Vec<MIRField>,
     },
     Union {
-        variants: Vec<(String, MIRTypeId)>,
+        variants: Vec<MIRField>,
     },
     TaggedUnion {
-        variants: Vec<(String, MIRTypeId)>,
+        variants: Vec<MIRField>,
     },
     PointerTo {
         inner_type: MIRTypeId,
     },
     MemoryReference {
         inner_type: MIRTypeId,
+        bitfield: Option<MIRBitfieldAccess>,
     },
     Array {
         length: usize,
@@ -304,13 +355,38 @@ impl MIRTypeContext {
         MIRType {
             kind: MIRTypeKind::MemoryReference {
                 inner_type: inner_id,
+                bitfield: None,
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn bitfield_ref_to(
+        &mut self,
+        inner_type: MIRType,
+        storage_type: MIRType,
+        bit_offset: usize,
+        bit_width: usize,
+        signed: bool,
+    ) -> MIRType {
+        let inner_id = self.intern(inner_type);
+        let storage_id = self.intern(storage_type);
+        MIRType {
+            kind: MIRTypeKind::MemoryReference {
+                inner_type: inner_id,
+                bitfield: Some(MIRBitfieldAccess {
+                    storage_type: storage_id,
+                    bit_offset,
+                    bit_width,
+                    signed,
+                }),
             },
             ..Default::default()
         }
     }
 
     pub fn mem_ref_inner_id(&self, ty: &MIRType) -> Option<MIRTypeId> {
-        let MIRTypeKind::MemoryReference { inner_type } = &ty.kind else {
+        let MIRTypeKind::MemoryReference { inner_type, .. } = &ty.kind else {
             return None;
         };
 
@@ -373,7 +449,7 @@ impl MIRTypeContext {
         return false;
     }
 
-    pub fn aggregate_fields<'a>(&'a self, ty: &'a MIRType) -> Option<&'a Vec<(String, MIRTypeId)>> {
+    pub fn aggregate_fields<'a>(&'a self, ty: &'a MIRType) -> Option<&'a Vec<MIRField>> {
         match &ty.kind {
             MIRTypeKind::Structured { fields } => Some(fields),
             MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => {
@@ -396,25 +472,13 @@ impl MIRTypeContext {
             MIRTypeKind::MemoryReference { .. } | MIRTypeKind::PointerTo { .. } => {
                 std::mem::size_of::<usize>()
             }
-            MIRTypeKind::Structured { fields } => {
-                let mut offset = 0usize;
-
-                for (_, field_id) in fields {
-                    let field_type = self
-                        .get(*field_id)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
-                    let align = self.type_alignment(field_type);
-                    offset = offset.div_ceil(align) * align;
-                    offset += self.type_size(field_type);
-                }
-
-                offset
-            }
+            MIRTypeKind::Structured { fields } => self.structured_fields_size(fields),
             MIRTypeKind::Union { variants } => variants
                 .iter()
-                .map(|(_, field_id)| {
+                .map(|field| {
+                    let field_id = field.type_id();
                     let field_type = self
-                        .get(*field_id)
+                        .get(field_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
                     self.type_size(field_type)
                 })
@@ -432,9 +496,10 @@ impl MIRTypeContext {
             MIRTypeKind::TaggedUnion { variants } => {
                 variants
                     .iter()
-                    .map(|(_, field_id)| {
+                    .map(|field| {
+                        let field_id = field.type_id();
                         let field_type = self
-                            .get(*field_id)
+                            .get(field_id)
                             .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
                         self.type_size(field_type)
                     })
@@ -446,6 +511,84 @@ impl MIRTypeContext {
             MIRTypeKind::Str => unreachable!("str is unsized and has no type_size"),
             MIRTypeKind::Function { .. } => unreachable!("Function has no type_size"),
         }
+    }
+
+    fn structured_fields_size(&self, fields: &[MIRField]) -> usize {
+        let mut offset = 0usize;
+        let mut active_storage: Option<(MIRTypeId, usize, usize)> = None;
+
+        for field in fields {
+            match field {
+                MIRField::Standard { type_id, .. } => {
+                    if let Some((storage_id, storage_offset, used_bits)) = active_storage.take() {
+                        let storage_type = self
+                            .get(storage_id)
+                            .unwrap_or_else(|| panic!("Unknown type id {}", storage_id.0));
+                        offset = storage_offset
+                            + used_bits.div_ceil(self.type_size(storage_type) * 8)
+                                * self.type_size(storage_type);
+                    }
+
+                    let field_type = self
+                        .get(*type_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", type_id.0));
+                    let align = self.type_alignment(field_type);
+                    offset = offset.div_ceil(align) * align;
+                    offset += self.type_size(field_type);
+                }
+                MIRField::Bitfield {
+                    integer_type_id,
+                    width,
+                    ..
+                } => {
+                    let storage_type = self
+                        .get(*integer_type_id)
+                        .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0));
+                    let storage_bits = self.type_size(storage_type) * 8;
+                    let storage_align = self.type_alignment(storage_type);
+
+                    if *width == 0 {
+                        active_storage = None;
+                        offset = offset.div_ceil(storage_align) * storage_align;
+                        continue;
+                    }
+
+                    active_storage = match active_storage.take() {
+                        Some((active_id, storage_offset, used_bits))
+                            if active_id == *integer_type_id
+                                && used_bits + *width <= storage_bits =>
+                        {
+                            Some((active_id, storage_offset, used_bits + *width))
+                        }
+                        Some((active_id, storage_offset, used_bits)) => {
+                            let active_type = self
+                                .get(active_id)
+                                .unwrap_or_else(|| panic!("Unknown type id {}", active_id.0));
+                            offset = storage_offset
+                                + used_bits.div_ceil(self.type_size(active_type) * 8)
+                                    * self.type_size(active_type);
+                            offset = offset.div_ceil(storage_align) * storage_align;
+                            Some((*integer_type_id, offset, *width))
+                        }
+                        None => {
+                            offset = offset.div_ceil(storage_align) * storage_align;
+                            Some((*integer_type_id, offset, *width))
+                        }
+                    };
+                }
+            }
+        }
+
+        if let Some((storage_id, storage_offset, used_bits)) = active_storage {
+            let storage_type = self
+                .get(storage_id)
+                .unwrap_or_else(|| panic!("Unknown type id {}", storage_id.0));
+            offset = storage_offset
+                + used_bits.div_ceil(self.type_size(storage_type) * 8)
+                    * self.type_size(storage_type);
+        }
+
+        offset
     }
 
     pub fn padded_size(&self, ty: &MIRType) -> usize {
@@ -465,9 +608,10 @@ impl MIRTypeContext {
             }
             MIRTypeKind::Structured { fields } => fields
                 .iter()
-                .map(|(_, field_id)| {
+                .map(|field| {
+                    let field_id = field.type_id();
                     let field_type = self
-                        .get(*field_id)
+                        .get(field_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
                     self.type_alignment(field_type)
                 })
@@ -475,9 +619,10 @@ impl MIRTypeContext {
                 .unwrap_or(8),
             MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => variants
                 .iter()
-                .map(|(_, field_id)| {
+                .map(|field| {
+                    let field_id = field.type_id();
                     let field_type = self
-                        .get(*field_id)
+                        .get(field_id)
                         .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
                     self.type_alignment(field_type)
                 })
@@ -779,14 +924,37 @@ impl MIRType {
         definitions.aggregate_fields(self).map(|fields| {
             fields
                 .iter()
-                .map(|(name, id)| {
-                    (
-                        name.clone(),
+                .filter_map(|field| {
+                    let name = field.name()?.to_string();
+                    let id = field.type_id();
+                    Some((
+                        name,
                         definitions
-                            .get(*id)
+                            .get(id)
                             .unwrap_or_else(|| panic!("Unknown type id {}", id.0))
                             .clone(),
-                    )
+                    ))
+                })
+                .collect()
+        })
+    }
+
+    pub fn standard_aggregate_fields(
+        &self,
+        definitions: &MIRTypeContext,
+    ) -> Option<Vec<(String, MIRType)>> {
+        definitions.aggregate_fields(self).map(|fields| {
+            fields
+                .iter()
+                .filter_map(|field| {
+                    let (name, id) = field.standard_parts()?;
+                    Some((
+                        name.clone(),
+                        definitions
+                            .get(id)
+                            .unwrap_or_else(|| panic!("Unknown type id {}", id.0))
+                            .clone(),
+                    ))
                 })
                 .collect()
         })
@@ -879,11 +1047,20 @@ impl MIRTypeKind {
             (
                 MIRTypeKind::PointerTo { inner_type: left },
                 MIRTypeKind::PointerTo { inner_type: right },
-            )
-            | (
-                MIRTypeKind::MemoryReference { inner_type: left },
-                MIRTypeKind::MemoryReference { inner_type: right },
             ) => left.contextual_eq_with_state(right, definitions, state),
+            (
+                MIRTypeKind::MemoryReference {
+                    inner_type: left,
+                    bitfield: left_bitfield,
+                },
+                MIRTypeKind::MemoryReference {
+                    inner_type: right,
+                    bitfield: right_bitfield,
+                },
+            ) => {
+                left_bitfield == right_bitfield
+                    && left.contextual_eq_with_state(right, definitions, state)
+            }
             (
                 MIRTypeKind::Array {
                     length: left_len,
@@ -910,8 +1087,8 @@ impl MIRTypeKind {
 }
 
 fn named_type_fields_contextual_eq(
-    left: &[(String, MIRTypeId)],
-    right: &[(String, MIRTypeId)],
+    left: &[MIRField],
+    right: &[MIRField],
     definitions: &MIRTypeContext,
     state: &mut TypeComparisonState,
 ) -> bool {
@@ -919,8 +1096,36 @@ fn named_type_fields_contextual_eq(
         && left
             .iter()
             .zip(right.iter())
-            .all(|((left_name, left_id), (right_name, right_id))| {
-                left_name == right_name
-                    && left_id.contextual_eq_with_state(right_id, definitions, state)
+            .all(|(left, right)| match (left, right) {
+                (
+                    MIRField::Standard {
+                        name: left_name,
+                        type_id: left_id,
+                    },
+                    MIRField::Standard {
+                        name: right_name,
+                        type_id: right_id,
+                    },
+                ) => {
+                    left_name == right_name
+                        && left_id.contextual_eq_with_state(right_id, definitions, state)
+                }
+                (
+                    MIRField::Bitfield {
+                        name: left_name,
+                        integer_type_id: left_id,
+                        width: left_width,
+                    },
+                    MIRField::Bitfield {
+                        name: right_name,
+                        integer_type_id: right_id,
+                        width: right_width,
+                    },
+                ) => {
+                    left_name == right_name
+                        && left_width == right_width
+                        && left_id.contextual_eq_with_state(right_id, definitions, state)
+                }
+                _ => false,
             })
 }

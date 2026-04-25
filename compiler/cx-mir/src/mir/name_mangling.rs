@@ -1,4 +1,5 @@
 use crate::mir::data::{MIRType, MIRTypeContext, MIRTypeKind};
+use crate::mir::r#type::MIRField;
 
 pub fn base_mangle_standard(name: &str) -> String {
     name.to_string()
@@ -31,8 +32,18 @@ pub(crate) fn type_mangle(definitions: &MIRTypeContext, ty: &MIRType) -> String 
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
             mangled.push_str(&type_mangle(definitions, inner_type));
         }
-        MIRTypeKind::MemoryReference { inner_type } => {
+        MIRTypeKind::MemoryReference {
+            inner_type,
+            bitfield,
+        } => {
             mangled.push('R');
+            if let Some(bitfield) = bitfield {
+                mangled.push('b');
+                mangled.push_str(&bitfield.bit_offset.to_string());
+                mangled.push('_');
+                mangled.push_str(&bitfield.bit_width.to_string());
+                mangled.push('_');
+            }
             let inner_type = definitions
                 .get(*inner_type)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type.0));
@@ -125,17 +136,17 @@ fn push_move_attributes(mangled: &mut String, ty: &MIRType) {
     mangled.push(if ty.move_attributes.nodrop { 'D' } else { 'd' });
 }
 
-fn push_aggregate_fields(
-    mangled: &mut String,
-    definitions: &MIRTypeContext,
-    fields: &Vec<(String, crate::mir::data::MIRTypeId)>,
-) {
+fn push_aggregate_fields(mangled: &mut String, definitions: &MIRTypeContext, fields: &[MIRField]) {
     mangled.push('f');
     mangled.push_str(&fields.len().to_string());
     mangled.push('_');
-    for (_, field_id) in fields {
+    for field in fields {
+        let field_id = field.type_id();
+        if matches!(field, MIRField::Bitfield { .. }) {
+            mangled.push('b');
+        }
         let field_type = definitions
-            .get(*field_id)
+            .get(field_id)
             .unwrap_or_else(|| panic!("Unknown type id {}", field_id.0));
         mangled.push_str(&type_mangle(definitions, field_type));
     }

@@ -107,18 +107,19 @@ pub fn compatible_types(
             // Unions in C are compatible even if their fields are in different orders, as long as they have the same set of fields.
             // Structs, however, require the fields to be in the same order.
             if type1.is_union() && type2.is_union() {
-                fields1.sort_by(|(name1, _), (name2, _)| name1.cmp(name2));
-                fields2.sort_by(|(name1, _), (name2, _)| name1.cmp(name2));
+                fields1.sort_by(|field1, field2| field1.name().cmp(&field2.name()));
+                fields2.sort_by(|field1, field2| field1.name().cmp(&field2.name()));
             }
 
-            return Ok(fields1.iter().zip(fields2.iter()).all(
-                |((_, field_type1), (_, field_type2))| {
-                    let field_type1 = env.symbols.context.get(*field_type1).cloned().unwrap();
-                    let field_type2 = env.symbols.context.get(*field_type2).cloned().unwrap();
+            return Ok(fields1.iter().zip(fields2.iter()).all(|(field1, field2)| {
+                if field1.name() != field2.name() {
+                    return false;
+                }
+                let field_type1 = env.symbols.context.get(field1.type_id()).cloned().unwrap();
+                let field_type2 = env.symbols.context.get(field2.type_id()).cloned().unwrap();
 
-                    compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
-                },
-            ));
+                compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
+            }));
         }
 
         _ => Ok(false),

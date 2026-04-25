@@ -425,7 +425,21 @@ impl Display for CXTypeKind {
             } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(_, ty)| format!("{ty}"))
+                    .map(|field| match field {
+                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
+                        crate::data::CXField::Bitfield {
+                            name,
+                            integer_type,
+                            width,
+                        } => format!(
+                            "{}{} : {}",
+                            integer_type,
+                            name.as_deref()
+                                .map(|name| format!(" {name}"))
+                                .unwrap_or_default(),
+                            width
+                        ),
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut attrs = Vec::new();
@@ -451,7 +465,21 @@ impl Display for CXTypeKind {
             CXTypeKind::Union { name, fields } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(_, ty)| format!("{ty}"))
+                    .map(|field| match field {
+                        crate::data::CXField::Standard { _type, .. } => format!("{_type}"),
+                        crate::data::CXField::Bitfield {
+                            name,
+                            integer_type,
+                            width,
+                        } => format!(
+                            "{}{} : {}",
+                            integer_type,
+                            name.as_deref()
+                                .map(|name| format!(" {name}"))
+                                .unwrap_or_default(),
+                            width
+                        ),
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(
@@ -468,7 +496,14 @@ impl Display for CXTypeKind {
             } => {
                 let variants_str = variants
                     .iter()
-                    .map(|(name, ty)| format!("{name}: {ty}"))
+                    .map(|field| match field {
+                        crate::data::CXField::Standard { name, _type } => {
+                            format!("{name}: {_type}")
+                        }
+                        crate::data::CXField::Bitfield { .. } => {
+                            "<invalid bitfield variant>".to_string()
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut attrs = Vec::new();

@@ -101,11 +101,10 @@ pub(crate) fn typecheck_access(
                             .clone()
                             .with_specifier(if lhs_ref_const { CX_CONST } else { 0 }),
                     ),
-                    MIRExpressionKind::StructFieldAccess {
+                    MIRExpressionKind::MemberAccess {
                         base: Box::new(lhs),
-                        field_index: struct_field.index,
-                        field_offset: struct_field.offset,
-                        struct_type: lhs_inner.clone(),
+                        member_index: struct_field.index,
+                        aggregate_type: lhs_inner.clone(),
                     },
                 );
 
@@ -114,44 +113,6 @@ pub(crate) fn typecheck_access(
                 }
 
                 return Ok(result);
-            }
-
-            if let Some(variants) = lhs_inner.aggregate_fields(&env.symbols.context) {
-                if matches!(lhs_inner.kind, MIRTypeKind::Union { .. }) {
-                    let Some((_, field_type)) = variants
-                        .iter()
-                        .find(|(field_name, _)| field_name.as_str() == name.as_str())
-                    else {
-                        return log_typecheck_error!(
-                            env,
-                            Some(expr.token_range()),
-                            "Union type {} has no field named {}",
-                            lhs_inner.display_with(&env.symbols.context),
-                            name
-                        );
-                    };
-
-                    let mut result = TypecheckResult::new_base(
-                        env.symbols.context.mem_ref_to(
-                            field_type.clone().with_specifier(if lhs_ref_const {
-                                CX_CONST
-                            } else {
-                                0
-                            }),
-                        ),
-                        MIRExpressionKind::UnionAliasAccess {
-                            base: Box::new(lhs),
-                            variant_type: field_type.clone(),
-                            union_type: lhs_inner.clone(),
-                        },
-                    );
-
-                    if let Some(binding) = lhs_binding.as_ref() {
-                        result = result.with_binding(binding.project());
-                    }
-
-                    return Ok(result);
-                }
             }
 
             let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;

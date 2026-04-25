@@ -4,7 +4,7 @@ use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter}
 use crate::mir::expression::{MIRBinOp, MIRCoercion, MIRExpression, MIRExpressionKind, MIRUnOp};
 use crate::mir::program::{MIRFunction, MIRGlobalVarKind, MIRGlobalVariable, MIRUnit};
 use crate::mir::r#type::{
-    MIRFloatType, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
+    MIRField, MIRFloatType, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind,
 };
 use std::fmt::{Display, Formatter};
 
@@ -286,7 +286,7 @@ fn write_aggregate(
     f: &mut Formatter<'_>,
     keyword: &str,
     ty: &MIRType,
-    fields: &[(String, MIRTypeId)],
+    fields: &[MIRField],
     definitions: &MIRTypeContext,
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
@@ -297,12 +297,33 @@ fn write_aggregate(
     write!(f, " {{")?;
     if !fields.is_empty() {
         write!(f, " ")?;
-        for (idx, (field_name, field_id)) in fields.iter().enumerate() {
+        for (idx, field) in fields.iter().enumerate() {
             if idx > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{field_name}: ")?;
-            write_type_id(f, definitions, *field_id, TypeRenderMode::Inline, state)?;
+            match field {
+                MIRField::Standard { name, type_id } => {
+                    write!(f, "{name}: ")?;
+                    write_type_id(f, definitions, *type_id, TypeRenderMode::Inline, state)?;
+                }
+                MIRField::Bitfield {
+                    name,
+                    integer_type_id,
+                    width,
+                } => {
+                    if let Some(name) = name {
+                        write!(f, "{name}: ")?;
+                    }
+                    write_type_id(
+                        f,
+                        definitions,
+                        *integer_type_id,
+                        TypeRenderMode::Inline,
+                        state,
+                    )?;
+                    write!(f, " : {width}")?;
+                }
+            }
         }
         write!(f, " ")?;
     }
@@ -342,9 +363,20 @@ fn write_type_body(
             write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
             write!(f, "*")
         }
-        MIRTypeKind::MemoryReference { inner_type } => {
+        MIRTypeKind::MemoryReference {
+            inner_type,
+            bitfield,
+        } => {
             write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
-            write!(f, "&")
+            if let Some(bitfield) = bitfield {
+                write!(
+                    f,
+                    "&<bitfield @{}:{}>",
+                    bitfield.bit_offset, bitfield.bit_width
+                )
+            } else {
+                write!(f, "&")
+            }
         }
         MIRTypeKind::Array {
             length: size,
@@ -766,35 +798,15 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            MIRExpressionKind::StructFieldAccess {
+            MIRExpressionKind::MemberAccess {
                 base,
-                field_index,
-                field_offset,
-                struct_type,
+                member_index,
+                aggregate_type,
                 ..
             } => {
-                write!(f, "StructFieldAccess [")?;
-                self.write_type(f, struct_type)?;
-                write!(f, "] index {field_index} (+{field_offset}) <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: base,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            MIRExpressionKind::UnionAliasAccess {
-                base,
-                variant_type,
-                union_type,
-            } => {
-                write!(f, "UnionAliasAccess [")?;
-                self.write_type(f, variant_type)?;
-                write!(f, " as ")?;
-                self.write_type(f, union_type)?;
-                write!(f, "] <'")?;
+                write!(f, "MemberAccess [")?;
+                self.write_type(f, aggregate_type)?;
+                write!(f, "] member {member_index} <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
@@ -914,11 +926,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 writeln!(f, ">")?;
                 for initializer in initializations {
                     self.indent(f)?;
-                    writeln!(
-                        f,
-                        "  Field {} (+{}):",
-                        initializer.field_index, initializer.field_offset
-                    )?;
+                    writeln!(f, "  Field {}:", initializer.field_index)?;
                     MIRExpressionFormatter {
                         expr: &initializer.value,
                         depth: self.depth + 2,

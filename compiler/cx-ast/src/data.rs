@@ -146,6 +146,39 @@ pub struct CXType {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum CXField {
+    Standard {
+        name: String,
+        _type: CXType,
+    },
+    Bitfield {
+        name: Option<String>,
+        integer_type: CXType,
+        width: usize,
+    },
+}
+
+impl CXField {
+    pub fn standard(name: String, _type: CXType) -> Self {
+        Self::Standard { name, _type }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            CXField::Standard { name, .. } => Some(name.as_str()),
+            CXField::Bitfield { name, .. } => name.as_deref(),
+        }
+    }
+
+    pub fn standard_parts(&self) -> Option<(&String, &CXType)> {
+        match self {
+            CXField::Standard { name, _type } => Some((name, _type)),
+            CXField::Bitfield { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXTypeKind {
     Identifier {
         name: CXIdent,
@@ -156,7 +189,7 @@ pub enum CXTypeKind {
         input: CXTemplateInput,
     },
 
-    ExplicitSizedArray(Box<CXType>, usize),
+    ExplicitSizedArray(Box<CXType>, Box<CXExpression>),
     ImplicitSizedArray(Box<CXType>),
 
     MemoryReference {
@@ -170,16 +203,16 @@ pub enum CXTypeKind {
     Structured {
         name: Option<CXIdent>,
         attributes: CXStructAttributes,
-        fields: Vec<(String, CXType)>,
+        fields: Vec<CXField>,
     },
     Union {
         name: Option<CXIdent>,
-        fields: Vec<(String, CXType)>,
+        fields: Vec<CXField>,
     },
     TaggedUnion {
         name: CXIdent,
         attributes: CXStructAttributes,
-        variants: Vec<(String, CXType)>,
+        variants: Vec<CXField>,
     },
 
     FunctionPointer {

@@ -1,15 +1,20 @@
 use std::sync::Arc;
 
 use cx_ast::ast::{CXExpression, VisibilityMode};
-use cx_ast::data::{CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType};
+use cx_ast::data::{
+    CXField, CXStructAttributes, CXTemplateInput, CXType, CXTypeKind, PredeclarationType,
+};
 use cx_mir::mir::data::{MIRMoveAttributes, MIRTemplateInput, MIRType, MIRTypeId, MIRTypeKind};
 use cx_mir::mir::program::MIRBaseMappings;
+use cx_mir::mir::r#type::MIRField;
 use cx_util::CXResult;
 use cx_util::identifier::CXIdent;
 
 use crate::environment::functions::completion::{complete_type, int_complete_fn_prototype};
 use crate::environment::symbols::templates::instantiate_type_template;
 use crate::log_typecheck_error;
+use crate::type_checking::constexpr::constexpr_evaluate;
+use crate::type_checking::typechecker::typecheck_expr;
 use crate::{environment::TypeEnvironment, log::TypeError};
 
 pub(crate) enum ResolvedBaseData<'a> {
@@ -45,7 +50,7 @@ pub(crate) fn base_data_from_module<'a>(
     }
 }
 
-pub(crate) fn _complete_template_input(
+pub(crate) fn internal_complete_template_input(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
     external_module: Option<&String>,
@@ -176,6 +181,74 @@ fn ensure_complete_value_type(
     }
 }
 
+fn complete_field(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    field: &CXField,
+) -> CXResult<MIRField> {
+    match field {
+        CXField::Standard { name, _type } => {
+            let field_type_id = complete_type_id(env, base_data, expr, _type)?;
+            let resolved_field_type = env
+                .symbols
+                .context
+                .get(field_type_id)
+                .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
+                .clone();
+            ensure_complete_value_type(env, expr, name, &resolved_field_type)?;
+            Ok(MIRField::standard(name.clone(), field_type_id))
+        }
+        CXField::Bitfield {
+            name,
+            integer_type,
+            width,
+        } => {
+            if name.is_some() && *width == 0 {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Named bitfield cannot have width 0"
+                );
+            }
+
+            let integer_type_id = complete_type_id(env, base_data, expr, integer_type)?;
+            let resolved_integer_type = env
+                .symbols
+                .context
+                .get(integer_type_id)
+                .unwrap_or_else(|| panic!("Unknown type id {}", integer_type_id.0))
+                .clone();
+            let MIRTypeKind::Integer { _type, .. } = resolved_integer_type.kind else {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Bitfield '{}' must have an integer type, found {}",
+                    name.as_deref().unwrap_or("<anonymous>"),
+                    resolved_integer_type.display_with(&env.symbols.context)
+                );
+            };
+            let max_width = _type.bytes() * 8;
+            if *width > max_width {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Bitfield '{}' has width {}, but its storage type only has {} bits",
+                    name.as_deref().unwrap_or("<anonymous>"),
+                    width,
+                    max_width
+                );
+            }
+
+            Ok(MIRField::Bitfield {
+                name: name.clone(),
+                integer_type_id,
+                width: *width,
+            })
+        }
+    }
+}
+
 fn complete_named_aggregate<F>(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -184,12 +257,12 @@ fn complete_named_aggregate<F>(
     name: CXIdent,
     template_info: Option<Box<cx_mir::mir::data::TemplateInfo>>,
     attributes: MIRMoveAttributes,
-    raw_fields: &[(String, CXType)],
+    raw_fields: &[CXField],
     aggregate_kind: &str,
     kind_ctor: F,
 ) -> CXResult<MIRType>
 where
-    F: Fn(Vec<(String, MIRTypeId)>) -> MIRTypeKind,
+    F: Fn(Vec<MIRField>) -> MIRTypeKind,
 {
     let type_id = env.get_or_create_named_type_id(name.as_str());
     env.symbols
@@ -221,17 +294,7 @@ where
     let result = (|| {
         let fields = raw_fields
             .iter()
-            .map(|(field_name, field_type)| {
-                let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
-                let resolved_field_type = env
-                    .symbols
-                    .context
-                    .get(field_type_id)
-                    .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
-                    .clone();
-                ensure_complete_value_type(env, expr, field_name, &resolved_field_type)?;
-                Ok((field_name.clone(), field_type_id))
-            })
+            .map(|field| complete_field(env, base_data, expr, field))
             .collect::<CXResult<Vec<_>>>()?;
 
         validate_linear_hierarchy(env, aggregate_kind, &fields, &attributes)?;
@@ -405,12 +468,24 @@ pub(crate) fn int_complete_type(
                 .get(inner_type_id)
                 .unwrap_or_else(|| panic!("Unknown type id {}", inner_type_id.0))
                 .clone();
+            
+            let Some(size) = typecheck_expr(env, base_data, size.as_ref(), None)
+                .and_then(|v| constexpr_evaluate(env, v.into_expression()))?
+                .get_integer() else {
+                
+                return log_typecheck_error!(
+                    env,
+                    Some(size.token_range()),
+                    "Invalid size expression, expected integer result"
+                );
+            };
+            
             ensure_complete_value_type(env, expr, "<array element>", &inner_type)?;
 
             Ok(construct_type(
                 ty,
                 MIRTypeKind::Array {
-                    length: *size,
+                    length: size as usize,
                     inner_type: inner_type_id,
                 },
             ))
@@ -432,6 +507,7 @@ pub(crate) fn int_complete_type(
                 ty,
                 MIRTypeKind::MemoryReference {
                     inner_type: inner_type_id,
+                    bitfield: None,
                 },
             ))
         }
@@ -483,17 +559,7 @@ pub(crate) fn int_complete_type(
         } => {
             let completed_fields = fields
                 .iter()
-                .map(|(field_name, field_type)| {
-                    let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
-                    let resolved_field_type = env
-                        .symbols
-                        .context
-                        .get(field_type_id)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
-                        .clone();
-                    ensure_complete_value_type(env, expr, field_name, &resolved_field_type)?;
-                    Ok((field_name.clone(), field_type_id))
-                })
+                .map(|field| complete_field(env, base_data, expr, field))
                 .collect::<CXResult<Vec<_>>>()?;
 
             let (nocopy, nodrop) = resolve_copy_traits(env, attributes);
@@ -536,17 +602,7 @@ pub(crate) fn int_complete_type(
         CXTypeKind::Union { name: None, fields } => {
             let completed_fields = fields
                 .iter()
-                .map(|(field_name, field_type)| {
-                    let field_type_id = complete_type_id(env, base_data, expr, field_type)?;
-                    let resolved_field_type = env
-                        .symbols
-                        .context
-                        .get(field_type_id)
-                        .unwrap_or_else(|| panic!("Unknown type id {}", field_type_id.0))
-                        .clone();
-                    ensure_complete_value_type(env, expr, field_name, &resolved_field_type)?;
-                    Ok((field_name.clone(), field_type_id))
-                })
+                .map(|field| complete_field(env, base_data, expr, field))
                 .collect::<CXResult<Vec<_>>>()?;
 
             Ok(MIRType {
@@ -603,16 +659,19 @@ fn resolve_copy_traits(env: &TypeEnvironment, attributes: &CXStructAttributes) -
 fn validate_linear_hierarchy(
     env: &mut TypeEnvironment,
     aggregate_kind: &str,
-    members: &[(String, MIRTypeId)],
+    members: &[MIRField],
     attributes: &MIRMoveAttributes,
 ) -> CXResult<()> {
     let aggregate_is_nocopy = attributes.nocopy || attributes.nodrop;
 
-    for (member_name, member_id) in members {
+    for member in members {
+        let Some((member_name, member_id)) = member.standard_parts() else {
+            continue;
+        };
         let member_type = env
             .symbols
             .context
-            .get(*member_id)
+            .get(member_id)
             .unwrap_or_else(|| panic!("Unknown type id {}", member_id.0));
         let Some(member_attributes) = member_type.struct_attributes() else {
             continue;

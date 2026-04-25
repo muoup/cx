@@ -78,16 +78,10 @@ pub enum MIRExpressionKind {
     Typechange(Box<MIRExpression>),
 
     // Aggregate Access
-    StructFieldAccess {
+    MemberAccess {
         base: Box<MIRExpression>,
-        field_index: usize,
-        field_offset: usize,
-        struct_type: MIRType,
-    },
-    UnionAliasAccess {
-        base: Box<MIRExpression>,
-        variant_type: MIRType,
-        union_type: MIRType,
+        member_index: usize,
+        aggregate_type: MIRType,
     },
     ArrayAccess {
         array: Box<MIRExpression>,
@@ -364,7 +358,6 @@ pub enum MIRCoercion {
 #[derive(Clone, Debug, Readable, Writable)]
 pub struct StructInitialization {
     pub field_index: usize,
-    pub field_offset: usize,
     pub value: MIRExpression,
 }
 
