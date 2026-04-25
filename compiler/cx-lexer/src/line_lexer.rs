@@ -111,7 +111,17 @@ fn number_lex(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
         }
         iter.next();
     }
-    let num = &iter.source[start_index..iter.current_iter];
+    let number_end = iter.current_iter;
+
+    while let Some(c) = iter.peek() {
+        if matches!(c, 'u' | 'U' | 'l' | 'L') {
+            iter.next();
+        } else {
+            break;
+        }
+    }
+
+    let num = &iter.source[start_index..number_end];
 
     if dot {
         match num.parse() {

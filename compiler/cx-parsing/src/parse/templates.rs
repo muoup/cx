@@ -6,7 +6,7 @@ use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::types::parse_initializer;
 
-pub(crate) fn note_templatedtype_s(
+pub(crate) fn note_templated_types(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
 ) {
@@ -25,7 +25,7 @@ pub(crate) fn note_templatedtype_s(
     }
 }
 
-pub(crate) fn unnote_templatedtype_s(
+pub(crate) fn unnote_templated_types(
     data: &mut ParserData,
     template_prototype: &CXTemplatePrototype,
 ) {

@@ -12,7 +12,7 @@ use crate::parse::operators::{
 };
 use crate::parse::templates::parse_template_args;
 use crate::parse::types::{parse_base_mods, parse_initializer, parse_specifier, parse_type_base};
-use crate::parse::{parse_body, parse_intrinsic, parse_std_ident};
+use crate::parse::{parse_body, parse_intrinsic, try_parse_ident};
 
 fn parse_at_intrinsic_expr(
     data: &mut ParserData,
@@ -483,7 +483,9 @@ pub(crate) fn parse_expr_val(
 
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpression> {
     let start_index = data.tokens.index;
-    let ident = parse_std_ident(&mut data.tokens)?;
+    let Some(ident) = try_parse_ident(&mut data.tokens) else {
+        return log_parse_error!(data, "Expected identifier");
+    };
 
     if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
         data.tokens.back();

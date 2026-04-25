@@ -1,0 +1,8 @@
+#include "includes/once_header.h"
+#include "includes/once_header.h"
+
+int main() {
+    OnceHeaderType value = { .value = 1 };
+    return value.value - 1;
+}
+

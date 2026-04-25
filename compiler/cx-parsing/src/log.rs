@@ -13,7 +13,12 @@ pub struct ParseErrorLog {
 
 impl CXErrorTrait for ParseErrorLog {
     fn pretty_print(&self) {
-        cx_log::pretty_point_error(&self.message, &self.file, &self.token);
+        let file = if self.token.file_origin.is_empty() {
+            self.file.clone()
+        } else {
+            PathBuf::from(self.token.file_origin.as_ref())
+        };
+        cx_log::pretty_point_error(&self.message, &file, &self.token);
     }
 
     fn error_prefix(&self) -> String {

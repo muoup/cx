@@ -51,7 +51,7 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
 
 ## Usage
 
-For language syntax and semantics, see [docs/language_spec.md](docs/language_spec.md).
+For an overview and documentation on language features, please see [the project page](docs/index.md).
 
 Basic usage:
 

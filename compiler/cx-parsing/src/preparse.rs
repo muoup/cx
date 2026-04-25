@@ -8,7 +8,7 @@ use cx_pipeline_data::CompilerConfig;
 use cx_tokens::{identifier, keyword, operator, punctuator, specifier, TokenIter};
 use cx_util::{identifier::CXIdent, log_error, module_path::ModulePath, CXResult};
 
-use crate::parse::parse_std_ident;
+use crate::parse::try_parse_ident;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparseConfig {
@@ -80,12 +80,12 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                 data.tokens.next();
             }
 
-            let Some(ident) = parse_std_ident(&mut data.tokens).ok() else {
+            let Some(ident) = try_parse_ident(&mut data.tokens) else {
                 return Ok(());
             };
 
             data.contents.type_idents.push(ModuleResource::new(
-                CXIdent::new(ident.as_str()),
+                ident.clone(),
                 data.visibility_mode,
                 CXLinkageMode::Standard,
             ));

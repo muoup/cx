@@ -12,9 +12,9 @@ use cx_util::CXResult;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::templates::{
-    note_templatedtype_s, parse_template_args, try_parse_template, unnote_templatedtype_s,
+    note_templated_types, parse_template_args, try_parse_template, unnote_templated_types,
 };
-use crate::parse::{parse_intrinsic, parse_std_ident};
+use crate::parse::{parse_intrinsic, try_parse_ident};
 
 fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXStructAttributes> {
     let mut attributes = CXStructAttributes::default();
@@ -90,7 +90,7 @@ fn defined_type(
 pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     assert_token_matches!(data.tokens, keyword!(Struct));
 
-    let name = parse_std_ident(&mut data.tokens).ok();
+    let name = try_parse_ident(&mut data.tokens);
     let template_prototype = try_parse_template(&mut data.tokens)?;
     let attributes = parse_type_attributes(data, "struct")?;
 
@@ -99,15 +99,13 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     }
 
     if let Some(template_prototype) = &template_prototype {
-        note_templatedtype_s(data, template_prototype);
+        note_templated_types(data, template_prototype);
     }
 
     let mut fields = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let Ok((name, _type)) = parse_initializer(data) else {
-            return log_preparse_error!(data.tokens, "Failed to parse struct member type");
-        };
+        let (name, _type) = parse_initializer(data)?;
 
         let Some(name) = name else {
             return log_preparse_error!(
@@ -122,7 +120,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
     }
 
     if let Some(template_prototype) = &template_prototype {
-        unnote_templatedtype_s(data, template_prototype);
+        unnote_templated_types(data, template_prototype);
     }
 
     defined_type(
@@ -147,7 +145,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         return parse_tagged_union_def(data);
     }
 
-    let name = parse_std_ident(&mut data.tokens).ok();
+    let name = try_parse_ident(&mut data.tokens);
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
         return predeclaration_type(data, name, PredeclarationType::Enum);
@@ -156,7 +154,9 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
     let mut idx = 0;
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let variant_name = parse_std_ident(&mut data.tokens)?;
+        let Some(variant_name) = try_parse_ident(&mut data.tokens) else {
+            return log_preparse_error!(data.tokens, "Expected enum variant name");
+        };
 
         if try_next!(data.tokens, TokenKind::Assignment(None)) {
             match next_kind!(data.tokens)? {
@@ -202,7 +202,10 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
     assert_token_matches!(data.tokens, keyword!(Enum));
     assert_token_matches!(data.tokens, keyword!(Union));
 
-    let name = parse_std_ident(&mut data.tokens)?;
+    let Some(name) = try_parse_ident(&mut data.tokens) else {
+        return log_preparse_error!(data.tokens, "Tagged unions must have a name");
+    };
+
     let template_prototype = try_parse_template(&mut data.tokens)?;
     let attributes = parse_type_attributes(data, "enum union")?;
 
@@ -210,8 +213,8 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 
     let mut variants = Vec::new();
 
-    loop {
-        let Ok(name) = parse_std_ident(&mut data.tokens) else {
+    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+        let Some(name) = try_parse_ident(&mut data.tokens) else {
             return log_preparse_error!(data.tokens, "Expected variant name in tagged union");
         };
 
@@ -237,11 +240,10 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
         }
 
         if !try_next!(data.tokens, operator!(Comma)) {
+            assert_token_matches!(data.tokens, punctuator!(CloseBrace));
             break;
         }
     }
-
-    assert_token_matches!(data.tokens, punctuator!(CloseBrace));
 
     defined_type(
         data,
@@ -260,7 +262,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
     assert_token_matches!(data.tokens, keyword!(Union));
 
-    let name = parse_std_ident(&mut data.tokens).ok();
+    let name = try_parse_ident(&mut data.tokens);
     let template_prototype = try_parse_template(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
@@ -269,7 +271,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
 
     let mut fields = Vec::new();
 
-    loop {
+    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let (name, _type) = parse_initializer(data)?;
 
         let Some(name) = name else {
@@ -281,13 +283,8 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
         };
 
         fields.push((name.to_string(), _type));
-
-        if !try_next!(data.tokens, punctuator!(Semicolon)) {
-            break;
-        }
+        assert_token_matches!(data.tokens, punctuator!(Semicolon));
     }
-
-    assert_token_matches!(data.tokens, punctuator!(CloseBrace));
 
     defined_type(
         data,
@@ -306,8 +303,12 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeQualifiers {
             SpecifierType::Const => spec_acc |= CX_CONST,
             SpecifierType::Volatile => spec_acc |= CX_VOLATILE,
             SpecifierType::Restrict => spec_acc |= CX_RESTRICT,
+            SpecifierType::Extern
+            | SpecifierType::Inline
+            | SpecifierType::Static
+            | SpecifierType::ThreadLocal => {}
 
-            _ => break,
+            SpecifierType::Public | SpecifierType::Private => break,
         }
     }
 
@@ -315,7 +316,7 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeQualifiers {
     spec_acc
 }
 
-pub(crate) fn parsetype_mods(
+pub(crate) fn parse_type_mods(
     data: &mut ParserData,
     acc_type: CXType,
 ) -> CXResult<(Option<CXIdent>, CXType)> {
@@ -338,7 +339,7 @@ pub(crate) fn parsetype_mods(
                 },
             );
 
-            parsetype_mods(data, acc_type)
+            parse_type_mods(data, acc_type)
         }
 
         operator!(Asterisk) => {
@@ -346,13 +347,13 @@ pub(crate) fn parsetype_mods(
             let specs = parse_specifier(&mut data.tokens);
             let acc_type = acc_type.pointer_to(false, specs);
 
-            parsetype_mods(data, acc_type)
+            parse_type_mods(data, acc_type)
         }
 
         operator!(Ampersand) => {
             data.tokens.next();
 
-            parsetype_mods(
+            parse_type_mods(
                 data,
                 CXTypeKind::MemoryReference {
                     inner_type: Box::new(acc_type),
@@ -367,7 +368,7 @@ pub(crate) fn parsetype_mods(
                 data.tokens.index = start_index;
                 return Ok((None, acc_type));
             }
-            let name = parse_std_ident(&mut data.tokens).ok();
+            let name = try_parse_ident(&mut data.tokens);
             assert_token_matches!(
                 data.tokens,
                 TokenKind::Punctuator(PunctuatorType::CloseParen)
@@ -407,7 +408,13 @@ pub(crate) fn parsetype_mods(
             ))
         }
 
-        identifier!() => Ok((Some(parse_std_ident(&mut data.tokens)?), acc_type)),
+        identifier!() => {
+            let Some(name) = try_parse_ident(&mut data.tokens) else {
+                unreachable!();
+            };
+
+            Ok((Some(name), acc_type))
+        }
 
         _ => Ok((None, acc_type)),
     }
@@ -469,7 +476,9 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
 
     let _type = match &next_token.kind {
         identifier!() => {
-            let ident = parse_std_ident(&mut data.tokens)?;
+            let Some(ident) = try_parse_ident(&mut data.tokens) else {
+                unreachable!();
+            };
 
             if peek_kind!(data.tokens, operator!(Less)) {
                 let params = parse_template_args(data)?;
@@ -498,10 +507,10 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<CXType> {
         keyword!(Enum) => parse_enum_def(data),
         keyword!(Union) => parse_union_def(data),
 
-        _ => {
+        tok => {
             return log_parse_error!(
                 data,
-                "Expected type base (identifier, struct, enum, union, or intrinsic)"
+                "Expected type base (identifier, struct, enum, union, or intrinsic), found: {tok}"
             )
         }
     };
@@ -515,7 +524,7 @@ pub(crate) fn parse_base_mods(
     data: &mut ParserData,
     acc_type: CXType,
 ) -> CXResult<(Option<CXIdent>, CXType)> {
-    let (name, modified_type) = parsetype_mods(data, acc_type)?;
+    let (name, modified_type) = parse_type_mods(data, acc_type)?;
 
     Ok((name, parse_suffixtype_mod(&mut data.tokens, modified_type)?))
 }

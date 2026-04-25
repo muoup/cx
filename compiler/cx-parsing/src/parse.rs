@@ -16,7 +16,7 @@ use crate::parse::{
     expressions::{expression_requires_semicolon, parse_expr},
     functions::try_function_parse,
     parser::ParserData,
-    templates::{note_templatedtype_s, parse_template_prototype, unnote_templatedtype_s},
+    templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
     types::parse_initializer,
 };
 
@@ -110,9 +110,9 @@ fn parse_fn_merge(
     } else {
         match template_prototype {
             Some(template_prototype) => {
-                note_templatedtype_s(data, &template_prototype);
+                note_templated_types(data, &template_prototype);
                 let body = parse_body(data)?;
-                unnote_templatedtype_s(data, &template_prototype);
+                unnote_templated_types(data, &template_prototype);
 
                 data.add_function(prototype.clone(), Some(template_prototype.clone()));
                 data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
@@ -241,14 +241,14 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     Ok(CXIdent::new(ss))
 }
 
-pub fn parse_std_ident(tokens: &mut TokenIter) -> CXResult<CXIdent> {
-    let TokenKind::Identifier(ident) = peek_next_kind!(tokens)? else {
-        return log_preparse_error!(tokens, "Expected standard identifier");
+pub fn try_parse_ident(tokens: &mut TokenIter) -> Option<CXIdent> {
+    let TokenKind::Identifier(ident) = peek_next_kind!(tokens).ok()? else {
+        return None;
     };
 
     let ident = ident.clone();
 
     tokens.next();
 
-    Ok(CXIdent::new(ident))
+    Some(CXIdent::new(ident))
 }
