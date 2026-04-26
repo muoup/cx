@@ -66,7 +66,8 @@ impl<'a> ParserData<'a> {
                     .and_then(|index| self.tokens.slice.get(index))
                     .map(|token| token.file_origin.clone())
             })
-            .filter(|origin| !origin.is_empty())
+            .filter(|origin| !origin.as_os_str().is_empty())
+            .map(|origin| Arc::from(origin.to_string_lossy().as_ref()))
             .unwrap_or_else(|| self.file_origin.clone())
     }
 

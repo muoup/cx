@@ -708,13 +708,46 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
         KeywordType::For => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
 
-            let init = parse_expr(data)?;
+            let init = if matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(punctuator!(Semicolon))
+            ) {
+                CXExprKind::Unit.into_expr_with_origin(
+                    data.tokens.index,
+                    data.tokens.index,
+                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                )
+            } else {
+                parse_expr(data)?
+            };
             assert_token_matches!(data.tokens, punctuator!(Semicolon));
 
-            let condition = parse_expr(data)?;
+            let condition = if matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(punctuator!(Semicolon))
+            ) {
+                CXExprKind::IntLiteral { val: 1, bytes: 4 }.into_expr_with_origin(
+                    data.tokens.index,
+                    data.tokens.index,
+                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                )
+            } else {
+                parse_expr(data)?
+            };
             assert_token_matches!(data.tokens, punctuator!(Semicolon));
 
-            let increment = parse_expr(data)?;
+            let increment = if matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(punctuator!(CloseParen))
+            ) {
+                CXExprKind::Unit.into_expr_with_origin(
+                    data.tokens.index,
+                    data.tokens.index,
+                    data.file_origin_for_range(data.tokens.index, data.tokens.index),
+                )
+            } else {
+                parse_expr(data)?
+            };
             assert_token_matches!(data.tokens, punctuator!(CloseParen));
 
             let body = parse_body(data)?;

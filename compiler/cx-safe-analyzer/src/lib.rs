@@ -86,7 +86,8 @@ impl AnalysisDiagnosticContext {
         if start_token.file_origin != end_token.file_origin {
             return CXError::create_result(format!(
                 "Source range tokens have different file origins: {} and {}",
-                start_token.file_origin, end_token.file_origin
+                start_token.file_origin.display(),
+                end_token.file_origin.display()
             ));
         }
 

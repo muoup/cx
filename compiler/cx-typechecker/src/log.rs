@@ -105,7 +105,8 @@ pub fn file_origin_for_tokens(
         .get(start_token)
         .or_else(|| end_token.checked_sub(1).and_then(|index| tokens.get(index)))
         .and_then(|token| {
-            (!token.file_origin.is_empty()).then(|| PathBuf::from(token.file_origin.as_ref()))
+            (!token.file_origin.as_os_str().is_empty())
+                .then(|| PathBuf::from(token.file_origin.as_ref()))
         })
 }
 
@@ -124,7 +125,11 @@ pub fn identifier_range_for_name(
         })
         .and_then(|index| {
             tokens.get(index).map(|token| {
-                TokenRange::new(index, index + 1, token.file_origin.clone())
+                TokenRange::new(
+                    index,
+                    index + 1,
+                    std::sync::Arc::from(token.file_origin.to_string_lossy().as_ref()),
+                )
             })
         })
         .unwrap_or_else(|| fallback.clone())
