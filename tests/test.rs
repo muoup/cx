@@ -1,6 +1,6 @@
 use cx_pipeline::standard_compilation;
-use cx_pipeline_data::{CompilerBackend, CompilerConfig, OptimizationLevel};
-use std::io::{self, Write};
+use cx_pipeline_data::{CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel};
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -68,6 +68,7 @@ fn compiler_config(
     working_directory: &Path,
     internal_directory: &Path,
     analysis: bool,
+    compilation_mode: CompilationMode
 ) -> CompilerConfig {
     CompilerConfig {
         backend,
@@ -77,10 +78,11 @@ fn compiler_config(
         },
         output,
         analysis,
+        compilation_mode,
+        
         verbose: false,
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
-        compilation_mode: cx_pipeline_data::CompilationMode::Executable,
         module_mode: true,
         project_config: None,
         link_entries: vec![],
@@ -122,6 +124,7 @@ fn expect_compile_success(input: &Path, analysis: bool) {
         working_directory,
         &internal_directory,
         analysis,
+        CompilationMode::Object,
     );
 
     standard_compilation(config, base_file_name(input)).unwrap_or_else(|err| {
@@ -149,6 +152,7 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         working_directory,
         &internal_directory,
         analysis,
+        CompilationMode::Object
     );
 
     let err = match standard_compilation(config, base_file_name(input)) {
@@ -210,6 +214,7 @@ fn run_end_to_end_test(input: &Path) {
         working_directory,
         &cranelift_internal,
         false,
+        CompilationMode::Executable
     );
 
     standard_compilation(cranelift_config, base_file_name(input)).unwrap_or_else(|err| {
@@ -234,6 +239,7 @@ fn run_end_to_end_test(input: &Path) {
             working_directory,
             &llvm_internal,
             false,
+            CompilationMode::Executable
         );
 
         standard_compilation(llvm_config, base_file_name(input)).unwrap_or_else(|err| {

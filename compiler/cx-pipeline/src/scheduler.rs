@@ -109,6 +109,7 @@ pub(crate) fn scheduling_loop(
         }
 
         reporter.complete_step();
+        
         if is_codegen {
             reporter.increment_modules();
         }
