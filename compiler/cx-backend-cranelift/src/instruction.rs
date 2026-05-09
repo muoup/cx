@@ -50,7 +50,7 @@ pub(crate) fn codegen_instruction(
             let fn_ref = get_func_ref(context, id, method_sig, params.as_slice())?;
             let inst = context.builder.ins().call(fn_ref, params.as_slice());
 
-            get_method_return(context, inst).expect("Failed to get return value for DirectCall")
+            get_method_return(context, inst)
         }
 
         LMIRInstructionKind::IndirectCall {
@@ -89,7 +89,7 @@ pub(crate) fn codegen_instruction(
                     .ins()
                     .call_indirect(sig_ref, val.as_value(), params.as_slice());
 
-            get_method_return(context, inst).expect("Failed to get return value for IndirectCall")
+            get_method_return(context, inst)
         }
 
         LMIRInstructionKind::Return { value } => {

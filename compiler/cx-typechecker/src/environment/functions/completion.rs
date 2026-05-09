@@ -106,7 +106,7 @@ pub fn int_complete_fn_prototype(
         );
     }
 
-    let parameters = normalized_prototype
+    let mut params = normalized_prototype
         .params
         .iter()
         .map(|CXParameter { name, _type }| {
@@ -131,11 +131,21 @@ pub fn int_complete_fn_prototype(
 
     let name = CXIdent::from(base_mangle_fn_name(env, base_data, &source_prototype.kind)?);
 
+    if params.len() == 1 {
+        let first_param = &params[0];
+
+        if matches!(first_param._type.kind, MIRTypeKind::Unit) && first_param.name.is_none() {
+            // Special case, if we have some function `int foo(void)` the 'void' indicates 0 parameters
+            // for legacy reasons
+            params.clear();
+        }
+    }
+    
     let prototype = MIRFunctionPrototype {
         name,
         source_prototype,
         return_type,
-        params: parameters,
+        params,
         var_args: normalized_prototype.var_args,
         contract: prototype.contract.clone(),
     };

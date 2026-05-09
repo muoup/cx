@@ -46,13 +46,14 @@ pub(crate) fn prepare_parameters<'a>(
         .collect::<CXResult<Vec<_>>>()
 }
 
-pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> Option<CodegenValue> {
+pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> CodegenValue {
     context
         .builder
         .inst_results(inst)
         .first()
         .cloned()
         .map(CodegenValue::Value)
+        .unwrap_or(CodegenValue::NULL)
 }
 
 pub(crate) fn get_func_ref(
