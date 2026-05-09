@@ -34,6 +34,7 @@ pub(crate) struct LexingContext {
     pub(crate) macros: HashMap<String, Macro>,
     pub(crate) once_files: HashSet<PathBuf>,
     sources: Vec<SourceFrame>,
+    pending_tokens: Vec<Token>,
     tokens: Vec<Token>,
 }
 
@@ -44,6 +45,7 @@ impl LexingContext {
             macros: builtin_macros(),
             once_files: HashSet::new(),
             sources: vec![SourceFrame::new(source, source_path)],
+            pending_tokens: Vec::new(),
             tokens: Vec::new(),
         }
     }
@@ -82,7 +84,10 @@ impl LexingContext {
     }
 
     pub(crate) fn emit_tokens(&mut self, tokens: Vec<Token>) {
-        self.tokens.extend(self.expand_macros(tokens));
+        self.pending_tokens.extend(tokens);
+        if !self.has_incomplete_function_macro_invocation(&self.pending_tokens) {
+            self.flush_pending_tokens();
+        }
     }
 
     fn apply_transition(&mut self, transition: LexTransition) -> CXResult<()> {
@@ -104,7 +109,7 @@ impl LexingContext {
         Ok(())
     }
 
-    fn finish_current_source(&self) -> CXResult<()> {
+    fn finish_current_source(&mut self) -> CXResult<()> {
         let frame = self.current_frame();
 
         if let Some(conditional) = frame.conditionals.last() {
@@ -122,7 +127,49 @@ impl LexingContext {
             );
         }
 
+        self.flush_pending_tokens();
         Ok(())
+    }
+
+    fn flush_pending_tokens(&mut self) {
+        if self.pending_tokens.is_empty() {
+            return;
+        }
+
+        let pending = std::mem::take(&mut self.pending_tokens);
+        let expanded = self.expand_macros(pending);
+        self.tokens.extend(expanded);
+    }
+
+    fn has_incomplete_function_macro_invocation(&self, tokens: &[Token]) -> bool {
+        let mut index = 0;
+
+        while index < tokens.len() {
+            let TokenKind::Identifier(name) = &tokens[index].kind else {
+                index += 1;
+                continue;
+            };
+
+            if !matches!(self.macros.get(name), Some(Macro::Function { .. })) {
+                index += 1;
+                continue;
+            }
+
+            if !matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+            ) {
+                index += 1;
+                continue;
+            }
+
+            let Some(next_index) = matching_close_paren_index(tokens, index + 1) else {
+                return true;
+            };
+            index = next_index + 1;
+        }
+
+        false
     }
 
     pub(crate) fn expand_macros(&self, base_tokens: Vec<Token>) -> Vec<Token> {
@@ -161,23 +208,65 @@ impl LexingContext {
                     index += 1;
                 }
                 Macro::Function { params, body } => {
-                    let Some((args, next_index)) = parse_macro_args(&base_tokens, index + 1) else {
+                    let Some((mut args, next_index)) = parse_macro_args(&base_tokens, index + 1)
+                    else {
                         expanded.push(token.clone());
                         index += 1;
                         continue;
                     };
 
-                    for body_token in body.iter() {
+                    if args.is_empty() && params.len() == 1 {
+                        args.push(Vec::new());
+                    }
+
+                    if args.len() != params.len() {
+                        expanded.push(token.clone());
+                        index += 1;
+                        continue;
+                    }
+
+                    let expanded_args = args
+                        .iter()
+                        .map(|arg| self.expand_macros(arg.clone()))
+                        .collect::<Vec<_>>();
+
+                    let mut body_index = 0;
+                    while body_index < body.len() {
+                        let body_token = &body[body_index];
+
+                        if matches!(
+                            &body_token.kind,
+                            TokenKind::Punctuator(PunctuatorType::Hash)
+                        ) && let Some(next_token) = body.get(body_index + 1)
+                            && let TokenKind::Identifier(identifier) = &next_token.kind
+                            && let Some(param_index) =
+                                params.iter().position(|param| param == identifier)
+                        {
+                            expanded.extend(retarget_tokens(
+                                std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
+                                    stringify_macro_arg(&args[param_index]),
+                                ))),
+                                token,
+                            ));
+                            body_index += 2;
+                            continue;
+                        }
+
                         if let TokenKind::Identifier(identifier) = &body_token.kind
                             && let Some(param_index) =
                                 params.iter().position(|param| param == identifier)
                         {
-                            expanded.extend(retarget_tokens(args[param_index].clone(), token));
+                            expanded.extend(retarget_tokens(
+                                expanded_args[param_index].clone(),
+                                token,
+                            ));
+                            body_index += 1;
                             continue;
                         }
 
                         expanded
                             .extend(retarget_tokens(std::iter::once(body_token.clone()), token));
+                        body_index += 1;
                     }
 
                     index = next_index;
@@ -207,7 +296,10 @@ impl LexingContext {
     }
 }
 
-fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Token) -> Vec<Token> {
+fn retarget_tokens(
+    tokens: impl IntoIterator<Item = Token>,
+    expansion_site: &Token,
+) -> Vec<Token> {
     tokens
         .into_iter()
         .map(|mut token| {
@@ -219,7 +311,46 @@ fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Tok
         .collect()
 }
 
-fn parse_macro_args(tokens: &[Token], open_paren_index: usize) -> Option<(Vec<Vec<Token>>, usize)> {
+fn stringify_macro_arg(tokens: &[Token]) -> String {
+    tokens
+        .iter()
+        .map(|token| token.kind.to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn matching_close_paren_index(tokens: &[Token], open_paren_index: usize) -> Option<usize> {
+    if !matches!(
+        tokens.get(open_paren_index).map(|token| &token.kind),
+        Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+    ) {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    let mut index = open_paren_index;
+    while index < tokens.len() {
+        match &tokens[index].kind {
+            TokenKind::Punctuator(PunctuatorType::OpenParen) => depth += 1,
+            TokenKind::Punctuator(PunctuatorType::CloseParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn parse_macro_args(
+    tokens: &[Token],
+    open_paren_index: usize,
+) -> Option<(Vec<Vec<Token>>, usize)> {
     if !matches!(
         tokens.get(open_paren_index).map(|token| &token.kind),
         Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
@@ -261,4 +392,115 @@ fn parse_macro_args(tokens: &[Token], open_paren_index: usize) -> Option<(Vec<Ve
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cx_tokens::token::OperatorType;
+
+    fn token(kind: TokenKind) -> Token {
+        Token::new_unknown(kind)
+    }
+
+    fn ident(name: &str) -> Token {
+        token(TokenKind::Identifier(name.to_string()))
+    }
+
+    fn punctuator(punctuator: PunctuatorType) -> Token {
+        token(TokenKind::Punctuator(punctuator))
+    }
+
+    fn comma() -> Token {
+        token(TokenKind::Operator(OperatorType::Comma))
+    }
+
+    #[test]
+    fn function_macro_stringifies_raw_arg_and_expands_normal_arg() {
+        let mut context = LexingContext::new(String::new(), Path::new("test.cx"), &[]);
+        context.macros.insert(
+            "A".to_string(),
+            Macro::Object(Box::new([ident("B")])),
+        );
+        context.macros.insert(
+            "F".to_string(),
+            Macro::Function {
+                params: Box::new(["x".to_string()]),
+                body: Box::new([
+                    punctuator(PunctuatorType::Hash),
+                    ident("x"),
+                    ident("x"),
+                ]),
+            },
+        );
+
+        let expanded = context.expand_macros(vec![
+            ident("F"),
+            punctuator(PunctuatorType::OpenParen),
+            ident("A"),
+            punctuator(PunctuatorType::CloseParen),
+        ]);
+
+        assert!(matches!(
+            expanded.as_slice(),
+            [
+                Token {
+                    kind: TokenKind::StringLiteral(raw),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Identifier(expanded),
+                    ..
+                },
+            ] if raw == "A" && expanded == "B"
+        ));
+    }
+
+    #[test]
+    fn buffers_multiline_function_macro_invocations_until_args_close() {
+        let mut context = LexingContext::new(String::new(), Path::new("test.cx"), &[]);
+        context.macros.insert(
+            "REDIRECT".to_string(),
+            Macro::Function {
+                params: Box::new(["name".to_string(), "proto".to_string(), "alias".to_string()]),
+                body: Box::new([
+                    ident("name"),
+                    ident("proto"),
+                    ident("__asm__"),
+                    punctuator(PunctuatorType::OpenParen),
+                    punctuator(PunctuatorType::Hash),
+                    ident("alias"),
+                    punctuator(PunctuatorType::CloseParen),
+                ]),
+            },
+        );
+
+        context.emit_tokens(vec![
+            ident("REDIRECT"),
+            punctuator(PunctuatorType::OpenParen),
+            ident("fscanf"),
+            comma(),
+            punctuator(PunctuatorType::OpenParen),
+            ident("FILE"),
+        ]);
+        assert!(context.tokens.is_empty());
+
+        context.emit_tokens(vec![
+            punctuator(PunctuatorType::CloseParen),
+            comma(),
+            ident("__isoc99_fscanf"),
+            punctuator(PunctuatorType::CloseParen),
+        ]);
+
+        assert!(context.tokens.iter().all(
+            |token| !matches!(&token.kind, TokenKind::Identifier(name) if name == "REDIRECT")
+        ));
+        assert!(context
+            .tokens
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Identifier(name) if name == "fscanf")));
+        assert!(context.tokens.iter().any(
+            |token| matches!(&token.kind, TokenKind::StringLiteral(value) if value == "__isoc99_fscanf")
+        ));
+    }
 }

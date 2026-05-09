@@ -149,6 +149,7 @@ pub(crate) fn punctuator(iter: &mut CharIter) -> Option<TokenKind> {
         ':' => Some(TokenKind::Punctuator(PunctuatorType::Colon)),
         '.' => Some(TokenKind::Punctuator(PunctuatorType::Period)),
         '?' => Some(TokenKind::Punctuator(PunctuatorType::QuestionMark)),
+        '#' => Some(TokenKind::Punctuator(PunctuatorType::Hash)),
         _ => {
             iter.back();
             None

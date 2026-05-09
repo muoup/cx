@@ -26,6 +26,7 @@ fn define_compiler_predefines(macros: &mut HashMap<String, Macro>) {
     define_int(macros, "__GNUC_MINOR__", 8);
     define_int(macros, "__GNUC_PATCHLEVEL__", 0);
     define_int(macros, "__GNUC_STDC_INLINE__", 1);
+    define_empty(macros, "__USER_LABEL_PREFIX__");
 }
 
 fn define_target_predefines(macros: &mut HashMap<String, Macro>) {

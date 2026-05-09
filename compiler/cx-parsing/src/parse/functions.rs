@@ -5,9 +5,13 @@ use cx_ast::{
         CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
         PredeclarationType,
     },
-    peek_next_kind, try_next,
+    next_kind, peek_next_kind, try_next,
 };
-use cx_tokens::{identifier, keyword, operator, punctuator, TokenRange};
+use cx_tokens::{
+    identifier, keyword, operator, punctuator,
+    token::{PunctuatorType, TokenKind},
+    TokenRange,
+};
 use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::parse::{
@@ -133,6 +137,8 @@ pub fn try_function_parse(
 }
 
 pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunctionContract> {
+    skip_c_declaration_suffixes(data)?;
+
     let safe = try_next!(data.tokens, keyword!(Safe));
 
     let mut contract = CXFunctionContract {
@@ -198,7 +204,65 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
         }
     }
 
+    skip_c_declaration_suffixes(data)?;
     Ok(contract)
+}
+
+// FIXME: Remove this hack and support declaration suffixes
+fn skip_c_declaration_suffixes(data: &mut ParserData) -> CXResult<()> {
+    loop {
+        let Some(token) = data.tokens.peek() else {
+            return Ok(());
+        };
+
+        let TokenKind::Identifier(name) = &token.kind else {
+            return Ok(());
+        };
+
+        if matches!(name.as_str(), "__asm__" | "__asm" | "asm") {
+            data.tokens.next();
+            skip_optional_parenthesized_tokens(data)?;
+            continue;
+        }
+
+        if name.starts_with("__attribute")
+            || matches!(
+                name.as_str(),
+                "__declspec" | "__nonnull" | "__nonnull__" | "__wur"
+            )
+        {
+            data.tokens.next();
+            skip_optional_parenthesized_tokens(data)?;
+            continue;
+        }
+
+        return Ok(());
+    }
+}
+
+fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CXResult<()> {
+    if !matches!(
+        data.tokens.peek().map(|token| &token.kind),
+        Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+    ) {
+        return Ok(());
+    }
+
+    let mut depth = 0usize;
+    while data.tokens.has_next() {
+        match next_kind!(data.tokens)? {
+            punctuator!(OpenParen) => depth += 1,
+            punctuator!(CloseParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    log_parse_error!(data, "Unclosed parenthesized declaration suffix")
 }
 
 pub(crate) struct ParseParamsResult {

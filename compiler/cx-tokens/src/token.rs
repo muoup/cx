@@ -217,6 +217,7 @@ pub enum PunctuatorType {
     Colon,
     Period,
     QuestionMark,
+    Hash,
 
     ThickArrow, /* (=>) */
 }

@@ -131,6 +131,13 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
         },
     ),
     (
+        "unsigned short int",
+        MIRTypeKind::Integer {
+            signed: false,
+            _type: MIRIntegerType::I32,
+        },
+    ),
+    (
         "signed",
         MIRTypeKind::Integer {
             signed: true,
@@ -161,7 +168,14 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
     (
         "long unsigned int",
         MIRTypeKind::Integer {
-            signed: true,
+            signed: false,
+            _type: MIRIntegerType::I64,
+        },
+    ),
+    (
+        "unsigned long int",
+        MIRTypeKind::Integer {
+            signed: false,
             _type: MIRIntegerType::I64,
         },
     ),
@@ -240,7 +254,9 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
             _type: MIRFloatType::F64,
         },
     ),
-    // C header compatibility shims until MIR has long-double and complex types.
+    // C header compatibility shims until MIR has long-double, complex, and
+    // target ABI va_list types.
+    ("__builtin_va_list", MIRTypeKind::Opaque { size: 24 }),
     (
         "long double",
         MIRTypeKind::Float {
