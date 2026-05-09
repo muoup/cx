@@ -138,7 +138,7 @@ fn parse_fn_merge(
 }
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
-    let (name, return_type) = parse_initializer(data)?;
+    let (name, return_type, linkage) = parse_initializer(data)?;
 
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
@@ -169,6 +169,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     is_mutable: true,
                     initializer: Some(initial_value),
                 },
+                linkage,
             );
         }
 
@@ -180,6 +181,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     is_mutable: true,
                     initializer: None,
                 },
+                linkage,
             );
         }
 

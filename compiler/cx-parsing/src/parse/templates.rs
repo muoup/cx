@@ -96,7 +96,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
     let mut inputtype_s = Vec::new();
 
     loop {
-        let (None, _type) = parse_initializer(data)? else {
+        let (None, _type, _) = parse_initializer(data)? else {
             return log_parse_error!(data, "Expected type declaration in template arguments!");
         };
 

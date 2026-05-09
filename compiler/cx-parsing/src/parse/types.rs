@@ -2,8 +2,9 @@ use crate::parse::expressions::parse_expr;
 use crate::parse::ParserData;
 use cx_ast::ast::CXGlobalVariable;
 use cx_ast::data::{
-    CXField, CXFunctionKind, CXFunctionPrototype, CXStructAttributes, CXTemplatePrototype, CXType,
-    CXTypeKind, CXTypeQualifiers, PredeclarationType, CX_CONST, CX_RESTRICT, CX_VOLATILE,
+    CXField, CXFunctionKind, CXFunctionPrototype, CXLinkageMode, CXStructAttributes,
+    CXTemplatePrototype, CXType, CXTypeKind, CXTypeQualifiers, PredeclarationType, CX_CONST,
+    CX_RESTRICT, CX_VOLATILE,
 };
 use cx_ast::{assert_token_matches, next_kind, peek_kind, try_next};
 use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
@@ -47,7 +48,7 @@ fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXS
 }
 
 fn parse_aggregate_field(data: &mut ParserData) -> CXResult<CXField> {
-    let (name, _type) = parse_initializer(data)?;
+    let (name, _type, _) = parse_initializer(data)?;
 
     if try_next!(data.tokens, punctuator!(Colon)) {
         let width = match next_kind!(data.tokens)? {
@@ -199,6 +200,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         data.add_global_variable(
             variant_name.as_string(),
             CXGlobalVariable::EnumConstant(idx as i32),
+            CXLinkageMode::Standard,
         );
         idx += 1;
 
@@ -245,9 +247,9 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 
         match parse_initializer(data) {
             // Success Path = Valid Type + No Name
-            Ok((None, _type)) => variants.push(CXField::standard(name.to_string(), _type)),
+            Ok((None, _type, _)) => variants.push(CXField::standard(name.to_string(), _type)),
 
-            Ok((Some(_), _)) => {
+            Ok((Some(_), _, _)) => {
                 return log_preparse_error!(
                     data.tokens,
                     "Tagged union variant may not have a named type"
@@ -309,24 +311,36 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
 }
 
 pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> CXTypeQualifiers {
+    parse_decl_specifiers(tokens).qualifiers
+}
+
+struct ParsedSpecifiers {
+    qualifiers: CXTypeQualifiers,
+    linkage: CXLinkageMode,
+}
+
+fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
     let mut spec_acc: CXTypeQualifiers = 0;
+    let mut linkage = CXLinkageMode::Standard;
 
     while let Ok(TokenKind::Specifier(spec)) = next_kind!(tokens) {
         match spec {
             SpecifierType::Const => spec_acc |= CX_CONST,
             SpecifierType::Volatile => spec_acc |= CX_VOLATILE,
             SpecifierType::Restrict => spec_acc |= CX_RESTRICT,
-            SpecifierType::Extern
-            | SpecifierType::Inline
-            | SpecifierType::Static
-            | SpecifierType::ThreadLocal => {}
+            SpecifierType::Extern => linkage = CXLinkageMode::Extern,
+            SpecifierType::Static => linkage = CXLinkageMode::Static,
+            SpecifierType::Inline | SpecifierType::ThreadLocal => {}
 
             SpecifierType::Public | SpecifierType::Private => break,
         }
     }
 
     tokens.back();
-    spec_acc
+    ParsedSpecifiers {
+        qualifiers: spec_acc,
+        linkage,
+    }
 }
 
 pub(crate) fn parse_type_mods(
@@ -533,17 +547,20 @@ pub(crate) fn parse_base_mods(
     Ok((name, parse_type_suffix_mod(data, modified_type)?))
 }
 
-pub(crate) fn parse_initializer(data: &mut ParserData) -> CXResult<(Option<CXIdent>, CXType)> {
-    let prefix_specs = parse_specifier(&mut data.tokens);
+pub(crate) fn parse_initializer(
+    data: &mut ParserData,
+) -> CXResult<(Option<CXIdent>, CXType, CXLinkageMode)> {
+    let prefix_specs = parse_decl_specifiers(&mut data.tokens);
     let type_base = parse_type_base(data)?;
 
-    parse_base_mods(data, type_base.add_specifier(prefix_specs))
+    let (name, _type) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
+    Ok((name, _type, prefix_specs.linkage))
 }
 
 pub(crate) fn parse_typedef_initializer(
     data: &mut ParserData,
 ) -> CXResult<(Option<CXIdent>, CXType)> {
-    let (name, return_type) = parse_initializer(data)?;
+    let (name, return_type, _) = parse_initializer(data)?;
 
     if name.is_none() || !peek_kind!(data.tokens, punctuator!(OpenParen)) {
         return Ok((name, return_type));

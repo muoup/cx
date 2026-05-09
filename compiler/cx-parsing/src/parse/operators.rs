@@ -89,7 +89,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 return Ok(None);
             }
 
-            let Some((None, _type)) = parse_initializer(data).ok() else {
+            let Some((None, _type, _)) = parse_initializer(data).ok() else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };

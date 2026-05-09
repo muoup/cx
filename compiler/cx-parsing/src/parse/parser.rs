@@ -135,11 +135,15 @@ impl<'a> ParserData<'a> {
         }
     }
 
-    pub fn add_global_variable(&mut self, name: String, var: CXGlobalVariable) {
-        self.ast.global_variables.insert(
-            name,
-            ModuleResource::new(var, self.visibility, CXLinkageMode::Standard),
-        );
+    pub fn add_global_variable(
+        &mut self,
+        name: String,
+        var: CXGlobalVariable,
+        linkage: CXLinkageMode,
+    ) {
+        self.ast
+            .global_variables
+            .insert(name, ModuleResource::new(var, self.visibility, linkage));
     }
 
     pub fn add_function_stmt(&mut self, stmt: CXFunctionStmt) {

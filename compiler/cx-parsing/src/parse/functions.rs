@@ -325,7 +325,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
-        let (name, _type) = parse_initializer(data)?;
+        let (name, _type, _) = parse_initializer(data)?;
         let name = name;
 
         params.push(CXParameter { name, _type });

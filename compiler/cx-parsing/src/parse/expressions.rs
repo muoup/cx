@@ -693,7 +693,7 @@ pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression
             );
 
             let return_type = if is_type_decl(data) {
-                let (None, _type) = parse_initializer(data)? else {
+                let (None, _type, _) = parse_initializer(data)? else {
                     return log_parse_error!(data, "Failed to parse type declaration for sizeof");
                 };
 
