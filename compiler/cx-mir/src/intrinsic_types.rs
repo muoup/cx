@@ -240,5 +240,30 @@ pub const INTRINSIC_TYPES: &[(&str, MIRTypeKind)] = &[
             _type: MIRFloatType::F64,
         },
     ),
+    // C header compatibility shims until MIR has long-double and complex types.
+    (
+        "long double",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    (
+        "_Complex float",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    (
+        "_Complex double",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
+    (
+        "_Complex long double",
+        MIRTypeKind::Float {
+            _type: MIRFloatType::F64,
+        },
+    ),
     ("_str", MIRTypeKind::Str),
 ];

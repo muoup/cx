@@ -92,7 +92,9 @@ fn define_compatibility_predefines(macros: &mut HashMap<String, Macro>) {
     }
 
     for name in ["__restrict", "__restrict__"] {
-        define_specifier(macros, name, SpecifierType::Restrict);
+        // FIXME: support restrict specifier
+        // define_specifier(macros, name, SpecifierType::Restrict);
+        define_empty(macros, name);
     }
 
     for name in ["__volatile", "__volatile__"] {

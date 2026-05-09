@@ -9,9 +9,9 @@ pub enum ConstexprResult {
     Integer(u64),
 }
 
-// FIXME: Currently we are going to be using a very oversimplified evaluation engine where all integers are handled as u64,
-// this could cause some very subtle parity problems, however the cases where this would happen are very slim, but this should
-// be addressed in the future.
+// FIXME: We currently use a very oversimplified evaluation engine where all integers are handled as u64,
+// this could cause some very subtle parity problems, however the edge cases this creates seem pretty unlikely for common use.
+// Regardless, this should be addressed in the future.
 
 pub fn constexpr_evaluate(
     env: &mut TypeEnvironment,

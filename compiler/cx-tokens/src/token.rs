@@ -278,6 +278,26 @@ pub enum IntrinsicType {
     Double,
     Unsigned,
     Signed,
+    Complex,
+}
+
+impl IntrinsicType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IntrinsicType::Void => "void",
+            IntrinsicType::Bool => "bool",
+            IntrinsicType::Char => "char",
+            IntrinsicType::Short => "short",
+            IntrinsicType::Int => "int",
+            IntrinsicType::Long => "long",
+            IntrinsicType::Auto => "auto",
+            IntrinsicType::Float => "float",
+            IntrinsicType::Double => "double",
+            IntrinsicType::Unsigned => "unsigned",
+            IntrinsicType::Signed => "signed",
+            IntrinsicType::Complex => "_Complex",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -317,6 +337,9 @@ impl TokenKind {
             "short" => TokenKind::Intrinsic(IntrinsicType::Short),
             "float" => TokenKind::Intrinsic(IntrinsicType::Float),
             "double" => TokenKind::Intrinsic(IntrinsicType::Double),
+            "_Complex" | "__complex" | "__complex__" => {
+                TokenKind::Intrinsic(IntrinsicType::Complex)
+            }
 
             "char" => TokenKind::Intrinsic(IntrinsicType::Char),
             "void" => TokenKind::Intrinsic(IntrinsicType::Void),
