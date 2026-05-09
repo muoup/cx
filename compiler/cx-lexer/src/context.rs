@@ -250,6 +250,35 @@ impl LexingContext {
                     while body_index < body.len() {
                         let body_token = &body[body_index];
 
+                        if is_hash_hash(body, body_index) {
+                            body_index += 2;
+                            let Some(left) = expanded.pop() else {
+                                continue;
+                            };
+                            let Some(next_token) = body.get(body_index) else {
+                                expanded.push(left);
+                                continue;
+                            };
+                            let mut right = replacement_tokens_for_macro_body_token(
+                                next_token,
+                                params,
+                                &args,
+                                &expanded_args,
+                                false,
+                            );
+                            if right.is_empty() {
+                                expanded.push(left);
+                                body_index += 1;
+                                continue;
+                            }
+
+                            let first_right = right.remove(0);
+                            expanded.push(paste_tokens(left, first_right, token));
+                            expanded.extend(retarget_tokens(right, token));
+                            body_index += 1;
+                            continue;
+                        }
+
                         if matches!(
                             &body_token.kind,
                             TokenKind::Punctuator(PunctuatorType::Hash)
@@ -272,8 +301,13 @@ impl LexingContext {
                             && let Some(param_index) =
                                 params.iter().position(|param| param == identifier)
                         {
+                            let arg_tokens = if is_hash_hash(body, body_index + 1) {
+                                args[param_index].clone()
+                            } else {
+                                expanded_args[param_index].clone()
+                            };
                             expanded.extend(retarget_tokens(
-                                expanded_args[param_index].clone(),
+                                arg_tokens,
                                 token,
                             ));
                             body_index += 1;
@@ -309,6 +343,63 @@ impl LexingContext {
 
     pub fn skip_tail(&mut self) {
         self.current_frame_mut().with_iter(skip_directive_tail);
+    }
+}
+
+fn is_hash_hash(tokens: &[Token], index: usize) -> bool {
+    matches!(
+        (
+            tokens.get(index).map(|token| &token.kind),
+            tokens.get(index + 1).map(|token| &token.kind)
+        ),
+        (
+            Some(TokenKind::Punctuator(PunctuatorType::Hash)),
+            Some(TokenKind::Punctuator(PunctuatorType::Hash))
+        )
+    )
+}
+
+fn replacement_tokens_for_macro_body_token(
+    body_token: &Token,
+    params: &[String],
+    raw_args: &[Vec<Token>],
+    expanded_args: &[Vec<Token>],
+    expand_arg: bool,
+) -> Vec<Token> {
+    if let TokenKind::Identifier(identifier) = &body_token.kind
+        && let Some(param_index) = params.iter().position(|param| param == identifier)
+    {
+        return if expand_arg {
+            expanded_args[param_index].clone()
+        } else {
+            raw_args[param_index].clone()
+        };
+    }
+
+    vec![body_token.clone()]
+}
+
+fn paste_tokens(left: Token, right: Token, expansion_site: &Token) -> Token {
+    let pasted_text = format!(
+        "{}{}",
+        token_paste_text(&left.kind),
+        token_paste_text(&right.kind)
+    );
+    let mut token = Token::new_unknown(TokenKind::from_str(pasted_text));
+    token.byte_start_index = expansion_site.byte_start_index;
+    token.byte_end_index = expansion_site.byte_end_index;
+    token.file_origin = expansion_site.file_origin.clone();
+    token
+}
+
+fn token_paste_text(kind: &TokenKind) -> String {
+    match kind {
+        TokenKind::Identifier(name) => name.clone(),
+        TokenKind::CompilerIdentifier(name) => format!("@{name}"),
+        TokenKind::IntLiteral(value) => value.to_string(),
+        TokenKind::FloatLiteral(value) => value.to_string(),
+        TokenKind::StringLiteral(value) => format!("\"{value}\""),
+        _ => kind.to_string(),
     }
 }
 
@@ -476,6 +567,42 @@ mod tests {
                     ..
                 },
             ] if raw == "A" && expanded == "B"
+        ));
+    }
+
+    #[test]
+    fn function_macro_pastes_argument_into_identifier() {
+        let mut context = test_context();
+        context.macros.insert(
+            "__GLIBC_USE".to_string(),
+            Macro::Function {
+                params: Box::new(["F".to_string()]),
+                body: Box::new([
+                    ident("__GLIBC_USE_"),
+                    punctuator(PunctuatorType::Hash),
+                    punctuator(PunctuatorType::Hash),
+                    ident("F"),
+                ]),
+            },
+        );
+        context.macros.insert(
+            "__GLIBC_USE_ISOC23".to_string(),
+            Macro::Object(Box::new([token(TokenKind::IntLiteral(1))])),
+        );
+
+        let expanded = context.expand_macros(vec![
+            ident("__GLIBC_USE"),
+            punctuator(PunctuatorType::OpenParen),
+            ident("ISOC23"),
+            punctuator(PunctuatorType::CloseParen),
+        ]);
+
+        assert!(matches!(
+            expanded.as_slice(),
+            [Token {
+                kind: TokenKind::IntLiteral(1),
+                ..
+            }]
         ));
     }
 
