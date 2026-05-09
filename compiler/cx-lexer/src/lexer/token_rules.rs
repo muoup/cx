@@ -4,6 +4,8 @@ use cx_tokens::{
 };
 use cx_util::{CXResult, char_iter::CharIter};
 
+use crate::lexer::number::number;
+
 pub(crate) fn literal_or_prefixed_token(
     iter: &mut CharIter,
     file_origin: &str,
@@ -150,54 +152,6 @@ pub(crate) fn punctuator(iter: &mut CharIter) -> Option<TokenKind> {
         _ => {
             iter.back();
             None
-        }
-    }
-}
-
-fn number(iter: &mut CharIter, file_origin: &str) -> CXResult<TokenKind> {
-    let start_index = iter.current_iter;
-    let mut dot = false;
-    while let Some(c) = iter.peek() {
-        if c == '.' {
-            dot = true;
-        } else if !c.is_ascii_digit() {
-            break;
-        }
-        iter.next();
-    }
-    let number_end = iter.current_iter;
-
-    while let Some(c) = iter.peek() {
-        if matches!(c, 'u' | 'U' | 'l' | 'L') {
-            iter.next();
-        } else {
-            break;
-        }
-    }
-
-    let num = &iter.source[start_index..number_end];
-
-    if dot {
-        match num.parse() {
-            Ok(value) => Ok(TokenKind::FloatLiteral(value)),
-            Err(_) => log_lexer_error!(
-                file_origin,
-                iter.source,
-                start_index,
-                iter.current_iter,
-                "Invalid numeric literal: {num}"
-            ),
-        }
-    } else {
-        match num.parse() {
-            Ok(value) => Ok(TokenKind::IntLiteral(value)),
-            Err(_) => log_lexer_error!(
-                file_origin,
-                iter.source,
-                start_index,
-                iter.current_iter,
-                "Invalid numeric literal: {num}"
-            ),
         }
     }
 }
