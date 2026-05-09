@@ -30,7 +30,7 @@ binaries = [
 import std::io;
 
 i32 main() {
-    io::println("Hello, world!");
+    println("Hello, world!");
     return 0;
 }
 ```
