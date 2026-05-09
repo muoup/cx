@@ -2,13 +2,17 @@ use crate::{
     environment::TypeEnvironment, log_typecheck_error,
     type_checking::value::ensure_valid_allocation_type,
 };
-use cx_ast::ast::{CXExprKind, CXExpression, CXGlobalVariable};
+use cx_ast::{ast::{CXExprKind, CXExpression, CXGlobalVariable}, data::ModuleResource};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
     program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_util::{CXError, CXResult, identifier::CXIdent};
+
+pub(crate) fn find_global<'a>(base_data: &'a MIRBaseMappings, ident: &str) -> Option<&'a ModuleResource<CXGlobalVariable>> {
+    base_data.global_variables.get(ident)
+}
 
 pub(crate) fn global_expr(
     env: &mut TypeEnvironment,
@@ -19,7 +23,7 @@ pub(crate) fn global_expr(
         return tcglobal_expr(global, &mut env.symbols.context).map(Option::Some);
     }
 
-    let Some(module_res) = base_data.global_variables.get(ident) else {
+    let Some(module_res) = find_global(base_data, ident) else {
         return CXError::create_result(format!("Global variable '{}' not found", ident));
     };
 

@@ -3,7 +3,7 @@
 int for_loop(int n) {
     // Test Comment
     for (int i = n; i > 0; i--) {
-        putc('0' + i);
+        putchar('0' + i);
     }
     return 0;
 }

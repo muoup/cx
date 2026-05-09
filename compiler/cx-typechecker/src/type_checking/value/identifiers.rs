@@ -2,7 +2,7 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        globals::global_expr,
+        globals::{find_global, global_expr},
         result::{TypecheckResult, TypecheckedBinding},
     },
 };
@@ -54,8 +54,17 @@ pub(crate) fn typecheck_identifier(
             Some(expr.token_range()),
             "Safe functions may not access global variables"
         )
-    } else if let Some(global) = global_expr(env, base_data, name.as_str())? {
-        Ok(TypecheckResult::from(global))
+    } else if let Some(_) = find_global(base_data, name.as_str()) {
+        let Some(global_expr) = global_expr(env, base_data, name.as_str())? else {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Invalid global variable '{}'",
+                name
+            );
+        };
+        
+        Ok(TypecheckResult::from(global_expr))
     } else {
         log_typecheck_error!(
             env,

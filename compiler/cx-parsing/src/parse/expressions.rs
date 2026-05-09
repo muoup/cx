@@ -377,11 +377,6 @@ pub(crate) fn parse_expr_val(
         return Ok(());
     }
 
-    if peek_kind!(data.tokens, TokenKind::Keyword(_)) {
-        expr_stack.push(parse_keyword_expr(data)?);
-        return Ok(());
-    }
-
     while let Some(op) = parse_prefix_unop(data)? {
         op_stack.push(PrecOperator::UnOp(op));
     }
@@ -410,6 +405,11 @@ pub(crate) fn parse_expr_val(
             data.back();
             parse_expr_identifier(data)?.kind
         }
+
+        TokenKind::Keyword(_) => {
+            data.back();
+            parse_keyword_expr(data)?.kind
+        },
 
         TokenKind::Operator(OperatorType::Move) => {
             let expr = parse_expr(data)?;
