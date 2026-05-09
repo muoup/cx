@@ -54,7 +54,7 @@ pub(crate) fn typecheck_identifier(
             Some(expr.token_range()),
             "Safe functions may not access global variables"
         )
-    } else if let Some(_) = find_global(base_data, name.as_str()) {
+    } else if find_global(base_data, name.as_str()).is_some() {
         let Some(global_expr) = global_expr(env, base_data, name.as_str())? else {
             return log_typecheck_error!(
                 env,

@@ -105,7 +105,7 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
             array_type.as_any_type_enum()
         }
 
-        _ => panic!("Invalid type: {_type:?}"),
+        LMIRTypeKind::Opaque { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
     })
 }
 

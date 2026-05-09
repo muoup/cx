@@ -5,6 +5,7 @@ use cx_lmir::{
     ElementID, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
     LMIRUnit, LMIRValue,
 };
+use cx_util::CXResult;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
