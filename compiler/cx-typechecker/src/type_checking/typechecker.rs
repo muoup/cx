@@ -139,7 +139,7 @@ fn typecheck_expr_inner(
                 kind: MIRExpressionKind::If {
                     condition: Box::new(condition_result),
                     then_branch: Box::new(then_result),
-                    else_branch: else_result.map(|r| Box::new(r)),
+                    else_branch: else_result.map(Box::new),
                 },
                 _type: cx_mir::mir::data::MIRType::unit(),
             })

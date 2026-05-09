@@ -250,9 +250,8 @@ pub fn project_compilation(
                     cx_c_header::generate_header(&library.name, &entry_lmir, &link_entries)
                 else {
                     eprintln!(
-                        "Warning: Failed to generate header for library '{}': {}",
-                        library.name,
-                        "Header generation is best-effort and will not fail the build"
+                        "Warning: Failed to generate header for library '{}': Header generation is best-effort and will not fail the build",
+                        library.name
                     );
                     continue;
                 };

@@ -1,6 +1,6 @@
 mod args;
-mod init;
 mod build;
+mod init;
 
 use args::Command;
 use cx_pipeline::standard_compilation;

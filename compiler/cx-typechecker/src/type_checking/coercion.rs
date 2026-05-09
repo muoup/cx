@@ -42,7 +42,7 @@ pub fn try_explicit_cast(
 
             (MIRTypeKind::PointerTo { .. }, MIRTypeKind::MemoryReference { .. })
                 if env.symbols.context.is_c_str(&from_type)
-                    && env.symbols.context.is_cx_str(&target_type) =>
+                    && env.symbols.context.is_cx_str(target_type) =>
             {
                 coerced(MIRCoercion::ReinterpretBits)
             }

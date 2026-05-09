@@ -42,8 +42,8 @@ pub fn typecheck_assignment(
         let loaded_lhs = std_rval_promotion(env, lhs.clone())?;
 
         rhs = typecheck_binop(env, op, loaded_lhs, rhs)?.into_expression();
-    } else if let Some(binding) = binding.as_ref() {
-        if binding.kind == BindingPlaceKind::Projection
+    } else if let Some(binding) = binding.as_ref()
+        && binding.kind == BindingPlaceKind::Projection
             && env
                 .function
                 .tracked_binding(binding.root.as_str())
@@ -57,7 +57,6 @@ pub fn typecheck_assignment(
                 "Assignment to a field or projection of a moved aggregate binding is not implemented"
             );
         }
-    }
 
     if inner.get_specifier(CX_CONST) {
         return log_typecheck_error!(

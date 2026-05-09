@@ -12,7 +12,7 @@ pub fn typecheck_binop(
     lhs: MIRExpression,
     rhs: MIRExpression,
 ) -> CXResult<TypecheckResult> {
-    binop::dispatch(env, &op, lhs, rhs)
+    binop::dispatch(env, op, lhs, rhs)
 }
 
 pub fn typecheck_unop(

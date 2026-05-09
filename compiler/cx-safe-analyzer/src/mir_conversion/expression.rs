@@ -282,7 +282,7 @@ pub fn convert_expression(
                 _type: FMIRType::unsafe_effect(FMIRType::pure(MIRType::unit())),
                 body: FMIRNodeBody::CompilerAssert {
                     condition: FRc::new(postcondition_node),
-                    message: format!("postcondition failed"),
+                    message: "postcondition failed".to_string(),
                 },
             };
 

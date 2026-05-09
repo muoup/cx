@@ -68,7 +68,7 @@ fn compiler_config(
     working_directory: &Path,
     internal_directory: &Path,
     analysis: bool,
-    compilation_mode: CompilationMode
+    compilation_mode: CompilationMode,
 ) -> CompilerConfig {
     CompilerConfig {
         backend,
@@ -79,7 +79,7 @@ fn compiler_config(
         output,
         analysis,
         compilation_mode,
-        
+
         verbose: false,
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
@@ -152,7 +152,7 @@ fn expect_failure(input: &Path, analysis: bool, expected_stage: FailureStage) {
         working_directory,
         &internal_directory,
         analysis,
-        CompilationMode::Object
+        CompilationMode::Object,
     );
 
     let err = match standard_compilation(config, base_file_name(input)) {
@@ -214,7 +214,7 @@ fn run_end_to_end_test(input: &Path) {
         working_directory,
         &cranelift_internal,
         false,
-        CompilationMode::Executable
+        CompilationMode::Executable,
     );
 
     standard_compilation(cranelift_config, base_file_name(input)).unwrap_or_else(|err| {
@@ -239,7 +239,7 @@ fn run_end_to_end_test(input: &Path) {
             working_directory,
             &llvm_internal,
             false,
-            CompilationMode::Executable
+            CompilationMode::Executable,
         );
 
         standard_compilation(llvm_config, base_file_name(input)).unwrap_or_else(|err| {

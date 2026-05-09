@@ -1,13 +1,21 @@
 pub mod conditionals;
+pub mod define;
 pub mod expr;
 pub mod includes;
-pub mod define;
 
 use cx_util::CXResult;
 
-use crate::{context::LexingContext, lexer::
-    scanner::LexTransition
-, preprocessor::{conditionals::{handle_elif, handle_else, handle_endif, handle_error, handle_if, handle_ifdef}, define::{handle_define, handle_undef}, includes::{handle_include, handle_pragma}}};
+use crate::{
+    context::LexingContext,
+    lexer::scanner::LexTransition,
+    preprocessor::{
+        conditionals::{
+            handle_elif, handle_else, handle_endif, handle_error, handle_if, handle_ifdef,
+        },
+        define::{handle_define, handle_undef},
+        includes::{handle_include, handle_pragma},
+    },
+};
 
 pub(crate) struct Preprocessor;
 

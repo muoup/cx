@@ -2,7 +2,8 @@ use cx_util::CXResult;
 
 use crate::{
     context::{LexingContext, Macro},
-    lexer::{comments::strip_replacement_comments, scanner::{LexTransition, tokenize_text}}, preprocessor::conditionals::{read_macro_head, rest_of_logical_directive},
+    lexer::scanner::{LexTransition, tokenize_text},
+    preprocessor::conditionals::{read_macro_head, rest_of_logical_directive},
 };
 
 pub(crate) fn handle_define(
@@ -28,9 +29,8 @@ pub(crate) fn handle_define(
     };
 
     let rest_of_line = rest_of_logical_directive(context.current_frame_mut());
-    let replacement = strip_replacement_comments(&rest_of_line);
     let file_path = context.current_frame().file_path.clone();
-    let tokens = tokenize_text(&replacement, file_path.as_path())?;
+    let tokens = tokenize_text(&rest_of_line, file_path.as_path())?;
 
     let macro_ = if let Some(params) = params {
         Macro::Function {
@@ -51,7 +51,7 @@ pub(crate) fn handle_undef(context: &mut LexingContext) -> CXResult<LexTransitio
     {
         context.macros.remove(&name);
     }
-    
+
     context.skip_tail();
     Ok(LexTransition::Continue)
 }

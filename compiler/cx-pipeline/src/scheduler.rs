@@ -109,7 +109,7 @@ pub(crate) fn scheduling_loop(
         }
 
         reporter.complete_step();
-        
+
         if is_codegen {
             reporter.increment_modules();
         }
@@ -397,12 +397,12 @@ pub(crate) fn perform_job(
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
-                    &lmir,
+                    lmir,
                     internal_directory_str,
                     context.config.optimization_level,
                 )
                 .ok_or(CXError::create_boxed("LLVM code generation failed"))?,
-                CompilerBackend::Cranelift => cranelift_compile(&lmir, internal_directory_str)
+                CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str)
                     .ok_or(CXError::create_boxed("Cranelift code generation failed"))?,
             };
 

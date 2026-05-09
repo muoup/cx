@@ -432,7 +432,7 @@ impl MIRTypeContext {
             return matches!(inner.kind, MIRTypeKind::Str);
         }
 
-        return false;
+        false
     }
 
     pub fn is_c_str(&self, ty: &MIRType) -> bool {
@@ -446,7 +446,7 @@ impl MIRTypeContext {
             );
         }
 
-        return false;
+        false
     }
 
     pub fn aggregate_fields<'a>(&'a self, ty: &'a MIRType) -> Option<&'a Vec<MIRField>> {
@@ -677,18 +677,15 @@ impl MIRType {
             (None, None) => {}
         }
 
-        match (
+        if let (Some(left_id), Some(right_id)) = (
             self.named_type_id(definitions),
             other.named_type_id(definitions),
         ) {
-            (Some(left_id), Some(right_id)) => {
-                if left_id == right_id {
-                    return true;
-                }
-
-                return left_id.contextual_eq_with_state(&right_id, definitions, state);
+            if left_id == right_id {
+                return true;
             }
-            _ => {}
+
+            return left_id.contextual_eq_with_state(&right_id, definitions, state);
         }
 
         match (

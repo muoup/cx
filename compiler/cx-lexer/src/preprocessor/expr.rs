@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
 use cx_util::CXResult;
 
-use crate::{context::{LexingContext, Macro}, lexer::scanner::tokenize_text};
+use crate::{
+    context::{LexingContext, Macro},
+    lexer::scanner::tokenize_text,
+};
 
 pub(crate) fn eval(
     context: &LexingContext,
@@ -12,7 +15,7 @@ pub(crate) fn eval(
 ) -> CXResult<bool> {
     let expanded = expand_defined_ops(context, expression);
     let frame = context.current_frame();
-    
+
     let mut tokens = tokenize_text(&expanded, frame.file_path.as_path())?;
     tokens = context.expand_macros(tokens);
     let mut parser = PreprocessorExprParser {

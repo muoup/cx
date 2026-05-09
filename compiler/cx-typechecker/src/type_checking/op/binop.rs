@@ -161,13 +161,13 @@ pub(crate) fn resolve_std_arithmetic(
     } else if lhs._type.is_integer() && rhs._type.is_integer() {
         coerce_integral_binop(env, op, lhs, rhs)
     } else {
-        return log_typecheck_error!(
+        log_typecheck_error!(
             env,
             lhs.token_range.as_ref(),
             "Invalid binary operation {op} for types {} and {}",
             lhs.get_type().display_with(&env.symbols.context),
             rhs.get_type().display_with(&env.symbols.context)
-        );
+        )
     }
 }
 
@@ -179,8 +179,7 @@ fn coerce_float_binop(
 ) -> CXResult<TypecheckResult> {
     if let MIRTypeKind::Float { _type: lftype } = lhs._type.kind
         && let MIRTypeKind::Float { _type: rftype } = rhs._type.kind
-    {
-        if lftype != rftype {
+        && lftype != rftype {
             let common_ftype = if lftype.bytes() > rftype.bytes() {
                 lhs._type.clone()
             } else {
@@ -189,7 +188,6 @@ fn coerce_float_binop(
 
             rhs = implicit_cast(env, rhs, &common_ftype)?;
         }
-    }
 
     if !rhs._type.is_float() {
         rhs = implicit_cast(env, rhs, &lhs._type)?;

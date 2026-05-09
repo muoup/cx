@@ -314,7 +314,7 @@ fn lower_bitfield_write_at_address(
     bit_width: usize,
     value: &MIRExpression,
 ) -> CXResult<LMIRValue> {
-    let storage_lmir_type = builder.convert_cx_type(&storage_type);
+    let storage_lmir_type = builder.convert_cx_type(storage_type);
     let storage_int_type = integer_lmir_type(&storage_lmir_type);
     let loaded = builder.add_new_instruction(
         LMIRInstructionKind::Load {
@@ -427,7 +427,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     .params
                     .iter()
                     .position(|param| {
-                        param.name.as_ref().map(String::as_str) == Some(name.as_str())
+                        param.name.as_deref() == Some(name.as_str())
                     })
                     .expect("Contract variable not found in function parameters")
                     as u32;

@@ -111,7 +111,7 @@ pub fn compatible_types(
                 fields2.sort_by(|field1, field2| field1.name().cmp(&field2.name()));
             }
 
-            return Ok(fields1.iter().zip(fields2.iter()).all(|(field1, field2)| {
+            Ok(fields1.iter().zip(fields2.iter()).all(|(field1, field2)| {
                 if field1.name() != field2.name() {
                     return false;
                 }
@@ -119,7 +119,7 @@ pub fn compatible_types(
                 let field_type2 = env.symbols.context.get(field2.type_id()).cloned().unwrap();
 
                 compatible_types(env, &field_type1, &field_type2).unwrap_or(false)
-            }));
+            }))
         }
 
         _ => Ok(false),

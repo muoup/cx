@@ -1,7 +1,13 @@
 use cx_pipeline::project_compilation;
-use cx_pipeline_data::{CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel, config::find_and_load_config};
+use cx_pipeline_data::{
+    config::find_and_load_config, CompilationMode, CompilerBackend, CompilerConfig,
+    OptimizationLevel,
+};
 
-use crate::{args::{self, BuildArgs}, setup_internal_directory};
+use crate::{
+    args::{self, BuildArgs},
+    setup_internal_directory,
+};
 
 pub(crate) fn run_build_mode(args: BuildArgs) {
     let invocation_directory = std::env::current_dir().expect("Failed to get current directory");

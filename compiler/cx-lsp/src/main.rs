@@ -276,7 +276,9 @@ impl LanguageServer for Backend {
             let length = if end.line == start.line {
                 end.character.saturating_sub(start.character)
             } else {
-                text[token.byte_start_index..token.byte_end_index].chars().count() as u32
+                text[token.byte_start_index..token.byte_end_index]
+                    .chars()
+                    .count() as u32
             };
 
             let delta_line = line - last_line;

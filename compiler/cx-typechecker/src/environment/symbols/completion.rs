@@ -654,14 +654,12 @@ fn resolve_copy_traits(env: &TypeEnvironment, attributes: &CXStructAttributes) -
     let mut nocopy = attributes.nocopy || attributes.nodrop;
     let mut nodrop = attributes.nodrop;
 
-    if let Some(param_name) = &attributes.copy_traits {
-        if let Some(resolved_type) = env.get_realized_type(param_name) {
-            if let Some(src_attrs) = resolved_type.struct_attributes() {
+    if let Some(param_name) = &attributes.copy_traits
+        && let Some(resolved_type) = env.get_realized_type(param_name)
+            && let Some(src_attrs) = resolved_type.struct_attributes() {
                 nocopy = nocopy || src_attrs.nocopy;
                 nodrop = nodrop || src_attrs.nodrop;
             }
-        }
-    }
 
     (nocopy, nodrop)
 }

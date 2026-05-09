@@ -143,7 +143,7 @@ pub(crate) fn typecheck_scoped_call(
         expr,
         &mir_type,
         method_name,
-        &arg_types,
+        arg_types,
     )? {
         prototype
     } else {

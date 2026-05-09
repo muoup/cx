@@ -35,11 +35,13 @@ pub fn typecheck_match(
     let base_snapshot = env.function.current_snapshot();
 
     match &expr_type.kind {
-         MIRTypeKind::MemoryReference { inner_type, .. } | MIRTypeKind::PointerTo { inner_type, .. } => {
-            expr_type = env.get_named_type_definition(*inner_type)
+        MIRTypeKind::MemoryReference { inner_type, .. }
+        | MIRTypeKind::PointerTo { inner_type, .. } => {
+            expr_type = env
+                .get_named_type_definition(*inner_type)
                 .expect("Memory reference or pointer inner type should be a named type")
                 .clone();
-            
+
             expr_value = MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::RegionDuplicate {
@@ -47,8 +49,8 @@ pub fn typecheck_match(
                 },
                 _type: expr_type.clone(),
             }
-         }
-         _ => {}
+        }
+        _ => {}
     }
 
     let match_arms = match &expr_type.kind {

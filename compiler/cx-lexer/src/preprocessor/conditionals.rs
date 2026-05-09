@@ -185,25 +185,126 @@ pub(crate) fn rest_of_logical_directive(frame: &mut SourceFrame) -> String {
     let mut output = String::new();
 
     loop {
-        let line = frame.rest_of_line();
-        let continued = line.trim_end().ends_with('\\');
-
-        if continued {
-            let trimmed = line.trim_end();
-            output.push_str(&trimmed[..trimmed.len() - 1]);
-            output.push(' ');
-            if frame.peek() == Some('\n') {
-                frame.with_iter(|iter| {
-                    iter.next();
-                });
-            }
-        } else {
-            output.push_str(&line);
+        let comment_crossed_newline = read_directive_line(frame, &mut output);
+        if comment_crossed_newline {
             break;
+        }
+
+        let continued = output.trim_end().ends_with('\\');
+        if !continued {
+            break;
+        }
+
+        trim_continuation_backslash(&mut output);
+        output.push(' ');
+        if frame.peek() == Some('\n') {
+            frame.with_iter(|iter| {
+                iter.next();
+            });
         }
     }
 
     output
+}
+
+fn read_directive_line(frame: &mut SourceFrame, output: &mut String) -> bool {
+    while let Some(c) = frame.peek() {
+        match c {
+            '\n' => return false,
+            '"' | '\'' => read_quoted_directive_text(frame, output, c),
+            '/' => {
+                frame.with_iter(|iter| {
+                    iter.next();
+                });
+
+                match frame.peek() {
+                    Some('/') => {
+                        output.push(' ');
+                        frame.rest_of_line();
+                        return false;
+                    }
+                    Some('*') => {
+                        output.push(' ');
+                        frame.with_iter(|iter| {
+                            iter.next();
+                        });
+                        if skip_block_comment(frame) {
+                            return true;
+                        }
+                    }
+                    _ => output.push('/'),
+                }
+            }
+            _ => {
+                output.push(c);
+                frame.with_iter(|iter| {
+                    iter.next();
+                });
+            }
+        }
+    }
+
+    false
+}
+
+fn read_quoted_directive_text(frame: &mut SourceFrame, output: &mut String, quote: char) {
+    output.push(quote);
+    frame.with_iter(|iter| {
+        iter.next();
+    });
+
+    while let Some(c) = frame.peek() {
+        if c == '\n' {
+            break;
+        }
+
+        output.push(c);
+        frame.with_iter(|iter| {
+            iter.next();
+        });
+
+        if c == '\\' {
+            if let Some(escaped) = frame.peek() {
+                if escaped == '\n' {
+                    break;
+                }
+
+                output.push(escaped);
+                frame.with_iter(|iter| {
+                    iter.next();
+                });
+            }
+        } else if c == quote {
+            break;
+        }
+    }
+}
+
+fn skip_block_comment(frame: &mut SourceFrame) -> bool {
+    let mut crossed_newline = false;
+
+    while let Some(c) = frame.peek() {
+        frame.with_iter(|iter| {
+            iter.next();
+        });
+
+        if c == '\n' {
+            crossed_newline = true;
+        } else if c == '*' && frame.peek() == Some('/') {
+            frame.with_iter(|iter| {
+                iter.next();
+            });
+            break;
+        }
+    }
+
+    crossed_newline
+}
+
+fn trim_continuation_backslash(output: &mut String) {
+    let trimmed_len = output.trim_end().len();
+    output.truncate(trimmed_len);
+    output.pop();
 }
 
 pub(crate) fn read_macro_head(frame: &mut SourceFrame) -> Option<(String, Option<Vec<String>>)> {

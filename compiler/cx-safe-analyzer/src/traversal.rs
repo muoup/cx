@@ -29,10 +29,10 @@ pub(crate) fn child_nodes(node: &FMIRNode) -> Vec<&FMIRNode> {
         } => {
             let mut children = vec![condition.as_ref()];
             for (val, arm) in arms {
-                children.push(&val);
-                children.push(&arm);
+                children.push(val);
+                children.push(arm);
             }
-            children.push(&default);
+            children.push(default);
             children
         }
         FMIRNodeBody::AggregateInitialization { fields } => {

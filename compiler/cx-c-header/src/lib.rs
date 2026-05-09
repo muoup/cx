@@ -60,7 +60,7 @@ pub fn generate_header(
         writeln!(output)?;
     }
 
-    for (_, def) in &type_defs {
+    for def in type_defs.values() {
         writeln!(output, "{def}")?;
         writeln!(output)?;
     }

@@ -67,30 +67,3 @@ pub(crate) fn skip_directive_tail(iter: &mut CharIter) {
         }
     }
 }
-
-pub(crate) fn strip_replacement_comments(input: &str) -> String {
-    let mut output = String::new();
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '/' {
-            match chars.peek() {
-                Some('/') => break,
-                Some('*') => {
-                    chars.next();
-                    while let Some(c) = chars.next() {
-                        if c == '*' && chars.peek() == Some(&'/') {
-                            chars.next();
-                            break;
-                        }
-                    }
-                }
-                _ => output.push(c),
-            }
-        } else {
-            output.push(c);
-        }
-    }
-
-    output
-}

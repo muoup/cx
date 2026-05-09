@@ -1,8 +1,12 @@
 use std::path::PathBuf;
 
-use cx_util::{CXError, CXResult, module_path::stdlib_directory};
+use cx_util::{CXError, CXResult, module_path::cx_library_directory};
 
-use crate::{context::{LexingContext, SourceInput}, lexer::scanner::LexTransition, preprocessor::{conditionals::rest_of_logical_directive, includes}};
+use crate::{
+    context::{LexingContext, SourceInput},
+    lexer::scanner::LexTransition,
+    preprocessor::{conditionals::rest_of_logical_directive, includes},
+};
 
 pub(crate) fn handle_include(
     context: &mut LexingContext,
@@ -19,7 +23,7 @@ pub(crate) fn handle_include(
     let file_name_start = context.current_frame().cursor;
     let Some(file_name) = context.current_frame_mut().next_word() else {
         let frame = context.current_frame();
-        
+
         return log_lexer_error!(
             frame.file_path.as_path(),
             &frame.source,
@@ -114,7 +118,7 @@ pub(crate) fn resolve_path(
         candidates.push(parent.join(inner));
     }
 
-    let bundled = PathBuf::from(stdlib_directory(&format!("libc/{inner}")));
+    let bundled = PathBuf::from(cx_library_directory(&format!("libc/{inner}")));
     let system = system_include_dirs()
         .into_iter()
         .map(|dir| dir.join(inner))
@@ -125,29 +129,11 @@ pub(crate) fn resolve_path(
         .chain(include_dirs.iter().map(|dir| dir.join(inner)))
         .collect::<Vec<_>>();
 
-    if is_compiler_library_file(current_file) {
-        search
-            .into_iter()
-            .chain(std::iter::once(bundled))
-            .chain(system)
-            .find(|path| path.is_file())
-    } else {
-        search
-            .into_iter()
-            .chain(system)
-            .chain(std::iter::once(bundled))
-            .find(|path| path.is_file())
-    }
-}
-
-fn is_compiler_library_file(current_file: &std::path::Path) -> bool {
-    let lib_dir = PathBuf::from(stdlib_directory(""));
-    let file_path = current_file
-        .canonicalize()
-        .unwrap_or_else(|_| current_file.to_path_buf());
-    let lib_dir = lib_dir.canonicalize().unwrap_or(lib_dir);
-
-    file_path.starts_with(lib_dir)
+    search
+        .into_iter()
+        .chain(system)
+        .chain(std::iter::once(bundled))
+        .find(|path| path.is_file())
 }
 
 fn system_include_dirs() -> Vec<PathBuf> {

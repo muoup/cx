@@ -215,20 +215,19 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
 
             // FIXME: Unify this logic with the logic for creating a argument list for a function call.
-            let inner_expr =
-                if try_next!(data.tokens, punctuator!(CloseParen)) {
-                    CXExprKind::Unit.into_expr_with_origin(
-                        start_index,
-                        data.tokens.index,
-                        data.file_origin_for_range(start_index, data.tokens.index),
-                    )
-                } else {
-                    data.change_comma_mode(true);
-                    let inner_expr = parse_expr(data)?;
-                    data.pop_comma_mode();
-                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
-                    inner_expr
-                };
+            let inner_expr = if try_next!(data.tokens, punctuator!(CloseParen)) {
+                CXExprKind::Unit.into_expr_with_origin(
+                    start_index,
+                    data.tokens.index,
+                    data.file_origin_for_range(start_index, data.tokens.index),
+                )
+            } else {
+                data.change_comma_mode(true);
+                let inner_expr = parse_expr(data)?;
+                data.pop_comma_mode();
+                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                inner_expr
+            };
 
             let scope_res_expr = CXExprKind::BinOp {
                 lhs: Box::new(type_expr),
@@ -477,7 +476,7 @@ pub(crate) fn parse_expr_val(
 
         _ => {
             data.back();
-            return log_parse_error!(data, "Expected expression value")
+            return log_parse_error!(data, "Expected expression value");
         }
     }
     .into_expr_with_origin(

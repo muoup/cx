@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Readable, Writable)]
 pub struct ModulePath(String);
 
-pub fn stdlib_directory(inner_path: &str) -> String {
+pub fn cx_library_directory(inner_path: &str) -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     format!("{manifest_dir}/../../lib/{inner_path}")
 }
@@ -47,7 +47,7 @@ impl ModulePath {
             } else {
                 format!("std/{suffix}.cx")
             };
-            PathBuf::from(stdlib_directory(&inner))
+            PathBuf::from(cx_library_directory(&inner))
         } else {
             let path = Path::new(self.as_str());
             if path.is_absolute() {
