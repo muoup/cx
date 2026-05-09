@@ -140,7 +140,7 @@ pub fn int_complete_fn_prototype(
             params.clear();
         }
     }
-    
+
     let prototype = MIRFunctionPrototype {
         name,
         source_prototype,
@@ -148,6 +148,7 @@ pub fn int_complete_fn_prototype(
         params,
         var_args: normalized_prototype.var_args,
         contract: prototype.contract.clone(),
+        linkage: prototype.linkage,
     };
 
     Ok(prototype)

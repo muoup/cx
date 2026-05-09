@@ -1,4 +1,4 @@
-use cx_ast::data::{CXFunctionContract, CXFunctionPrototype};
+use cx_ast::data::{CXFunctionContract, CXFunctionPrototype, CXLinkageMode};
 use cx_util::identifier::CXIdent;
 use speedy::{Readable, Writable};
 
@@ -85,6 +85,7 @@ pub struct MIRFunctionPrototype {
     pub params: Vec<MIRParameter>,
     pub var_args: bool,
     pub contract: CXFunctionContract,
+    pub linkage: CXLinkageMode,
 }
 
 impl MIRFunctionPrototype {

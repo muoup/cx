@@ -106,7 +106,7 @@ pub(crate) fn convert_cx_prototype(
         return_type: signature.return_type.clone(),
         params: signature.params.clone(),
         var_args: signature.var_args,
-        linkage: LinkageType::Standard,
+        linkage: convert_linkage(cx_proto.linkage),
         temp_buffer,
     }
 }

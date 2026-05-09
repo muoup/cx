@@ -1,9 +1,9 @@
 use cx_ast::{
     assert_token_matches,
     data::{
-        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXParameter,
-        CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType, CXTypeKind,
-        PredeclarationType,
+        CXFunctionContract, CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent,
+        CXLinkageMode, CXParameter, CXReceiverData, CXReceiverMode, CXTemplatePrototype, CXType,
+        CXTypeKind, PredeclarationType,
     },
     next_kind, peek_next_kind, try_next,
 };
@@ -30,6 +30,7 @@ pub fn try_function_parse(
     data: &mut ParserData,
     return_type: CXType,
     name: CXIdent,
+    linkage: CXLinkageMode,
 ) -> CXResult<Option<FunctionDeclaration>> {
     let range_start = data.tokens.index;
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -48,6 +49,7 @@ pub fn try_function_parse(
                 params: args.params,
                 var_args: args.var_args,
                 contract: args.contract,
+                linkage,
                 range: TokenRange::new(
                     range_start,
                     data.tokens.index,
@@ -117,6 +119,7 @@ pub fn try_function_parse(
                 params: params.params,
                 var_args: params.var_args,
                 contract: params.contract,
+                linkage,
                 range: TokenRange::new(
                     range_start,
                     data.tokens.index,

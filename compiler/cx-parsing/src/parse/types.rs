@@ -421,6 +421,7 @@ pub(crate) fn parse_type_mods(
                 params,
                 var_args,
                 contract,
+                linkage: CXLinkageMode::Standard,
                 range: TokenRange::default(),
             };
 
@@ -584,6 +585,7 @@ pub(crate) fn parse_typedef_initializer(
         params,
         var_args,
         contract,
+        linkage: CXLinkageMode::Standard,
         range: TokenRange::default(),
     };
 

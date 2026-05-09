@@ -154,7 +154,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         );
     }
 
-    if let Some(func) = try_function_parse(data, return_type.clone(), name.clone())? {
+    if let Some(func) = try_function_parse(data, return_type.clone(), name.clone(), linkage)? {
         return parse_fn_merge(data, func.prototype, func.template_prototype);
     }
 

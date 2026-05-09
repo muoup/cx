@@ -409,7 +409,7 @@ pub(crate) fn parse_expr_val(
         TokenKind::Keyword(_) => {
             data.back();
             parse_keyword_expr(data)?.kind
-        },
+        }
 
         TokenKind::Operator(OperatorType::Move) => {
             let expr = parse_expr(data)?;

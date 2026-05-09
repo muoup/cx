@@ -114,6 +114,7 @@ impl<'a> ParserData<'a> {
     ) {
         match prototype {
             Some(proto) => {
+                let linkage = function.linkage;
                 self.ast.function_data.insert_template(
                     function.kind.into_key(),
                     ModuleResource::new(
@@ -122,14 +123,15 @@ impl<'a> ParserData<'a> {
                             shell: function,
                         },
                         self.visibility,
-                        CXLinkageMode::Standard,
+                        linkage,
                     ),
                 );
             }
             None => {
+                let linkage = function.linkage;
                 self.ast.function_data.insert_standard(
                     function.kind.into_key(),
-                    ModuleResource::new(function, self.visibility, CXLinkageMode::Standard),
+                    ModuleResource::new(function, self.visibility, linkage),
                 );
             }
         }

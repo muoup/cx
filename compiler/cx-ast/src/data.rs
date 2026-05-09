@@ -56,7 +56,7 @@ pub struct CXReceiverData {
     pub specifiers: CXTypeQualifiers,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Readable, Writable)]
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Readable, Writable)]
 pub enum CXLinkageMode {
     #[default]
     Standard,
@@ -104,6 +104,7 @@ pub struct CXFunctionPrototype {
     pub return_type: CXType,
     pub var_args: bool,
     pub contract: CXFunctionContract,
+    pub linkage: CXLinkageMode,
     pub range: TokenRange,
 }
 
