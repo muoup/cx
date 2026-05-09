@@ -1,3 +1,4 @@
+pub mod builtins;
 pub mod conditionals;
 pub mod define;
 pub mod expr;

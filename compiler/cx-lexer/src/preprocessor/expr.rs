@@ -131,22 +131,29 @@ struct PreprocessorExprParser<'a> {
     macros: &'a HashMap<String, Macro>,
 }
 
+#[derive(Clone, Copy)]
+struct PreprocessorBinOp {
+    token_count: usize,
+    precedence: u8,
+    apply: fn(i64, i64) -> i64,
+}
+
 impl PreprocessorExprParser<'_> {
     fn parse_expression(&mut self) -> Option<i64> {
         self.parse_conditional()
     }
 
     fn parse_conditional(&mut self) -> Option<i64> {
-        let condition = self.parse_logical_or()?;
+        let condition = self.parse_binary(0)?;
         if !self.consume_punctuator(PunctuatorType::QuestionMark) {
             return Some(condition);
         }
 
-        let true_value = self.parse_expression()?;
+        let true_value = self.parse_conditional()?;
         if !self.consume_punctuator(PunctuatorType::Colon) {
             return None;
         }
-        let false_value = self.parse_expression()?;
+        let false_value = self.parse_conditional()?;
 
         Some(if condition != 0 {
             true_value
@@ -155,80 +162,20 @@ impl PreprocessorExprParser<'_> {
         })
     }
 
-    fn parse_logical_or(&mut self) -> Option<i64> {
-        let mut lhs = self.parse_logical_and()?;
-        while self.consume_operator(OperatorType::DoubleBar) {
-            let rhs = self.parse_logical_and()?;
-            lhs = i64::from(lhs != 0 || rhs != 0);
-        }
-        Some(lhs)
-    }
-
-    fn parse_logical_and(&mut self) -> Option<i64> {
-        let mut lhs = self.parse_equality()?;
-        while self.consume_operator(OperatorType::DoubleAmpersand) {
-            let rhs = self.parse_equality()?;
-            lhs = i64::from(lhs != 0 && rhs != 0);
-        }
-        Some(lhs)
-    }
-
-    fn parse_equality(&mut self) -> Option<i64> {
-        let mut lhs = self.parse_relational()?;
-        loop {
-            if self.consume_operator(OperatorType::Equal) {
-                lhs = i64::from(lhs == self.parse_relational()?);
-            } else if self.consume_operator(OperatorType::NotEqual) {
-                lhs = i64::from(lhs != self.parse_relational()?);
-            } else {
-                return Some(lhs);
-            }
-        }
-    }
-
-    fn parse_relational(&mut self) -> Option<i64> {
-        let mut lhs = self.parse_additive()?;
-        loop {
-            if self.consume_operator(OperatorType::Less) {
-                lhs = i64::from(lhs < self.parse_additive()?);
-            } else if self.consume_operator(OperatorType::LessEqual) {
-                lhs = i64::from(lhs <= self.parse_additive()?);
-            } else if self.consume_operator(OperatorType::Greater) {
-                lhs = i64::from(lhs > self.parse_additive()?);
-            } else if self.consume_operator(OperatorType::GreaterEqual) {
-                lhs = i64::from(lhs >= self.parse_additive()?);
-            } else {
-                return Some(lhs);
-            }
-        }
-    }
-
-    fn parse_additive(&mut self) -> Option<i64> {
-        let mut lhs = self.parse_multiplicative()?;
-        loop {
-            if self.consume_operator(OperatorType::Plus) {
-                lhs += self.parse_multiplicative()?;
-            } else if self.consume_operator(OperatorType::Minus) {
-                lhs -= self.parse_multiplicative()?;
-            } else {
-                return Some(lhs);
-            }
-        }
-    }
-
-    fn parse_multiplicative(&mut self) -> Option<i64> {
+    fn parse_binary(&mut self, min_precedence: u8) -> Option<i64> {
         let mut lhs = self.parse_unary()?;
-        loop {
-            if self.consume_operator(OperatorType::Asterisk) {
-                lhs *= self.parse_unary()?;
-            } else if self.consume_operator(OperatorType::Slash) {
-                lhs /= self.parse_unary()?;
-            } else if self.consume_operator(OperatorType::Percent) {
-                lhs %= self.parse_unary()?;
-            } else {
-                return Some(lhs);
+
+        while let Some(op) = self.peek_binop() {
+            if op.precedence < min_precedence {
+                break;
             }
+
+            self.index += op.token_count;
+            let rhs = self.parse_binary(op.precedence + 1)?;
+            lhs = (op.apply)(lhs, rhs);
         }
+
+        Some(lhs)
     }
 
     fn parse_unary(&mut self) -> Option<i64> {
@@ -263,12 +210,67 @@ impl PreprocessorExprParser<'_> {
             }
             TokenKind::Punctuator(PunctuatorType::OpenParen) => {
                 self.index += 1;
-                let value = self.parse_expression()?;
+                let value = self.parse_conditional()?;
                 if !self.consume_punctuator(PunctuatorType::CloseParen) {
                     return None;
                 }
                 Some(value)
             }
+            _ => None,
+        }
+    }
+
+    fn peek_binop(&self) -> Option<PreprocessorBinOp> {
+        let kind = self.tokens.get(self.index).map(|token| &token.kind)?;
+
+        if matches!(
+            (
+                kind,
+                self.tokens.get(self.index + 1).map(|token| &token.kind)
+            ),
+            (TokenKind::Operator(OperatorType::Less), Some(TokenKind::Operator(OperatorType::Less)))
+        ) {
+            return Some(binop(2, 8, |lhs, rhs| lhs << rhs));
+        }
+
+        if matches!(
+            (
+                kind,
+                self.tokens.get(self.index + 1).map(|token| &token.kind)
+            ),
+            (
+                TokenKind::Operator(OperatorType::Greater),
+                Some(TokenKind::Operator(OperatorType::Greater))
+            )
+        ) {
+            return Some(binop(2, 8, |lhs, rhs| lhs >> rhs));
+        }
+
+        let TokenKind::Operator(operator) = kind else {
+            return None;
+        };
+
+        match operator {
+            OperatorType::DoubleBar => Some(binop(1, 1, |lhs, rhs| {
+                i64::from(lhs != 0 || rhs != 0)
+            })),
+            OperatorType::DoubleAmpersand => Some(binop(1, 2, |lhs, rhs| {
+                i64::from(lhs != 0 && rhs != 0)
+            })),
+            OperatorType::Bar => Some(binop(1, 3, |lhs, rhs| lhs | rhs)),
+            OperatorType::Caret => Some(binop(1, 4, |lhs, rhs| lhs ^ rhs)),
+            OperatorType::Ampersand => Some(binop(1, 5, |lhs, rhs| lhs & rhs)),
+            OperatorType::Equal => Some(binop(1, 6, |lhs, rhs| i64::from(lhs == rhs))),
+            OperatorType::NotEqual => Some(binop(1, 6, |lhs, rhs| i64::from(lhs != rhs))),
+            OperatorType::Less => Some(binop(1, 7, |lhs, rhs| i64::from(lhs < rhs))),
+            OperatorType::LessEqual => Some(binop(1, 7, |lhs, rhs| i64::from(lhs <= rhs))),
+            OperatorType::Greater => Some(binop(1, 7, |lhs, rhs| i64::from(lhs > rhs))),
+            OperatorType::GreaterEqual => Some(binop(1, 7, |lhs, rhs| i64::from(lhs >= rhs))),
+            OperatorType::Plus => Some(binop(1, 9, |lhs, rhs| lhs + rhs)),
+            OperatorType::Minus => Some(binop(1, 9, |lhs, rhs| lhs - rhs)),
+            OperatorType::Asterisk => Some(binop(1, 10, |lhs, rhs| lhs * rhs)),
+            OperatorType::Slash => Some(binop(1, 10, |lhs, rhs| lhs / rhs)),
+            OperatorType::Percent => Some(binop(1, 10, |lhs, rhs| lhs % rhs)),
             _ => None,
         }
     }
@@ -295,5 +297,13 @@ impl PreprocessorExprParser<'_> {
         } else {
             false
         }
+    }
+}
+
+fn binop(token_count: usize, precedence: u8, apply: fn(i64, i64) -> i64) -> PreprocessorBinOp {
+    PreprocessorBinOp {
+        token_count,
+        precedence,
+        apply,
     }
 }

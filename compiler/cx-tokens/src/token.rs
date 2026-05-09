@@ -65,6 +65,30 @@ pub struct Token {
     pub file_origin: Arc<Path>,
 }
 
+impl Token {
+    pub fn new(
+        kind: TokenKind,
+        byte_range: (usize, usize),
+        file_origin: Arc<Path>,
+    ) -> Self {
+        Self {
+            kind,
+            byte_start_index: byte_range.0,
+            byte_end_index: byte_range.1,
+            file_origin,
+        }
+    }
+
+    pub fn new_unknown(kind: TokenKind) -> Token {
+        Self {
+            kind,
+            byte_start_index: 0,
+            byte_end_index: 0,
+            file_origin: Arc::from(Path::new("")),
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! keyword {
     () => {

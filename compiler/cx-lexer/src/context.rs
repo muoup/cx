@@ -1,10 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
-use cx_tokens::token::{PunctuatorType, SpecifierType, Token, TokenKind};
+use cx_tokens::token::{PunctuatorType, Token, TokenKind};
 use cx_util::CXResult;
 
 use crate::{
@@ -13,7 +12,7 @@ use crate::{
         scanner::{LexEvent, LexTransition, Lexer},
         source::{ConditionalFrame, SourceFrame},
     },
-    preprocessor::Preprocessor,
+    preprocessor::{Preprocessor, builtins::builtin_macros},
 };
 
 #[derive(Clone)]
@@ -206,34 +205,6 @@ impl LexingContext {
     pub fn skip_tail(&mut self) {
         self.current_frame_mut().with_iter(skip_directive_tail);
     }
-}
-
-fn builtin_macros() -> HashMap<String, Macro> {
-    let mut macros = HashMap::new();
-
-    for name in ["__restrict", "__restrict__", "__extension__"] {
-        macros.insert(name.to_string(), Macro::Object(Box::new([])));
-    }
-
-    macros.insert(
-        "__const".to_string(),
-        Macro::Object(Box::new([Token {
-            kind: TokenKind::Specifier(SpecifierType::Const),
-            byte_start_index: 0,
-            byte_end_index: 0,
-            file_origin: Arc::<Path>::from(Path::new("")),
-        }])),
-    );
-
-    macros.insert(
-        "__attribute__".to_string(),
-        Macro::Function {
-            params: Box::new(["x".to_string()]),
-            body: Box::new([]),
-        },
-    );
-
-    macros
 }
 
 fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Token) -> Vec<Token> {

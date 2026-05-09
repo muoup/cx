@@ -131,7 +131,7 @@ pub(crate) fn resolve_path(
 
     search
         .into_iter()
-        //.chain(system)
+        .chain(system)
         .chain(std::iter::once(bundled))
         .find(|path| path.is_file())
 }
