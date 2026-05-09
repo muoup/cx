@@ -1,0 +1,11 @@
+[project]
+name = "lsp-interpreter"
+
+[build]
+backend = "llvm"
+optimization = "O0"
+
+[workspace.targets.default]
+binaries = [
+  { name = "lsp-interpreter", entry = "main.cx" },
+]

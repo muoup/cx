@@ -1,0 +1,63 @@
+import std::string;
+import std::vector;
+import std::box;
+import std::io;
+
+public:
+
+enum union lisp_node : @nodrop {
+    // Any float literal
+    Number      :: f64,
+
+    // (fndef <name> (<params> <body>)
+    FnDef       :: struct : @nodrop {
+        string name;
+        vector<string> params;
+        vector<lisp_node> body;
+    },
+    FnCall      :: struct : @nodrop {
+        string name;
+        vector<lisp_node> args;
+    },
+    Plus        :: struct : @nodrop {
+        box<lisp_node> left;
+        box<lisp_node> right;
+    },
+    Minus       :: struct : @nodrop {
+        box<lisp_node> left;
+        box<lisp_node> right;
+    },
+    PrintNum    :: box<lisp_node>,
+    PrintStr    :: string
+};
+
+void interpret(lisp_node* node) {
+    interpreter interpret = { .functions = vector<function_decl>::new<function_decl>() };
+
+    interpret.interpret(node);
+
+    // FIXME: We are leaking the `functions` vector here, but consuming inner members of an aggregate is not yet supported.
+    @leak(interpret);
+}
+
+private:
+
+struct function_decl : @nodrop {
+    string name;
+    vector<string> params;
+    vector<lisp_node> body;
+};
+
+struct interpreter : @nodrop {
+    vector<function_decl> functions;
+};
+
+void interpreter::interpret(*this, lisp_node* node) {
+    match (node) {
+        lisp_node::Number(num) => printf("Number: %d\n", num);
+        lisp_node::FnDef(fn_def) => {}
+        lisp_node::FnCall(fn_call) => {}
+        lisp_node::Plus(plus) => {}
+        lisp_node::Minus(minus) => {}
+    }
+}

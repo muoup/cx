@@ -34,16 +34,21 @@ pub fn typecheck_match(
     let join_scope_idx = env.function.current_scope_index();
     let base_snapshot = env.function.current_snapshot();
 
-    if let Some(inner) = env.symbols.context.mem_ref_inner(&expr_type) {
-        expr_type = inner.clone();
-
-        expr_value = MIRExpression {
-            token_range: None,
-            kind: MIRExpressionKind::RegionDuplicate {
-                source: Box::new(expr_value),
-            },
-            _type: expr_type.clone(),
-        }
+    match &expr_type.kind {
+         MIRTypeKind::MemoryReference { inner_type, .. } | MIRTypeKind::PointerTo { inner_type, .. } => {
+            expr_type = env.get_named_type_definition(*inner_type)
+                .expect("Memory reference or pointer inner type should be a named type")
+                .clone();
+            
+            expr_value = MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::RegionDuplicate {
+                    source: Box::new(expr_value),
+                },
+                _type: expr_type.clone(),
+            }
+         }
+         _ => {}
     }
 
     let match_arms = match &expr_type.kind {
