@@ -6,42 +6,44 @@ use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
 use cx_lmir::{LMIRFunctionSignature, LMIRParameter, LMIRValue};
+use cx_util::CXResult;
 
 pub(crate) fn prepare_function_sig(
     object_module: &mut ObjectModule,
     signature: &LMIRFunctionSignature,
-) -> Option<Signature> {
+) -> CXResult<Signature> {
     let mut sig = Signature::new(object_module.target_config().default_call_conv);
 
     if !signature.return_type.is_void() {
         sig.returns
-            .push(get_cranelift_abi_type(&signature.return_type));
+            .push(get_cranelift_abi_type(&signature.return_type)?);
     }
 
     for LMIRParameter { _type, .. } in signature.params.iter() {
-        sig.params.push(get_cranelift_abi_type(_type));
+        sig.params.push(get_cranelift_abi_type(_type)?);
     }
 
-    Some(sig)
+    Ok(sig)
 }
 
 pub(crate) fn prepare_method_call<'a>(
     context: &'a mut FunctionState,
     func: &LMIRValue,
     args: &'a [LMIRValue],
-) -> Option<(CodegenValue, Vec<Value>)> {
-    let val = context.get_value(func).unwrap();
+) -> CXResult<(CodegenValue, Vec<Value>)> {
+    let val = context.get_value(func)?;
+    let params = prepare_parameters(context, args)?;
 
-    Some((val, prepare_parameters(context, args)?))
+    Ok((val, params))
 }
 
 pub(crate) fn prepare_parameters<'a>(
     context: &'a mut FunctionState,
     args: &'a [LMIRValue],
-) -> Option<Vec<Value>> {
+) -> CXResult<Vec<Value>> {
     args.iter()
-        .map(|arg| context.get_value(arg)?.as_value().into())
-        .collect::<Option<Vec<_>>>()
+        .map(|arg| context.get_value(arg).map(|cg| CodegenValue::as_value(&cg)))
+        .collect::<CXResult<Vec<_>>>()
 }
 
 pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> Option<CodegenValue> {
@@ -58,13 +60,11 @@ pub(crate) fn get_func_ref(
     func_id: FuncId,
     signature: &LMIRFunctionSignature,
     args: &[Value],
-) -> Option<FuncRef> {
+) -> CXResult<FuncRef> {
     if !signature.var_args || args.len() == signature.params.len() {
-        return Some(
-            context
-                .object_module
-                .declare_func_in_func(func_id, context.builder.func),
-        );
+        return Ok(context
+            .object_module
+            .declare_func_in_func(func_id, context.builder.func));
     }
 
     let mut sig = prepare_function_sig(context.object_module, signature)?;
@@ -80,9 +80,16 @@ pub(crate) fn get_func_ref(
         .object_module
         .declare_func_in_func(func_id, context.builder.func);
 
-    let sig_ref = context.builder.func.dfg.ext_funcs.get(func_ref)?.signature;
+    let sig_ref = context
+        .builder
+        .func
+        .dfg
+        .ext_funcs
+        .get(func_ref)
+        .unwrap()
+        .signature;
 
     context.builder.func.dfg.signatures[sig_ref] = sig;
 
-    Some(func_ref)
+    Ok(func_ref)
 }

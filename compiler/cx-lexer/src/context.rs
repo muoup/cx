@@ -4,7 +4,7 @@ use std::{
 };
 
 use cx_tokens::token::{PunctuatorType, Token, TokenKind};
-use cx_util::CXResult;
+use cx_util::{module_path::cx_library_directory, CXError, CXResult};
 
 use crate::{
     lexer::{
@@ -39,15 +39,31 @@ pub(crate) struct LexingContext {
 }
 
 impl LexingContext {
-    pub(crate) fn new(source: String, source_path: &Path, include_dirs: &[PathBuf]) -> Self {
-        Self {
+    pub(crate) fn new(
+        source: String,
+        source_path: &Path,
+        include_dirs: &[PathBuf],
+    ) -> CXResult<Self> {
+        let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
+        let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
+            CXError::create_boxed(format!(
+                "Failed to read internal builtin header {}: {}",
+                builtin_path.display(),
+                e
+            ))
+        })?;
+
+        Ok(Self {
             include_dirs: include_dirs.to_vec(),
             macros: builtin_macros(),
             once_files: HashSet::new(),
-            sources: vec![SourceFrame::new(source, source_path)],
+            sources: vec![
+                SourceFrame::new(source, source_path),
+                SourceFrame::new(builtin_source, &builtin_path),
+            ],
             pending_tokens: Vec::new(),
             tokens: Vec::new(),
-        }
+        })
     }
 
     pub(crate) fn run(mut self) -> CXResult<Vec<Token>> {
@@ -415,9 +431,16 @@ mod tests {
         token(TokenKind::Operator(OperatorType::Comma))
     }
 
+    fn test_context() -> LexingContext {
+        match LexingContext::new(String::new(), Path::new("test.cx"), &[]) {
+            Ok(context) => context,
+            Err(error) => panic!("{}", error.error_message()),
+        }
+    }
+
     #[test]
     fn function_macro_stringifies_raw_arg_and_expands_normal_arg() {
-        let mut context = LexingContext::new(String::new(), Path::new("test.cx"), &[]);
+        let mut context = test_context();
         context.macros.insert(
             "A".to_string(),
             Macro::Object(Box::new([ident("B")])),
@@ -458,7 +481,7 @@ mod tests {
 
     #[test]
     fn buffers_multiline_function_macro_invocations_until_args_close() {
-        let mut context = LexingContext::new(String::new(), Path::new("test.cx"), &[]);
+        let mut context = test_context();
         context.macros.insert(
             "REDIRECT".to_string(),
             Macro::Function {

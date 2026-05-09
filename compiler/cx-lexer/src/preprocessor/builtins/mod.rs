@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_tokens::token::{SpecifierType, Token, TokenKind};
+use cx_tokens::token::{Token, TokenKind};
 
 use crate::context::Macro;
 
@@ -10,7 +10,6 @@ pub(crate) fn builtin_macros() -> HashMap<String, Macro> {
     define_language_predefines(&mut macros);
     define_compiler_predefines(&mut macros);
     define_target_predefines(&mut macros);
-    define_compatibility_predefines(&mut macros);
 
     macros
 }
@@ -26,7 +25,6 @@ fn define_compiler_predefines(macros: &mut HashMap<String, Macro>) {
     define_int(macros, "__GNUC_MINOR__", 8);
     define_int(macros, "__GNUC_PATCHLEVEL__", 0);
     define_int(macros, "__GNUC_STDC_INLINE__", 1);
-    define_empty(macros, "__USER_LABEL_PREFIX__");
 }
 
 fn define_target_predefines(macros: &mut HashMap<String, Macro>) {
@@ -79,61 +77,10 @@ fn define_target_predefines(macros: &mut HashMap<String, Macro>) {
     }
 }
 
-fn define_compatibility_predefines(macros: &mut HashMap<String, Macro>) {
-    define_empty(macros, "__extension__");
-    define_empty_function(macros, "__attribute__", &["x"]);
-    define_empty_function(macros, "__attribute", &["x"]);
-
-    for name in ["__const", "__const__"] {
-        define_specifier(macros, name, SpecifierType::Const);
-    }
-
-    for name in ["__inline", "__inline__"] {
-        define_specifier(macros, name, SpecifierType::Inline);
-    }
-
-    for name in ["__restrict", "__restrict__"] {
-        // FIXME: support restrict specifier
-        // define_specifier(macros, name, SpecifierType::Restrict);
-        define_empty(macros, name);
-    }
-
-    for name in ["__volatile", "__volatile__"] {
-        define_specifier(macros, name, SpecifierType::Volatile);
-    }
-}
-
-fn define_empty(macros: &mut HashMap<String, Macro>, name: &str) {
-    macros.insert(name.to_string(), Macro::Object(Box::new([])));
-}
-
-fn define_empty_function(macros: &mut HashMap<String, Macro>, name: &str, params: &[&str]) {
-    macros.insert(
-        name.to_string(),
-        Macro::Function {
-            params: params
-                .iter()
-                .map(|param| param.to_string())
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-            body: Box::new([]),
-        },
-    );
-}
-
 fn define_int(macros: &mut HashMap<String, Macro>, name: &str, value: i64) {
     macros.insert(
         name.to_string(),
         Macro::Object(Box::new([Token::new_unknown(TokenKind::IntLiteral(value))])),
-    );
-}
-
-fn define_specifier(macros: &mut HashMap<String, Macro>, name: &str, specifier: SpecifierType) {
-    macros.insert(
-        name.to_string(),
-        Macro::Object(Box::new([Token::new_unknown(TokenKind::Specifier(
-            specifier,
-        ))])),
     );
 }
 

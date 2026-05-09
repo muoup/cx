@@ -10,7 +10,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_util::identifier::CXIdent;
-use cx_util::log_error;
+use cx_util::{CXError, CXResult, log_error};
 use std::collections::HashMap;
 
 mod codegen;
@@ -33,6 +33,11 @@ impl CodegenValue {
 
             _ => panic!("Expected Value, got: {self:?}"),
         }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_null(&self) -> bool {
+        matches!(self, CodegenValue::NULL)
     }
 }
 
@@ -75,23 +80,24 @@ impl FunctionState<'_> {
         self.block_map.get(id).cloned().unwrap()
     }
 
-    pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> Option<CodegenValue> {
+    pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> CXResult<CodegenValue> {
         match bc_value {
-            LMIRValue::NULL => Some(CodegenValue::NULL),
+            LMIRValue::NULL => Ok(CodegenValue::NULL),
 
-            LMIRValue::ParameterRef(i) => Some(CodegenValue::Value(Value::from_u32(*i))),
+            LMIRValue::ParameterRef(i) => Ok(CodegenValue::Value(Value::from_u32(*i))),
 
             LMIRValue::FunctionRef(name) => {
-                let (_func_id, func_ref) = self.get_function(name.as_str())?;
+                let (_func_id, func_ref) = self.get_function(name.as_str())
+                    .ok_or_else(|| CXError::create_boxed(format!("Function not found: {}", name)))?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
-                Some(CodegenValue::Value(as_value))
+                Ok(CodegenValue::Value(as_value))
             }
 
             LMIRValue::IntImmediate { val, _type } => {
                 let int_type = get_cranelift_type(&LMIRTypeKind::Integer(*_type).into());
-                let value = self.builder.ins().iconst(int_type, *val);
-                Some(CodegenValue::Value(value))
+                let value = self.builder.ins().iconst(int_type?, *val);
+                Ok(CodegenValue::Value(value))
             }
 
             LMIRValue::FloatImmediate {
@@ -100,7 +106,7 @@ impl FunctionState<'_> {
             } => {
                 let as_f32: f32 = val.into();
                 let value = self.builder.ins().f32const(as_f32);
-                Some(CodegenValue::Value(value))
+                Ok(CodegenValue::Value(value))
             }
 
             LMIRValue::FloatImmediate {
@@ -109,7 +115,7 @@ impl FunctionState<'_> {
             } => {
                 let as_f64: f64 = val.into();
                 let value = self.builder.ins().f64const(as_f64);
-                Some(CodegenValue::Value(value))
+                Ok(CodegenValue::Value(value))
             }
 
             LMIRValue::Global(id) => {
@@ -122,21 +128,21 @@ impl FunctionState<'_> {
                     .ins()
                     .global_value(self.pointer_type, global_ref);
 
-                Some(CodegenValue::Value(gv))
+                Ok(CodegenValue::Value(gv))
             }
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    log_error!("Variable not found in variable table: {:?}", bc_value);
+                    return CXError::create_result(format!("Variable not found in variable table: {:?}", bc_value));
                 };
 
-                Some(var)
+                Ok(var)
             }
         }
     }
 }
 
-pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> Option<Vec<u8>> {
+pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     let settings_builder = settings::builder();
     let flags = settings::Flags::new(settings_builder);
 
@@ -166,7 +172,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> Option<Vec<u8>> {
     }
 
     for fn_prototype in bc.fn_map.values() {
-        codegen_fn_prototype(&mut global_state, fn_prototype);
+        codegen_fn_prototype(&mut global_state, fn_prototype)?;
     }
 
     for func in &bc.fn_defs {
@@ -187,5 +193,6 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> Option<Vec<u8>> {
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    global_state.object_module.finish().emit().ok()
+    global_state.object_module.finish().emit()
+        .map_err(|e| CXError::create_boxed(format!("Failed to emit object file: {e}")))
 }

@@ -129,7 +129,7 @@ pub fn lmir_aot_codegen(
     bytecode: &LMIRUnit,
     output_path: &str,
     optimization_level: OptimizationLevel,
-) -> Option<Vec<u8>> {
+) -> CXResult<Vec<u8>> {
     let context = Context::create();
     Target::initialize_native(&InitializationConfig::default())
         .expect("Failed to initialize native");
@@ -213,7 +213,7 @@ pub fn lmir_aot_codegen(
         .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
         .expect("Failed to export module to file");
 
-    Some(buff.as_slice().to_vec())
+    Ok(buff.as_slice().to_vec())
 }
 
 fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option<()> {

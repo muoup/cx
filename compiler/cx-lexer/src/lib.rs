@@ -21,7 +21,7 @@ pub fn lex_with_context(
     source_path: &Path,
     include_dirs: &[PathBuf],
 ) -> CXResult<Vec<Token>> {
-    LexingContext::new(source.to_string(), source_path, include_dirs).run()
+    LexingContext::new(source.to_string(), source_path, include_dirs)?.run()
 }
 
 pub fn lex_file(source_path: &Path, include_dirs: &[PathBuf]) -> CXResult<Vec<Token>> {

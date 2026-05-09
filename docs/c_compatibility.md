@@ -30,3 +30,13 @@ declare `__gnuc_va_list`, `va_list`, and functions taking `va_list` parameters.
 This is a declaration/typechecking shim only. It does not implement `va_start`,
 `va_arg`, `va_copy`, `va_end`, or ABI-correct varargs lowering. Revisit the size
 and representation when target-specific C varargs semantics are implemented.
+
+## Internal Builtin Header
+
+The preprocessor reads `lib/libc/internal/__builtins.h` before user source so
+C-spelled compatibility macros can live in a C header instead of Rust code.
+
+Macros in that file are intentionally typechecking shims. For example,
+`__builtin_bswap16`, `__builtin_bswap32`, and `__builtin_bswap64` currently
+expand to identity expressions. Replace them with real compiler intrinsics or
+ABI-aware implementations when those semantics are supported.

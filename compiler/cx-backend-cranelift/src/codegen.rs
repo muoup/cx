@@ -9,12 +9,13 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
+use cx_util::{CXError, CXResult};
 use cx_util::format::dump_data;
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
     prototype: &LMIRFunctionPrototype,
-) -> Option<()> {
+) -> CXResult<()> {
     let sig = prepare_function_sig(&mut global_state.object_module, &prototype.signature())?;
     let linkage = convert_linkage(prototype.linkage);
 
@@ -30,24 +31,29 @@ pub(crate) fn codegen_fn_prototype(
         .function_sigs
         .insert(prototype.name.to_owned(), sig);
 
-    Some(())
+    Ok(())
 }
 
-pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &LMIRBasicBlock) {
+pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &LMIRBasicBlock) -> CXResult<()> {
     let block = context.get_block(&fn_block.id);
     context.builder.switch_to_block(block);
 
     for instr in fn_block.body.iter() {
-        if let Some(val) = codegen_instruction(context, instr) {
-            if let Some(result) = instr.result.as_ref() {
-                context.variable_table.insert(result.clone(), val);
-            }
-        };
+        let ret = codegen_instruction(context, instr)
+            .map_err(|err| {
+                CXError::create_boxed(format!("Failed to codegen instruction: {instr:#?}\nError: {}", err.error_message()))
+            })?;
+        
+        if let Some(result) = instr.result.as_ref() {
+            context.variable_table.insert(result.clone(), ret);
+        }
 
         if instr.kind.is_block_terminating() {
             break;
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn codegen_function(
@@ -55,7 +61,7 @@ pub(crate) fn codegen_function(
     func_id: FuncId,
     func_sig: Signature,
     bc_func: &LMIRFunction,
-) -> Option<()> {
+) -> CXResult<()> {
     let mut func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), func_sig);
 
     let mut binding = FunctionBuilderContext::new();
@@ -87,7 +93,7 @@ pub(crate) fn codegen_function(
     let first_block = context.get_block(first_block);
 
     for arg in bc_func.prototype.params.iter() {
-        let cranelift_type = get_cranelift_type(&arg._type);
+        let cranelift_type = get_cranelift_type(&arg._type)?;
         let arg = context
             .builder
             .append_block_param(first_block, cranelift_type);
@@ -96,7 +102,7 @@ pub(crate) fn codegen_function(
     }
 
     for fn_block in bc_func.blocks.iter() {
-        codegen_block(&mut context, fn_block);
+        codegen_block(&mut context, fn_block)?;
     }
 
     context.builder.seal_all_blocks();
@@ -120,5 +126,5 @@ pub(crate) fn codegen_function(
 
     object_module.clear_context(context);
 
-    Some(())
+    Ok(())
 }

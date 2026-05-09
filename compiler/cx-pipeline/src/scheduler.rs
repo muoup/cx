@@ -400,11 +400,9 @@ pub(crate) fn perform_job(
                     lmir,
                     internal_directory_str,
                     context.config.optimization_level,
-                )
-                .ok_or(CXError::create_boxed("LLVM code generation failed"))?,
+                ),
                 CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str)
-                    .ok_or(CXError::create_boxed("Cranelift code generation failed"))?,
-            };
+            }?;
 
             let mut file =
                 std::fs::File::create(&internal_directory).expect("Failed to create object file");

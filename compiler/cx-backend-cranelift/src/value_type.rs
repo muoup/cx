@@ -1,12 +1,13 @@
 use cranelift::codegen::ir;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
+use cx_util::{CXError, CXResult};
 
-pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> ir::AbiParam {
-    ir::AbiParam::new(get_cranelift_type(val_type))
+pub(crate) fn get_cranelift_abi_type(val_type: &LMIRType) -> CXResult<ir::AbiParam> {
+    get_cranelift_type(val_type).map(ir::AbiParam::new)
 }
 
-pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> ir::Type {
-    match &val_type.kind {
+pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
+    Ok(match &val_type.kind {
         LMIRTypeKind::Integer(LMIRIntegerType::I1) => ir::types::I8,
         LMIRTypeKind::Integer(LMIRIntegerType::I8) => ir::types::I8,
         LMIRTypeKind::Integer(LMIRIntegerType::I16) => ir::types::I16,
@@ -24,9 +25,12 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> ir::Type {
         | LMIRTypeKind::Pointer { .. }
         | LMIRTypeKind::Array { .. } => ir::Type::int(64).unwrap(),
 
+        // FIXME: This is a bit of a hack, but for opaque types we can just treat them as an integer of the appropriate size.
+        LMIRTypeKind::Opaque { .. } => ir::Type::int(64).unwrap(),
+        
         // Because of the way Cranelift codegen works, there is actually no need for
         // handling arrays, as anywhere where the type is used (i.e. in stack allocations)
         // will implicitly use the size which can be derived from the bc type.
-        _ => panic!("PANIC: Unsupported type for Cranelift: {val_type:?}"),
-    }
+        _ => return CXError::create_result(format!("Unsupported type for codegen: {val_type:?}")),
+    })
 }
