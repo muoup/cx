@@ -63,7 +63,7 @@ pub(crate) fn typecheck_identifier(
                 name
             );
         };
-        
+
         Ok(TypecheckResult::from(global_expr))
     } else {
         log_typecheck_error!(

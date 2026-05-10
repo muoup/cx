@@ -1,5 +1,5 @@
 use crate::parse::ParserData;
-use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex};
+use cx_ast::ast::{CXBinOp, CXExprKind, CXExpression, CXInitIndex, CXUnpackBinding};
 use cx_ast::data::CXTypeKind;
 use cx_ast::{assert_token_matches, next_kind, try_next};
 use cx_mir::intrinsic_types::is_intrinsic_type;
@@ -50,6 +50,41 @@ fn parse_at_intrinsic_expr(
 
             Ok(CXExprKind::Leak {
                 expr: Box::new(expr),
+            }
+            .into_expr_with_origin(
+                start_index,
+                data.tokens.index,
+                data.file_origin_for_range(start_index, data.tokens.index),
+            ))
+        }
+
+        "unpack" => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(OpenBrace));
+
+            let mut bindings = Vec::new();
+            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+                let Some(field) = try_parse_ident(&mut data.tokens) else {
+                    return log_parse_error!(data, "Expected field name in @unpack binding");
+                };
+                assert_token_matches!(data.tokens, punctuator!(Colon));
+                let Some(binding) = try_parse_ident(&mut data.tokens) else {
+                    return log_parse_error!(data, "Expected binding name in @unpack binding");
+                };
+
+                bindings.push(CXUnpackBinding { field, binding });
+
+                if !try_next!(data.tokens, operator!(Comma)) {
+                    assert_token_matches!(data.tokens, punctuator!(CloseBrace));
+                    break;
+                }
+            }
+
+            Ok(CXExprKind::Unpack {
+                expr: Box::new(expr),
+                bindings,
             }
             .into_expr_with_origin(
                 start_index,

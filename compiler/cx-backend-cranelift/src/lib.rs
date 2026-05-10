@@ -10,7 +10,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_util::identifier::CXIdent;
-use cx_util::{CXError, CXResult, log_error};
+use cx_util::{log_error, CXError, CXResult};
 use std::collections::HashMap;
 
 mod codegen;
@@ -87,8 +87,9 @@ impl FunctionState<'_> {
             LMIRValue::ParameterRef(i) => Ok(CodegenValue::Value(Value::from_u32(*i))),
 
             LMIRValue::FunctionRef(name) => {
-                let (_func_id, func_ref) = self.get_function(name.as_str())
-                    .ok_or_else(|| CXError::create_boxed(format!("Function not found: {}", name)))?;
+                let (_func_id, func_ref) = self.get_function(name.as_str()).ok_or_else(|| {
+                    CXError::create_boxed(format!("Function not found: {}", name))
+                })?;
                 let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
 
                 Ok(CodegenValue::Value(as_value))
@@ -133,7 +134,10 @@ impl FunctionState<'_> {
 
             LMIRValue::Register { register, _type } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
-                    return CXError::create_result(format!("Variable not found in variable table: {:?}", bc_value));
+                    return CXError::create_result(format!(
+                        "Variable not found in variable table: {:?}",
+                        bc_value
+                    ));
                 };
 
                 Ok(var)
@@ -193,6 +197,9 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         codegen_function(&mut global_state, func_id, func_sig, func)?;
     }
 
-    global_state.object_module.finish().emit()
+    global_state
+        .object_module
+        .finish()
+        .emit()
         .map_err(|e| CXError::create_boxed(format!("Failed to emit object file: {e}")))
 }

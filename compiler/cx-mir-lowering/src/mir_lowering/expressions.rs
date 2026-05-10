@@ -426,9 +426,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     .current_prototype()
                     .params
                     .iter()
-                    .position(|param| {
-                        param.name.as_deref() == Some(name.as_str())
-                    })
+                    .position(|param| param.name.as_deref() == Some(name.as_str()))
                     .expect("Contract variable not found in function parameters")
                     as u32;
 

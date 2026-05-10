@@ -55,13 +55,14 @@ pub fn try_implicit_coercion(
 
     if let (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float }) =
         (&expr._type.kind, &target_type.kind)
-        && from_float != to_float {
-            return crate::type_checking::coercion::implicit::coercion_expr(
-                expr,
-                target_type.clone(),
-                MIRCoercion::FloatCast { to_type: *to_float },
-            );
-        }
+        && from_float != to_float
+    {
+        return crate::type_checking::coercion::implicit::coercion_expr(
+            expr,
+            target_type.clone(),
+            MIRCoercion::FloatCast { to_type: *to_float },
+        );
+    }
 
     CoercionResult::unapplied(expr)
 }

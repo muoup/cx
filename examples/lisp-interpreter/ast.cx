@@ -36,8 +36,7 @@ void interpret(lisp_node* node) {
 
     interpret.interpret(node);
 
-    // FIXME: We are leaking the `functions` vector here, but consuming inner members of an aggregate is not yet supported.
-    @leak(interpret);
+    interpret.drop();
 }
 
 private:
@@ -60,4 +59,12 @@ void interpreter::interpret(*this, lisp_node* node) {
         lisp_node::Plus(plus) => {}
         lisp_node::Minus(minus) => {}
     }
+}
+
+void interpreter::drop(this) {
+    @unpack(this) {
+        functions: functions,
+    };
+
+    functions.drop<function_decl>();
 }

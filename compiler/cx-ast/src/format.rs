@@ -211,6 +211,15 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "Move")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            CXExprKind::Unpack { expr, bindings } => {
+                writeln!(f, "Unpack")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)?;
+                for binding in bindings {
+                    self.indent_plus_one(f)?;
+                    writeln!(f, "{}: {}", binding.field, binding.binding)?;
+                }
+                Ok(())
+            }
             CXExprKind::InitializerList { indices } => {
                 writeln!(f, "InitializerList")?;
                 for index in indices {

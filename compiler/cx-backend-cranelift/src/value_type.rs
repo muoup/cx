@@ -27,7 +27,7 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
 
         // FIXME: This is a bit of a hack, but for opaque types we can just treat them as an integer of the appropriate size.
         LMIRTypeKind::Opaque { .. } => ir::Type::int(64).unwrap(),
-        
+
         // Because of the way Cranelift codegen works, there is actually no need for
         // handling arrays, as anywhere where the type is used (i.e. in stack allocations)
         // will implicitly use the size which can be derived from the bc type.

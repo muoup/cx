@@ -110,6 +110,12 @@ pub struct CXInitIndex {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct CXUnpackBinding {
+    pub field: CXIdent,
+    pub binding: CXIdent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXGlobalVariable {
     EnumConstant(i32),
 
@@ -249,6 +255,10 @@ pub enum CXExprKind {
     },
     Leak {
         expr: Box<CXExpression>,
+    },
+    Unpack {
+        expr: Box<CXExpression>,
+        bindings: Vec<CXUnpackBinding>,
     },
 
     Move {

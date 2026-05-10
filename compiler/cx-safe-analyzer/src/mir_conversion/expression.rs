@@ -440,6 +440,22 @@ pub fn convert_expression(
             ))
         }
 
+        MIRExpressionKind::MemberAccess { base, .. } => {
+            let base_node = convert_expression(env, base)?;
+
+            Ok(FMIRNode {
+                token_range: mir_expr.token_range.clone(),
+                _type: base_node
+                    ._type
+                    .identity()
+                    .apply(FMIRType::pure(mir_expr._type.clone())),
+                body: FMIRNodeBody::Transmute {
+                    value: FRc::new(base_node),
+                    target_type: FMIRType::pure(mir_expr._type.clone()),
+                },
+            })
+        }
+
         MIRExpressionKind::RegionMove { source } => convert_expression(env, source),
 
         MIRExpressionKind::Typechange(inner) => {

@@ -228,7 +228,10 @@ impl PreprocessorExprParser<'_> {
                 kind,
                 self.tokens.get(self.index + 1).map(|token| &token.kind)
             ),
-            (TokenKind::Operator(OperatorType::Less), Some(TokenKind::Operator(OperatorType::Less)))
+            (
+                TokenKind::Operator(OperatorType::Less),
+                Some(TokenKind::Operator(OperatorType::Less))
+            )
         ) {
             return Some(binop(2, 8, |lhs, rhs| lhs << rhs));
         }
@@ -251,12 +254,12 @@ impl PreprocessorExprParser<'_> {
         };
 
         match operator {
-            OperatorType::DoubleBar => Some(binop(1, 1, |lhs, rhs| {
-                i64::from(lhs != 0 || rhs != 0)
-            })),
-            OperatorType::DoubleAmpersand => Some(binop(1, 2, |lhs, rhs| {
-                i64::from(lhs != 0 && rhs != 0)
-            })),
+            OperatorType::DoubleBar => {
+                Some(binop(1, 1, |lhs, rhs| i64::from(lhs != 0 || rhs != 0)))
+            }
+            OperatorType::DoubleAmpersand => {
+                Some(binop(1, 2, |lhs, rhs| i64::from(lhs != 0 && rhs != 0)))
+            }
             OperatorType::Bar => Some(binop(1, 3, |lhs, rhs| lhs | rhs)),
             OperatorType::Caret => Some(binop(1, 4, |lhs, rhs| lhs ^ rhs)),
             OperatorType::Ampersand => Some(binop(1, 5, |lhs, rhs| lhs & rhs)),

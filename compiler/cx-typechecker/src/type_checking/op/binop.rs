@@ -179,15 +179,16 @@ fn coerce_float_binop(
 ) -> CXResult<TypecheckResult> {
     if let MIRTypeKind::Float { _type: lftype } = lhs._type.kind
         && let MIRTypeKind::Float { _type: rftype } = rhs._type.kind
-        && lftype != rftype {
-            let common_ftype = if lftype.bytes() > rftype.bytes() {
-                lhs._type.clone()
-            } else {
-                rhs._type.clone()
-            };
+        && lftype != rftype
+    {
+        let common_ftype = if lftype.bytes() > rftype.bytes() {
+            lhs._type.clone()
+        } else {
+            rhs._type.clone()
+        };
 
-            rhs = implicit_cast(env, rhs, &common_ftype)?;
-        }
+        rhs = implicit_cast(env, rhs, &common_ftype)?;
+    }
 
     if !rhs._type.is_float() {
         rhs = implicit_cast(env, rhs, &lhs._type)?;

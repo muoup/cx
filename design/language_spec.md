@@ -402,7 +402,35 @@ Current restrictions:
 - the binding must have `@nodrop`
 - conditional `@leak` does not satisfy ownership discharge
 
-### 9.4 Control-Flow Merge Rules
+### 9.4 `@unpack`
+
+`@unpack(x) { field: binding, ... }` consumes a local struct binding and introduces fresh local bindings for selected fields.
+
+All direct `@nodrop` fields must be explicitly bound. Unbound non-`@nodrop` fields are discarded with ordinary C value semantics.
+
+```c
+struct Container : @nodrop {
+    Resource resource;
+    int count;
+};
+
+void Container::drop(this) safe {
+    @unpack(this) {
+        resource: resource,
+    };
+
+    resource.drop();
+}
+```
+
+Current restrictions:
+
+- the operand must be a local identifier
+- the binding must be a stack local
+- the binding must have struct type
+- duplicate field or binding names are rejected
+
+### 9.5 Control-Flow Merge Rules
 
 Move state is tracked across:
 

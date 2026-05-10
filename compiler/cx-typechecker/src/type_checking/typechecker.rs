@@ -22,7 +22,7 @@ use crate::type_checking::value::{
         typecheck_float_literal, typecheck_int_literal, typecheck_string_literal, typecheck_unit,
     },
     locals::typecheck_var_declaration,
-    moves::{typecheck_leak, typecheck_move},
+    moves::{typecheck_leak, typecheck_move, typecheck_unpack},
     sizeof::{typecheck_sizeof_expr, typecheck_sizeof_type},
     unsafe_ops::typecheck_unsafe,
 };
@@ -307,6 +307,11 @@ fn typecheck_expr_inner(
         }
 
         CXExprKind::Leak { expr: inner } => typecheck_leak(env, base_data, expr, inner)?,
+
+        CXExprKind::Unpack {
+            expr: inner,
+            bindings,
+        } => typecheck_unpack(env, base_data, expr, inner, bindings)?,
 
         CXExprKind::UnOp { operator, operand } => {
             op::typecheck_unop(env, base_data, operator, operand)?

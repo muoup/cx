@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::{
     environment::{BindingMoveState, TypeEnvironment},
     log_typecheck_error,
@@ -8,9 +10,13 @@ use crate::{
         value::locals::{ensure_binding_available, mark_binding},
     },
 };
-use cx_ast::ast::CXExpression;
-use cx_mir::mir::{data::MIRType, expression::MIRExpressionKind, program::MIRBaseMappings};
-use cx_util::CXResult;
+use cx_ast::ast::{CXExpression, CXUnpackBinding};
+use cx_mir::mir::{
+    data::{MIRType, MIRTypeKind},
+    expression::{MIRExpression, MIRExpressionKind},
+    program::MIRBaseMappings,
+};
+use cx_util::{CXResult, identifier::CXIdent};
 
 pub(crate) fn typecheck_move(
     env: &mut TypeEnvironment,
@@ -121,5 +127,186 @@ pub(crate) fn typecheck_leak(
         MIRExpressionKind::LeakLifetime {
             expression: Box::new(value),
         },
+    ))
+}
+
+pub(crate) fn typecheck_unpack(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    inner: &CXExpression,
+    bindings: &[CXUnpackBinding],
+) -> CXResult<TypecheckResult> {
+    let value = typecheck_expr(env, base_data, inner, None)?;
+
+    let Some(source_binding) = value.binding.clone() else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@unpack currently requires a local identifier"
+        );
+    };
+
+    if source_binding.kind != BindingPlaceKind::Local {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@unpack on aggregate fields or projections is not implemented"
+        );
+    };
+
+    let value = value.into_expression();
+
+    let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@unpack requires a stack local value"
+        );
+    };
+
+    if !matches!(inner_type.kind, MIRTypeKind::Structured { .. }) {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@unpack requires a struct type, found {}",
+            inner_type.display_with(&env.symbols.context)
+        );
+    }
+
+    let Some(fields) = env.symbols.context.aggregate_fields(&inner_type).cloned() else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@unpack requires a complete struct type"
+        );
+    };
+
+    let mut field_map = HashMap::new();
+    for (index, field) in fields.iter().enumerate() {
+        let Some(name) = field.name() else {
+            continue;
+        };
+        let Some(field_type) = env.symbols.context.get(field.type_id()).cloned() else {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "Internal error: @unpack field '{}' has an unknown type",
+                name
+            );
+        };
+        field_map.insert(name.to_string(), (index, field_type));
+    }
+
+    let mut seen_fields = HashSet::new();
+    let mut seen_bindings = HashSet::new();
+    for unpack_binding in bindings {
+        if !field_map.contains_key(unpack_binding.field.as_str()) {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "@unpack field '{}' does not exist on {}",
+                unpack_binding.field,
+                inner_type.display_with(&env.symbols.context)
+            );
+        }
+
+        if !seen_fields.insert(unpack_binding.field.as_string()) {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "@unpack field '{}' is bound more than once",
+                unpack_binding.field
+            );
+        }
+
+        if !seen_bindings.insert(unpack_binding.binding.as_string()) {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "@unpack binding '{}' is introduced more than once",
+                unpack_binding.binding
+            );
+        }
+    }
+
+    for (field_name, (_, field_type)) in field_map.iter() {
+        if env.symbols.is_nodrop(field_type) && !seen_fields.contains(field_name) {
+            return log_typecheck_error!(
+                env,
+                Some(expr.token_range()),
+                "@unpack of {} must bind @nodrop field '{}'",
+                inner_type.display_with(&env.symbols.context),
+                field_name
+            );
+        }
+    }
+
+    ensure_binding_available(env, Some(inner.token_range().clone()), &source_binding.root)?;
+    mark_binding(env, &source_binding, BindingMoveState::Moved);
+
+    let mut statements = Vec::new();
+    for unpack_binding in bindings {
+        let (member_index, field_type) = field_map
+            .get(unpack_binding.field.as_str())
+            .expect("@unpack field existence checked above");
+
+        let field_place = MIRExpression {
+            token_range: None,
+            _type: env.symbols.context.mem_ref_to(field_type.clone()),
+            kind: MIRExpressionKind::MemberAccess {
+                base: Box::new(value.clone()),
+                member_index: *member_index,
+                aggregate_type: inner_type.clone(),
+            },
+        };
+
+        let initial_value = if field_type.is_memory_resident() || env.symbols.is_nocopy(field_type)
+        {
+            MIRExpression {
+                token_range: None,
+                _type: field_type.clone(),
+                kind: MIRExpressionKind::RegionMove {
+                    source: Box::new(field_place),
+                },
+            }
+        } else {
+            MIRExpression {
+                token_range: None,
+                _type: field_type.clone(),
+                kind: MIRExpressionKind::RegionDuplicate {
+                    source: Box::new(field_place),
+                },
+            }
+        };
+
+        let binding_name = CXIdent::new(unpack_binding.binding.as_str());
+        env.function.insert_symbol(
+            binding_name.as_string(),
+            MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::Variable(binding_name.clone()),
+                _type: env.symbols.context.mem_ref_to(field_type.clone()),
+            },
+        );
+        if env.symbols.is_nocopy(field_type) {
+            env.function
+                .track_binding(binding_name.as_string(), env.symbols.is_nodrop(field_type));
+        }
+
+        statements.push(MIRExpression {
+            token_range: None,
+            _type: env.symbols.context.mem_ref_to(field_type.clone()),
+            kind: MIRExpressionKind::RegionCreate {
+                name: Some(binding_name),
+                _type: field_type.clone(),
+                initial_value: Some(Box::new(initial_value)),
+            },
+        });
+    }
+
+    Ok(TypecheckResult::new_base(
+        MIRType::unit(),
+        MIRExpressionKind::Block { statements },
     ))
 }

@@ -9,8 +9,8 @@ use cranelift::codegen::ir::{Function, UserFuncName};
 use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{FuncId, Module};
 use cx_lmir::{LMIRBasicBlock, LMIRFunction, LMIRFunctionPrototype};
-use cx_util::{CXError, CXResult};
 use cx_util::format::dump_data;
+use cx_util::{CXError, CXResult};
 
 pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
@@ -34,16 +34,21 @@ pub(crate) fn codegen_fn_prototype(
     Ok(())
 }
 
-pub(crate) fn codegen_block(context: &mut FunctionState, fn_block: &LMIRBasicBlock) -> CXResult<()> {
+pub(crate) fn codegen_block(
+    context: &mut FunctionState,
+    fn_block: &LMIRBasicBlock,
+) -> CXResult<()> {
     let block = context.get_block(&fn_block.id);
     context.builder.switch_to_block(block);
 
     for instr in fn_block.body.iter() {
-        let ret = codegen_instruction(context, instr)
-            .map_err(|err| {
-                CXError::create_boxed(format!("Failed to codegen instruction: {instr:#?}\nError: {}", err.error_message()))
-            })?;
-        
+        let ret = codegen_instruction(context, instr).map_err(|err| {
+            CXError::create_boxed(format!(
+                "Failed to codegen instruction: {instr:#?}\nError: {}",
+                err.error_message()
+            ))
+        })?;
+
         if let Some(result) = instr.result.as_ref() {
             context.variable_table.insert(result.clone(), ret);
         }

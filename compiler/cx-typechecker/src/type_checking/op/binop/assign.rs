@@ -44,19 +44,17 @@ pub fn typecheck_assignment(
         rhs = typecheck_binop(env, op, loaded_lhs, rhs)?.into_expression();
     } else if let Some(binding) = binding.as_ref()
         && binding.kind == BindingPlaceKind::Projection
-            && env
-                .function
-                .tracked_binding(binding.root.as_str())
-                .is_some_and(|tracked| {
-                    tracked.state != crate::environment::BindingMoveState::Available
-                })
-        {
-            return log_typecheck_error!(
-                env,
-                lhs.token_range.as_ref(),
-                "Assignment to a field or projection of a moved aggregate binding is not implemented"
-            );
-        }
+        && env
+            .function
+            .tracked_binding(binding.root.as_str())
+            .is_some_and(|tracked| tracked.state != crate::environment::BindingMoveState::Available)
+    {
+        return log_typecheck_error!(
+            env,
+            lhs.token_range.as_ref(),
+            "Assignment to a field or projection of a moved aggregate binding is not implemented"
+        );
+    }
 
     if inner.get_specifier(CX_CONST) {
         return log_typecheck_error!(

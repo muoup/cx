@@ -1,0 +1,14 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+struct Container : @nodrop {
+    Resource resource;
+    int count;
+};
+
+void Container::drop(this) {
+    @unpack(this) {
+        count: count,
+    };
+}

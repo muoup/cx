@@ -2,7 +2,10 @@ use crate::{
     environment::TypeEnvironment, log_typecheck_error,
     type_checking::value::ensure_valid_allocation_type,
 };
-use cx_ast::{ast::{CXExprKind, CXExpression, CXGlobalVariable}, data::ModuleResource};
+use cx_ast::{
+    ast::{CXExprKind, CXExpression, CXGlobalVariable},
+    data::ModuleResource,
+};
 use cx_mir::mir::{
     data::{MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
@@ -10,7 +13,10 @@ use cx_mir::mir::{
 };
 use cx_util::{CXError, CXResult, identifier::CXIdent};
 
-pub(crate) fn find_global<'a>(base_data: &'a MIRBaseMappings, ident: &str) -> Option<&'a ModuleResource<CXGlobalVariable>> {
+pub(crate) fn find_global<'a>(
+    base_data: &'a MIRBaseMappings,
+    ident: &str,
+) -> Option<&'a ModuleResource<CXGlobalVariable>> {
     base_data.global_variables.get(ident)
 }
 

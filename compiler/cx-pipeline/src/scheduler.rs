@@ -401,7 +401,7 @@ pub(crate) fn perform_job(
                     internal_directory_str,
                     context.config.optimization_level,
                 ),
-                CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str)
+                CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str),
             }?;
 
             let mut file =

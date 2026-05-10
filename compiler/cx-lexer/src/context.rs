@@ -4,7 +4,7 @@ use std::{
 };
 
 use cx_tokens::token::{PunctuatorType, Token, TokenKind};
-use cx_util::{module_path::cx_library_directory, CXError, CXResult};
+use cx_util::{CXError, CXResult, module_path::cx_library_directory};
 
 use crate::{
     lexer::{
@@ -306,10 +306,7 @@ impl LexingContext {
                             } else {
                                 expanded_args[param_index].clone()
                             };
-                            expanded.extend(retarget_tokens(
-                                arg_tokens,
-                                token,
-                            ));
+                            expanded.extend(retarget_tokens(arg_tokens, token));
                             body_index += 1;
                             continue;
                         }
@@ -403,10 +400,7 @@ fn token_paste_text(kind: &TokenKind) -> String {
     }
 }
 
-fn retarget_tokens(
-    tokens: impl IntoIterator<Item = Token>,
-    expansion_site: &Token,
-) -> Vec<Token> {
+fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Token) -> Vec<Token> {
     tokens
         .into_iter()
         .map(|mut token| {
@@ -454,10 +448,7 @@ fn matching_close_paren_index(tokens: &[Token], open_paren_index: usize) -> Opti
     None
 }
 
-fn parse_macro_args(
-    tokens: &[Token],
-    open_paren_index: usize,
-) -> Option<(Vec<Vec<Token>>, usize)> {
+fn parse_macro_args(tokens: &[Token], open_paren_index: usize) -> Option<(Vec<Vec<Token>>, usize)> {
     if !matches!(
         tokens.get(open_paren_index).map(|token| &token.kind),
         Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
@@ -532,19 +523,14 @@ mod tests {
     #[test]
     fn function_macro_stringifies_raw_arg_and_expands_normal_arg() {
         let mut context = test_context();
-        context.macros.insert(
-            "A".to_string(),
-            Macro::Object(Box::new([ident("B")])),
-        );
+        context
+            .macros
+            .insert("A".to_string(), Macro::Object(Box::new([ident("B")])));
         context.macros.insert(
             "F".to_string(),
             Macro::Function {
                 params: Box::new(["x".to_string()]),
-                body: Box::new([
-                    punctuator(PunctuatorType::Hash),
-                    ident("x"),
-                    ident("x"),
-                ]),
+                body: Box::new([punctuator(PunctuatorType::Hash), ident("x"), ident("x")]),
             },
         );
 
@@ -645,10 +631,11 @@ mod tests {
         assert!(context.tokens.iter().all(
             |token| !matches!(&token.kind, TokenKind::Identifier(name) if name == "REDIRECT")
         ));
-        assert!(context
-            .tokens
-            .iter()
-            .any(|token| matches!(&token.kind, TokenKind::Identifier(name) if name == "fscanf")));
+        assert!(
+            context.tokens.iter().any(
+                |token| matches!(&token.kind, TokenKind::Identifier(name) if name == "fscanf")
+            )
+        );
         assert!(context.tokens.iter().any(
             |token| matches!(&token.kind, TokenKind::StringLiteral(value) if value == "__isoc99_fscanf")
         ));

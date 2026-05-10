@@ -25,7 +25,7 @@ impl Preprocessor {
         let directive_start = context.current_frame().cursor;
         let Some(directive) = context.current_frame_mut().next_word() else {
             let frame = context.current_frame();
-            
+
             return log_lexer_error!(
                 frame.file_path.as_path(),
                 &frame.source,
@@ -39,7 +39,7 @@ impl Preprocessor {
         if directive == "#" {
             let Some(name) = context.current_frame_mut().next_word() else {
                 let frame = context.current_frame();
-                
+
                 return log_lexer_error!(
                     frame.file_path.as_path(),
                     &frame.source,
@@ -76,7 +76,7 @@ impl Preprocessor {
                 }
 
                 let frame = context.current_frame();
-                
+
                 log_lexer_error!(
                     frame.file_path.as_path(),
                     &frame.source,

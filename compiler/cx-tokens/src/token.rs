@@ -66,11 +66,7 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn new(
-        kind: TokenKind,
-        byte_range: (usize, usize),
-        file_origin: Arc<Path>,
-    ) -> Self {
+    pub fn new(kind: TokenKind, byte_range: (usize, usize), file_origin: Arc<Path>) -> Self {
         Self {
             kind,
             byte_start_index: byte_range.0,
