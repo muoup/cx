@@ -69,8 +69,7 @@ fn require_complete_prototype_type(
     ty: &MIRType,
     context: &str,
 ) -> CXResult<()> {
-    if ty.is_memory_resident()
-        && let Some(name) = ty.get_name()
+    if let Some(name) = ty.get_name()
         && let Some(id) = env.get_named_type_id(name.as_str())
         && !env.symbols.context.contains(id)
     {

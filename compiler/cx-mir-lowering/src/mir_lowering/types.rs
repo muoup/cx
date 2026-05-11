@@ -6,6 +6,7 @@ use cx_mir::mir::data::{
     MIRFloatType, MIRFunctionPrototype, MIRFunctionSignature, MIRIntegerType, MIRType,
     MIRTypeContext, MIRTypeKind,
 };
+use cx_util::identifier::CXIdent;
 
 impl LMIRBuilder {
     pub(crate) fn convert_cx_type(&self, cx_type: &MIRType) -> LMIRType {
@@ -25,6 +26,10 @@ impl LMIRBuilder {
         cx_sig: &MIRFunctionSignature,
     ) -> LMIRFunctionSignature {
         convert_cx_signature(cx_sig, &self.type_definitions)
+    }
+
+    pub(crate) fn convert_cx_parameter_type(&self, cx_type: &MIRType) -> LMIRType {
+        convert_parameter_type(cx_type, &self.type_definitions)
     }
 
     pub(crate) fn convert_integer_type(&self, cx_itype: &MIRIntegerType) -> LMIRIntegerType {
@@ -64,18 +69,18 @@ pub(crate) fn convert_cx_signature(
         .params
         .iter()
         .map(|param| LMIRParameter {
-            name: param.name.as_ref().map(|name| name.as_string()),
+            name: param.name.clone(),
             _type: convert_parameter_type(&param._type, definitions),
         })
         .collect::<Vec<_>>();
 
     let mut return_type = convert_type(&cx_sig.return_type, definitions);
 
-    if cx_sig.return_type.is_memory_resident() {
+    if return_type.is_memory_resident() {
         params.insert(
             0,
             LMIRParameter {
-                name: Some("__internal_buffer".to_string()),
+                name: Some(CXIdent::from("__internal_buffer")),
                 _type: LMIRType::default_pointer(),
             },
         );
@@ -94,18 +99,19 @@ pub(crate) fn convert_cx_prototype(
     cx_proto: &MIRFunctionPrototype,
     definitions: &MIRTypeContext,
 ) -> LMIRFunctionPrototype {
-    let signature = convert_cx_signature(&cx_proto.signature(), definitions);
-    let temp_buffer = if cx_proto.return_type.is_memory_resident() {
-        Some(convert_type(&cx_proto.return_type, definitions))
+    let raw_return_type = convert_type(&cx_proto.return_type, definitions);
+    let bc_proto = convert_cx_signature(&cx_proto.signature(), definitions);
+    let temp_buffer = if raw_return_type.is_memory_resident() {
+        Some(raw_return_type)
     } else {
         None
     };
 
     LMIRFunctionPrototype {
         name: cx_proto.name.to_string(),
-        return_type: signature.return_type.clone(),
-        params: signature.params.clone(),
-        var_args: signature.var_args,
+        return_type: bc_proto.return_type.clone(),
+        params: bc_proto.params.clone(),
+        var_args: bc_proto.var_args,
         linkage: convert_linkage(cx_proto.linkage),
         temp_buffer,
     }

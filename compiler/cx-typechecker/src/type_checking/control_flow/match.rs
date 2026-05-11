@@ -163,12 +163,11 @@ pub fn typecheck_match(
                     }),
                 };
 
-                let variant_get_type =
-                    if !expr_type.is_memory_reference() && variant_type.is_memory_resident() {
-                        variant_type.clone()
-                    } else {
-                        env.symbols.context.mem_ref_to(variant_type.clone())
-                    };
+                let variant_get_type = if !expr_type.is_memory_reference() {
+                    variant_type.clone()
+                } else {
+                    env.symbols.context.mem_ref_to(variant_type.clone())
+                };
 
                 // Extract the variant value and bind it
                 let variant_value_expr = TypecheckResult::new_base(

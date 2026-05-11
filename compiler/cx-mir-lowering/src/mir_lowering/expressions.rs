@@ -12,7 +12,7 @@ use cx_mir::mir::{
     program::MIRFunction,
     r#type::MIRType,
 };
-use cx_util::CXResult;
+use cx_util::{identifier::CXIdent, CXResult};
 
 use crate::builder::LMIRBuilder;
 
@@ -426,7 +426,9 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
                     .current_prototype()
                     .params
                     .iter()
-                    .position(|param| param.name.as_deref() == Some(name.as_str()))
+                    .position(|param| {
+                        param.name.as_ref().map(CXIdent::as_str) == Some(name.as_str())
+                    })
                     .expect("Contract variable not found in function parameters")
                     as u32;
 
@@ -461,7 +463,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let bc_type = builder.convert_cx_type(_type);
 
             let result = if let Some(initial_value) = initial_value {
-                if _type.is_memory_resident() {
+                if bc_type.is_memory_resident() {
                     // OPTIMIZATION: The initial value expression returns a pointer to its buffer.
                     // Alias that buffer as the variable's buffer - no allocation or copy needed.
                     let bc_iv = lower_expression(builder, initial_value)?;
@@ -523,7 +525,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             let mir_value_type = &value._type;
             let bc_type = builder.convert_cx_type(mir_value_type);
 
-            if mir_value_type.is_memory_resident() {
+            if bc_type.is_memory_resident() {
                 builder.add_new_instruction(
                     LMIRInstructionKind::Memcpy {
                         dest: bc_target,
@@ -793,7 +795,10 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             get_tagged_union_tag(builder, bc_value, sum_type)
         }
 
-        MIRExpressionKind::TaggedUnionGet { value, .. } => lower_tagged_union_get(builder, value),
+        MIRExpressionKind::TaggedUnionGet {
+            value,
+            variant_type,
+        } => lower_tagged_union_get(builder, value, variant_type),
 
         MIRExpressionKind::TaggedUnionSet {
             target,
@@ -890,6 +895,7 @@ fn lower_call(
     };
 
     let bc_signature = builder.convert_cx_signature(&signature);
+    let returns_indirectly = return_type.is_memory_resident();
 
     if let Some(precondition) = &contract.precondition {
         builder.push_scope(None, None);
@@ -912,7 +918,7 @@ fn lower_call(
         vec![]
     };
 
-    let return_buffer = if signature.return_type.is_memory_resident() {
+    let return_buffer = if returns_indirectly {
         let buffer = builder.add_new_instruction(
             LMIRInstructionKind::Allocate {
                 alignment: return_type.alignment(),
@@ -1055,17 +1061,17 @@ fn lower_array_initializer(
 
         // Check if bc_elem is a pointer to an in-memory aggregate (struct/union/array)
         // If so, we need to use Memcpy to copy the actual bytes, not Store the pointer
-        let bc_elem_type_for_memcpy = builder.convert_cx_type(element_type);
-        if element_type.is_memory_resident() {
+        let bc_element_type = builder.convert_cx_type(element_type);
+        if bc_element_type.is_memory_resident() {
             builder.add_new_instruction(
                 LMIRInstructionKind::Memcpy {
                     dest: elem_addr,
                     src: bc_elem,
                     size: LMIRValue::IntImmediate {
-                        val: bc_elem_type_for_memcpy.size() as i64,
+                        val: bc_element_type.size() as i64,
                         _type: LMIRIntegerType::I64,
                     },
-                    alignment: bc_elem_type_for_memcpy.alignment(),
+                    alignment: bc_element_type.alignment(),
                 },
                 LMIRType::unit(),
                 false,
@@ -1154,7 +1160,7 @@ fn lower_struct_initializer(
             true,
         )?;
 
-        if mir_field_type.is_memory_resident() {
+        if bc_field_type.is_memory_resident() {
             builder.add_new_instruction(
                 LMIRInstructionKind::Memcpy {
                     dest: field_addr,
@@ -1186,13 +1192,11 @@ fn lower_struct_initializer(
 
 /// Generate LMIR for an MIR function
 pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
-    let return_buffer_size = if mir_fn.prototype.return_type.is_memory_resident() {
-        Some(
-            mir_fn
-                .prototype
-                .return_type
-                .type_size(&builder.type_definitions),
-        )
+    let bc_proto = builder.convert_cx_prototype(&mir_fn.prototype);
+    let raw_return_type = builder.convert_cx_type(&mir_fn.prototype.return_type);
+
+    let return_buffer_size = if raw_return_type.is_memory_resident() {
+        Some(raw_return_type.size())
     } else {
         None
     };
@@ -1203,18 +1207,19 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
 
-    let has_return_buffer = mir_fn.prototype.return_type.is_memory_resident();
+    let has_return_buffer = bc_proto.temp_buffer.is_some();
     let param_offset = if has_return_buffer { 1 } else { 0 };
 
     for (i, param) in mir_fn.prototype.params.iter().enumerate() {
         if let Some(name) = &param.name {
-            let bc_param_type = builder.convert_cx_type(&param._type);
+            let param_type = builder.convert_cx_parameter_type(&param._type);
+            let raw_param_type = builder.convert_cx_type(&param._type);
 
-            if !param._type.is_memory_resident() {
+            if !raw_param_type.is_memory_resident() {
                 let alloc = builder.add_new_instruction(
                     LMIRInstructionKind::Allocate {
-                        alignment: bc_param_type.alignment(),
-                        _type: bc_param_type.clone(),
+                        alignment: param_type.alignment(),
+                        _type: param_type.clone(),
                     },
                     LMIRType::default_pointer(),
                     true,
@@ -1223,7 +1228,7 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                     LMIRInstructionKind::Store {
                         memory: alloc.clone(),
                         value: LMIRValue::ParameterRef((i + param_offset) as u32),
-                        _type: bc_param_type,
+                        _type: param_type,
                     },
                     LMIRType::unit(),
                     false,

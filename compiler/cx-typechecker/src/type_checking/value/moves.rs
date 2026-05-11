@@ -117,15 +117,6 @@ pub(crate) fn typecheck_adopt(
         );
     }
 
-    if !inner_type.is_memory_resident() {
-        return log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "@adopt currently requires a memory-resident type, found {}",
-            inner_type.display_with(&env.symbols.context)
-        );
-    }
-
     Ok(TypecheckResult::new_base(
         inner_type,
         MIRExpressionKind::RegionAdopt {
@@ -322,8 +313,7 @@ pub(crate) fn typecheck_unpack(
             },
         };
 
-        let initial_value = if field_type.is_memory_resident() || env.symbols.is_nocopy(field_type)
-        {
+        let initial_value = if env.symbols.is_nocopy(field_type) {
             MIRExpression {
                 token_range: None,
                 _type: field_type.clone(),

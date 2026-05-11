@@ -17,6 +17,13 @@ use crate::{
     },
 };
 
+fn typechange_can_forward_region(return_type: &MIRType) -> bool {
+    return_type.is_structure()
+        || return_type.is_union()
+        || return_type.is_array()
+        || return_type.is_opaque()
+}
+
 pub fn typecheck_return(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -34,7 +41,7 @@ pub fn typecheck_return(
             // so we will induce in effect just a direct memcpy from the source T to the return buffer.
             if let Some(inner) = env.symbols.context.mem_ref_inner(&_ty).cloned()
                 && env.symbols.is_copyable(&inner)
-                && return_type.is_memory_resident()
+                && typechange_can_forward_region(&inner)
             {
                 some_value = MIRExpression {
                     _type: inner,

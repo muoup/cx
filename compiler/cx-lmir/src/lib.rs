@@ -81,7 +81,7 @@ impl From<LMIRRegister> for CXIdent {
 
 #[derive(Debug, Clone)]
 pub struct LMIRParameter {
-    pub name: Option<String>,
+    pub name: Option<CXIdent>,
     pub _type: LMIRType,
 }
 

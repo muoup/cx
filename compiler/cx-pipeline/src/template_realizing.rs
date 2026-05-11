@@ -10,7 +10,7 @@ use cx_util::CXResult;
 struct TemplateRequestReceipt {
     module_origin: Option<String>,
     kind: CXFunctionKind,
-    input: MIRTemplateInput
+    input: MIRTemplateInput,
 }
 
 pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment) -> CXResult<()> {
@@ -32,7 +32,11 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
                     continue;
                 }
 
-                requests_fulfilled.push(TemplateRequestReceipt { module_origin: module_origin.clone(), kind: kind.clone(), input: input.clone() });
+                requests_fulfilled.push(TemplateRequestReceipt {
+                    module_origin: module_origin.clone(),
+                    kind: kind.clone(),
+                    input: input.clone(),
+                });
                 realize_fn_implementation(env, &origin, &kind, &input)?;
             }
         }
@@ -48,11 +52,9 @@ fn request_was_fulfilled(
     kind: &CXFunctionKind,
     input: &MIRTemplateInput,
 ) -> bool {
-    requests_fulfilled
-        .iter()
-        .any(|receipt| {
-            &receipt.module_origin == module_origin
-                && &receipt.kind == kind
-                && receipt.input.contextual_eq(input, &env.symbols.context)
-        })
+    requests_fulfilled.iter().any(|receipt| {
+        &receipt.module_origin == module_origin
+            && &receipt.kind == kind
+            && receipt.input.contextual_eq(input, &env.symbols.context)
+    })
 }

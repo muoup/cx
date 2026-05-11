@@ -766,16 +766,6 @@ impl MIRType {
         matches!(self.kind, MIRTypeKind::Array { .. })
     }
 
-    pub fn is_memory_resident(&self) -> bool {
-        matches!(
-            self.kind,
-            MIRTypeKind::Structured { .. }
-                | MIRTypeKind::Union { .. }
-                | MIRTypeKind::TaggedUnion { .. }
-                | MIRTypeKind::Array { .. }
-        )
-    }
-
     pub fn is_opaque(&self) -> bool {
         matches!(self.kind, MIRTypeKind::Opaque { .. })
     }

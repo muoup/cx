@@ -1,6 +1,7 @@
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRFunctionPrototype, LMIRUnit, LinkageType};
 use cx_pipeline_data::config::LinkEntry;
+use cx_util::identifier::CXIdent;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -221,9 +222,9 @@ fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
         .map(|(i, param)| {
             let name = param
                 .name
-                .as_deref()
-                .unwrap_or(&format!("arg{i}"))
-                .to_string();
+                .as_ref()
+                .map(CXIdent::as_string)
+                .unwrap_or(format!("arg{i}"));
             lmir_type_to_c(&param._type, Some(&name))
         })
         .collect();

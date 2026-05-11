@@ -3,6 +3,7 @@ import std::vector;
 import std::io;
 
 #include <stdlib.h>
+#include <ctype.h>
 
 double atof(char* str);
 void exit(int status);
@@ -10,19 +11,19 @@ void exit(int status);
 public:
 
 enum union lisp_node : @nodrop {
-    Program     :: vector<lisp_node*>,
+    Program     :: vector<box<lisp_node>>,
     Number      :: f64,
-    Symbol      :: char*,
+    Symbol      :: string,
 
     // (fndef <name> (<params>...) <body>...)
     FnDef       :: struct : @nodrop {
-        char* name;
-        vector<char*> params;
-        vector<lisp_node*> body;
+        string name;
+        vector<string> params;
+        vector<box<lisp_node>> body;
     },
     FnCall      :: struct : @nodrop {
-        char* name;
-        vector<lisp_node*> args;
+        string name;
+        vector<box<lisp_node>> args;
     },
     Plus        :: struct : @nodrop {
         box<lisp_node> left;
@@ -58,7 +59,7 @@ void interpret(lisp_node* node) {
 void run(const char* source) {
     box<lisp_node> node = parse(source);
     interpret(node.ptr);
-    node.drop_with<lisp_node>(drop_lisp_node_value);
+    node.drop_with<lisp_node>(drop_lisp_node);
 }
 
 private:
@@ -81,12 +82,14 @@ struct interpreter : @nodrop {
     vector<function_decl> functions;
 };
 
-bool is_whitespace(char c) {
-    return c == ' ' || c == '\n' || c == '\t' || c == '\r';
-}
-
 bool is_delimiter(char c) {
-    return is_whitespace(c) || c == '(' || c == ')' || c == '"' || c == '\0';
+    if (is_whitespace(c)) return 1 == 1;
+    if (c == '(') return 1 == 1;
+    if (c == ')') return 1 == 1;
+    if (c == '"') return 1 == 1;
+    if (c == '\0') return 1 == 1;
+
+    return 1 == 0;
 }
 
 bool is_digit(char c) {
@@ -181,12 +184,12 @@ char* parser::parse_string_literal(*this) {
 }
 
 box<lisp_node> parser::parse_program(*this) {
-    vector<lisp_node*> body = vector<lisp_node*>::new<lisp_node*>();
+    vector<box<lisp_node>> body = vector<box<lisp_node>>::new<box<lisp_node>>();
 
     this.skip_ws();
     while (this.peek() != '\0') {
         box<lisp_node> expr = this.parse_expr();
-        body.push<lisp_node*>(expr.leak<lisp_node>());
+        body.push<box<lisp_node>>(move expr);
         this.skip_ws();
     }
 
@@ -218,13 +221,13 @@ box<lisp_node> parser::parse_expr(*this) {
     return box_node(move node);
 }
 
-vector<lisp_node*> parser::parse_expr_list_until_close(*this) {
-    vector<lisp_node*> exprs = vector<lisp_node*>::new<lisp_node*>();
+vector<box<lisp_node>> parser::parse_expr_list_until_close(*this) {
+    vector<box<lisp_node>> exprs = vector<box<lisp_node>>::new<box<lisp_node>>();
 
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
         box<lisp_node> expr = this.parse_expr();
-        exprs.push<lisp_node*>(expr.leak<lisp_node>());
+        exprs.push<box<lisp_node>>(move expr);
         this.skip_ws();
     }
 
@@ -232,13 +235,13 @@ vector<lisp_node*> parser::parse_expr_list_until_close(*this) {
     return move exprs;
 }
 
-vector<char*> parser::parse_params(*this) {
-    vector<char*> params = vector<char*>::new<char*>();
+vector<string> parser::parse_params(*this) {
+    vector<string> params = vector<string>::new<string>();
 
     this.expect('(');
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
-        params.push<char*>(this.parse_token());
+        params.push<string>(this.parse_token());
         this.skip_ws();
     }
     this.expect(')');
@@ -253,8 +256,8 @@ box<lisp_node> parser::parse_list(*this) {
     if (str_eq(op, "fndef")) {
         free(op);
         char* name = this.parse_token();
-        vector<char*> params = this.parse_params();
-        vector<lisp_node*> body = this.parse_expr_list_until_close();
+        vector<string> params = this.parse_params();
+        vector<box<lisp_node>> body = this.parse_expr_list_until_close();
 
         lisp_node node = lisp_node::FnDef({
             .name = name,
@@ -306,7 +309,7 @@ box<lisp_node> parser::parse_list(*this) {
         return box_node(move node);
     }
 
-    vector<lisp_node*> args = this.parse_expr_list_until_close();
+    vector<box<lisp_node>> args = this.parse_expr_list_until_close();
     lisp_node node = lisp_node::FnCall({
         .name = op,
         .args = move args
@@ -314,76 +317,50 @@ box<lisp_node> parser::parse_list(*this) {
     return box_node(move node);
 }
 
-void drop_cstr_vector(vector<char*> values) {
-    for (usize i = 0; i < values.length; i++) {
-        free(values.data[i]);
-    }
+void lisp_node::drop(lisp_node node) {
+    lisp_node* node_ref = &node;
 
-    free(values.data);
-    @leak(values);
-}
-
-void drop_node_ptr_vector(vector<lisp_node*> nodes) {
-    for (usize i = 0; i < nodes.length; i++) {
-        drop_lisp_node_value(nodes.data[i]);
-        free(nodes.data[i]);
-    }
-
-    free(nodes.data);
-    @leak(nodes);
-}
-
-void drop_cstr_vector_ptr(vector<char*>* values) {
-    for (usize i = 0; i < values->length; i++) {
-        free(values->data[i]);
-    }
-
-    free(values->data);
-}
-
-void drop_node_ptr_vector_ptr(vector<lisp_node*>* nodes) {
-    for (usize i = 0; i < nodes->length; i++) {
-        drop_lisp_node_value(nodes->data[i]);
-        free(nodes->data[i]);
-    }
-
-    free(nodes->data);
-}
-
-void drop_lisp_node_value(lisp_node* node) {
-    match (node) {
-        lisp_node::Program(body) => drop_node_ptr_vector(body);
+    match (node_ref) {
+        lisp_node::Program(body) => body.drop_with<box<lisp_node>>(drop_lisp_node_box);
         lisp_node::Number(_) => {}
         lisp_node::Symbol(name) => free(name);
         lisp_node::FnDef(fn_def) => {
             free(fn_def.name);
             drop_cstr_vector_ptr(&fn_def.params);
-            drop_node_ptr_vector_ptr(&fn_def.body);
+            vector<box<lisp_node>> body = @adopt(fn_def.body);
+            body.drop_with<box<lisp_node>>(drop_lisp_node_box);
         }
         lisp_node::FnCall(fn_call) => {
             free(fn_call.name);
-            drop_node_ptr_vector_ptr(&fn_call.args);
+            vector<box<lisp_node>> args = @adopt(fn_call.args);
+            args.drop_with<box<lisp_node>>(drop_lisp_node_box);
         }
         lisp_node::Plus(plus) => {
-            plus.left.drop_in_place_with<lisp_node>(drop_lisp_node_value);
-            plus.right.drop_in_place_with<lisp_node>(drop_lisp_node_value);
+            box<lisp_node> left = @adopt(plus.left);
+            box<lisp_node> right = @adopt(plus.right);
+            left.drop_with<lisp_node>(drop_lisp_node);
+            right.drop_with<lisp_node>(drop_lisp_node);
         }
         lisp_node::Minus(minus) => {
-            minus.left.drop_in_place_with<lisp_node>(drop_lisp_node_value);
-            minus.right.drop_in_place_with<lisp_node>(drop_lisp_node_value);
+            box<lisp_node> left = @adopt(minus.left);
+            box<lisp_node> right = @adopt(minus.right);
+            left.drop_with<lisp_node>(drop_lisp_node);
+            right.drop_with<lisp_node>(drop_lisp_node);
         }
-        lisp_node::PrintNum(value) => value.drop_in_place_with<lisp_node>(drop_lisp_node_value);
+        lisp_node::PrintNum(value) => value.drop_with<lisp_node>(drop_lisp_node);
         lisp_node::PrintStr(value) => free(value);
     }
+
+    @leak(node);
 }
 
 void interpreter::interpret(*this, lisp_node* node) {
     this.eval(node, NULL, 0);
 }
 
-void interpreter::register_program_functions(*this, lisp_node** body, usize body_length) {
+void interpreter::register_program_functions(*this, box<lisp_node>* body, usize body_length) {
     for (usize i = 0; i < body_length; i++) {
-        lisp_node* node = body[i];
+        lisp_node* node = body[i].ptr;
         match (node) {
             lisp_node::FnDef(_) => this.functions.push<function_decl>((function_decl) {
                 .node = node
@@ -420,7 +397,7 @@ lisp_node* interpreter::find_function(*this, char* name) {
     return NULL;
 }
 
-f64 interpreter::call_function(*this, char* name, vector<lisp_node*>* args, binding* locals, usize local_count) {
+f64 interpreter::call_function(*this, char* name, vector<box<lisp_node>>* args, binding* locals, usize local_count) {
     lisp_node* fn_node = this.find_function(name);
     if (fn_node == NULL) {
         printf("Unknown function: %s\n", name);
@@ -434,7 +411,7 @@ f64 interpreter::call_function(*this, char* name, vector<lisp_node*>* args, bind
             for (usize i = 0; i < fn_def.params.length; i++) {
                 f64 arg_value = 0.0;
                 if (i < args->length) {
-                    arg_value = this.eval(args->data[i], locals, local_count);
+                    arg_value = this.eval(args->data[i].ptr, locals, local_count);
                 }
 
                 call_locals[i].name = fn_def.params.data[i];
@@ -443,7 +420,7 @@ f64 interpreter::call_function(*this, char* name, vector<lisp_node*>* args, bind
 
             f64 result = 0.0;
             for (usize i = 0; i < fn_def.body.length; i++) {
-                result = this.eval(fn_def.body.data[i], call_locals, fn_def.params.length);
+                result = this.eval(fn_def.body.data[i].ptr, call_locals, fn_def.params.length);
             }
 
             free(call_locals);
@@ -460,7 +437,7 @@ f64 interpreter::eval(*this, lisp_node* node, binding* locals, usize local_count
 
             f64 result = 0.0;
             for (usize i = 0; i < body.length; i++) {
-                result = this.eval(body.data[i], locals, local_count);
+                result = this.eval(body.data[i].ptr, locals, local_count);
             }
 
             return result;
