@@ -272,6 +272,14 @@ impl TypeEnvironment<'_> {
         self.items.in_external_templated_function = value;
     }
 
+    pub fn set_external_template_origin(&mut self, origin: Option<String>) {
+        self.items.external_template_origin = origin;
+    }
+
+    pub fn external_template_origin(&self) -> Option<&String> {
+        self.items.external_template_origin.as_ref()
+    }
+
     pub fn request_function_generation(&mut self, request: MIRFunctionGenRequest) {
         self.items.requests.push(request);
     }

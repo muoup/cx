@@ -58,6 +58,21 @@ fn parse_at_intrinsic_expr(
             ))
         }
 
+        "adopt" => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen));
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+
+            Ok(CXExprKind::Adopt {
+                expr: Box::new(expr),
+            }
+            .into_expr_with_origin(
+                start_index,
+                data.tokens.index,
+                data.file_origin_for_range(start_index, data.tokens.index),
+            ))
+        }
+
         "unpack" => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen));
             let expr = parse_expr(data)?;

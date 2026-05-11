@@ -798,6 +798,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
+            MIRExpressionKind::RegionAdopt { source } => {
+                write!(f, "RegionAdopt <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: source,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
             MIRExpressionKind::MemberAccess {
                 base,
                 member_index,

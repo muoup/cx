@@ -256,6 +256,9 @@ pub enum CXExprKind {
     Leak {
         expr: Box<CXExpression>,
     },
+    Adopt {
+        expr: Box<CXExpression>,
+    },
     Unpack {
         expr: Box<CXExpression>,
         bindings: Vec<CXUnpackBinding>,

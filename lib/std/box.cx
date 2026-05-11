@@ -28,6 +28,14 @@ T* box<T>::leak<T>(this) {
     return ptr;
 }
 
+void box<T>::drop_with<T>(this, void(*drop_value)(T)) {
+    @unsafe {
+        drop_value(@adopt(*this.ptr));
+    };
+
+    this.drop();
+}
+
 void box<T>::drop<T>(this) safe {
     @unsafe {
         free(this.ptr);

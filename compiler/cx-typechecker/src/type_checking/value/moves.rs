@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use cx_ast::ast::{CXExpression, CXUnpackBinding};
+use cx_ast::data::CX_CONST;
 use cx_mir::mir::{
     data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
@@ -69,6 +70,66 @@ pub(crate) fn typecheck_move(
         inner_type,
         MIRExpressionKind::RegionMove {
             source: Box::new(inner_val),
+        },
+    ))
+}
+
+pub(crate) fn typecheck_adopt(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    expr: &CXExpression,
+    inner: &CXExpression,
+) -> CXResult<TypecheckResult> {
+    if env.function.in_safe_context() {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@adopt is unsafe and must be wrapped in @unsafe in safe functions"
+        );
+    }
+
+    let value = typecheck_expr(env, base_data, inner, None)?;
+    let binding = value.binding.clone();
+    let value = value.into_expression();
+    let Some(inner_type) = env.symbols.context.mem_ref_inner(&value._type).cloned() else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@adopt requires an addressable memory place"
+        );
+    };
+
+    if value._type.get_specifier(CX_CONST) || inner_type.get_specifier(CX_CONST) {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@adopt cannot adopt from a const memory place"
+        );
+    }
+
+    if let Some(binding) = binding.as_ref()
+        && binding.kind == BindingPlaceKind::Local
+    {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@adopt of a local binding is not allowed; use move for local bindings"
+        );
+    }
+
+    if !inner_type.is_memory_resident() {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "@adopt currently requires a memory-resident type, found {}",
+            inner_type.display_with(&env.symbols.context)
+        );
+    }
+
+    Ok(TypecheckResult::new_base(
+        inner_type,
+        MIRExpressionKind::RegionAdopt {
+            source: Box::new(value),
         },
     ))
 }

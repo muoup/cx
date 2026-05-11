@@ -19,6 +19,7 @@ pub struct ItemRegistry {
     pub generated_functions: Vec<MIRFunction>,
     pub requests: Vec<MIRFunctionGenRequest>,
     pub in_external_templated_function: bool,
+    pub external_template_origin: Option<String>,
 }
 
 impl ItemRegistry {
@@ -29,6 +30,7 @@ impl ItemRegistry {
             generated_functions: Vec::new(),
             requests: Vec::new(),
             in_external_templated_function: false,
+            external_template_origin: None,
         }
     }
 

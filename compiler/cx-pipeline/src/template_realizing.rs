@@ -7,6 +7,12 @@ use cx_typechecker::{
 };
 use cx_util::CXResult;
 
+struct TemplateRequestReceipt {
+    module_origin: Option<String>,
+    kind: CXFunctionKind,
+    input: MIRTemplateInput
+}
+
 pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment) -> CXResult<()> {
     let mut requests_fulfilled = Vec::new();
 
@@ -22,11 +28,11 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
                     None => job.clone(),
                 };
 
-                if request_was_fulfilled(env, &requests_fulfilled, &kind, &input) {
+                if request_was_fulfilled(env, &requests_fulfilled, &module_origin, &kind, &input) {
                     continue;
                 }
 
-                requests_fulfilled.push((kind.clone(), input.clone()));
+                requests_fulfilled.push(TemplateRequestReceipt { module_origin: module_origin.clone(), kind: kind.clone(), input: input.clone() });
                 realize_fn_implementation(env, &origin, &kind, &input)?;
             }
         }
@@ -37,13 +43,16 @@ pub(crate) fn realize_templates(job: &CompilationUnit, env: &mut TypeEnvironment
 
 fn request_was_fulfilled(
     env: &TypeEnvironment,
-    requests_fulfilled: &[(CXFunctionKind, MIRTemplateInput)],
+    requests_fulfilled: &[TemplateRequestReceipt],
+    module_origin: &Option<String>,
     kind: &CXFunctionKind,
     input: &MIRTemplateInput,
 ) -> bool {
     requests_fulfilled
         .iter()
-        .any(|(existing_kind, existing_input)| {
-            existing_kind == kind && existing_input.contextual_eq(input, &env.symbols.context)
+        .any(|receipt| {
+            &receipt.module_origin == module_origin
+                && &receipt.kind == kind
+                && receipt.input.contextual_eq(input, &env.symbols.context)
         })
 }

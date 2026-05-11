@@ -69,6 +69,9 @@ pub enum MIRExpressionKind {
     RegionMove {
         source: Box<MIRExpression>,
     },
+    RegionAdopt {
+        source: Box<MIRExpression>,
+    },
     MemoryWrite {
         target: Box<MIRExpression>,
         value: Box<MIRExpression>,

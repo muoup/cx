@@ -1,0 +1,21 @@
+import std::vector;
+import std::io;
+
+struct test_type : @nodrop {
+    int num;
+};
+
+void destructor(test_type t) {
+    printf("dropped num: %d\n", t.num);
+    @leak(t);
+}
+
+int main() {
+    vector<test_type> t = vector<test_type>::new<test_type>();
+
+    for (int i = 0; i < 10; i++) {
+        t.push((test_type) { .num = i });
+    }
+
+    t.drop_with(destructor);
+}

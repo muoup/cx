@@ -274,6 +274,10 @@ impl<'a> Display for CXExprFormatter<'a> {
                 writeln!(f, "Leak")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            CXExprKind::Adopt { expr } => {
+                writeln!(f, "Adopt")?;
+                CXExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
             CXExprKind::SizeOfExpr { expr } => {
                 writeln!(f, "SizeOf")?;
                 CXExprFormatter::new(expr, self.depth + 1).fmt(f)

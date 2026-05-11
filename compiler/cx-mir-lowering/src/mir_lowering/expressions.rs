@@ -551,6 +551,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
         }
 
         MIRExpressionKind::RegionMove { source } => lower_expression(builder, source),
+        MIRExpressionKind::RegionAdopt { source } => lower_expression(builder, source),
 
         MIRExpressionKind::RegionDuplicate { source } => {
             if let MIRExpressionKind::MemberAccess {

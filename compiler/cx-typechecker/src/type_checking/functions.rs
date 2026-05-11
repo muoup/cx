@@ -96,9 +96,20 @@ pub fn realize_fn_implementation(
     let overwrites = add_templated_types(env, &template.resource.prototype, input)?;
     let prototype = complete_function_template(env, base_data.as_ref(), template)?;
 
-    env.set_external_templated_function(true);
-    typecheck_function(env, base_data.as_ref(), prototype.clone(), body)?;
-    env.set_external_templated_function(false);
+    let old_external_template = env.items.in_external_templated_function;
+    let old_external_origin = env.items.external_template_origin.clone();
+    let external_origin = if origin.as_str() == env.source.compilation_unit.as_str() {
+        None
+    } else {
+        Some(origin.identifier().to_string())
+    };
+
+    env.set_external_templated_function(external_origin.is_some());
+    env.set_external_template_origin(external_origin);
+    let typecheck_result = typecheck_function(env, base_data.as_ref(), prototype.clone(), body);
+    env.set_external_templated_function(old_external_template);
+    env.set_external_template_origin(old_external_origin);
+    typecheck_result?;
 
     restore_template_overwrites(env, overwrites);
     Ok(())

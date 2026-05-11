@@ -458,6 +458,12 @@ pub fn convert_expression(
 
         MIRExpressionKind::RegionMove { source } => convert_expression(env, source),
 
+        MIRExpressionKind::RegionAdopt { .. } => Ok(FMIRNode {
+            token_range: mir_expr.token_range.clone(),
+            _type: FMIRType::unsafe_effect(FMIRType::pure(mir_expr._type.clone())),
+            body: FMIRNodeBody::UnsafeBlock,
+        }),
+
         MIRExpressionKind::Typechange(inner) => {
             if inner._type.is_pointer() {
                 return log_analysis_error!(

@@ -614,7 +614,10 @@ fn instantiate_function_template_with_input(
     completed_input: &MIRTemplateInput,
 ) -> CXResult<MIRFunctionPrototype> {
     let resource = &template.resource;
-    let module_origin = &template.external_module;
+    let module_origin = template
+        .external_module
+        .clone()
+        .or_else(|| env.external_template_origin().cloned());
     let template_prototype = &resource.prototype;
     let overwrites = add_templated_types(env, template_prototype, completed_input)?;
 
@@ -634,7 +637,7 @@ fn instantiate_function_template_with_input(
             .realized_fns
             .insert(instantiated.name.to_string(), instantiated.clone());
         env.request_function_generation(MIRFunctionGenRequest::Template {
-            module_origin: module_origin.clone(),
+            module_origin,
             kind: template.resource.shell.kind.clone(),
             input: completed_input.clone(),
         });

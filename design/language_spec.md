@@ -77,6 +77,7 @@ CX also uses `@`-prefixed compiler identifiers. These are not ordinary user iden
 - `@nodrop`
 - `@unsafe`
 - `@leak`
+- `@adopt`
 
 ## 3. Aggregate Types
 
@@ -430,7 +431,28 @@ Current restrictions:
 - the binding must have struct type
 - duplicate field or binding names are rejected
 
-### 9.5 Control-Flow Merge Rules
+### 9.5 `@adopt`
+
+`@adopt(place)` unsafely creates an owned value from an existing addressable memory place without copying the bytes at that place.
+
+```c
+Resource value = @unsafe(@adopt(*ptr));
+value.drop();
+```
+
+The adopted place becomes the storage for the owned value. This is intended for low-level data structures that manually manage initialized regions, such as vectors dropping elements stored behind a pointer.
+
+Current restrictions:
+
+- `@adopt` is unsafe-only in safe code
+- the operand must be an addressable memory place
+- the operand may not be const
+- the adopted type must currently be memory-resident
+- adopting a local binding directly is rejected; use `move` for local bindings
+
+The adoption operation itself does not copy or relocate. Later assignment, argument passing, or return operations follow ordinary value semantics and may copy or relocate unless separately rejected by the type system.
+
+### 9.6 Control-Flow Merge Rules
 
 Move state is tracked across:
 
