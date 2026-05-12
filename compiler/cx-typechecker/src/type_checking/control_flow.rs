@@ -68,7 +68,7 @@ pub(crate) fn typecheck_fallthrough_scope(
     sink: ScopeArrowSink,
     label: &str,
 ) -> CXResult<MIRExpression> {
-    env.function.push_scope(false, false);
+    env.push_scope(false, false);
     env.function.set_scope_anchor(expr);
     env.function.set_scope_fallthrough_target(ScopeExitTarget {
         target_scope,
@@ -76,8 +76,7 @@ pub(crate) fn typecheck_fallthrough_scope(
         label: label.to_string(),
     });
     let result = typecheck_expr(env, base_data, expr, None)?.into_expression();
-    env.function
-        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+    env.pop_scope()?;
     Ok(result)
 }
 

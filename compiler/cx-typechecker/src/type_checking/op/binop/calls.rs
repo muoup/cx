@@ -2,6 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::environment::functions::query::{
     query_deduced_member_function, query_deduced_standard_function,
 };
+use crate::environment::symbols::{ResolvedValueSymbol, SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
 use crate::type_checking::coercion::implicit::implicit_cast;
@@ -182,7 +183,13 @@ pub(crate) fn deduced_callee(
 ) -> CXResult<Option<TypecheckResult>> {
     match &lhs.kind {
         CXExprKind::Identifier(name) => {
-            if env.function.symbol_value(name.as_str()).is_some() {
+            if matches!(
+                env.symbols.resolve_value_symbol(name.as_str()),
+                Some(ResolvedValueSymbol::Value {
+                    origin: Some(SymbolValueOrigin::Local | SymbolValueOrigin::Contract),
+                    ..
+                })
+            ) {
                 return Ok(None);
             }
 

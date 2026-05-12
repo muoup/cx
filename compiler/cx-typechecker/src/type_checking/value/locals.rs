@@ -1,5 +1,5 @@
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
+    environment::{BindingMoveState, TypeEnvironment, symbols::SymbolValueOrigin},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -89,13 +89,14 @@ pub(crate) fn typecheck_var_declaration(
         _type: mem_type.clone(),
     };
 
-    env.function.insert_symbol(
-        name.as_string(),
+    env.symbols.insert_value(
+        name.clone(),
         MIRExpression {
             token_range: None,
             kind: MIRExpressionKind::Variable(name.clone()),
             _type: mem_type,
         },
+        Some(SymbolValueOrigin::Local),
     );
 
     if env.symbols.is_nocopy(&ty) {

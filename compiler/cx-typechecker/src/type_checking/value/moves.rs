@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    environment::{BindingMoveState, TypeEnvironment},
+    environment::{BindingMoveState, TypeEnvironment, symbols::SymbolValueOrigin},
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -332,13 +332,15 @@ pub(crate) fn typecheck_unpack(
         };
 
         let binding_name = CXIdent::new(unpack_binding.binding.as_str());
-        env.function.insert_symbol(
-            binding_name.as_string(),
+        let binding_ref_type = env.symbols.context.mem_ref_to(field_type.clone());
+        env.symbols.insert_value(
+            binding_name.clone(),
             MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::Variable(binding_name.clone()),
-                _type: env.symbols.context.mem_ref_to(field_type.clone()),
+                _type: binding_ref_type,
             },
+            Some(SymbolValueOrigin::Local),
         );
         if env.symbols.is_nocopy(field_type) {
             env.function

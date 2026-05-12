@@ -18,7 +18,7 @@ pub struct LMIRBuilder {
 
     pub fn_map: LMIRFunctionMap,
 
-    symbol_table: ScopedMap<LMIRValue>,
+    symbol_table: ScopedMap<String, LMIRValue>,
     goto_stack: Vec<LMIRGotoContext>,
     function_context: Option<LMIRFunctionContext>,
 }

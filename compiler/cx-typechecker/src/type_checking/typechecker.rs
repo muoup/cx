@@ -96,7 +96,7 @@ fn typecheck_expr_inner(
         } => {
             let condition_result = typecheck_expr(env, base_data, condition, None)
                 .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
-            env.function.push_scope(false, false);
+            env.push_scope(false, false);
             env.function
                 .configure_merge_scope(expr, "if join", None, false);
             let join_scope_idx = env.function.current_scope_index();
@@ -131,8 +131,7 @@ fn typecheck_expr_inner(
                 None
             };
 
-            env.function
-                .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+            env.pop_scope()?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -175,7 +174,7 @@ fn typecheck_expr_inner(
             body,
             pre_eval,
         } => {
-            env.function.push_scope(true, true);
+            env.push_scope(true, true);
             env.function.set_scope_anchor(expr);
             env.function
                 .configure_loop_scope(expr, LoopScopeKind::While);
@@ -199,8 +198,7 @@ fn typecheck_expr_inner(
                 ScopeArrowSink::LoopContinue,
                 "loop fallthrough",
             )?;
-            env.function
-                .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+            env.pop_scope()?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,
@@ -219,7 +217,7 @@ fn typecheck_expr_inner(
             increment,
             body,
         } => {
-            env.function.push_scope(true, true);
+            env.push_scope(true, true);
             env.function.set_scope_anchor(expr);
             let init_result = typecheck_expr(env, base_data, init, None)?.into_expression();
             env.function.configure_loop_scope(expr, LoopScopeKind::For);
@@ -249,8 +247,7 @@ fn typecheck_expr_inner(
             env.function
                 .restore_snapshot(&env.function.loop_entry_snapshot(loop_scope_idx));
             env.function.set_scope_reachable(loop_scope_idx, true);
-            env.function
-                .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+            env.pop_scope()?;
 
             TypecheckResult::from(MIRExpression {
                 token_range: None,

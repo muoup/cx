@@ -7,7 +7,9 @@ use cx_tokens::TokenRange;
 use cx_util::CXResult;
 
 use crate::{
-    environment::{ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment},
+    environment::{
+        ScopeArrowSink, ScopeExitTarget, ScopeId, TypeEnvironment, symbols::SymbolValueOrigin,
+    },
     log_typecheck_error,
     type_checking::{
         coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
@@ -94,15 +96,15 @@ pub fn typecheck_return(
             );
         }
 
-        env.function.push_scope(false, false);
+        env.push_scope(false, false);
 
         for param in env.current_function().params.clone() {
             let Some(name) = param.name else {
                 continue;
             };
 
-            env.function.insert_symbol(
-                name.as_string(),
+            env.symbols.insert_value(
+                name.clone(),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
                         name: name.clone(),
@@ -111,12 +113,13 @@ pub fn typecheck_return(
                     token_range: None,
                     _type: param._type.clone(),
                 },
+                Some(SymbolValueOrigin::Contract),
             );
         }
 
         if let Some(ret_name) = ret_name.as_ref() {
-            env.function.insert_symbol(
-                ret_name.as_string(),
+            env.symbols.insert_value(
+                ret_name.clone(),
                 MIRExpression {
                     kind: MIRExpressionKind::ContractVariable {
                         name: ret_name.clone(),
@@ -125,14 +128,14 @@ pub fn typecheck_return(
                     token_range: None,
                     _type: return_type.clone(),
                 },
+                Some(SymbolValueOrigin::Contract),
             );
         }
 
         let postcondition = typecheck_expr(env, base_data, &ret_contract, None)
             .and_then(|v| implicit_cast(env, v.into_expression(), &MIRType::bool()))?;
 
-        env.function
-            .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+        env.pop_scope()?;
 
         Ok(TypecheckResult::new_base(
             MIRType::unit(),

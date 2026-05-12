@@ -3,7 +3,6 @@ use std::path::Path;
 
 use cx_ast::ast::CXExpression;
 use cx_mir::mir::data::MIRFunctionPrototype;
-use cx_mir::mir::expression::MIRExpression;
 use cx_tokens::token::Token;
 use cx_util::CXResult;
 
@@ -68,18 +67,6 @@ impl FunctionContext {
 
     pub fn pop_scope(&mut self, compilation_unit: &Path, tokens: &[Token]) -> CXResult<()> {
         self.flow_mut().pop_scope(compilation_unit, tokens)
-    }
-
-    pub fn insert_symbol(&mut self, name: String, value: MIRExpression) {
-        self.flow_mut().insert_symbol(name, value);
-    }
-
-    pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
-        self.flow().symbol_value(name)
-    }
-
-    pub fn symbol_value_opt(&self, name: &str) -> Option<&MIRExpression> {
-        self.flow.as_ref().and_then(|flow| flow.symbol_value(name))
     }
 
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {

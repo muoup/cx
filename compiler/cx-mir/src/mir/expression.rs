@@ -2,6 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
+use crate::mir::data::MIRFunctionPrototype;
 use crate::mir::r#type::{MIRFloatType, MIRIntegerType, MIRType, MIRTypeKind};
 
 #[derive(Clone, Debug, Default, Readable, Writable)]
@@ -16,6 +17,36 @@ pub struct MIRExpression {
     pub kind: MIRExpressionKind,
     pub _type: MIRType,
     pub token_range: Option<TokenRange>,
+}
+
+#[derive(Clone, Debug, Readable, Writable)]
+pub enum MIRPureExpression {
+    IntegerLiteral(i64, MIRIntegerType, bool),
+    FunctionReference(MIRFunctionPrototype),
+}
+
+impl MIRPureExpression {
+    pub fn as_value(&self) -> MIRExpression {
+        match self {
+            Self::IntegerLiteral(value, integer_type, signed) => MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::IntLiteral(*value, *integer_type, *signed),
+                _type: MIRType::from(MIRTypeKind::Integer {
+                    _type: *integer_type,
+                    signed: *signed,
+                }),
+            },
+            Self::FunctionReference(prototype) => MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::FunctionReference {
+                    name: prototype.name.clone(),
+                },
+                _type: MIRType::from(MIRTypeKind::Function {
+                    signature: Box::new(prototype.signature()),
+                }),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Readable, Writable)]

@@ -21,7 +21,7 @@ pub struct VariableIdentifier {
 
 pub(crate) struct FMIREnvironment {
     current_mir_prototype: Option<MIRFunctionPrototype>,
-    region_table: ScopedMap<VariableIdentifier>,
+    region_table: ScopedMap<String, VariableIdentifier>,
     pub compilation_unit: PathBuf,
     pub type_definitions: MIRTypeContext,
 }

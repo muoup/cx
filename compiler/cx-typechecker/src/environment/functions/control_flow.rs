@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use cx_ast::ast::CXExpression;
-use cx_mir::mir::expression::MIRExpression;
 use cx_tokens::TokenRange;
 use cx_tokens::token::Token;
 use cx_util::CXResult;
@@ -24,8 +23,7 @@ pub struct TrackedBindingState {
 
 #[derive(Clone)]
 pub struct ControlFlowSnapshot {
-    pub symbol_table: ScopedMap<MIRExpression>,
-    pub tracked_bindings: ScopedMap<TrackedBindingState>,
+    pub tracked_bindings: ScopedMap<String, TrackedBindingState>,
 }
 
 #[derive(Clone)]
@@ -106,23 +104,19 @@ pub struct Scope {
 }
 
 pub struct ControlFlow {
-    // TODO: Symbol table should be in SymbolStore in the future
-    symbol_table: ScopedMap<MIRExpression>,
-    tracked_bindings: ScopedMap<TrackedBindingState>,
+    tracked_bindings: ScopedMap<String, TrackedBindingState>,
     scope_stack: Vec<Scope>,
 }
 
 impl ControlFlow {
     pub fn new() -> Self {
         Self {
-            symbol_table: ScopedMap::new(),
             tracked_bindings: ScopedMap::new(),
             scope_stack: Vec::new(),
         }
     }
 
     pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
-        self.symbol_table.push_scope();
         self.tracked_bindings.push_scope();
         self.scope_stack.push(Scope {
             has_break_merge,
@@ -141,7 +135,6 @@ impl ControlFlow {
 
         let current_scope_nodrop = self.current_scope_nodrop_bindings();
         let current_snapshot = scope.reachable.then(|| self.current_snapshot());
-        self.symbol_table.pop_scope();
         self.tracked_bindings.pop_scope();
         self.scope_stack.pop().unwrap();
 
@@ -186,23 +179,13 @@ impl ControlFlow {
         Ok(())
     }
 
-    pub fn insert_symbol(&mut self, name: String, value: MIRExpression) {
-        self.symbol_table.insert(name, value);
-    }
-
-    pub fn symbol_value(&self, name: &str) -> Option<&MIRExpression> {
-        self.symbol_table.get(name)
-    }
-
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
         ControlFlowSnapshot {
-            symbol_table: self.symbol_table.clone(),
             tracked_bindings: self.tracked_bindings.clone(),
         }
     }
 
     pub fn restore_snapshot(&mut self, snapshot: &ControlFlowSnapshot) {
-        self.symbol_table = snapshot.symbol_table.clone();
         self.tracked_bindings = snapshot.tracked_bindings.clone();
     }
 

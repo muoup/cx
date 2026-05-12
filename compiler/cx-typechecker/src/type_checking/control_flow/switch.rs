@@ -20,7 +20,7 @@ pub fn typecheck_switch(
     cases: &[(u64, usize)],
     default_case: Option<&usize>,
 ) -> CXResult<TypecheckResult> {
-    env.function.push_scope(true, false);
+    env.push_scope(true, false);
     env.function.set_scope_anchor(condition);
     env.function
         .configure_merge_scope(condition, "switch join", None, false);
@@ -124,8 +124,7 @@ pub fn typecheck_switch(
         );
     }
 
-    env.function
-        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+    env.pop_scope()?;
 
     // Build the match expression
     Ok(TypecheckResult::new_base(

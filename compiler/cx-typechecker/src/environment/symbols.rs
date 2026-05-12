@@ -6,7 +6,7 @@ use cx_mir::intrinsic_types::INTRINSIC_TYPES;
 use cx_mir::mir::data::{
     MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind, TemplateInfo,
 };
-use cx_mir::mir::expression::MIRExpression;
+use cx_mir::mir::expression::{MIRExpression, MIRPureExpression};
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 
@@ -19,17 +19,45 @@ struct SymbolId(u64);
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 enum SymbolDefinition {
-    Type(MIRTypeId),
-    Function(MIRFunctionPrototype),
-    ValueSymbol(MIRExpression),
-    PureExpr(MIRExpression),
-    TemplateTypeParam { resolved_type: MIRTypeId },
+    Type(MIRType),
+    Value(MIRExpression),
+    PureValue(MIRPureExpression),
+}
+
+impl SymbolDefinition {
+    fn as_value(&self) -> Option<MIRExpression> {
+        match self {
+            Self::Value(value) => Some(value.clone()),
+            Self::PureValue(value) => Some(value.as_value()),
+            Self::Type(_) => None,
+        }
+    }
+
+    fn as_pure(&self) -> Option<MIRPureExpression> {
+        match self {
+            Self::PureValue(value) => Some(value.clone()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolValueOrigin {
+    Local,
+    Global,
+    Contract,
+}
+
+#[derive(Clone, Debug, Default)]
+struct SymbolMetadata {
+    value_origin: Option<SymbolValueOrigin>,
 }
 
 #[derive(Clone, Debug)]
 struct Symbol {
     name: CXIdent,
     definition: SymbolDefinition,
+    metadata: SymbolMetadata,
 }
 
 struct SymbolStore {
@@ -45,10 +73,22 @@ impl SymbolStore {
         }
     }
 
-    fn insert(&mut self, name: CXIdent, definition: SymbolDefinition) -> SymbolId {
+    fn insert(
+        &mut self,
+        name: CXIdent,
+        definition: SymbolDefinition,
+        metadata: SymbolMetadata,
+    ) -> SymbolId {
         let id = SymbolId(self.next_id);
         self.next_id += 1;
-        self.symbols.insert(id, Symbol { name, definition });
+        self.symbols.insert(
+            id,
+            Symbol {
+                name,
+                definition,
+                metadata,
+            },
+        );
         id
     }
 
@@ -57,11 +97,11 @@ impl SymbolStore {
     }
 }
 
-struct TemplateScope {
-    bindings: ScopedMap<SymbolId>,
+struct SymbolScope {
+    bindings: ScopedMap<String, SymbolId>,
 }
 
-impl TemplateScope {
+impl SymbolScope {
     fn new() -> Self {
         Self {
             bindings: ScopedMap::new_with_starting_scope(),
@@ -93,8 +133,7 @@ pub struct SymbolRegistry {
     definition_stack: Vec<MIRTypeId>,
     next_type_id: u64,
     symbols: SymbolStore,
-    template_scope: TemplateScope,
-    value_scope: TemplateScope,
+    scope: SymbolScope,
 }
 
 pub struct TemplateBindingFrame {
@@ -103,8 +142,11 @@ pub struct TemplateBindingFrame {
 
 #[derive(Clone)]
 pub enum ResolvedValueSymbol {
-    ValueSymbol(MIRExpression),
-    PureExpr(MIRExpression),
+    Value {
+        value: MIRExpression,
+        origin: Option<SymbolValueOrigin>,
+    },
+    PureValue(MIRPureExpression),
 }
 
 impl SymbolRegistry {
@@ -113,6 +155,7 @@ impl SymbolRegistry {
         let mut context = MIRTypeContext::default();
         let mut named_type_ids = HashMap::new();
         let mut symbols = SymbolStore::new();
+        let mut scope = SymbolScope::new();
         let mut next_type_id = 1u64;
 
         for (name, ty_kind) in INTRINSIC_TYPES {
@@ -124,7 +167,12 @@ impl SymbolRegistry {
             context.register_identifier(CXIdent::new(*name), id);
             named_type_ids.insert((*name).to_string(), id);
             realized_types.insert((*name).to_string(), ty);
-            symbols.insert(CXIdent::new(*name), SymbolDefinition::Type(id));
+            let symbol_id = symbols.insert(
+                CXIdent::new(*name),
+                SymbolDefinition::Type(context.get(id).cloned().unwrap()),
+                SymbolMetadata::default(),
+            );
+            scope.insert((*name).to_string(), symbol_id);
         }
 
         Self {
@@ -135,18 +183,27 @@ impl SymbolRegistry {
             definition_stack: Vec::new(),
             next_type_id,
             symbols,
-            template_scope: TemplateScope::new(),
-            value_scope: TemplateScope::new(),
+            scope,
         }
+    }
+
+    pub fn push_scope(&mut self) {
+        self.scope.push_scope();
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.scope.pop_scope();
     }
 
     pub fn add_type(&mut self, name: String, ty: MIRType) -> Option<MIRType> {
         let old = self.realized_types.remove(&name);
         self.realized_types.insert(name.clone(), ty.clone());
-        if let Some(id) = self.named_type_ids.get(&name).copied() {
-            self.symbols
-                .insert(CXIdent::new(name.as_str()), SymbolDefinition::Type(id));
-        }
+        let symbol_id = self.symbols.insert(
+            CXIdent::new(name.as_str()),
+            SymbolDefinition::Type(ty),
+            SymbolMetadata::default(),
+        );
+        self.scope.insert(name, symbol_id);
         old
     }
 
@@ -163,18 +220,16 @@ impl SymbolRegistry {
             ));
         }
 
-        self.template_scope.push_scope();
+        self.scope.push_scope();
         let mut overwritten = Vec::new();
 
         for (name, arg_type) in names.iter().zip(args.iter()) {
-            let type_id = self.intern_type(arg_type.clone());
             let symbol_id = self.symbols.insert(
                 CXIdent::new(name.as_str()),
-                SymbolDefinition::TemplateTypeParam {
-                    resolved_type: type_id,
-                },
+                SymbolDefinition::Type(arg_type.clone()),
+                SymbolMetadata::default(),
             );
-            self.template_scope.insert(name.clone(), symbol_id);
+            self.scope.insert(name.clone(), symbol_id);
             overwritten.push((
                 name.clone(),
                 self.realized_types.insert(name.clone(), arg_type.clone()),
@@ -197,7 +252,7 @@ impl SymbolRegistry {
                 }
             }
         }
-        self.template_scope.pop_scope();
+        self.scope.pop_scope();
     }
 
     pub fn get_or_create_named_type_id(&mut self, name: &str) -> MIRTypeId {
@@ -217,8 +272,13 @@ impl SymbolRegistry {
                 ..Default::default()
             },
         );
-        self.symbols
-            .insert(CXIdent::new(name), SymbolDefinition::Type(id));
+        let ty = self.context.get(id).cloned().unwrap();
+        let symbol_id = self.symbols.insert(
+            CXIdent::new(name),
+            SymbolDefinition::Type(ty),
+            SymbolMetadata::default(),
+        );
+        self.scope.insert(name.to_string(), symbol_id);
         id
     }
 
@@ -238,6 +298,14 @@ impl SymbolRegistry {
     ) -> Option<MIRType> {
         self.currently_defining_types.remove(&id);
         self.remove_from_definition_stack(id);
+        if let Some(name) = definition.get_name() {
+            let symbol_id = self.symbols.insert(
+                name.clone(),
+                SymbolDefinition::Type(definition.clone()),
+                SymbolMetadata::default(),
+            );
+            self.scope.insert(name.as_string(), symbol_id);
+        }
         self.context.insert(id, definition)
     }
 
@@ -297,8 +365,14 @@ impl SymbolRegistry {
     }
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
-        if let Some(ty) = self.get_template_type_binding(name) {
-            return Some(ty);
+        if let Some(symbol_id) = self.scope.get(name)
+            && let Some(symbol) = self.symbols.get(symbol_id)
+            && symbol.name.as_str() == name
+        {
+            match &symbol.definition {
+                SymbolDefinition::Type(ty) => return Some(ty.clone()),
+                _ => return None,
+            }
         }
 
         if let Some(id) = self.get_named_type_id(name)
@@ -314,55 +388,62 @@ impl SymbolRegistry {
         self.realized_types.get(name).cloned()
     }
 
-    fn get_template_type_binding(&self, name: &str) -> Option<MIRType> {
-        let symbol_id = self.template_scope.get(name)?;
-        let symbol = self.symbols.get(symbol_id)?;
-
-        if symbol.name.as_str() != name {
-            return None;
-        }
-
-        match &symbol.definition {
-            SymbolDefinition::TemplateTypeParam { resolved_type } => {
-                self.context.get(*resolved_type).cloned()
-            }
-            SymbolDefinition::Type(type_id) => self.context.get(*type_id).cloned(),
-            _ => None,
-        }
+    pub fn insert_value(
+        &mut self,
+        name: CXIdent,
+        expr: MIRExpression,
+        origin: Option<SymbolValueOrigin>,
+    ) {
+        let symbol_id = self.symbols.insert(
+            name.clone(),
+            SymbolDefinition::Value(expr),
+            SymbolMetadata {
+                value_origin: origin,
+            },
+        );
+        self.scope.insert(name.as_string(), symbol_id);
     }
 
-    pub fn insert_value_symbol(&mut self, name: CXIdent, expr: MIRExpression) {
-        let symbol_id = self
-            .symbols
-            .insert(name.clone(), SymbolDefinition::ValueSymbol(expr));
-        self.value_scope.insert(name.as_string(), symbol_id);
-    }
-
-    pub fn insert_pure_expr(&mut self, name: CXIdent, expr: MIRExpression) {
-        let symbol_id = self
-            .symbols
-            .insert(name.clone(), SymbolDefinition::PureExpr(expr));
-        self.value_scope.insert(name.as_string(), symbol_id);
+    pub fn insert_pure_value(&mut self, name: CXIdent, expr: MIRPureExpression) {
+        let symbol_id = self.symbols.insert(
+            name.clone(),
+            SymbolDefinition::PureValue(expr),
+            SymbolMetadata::default(),
+        );
+        self.scope.insert(name.as_string(), symbol_id);
     }
 
     pub fn insert_function_symbol(&mut self, name: CXIdent, prototype: MIRFunctionPrototype) {
-        let symbol_id = self
-            .symbols
-            .insert(name.clone(), SymbolDefinition::Function(prototype));
-        self.value_scope.insert(name.as_string(), symbol_id);
+        self.insert_pure_value(name, MIRPureExpression::FunctionReference(prototype));
     }
 
     pub fn resolve_value_symbol(&self, name: &str) -> Option<ResolvedValueSymbol> {
-        let symbol_id = self.value_scope.get(name)?;
+        let symbol_id = self.scope.get(name)?;
         let symbol = self.symbols.get(symbol_id)?;
 
-        match &symbol.definition {
-            SymbolDefinition::ValueSymbol(expr) => {
-                Some(ResolvedValueSymbol::ValueSymbol(expr.clone()))
-            }
-            SymbolDefinition::PureExpr(expr) => Some(ResolvedValueSymbol::PureExpr(expr.clone())),
-            _ => None,
+        if let Some(value) = symbol.definition.as_pure() {
+            return Some(ResolvedValueSymbol::PureValue(value));
         }
+
+        symbol
+            .definition
+            .as_value()
+            .map(|value| ResolvedValueSymbol::Value {
+                value,
+                origin: symbol.metadata.value_origin,
+            })
+    }
+
+    pub fn resolve_pure_symbol(&self, name: &str) -> Option<MIRPureExpression> {
+        let symbol_id = self.scope.get(name)?;
+        let symbol = self.symbols.get(symbol_id)?;
+        symbol.definition.as_pure()
+    }
+
+    pub fn resolve_symbol_as_value(&self, name: &str) -> Option<MIRExpression> {
+        let symbol_id = self.scope.get(name)?;
+        let symbol = self.symbols.get(symbol_id)?;
+        symbol.definition.as_value()
     }
 
     pub fn is_copyable(&self, ty: &MIRType) -> bool {

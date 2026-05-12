@@ -1,8 +1,8 @@
 use crate::{
-    environment::TypeEnvironment,
     environment::symbols::templates::{
         add_templated_types, complete_function_template, restore_template_overwrites,
     },
+    environment::{TypeEnvironment, symbols::SymbolValueOrigin},
     type_checking::{
         globals::complete_base_globals,
         typechecker::{add_implicit_return, typecheck_expr},
@@ -28,7 +28,7 @@ pub fn typecheck_function(
     body: &CXExpression,
 ) -> CXResult<()> {
     env.function.begin_function(prototype.clone());
-    env.function.push_scope(false, false);
+    env.push_scope(false, false);
     env.function.set_scope_anchor(body);
     env.function
         .configure_merge_scope(body, "function exit", Some("fallthrough"), true);
@@ -40,13 +40,14 @@ pub fn typecheck_function(
         ensure_valid_allocation_type(env, Some(body.token_range().clone()), "a parameter", _type)?;
         let ref_type = env.symbols.context.mem_ref_to(_type.clone());
 
-        env.function.insert_symbol(
-            name.as_string(),
+        env.symbols.insert_value(
+            name.clone(),
             MIRExpression {
                 token_range: None,
                 kind: MIRExpressionKind::Variable(name.clone()),
                 _type: ref_type,
             },
+            Some(SymbolValueOrigin::Local),
         );
         if env.symbols.is_nocopy(_type) {
             env.function
@@ -57,8 +58,7 @@ pub fn typecheck_function(
     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
     let with_implicit_return = add_implicit_return(env, base_data, body_expr)?;
 
-    env.function
-        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+    env.pop_scope()?;
     env.function.end_function();
 
     env.push_generated_function(MIRFunction {

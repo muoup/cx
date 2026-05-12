@@ -20,7 +20,7 @@ pub use crate::environment::functions::control_flow::{
 use crate::environment::functions::query::{query_member_function, query_standard_function};
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
-use crate::environment::symbols::{ResolvedValueSymbol, SymbolRegistry, TemplateBindingFrame};
+use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
 use crate::log::TypeError;
 
 pub(crate) mod functions;
@@ -145,6 +145,19 @@ impl TypeEnvironment<'_> {
 
     pub fn get_realized_type(&self, name: &str) -> Option<MIRType> {
         self.symbols.get_realized_type(name)
+    }
+
+    pub fn push_scope(&mut self, has_break_merge: bool, has_continue_merge: bool) {
+        self.symbols.push_scope();
+        self.function
+            .push_scope(has_break_merge, has_continue_merge);
+    }
+
+    pub fn pop_scope(&mut self) -> CXResult<()> {
+        self.function
+            .pop_scope(self.source.compilation_unit.as_path(), self.source.tokens)?;
+        self.symbols.pop_scope();
+        Ok(())
     }
 
     pub fn current_function(&self) -> &MIRFunctionPrototype {
@@ -296,25 +309,5 @@ impl TypeEnvironment<'_> {
 
     pub fn realize_global(&mut self, name: String, global: MIRGlobalVariable) {
         self.items.realized_globals.insert(name, global);
-    }
-
-    pub fn insert_value_symbol(
-        &mut self,
-        name: CXIdent,
-        expr: cx_mir::mir::expression::MIRExpression,
-    ) {
-        self.symbols.insert_value_symbol(name, expr);
-    }
-
-    pub fn insert_pure_expr(
-        &mut self,
-        name: CXIdent,
-        expr: cx_mir::mir::expression::MIRExpression,
-    ) {
-        self.symbols.insert_pure_expr(name, expr);
-    }
-
-    pub fn resolve_value_symbol(&self, name: &str) -> Option<ResolvedValueSymbol> {
-        self.symbols.resolve_value_symbol(name)
     }
 }

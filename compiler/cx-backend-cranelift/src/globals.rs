@@ -45,7 +45,7 @@ pub(crate) fn generate_global(state: &mut GlobalState, variable: &LMIRGlobalValu
                 // Little Endian:
                 // 1111 2222 3333 4444
                 // ~~~~~~~~~ = i16
-                // 
+                //
                 // Big Endian:
                 // 4444 3333 2222 1111
                 //     i16 = ~~~~~~~~~

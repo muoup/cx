@@ -1,5 +1,5 @@
 use crate::{
-    environment::TypeEnvironment,
+    environment::{TypeEnvironment, symbols::SymbolValueOrigin},
     log_typecheck_error,
     type_checking::{
         constexpr::constexpr_evaluate, typechecker::typecheck_expr,
@@ -11,8 +11,8 @@ use cx_ast::{
     data::{CXLinkageMode, ModuleResource},
 };
 use cx_mir::mir::{
-    data::{MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind},
-    expression::{MIRExpression, MIRExpressionKind},
+    data::{MIRIntegerType, MIRTypeContext},
+    expression::{MIRExpression, MIRExpressionKind, MIRPureExpression},
     program::{MIRBaseMappings, MIRGlobalVarKind, MIRGlobalVariable},
 };
 use cx_util::{CXResult, identifier::CXIdent};
@@ -65,7 +65,8 @@ fn complete_global(
                 };
 
                 previous = Some(value);
-                env.insert_pure_expr(variant.name.clone(), enum_literal(value));
+                env.symbols
+                    .insert_pure_value(variant.name.clone(), enum_literal(value));
             }
 
             Ok(())
@@ -120,21 +121,15 @@ fn complete_global(
                 env.items.realized_globals.get(ident).unwrap(),
                 &mut env.symbols.context,
             )?;
-            env.insert_value_symbol(CXIdent::new(ident), expr);
+            env.symbols
+                .insert_value(CXIdent::new(ident), expr, Some(SymbolValueOrigin::Global));
             Ok(())
         }
     }
 }
 
-fn enum_literal(value: i64) -> MIRExpression {
-    MIRExpression {
-        token_range: None,
-        kind: MIRExpressionKind::IntLiteral(value, MIRIntegerType::from_bytes(8).unwrap(), true),
-        _type: MIRType::from(MIRTypeKind::Integer {
-            _type: MIRIntegerType::from_bytes(8).unwrap(),
-            signed: true,
-        }),
-    }
+fn enum_literal(value: i64) -> MIRPureExpression {
+    MIRPureExpression::IntegerLiteral(value, MIRIntegerType::from_bytes(8).unwrap(), true)
 }
 
 fn tcglobal_expr(

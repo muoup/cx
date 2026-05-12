@@ -1,4 +1,4 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{TypeEnvironment, symbols::SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::pattern::tagged_union::{TypeConstructor, deconstruct_type_constructor};
@@ -96,13 +96,14 @@ pub(crate) fn typecheck_is(
             };
 
             let variant_ref_type = env.symbols.context.mem_ref_to(variant_type.clone());
-            env.function.insert_symbol(
-                name.as_string(),
+            env.symbols.insert_value(
+                name.clone(),
                 MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::Variable(name.clone()),
                     _type: variant_ref_type,
                 },
+                Some(SymbolValueOrigin::Local),
             );
 
             name.clone()

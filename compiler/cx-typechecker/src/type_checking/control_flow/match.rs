@@ -1,6 +1,7 @@
 use crate::environment::ScopeArrowSink;
 use crate::environment::ScopeExitTarget;
 use crate::environment::TypeEnvironment;
+use crate::environment::symbols::SymbolValueOrigin;
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::control_flow::expr_may_fall_through;
@@ -26,7 +27,7 @@ pub fn typecheck_match(
         .and_then(|val| std_rval_promotion(env, val.into_expression()))?;
     let mut expr_type = expr_value.get_type();
 
-    env.function.push_scope(false, false);
+    env.push_scope(false, false);
     env.function.set_scope_anchor(condition);
     env.function
         .configure_merge_scope(condition, "match join", None, false);
@@ -189,9 +190,14 @@ pub fn typecheck_match(
                     };
 
                     // Typecheck the body with the variant value bound.
-                    env.function
-                        .insert_symbol(name.as_string(), variant_value_expr);
+                    env.symbols.push_scope();
+                    env.symbols.insert_value(
+                        name.clone(),
+                        variant_value_expr,
+                        Some(SymbolValueOrigin::Local),
+                    );
                     let body_expr = typecheck_expr(env, base_data, body, None)?.into_expression();
+                    env.symbols.pop_scope();
                     if expr_may_fall_through(&body_expr) {
                         env.function.enqueue_scope_arrow(
                             &ScopeExitTarget {
@@ -266,8 +272,7 @@ pub fn typecheck_match(
         );
     }
 
-    env.function
-        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+    env.pop_scope()?;
 
     // Build the match expression
     Ok(TypecheckResult::new_base(

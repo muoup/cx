@@ -1,4 +1,4 @@
-use crate::environment::TypeEnvironment;
+use crate::environment::{TypeEnvironment, symbols::SymbolValueOrigin};
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
 use crate::type_checking::typechecker::typecheck_expr;
@@ -15,14 +15,14 @@ pub(crate) fn typecheck_contract(
     let naive_contract = &prototype.contract;
     let previous_mode = env.push_contract_mode(naive_contract.safe);
 
-    env.function.push_scope(false, false);
+    env.push_scope(false, false);
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
             let _ty = env.symbols.context.mem_ref_to(param._type.clone());
 
-            env.function.insert_symbol(
-                name.to_string(),
+            env.symbols.insert_value(
+                name.clone(),
                 MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::ContractVariable {
@@ -31,6 +31,7 @@ pub(crate) fn typecheck_contract(
                     },
                     _type: param._type.clone(),
                 },
+                Some(SymbolValueOrigin::Contract),
             );
         }
     }
@@ -48,8 +49,8 @@ pub(crate) fn typecheck_contract(
 
     let postcondition = if let Some((ret_name, post_expr)) = &naive_contract.postcondition {
         if let Some(ret_name) = ret_name {
-            env.function.insert_symbol(
-                ret_name.to_string(),
+            env.symbols.insert_value(
+                ret_name.clone(),
                 MIRExpression {
                     token_range: None,
                     kind: MIRExpressionKind::ContractVariable {
@@ -58,6 +59,7 @@ pub(crate) fn typecheck_contract(
                     },
                     _type: prototype.return_type.clone(),
                 },
+                Some(SymbolValueOrigin::Contract),
             );
         }
 
@@ -69,8 +71,7 @@ pub(crate) fn typecheck_contract(
         None
     };
 
-    env.function
-        .pop_scope(env.source.compilation_unit.as_path(), env.source.tokens)?;
+    env.pop_scope()?;
     env.restore_function_mode(previous_mode);
 
     Ok(MIRFunctionContract {
