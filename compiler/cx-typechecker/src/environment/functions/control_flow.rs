@@ -106,6 +106,7 @@ pub struct Scope {
 }
 
 pub struct ControlFlow {
+    // TODO: Symbol table should be in SymbolStore in the future
     symbol_table: ScopedMap<MIRExpression>,
     tracked_bindings: ScopedMap<TrackedBindingState>,
     scope_stack: Vec<Scope>,

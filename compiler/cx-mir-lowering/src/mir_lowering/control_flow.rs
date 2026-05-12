@@ -5,7 +5,7 @@ use cx_lmir::{
     LMIRInstructionKind, LMIRValue,
 };
 use cx_mir::mir::{
-    data::MIRType,
+    data::{MIRType, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind},
 };
 use cx_util::CXResult;
@@ -49,7 +49,7 @@ pub fn lower_if(
     builder.set_current_block(then_block_id.clone());
 
     builder.push_scope(None, None);
-    lower_expression(builder, then_branch)?;
+    let then_result = lower_expression(builder, then_branch)?;
     builder.pop_scope()?;
 
     builder.add_new_instruction(
@@ -62,9 +62,9 @@ pub fn lower_if(
 
     // Else branch
     builder.set_current_block(else_block_id.clone());
-    if let Some(else_expr) = else_branch {
+    let else_result = if let Some(else_expr) = else_branch {
         builder.push_scope(None, None);
-        lower_expression(builder, else_expr)?;
+        let else_result = lower_expression(builder, else_expr)?;
         builder.pop_scope()?;
         builder.add_new_instruction(
             LMIRInstructionKind::Jump {
@@ -73,11 +73,28 @@ pub fn lower_if(
             LMIRType::unit(),
             false,
         )?;
-    }
+        Some(else_result)
+    } else {
+        None
+    };
 
     builder.pop_scope()?;
     builder.move_block_to_end(&merge_block_id);
     builder.set_current_block(merge_block_id);
+
+    if !matches!(_result_type.kind, MIRTypeKind::Unit) {
+        if let Some(else_result) = else_result {
+            let result_type = builder.convert_cx_type(_result_type);
+            return builder.add_new_instruction(
+                LMIRInstructionKind::Phi {
+                    predecessors: vec![(then_result, then_block_id), (else_result, else_block_id)],
+                },
+                result_type,
+                true,
+            );
+        }
+    }
+
     Ok(LMIRValue::NULL)
 }
 

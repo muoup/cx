@@ -1,0 +1,4 @@
+public:
+
+int x = 15;
+int y = 25;

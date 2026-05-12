@@ -333,6 +333,9 @@ fn convert_int_binop(op: &MIRIntegerBinOp) -> LMIRIntBinOp {
         MIRIntegerBinOp::BAND => LMIRIntBinOp::BAND,
         MIRIntegerBinOp::BOR => LMIRIntBinOp::BOR,
         MIRIntegerBinOp::BXOR => LMIRIntBinOp::BXOR,
+        MIRIntegerBinOp::SHL => LMIRIntBinOp::SHL,
+        MIRIntegerBinOp::ASHR => LMIRIntBinOp::ASHR,
+        MIRIntegerBinOp::LSHR => LMIRIntBinOp::LSHR,
 
         _ => unreachable!("Logical operators (LAND, LOR) should be handled by lower_logical_op"),
     }

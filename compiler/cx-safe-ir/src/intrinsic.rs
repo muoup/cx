@@ -74,6 +74,9 @@ pub enum FMIRIntrinsicIBinOp {
     BAND,
     BOR,
     BXOR,
+    SHL,
+    ASHR,
+    LSHR,
 }
 
 #[derive(Clone, Debug)]

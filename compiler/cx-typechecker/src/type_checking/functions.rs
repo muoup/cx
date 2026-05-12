@@ -4,7 +4,7 @@ use crate::{
         add_templated_types, complete_function_template, restore_template_overwrites,
     },
     type_checking::{
-        globals::global_expr,
+        globals::complete_base_globals,
         typechecker::{add_implicit_return, typecheck_expr},
         value::ensure_valid_allocation_type,
     },
@@ -105,6 +105,9 @@ pub fn realize_fn_implementation(
     };
 
     env.set_external_templated_function(external_origin.is_some());
+    if external_origin.is_some() {
+        complete_base_globals(env, base_data.as_ref())?;
+    }
     env.set_external_template_origin(external_origin);
     let typecheck_result = typecheck_function(env, base_data.as_ref(), prototype.clone(), body);
     env.set_external_templated_function(old_external_template);
@@ -121,17 +124,6 @@ pub fn complete_base_functions(
 ) -> CXResult<()> {
     for (_, cx_fn) in base_data.fn_data.standard_iter() {
         env.complete_prototype(base_data, cx_fn.external_module.as_ref(), &cx_fn.resource)?;
-    }
-
-    Ok(())
-}
-
-pub fn complete_base_globals(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-) -> CXResult<()> {
-    for name in base_data.global_variables.keys() {
-        global_expr(env, base_data, name.as_str())?;
     }
 
     Ok(())

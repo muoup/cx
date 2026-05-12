@@ -237,6 +237,9 @@ pub enum MIRIntegerBinOp {
     BAND,
     BOR,
     BXOR,
+    SHL,
+    ASHR,
+    LSHR,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]

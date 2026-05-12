@@ -1,6 +1,6 @@
 use crate::parse::expressions::parse_expr;
 use crate::parse::ParserData;
-use cx_ast::ast::CXGlobalVariable;
+use cx_ast::ast::{CXEnumVariant, CXGlobalVariable};
 use cx_ast::data::{
     CXField, CXFunctionKind, CXFunctionPrototype, CXLinkageMode, CXStructAttributes,
     CXTemplatePrototype, CXType, CXTypeKind, CXTypeQualifiers, PredeclarationType, CX_CONST,
@@ -163,6 +163,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
 pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
     assert_token_matches!(data.tokens, keyword!(Enum));
+    let enum_start_index = data.tokens.index - 1;
 
     if peek_kind!(data.tokens, keyword!(Union)) {
         data.tokens.back();
@@ -175,40 +176,38 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         return predeclaration_type(data, name, PredeclarationType::Enum);
     }
 
-    let mut idx = 0;
+    let mut variants = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         let Some(variant_name) = try_parse_ident(&mut data.tokens) else {
             return log_preparse_error!(data.tokens, "Expected enum variant name");
         };
 
-        if try_next!(data.tokens, TokenKind::Assignment(None)) {
-            match next_kind!(data.tokens)? {
-                TokenKind::IntLiteral(val) => {
-                    idx = *val;
-                }
+        let value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
+            data.change_comma_mode(false);
+            let value = parse_expr(data)?;
+            data.pop_comma_mode();
+            Some(value)
+        } else {
+            None
+        };
 
-                _ => {
-                    return log_preparse_error!(
-                        data.tokens,
-                        "Enum variant value must be an integer literal"
-                    )
-                }
-            }
-        }
-
-        data.add_global_variable(
-            variant_name.as_string(),
-            CXGlobalVariable::EnumConstant(idx as i32),
-            CXLinkageMode::Standard,
-        );
-        idx += 1;
+        variants.push(CXEnumVariant {
+            name: variant_name,
+            value,
+        });
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseBrace));
             break;
         }
     }
+
+    data.add_global_variable(
+        format!("__cx_enum_definition_{enum_start_index}"),
+        CXGlobalVariable::EnumDefinition { variants },
+        CXLinkageMode::Standard,
+    );
 
     defined_type(
         data,

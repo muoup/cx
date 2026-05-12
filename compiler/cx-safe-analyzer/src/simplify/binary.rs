@@ -28,6 +28,8 @@ pub fn eval_int_binop(op: &FMIRIntrinsicIBinOp, left: i64, right: i64) -> Option
         Op::BAND => Some(ConstValue::Int(left & right)),
         Op::BOR => Some(ConstValue::Int(left | right)),
         Op::BXOR => Some(ConstValue::Int(left ^ right)),
+        Op::SHL => Some(ConstValue::Int(left << right)),
+        Op::ASHR | Op::LSHR => Some(ConstValue::Int(left >> right)),
     }
 }
 

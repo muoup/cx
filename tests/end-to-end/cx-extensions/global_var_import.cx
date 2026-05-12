@@ -1,0 +1,8 @@
+import includes::global_variables;
+import std::io;
+
+int main() {
+    int* y_ptr = &y;
+
+    printf("x: %d, y: %d\n", x, *y_ptr);
+}

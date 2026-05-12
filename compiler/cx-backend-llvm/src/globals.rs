@@ -58,13 +58,6 @@ pub(crate) fn generate_global_variable(
                 global.set_linkage(Linkage::External);
             }
 
-            if let Some(initial_value) = initial_value {
-                let init_val = llvm_type
-                    .into_int_type()
-                    .const_int(*initial_value as u64, true);
-                global.set_initializer(&init_val);
-            }
-
             state.globals.push(global);
         }
     }

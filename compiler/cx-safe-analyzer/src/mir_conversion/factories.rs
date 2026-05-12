@@ -116,6 +116,9 @@ pub fn int_binop_intrinsic(op: &MIRIntegerBinOp) -> FMIRIntrinsicIBinOp {
         MIR::BAND => FMIR::BAND,
         MIR::BOR => FMIR::BOR,
         MIR::BXOR => FMIR::BXOR,
+        MIR::SHL => FMIR::SHL,
+        MIR::ASHR => FMIR::ASHR,
+        MIR::LSHR => FMIR::LSHR,
     }
 }
 

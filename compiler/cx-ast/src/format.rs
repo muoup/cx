@@ -78,8 +78,13 @@ impl Display for CXLinkageMode {
 impl Display for CXGlobalVariable {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            CXGlobalVariable::EnumConstant(val) => {
-                write!(f, "enum constant {}", val)
+            CXGlobalVariable::EnumDefinition { variants } => {
+                let variants = variants
+                    .iter()
+                    .map(|variant| variant.name.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "enum {{ {} }}", variants)
             }
 
             CXGlobalVariable::Standard {
@@ -242,6 +247,17 @@ impl<'a> Display for CXExprFormatter<'a> {
                 if let Some(else_branch) = else_branch {
                     CXExprFormatter::new(else_branch, self.depth + 1).fmt(f)?;
                 }
+                Ok(())
+            }
+            CXExprKind::Ternary {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                writeln!(f, "Ternary")?;
+                CXExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(then_branch, self.depth + 1).fmt(f)?;
+                CXExprFormatter::new(else_branch, self.depth + 1).fmt(f)?;
                 Ok(())
             }
             CXExprKind::For {

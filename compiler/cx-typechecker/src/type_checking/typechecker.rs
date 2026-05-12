@@ -4,7 +4,7 @@ use crate::environment::{LoopScopeKind, ScopeArrowSink, ScopeExitTarget, TypeEnv
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::constructors::typecheck_type_constructor_expr;
 use crate::type_checking::aggregate::initialization::typecheck_initializer_list;
-use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::control_flow::r#return::typecheck_return;
 use crate::type_checking::control_flow::{
     enqueue_jump_arrow, expr_may_fall_through, process_for_increment_arrows,
@@ -142,6 +142,31 @@ fn typecheck_expr_inner(
                     else_branch: else_result.map(Box::new),
                 },
                 _type: cx_mir::mir::data::MIRType::unit(),
+            })
+        }
+
+        CXExprKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            let condition_result = typecheck_expr(env, base_data, condition, None)
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                .and_then(|v| implicit_cast(env, v, &MIRType::bool()))?;
+            let then_result = typecheck_expr(env, base_data, then_branch, expected_type)
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))?;
+            let else_result = typecheck_expr(env, base_data, else_branch, Some(&then_result._type))
+                .and_then(|v| std_rval_promotion(env, v.into_expression()))
+                .and_then(|v| implicit_cast(env, v, &then_result._type))?;
+
+            TypecheckResult::from(MIRExpression {
+                token_range: None,
+                kind: MIRExpressionKind::If {
+                    condition: Box::new(condition_result),
+                    then_branch: Box::new(then_result.clone()),
+                    else_branch: Some(Box::new(else_result)),
+                },
+                _type: then_result._type,
             })
         }
 

@@ -188,6 +188,26 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<CXExpression> {
         );
     }
 
+    if try_next!(data.tokens, punctuator!(QuestionMark)) {
+        let start_index = expr.range.start_token;
+        let condition = expr;
+        let then_branch = parse_expr(data)?;
+        assert_token_matches!(data.tokens, punctuator!(Colon));
+        let else_branch = parse_expr(data)?;
+        let end_index = else_branch.range.end_token;
+
+        return Ok(CXExprKind::Ternary {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+        }
+        .into_expr_with_origin(
+            start_index,
+            end_index,
+            data.file_origin_for_range(start_index, end_index),
+        ));
+    }
+
     Ok(expr)
 }
 

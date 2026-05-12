@@ -21,7 +21,7 @@ use cx_tokens::TokenIter;
 use cx_typechecker::environment::TypeEnvironment;
 use cx_typechecker::gather_interface;
 use cx_typechecker::log::TypeError;
-use cx_typechecker::{complete_base_functions, complete_base_globals, typecheck};
+use cx_typechecker::typecheck;
 use cx_util::format::dump_data;
 use cx_util::module_path::ModulePath;
 use cx_util::{CXError, CXErrorTrait, CXResult};
@@ -344,8 +344,6 @@ pub(crate) fn perform_job(
                 &context.module_db,
             );
 
-            complete_base_globals(&mut env, structure_data.as_ref())?;
-            complete_base_functions(&mut env, structure_data.as_ref())?;
             typecheck(&mut env, structure_data.as_ref(), &self_ast)?;
             realize_templates(&job.unit, &mut env)?;
 

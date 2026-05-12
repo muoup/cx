@@ -116,8 +116,16 @@ pub struct CXUnpackBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub struct CXEnumVariant {
+    pub name: CXIdent,
+    pub value: Option<CXExpression>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
 pub enum CXGlobalVariable {
-    EnumConstant(i32),
+    EnumDefinition {
+        variants: Vec<CXEnumVariant>,
+    },
 
     Standard {
         _type: CXType,
@@ -186,6 +194,11 @@ pub enum CXExprKind {
         condition: Box<CXExpression>,
         then_branch: Box<CXExpression>,
         else_branch: Option<Box<CXExpression>>,
+    },
+    Ternary {
+        condition: Box<CXExpression>,
+        then_branch: Box<CXExpression>,
+        else_branch: Box<CXExpression>,
     },
     While {
         condition: Box<CXExpression>,

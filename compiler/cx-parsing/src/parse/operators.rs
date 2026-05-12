@@ -73,6 +73,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
             OperatorType::Decrement => Some(CXUnOp::PreIncrement(-1)),
             OperatorType::Minus => Some(CXUnOp::Negative),
             OperatorType::Exclamation => Some(CXUnOp::LNot),
+            OperatorType::Tilda => Some(CXUnOp::BNot),
 
             _ => {
                 data.tokens.back();

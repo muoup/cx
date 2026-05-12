@@ -1,10 +1,7 @@
 use crate::{
-    environment::TypeEnvironment,
+    environment::{TypeEnvironment, symbols::ResolvedValueSymbol},
     log_typecheck_error,
-    type_checking::{
-        globals::{find_global, global_expr},
-        result::{TypecheckResult, TypecheckedBinding},
-    },
+    type_checking::result::{TypecheckResult, TypecheckedBinding},
 };
 use cx_ast::{ast::CXExpression, data::CXTemplateInput};
 use cx_mir::mir::{
@@ -21,7 +18,7 @@ pub(crate) fn typecheck_identifier(
     expr: &CXExpression,
     name: &CXIdent,
 ) -> CXResult<TypecheckResult> {
-    if let Some(symbol_val) = env.function.symbol_value(name.as_str()) {
+    if let Some(symbol_val) = env.function.symbol_value_opt(name.as_str()) {
         let symbol_val = symbol_val.clone();
         Ok(TypecheckResult::from(symbol_val).with_binding(TypecheckedBinding::local(name.clone())))
     } else if let Some(function_type) = env
@@ -46,25 +43,21 @@ pub(crate) fn typecheck_identifier(
                 signature: Box::new(function_type.signature()),
             }),
         }))
-    } else if env.function.in_safe_context()
-        && base_data.global_variables.contains_key(name.as_str())
-    {
-        log_typecheck_error!(
-            env,
-            Some(expr.token_range()),
-            "Safe functions may not access global variables"
-        )
-    } else if find_global(base_data, name.as_str()).is_some() {
-        let Some(global_expr) = global_expr(env, base_data, name.as_str())? else {
-            return log_typecheck_error!(
-                env,
-                Some(expr.token_range()),
-                "Invalid global variable '{}'",
-                name
-            );
-        };
+    } else if let Some(symbol) = env.resolve_value_symbol(name.as_str()) {
+        match symbol {
+            ResolvedValueSymbol::PureExpr(value) => Ok(TypecheckResult::from(value)),
+            ResolvedValueSymbol::ValueSymbol(value) => {
+                if env.function.in_safe_context() {
+                    return log_typecheck_error!(
+                        env,
+                        Some(expr.token_range()),
+                        "Safe functions may not access global variables"
+                    );
+                }
 
-        Ok(TypecheckResult::from(global_expr))
+                Ok(TypecheckResult::from(value))
+            }
+        }
     } else {
         log_typecheck_error!(
             env,

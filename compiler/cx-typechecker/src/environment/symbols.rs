@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet};
 use cx_ast::data::{CX_CONST, CXTypeQualifiers};
 use cx_mir::CXTypeMap;
 use cx_mir::intrinsic_types::INTRINSIC_TYPES;
-use cx_mir::mir::data::{MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind, TemplateInfo};
+use cx_mir::mir::data::{
+    MIRFunctionPrototype, MIRType, MIRTypeContext, MIRTypeId, MIRTypeKind, TemplateInfo,
+};
+use cx_mir::mir::expression::MIRExpression;
 use cx_util::identifier::CXIdent;
 use cx_util::scoped_map::ScopedMap;
 
@@ -14,8 +17,12 @@ pub(crate) mod templates;
 struct SymbolId(u64);
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum SymbolDefinition {
     Type(MIRTypeId),
+    Function(MIRFunctionPrototype),
+    ValueSymbol(MIRExpression),
+    PureExpr(MIRExpression),
     TemplateTypeParam { resolved_type: MIRTypeId },
 }
 
@@ -87,10 +94,17 @@ pub struct SymbolRegistry {
     next_type_id: u64,
     symbols: SymbolStore,
     template_scope: TemplateScope,
+    value_scope: TemplateScope,
 }
 
 pub struct TemplateBindingFrame {
     bindings: Vec<(String, Option<MIRType>)>,
+}
+
+#[derive(Clone)]
+pub enum ResolvedValueSymbol {
+    ValueSymbol(MIRExpression),
+    PureExpr(MIRExpression),
 }
 
 impl SymbolRegistry {
@@ -122,6 +136,7 @@ impl SymbolRegistry {
             next_type_id,
             symbols,
             template_scope: TemplateScope::new(),
+            value_scope: TemplateScope::new(),
         }
     }
 
@@ -307,11 +322,46 @@ impl SymbolRegistry {
             return None;
         }
 
-        match symbol.definition {
+        match &symbol.definition {
             SymbolDefinition::TemplateTypeParam { resolved_type } => {
-                self.context.get(resolved_type).cloned()
+                self.context.get(*resolved_type).cloned()
             }
-            SymbolDefinition::Type(type_id) => self.context.get(type_id).cloned(),
+            SymbolDefinition::Type(type_id) => self.context.get(*type_id).cloned(),
+            _ => None,
+        }
+    }
+
+    pub fn insert_value_symbol(&mut self, name: CXIdent, expr: MIRExpression) {
+        let symbol_id = self
+            .symbols
+            .insert(name.clone(), SymbolDefinition::ValueSymbol(expr));
+        self.value_scope.insert(name.as_string(), symbol_id);
+    }
+
+    pub fn insert_pure_expr(&mut self, name: CXIdent, expr: MIRExpression) {
+        let symbol_id = self
+            .symbols
+            .insert(name.clone(), SymbolDefinition::PureExpr(expr));
+        self.value_scope.insert(name.as_string(), symbol_id);
+    }
+
+    pub fn insert_function_symbol(&mut self, name: CXIdent, prototype: MIRFunctionPrototype) {
+        let symbol_id = self
+            .symbols
+            .insert(name.clone(), SymbolDefinition::Function(prototype));
+        self.value_scope.insert(name.as_string(), symbol_id);
+    }
+
+    pub fn resolve_value_symbol(&self, name: &str) -> Option<ResolvedValueSymbol> {
+        let symbol_id = self.value_scope.get(name)?;
+        let symbol = self.symbols.get(symbol_id)?;
+
+        match &symbol.definition {
+            SymbolDefinition::ValueSymbol(expr) => {
+                Some(ResolvedValueSymbol::ValueSymbol(expr.clone()))
+            }
+            SymbolDefinition::PureExpr(expr) => Some(ResolvedValueSymbol::PureExpr(expr.clone())),
+            _ => None,
         }
     }
 

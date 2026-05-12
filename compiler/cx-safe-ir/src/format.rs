@@ -261,6 +261,9 @@ impl Display for FMIRIntrinsicIBinOp {
             FMIRIntrinsicIBinOp::BAND => write!(f, "band"),
             FMIRIntrinsicIBinOp::BOR => write!(f, "bor"),
             FMIRIntrinsicIBinOp::BXOR => write!(f, "bxor"),
+            FMIRIntrinsicIBinOp::SHL => write!(f, "shl"),
+            FMIRIntrinsicIBinOp::ASHR => write!(f, "ashr"),
+            FMIRIntrinsicIBinOp::LSHR => write!(f, "lshr"),
         }
     }
 }

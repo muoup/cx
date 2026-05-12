@@ -78,6 +78,10 @@ impl FunctionContext {
         self.flow().symbol_value(name)
     }
 
+    pub fn symbol_value_opt(&self, name: &str) -> Option<&MIRExpression> {
+        self.flow.as_ref().and_then(|flow| flow.symbol_value(name))
+    }
+
     pub fn current_snapshot(&self) -> ControlFlowSnapshot {
         self.flow().current_snapshot()
     }

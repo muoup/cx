@@ -20,7 +20,7 @@ pub use crate::environment::functions::control_flow::{
 use crate::environment::functions::query::{query_member_function, query_standard_function};
 use crate::environment::items::ItemRegistry;
 use crate::environment::source::SourceContext;
-use crate::environment::symbols::{SymbolRegistry, TemplateBindingFrame};
+use crate::environment::symbols::{ResolvedValueSymbol, SymbolRegistry, TemplateBindingFrame};
 use crate::log::TypeError;
 
 pub(crate) mod functions;
@@ -171,6 +171,8 @@ impl TypeEnvironment<'_> {
                 self.items
                     .realized_fns
                     .insert(prototype.name.to_string(), prototype.clone());
+                self.symbols
+                    .insert_function_symbol(prototype.name.clone(), prototype.clone());
             },
         )
     }
@@ -294,5 +296,25 @@ impl TypeEnvironment<'_> {
 
     pub fn realize_global(&mut self, name: String, global: MIRGlobalVariable) {
         self.items.realized_globals.insert(name, global);
+    }
+
+    pub fn insert_value_symbol(
+        &mut self,
+        name: CXIdent,
+        expr: cx_mir::mir::expression::MIRExpression,
+    ) {
+        self.symbols.insert_value_symbol(name, expr);
+    }
+
+    pub fn insert_pure_expr(
+        &mut self,
+        name: CXIdent,
+        expr: cx_mir::mir::expression::MIRExpression,
+    ) {
+        self.symbols.insert_pure_expr(name, expr);
+    }
+
+    pub fn resolve_value_symbol(&self, name: &str) -> Option<ResolvedValueSymbol> {
+        self.symbols.resolve_value_symbol(name)
     }
 }

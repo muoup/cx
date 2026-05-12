@@ -19,6 +19,9 @@ pub fn typecheck(
     base_data: &MIRBaseMappings,
     ast: &CXAST,
 ) -> CXResult<()> {
+    complete_base_globals(env, base_data)?;
+    complete_base_functions(env, base_data)?;
+
     for stmt in ast.function_stmts.iter() {
         if let CXFunctionStmt::FunctionDefinition { prototype, body } = stmt {
             let prototype = env.complete_prototype(base_data, None, prototype)?;

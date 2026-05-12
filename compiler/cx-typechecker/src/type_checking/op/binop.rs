@@ -377,7 +377,9 @@ fn coerce_integral_binop(
         | CXBinOp::Modulus
         | CXBinOp::BitAnd
         | CXBinOp::BitOr
-        | CXBinOp::BitXor => lhs._type.clone(),
+        | CXBinOp::BitXor
+        | CXBinOp::LShift
+        | CXBinOp::RShift => lhs._type.clone(),
 
         CXBinOp::Less
         | CXBinOp::Greater
@@ -449,6 +451,9 @@ fn lower_int_binop(op: &CXBinOp, signed: bool) -> Option<MIRIntegerBinOp> {
         CXBinOp::BitAnd => MIRIntegerBinOp::BAND,
         CXBinOp::BitOr => MIRIntegerBinOp::BOR,
         CXBinOp::BitXor => MIRIntegerBinOp::BXOR,
+        CXBinOp::LShift => MIRIntegerBinOp::SHL,
+        CXBinOp::RShift if signed => MIRIntegerBinOp::ASHR,
+        CXBinOp::RShift => MIRIntegerBinOp::LSHR,
 
         _ => return None,
     })
