@@ -1,5 +1,5 @@
 [project]
-name = "lsp-interpreter"
+name = "lisp-interpreter"
 
 [build]
 backend = "llvm"
@@ -7,5 +7,5 @@ optimization = "O0"
 
 [workspace.targets.default]
 binaries = [
-  { name = "lsp-interpreter", entry = "main.cx" },
+  { name = "lisp-interpreter", entry = "main.cx" },
 ]

@@ -1,3 +1,5 @@
+#pragma once
+
 void memset(void* ptr, int value, usize num);
 void memcpy(void* dest, void* src, usize num);
 void memmove(void* dest, void* src, usize num);

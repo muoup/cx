@@ -1,0 +1,271 @@
+import ast;
+import std::box;
+import std::vector;
+import std::string;
+import std::io;
+
+#include <stdlib.h>
+#include <ctype.h>
+#undef isdigit
+#undef isspace
+
+double atof(char* str);
+void exit(int status);
+
+public:
+
+lisp_node parse(const char* source) {
+    parser p = {
+        .source = source,
+        .pos = 0
+    };
+
+    return p.parse_program();
+}
+
+private:
+
+struct parser {
+    const char* source;
+    usize pos;
+};
+
+bool is_delimiter(char c) {
+    if (isspace(c) != 0) return 1 == 1;
+    if (c == '(') return 1 == 1;
+    if (c == ')') return 1 == 1;
+    if (c == '"') return 1 == 1;
+    if (c == '\0') return 1 == 1;
+
+    return 1 == 0;
+}
+
+bool is_number_token(char* token) {
+    if (isdigit(token[0]) != 0) {
+        return 1 == 1;
+    }
+
+    return token[0] == '-' && isdigit(token[1]) != 0;
+}
+
+bool token_eq(char* left, char* right) {
+    usize i = 0;
+    while (left[i] == right[i]) {
+        if (left[i] == '\0') {
+            return 1 == 1;
+        }
+
+        i++;
+    }
+
+    return 1 == 0;
+}
+
+char* copy_range(const char* source, usize start, usize end) {
+    usize length = end - start;
+    char* result = malloc(length + 1);
+
+    for (usize i = 0; i < length; i++) {
+        result[i] = source[start + i];
+    }
+
+    result[length] = '\0';
+    return result;
+}
+
+string string_from_owned_token(char* token) {
+    string result = string::new();
+    result.append((const char*) token);
+    result.data[result.length] = '\0';
+    free(token);
+    return move result;
+}
+
+char parser::peek(*this) {
+    return this.source[this.pos];
+}
+
+char parser::advance(*this) {
+    char c = this.peek();
+    this.pos++;
+    return c;
+}
+
+void parser::skip_ws(*this) {
+    while (isspace(this.peek()) != 0) {
+        this.advance();
+    }
+}
+
+void parser::expect(*this, char expected) {
+    this.skip_ws();
+    char got = this.advance();
+    if (got != expected) {
+        printf("Parse error: expected '%c', got '%c'\n", expected, got);
+        exit(1);
+    }
+}
+
+char* parser::parse_token(*this) {
+    this.skip_ws();
+    usize start = this.pos;
+
+    while (!is_delimiter(this.peek())) {
+        this.advance();
+    }
+
+    return copy_range(this.source, start, this.pos);
+}
+
+string parser::parse_name(*this) {
+    return string_from_owned_token(this.parse_token());
+}
+
+char* parser::parse_string_literal(*this) {
+    this.skip_ws();
+    this.expect('"');
+
+    usize start = this.pos;
+    while (this.peek() != '"' && this.peek() != '\0') {
+        this.advance();
+    }
+
+    char* result = copy_range(this.source, start, this.pos);
+    this.expect('"');
+    return result;
+}
+
+lisp_node parser::parse_program(*this) {
+    vector<lisp_node> body = vector<lisp_node>::new<lisp_node>();
+
+    this.skip_ws();
+    while (this.peek() != '\0') {
+        lisp_node expr = this.parse_expr();
+        body.push<lisp_node>(move expr);
+        this.skip_ws();
+    }
+
+    return lisp_node::Program(move body);
+}
+
+lisp_node parser::parse_expr(*this) {
+    this.skip_ws();
+
+    if (this.peek() == '(') {
+        return this.parse_list();
+    }
+
+    if (this.peek() == '"') {
+        return lisp_node::PrintStr(this.parse_string_literal());
+    }
+
+    char* token = this.parse_token();
+    if (is_number_token(token)) {
+        f64 value = atof(token);
+        free(token);
+        return lisp_node::Number(value);
+    }
+
+    return lisp_node::Symbol(string_from_owned_token(token));
+}
+
+vector<lisp_node> parser::parse_expr_list_until_close(*this) {
+    vector<lisp_node> exprs = vector<lisp_node>::new<lisp_node>();
+
+    this.skip_ws();
+    while (this.peek() != ')' && this.peek() != '\0') {
+        lisp_node expr = this.parse_expr();
+        exprs.push<lisp_node>(move expr);
+        this.skip_ws();
+    }
+
+    this.expect(')');
+    return move exprs;
+}
+
+vector<string> parser::parse_params(*this) {
+    vector<string> params = vector<string>::new<string>();
+
+    this.expect('(');
+    this.skip_ws();
+    while (this.peek() != ')' && this.peek() != '\0') {
+        string param = this.parse_name();
+        params.push<string>(move param);
+        this.skip_ws();
+    }
+    this.expect(')');
+
+    return move params;
+}
+
+lisp_node parser::parse_list(*this) {
+    this.expect('(');
+    char* op = this.parse_token();
+
+    if (token_eq(op, "fndef")) {
+        free(op);
+        string name = this.parse_name();
+        vector<string> params = this.parse_params();
+        vector<lisp_node> body = this.parse_expr_list_until_close();
+
+        return lisp_node::FnDef({
+            .name = move name,
+            .params = move params,
+            .body = move body
+        });
+    }
+
+    if (token_eq(op, "+")) {
+        free(op);
+        lisp_node left_node = this.parse_expr();
+        lisp_node right_node = this.parse_expr();
+        this.expect(')');
+
+        box<lisp_node> left = box<lisp_node>::new<lisp_node>(move left_node);
+        box<lisp_node> right = box<lisp_node>::new<lisp_node>(move right_node);
+
+        return lisp_node::Plus({
+            .left = move left,
+            .right = move right
+        });
+    }
+
+    if (token_eq(op, "-")) {
+        free(op);
+        lisp_node left_node = this.parse_expr();
+        lisp_node right_node = this.parse_expr();
+        this.expect(')');
+
+        box<lisp_node> left = box<lisp_node>::new<lisp_node>(move left_node);
+        box<lisp_node> right = box<lisp_node>::new<lisp_node>(move right_node);
+
+        return lisp_node::Minus({
+            .left = move left,
+            .right = move right
+        });
+    }
+
+    if (token_eq(op, "print-num")) {
+        free(op);
+        lisp_node value_node = this.parse_expr();
+        this.expect(')');
+
+        box<lisp_node> value = box<lisp_node>::new<lisp_node>(move value_node);
+        return lisp_node::PrintNum(move value);
+    }
+
+    if (token_eq(op, "print-str")) {
+        free(op);
+        char* value = this.parse_string_literal();
+        this.expect(')');
+        return lisp_node::PrintStr(value);
+    }
+
+    string name = string_from_owned_token(op);
+    vector<lisp_node> args = this.parse_expr_list_until_close();
+
+    return lisp_node::FnCall({
+        .name = move name,
+        .args = move args
+    });
+}

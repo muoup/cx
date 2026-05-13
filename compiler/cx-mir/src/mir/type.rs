@@ -964,6 +964,7 @@ impl MIRType {
         self.template_info = template_info.clone();
     }
 
+    // TODO: Remove size awareness from MIR, shift all size calculations to LMIR
     pub fn type_size(&self, definitions: &MIRTypeContext) -> usize {
         definitions.type_size(self)
     }

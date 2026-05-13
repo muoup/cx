@@ -1,3 +1,5 @@
+#pragma once
+
 #define NULL (void*)0
 
 typedef long size_t;

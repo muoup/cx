@@ -1,6 +1,7 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::functions::query::{
-    query_deduced_static_member_function, query_member_function, query_static_member_function,
+    query_deduced_member_function, query_deduced_static_member_function, query_member_function,
+    query_static_member_function,
 };
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::implicit_cast;
@@ -73,6 +74,16 @@ fn resolve_scoped_type_and_method<'a>(
     Ok((mir_type, method_name, template_input))
 }
 
+fn tagged_union_has_variant(env: &TypeEnvironment, union_type: &MIRType, name: &CXIdent) -> bool {
+    union_type
+        .aggregate_fields(&env.symbols.context)
+        .is_some_and(|variants| {
+            variants
+                .iter()
+                .any(|(variant_name, _)| variant_name == name.as_str())
+        })
+}
+
 pub(crate) fn typecheck_type_constructor(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -127,69 +138,95 @@ pub(crate) fn typecheck_scoped_call(
     let (mir_type, method_name, template_input) =
         resolve_scoped_type_and_method(env, base_data, type_expr, method_expr, expr)?;
 
-    if mir_type.is_tagged_union() {
-        if template_input.is_some() {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Tagged union constructors may not use template arguments after scope resolution"
-            );
-        }
-
-        return typecheck_type_constructor(env, base_data, expr, &mir_type, method_name, args_expr);
-    }
-
-    let tc_args = comma_separated(env, base_data, args_expr)?;
-    let arg_types = &tc_args
-        .iter()
-        .map(|(_, val)| val.get_type())
-        .collect::<Vec<_>>();
-
-    let prototype = if let Some(template_input) = template_input {
-        let Some(prototype) = query_static_member_function(
+    if let Some(template_input) = template_input {
+        let prototype = if let Some(prototype) = query_static_member_function(
             env,
             base_data,
             expr,
             &mir_type,
             method_name,
             Some(template_input),
-        )?
-        else {
+        )? {
+            prototype
+        } else if let Some(prototype) = query_member_function(
+            env,
+            base_data,
+            expr,
+            &mir_type,
+            method_name,
+            Some(template_input),
+        )? {
+            prototype
+        } else {
             return log_typecheck_error!(
                 env,
                 expr.token_range(),
-                "Static member function '{}::{}<...>' not found",
+                "Scoped function '{}::{}<...>' not found",
                 mir_type.display_with(&env.symbols.context),
                 method_name
             );
         };
-        prototype
-    } else if let Some(prototype) = query_deduced_static_member_function(
-        env,
-        base_data,
-        expr,
-        &mir_type,
-        method_name,
-        arg_types,
-    )? {
-        prototype
-    } else {
-        let Some(prototype) =
-            query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
-        else {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Static member function '{}::{}' not found",
-                mir_type.display_with(&env.symbols.context),
-                method_name
-            );
-        };
-        prototype
-    };
 
-    let function = TypecheckResult::from(build_function_reference(&prototype));
-    finish_function_call(env, base_data, expr, function, tc_args)
+        let tc_args = comma_separated(env, base_data, args_expr)?;
+        let function = TypecheckResult::from(build_function_reference(&prototype));
+        return finish_function_call(env, base_data, expr, function, tc_args);
+    } else {
+        let exact_prototype = if let Some(prototype) =
+            query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
+        {
+            Some(prototype)
+        } else {
+            query_member_function(env, base_data, expr, &mir_type, method_name, None)?
+        };
+
+        if exact_prototype.is_none()
+            && mir_type.is_tagged_union()
+            && tagged_union_has_variant(env, &mir_type, method_name)
+        {
+            return typecheck_type_constructor(
+                env,
+                base_data,
+                expr,
+                &mir_type,
+                method_name,
+                args_expr,
+            );
+        }
+
+        let tc_args = comma_separated(env, base_data, args_expr)?;
+        let arg_types = &tc_args
+            .iter()
+            .map(|(_, val)| val.get_type())
+            .collect::<Vec<_>>();
+
+        let prototype = if let Some(prototype) = query_deduced_static_member_function(
+            env,
+            base_data,
+            expr,
+            &mir_type,
+            method_name,
+            arg_types,
+        )? {
+            prototype
+        } else if let Some(prototype) =
+            query_deduced_member_function(env, base_data, expr, &mir_type, method_name, arg_types)?
+        {
+            prototype
+        } else if let Some(prototype) = exact_prototype {
+            prototype
+        } else {
+            return log_typecheck_error!(
+                env,
+                expr.token_range(),
+                "Scoped function '{}::{}' not found",
+                mir_type.display_with(&env.symbols.context),
+                method_name
+            );
+        };
+
+        let function = TypecheckResult::from(build_function_reference(&prototype));
+        finish_function_call(env, base_data, expr, function, tc_args)
+    }
 }
 
 pub(crate) fn typecheck_scoped_reference(

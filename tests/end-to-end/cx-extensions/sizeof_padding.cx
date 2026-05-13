@@ -1,0 +1,16 @@
+#include <stdio.h>
+
+struct Padded {
+    char c;
+    double d;
+};
+
+enum union Tagged {
+    small :: char,
+    large :: Padded
+};
+
+int main() {
+    printf("%lu %lu\n", sizeof(Padded), sizeof(Tagged));
+    return 0;
+}

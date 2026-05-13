@@ -17,7 +17,7 @@ pub(crate) fn typecheck_sizeof_type(
     ty: &CXType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = env.complete_type(base_data, expr, ty)?;
-    Ok(sizeof_result(tc_type.type_size(&env.symbols.context)))
+    Ok(sizeof_result(tc_type.padded_size(&env.symbols.context)))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -27,7 +27,7 @@ pub(crate) fn typecheck_sizeof_expr(
 ) -> CXResult<TypecheckResult> {
     let tc_expr = typecheck_expr(env, base_data, expr, None)?;
     Ok(sizeof_result(
-        tc_expr.get_type().type_size(&env.symbols.context),
+        tc_expr.get_type().padded_size(&env.symbols.context),
     ))
 }
 
