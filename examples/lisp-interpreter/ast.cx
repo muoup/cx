@@ -20,11 +20,11 @@ enum union lisp_node : @nodrop {
     FnDef       :: struct : @nodrop {
         string name;
         vector<string> params;
-        vector<box<lisp_node>> body;
+        vector<lisp_node> body;
     },
     FnCall      :: struct : @nodrop {
         string name;
-        vector<box<lisp_node>> args;
+        vector<lisp_node> args;
     },
     Plus        :: struct : @nodrop {
         box<lisp_node> left;
@@ -60,7 +60,7 @@ void interpret(lisp_node* node) {
 void run(const char* source) {
     box<lisp_node> node = parse(source);
     interpret(node.ptr);
-    node.drop_with<lisp_node>(drop_lisp_node);
+    node.drop_with<lisp_node>(lisp_node::drop);
 }
 
 private:
@@ -128,10 +128,6 @@ char* copy_range(const char* source, usize start, usize end) {
 
     result[length] = '\0';
     return result;
-}
-
-box<lisp_node> box_node(lisp_node node) {
-    return box<lisp_node>::new<lisp_node>(move node);
 }
 
 char parser::peek(*this) {
@@ -228,7 +224,7 @@ vector<box<lisp_node>> parser::parse_expr_list_until_close(*this) {
     this.skip_ws();
     while (this.peek() != ')' && this.peek() != '\0') {
         box<lisp_node> expr = this.parse_expr();
-        exprs.push<box<lisp_node>>(move expr);
+        exprs.push(box::new(move expr));
         this.skip_ws();
     }
 

@@ -22,6 +22,13 @@ T& box<T>::deref_mut<T>(*this) safe {
     return @unsafe(*(this.ptr));
 }
 
+// TODO: Bound this type as not @pinned when that feature is added
+T box<T>::unwrap(this) safe {
+    T inner = move @adopt(*this.ptr);
+    @leak(this);
+    return inner;
+}
+
 T* box<T>::leak<T>(this) {
     T* ptr = this.ptr;
     @leak(this);
