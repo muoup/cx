@@ -1,6 +1,7 @@
 import std::box;
 import std::vector;
 import std::io;
+import std::string;
 
 #include <stdlib.h>
 #include <ctype.h>

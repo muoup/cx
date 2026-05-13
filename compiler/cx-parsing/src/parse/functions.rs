@@ -165,10 +165,10 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
                 }
 
                 data.tokens.next();
-                assert_token_matches!(data.tokens, punctuator!(Colon));
-                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+                assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
                 contract.precondition = Some(expr);
             }
@@ -186,16 +186,16 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<CXFunct
                     assert_token_matches!(data.tokens, identifier!(ret));
                     let name = CXIdent::new(ret.as_str());
 
-                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                     Some(name)
                 } else {
                     None
                 };
 
-                assert_token_matches!(data.tokens, punctuator!(Colon));
-                assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+                assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
                 contract.postcondition = Some((return_val_name, expr));
             }
@@ -276,7 +276,7 @@ pub(crate) struct ParseParamsResult {
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult> {
-    assert_token_matches!(data.tokens, punctuator!(OpenParen));
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
     let mut params = Vec::new();
     let mut receiver = None;
@@ -304,7 +304,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
     }
 
     if receiver.is_some() && !try_next!(data.tokens, operator!(Comma)) {
-        assert_token_matches!(data.tokens, punctuator!(CloseParen));
+        assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
         let contract = parse_function_contract(data)?;
 
         return Ok(ParseParamsResult {
@@ -317,7 +317,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             let contract = parse_function_contract(data)?;
 
             return Ok(ParseParamsResult {
@@ -334,7 +334,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
         params.push(CXParameter { name, _type });
 
         if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseParen));
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
             break;
         }
     }

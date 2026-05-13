@@ -72,7 +72,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
 }
 
 pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
-    assert_token_matches!(data.tokens, keyword!(Typedef));
+    assert_token_matches!(data.tokens, keyword!(Typedef), "'typedef'");
     let start_index = data.tokens.index;
 
     let template_prototype = if matches!(peek_next_kind!(data.tokens)?, operator!(Less)) {
@@ -90,7 +90,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         );
     };
 
-    assert_token_matches!(data.tokens, punctuator!(Semicolon));
+    assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
     data.add_type(name.as_string(), _type, template_prototype);
     Ok(())
@@ -143,7 +143,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     let Some(name) = name else {
         // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
 
-        assert_token_matches!(data.tokens, punctuator!(Semicolon));
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
         return Ok(());
     };
 
@@ -161,7 +161,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     match next_kind!(data.tokens)? {
         TokenKind::Assignment(_) => {
             let initial_value = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(Semicolon));
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             data.add_global_variable(
                 name.as_string(),
                 CXGlobalVariable::Standard {
@@ -206,7 +206,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
             let stmt = parse_expr(data)?;
 
             if expression_requires_semicolon(&stmt) {
-                assert_token_matches!(data.tokens, punctuator!(Semicolon));
+                assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             }
 
             body.push(stmt);
@@ -221,7 +221,7 @@ fn parse_body(data: &mut ParserData) -> CXResult<CXExpression> {
         let body = parse_expr(data)?;
 
         if expression_requires_semicolon(&body) {
-            assert_token_matches!(data.tokens, punctuator!(Semicolon));
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
         }
 
         Ok(body)

@@ -55,7 +55,7 @@ pub(crate) fn try_parse_template(tokens: &mut TokenIter) -> CXResult<Option<CXTe
 }
 
 pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTemplatePrototype> {
-    assert_token_matches!(tokens, operator!(Less));
+    assert_token_matches!(tokens, operator!(Less), "'<'");
 
     let mut type_decls = Vec::new();
 
@@ -69,7 +69,7 @@ pub(crate) fn parse_template_prototype(tokens: &mut TokenIter) -> CXResult<CXTem
         }
     }
 
-    assert_token_matches!(tokens, operator!(Greater));
+    assert_token_matches!(tokens, operator!(Greater), "'>'");
 
     Ok(CXTemplatePrototype { types: type_decls })
 }
@@ -91,7 +91,7 @@ pub(crate) fn convert_template_proto_to_args(prototype: CXTemplatePrototype) -> 
 }
 
 pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateInput> {
-    assert_token_matches!(data.tokens, operator!(Less));
+    assert_token_matches!(data.tokens, operator!(Less), "'<'");
 
     let mut inputtype_s = Vec::new();
 
@@ -107,7 +107,7 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<CXTemplateI
         }
     }
 
-    assert_token_matches!(data.tokens, operator!(Greater));
+    assert_token_matches!(data.tokens, operator!(Greater), "'>'");
 
     Ok(CXTemplateInput {
         params: inputtype_s,

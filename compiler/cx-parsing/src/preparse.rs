@@ -99,12 +99,12 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         specifier!(Public) => {
             data.visibility_mode = VisibilityMode::Public;
-            assert_token_matches!(data.tokens, punctuator!(Colon));
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         specifier!(Private) => {
             data.visibility_mode = VisibilityMode::Private;
-            assert_token_matches!(data.tokens, punctuator!(Colon));
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         }
 
         _ => (),
@@ -114,7 +114,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 }
 
 fn parse_import(tokens: &mut TokenIter) -> CXResult<ModulePath> {
-    assert_token_matches!(tokens, keyword!(Import));
+    assert_token_matches!(tokens, keyword!(Import), "'import'");
 
     let mut import_path = String::new();
 

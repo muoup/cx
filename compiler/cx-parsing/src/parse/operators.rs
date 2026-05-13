@@ -97,7 +97,8 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
 
             assert_token_matches!(
                 data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen)
+                TokenKind::Punctuator(PunctuatorType::CloseParen),
+                "')'"
             );
 
             Some(CXUnOp::ExplicitCast(_type))

@@ -29,10 +29,10 @@ fn parse_type_attributes(data: &mut ParserData, kind_name: &str) -> CXResult<CXS
                 "nocopy" => attributes.nocopy = true,
                 "nodrop" => attributes.nodrop = true,
                 "copy_traits" => {
-                    assert_token_matches!(data.tokens, punctuator!(OpenParen));
+                    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                     assert_token_matches!(data.tokens, identifier!(type_param));
                     let type_param = type_param.clone();
-                    assert_token_matches!(data.tokens, punctuator!(CloseParen));
+                    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                     attributes.copy_traits = Some(type_param);
                 }
                 _ => return log_parse_error!(data, "Unknown {kind_name} attribute '@{}'", attr),
@@ -122,7 +122,7 @@ fn defined_type(
 }
 
 pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
-    assert_token_matches!(data.tokens, keyword!(Struct));
+    assert_token_matches!(data.tokens, keyword!(Struct), "'struct'");
 
     let name = try_parse_ident(&mut data.tokens);
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -140,7 +140,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         fields.push(parse_aggregate_field(data)?);
-        assert_token_matches!(data.tokens, punctuator!(Semicolon));
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
     }
 
     if let Some(template_prototype) = &template_prototype {
@@ -162,7 +162,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<CXType> {
 }
 
 pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
-    assert_token_matches!(data.tokens, keyword!(Enum));
+    assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
     let enum_start_index = data.tokens.index - 1;
 
     if peek_kind!(data.tokens, keyword!(Union)) {
@@ -198,7 +198,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
         });
 
         if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseBrace));
+            assert_token_matches!(data.tokens, punctuator!(CloseBrace), "'}'");
             break;
         }
     }
@@ -223,8 +223,8 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<CXType> {
 }
 
 pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> {
-    assert_token_matches!(data.tokens, keyword!(Enum));
-    assert_token_matches!(data.tokens, keyword!(Union));
+    assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
+    assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let Some(name) = try_parse_ident(&mut data.tokens) else {
         return log_preparse_error!(data.tokens, "Tagged unions must have a name");
@@ -233,7 +233,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
     let template_prototype = try_parse_template(&mut data.tokens)?;
     let attributes = parse_type_attributes(data, "enum union")?;
 
-    assert_token_matches!(data.tokens, punctuator!(OpenBrace));
+    assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
     let mut variants = Vec::new();
 
@@ -242,7 +242,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
             return log_preparse_error!(data.tokens, "Expected variant name in tagged union");
         };
 
-        assert_token_matches!(data.tokens, operator!(ScopeRes));
+        assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
 
         match parse_initializer(data) {
             // Success Path = Valid Type + No Name
@@ -264,7 +264,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
         }
 
         if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseBrace));
+            assert_token_matches!(data.tokens, punctuator!(CloseBrace), "'}'");
             break;
         }
     }
@@ -284,7 +284,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<CXType> 
 }
 
 pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
-    assert_token_matches!(data.tokens, keyword!(Union));
+    assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let name = try_parse_ident(&mut data.tokens);
     let template_prototype = try_parse_template(&mut data.tokens)?;
@@ -297,7 +297,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<CXType> {
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
         fields.push(parse_aggregate_field(data)?);
-        assert_token_matches!(data.tokens, punctuator!(Semicolon));
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
     }
 
     defined_type(
@@ -354,7 +354,7 @@ pub(crate) fn parse_type_mods(
     match &next_tok.kind {
         keyword!(Weak) => {
             data.tokens.next();
-            assert_token_matches!(data.tokens, operator!(Asterisk));
+            assert_token_matches!(data.tokens, operator!(Asterisk), "'*'");
 
             let specs = parse_specifier(&mut data.tokens);
             let acc_type = CXType::new(
@@ -396,7 +396,8 @@ pub(crate) fn parse_type_mods(
             let name = try_parse_ident(&mut data.tokens);
             assert_token_matches!(
                 data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen)
+                TokenKind::Punctuator(PunctuatorType::CloseParen),
+                "')'"
             );
 
             let ParseParamsResult {
@@ -462,7 +463,7 @@ pub(crate) fn parse_type_suffix_mod(
                 acc_type = CXTypeKind::ImplicitSizedArray(Box::new(acc_type)).to_type();
             } else {
                 let inner = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseBracket));
+                assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
 
                 acc_type =
                     CXTypeKind::ExplicitSizedArray(Box::new(acc_type), Box::new(inner)).to_type();
