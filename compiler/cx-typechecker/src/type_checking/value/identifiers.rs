@@ -22,20 +22,22 @@ pub(crate) fn typecheck_identifier(
     name: &CXIdent,
 ) -> CXResult<TypecheckResult> {
     if let Some(symbol) = env.symbols.resolve_value_symbol(name.as_str()) {
-        resolved_symbol_to_typecheck_result(env, expr, name, symbol)
-    } else if let Some(function_type) = env
-        .get_realized_func(&base_mangle_standard(name.as_str()))
-        .map(Ok)
-        .or_else(|| {
+        return resolved_symbol_to_typecheck_result(env, expr, name, symbol);
+    }
+
+    let function_type =
+        if let Some(function_type) = env.get_realized_func(&base_mangle_standard(name.as_str())) {
+            Some(function_type)
+        } else {
             let key = cx_ast::data::CXFunctionKey::Standard(name.clone());
             if base_data.fn_data.is_key_any(&key) {
-                Some(env.get_standard_function(base_data, expr, name, None))
+                env.get_standard_function(base_data, expr, name, None)?
             } else {
                 None
             }
-        })
-        .transpose()?
-    {
+        };
+
+    if let Some(function_type) = function_type {
         env.symbols
             .insert_function_symbol(name.clone(), function_type.clone());
         Ok(TypecheckResult::from(MIRExpression {
@@ -94,7 +96,15 @@ pub(crate) fn typecheck_templated_identifier(
     name: &CXIdent,
     template_input: &CXTemplateInput,
 ) -> CXResult<TypecheckResult> {
-    let function = env.get_standard_function(base_data, expr, name, Some(template_input))?;
+    let Some(function) = env.get_standard_function(base_data, expr, name, Some(template_input))?
+    else {
+        return log_typecheck_error!(
+            env,
+            Some(expr.token_range()),
+            "Function '{}' not found",
+            name
+        );
+    };
 
     Ok(TypecheckResult::from(MIRExpression {
         token_range: None,

@@ -2,7 +2,9 @@ use cx_ast::{
     assert_token_matches,
     ast::VisibilityMode,
     ast::{CXExprKind, CXExpression, CXFunctionStmt, CXGlobalVariable, CXAST},
-    data::{CXFunctionPrototype, CXTemplatePrototype},
+    data::{
+        CXFunctionKind, CXFunctionPrototype, CXFunctionTypeIdent, CXTemplatePrototype, CXTypeKind,
+    },
     next_kind, peek_next_kind, try_next, PreparseContents,
 };
 use cx_tokens::{
@@ -19,6 +21,40 @@ use crate::parse::{
     templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
     types::{parse_initializer, parse_typedef_initializer},
 };
+
+fn active_body_template_prototype(
+    prototype: &CXFunctionPrototype,
+    function_template: Option<&CXTemplatePrototype>,
+) -> Option<CXTemplatePrototype> {
+    let mut types = Vec::new();
+
+    let member_type = match &prototype.kind {
+        CXFunctionKind::MemberFunction { member_type, .. }
+        | CXFunctionKind::StaticMemberFunction { member_type, .. } => Some(member_type),
+        CXFunctionKind::Standard(_) => None,
+    };
+
+    if let Some(CXFunctionTypeIdent::Templated(_, input)) = member_type {
+        for param in &input.params {
+            if let CXTypeKind::Identifier { name, .. } = &param.kind {
+                let name = name.as_string();
+                if !types.contains(&name) {
+                    types.push(name);
+                }
+            }
+        }
+    }
+
+    if let Some(function_template) = function_template {
+        for name in &function_template.types {
+            if !types.contains(name) {
+                types.push(name.clone());
+            }
+        }
+    }
+
+    (!types.is_empty()).then_some(CXTemplatePrototype { types })
+}
 
 mod expressions;
 mod functions;
@@ -108,11 +144,17 @@ fn parse_fn_merge(
 
         data.add_function(prototype, None);
     } else {
+        let body_template = active_body_template_prototype(&prototype, template_prototype.as_ref());
+
         match template_prototype {
             Some(template_prototype) => {
-                note_templated_types(data, &template_prototype);
+                if let Some(body_template) = &body_template {
+                    note_templated_types(data, body_template);
+                }
                 let body = parse_body(data)?;
-                unnote_templated_types(data, &template_prototype);
+                if let Some(body_template) = &body_template {
+                    unnote_templated_types(data, body_template);
+                }
 
                 data.add_function(prototype.clone(), Some(template_prototype.clone()));
                 data.add_function_stmt(CXFunctionStmt::TemplatedFunction {
@@ -123,7 +165,13 @@ fn parse_fn_merge(
             }
 
             None => {
+                if let Some(body_template) = &body_template {
+                    note_templated_types(data, body_template);
+                }
                 let body = parse_body(data)?;
+                if let Some(body_template) = &body_template {
+                    unnote_templated_types(data, body_template);
+                }
 
                 data.add_function(prototype.clone(), None);
                 data.add_function_stmt(CXFunctionStmt::FunctionDefinition {

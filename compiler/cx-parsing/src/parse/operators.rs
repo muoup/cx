@@ -1,6 +1,7 @@
 use crate::parse::ParserData;
 use cx_ast::ast::{CXBinOp, CXUnOp};
-use cx_ast::{assert_token_matches, next_kind};
+use cx_ast::next_kind;
+use cx_tokens::punctuator;
 use cx_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use cx_util::CXResult;
 
@@ -82,7 +83,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
         },
 
         // Maybe a type cast
-        TokenKind::Punctuator(PunctuatorType::OpenParen) => {
+        punctuator!(OpenParen) => {
             let pre_index = data.tokens.index - 1;
 
             if !is_type_decl(data) {
@@ -95,11 +96,13 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<CXUnOp
                 return Ok(None);
             };
 
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen),
-                "')'"
-            );
+            if !matches!(
+                data.tokens.next().map(|t| &t.kind),
+                Some(punctuator!(CloseParen))
+            ) {
+                data.tokens.index = pre_index;
+                return Ok(None);
+            }
 
             Some(CXUnOp::ExplicitCast(_type))
         }

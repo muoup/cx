@@ -115,7 +115,17 @@ pub(crate) fn typecheck_access(
                 return Ok(result);
             }
 
-            let prototype = env.get_member_function(base_data, expr, &lhs_inner, name, None)?;
+            let Some(prototype) =
+                env.get_member_function(base_data, expr, &lhs_inner, name, None)?
+            else {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Member '{}' not found on type '{}'",
+                    name,
+                    lhs_inner.display_with(&env.symbols.context)
+                );
+            };
             let receiver = build_member_receiver_argument(
                 env,
                 expr,
@@ -134,8 +144,17 @@ pub(crate) fn typecheck_access(
             name,
             template_input,
         } => {
-            let prototype =
-                env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?;
+            let Some(prototype) =
+                env.get_member_function(base_data, expr, &lhs_inner, name, Some(template_input))?
+            else {
+                return log_typecheck_error!(
+                    env,
+                    Some(expr.token_range()),
+                    "Member function '{}<...>' not found on type '{}'",
+                    name,
+                    lhs_inner.display_with(&env.symbols.context)
+                );
+            };
             let receiver = build_member_receiver_argument(
                 env,
                 expr,

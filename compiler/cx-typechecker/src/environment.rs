@@ -196,7 +196,7 @@ impl TypeEnvironment<'_> {
         expr: &CXExpression,
         key: &CXIdent,
         template_input: Option<&CXTemplateInput>,
-    ) -> CXResult<MIRFunctionPrototype> {
+    ) -> CXResult<Option<MIRFunctionPrototype>> {
         query_standard_function(self, base_data, expr, key, template_input)
     }
 
@@ -207,7 +207,7 @@ impl TypeEnvironment<'_> {
         member_type: &MIRType,
         name: &CXIdent,
         template_input: Option<&CXTemplateInput>,
-    ) -> CXResult<MIRFunctionPrototype> {
+    ) -> CXResult<Option<MIRFunctionPrototype>> {
         query_member_function(self, base_data, expr, member_type, name, template_input)
     }
 

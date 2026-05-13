@@ -282,7 +282,21 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                 }
             };
 
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let scope_res_expr = CXExprKind::BinOp {
+                lhs: Box::new(type_expr),
+                rhs: Box::new(variant_expr),
+                op: CXBinOp::ScopeRes,
+            }
+            .into_expr_with_origin(
+                start_index,
+                data.tokens.index,
+                data.file_origin_for_range(start_index, data.tokens.index),
+            );
+
+            if !try_next!(data.tokens, punctuator!(OpenParen)) {
+                decls.push(scope_res_expr);
+                break;
+            }
 
             // FIXME: Unify this logic with the logic for creating a argument list for a function call.
             let inner_expr = if try_next!(data.tokens, punctuator!(CloseParen)) {
@@ -298,17 +312,6 @@ pub(crate) fn parse_declaration(data: &mut ParserData) -> CXResult<CXExpression>
                 assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                 inner_expr
             };
-
-            let scope_res_expr = CXExprKind::BinOp {
-                lhs: Box::new(type_expr),
-                rhs: Box::new(variant_expr),
-                op: CXBinOp::ScopeRes,
-            }
-            .into_expr_with_origin(
-                start_index,
-                data.tokens.index,
-                data.file_origin_for_range(start_index, data.tokens.index),
-            );
 
             let method_call_expr = CXExprKind::BinOp {
                 lhs: Box::new(scope_res_expr),
@@ -441,7 +444,6 @@ pub(crate) fn parse_expr_val(
     op_stack: &mut Vec<PrecOperator>,
 ) -> CXResult<()> {
     let start_index = data.tokens.index;
-
     if is_type_decl(data) {
         expr_stack.push(parse_declaration(data)?);
         return Ok(());
@@ -575,28 +577,46 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<CXExpress
         return log_parse_error!(data, "Expected identifier");
     };
 
-    if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
+    let lhs = if !matches!(next_kind!(data.tokens)?, operator!(Less)) || !is_type_decl(data) {
         data.tokens.back();
-        return Ok(CXExprKind::Identifier(ident).into_expr_with_origin(
+        CXExprKind::Identifier(ident).into_expr_with_origin(
             start_index,
             data.tokens.index,
             data.file_origin_for_range(start_index, data.tokens.index),
+        )
+    } else {
+        data.tokens.back();
+
+        let args = parse_template_args(data)?;
+
+        CXExprKind::TemplatedIdentifier {
+            name: ident,
+            template_input: args,
+        }
+        .into_expr_with_origin(
+            start_index,
+            data.tokens.index,
+            data.file_origin_for_range(start_index, data.tokens.index),
+        )
+    };
+
+    if try_next!(data.tokens, operator!(ScopeRes)) {
+        let rhs = parse_expr_identifier(data)?;
+        let end_index = rhs.range.end_token;
+
+        return Ok(CXExprKind::BinOp {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            op: CXBinOp::ScopeRes,
+        }
+        .into_expr_with_origin(
+            start_index,
+            end_index,
+            data.file_origin_for_range(start_index, end_index),
         ));
     }
 
-    data.tokens.back();
-
-    let args = parse_template_args(data)?;
-
-    Ok(CXExprKind::TemplatedIdentifier {
-        name: ident,
-        template_input: args,
-    }
-    .into_expr_with_origin(
-        start_index,
-        data.tokens.index,
-        data.file_origin_for_range(start_index, data.tokens.index),
-    ))
+    Ok(lhs)
 }
 
 pub(crate) fn parse_keyword_expr(data: &mut ParserData) -> CXResult<CXExpression> {

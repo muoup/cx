@@ -1,0 +1,20 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+void Resource::drop(this) {
+    @leak(this);
+}
+
+void destroy_with(void (*destructor)(Resource)) {
+    Resource value = (Resource) {
+        .value = 1
+    };
+
+    destructor(move value);
+}
+
+int main() {
+    destroy_with(Resource::drop);
+    return 0;
+}

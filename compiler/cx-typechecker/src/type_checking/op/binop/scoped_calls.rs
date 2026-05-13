@@ -1,6 +1,6 @@
 use crate::environment::TypeEnvironment;
 use crate::environment::functions::query::{
-    query_deduced_static_member_function, query_static_member_function,
+    query_deduced_static_member_function, query_member_function, query_static_member_function,
 };
 use crate::log_typecheck_error;
 use crate::type_checking::coercion::implicit::implicit_cast;
@@ -16,6 +16,62 @@ use cx_mir::mir::data::MIRType;
 use cx_mir::mir::expression::MIRExpressionKind;
 use cx_mir::mir::program::MIRBaseMappings;
 use cx_util::{CXResult, identifier::CXIdent};
+
+fn resolve_scoped_type_and_method<'a>(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    type_expr: &CXExpression,
+    method_expr: &'a CXExpression,
+    expr: &CXExpression,
+) -> CXResult<(
+    MIRType,
+    &'a CXIdent,
+    Option<&'a cx_ast::data::CXTemplateInput>,
+)> {
+    let mir_type = match &type_expr.kind {
+        CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, name.as_str())?,
+
+        CXExprKind::TemplatedIdentifier {
+            name,
+            template_input,
+        } => {
+            let cx_type = CXTypeKind::TemplatedIdentifier {
+                name: name.clone(),
+                input: template_input.clone(),
+            }
+            .to_type();
+
+            env.complete_type(base_data, type_expr, &cx_type)?
+        }
+
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr.token_range(),
+                "Expected a type identifier before scope resolution operator, found {:?}",
+                type_expr
+            );
+        }
+    };
+
+    let (method_name, template_input) = match &method_expr.kind {
+        CXExprKind::Identifier(method_name) => (method_name, None),
+        CXExprKind::TemplatedIdentifier {
+            name,
+            template_input,
+        } => (name, Some(template_input)),
+        _ => {
+            return log_typecheck_error!(
+                env,
+                expr.token_range(),
+                "Expected identifier after scope resolution operator, found {:?}",
+                method_expr
+            );
+        }
+    };
+
+    Ok((mir_type, method_name, template_input))
+}
 
 pub(crate) fn typecheck_type_constructor(
     env: &mut TypeEnvironment,
@@ -68,47 +124,8 @@ pub(crate) fn typecheck_scoped_call(
     args_expr: &CXExpression,
     expr: &CXExpression,
 ) -> CXResult<TypecheckResult> {
-    let mir_type = match &type_expr.kind {
-        CXExprKind::Identifier(name) => env.get_type(base_data, type_expr, name.as_str())?,
-
-        CXExprKind::TemplatedIdentifier {
-            name,
-            template_input,
-        } => {
-            let cx_type = CXTypeKind::TemplatedIdentifier {
-                name: name.clone(),
-                input: template_input.clone(),
-            }
-            .to_type();
-
-            env.complete_type(base_data, type_expr, &cx_type)?
-        }
-
-        _ => {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Expected a type identifier before scope resolution operator, found {:?}",
-                type_expr
-            );
-        }
-    };
-
-    let (method_name, template_input) = match &method_expr.kind {
-        CXExprKind::Identifier(method_name) => (method_name, None),
-        CXExprKind::TemplatedIdentifier {
-            name,
-            template_input,
-        } => (name, Some(template_input)),
-        _ => {
-            return log_typecheck_error!(
-                env,
-                expr.token_range(),
-                "Expected identifier after scope resolution operator, found {:?}",
-                method_expr
-            );
-        }
-    };
+    let (mir_type, method_name, template_input) =
+        resolve_scoped_type_and_method(env, base_data, type_expr, method_expr, expr)?;
 
     if mir_type.is_tagged_union() {
         if template_input.is_some() {
@@ -129,7 +146,7 @@ pub(crate) fn typecheck_scoped_call(
         .collect::<Vec<_>>();
 
     let prototype = if let Some(template_input) = template_input {
-        query_static_member_function(
+        let Some(prototype) = query_static_member_function(
             env,
             base_data,
             expr,
@@ -137,6 +154,16 @@ pub(crate) fn typecheck_scoped_call(
             method_name,
             Some(template_input),
         )?
+        else {
+            return log_typecheck_error!(
+                env,
+                expr.token_range(),
+                "Static member function '{}::{}<...>' not found",
+                mir_type.display_with(&env.symbols.context),
+                method_name
+            );
+        };
+        prototype
     } else if let Some(prototype) = query_deduced_static_member_function(
         env,
         base_data,
@@ -147,9 +174,61 @@ pub(crate) fn typecheck_scoped_call(
     )? {
         prototype
     } else {
-        query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
+        let Some(prototype) =
+            query_static_member_function(env, base_data, expr, &mir_type, method_name, None)?
+        else {
+            return log_typecheck_error!(
+                env,
+                expr.token_range(),
+                "Static member function '{}::{}' not found",
+                mir_type.display_with(&env.symbols.context),
+                method_name
+            );
+        };
+        prototype
     };
 
     let function = TypecheckResult::from(build_function_reference(&prototype));
     finish_function_call(env, base_data, expr, function, tc_args)
+}
+
+pub(crate) fn typecheck_scoped_reference(
+    env: &mut TypeEnvironment,
+    base_data: &MIRBaseMappings,
+    type_expr: &CXExpression,
+    method_expr: &CXExpression,
+    expr: &CXExpression,
+) -> CXResult<TypecheckResult> {
+    let (mir_type, method_name, template_input) =
+        resolve_scoped_type_and_method(env, base_data, type_expr, method_expr, expr)?;
+
+    if let Some(prototype) =
+        query_static_member_function(env, base_data, expr, &mir_type, method_name, template_input)?
+    {
+        return Ok(TypecheckResult::from(build_function_reference(&prototype)));
+    }
+
+    if let Some(prototype) =
+        query_member_function(env, base_data, expr, &mir_type, method_name, template_input)?
+    {
+        return Ok(TypecheckResult::from(build_function_reference(&prototype)));
+    }
+
+    if mir_type.is_tagged_union() {
+        return log_typecheck_error!(
+            env,
+            expr.token_range(),
+            "Tagged union constructor '{}::{}' requires an argument list",
+            mir_type.display_with(&env.symbols.context),
+            method_name
+        );
+    }
+
+    log_typecheck_error!(
+        env,
+        expr.token_range(),
+        "Function '{}::{}' not found",
+        mir_type.display_with(&env.symbols.context),
+        method_name
+    )
 }

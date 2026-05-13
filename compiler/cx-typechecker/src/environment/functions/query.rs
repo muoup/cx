@@ -70,25 +70,6 @@ fn query_function_by_key(
     Ok(None)
 }
 
-fn require_function_by_key(
-    env: &mut TypeEnvironment,
-    base_data: &MIRBaseMappings,
-    expr: &CXExpression,
-    key: &CXFunctionKey,
-    resolution: FunctionResolution<'_>,
-) -> CXResult<MIRFunctionPrototype> {
-    let Some(prototype) = query_function_by_key(env, base_data, expr, key, resolution)? else {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "Function with key {} not found in base mappings",
-            key,
-        );
-    };
-
-    Ok(prototype)
-}
-
 pub fn query_member_function(
     env: &mut TypeEnvironment,
     base_data: &MIRBaseMappings,
@@ -96,22 +77,16 @@ pub fn query_member_function(
     member_type: &MIRType,
     name: &CXIdent,
     template_input: Option<&CXTemplateInput>,
-) -> CXResult<MIRFunctionPrototype> {
+) -> CXResult<Option<MIRFunctionPrototype>> {
     let Some(base_name) = member_type.get_base_identifier() else {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "Cannot query member function '{}' on non-identifiable type '{}'",
-            name,
-            member_type.display_with(&env.symbols.context),
-        );
+        return Ok(None);
     };
 
     if template_input.is_none() {
         let mangled_name = base_mangle_member(&env.symbols.context, name.as_str(), member_type);
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-            return Ok(func_proto);
+            return Ok(Some(func_proto));
         }
     }
 
@@ -120,7 +95,7 @@ pub fn query_member_function(
         name: name.clone(),
     };
 
-    require_function_by_key(
+    query_function_by_key(
         env,
         base_data,
         expr,
@@ -165,24 +140,18 @@ pub fn query_static_member_function(
     member_type: &MIRType,
     name: &CXIdent,
     template_input: Option<&CXTemplateInput>,
-) -> CXResult<MIRFunctionPrototype> {
+) -> CXResult<Option<MIRFunctionPrototype>> {
     if template_input.is_none() {
         let mangled_name =
             base_mangle_static_member(&env.symbols.context, name.as_str(), member_type);
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-            return Ok(func_proto);
+            return Ok(Some(func_proto));
         }
     }
 
     let Some(base_name) = member_type.get_base_identifier() else {
-        return log_typecheck_error!(
-            env,
-            expr.token_range(),
-            "Cannot query static member function '{}' on non-identifiable type '{}'",
-            name,
-            member_type.display_with(&env.symbols.context),
-        );
+        return Ok(None);
     };
 
     let key = CXFunctionKey::StaticMemberFunction {
@@ -190,7 +159,7 @@ pub fn query_static_member_function(
         name: name.clone(),
     };
 
-    require_function_by_key(
+    query_function_by_key(
         env,
         base_data,
         expr,
@@ -234,18 +203,18 @@ pub fn query_standard_function(
     expr: &CXExpression,
     name: &CXIdent,
     template_input: Option<&CXTemplateInput>,
-) -> CXResult<MIRFunctionPrototype> {
+) -> CXResult<Option<MIRFunctionPrototype>> {
     if template_input.is_none() {
         let mangled_name = base_mangle_standard(name.as_str());
 
         if let Some(func_proto) = env.get_realized_func(&mangled_name) {
-            return Ok(func_proto);
+            return Ok(Some(func_proto));
         }
     }
 
     let key = CXFunctionKey::Standard(name.clone());
 
-    require_function_by_key(
+    query_function_by_key(
         env,
         base_data,
         expr,
