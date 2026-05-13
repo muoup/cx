@@ -5,5 +5,6 @@
 (builtin_type) @type.builtin
 (keyword) @keyword
 (compiler_identifier) @keyword
+(operator) @operator
 
 (preprocessor_directive) @keyword
