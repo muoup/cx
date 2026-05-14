@@ -14,12 +14,12 @@ box<T> box<T>::new<T>(T value) safe {
     };
 }
 
-const T& box<T>::deref<T>(const *this) safe {
-    return @unsafe(*(this.ptr));
+const T& box<T>::deref<T>(const *this) {
+    return *(this.ptr);
 }
 
-T& box<T>::deref_mut<T>(*this) safe {
-    return @unsafe(*(this.ptr));
+T& box<T>::deref_mut<T>(*this) {
+    return *(this.ptr);
 }
 
 // TODO: Bound this type as not @pinned when that feature is added
