@@ -80,7 +80,6 @@ pub(crate) fn typecheck_is(
             union_name
         );
     };
-
     let inner_name = match inner {
         None => CXIdent::from(""),
         Some(inner) if matches!(inner.kind, CXExprKind::Unit) => CXIdent::from(""),

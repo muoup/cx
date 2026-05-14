@@ -1,4 +1,3 @@
-import std::ref;
 import std::optional;
 
 public:
@@ -65,15 +64,12 @@ opt<T> vector<T>::pop<T>(*this) {
     return move buffer;
 }
 
-// FIXME: Remove ref<T>
-opt<ref<T>> vector<T>::at<T>(*this, usize index) {
+opt<T&> vector<T>::at<T>(*this, usize index) {
     if (index >= this.length) {
-        return opt<ref<T>>::none();
+        return opt<T&>::none();
     }
 
-    return opt<ref<T>>::some(
-        @unsafe(ref<T>::new<T>(&this.data[index]))
-    );
+    return opt<T&>::some(this.data[index]);
 }
 
 private:

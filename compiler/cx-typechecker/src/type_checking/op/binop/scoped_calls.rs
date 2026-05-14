@@ -4,8 +4,7 @@ use crate::environment::functions::query::{
     query_static_member_function,
 };
 use crate::log_typecheck_error;
-use crate::type_checking::coercion::implicit::implicit_cast;
-use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
+use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::op::binop::calls::{
     build_function_reference, comma_separated, finish_function_call,
 };
@@ -114,8 +113,7 @@ pub(crate) fn typecheck_type_constructor(
     };
 
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-        .and_then(|v| std_rval_promotion(env, v.into_expression()))
-        .and_then(|v| implicit_cast(env, v, &variant_type))?;
+        .and_then(|v| try_argument_conversion(env, v.into_expression(), &variant_type))?;
 
     Ok(TypecheckResult::new_base(
         union_type.clone(),

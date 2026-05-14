@@ -5,6 +5,7 @@ use crate::environment::functions::query::{
 use crate::environment::symbols::{ResolvedValueSymbol, SymbolValueOrigin};
 use crate::log_typecheck_error;
 use crate::type_checking::aggregate::fields::struct_field;
+use crate::type_checking::coercion::implicit::conversion::try_argument_conversion;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
 use crate::type_checking::coercion::implicit::promotion::std_rval_promotion;
@@ -42,7 +43,6 @@ pub(crate) fn finish_function_call<'a>(
     mut tc_args: Vec<(&'a CXExpression, MIRExpression)>,
 ) -> CXResult<TypecheckResult> {
     let (function, implicit_parameters) = function.decompose_function_expr();
-    let implicit_arg_count = implicit_parameters.len();
     tc_args = implicit_parameters
         .iter()
         .map(|val| (expr, val.clone()))
@@ -91,15 +91,12 @@ pub(crate) fn finish_function_call<'a>(
 
     let canon_params = signature.params.len();
 
-    for (_, val) in tc_args.iter_mut().skip(implicit_arg_count) {
-        *val = std_rval_promotion(env, std::mem::take(val))?;
-    }
-
     for ((_arg_expr, val), param) in tc_args.iter_mut().zip(signature.params.iter()) {
-        *val = implicit_cast(env, std::mem::take(val), &param._type)?;
+        *val = try_argument_conversion(env, std::mem::take(val), &param._type)?;
     }
 
     for (_arg_expr, val) in tc_args.iter_mut().skip(canon_params) {
+        *val = std_rval_promotion(env, std::mem::take(val))?;
         let arg_type = val._type.clone();
 
         match &arg_type.kind {

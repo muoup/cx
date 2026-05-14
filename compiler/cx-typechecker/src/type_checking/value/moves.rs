@@ -4,7 +4,7 @@ use crate::{
     environment::{BindingMoveState, TypeEnvironment, symbols::SymbolValueOrigin},
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::{implicit_cast, promotion::std_rval_promotion},
+        coercion::implicit::conversion::try_argument_conversion,
         result::{BindingPlaceKind, TypecheckResult},
         typechecker::typecheck_expr,
         value::locals::{ensure_binding_available, mark_binding},
@@ -62,8 +62,7 @@ pub(crate) fn typecheck_move(
         ensure_binding_available(env, Some(inner_expr.token_range().clone()), &binding.root)?;
         mark_binding(env, &binding, BindingMoveState::Moved);
     } else {
-        inner_val = std_rval_promotion(env, inner_val)
-            .and_then(|inner_val| implicit_cast(env, inner_val, &inner_type))?;
+        inner_val = try_argument_conversion(env, inner_val, &inner_type)?;
     }
 
     Ok(TypecheckResult::new_base(

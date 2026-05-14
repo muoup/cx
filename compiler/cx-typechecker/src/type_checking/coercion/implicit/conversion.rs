@@ -6,7 +6,13 @@ use cx_util::CXResult;
 
 use crate::{
     environment::TypeEnvironment,
-    type_checking::coercion::{CoercionResult, implicit::promotion::integer},
+    type_checking::coercion::{
+        CoercionResult,
+        implicit::{
+            implicit_cast,
+            promotion::{integer, lvalue, std_rval_promotion},
+        },
+    },
 };
 
 pub mod compatible;
@@ -65,4 +71,25 @@ pub fn try_implicit_coercion(
     }
 
     CoercionResult::unapplied(expr)
+}
+
+pub fn try_argument_conversion(
+    env: &mut TypeEnvironment,
+    expr: MIRExpression,
+    argument_type: &MIRType,
+) -> CXResult<MIRExpression> {
+    let expr = if argument_type.is_memory_reference() {
+        let expr_type = expr.get_type();
+        if let Some(inner) = env.symbols.context.mem_ref_inner(&expr_type)
+            && env.type_eq(inner, argument_type)
+        {
+            lvalue::try_conversion(env, expr)?.expr()
+        } else {
+            expr
+        }
+    } else {
+        std_rval_promotion(env, expr)?
+    };
+
+    implicit_cast(env, expr, argument_type)
 }

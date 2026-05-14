@@ -2,7 +2,8 @@ use crate::{
     environment::TypeEnvironment,
     log_typecheck_error,
     type_checking::{
-        coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
+        coercion::implicit::conversion::try_argument_conversion, result::TypecheckResult,
+        typechecker::typecheck_expr,
     },
 };
 use cx_ast::ast::CXExpression;
@@ -39,7 +40,7 @@ pub(crate) fn typecheck_type_constructor_expr(
     };
 
     let inner = typecheck_expr(env, base_data, inner, Some(&variant_type))
-        .and_then(|v| implicit_cast(env, v.into_expression(), &variant_type))?;
+        .and_then(|v| try_argument_conversion(env, v.into_expression(), &variant_type))?;
 
     let allocation = TypecheckResult::new_base(
         union_type.clone(),
