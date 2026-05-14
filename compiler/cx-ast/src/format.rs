@@ -572,7 +572,7 @@ impl Display for CXFunctionPrototype {
         }));
 
         let params_str = params.join(", ");
-        write!(f, "{} {}({})", self.return_type, self.kind, params_str)
+        write!(f, "{} :: {}({})", self.return_type, self.kind, params_str)
     }
 }
 

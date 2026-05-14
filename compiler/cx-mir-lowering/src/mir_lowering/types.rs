@@ -1,12 +1,11 @@
 use crate::builder::LMIRBuilder;
+use crate::mir_lowering::abi::{classify_signature, LMIRABIMode};
 use cx_ast::data::CXLinkageMode;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameter, LinkageType};
+use cx_lmir::{LMIRFunctionPrototype, LMIRParameter, LMIRParameterABI, LinkageType};
 use cx_mir::mir::data::{
-    MIRFloatType, MIRFunctionPrototype, MIRFunctionSignature, MIRIntegerType, MIRType,
-    MIRTypeContext, MIRTypeKind,
+    MIRFloatType, MIRFunctionPrototype, MIRIntegerType, MIRType, MIRTypeContext, MIRTypeKind,
 };
-use cx_util::identifier::CXIdent;
 
 impl LMIRBuilder {
     pub(crate) fn convert_cx_type(&self, cx_type: &MIRType) -> LMIRType {
@@ -19,13 +18,6 @@ impl LMIRBuilder {
         cx_proto: &MIRFunctionPrototype,
     ) -> LMIRFunctionPrototype {
         convert_cx_prototype(cx_proto, &self.type_definitions)
-    }
-
-    pub(crate) fn convert_cx_signature(
-        &self,
-        cx_sig: &MIRFunctionSignature,
-    ) -> LMIRFunctionSignature {
-        convert_cx_signature(cx_sig, &self.type_definitions)
     }
 
     pub(crate) fn convert_cx_parameter_type(&self, cx_type: &MIRType) -> LMIRType {
@@ -61,51 +53,33 @@ fn convert_parameter_type(param_type: &MIRType, definitions: &MIRTypeContext) ->
     }
 }
 
-pub(crate) fn convert_cx_signature(
-    cx_sig: &MIRFunctionSignature,
-    definitions: &MIRTypeContext,
-) -> LMIRFunctionSignature {
-    let mut params = cx_sig
-        .params
-        .iter()
-        .map(|param| LMIRParameter {
-            name: param.name.clone(),
-            _type: convert_parameter_type(&param._type, definitions),
-        })
-        .collect::<Vec<_>>();
-
-    let mut return_type = convert_type(&cx_sig.return_type, definitions);
-
-    if return_type.is_memory_resident() {
-        params.insert(
-            0,
-            LMIRParameter {
-                name: Some(CXIdent::from("__internal_buffer")),
-                _type: LMIRType::default_pointer(),
-            },
-        );
-
-        return_type = LMIRType::default_pointer();
-    }
-
-    LMIRFunctionSignature {
-        return_type,
-        params,
-        var_args: cx_sig.var_args,
-    }
-}
-
 pub(crate) fn convert_cx_prototype(
     cx_proto: &MIRFunctionPrototype,
     definitions: &MIRTypeContext,
 ) -> LMIRFunctionPrototype {
     let raw_return_type = convert_type(&cx_proto.return_type, definitions);
-    let bc_proto = convert_cx_signature(&cx_proto.signature(), definitions);
-    let temp_buffer = if raw_return_type.is_memory_resident() {
-        Some(raw_return_type)
+    let raw_params = cx_proto
+        .params
+        .iter()
+        .map(|param| LMIRParameter {
+            name: param.name.clone(),
+            _type: convert_type(&param._type, definitions),
+            abi: LMIRParameterABI::Normal,
+        })
+        .collect::<Vec<_>>();
+    let abi_mode = if cx_proto.linkage == CXLinkageMode::Extern {
+        LMIRABIMode::C
     } else {
-        None
+        LMIRABIMode::Internal
     };
+    let abi_signature = classify_signature(
+        raw_return_type.clone(),
+        raw_params,
+        cx_proto.var_args,
+        abi_mode,
+    );
+    let bc_proto = abi_signature.lowered_signature();
+    let temp_buffer = abi_signature.return_kind.sret_type();
 
     LMIRFunctionPrototype {
         name: cx_proto.name.to_string(),
@@ -114,6 +88,7 @@ pub(crate) fn convert_cx_prototype(
         var_args: bc_proto.var_args,
         linkage: convert_linkage(cx_proto.linkage),
         temp_buffer,
+        abi_signature,
     }
 }
 

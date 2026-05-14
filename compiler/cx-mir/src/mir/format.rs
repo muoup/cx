@@ -480,7 +480,7 @@ impl Display for MIRFunctionPrototypeDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} {}",
+            "{} :: {}",
             self.prototype.name,
             self.prototype.signature().display_with(self.definitions)
         )
@@ -789,6 +789,17 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             MIRExpressionKind::RegionDuplicate { source } => {
                 write!(f, "RegionDuplicate")?;
                 write!(f, " <'")?;
+                self.write_type(f, &self.expr._type)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: source,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            MIRExpressionKind::ByValueArgument { source } => {
+                write!(f, "ByValueArgument <'")?;
                 self.write_type(f, &self.expr._type)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {

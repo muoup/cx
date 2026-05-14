@@ -69,6 +69,25 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
             basic_type.array_type(*size as u32).as_any_type_enum()
         }
         LMIRTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+        LMIRTypeKind::Vector { element, count } => {
+            let element = bc_llvm_type(context, element)?;
+            match any_to_basic_type(element)? {
+                BasicTypeEnum::IntType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
+                BasicTypeEnum::FloatType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
+                BasicTypeEnum::PointerType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
+                ty => panic!("Unsupported LLVM vector element type: {ty:?}"),
+            }
+        }
+        LMIRTypeKind::ABIAggregate { fields } => {
+            let fields = fields
+                .iter()
+                .map(|field| {
+                    let field = bc_llvm_type(context, field)?;
+                    any_to_basic_type(field)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            context.struct_type(fields.as_slice(), false).as_any_type_enum()
+        }
 
         LMIRTypeKind::Struct { name, fields } => {
             if let Some(_type) = context.get_struct_type(name.as_str()) {
@@ -134,6 +153,12 @@ pub(crate) fn bc_llvm_signature<'a>(
             }
             AnyTypeEnum::PointerType(ptr_type) => {
                 ptr_type.fn_type(args.as_slice(), signature.var_args)
+            }
+            AnyTypeEnum::StructType(struct_type) => {
+                struct_type.fn_type(args.as_slice(), signature.var_args)
+            }
+            AnyTypeEnum::VectorType(vector_type) => {
+                vector_type.fn_type(args.as_slice(), signature.var_args)
             }
             AnyTypeEnum::VoidType(void_type) => {
                 void_type.fn_type(args.as_slice(), signature.var_args)

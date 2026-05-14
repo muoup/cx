@@ -1,11 +1,12 @@
 use crate::value_type::get_cranelift_abi_type;
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
-use cranelift::codegen::ir::{FuncRef, Inst};
+use cranelift::codegen::ir::{ArgumentPurpose, FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_lmir::{LMIRFunctionSignature, LMIRParameter, LMIRValue};
+use cx_lmir::types::{LMIRType, LMIRTypeKind};
+use cx_lmir::{LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRValue};
 use cx_util::CXResult;
 
 pub(crate) fn prepare_function_sig(
@@ -16,14 +17,39 @@ pub(crate) fn prepare_function_sig(
 
     if !signature.return_type.is_void() {
         sig.returns
-            .push(get_cranelift_abi_type(&signature.return_type)?);
+            .extend(get_cranelift_abi_types(&signature.return_type)?);
     }
 
-    for LMIRParameter { _type, .. } in signature.params.iter() {
-        sig.params.push(get_cranelift_abi_type(_type)?);
+    for LMIRParameter { _type, abi, .. } in signature.params.iter() {
+        let param = match abi {
+            LMIRParameterABI::Normal => get_cranelift_abi_type(_type)?,
+            LMIRParameterABI::ByVal { pointee, .. } => ir::AbiParam::special(
+                context_pointer_type(object_module),
+                ArgumentPurpose::StructArgument(pointee.size() as u32),
+            ),
+            LMIRParameterABI::StructReturn { .. } => ir::AbiParam::special(
+                context_pointer_type(object_module),
+                ArgumentPurpose::StructReturn,
+            ),
+        };
+        sig.params.push(param);
     }
 
     Ok(sig)
+}
+
+fn context_pointer_type(object_module: &ObjectModule) -> ir::Type {
+    object_module.target_config().pointer_type()
+}
+
+pub(crate) fn get_cranelift_abi_types(val_type: &LMIRType) -> CXResult<Vec<ir::AbiParam>> {
+    match &val_type.kind {
+        LMIRTypeKind::ABIAggregate { fields } => fields
+            .iter()
+            .map(get_cranelift_abi_type)
+            .collect::<CXResult<Vec<_>>>(),
+        _ => Ok(vec![get_cranelift_abi_type(val_type)?]),
+    }
 }
 
 pub(crate) fn prepare_method_call<'a>(
@@ -41,19 +67,24 @@ pub(crate) fn prepare_parameters<'a>(
     context: &'a mut FunctionState,
     args: &'a [LMIRValue],
 ) -> CXResult<Vec<Value>> {
-    args.iter()
-        .map(|arg| context.get_value(arg).map(|cg| CodegenValue::as_value(&cg)))
-        .collect::<CXResult<Vec<_>>>()
+    let mut params = Vec::new();
+    for arg in args {
+        match context.get_value(arg)? {
+            CodegenValue::Value(value) => params.push(value),
+            CodegenValue::Aggregate(values) => params.extend(values),
+            CodegenValue::NULL => {}
+        }
+    }
+    Ok(params)
 }
 
 pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> CodegenValue {
-    context
-        .builder
-        .inst_results(inst)
-        .first()
-        .cloned()
-        .map(CodegenValue::Value)
-        .unwrap_or(CodegenValue::NULL)
+    let results = context.builder.inst_results(inst);
+    match results {
+        [] => CodegenValue::NULL,
+        [value] => CodegenValue::Value(*value),
+        values => CodegenValue::Aggregate(values.to_vec()),
+    }
 }
 
 pub(crate) fn get_func_ref(

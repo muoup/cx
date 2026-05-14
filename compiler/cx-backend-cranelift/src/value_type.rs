@@ -18,6 +18,19 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
         // LMIRTypeKind::Float { bytes: 2 } => ir::types::F16,
         LMIRTypeKind::Float(LMIRFloatType::F32) => ir::types::F32,
         LMIRTypeKind::Float(LMIRFloatType::F64) => ir::types::F64,
+        LMIRTypeKind::Vector { element, count } => {
+            let element = get_cranelift_type(element)?;
+            element.by(*count as u32).ok_or_else(|| {
+                CXError::create_boxed(format!(
+                    "Unsupported vector type for codegen: {element} x {count}"
+                ))
+            })?
+        }
+        LMIRTypeKind::ABIAggregate { .. } => {
+            return CXError::create_result(format!(
+                "ABI aggregate must be expanded before scalar codegen: {val_type:?}"
+            ));
+        }
         // LMIRTypeKind::Float { bytes: 16 } => ir::types::F128,
         //
         LMIRTypeKind::Union { .. }

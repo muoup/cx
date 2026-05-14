@@ -1,11 +1,11 @@
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
-use crate::attributes::attr_noundef;
+use crate::attributes::{attr_byval, attr_noundef, attr_sret};
 use crate::routines::get_function;
 use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction, LMIRInstructionKind,
-    LMIRIntUnOp,
+    LMIRIntUnOp, LMIRParameterABI,
 };
 use cx_util::log_error;
 use inkwell::AddressSpace;
@@ -86,6 +86,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     attr_noundef(global_state.context),
                 )
             }
+            apply_call_abi_attributes(global_state, &val, method_sig);
 
             match val.try_as_basic_value() {
                 ValueKind::Basic(val) => CodegenValue::Value(val.as_any_value_enum()),
@@ -120,6 +121,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     inst_num().as_str(),
                 )
                 .unwrap();
+            apply_call_abi_attributes(global_state, &val, method_sig);
 
             match val.try_as_basic_value() {
                 ValueKind::Basic(val) => CodegenValue::Value(val.as_any_value_enum()),
@@ -730,4 +732,31 @@ pub(crate) fn generate_instruction<'a, 'b>(
             CodegenValue::NULL
         }
     })
+}
+
+fn apply_call_abi_attributes<'a>(
+    global_state: &GlobalState<'a>,
+    call: &inkwell::values::CallSiteValue<'a>,
+    method_sig: &cx_lmir::LMIRFunctionSignature,
+) -> Option<()> {
+    for (i, param) in method_sig.params.iter().enumerate() {
+        match &param.abi {
+            LMIRParameterABI::Normal => {}
+            LMIRParameterABI::ByVal { pointee, .. } => {
+                let pointee = bc_llvm_type(global_state.context, pointee)?;
+                call.add_attribute(
+                    AttributeLoc::Param(i as u32),
+                    attr_byval(global_state.context, pointee),
+                );
+            }
+            LMIRParameterABI::StructReturn { pointee, .. } => {
+                let pointee = bc_llvm_type(global_state.context, pointee)?;
+                call.add_attribute(
+                    AttributeLoc::Param(i as u32),
+                    attr_sret(global_state.context, pointee),
+                );
+            }
+        }
+    }
+    Some(())
 }

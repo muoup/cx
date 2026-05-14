@@ -1,3 +1,4 @@
+use cx_ast::data::CX_CONST;
 use cx_mir::mir::{
     expression::{MIRCoercion, MIRExpression, MIRExpressionKind},
     r#type::{MIRType, MIRTypeKind},
@@ -78,6 +79,10 @@ pub fn try_argument_conversion(
     expr: MIRExpression,
     argument_type: &MIRType,
 ) -> CXResult<MIRExpression> {
+    if let Some(expr) = try_deferred_by_value_argument(env, &expr, argument_type) {
+        return implicit_cast(env, expr, argument_type);
+    }
+
     let expr = if argument_type.is_memory_reference() {
         let expr_type = expr.get_type();
         if let Some(inner) = env.symbols.context.mem_ref_inner(&expr_type)
@@ -92,4 +97,42 @@ pub fn try_argument_conversion(
     };
 
     implicit_cast(env, expr, argument_type)
+}
+
+fn try_deferred_by_value_argument(
+    env: &TypeEnvironment,
+    expr: &MIRExpression,
+    argument_type: &MIRType,
+) -> Option<MIRExpression> {
+    if argument_type.is_memory_reference() {
+        return None;
+    }
+
+    let expr_type = expr.get_type();
+    let inner = env.symbols.context.mem_ref_inner(&expr_type)?;
+    let unqualified_inner = inner.without_specifier(CX_CONST);
+
+    if !is_deferred_by_value_candidate(&unqualified_inner)
+        || !env.symbols.is_copyable(&unqualified_inner)
+        || !env.type_eq(&unqualified_inner, argument_type)
+    {
+        return None;
+    }
+
+    Some(MIRExpression {
+        token_range: expr.token_range.clone(),
+        _type: argument_type.clone(),
+        kind: MIRExpressionKind::ByValueArgument {
+            source: Box::new(expr.clone()),
+        },
+    })
+}
+
+fn is_deferred_by_value_candidate(ty: &MIRType) -> bool {
+    matches!(
+        ty.kind,
+        MIRTypeKind::Structured { .. }
+            | MIRTypeKind::Union { .. }
+            | MIRTypeKind::TaggedUnion { .. }
+    )
 }

@@ -1,4 +1,4 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
@@ -83,6 +83,14 @@ impl From<LMIRRegister> for CXIdent {
 pub struct LMIRParameter {
     pub name: Option<CXIdent>,
     pub _type: LMIRType,
+    pub abi: LMIRParameterABI,
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRParameterABI {
+    Normal,
+    ByVal { pointee: LMIRType, alignment: u8 },
+    StructReturn { pointee: LMIRType, alignment: u8 },
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +101,156 @@ pub struct LMIRFunctionSignature {
 }
 
 #[derive(Debug, Clone)]
+pub enum LMIRABIArgKind {
+    Direct {
+        slots: Vec<LMIRABISlot>,
+    },
+    Indirect {
+        pointee: LMIRType,
+        byval: bool,
+        alignment: u8,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRABISlot {
+    pub _type: LMIRType,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRABIParameter {
+    pub name: Option<CXIdent>,
+    pub semantic_type: LMIRType,
+    pub kind: LMIRABIArgKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum LMIRABIReturnKind {
+    Void,
+    Direct {
+        slots: Vec<LMIRABISlot>,
+    },
+    IndirectSret {
+        pointee: LMIRType,
+        alignment: u8,
+        returns_pointer: bool,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct LMIRABISignature {
+    pub return_kind: LMIRABIReturnKind,
+    pub params: Vec<LMIRABIParameter>,
+    pub var_args: bool,
+}
+
+impl LMIRABIArgKind {
+    pub fn lowered_params(&self, name: Option<CXIdent>) -> Vec<LMIRParameter> {
+        match self {
+            LMIRABIArgKind::Direct { slots } => slots
+                .iter()
+                .enumerate()
+                .map(|(i, slot)| LMIRParameter {
+                    name: name.as_ref().map(|name| {
+                        if slots.len() == 1 {
+                            name.clone()
+                        } else {
+                            CXIdent::from(format!("{name}.__abi_slot_{i}"))
+                        }
+                    }),
+                    _type: slot._type.clone(),
+                    abi: LMIRParameterABI::Normal,
+                })
+                .collect(),
+            LMIRABIArgKind::Indirect {
+                pointee,
+                byval,
+                alignment,
+            } => vec![LMIRParameter {
+                name,
+                _type: LMIRType::default_pointer(),
+                abi: if *byval {
+                    LMIRParameterABI::ByVal {
+                        pointee: pointee.clone(),
+                        alignment: *alignment,
+                    }
+                } else {
+                    LMIRParameterABI::Normal
+                },
+            }],
+        }
+    }
+}
+
+impl LMIRABIReturnKind {
+    pub fn lowered_type(&self) -> LMIRType {
+        match self {
+            LMIRABIReturnKind::Void => LMIRType::unit(),
+            LMIRABIReturnKind::Direct { slots } if slots.len() == 1 => slots[0]._type.clone(),
+            LMIRABIReturnKind::Direct { slots } => LMIRTypeKind::ABIAggregate {
+                fields: slots.iter().map(|slot| slot._type.clone()).collect(),
+            }
+            .into(),
+            LMIRABIReturnKind::IndirectSret {
+                returns_pointer: true,
+                ..
+            } => LMIRType::default_pointer(),
+            LMIRABIReturnKind::IndirectSret {
+                returns_pointer: false,
+                ..
+            } => LMIRType::unit(),
+        }
+    }
+
+    pub fn sret_type(&self) -> Option<LMIRType> {
+        match self {
+            LMIRABIReturnKind::IndirectSret { pointee, .. } => Some(pointee.clone()),
+            _ => None,
+        }
+    }
+}
+
+impl LMIRABISignature {
+    pub fn lowered_signature(&self) -> LMIRFunctionSignature {
+        let mut params = self
+            .params
+            .iter()
+            .flat_map(|param| param.kind.lowered_params(param.name.clone()))
+            .collect::<Vec<_>>();
+
+        if let LMIRABIReturnKind::IndirectSret {
+            pointee,
+            alignment,
+            returns_pointer,
+        } = &self.return_kind
+        {
+            params.insert(
+                0,
+                LMIRParameter {
+                    name: Some(CXIdent::from("__internal_buffer")),
+                    _type: LMIRType::default_pointer(),
+                    abi: if *returns_pointer {
+                        LMIRParameterABI::Normal
+                    } else {
+                        LMIRParameterABI::StructReturn {
+                            pointee: pointee.clone(),
+                            alignment: *alignment,
+                        }
+                    },
+                },
+            );
+        }
+
+        LMIRFunctionSignature {
+            return_type: self.return_kind.lowered_type(),
+            params,
+            var_args: self.var_args,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
     pub name: String,
     pub return_type: LMIRType,
@@ -100,6 +258,7 @@ pub struct LMIRFunctionPrototype {
     pub var_args: bool,
     pub linkage: LinkageType,
     pub temp_buffer: Option<LMIRType>,
+    pub abi_signature: LMIRABISignature,
 }
 
 impl LMIRFunctionPrototype {

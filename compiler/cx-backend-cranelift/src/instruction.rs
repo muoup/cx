@@ -1,5 +1,6 @@
 use crate::inst_calling::{
-    get_func_ref, get_method_return, prepare_method_call, prepare_parameters,
+    get_cranelift_abi_types, get_func_ref, get_method_return, prepare_method_call,
+    prepare_parameters,
 };
 use crate::routines::get_function;
 use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
@@ -66,7 +67,7 @@ pub(crate) fn codegen_instruction(
             sig.returns = if return_type.is_void() {
                 vec![]
             } else {
-                vec![get_cranelift_abi_type(return_type)?]
+                get_cranelift_abi_types(return_type)?
             };
             sig.params = method_sig
                 .params
@@ -109,12 +110,27 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Load { memory, _type } => {
             let target = context.get_value(memory)?.as_value();
 
-            CodegenValue::Value(context.builder.ins().load(
-                get_cranelift_type(_type)?,
-                MemFlags::new(),
-                target,
-                0,
-            ))
+            if let LMIRTypeKind::ABIAggregate { fields } = &_type.kind {
+                let mut values = Vec::new();
+                let mut offset = 0;
+                for field in fields {
+                    values.push(context.builder.ins().load(
+                        get_cranelift_type(field)?,
+                        MemFlags::new(),
+                        target,
+                        offset as i32,
+                    ));
+                    offset += field.size();
+                }
+                CodegenValue::Aggregate(values)
+            } else {
+                CodegenValue::Value(context.builder.ins().load(
+                    get_cranelift_type(_type)?,
+                    MemFlags::new(),
+                    target,
+                    0,
+                ))
+            }
         }
 
         LMIRInstructionKind::GetFunctionAddr { func } => {
@@ -478,12 +494,26 @@ pub(crate) fn codegen_instruction(
             _type,
         } => {
             let target = context.get_value(memory)?.as_value();
-            let value = context.get_value(value)?.as_value();
+            let value = context.get_value(value)?;
 
-            context
-                .builder
-                .ins()
-                .store(MemFlags::new(), value, target, 0);
+            match (&_type.kind, value) {
+                (LMIRTypeKind::ABIAggregate { fields }, CodegenValue::Aggregate(values)) => {
+                    let mut offset = 0;
+                    for (field, value) in fields.iter().zip(values) {
+                        context
+                            .builder
+                            .ins()
+                            .store(MemFlags::new(), value, target, offset as i32);
+                        offset += field.size();
+                    }
+                }
+                (_, value) => {
+                    context
+                        .builder
+                        .ins()
+                        .store(MemFlags::new(), value.as_value(), target, 0);
+                }
+            }
 
             CodegenValue::NULL
         }

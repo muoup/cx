@@ -196,6 +196,9 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
                 format!("{elem_c} {name}[{size}]")
             }
         }
+        LMIRTypeKind::Vector { .. } | LMIRTypeKind::ABIAggregate { .. } => {
+            panic!("ABI-only type cannot be emitted in a C header: {ty:?}")
+        }
         LMIRTypeKind::Opaque { bytes } => {
             // Represent opaque types as byte arrays
             if name.is_empty() {

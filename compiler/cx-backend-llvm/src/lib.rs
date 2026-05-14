@@ -3,7 +3,7 @@ use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
     ElementID, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
-    LMIRUnit, LMIRValue,
+    LMIRParameterABI, LMIRUnit, LMIRValue,
 };
 use cx_util::CXResult;
 use inkwell::attributes::AttributeLoc;
@@ -317,6 +317,23 @@ fn cache_prototype<'a>(
             .for_each(|attr| {
                 func.add_attribute(AttributeLoc::Param(i as u32), attr);
             });
+        match &_type.abi {
+            LMIRParameterABI::Normal => {}
+            LMIRParameterABI::ByVal { pointee, .. } => {
+                let pointee = bc_llvm_type(global_state.context, pointee)?;
+                func.add_attribute(
+                    AttributeLoc::Param(i as u32),
+                    attr_byval(global_state.context, pointee),
+                );
+            }
+            LMIRParameterABI::StructReturn { pointee, .. } => {
+                let pointee = bc_llvm_type(global_state.context, pointee)?;
+                func.add_attribute(
+                    AttributeLoc::Param(i as u32),
+                    attr_sret(global_state.context, pointee),
+                );
+            }
+        }
     }
 
     global_state

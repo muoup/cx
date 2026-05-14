@@ -56,6 +56,15 @@ pub enum LMIRTypeKind {
         dereferenceable: u32,
     },
 
+    Vector {
+        element: Box<LMIRType>,
+        count: usize,
+    },
+
+    ABIAggregate {
+        fields: Vec<LMIRType>,
+    },
+
     Array {
         element: Box<LMIRType>,
         size: usize,
@@ -85,6 +94,8 @@ impl LMIRType {
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            LMIRTypeKind::Vector { element, count } => element.size() * count,
+            LMIRTypeKind::ABIAggregate { fields } => fields.iter().map(|field| field.size()).sum(),
             LMIRTypeKind::Array { element, size } => element.size() * size,
             LMIRTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
@@ -118,6 +129,12 @@ impl LMIRType {
             LMIRTypeKind::Integer(_type) => _type.bytes().min(8),
             LMIRTypeKind::Float(_type) => _type.bytes().min(8),
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
+            LMIRTypeKind::Vector { element, .. } => element.alignment(),
+            LMIRTypeKind::ABIAggregate { fields } => fields
+                .iter()
+                .map(|field| field.alignment())
+                .max()
+                .unwrap_or(1),
             LMIRTypeKind::Array { element, .. } => element.alignment(),
             LMIRTypeKind::Struct { fields, .. } => fields
                 .iter()
@@ -149,6 +166,8 @@ impl LMIRType {
             LMIRTypeKind::Integer(_) => false,
             LMIRTypeKind::Float(_) => false,
             LMIRTypeKind::Pointer { .. } => false,
+            LMIRTypeKind::Vector { .. } => false,
+            LMIRTypeKind::ABIAggregate { .. } => false,
             LMIRTypeKind::Array { .. } => true,
             LMIRTypeKind::Struct { .. } => true,
             LMIRTypeKind::Union { .. } => true,

@@ -23,6 +23,7 @@ mod value_type;
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue {
     Value(Value),
+    Aggregate(Vec<Value>),
     NULL,
 }
 

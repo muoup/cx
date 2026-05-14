@@ -1,5 +1,5 @@
 #pragma once
 
-typedef u64 time_t;
+#include <stdlib.h>
 
 time_t time(time_t *timer);

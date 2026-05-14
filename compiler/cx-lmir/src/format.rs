@@ -424,6 +424,18 @@ impl Display for LMIRTypeKind {
             LMIRTypeKind::Array { element, size } => {
                 write!(f, "[{element}; {size}]")
             }
+            LMIRTypeKind::Vector { element, count } => {
+                write!(f, "<{count} x {element}>")
+            }
+            LMIRTypeKind::ABIAggregate { fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|_type| format!("{_type}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                write!(f, "abi {{ {fields} }}")
+            }
             LMIRTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()

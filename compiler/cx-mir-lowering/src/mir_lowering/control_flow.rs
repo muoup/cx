@@ -437,7 +437,11 @@ pub fn lower_return(
 
         builder.add_new_instruction(
             LMIRInstructionKind::Return {
-                value: Some(return_buffer),
+                value: if builder.current_prototype().return_type.is_void() {
+                    None
+                } else {
+                    Some(return_buffer)
+                },
             },
             LMIRType::unit(),
             false,

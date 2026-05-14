@@ -5,6 +5,7 @@ use cx_util::CXResult;
 
 use crate::builder::LMIRBuilder;
 
+mod abi;
 mod binary_ops;
 mod coercion;
 mod control_flow;
