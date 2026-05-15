@@ -1,3 +1,4 @@
+use cx_ast::data::{CX_CONST, CX_RESTRICT, CX_VOLATILE, CXTypeQualifiers};
 use cx_util::identifier::CXIdent;
 
 use crate::mir::data::{MIRFunctionPrototype, MIRFunctionSignature, MIRParameter};
@@ -282,6 +283,40 @@ fn write_type_id(
     result
 }
 
+fn write_type_qualifiers_prefix(
+    f: &mut Formatter<'_>,
+    specifiers: CXTypeQualifiers,
+) -> std::fmt::Result {
+    if specifiers & CX_CONST != 0 {
+        write!(f, "const ")?;
+    }
+    if specifiers & CX_VOLATILE != 0 {
+        write!(f, "volatile ")?;
+    }
+    if specifiers & CX_RESTRICT != 0 {
+        write!(f, "restrict ")?;
+    }
+
+    Ok(())
+}
+
+fn write_type_qualifiers_suffix(
+    f: &mut Formatter<'_>,
+    specifiers: CXTypeQualifiers,
+) -> std::fmt::Result {
+    if specifiers & CX_CONST != 0 {
+        write!(f, " const")?;
+    }
+    if specifiers & CX_VOLATILE != 0 {
+        write!(f, " volatile")?;
+    }
+    if specifiers & CX_RESTRICT != 0 {
+        write!(f, " restrict")?;
+    }
+
+    Ok(())
+}
+
 fn write_aggregate(
     f: &mut Formatter<'_>,
     keyword: &str,
@@ -341,7 +376,12 @@ fn write_type_body(
     let display_id = (id.0 != 0).then_some(id);
 
     if matches!(mode, TypeRenderMode::Inline) && should_inline_as_reference(ty, display_id) {
+        write_type_qualifiers_prefix(f, ty.specifiers)?;
         return write_type_reference(f, ty, display_id);
+    }
+
+    if !matches!(ty.kind, MIRTypeKind::PointerTo { .. }) {
+        write_type_qualifiers_prefix(f, ty.specifiers)?;
     }
 
     match &ty.kind {
@@ -361,7 +401,8 @@ fn write_type_body(
         MIRTypeKind::Unit => write!(f, "()"),
         MIRTypeKind::PointerTo { inner_type } => {
             write_type_id(f, definitions, *inner_type, TypeRenderMode::Inline, state)?;
-            write!(f, "*")
+            write!(f, "*")?;
+            write_type_qualifiers_suffix(f, ty.specifiers)
         }
         MIRTypeKind::MemoryReference {
             inner_type,

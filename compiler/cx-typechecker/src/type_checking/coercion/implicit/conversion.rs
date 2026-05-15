@@ -10,7 +10,7 @@ use crate::{
     type_checking::coercion::{
         CoercionResult,
         implicit::{
-            implicit_cast,
+            self, implicit_cast,
             promotion::{integer, lvalue, std_rval_promotion},
         },
     },
@@ -60,18 +60,46 @@ pub fn try_implicit_coercion(
         return integer::try_conversion(env, expr, target_type);
     }
 
-    if let (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float }) =
-        (&expr._type.kind, &target_type.kind)
-        && from_float != to_float
-    {
-        return crate::type_checking::coercion::implicit::coercion_expr(
-            expr,
-            target_type.clone(),
-            MIRCoercion::FloatCast { to_type: *to_float },
-        );
-    }
+    match (&expr._type.kind, &target_type.kind) {
+        (MIRTypeKind::Float { _type: from_float }, MIRTypeKind::Float { _type: to_float })
+            if from_float != to_float =>
+        {
+            return implicit::coercion_expr(
+                expr,
+                target_type.clone(),
+                MIRCoercion::FloatCast { to_type: *to_float },
+            );
+        }
 
-    CoercionResult::unapplied(expr)
+        (
+            MIRTypeKind::PointerTo {
+                inner_type: from_ptr,
+            },
+            MIRTypeKind::PointerTo { inner_type: to_ptr },
+        ) => {
+            let from_inner = env.get_named_type_definition(*from_ptr).unwrap().clone();
+            let to_inner = env.get_named_type_definition(*to_ptr).unwrap().clone();
+
+            // If we are coercing T1* -> T2* and they are compatible as unqualified types, and we only
+            // add cvr-specifiers to coerce, than this is a valid implicit cast
+            if compatible::compatible_types(
+                env,
+                &from_inner.clone().without_specifiers(),
+                &to_inner.clone().without_specifiers(),
+            )? && from_inner.specifiers & to_inner.specifiers == from_inner.specifiers
+            {
+                return implicit::coercion_expr(
+                    expr,
+                    target_type.clone(),
+                    MIRCoercion::ReinterpretBits,
+                );
+            }
+
+            CoercionResult::unapplied(expr)
+        }
+
+        _ => CoercionResult::unapplied(expr),
+    }
 }
 
 pub fn try_argument_conversion(

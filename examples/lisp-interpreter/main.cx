@@ -1,6 +1,17 @@
 import interpreter;
 
-i32 main() {
+import std::optional;
+import std::io;
+import std::file;
+
+i32 main(i32 argc, char** argv) {
+    if (argc == 1) {
+        println("Please include a file path as an argument to interpret");
+        return 1;
+    }
+
+    opt<file> f = file::open(argv[1], "r");
+
     run("(fndef add (x y) (+ x y)) (fndef double (x) (add x x)) (print-str \"CX Lisp says hello\") (print-num (+ 1 2)) (print-num (- (double 21) 2))");
 
     return 0;

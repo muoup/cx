@@ -680,25 +680,9 @@ impl MIRType {
         if let (Some(left_id), Some(right_id)) = (
             self.named_type_id(definitions),
             other.named_type_id(definitions),
-        ) {
-            if left_id == right_id {
-                return true;
-            }
-
-            return left_id.contextual_eq_with_state(&right_id, definitions, state);
-        }
-
-        match (
-            self.template_info.as_deref(),
-            other.template_info.as_deref(),
-        ) {
-            (Some(left), Some(right)) => {
-                if !left.contextual_eq_with_state(right, definitions, state) {
-                    return false;
-                }
-            }
-            (None, None) => {}
-            _ => return false,
+        ) && left_id == right_id
+        {
+            return true;
         }
 
         self.kind
@@ -745,6 +729,11 @@ impl MIRType {
 
     pub fn remove_specifier(&mut self, specifier: CXTypeQualifiers) -> &mut Self {
         self.specifiers &= !specifier;
+        self
+    }
+
+    pub fn without_specifiers(mut self) -> Self {
+        self.specifiers = 0;
         self
     }
 
