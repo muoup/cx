@@ -5,8 +5,7 @@ use cranelift::codegen::ir::{ArgumentPurpose, FuncRef, Inst};
 use cranelift::prelude::{Signature, Value};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
-use cx_lmir::types::{LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRValue};
+use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue};
 use cx_util::CXResult;
 
 pub(crate) fn prepare_function_sig(
@@ -15,41 +14,60 @@ pub(crate) fn prepare_function_sig(
 ) -> CXResult<Signature> {
     let mut sig = Signature::new(object_module.target_config().default_call_conv);
 
-    if !signature.return_type.is_void() {
-        sig.returns
-            .extend(get_cranelift_abi_types(&signature.return_type)?);
+    match &signature.return_abi {
+        LMIRReturnABI::Void => {}
+        LMIRReturnABI::Direct { slots } => {
+            for slot in slots {
+                sig.returns.push(get_cranelift_abi_type(&slot._type)?);
+            }
+        }
+        LMIRReturnABI::IndirectSret {
+            returns_pointer: true,
+            ..
+        } => sig.returns.push(ir::AbiParam::new(
+            object_module.target_config().pointer_type(),
+        )),
+        LMIRReturnABI::IndirectSret {
+            returns_pointer: false,
+            ..
+        } => {}
     }
 
-    for LMIRParameter { _type, abi, .. } in signature.params.iter() {
-        let param = match abi {
-            LMIRParameterABI::Normal => get_cranelift_abi_type(_type)?,
-            LMIRParameterABI::ByVal { pointee, .. } => ir::AbiParam::special(
-                context_pointer_type(object_module),
-                ArgumentPurpose::StructArgument(pointee.size() as u32),
-            ),
-            LMIRParameterABI::StructReturn { .. } => ir::AbiParam::special(
-                context_pointer_type(object_module),
+    if let LMIRReturnABI::IndirectSret {
+        returns_pointer, ..
+    } = &signature.return_abi
+    {
+        let param = if *returns_pointer {
+            ir::AbiParam::new(object_module.target_config().pointer_type())
+        } else {
+            ir::AbiParam::special(
+                object_module.target_config().pointer_type(),
                 ArgumentPurpose::StructReturn,
-            ),
+            )
         };
         sig.params.push(param);
     }
 
-    Ok(sig)
-}
-
-fn context_pointer_type(object_module: &ObjectModule) -> ir::Type {
-    object_module.target_config().pointer_type()
-}
-
-pub(crate) fn get_cranelift_abi_types(val_type: &LMIRType) -> CXResult<Vec<ir::AbiParam>> {
-    match &val_type.kind {
-        LMIRTypeKind::ABIAggregate { fields } => fields
-            .iter()
-            .map(get_cranelift_abi_type)
-            .collect::<CXResult<Vec<_>>>(),
-        _ => Ok(vec![get_cranelift_abi_type(val_type)?]),
+    for param in signature.params.iter() {
+        match &param.abi {
+            LMIRParameterABI::Direct { slots } => {
+                for slot in slots {
+                    sig.params.push(get_cranelift_abi_type(&slot._type)?);
+                }
+            }
+            LMIRParameterABI::Indirect { byval: true, .. } => {
+                sig.params.push(ir::AbiParam::special(
+                    object_module.target_config().pointer_type(),
+                    ArgumentPurpose::StructArgument(param._type.size() as u32),
+                ))
+            }
+            LMIRParameterABI::Indirect { byval: false, .. } => sig.params.push(ir::AbiParam::new(
+                object_module.target_config().pointer_type(),
+            )),
+        }
     }
+
+    Ok(sig)
 }
 
 pub(crate) fn prepare_method_call<'a>(
@@ -72,6 +90,9 @@ pub(crate) fn prepare_parameters<'a>(
         match context.get_value(arg)? {
             CodegenValue::Value(value) => params.push(value),
             CodegenValue::Aggregate(values) => params.extend(values),
+            CodegenValue::AggregateSlots(values) => {
+                params.extend(values.into_iter().map(|(_, value)| value))
+            }
             CodegenValue::NULL => {}
         }
     }
@@ -83,7 +104,12 @@ pub(crate) fn get_method_return(context: &FunctionState, inst: Inst) -> CodegenV
     match results {
         [] => CodegenValue::NULL,
         [value] => CodegenValue::Value(*value),
-        values => CodegenValue::Aggregate(values.to_vec()),
+        values => match &context.signature.return_abi {
+            LMIRReturnABI::Direct { slots } => CodegenValue::AggregateSlots(
+                slots.iter().cloned().zip(values.iter().copied()).collect(),
+            ),
+            _ => CodegenValue::Aggregate(values.to_vec()),
+        },
     }
 }
 
@@ -93,7 +119,7 @@ pub(crate) fn get_func_ref(
     signature: &LMIRFunctionSignature,
     args: &[Value],
 ) -> CXResult<FuncRef> {
-    if !signature.var_args || args.len() == signature.params.len() {
+    if !signature.var_args || args.len() == signature.expanded_param_count() {
         return Ok(context
             .object_module
             .declare_func_in_func(func_id, context.builder.func));
@@ -101,7 +127,7 @@ pub(crate) fn get_func_ref(
 
     let mut sig = prepare_function_sig(context.object_module, signature)?;
 
-    for i in signature.params.len()..args.len() {
+    for i in signature.expanded_param_count()..args.len() {
         let arg_type = context.builder.func.dfg.value_type(args[i]);
 
         sig.params.push(ir::AbiParam::new(arg_type));

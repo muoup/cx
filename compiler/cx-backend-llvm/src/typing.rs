@@ -1,6 +1,8 @@
 use crate::GlobalState;
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRFunctionPrototype, LMIRFunctionSignature, LinkageType};
+use cx_lmir::{
+    LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LinkageType,
+};
 use inkwell::AddressSpace;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
@@ -70,23 +72,11 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
         }
         LMIRTypeKind::Pointer { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
         LMIRTypeKind::Vector { element, count } => {
-            let element = bc_llvm_type(context, element)?;
+            let element = bc_llvm_type(context, &LMIRTypeKind::Float(*element).into())?;
             match any_to_basic_type(element)? {
-                BasicTypeEnum::IntType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
                 BasicTypeEnum::FloatType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
-                BasicTypeEnum::PointerType(ty) => ty.vec_type(*count as u32).as_any_type_enum(),
                 ty => panic!("Unsupported LLVM vector element type: {ty:?}"),
             }
-        }
-        LMIRTypeKind::ABIAggregate { fields } => {
-            let fields = fields
-                .iter()
-                .map(|field| {
-                    let field = bc_llvm_type(context, field)?;
-                    any_to_basic_type(field)
-                })
-                .collect::<Option<Vec<_>>>()?;
-            context.struct_type(fields.as_slice(), false).as_any_type_enum()
         }
 
         LMIRTypeKind::Struct { name, fields } => {
@@ -117,14 +107,10 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, _type: &LMIRType) -> Option
                 .map(|s| s.as_any_type_enum());
         }
 
-        LMIRTypeKind::Union { .. } => {
-            let _type_size = _type.size();
-            let array_type = context.i8_type().array_type(_type_size as u32);
-
-            array_type.as_any_type_enum()
-        }
-
-        LMIRTypeKind::Opaque { .. } => context.ptr_type(AddressSpace::from(0)).as_any_type_enum(),
+        LMIRTypeKind::Opaque { bytes } => context
+            .i8_type()
+            .array_type(*bytes as u32)
+            .as_any_type_enum(),
     })
 }
 
@@ -132,48 +118,82 @@ pub(crate) fn bc_llvm_signature<'a>(
     state: &GlobalState<'a>,
     signature: &LMIRFunctionSignature,
 ) -> Option<FunctionType<'a>> {
-    let args = signature
-        .params
-        .iter()
-        .map(|arg| {
-            let bc_arg = bc_llvm_type(state.context, &arg._type)?;
-            let basic_type = any_to_basic_type(bc_arg)?;
+    let mut args = Vec::new();
 
-            let md_type = unsafe { BasicMetadataTypeEnum::new(basic_type.as_type_ref()) };
+    if signature.return_abi.has_indirect_return_param() {
+        args.push(state.context.ptr_type(AddressSpace::from(0)).into());
+    }
 
-            Some(md_type)
-        })
-        .collect::<Option<Vec<_>>>()?;
+    for param in &signature.params {
+        match &param.abi {
+            LMIRParameterABI::Direct { slots } => {
+                for slot in slots {
+                    let bc_arg = bc_llvm_type(state.context, &slot._type)?;
+                    let basic_type = any_to_basic_type(bc_arg)?;
+                    let md_type = unsafe { BasicMetadataTypeEnum::new(basic_type.as_type_ref()) };
+                    args.push(md_type);
+                }
+            }
+            LMIRParameterABI::Indirect { .. } => {
+                args.push(state.context.ptr_type(AddressSpace::from(0)).into());
+            }
+        }
+    }
 
-    Some(
-        match bc_llvm_type(state.context, &signature.return_type).unwrap() {
-            AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), signature.var_args),
-            AnyTypeEnum::FloatType(float_type) => {
-                float_type.fn_type(args.as_slice(), signature.var_args)
-            }
-            AnyTypeEnum::PointerType(ptr_type) => {
-                ptr_type.fn_type(args.as_slice(), signature.var_args)
-            }
-            AnyTypeEnum::StructType(struct_type) => {
-                struct_type.fn_type(args.as_slice(), signature.var_args)
-            }
-            AnyTypeEnum::VectorType(vector_type) => {
-                vector_type.fn_type(args.as_slice(), signature.var_args)
-            }
-            AnyTypeEnum::VoidType(void_type) => {
-                void_type.fn_type(args.as_slice(), signature.var_args)
-            }
+    let return_type = match &signature.return_abi {
+        LMIRReturnABI::Void => state.context.void_type().as_any_type_enum(),
+        LMIRReturnABI::Direct { slots } if slots.len() == 1 => {
+            bc_llvm_type(state.context, &slots[0]._type)?
+        }
+        LMIRReturnABI::Direct { slots } => {
+            let fields = slots
+                .iter()
+                .map(|slot| {
+                    let field = bc_llvm_type(state.context, &slot._type)?;
+                    any_to_basic_type(field)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            state
+                .context
+                .struct_type(fields.as_slice(), false)
+                .as_any_type_enum()
+        }
+        LMIRReturnABI::IndirectSret {
+            returns_pointer: true,
+            ..
+        } => state
+            .context
+            .ptr_type(AddressSpace::from(0))
+            .as_any_type_enum(),
+        LMIRReturnABI::IndirectSret {
+            returns_pointer: false,
+            ..
+        } => state.context.void_type().as_any_type_enum(),
+    };
 
-            _ty => panic!("Invalid return type, found: {_ty:?}"),
-        },
-    )
+    Some(match return_type {
+        AnyTypeEnum::IntType(int_type) => int_type.fn_type(args.as_slice(), signature.var_args),
+        AnyTypeEnum::FloatType(float_type) => {
+            float_type.fn_type(args.as_slice(), signature.var_args)
+        }
+        AnyTypeEnum::PointerType(ptr_type) => ptr_type.fn_type(args.as_slice(), signature.var_args),
+        AnyTypeEnum::StructType(struct_type) => {
+            struct_type.fn_type(args.as_slice(), signature.var_args)
+        }
+        AnyTypeEnum::VectorType(vector_type) => {
+            vector_type.fn_type(args.as_slice(), signature.var_args)
+        }
+        AnyTypeEnum::VoidType(void_type) => void_type.fn_type(args.as_slice(), signature.var_args),
+
+        _ty => panic!("Invalid return type, found: {_ty:?}"),
+    })
 }
 
 pub(crate) fn bc_llvm_prototype<'a>(
     state: &GlobalState<'a>,
     prototype: &LMIRFunctionPrototype,
 ) -> Option<FunctionType<'a>> {
-    bc_llvm_signature(state, &prototype.signature())
+    bc_llvm_signature(state, prototype.signature())
 }
 
 pub(crate) fn convert_linkage(linkage: LinkageType) -> Linkage {

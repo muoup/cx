@@ -2,8 +2,8 @@ use crate::attributes::*;
 use crate::typing::{bc_llvm_prototype, bc_llvm_type, convert_linkage};
 use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    ElementID, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
-    LMIRParameterABI, LMIRUnit, LMIRValue,
+    ElementID, LMIRABISlot, LMIRBasicBlock, LMIRBlockID, LMIRFunction, LMIRFunctionMap,
+    LMIRFunctionPrototype, LMIRParameterABI, LMIRReturnABI, LMIRUnit, LMIRValue,
 };
 use cx_util::CXResult;
 use inkwell::attributes::AttributeLoc;
@@ -13,7 +13,7 @@ use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::FunctionType;
-use inkwell::values::{AnyValue, AnyValueEnum, FunctionValue, GlobalValue};
+use inkwell::values::{AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue};
 
 use crate::globals::generate_global_variable;
 use crate::instruction::reset_num;
@@ -44,6 +44,7 @@ pub(crate) struct FunctionState<'a, 'b> {
     function_value: &'b FunctionValue<'a>,
 
     current_function: String,
+    signature: cx_lmir::LMIRFunctionSignature,
 
     builder: Builder<'a>,
     value_map: HashMap<LMIRValue, CodegenValue<'a>>,
@@ -113,6 +114,7 @@ impl<'a> FunctionState<'a, '_> {
 #[derive(Debug, Clone)]
 pub(crate) enum CodegenValue<'a> {
     Value(AnyValueEnum<'a>),
+    AggregateSlots(Vec<(LMIRABISlot, BasicValueEnum<'a>)>),
     NULL,
 }
 
@@ -236,6 +238,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> Option
         function_value: &func_val,
 
         current_function: bytecode.prototype.name.clone(),
+        signature: bytecode.prototype.signature.clone(),
 
         builder,
         value_map: HashMap::new(),
@@ -311,29 +314,41 @@ fn cache_prototype<'a>(
     // Put each function in its own ELF section for --gc-sections DCE
     func.set_section(Some(&format!(".text.{}", prototype.name)));
 
-    for (i, _type) in prototype.params.iter().enumerate() {
-        get_type_attributes(global_state.context, &_type._type)
+    let signature = prototype.signature();
+    for i in 0..signature.expanded_param_count() {
+        let param_type = signature.expanded_param_type(i).unwrap();
+        get_type_attributes(global_state.context, &param_type)
             .into_iter()
             .for_each(|attr| {
                 func.add_attribute(AttributeLoc::Param(i as u32), attr);
             });
-        match &_type.abi {
-            LMIRParameterABI::Normal => {}
-            LMIRParameterABI::ByVal { pointee, .. } => {
-                let pointee = bc_llvm_type(global_state.context, pointee)?;
-                func.add_attribute(
-                    AttributeLoc::Param(i as u32),
-                    attr_byval(global_state.context, pointee),
-                );
-            }
-            LMIRParameterABI::StructReturn { pointee, .. } => {
-                let pointee = bc_llvm_type(global_state.context, pointee)?;
-                func.add_attribute(
-                    AttributeLoc::Param(i as u32),
-                    attr_sret(global_state.context, pointee),
-                );
-            }
+    }
+
+    let mut param_index = 0usize;
+    if let LMIRReturnABI::IndirectSret {
+        alignment: _,
+        returns_pointer: false,
+    } = &signature.return_abi
+    {
+        let pointee = bc_llvm_type(global_state.context, &signature.return_type)?;
+        func.add_attribute(
+            AttributeLoc::Param(param_index as u32),
+            attr_sret(global_state.context, pointee),
+        );
+    }
+    if signature.return_abi.has_indirect_return_param() {
+        param_index += 1;
+    }
+
+    for param in &signature.params {
+        if let LMIRParameterABI::Indirect { byval: true, .. } = &param.abi {
+            let pointee = bc_llvm_type(global_state.context, &param._type)?;
+            func.add_attribute(
+                AttributeLoc::Param(param_index as u32),
+                attr_byval(global_state.context, pointee),
+            );
         }
+        param_index += param.abi.slot_count();
     }
 
     global_state

@@ -8,6 +8,7 @@ use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
 use cranelift_module::{DataId, FuncId, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
+use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_util::identifier::CXIdent;
 use cx_util::{log_error, CXError, CXResult};
@@ -24,6 +25,7 @@ mod value_type;
 pub(crate) enum CodegenValue {
     Value(Value),
     Aggregate(Vec<Value>),
+    AggregateSlots(Vec<(LMIRABISlot, Value)>),
     NULL,
 }
 
@@ -56,6 +58,7 @@ pub struct FunctionState<'a> {
 
     pub(crate) variable_table: VariableTable,
     pub(crate) pointer_type: ir::Type,
+    pub(crate) signature: LMIRFunctionSignature,
 }
 
 pub(crate) struct GlobalState<'a> {

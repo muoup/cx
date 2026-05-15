@@ -57,12 +57,8 @@ pub enum LMIRTypeKind {
     },
 
     Vector {
-        element: Box<LMIRType>,
+        element: LMIRFloatType,
         count: usize,
-    },
-
-    ABIAggregate {
-        fields: Vec<LMIRType>,
     },
 
     Array {
@@ -70,10 +66,6 @@ pub enum LMIRTypeKind {
         size: usize,
     },
     Struct {
-        name: String,
-        fields: Vec<(String, LMIRType)>,
-    },
-    Union {
         name: String,
         fields: Vec<(String, LMIRType)>,
     },
@@ -94,8 +86,7 @@ impl LMIRType {
             LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
             LMIRTypeKind::Float(_type) => _type.bytes() as usize,
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            LMIRTypeKind::Vector { element, count } => element.size() * count,
-            LMIRTypeKind::ABIAggregate { fields } => fields.iter().map(|field| field.size()).sum(),
+            LMIRTypeKind::Vector { element, count } => element.bytes() as usize * count,
             LMIRTypeKind::Array { element, size } => element.size() * size,
             LMIRTypeKind::Struct { fields, .. } => {
                 let mut current_size = 0;
@@ -113,10 +104,12 @@ impl LMIRType {
                     current_size += field_size;
                 }
 
+                let alignment = self.alignment() as usize;
+                if current_size % alignment != 0 {
+                    current_size += alignment - (current_size % alignment);
+                }
+
                 current_size
-            }
-            LMIRTypeKind::Union { fields, .. } => {
-                fields.iter().map(|(_, field)| field.size()).max().unwrap()
             }
 
             LMIRTypeKind::Unit => 0,
@@ -129,19 +122,9 @@ impl LMIRType {
             LMIRTypeKind::Integer(_type) => _type.bytes().min(8),
             LMIRTypeKind::Float(_type) => _type.bytes().min(8),
             LMIRTypeKind::Pointer { .. } => 8, // TODO: make this configurable
-            LMIRTypeKind::Vector { element, .. } => element.alignment(),
-            LMIRTypeKind::ABIAggregate { fields } => fields
-                .iter()
-                .map(|field| field.alignment())
-                .max()
-                .unwrap_or(1),
+            LMIRTypeKind::Vector { element, .. } => element.bytes().min(16),
             LMIRTypeKind::Array { element, .. } => element.alignment(),
             LMIRTypeKind::Struct { fields, .. } => fields
-                .iter()
-                .map(|(_, field)| field.alignment())
-                .max()
-                .unwrap_or(8),
-            LMIRTypeKind::Union { fields, .. } => fields
                 .iter()
                 .map(|(_, field)| field.alignment())
                 .max()
@@ -167,10 +150,8 @@ impl LMIRType {
             LMIRTypeKind::Float(_) => false,
             LMIRTypeKind::Pointer { .. } => false,
             LMIRTypeKind::Vector { .. } => false,
-            LMIRTypeKind::ABIAggregate { .. } => false,
             LMIRTypeKind::Array { .. } => true,
             LMIRTypeKind::Struct { .. } => true,
-            LMIRTypeKind::Union { .. } => true,
             LMIRTypeKind::Unit => false,
         }
     }

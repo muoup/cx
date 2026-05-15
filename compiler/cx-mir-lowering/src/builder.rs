@@ -36,7 +36,6 @@ pub struct LMIRFunctionContext {
 
     current_block: usize,
     register_counter: u32,
-    return_buffer_size: Option<usize>,
 
     blocks: Vec<LMIRBasicBlock>,
 }
@@ -73,11 +72,7 @@ impl LMIRBuilder {
         LMIRRegister::new(format!("{}", reg_id))
     }
 
-    pub fn new_function(
-        &mut self,
-        fn_prototype: MIRFunctionPrototype,
-        return_buffer_size: Option<usize>,
-    ) {
+    pub fn new_function(&mut self, fn_prototype: MIRFunctionPrototype) {
         assert!(
             self.function_context.is_none(),
             "Attempted to start a new function while another function context is active"
@@ -94,7 +89,6 @@ impl LMIRBuilder {
             mir_prototype: fn_prototype,
             current_block: 0,
             register_counter: 0,
-            return_buffer_size,
 
             blocks: Vec::new(),
         });
@@ -217,10 +211,6 @@ impl LMIRBuilder {
 
     pub fn get_prototype(&self, name: &str) -> Option<&LMIRFunctionPrototype> {
         self.fn_map.get(name)
-    }
-
-    pub fn return_buffer_size(&self) -> Option<usize> {
-        self.fun().return_buffer_size
     }
 
     pub fn get_symbol(&self, name: &CXIdent) -> Option<LMIRValue> {
@@ -351,13 +341,10 @@ impl LMIRBuilder {
 
             LMIRValue::ParameterRef(param_index) => {
                 let context = self.fun();
-                let param = context
-                    .prototype
-                    .params
-                    .get(*param_index as usize)
-                    .expect("Parameter index out of bounds in function prototype");
-
-                param._type.clone()
+                let signature = context.prototype.signature();
+                signature
+                    .expanded_param_type(*param_index as usize)
+                    .expect("Parameter index out of bounds in function prototype")
             }
             LMIRValue::Global(global_index) => {
                 let global = self

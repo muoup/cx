@@ -1,8 +1,5 @@
-use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::{
-    LMIRABIArgKind, LMIRABIParameter, LMIRABIReturnKind, LMIRABISignature, LMIRABISlot,
-    LMIRParameter,
-};
+use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
+use cx_lmir::{LMIRABISlot, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI, LMIRReturnABI};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LMIRABIMode {
@@ -15,27 +12,28 @@ pub(crate) fn classify_signature(
     params: Vec<LMIRParameter>,
     var_args: bool,
     mode: LMIRABIMode,
-) -> LMIRABISignature {
-    let return_kind = classify_return(return_type, mode);
+) -> LMIRFunctionSignature {
+    let return_abi = classify_return(return_type.clone(), mode);
     let params = params
         .into_iter()
         .map(|param| classify_param(param, mode))
         .collect();
 
-    LMIRABISignature {
-        return_kind,
+    LMIRFunctionSignature {
+        return_type,
+        return_abi,
         params,
         var_args,
     }
 }
 
-fn classify_return(return_type: LMIRType, mode: LMIRABIMode) -> LMIRABIReturnKind {
+fn classify_return(return_type: LMIRType, mode: LMIRABIMode) -> LMIRReturnABI {
     if return_type.is_void() {
-        return LMIRABIReturnKind::Void;
+        return LMIRReturnABI::Void;
     }
 
     if !return_type.is_memory_resident() {
-        return LMIRABIReturnKind::Direct {
+        return LMIRReturnABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
                 _type: return_type,
@@ -45,20 +43,19 @@ fn classify_return(return_type: LMIRType, mode: LMIRABIMode) -> LMIRABIReturnKin
 
     if mode == LMIRABIMode::C {
         if let Some(slots) = direct_aggregate_slots(&return_type) {
-            return LMIRABIReturnKind::Direct { slots };
+            return LMIRReturnABI::Direct { slots };
         }
     }
 
-    LMIRABIReturnKind::IndirectSret {
+    LMIRReturnABI::IndirectSret {
         alignment: return_type.alignment(),
         returns_pointer: mode == LMIRABIMode::Internal,
-        pointee: return_type,
     }
 }
 
-fn classify_param(param: LMIRParameter, mode: LMIRABIMode) -> LMIRABIParameter {
-    let kind = if !param._type.is_memory_resident() {
-        LMIRABIArgKind::Direct {
+fn classify_param(mut param: LMIRParameter, mode: LMIRABIMode) -> LMIRParameter {
+    param.abi = if !param._type.is_memory_resident() {
+        LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
                 _type: param._type.clone(),
@@ -66,22 +63,20 @@ fn classify_param(param: LMIRParameter, mode: LMIRABIMode) -> LMIRABIParameter {
         }
     } else if mode == LMIRABIMode::C {
         if let Some(slots) = direct_aggregate_slots(&param._type) {
-            LMIRABIArgKind::Direct { slots }
+            LMIRParameterABI::Direct { slots }
         } else {
-            LMIRABIArgKind::Indirect {
+            LMIRParameterABI::Indirect {
                 alignment: param._type.alignment(),
-                pointee: param._type.clone(),
                 byval: true,
             }
         }
     } else if param._type.is_structure() {
-        LMIRABIArgKind::Indirect {
+        LMIRParameterABI::Indirect {
             alignment: param._type.alignment(),
-            pointee: param._type.clone(),
             byval: false,
         }
     } else {
-        LMIRABIArgKind::Direct {
+        LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
                 _type: param._type.clone(),
@@ -89,23 +84,15 @@ fn classify_param(param: LMIRParameter, mode: LMIRABIMode) -> LMIRABIParameter {
         }
     };
 
-    LMIRABIParameter {
-        name: param.name,
-        semantic_type: param._type,
-        kind,
-    }
+    param
 }
 
-pub(crate) fn direct_integer_aggregate_type(ty: &LMIRType) -> Option<LMIRType> {
-    if !ty.is_structure() && !matches!(ty.kind, LMIRTypeKind::Union { .. }) {
-        return None;
-    }
-
-    match ty.size() {
+fn integer_slot_type(size: usize) -> Option<LMIRType> {
+    match size {
         1 => Some(LMIRTypeKind::Integer(LMIRIntegerType::I8).into()),
         2 => Some(LMIRTypeKind::Integer(LMIRIntegerType::I16).into()),
-        4 => Some(LMIRTypeKind::Integer(LMIRIntegerType::I32).into()),
-        8 => Some(LMIRTypeKind::Integer(LMIRIntegerType::I64).into()),
+        3 | 4 => Some(LMIRTypeKind::Integer(LMIRIntegerType::I32).into()),
+        5..=8 => Some(LMIRTypeKind::Integer(LMIRIntegerType::I64).into()),
         _ => None,
     }
 }
@@ -115,72 +102,107 @@ fn direct_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
         return Some(vec![LMIRABISlot { _type, offset: 0 }]);
     }
 
-    if let Some(fields) = homogeneous_float_fields(ty) {
-        if fields.len() == 4 && fields.iter().all(|field| field.size() == 4) {
-            let lane = LMIRTypeKind::Float(cx_lmir::types::LMIRFloatType::F32).into();
-            let vector: LMIRType = LMIRTypeKind::Vector {
-                element: Box::new(lane),
-                count: 2,
+    if let Some((fields, ftype)) = homogeneous_float_fields(ty) {
+        match (fields, ftype) {
+            (size @ (2 | 4), LMIRFloatType::F32) => {
+                let vector: LMIRType = LMIRTypeKind::Vector {
+                    element: LMIRFloatType::F32,
+                    count: 2,
+                }
+                .into();
+
+                return Some(if size == 2 {
+                    vec![LMIRABISlot {
+                        _type: vector,
+                        offset: 0,
+                    }]
+                } else {
+                    vec![
+                        LMIRABISlot {
+                            _type: vector.clone(),
+                            offset: 0,
+                        },
+                        LMIRABISlot {
+                            _type: vector,
+                            offset: 8,
+                        },
+                    ]
+                });
             }
-            .into();
-            return Some(vec![
-                LMIRABISlot {
-                    _type: vector.clone(),
+
+            (1, _) => {
+                return Some(vec![LMIRABISlot {
+                    _type: LMIRTypeKind::Float(ftype).into(),
                     offset: 0,
-                },
-                LMIRABISlot {
-                    _type: vector,
-                    offset: 8,
-                },
-            ]);
+                }])
+            }
+
+            _ => {}
         }
     }
 
-    direct_integer_aggregate_type(ty).map(|_type| vec![LMIRABISlot { _type, offset: 0 }])
+    direct_integer_aggregate_slots(ty)
+}
+
+fn direct_integer_aggregate_slots(ty: &LMIRType) -> Option<Vec<LMIRABISlot>> {
+    if !ty.is_structure() && !matches!(ty.kind, LMIRTypeKind::Opaque { .. }) {
+        return None;
+    }
+
+    match ty.size() {
+        0 => None,
+        size @ 1..=8 => Some(vec![LMIRABISlot {
+            _type: integer_slot_type(size)?,
+            offset: 0,
+        }]),
+        size @ 9..=16 => Some(vec![
+            LMIRABISlot {
+                _type: LMIRTypeKind::Integer(LMIRIntegerType::I64).into(),
+                offset: 0,
+            },
+            LMIRABISlot {
+                _type: integer_slot_type(size - 8)?,
+                offset: 8,
+            },
+        ]),
+        _ => None,
+    }
 }
 
 fn direct_sse_aggregate_type(ty: &LMIRType) -> Option<LMIRType> {
-    let fields = homogeneous_float_fields(ty)?;
-    let first = fields.first()?;
+    let (len, ftype) = homogeneous_float_fields(ty)?;
 
-    if fields.len() == 1 {
-        return Some(first.clone());
-    }
-
-    if fields.len() == 2 && fields.iter().all(|field| field.size() == 4) {
-        return Some(
+    match (len, ftype) {
+        (1, _) => Some(LMIRTypeKind::Float(ftype).into()),
+        (2, LMIRFloatType::F32) => Some(
             LMIRTypeKind::Vector {
-                element: Box::new(first.clone()),
+                element: ftype,
                 count: 2,
             }
             .into(),
-        );
+        ),
+        _ => None,
     }
-
-    None
 }
 
-fn homogeneous_float_fields(ty: &LMIRType) -> Option<Vec<LMIRType>> {
+fn homogeneous_float_fields(ty: &LMIRType) -> Option<(usize, LMIRFloatType)> {
     let LMIRTypeKind::Struct { fields, .. } = &ty.kind else {
         return None;
     };
 
-    let fields = fields
-        .iter()
-        .map(|(_, field)| field.clone())
-        .collect::<Vec<_>>();
-
-    if fields.is_empty()
-        || fields
-            .iter()
-            .any(|field| !matches!(field.kind, LMIRTypeKind::Float(_)))
-    {
+    let LMIRTypeKind::Float(_fty) = &fields.get(0)?.1.kind else {
         return None;
+    };
+
+    for (_, _ty) in fields.iter().skip(1) {
+        let LMIRTypeKind::Float(_fty2) = &_ty.kind else {
+            return None;
+        };
+
+        if *_fty2 != *_fty {
+            return None;
+        }
     }
 
-    if fields.iter().map(|field| field.size()).sum::<usize>() != ty.size() {
-        return None;
-    }
-
-    Some(fields)
+    Some((fields.len(), *_fty))
 }

@@ -4,11 +4,11 @@
 
 use cx_lmir::{
     types::{LMIRIntegerType, LMIRType, LMIRTypeKind},
-    LMIRABIArgKind, LMIRABISignature, LMIRABISlot, LMIRInstructionKind, LMIRIntBinOp, LMIRPtrBinOp,
-    LMIRValue,
+    LMIRABISlot, LMIRFunctionSignature, LMIRInstructionKind, LMIRIntBinOp, LMIRParameterABI,
+    LMIRPtrBinOp, LMIRValue,
 };
 use cx_mir::mir::{
-    data::MIRTypeKind,
+    data::{MIRFunctionSignature, MIRTypeKind},
     expression::{MIRExpression, MIRExpressionKind, MIRFunctionContract, StructInitialization},
     program::MIRFunction,
     r#type::{MIRField, MIRType},
@@ -55,9 +55,7 @@ fn aggregate_member_layout(
                 .get(member_index)
                 .unwrap_or_else(|| panic!("member index {member_index} out of bounds"));
             match field {
-                MIRField::Standard { .. } => {
-                    AggregateMemberLayout::Standard { byte_offset: 0 }
-                }
+                MIRField::Standard { .. } => AggregateMemberLayout::Standard { byte_offset: 0 },
                 MIRField::Bitfield {
                     integer_type_id,
                     width,
@@ -480,6 +478,7 @@ pub fn lower_expression(builder: &mut LMIRBuilder, expr: &MIRExpression) -> CXRe
             if *force_param {
                 let idx = builder
                     .current_prototype()
+                    .signature()
                     .params
                     .iter()
                     .position(|param| {
@@ -896,18 +895,16 @@ fn lower_call(
         _ => unreachable!("Call expression function must have function type"),
     };
 
-    let abi_signature = call_abi_signature(builder, &fn_val, &signature);
-    let bc_signature = abi_signature.lowered_signature();
-    let bc_return_type = bc_signature.return_type.clone();
-    let returns_indirectly = abi_signature.return_kind.sret_type().is_some();
+    let call_signature = lower_call_signature(builder, &fn_val, &signature);
+    let returns_indirectly = call_signature.return_abi.has_indirect_return_param();
     let mut args = Vec::new();
     for (i, arg) in arguments.iter().enumerate() {
-        if let Some(abi_param) = abi_signature.params.get(i) {
+        if let Some(abi_param) = call_signature.params.get(i) {
             args.extend(lower_call_argument(
                 builder,
                 arg,
-                &abi_param.kind,
-                &abi_param.semantic_type,
+                &abi_param.abi,
+                &abi_param._type,
             )?);
         } else {
             args.push(lower_expression(builder, arg)?);
@@ -950,10 +947,17 @@ fn lower_call(
         None
     };
 
-    let instruction_return_type = if return_buffer.is_some() {
-        bc_signature.return_type.clone()
-    } else {
-        bc_signature.return_type.clone()
+    let instruction_return_type = match &call_signature.return_abi {
+        cx_lmir::LMIRReturnABI::Void => LMIRType::unit(),
+        cx_lmir::LMIRReturnABI::Direct { .. } => return_type.clone(),
+        cx_lmir::LMIRReturnABI::IndirectSret {
+            returns_pointer: true,
+            ..
+        } => LMIRType::default_pointer(),
+        cx_lmir::LMIRReturnABI::IndirectSret {
+            returns_pointer: false,
+            ..
+        } => LMIRType::unit(),
     };
 
     let value = if let LMIRValue::FunctionRef(func) = &fn_val {
@@ -961,7 +965,7 @@ fn lower_call(
             LMIRInstructionKind::DirectCall {
                 func: func.clone(),
                 args,
-                method_sig: bc_signature.clone(),
+                method_sig: call_signature.clone(),
             },
             instruction_return_type.clone(),
             true,
@@ -969,7 +973,7 @@ fn lower_call(
     } else {
         builder.add_new_instruction(
             LMIRInstructionKind::IndirectCall {
-                method_sig: bc_signature,
+                method_sig: call_signature,
                 func_ptr: fn_val,
                 args,
             },
@@ -993,7 +997,7 @@ fn lower_call(
             LMIRInstructionKind::Store {
                 memory: buffer.clone(),
                 value,
-                _type: bc_return_type,
+                _type: return_type.clone(),
             },
             LMIRType::unit(),
             false,
@@ -1031,14 +1035,14 @@ fn lower_call(
     Ok(value)
 }
 
-fn call_abi_signature(
+fn lower_call_signature(
     builder: &LMIRBuilder,
     fn_val: &LMIRValue,
-    semantic_signature: &cx_mir::mir::data::MIRFunctionSignature,
-) -> LMIRABISignature {
+    semantic_signature: &MIRFunctionSignature,
+) -> LMIRFunctionSignature {
     if let LMIRValue::FunctionRef(func) = fn_val {
         if let Some(prototype) = builder.get_prototype(func.as_str()) {
-            return prototype.abi_signature.clone();
+            return prototype.signature.clone();
         }
     }
 
@@ -1049,7 +1053,7 @@ fn call_abi_signature(
         .map(|param| cx_lmir::LMIRParameter {
             name: param.name.clone(),
             _type: builder.convert_cx_type(&param._type),
-            abi: cx_lmir::LMIRParameterABI::Normal,
+            abi: LMIRParameterABI::Direct { slots: vec![] },
         })
         .collect();
 
@@ -1064,11 +1068,11 @@ fn call_abi_signature(
 fn lower_call_argument(
     builder: &mut LMIRBuilder,
     arg: &MIRExpression,
-    abi_arg: &LMIRABIArgKind,
+    abi_arg: &LMIRParameterABI,
     semantic_param_type: &LMIRType,
 ) -> CXResult<Vec<LMIRValue>> {
     match abi_arg {
-        LMIRABIArgKind::Direct { slots } => {
+        LMIRParameterABI::Direct { slots } => {
             if semantic_param_type.is_memory_resident() {
                 let source = if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
                     source.as_ref()
@@ -1084,14 +1088,16 @@ fn lower_call_argument(
                 Ok(vec![lower_expression(builder, arg)?])
             }
         }
-        LMIRABIArgKind::Indirect {
-            pointee,
+        LMIRParameterABI::Indirect {
             byval: _,
             alignment,
         } => {
             if let MIRExpressionKind::ByValueArgument { source } = &arg.kind {
                 return Ok(vec![lower_byval_copy_argument(
-                    builder, source, pointee, *alignment,
+                    builder,
+                    source,
+                    semantic_param_type,
+                    *alignment,
                 )?]);
             }
 
@@ -1180,7 +1186,7 @@ pub(crate) fn lower_contract_assertion(
         LMIRInstructionKind::DirectCall {
             func: cx_util::identifier::CXIdent::from("__compiler_assert"),
             args: vec![condition_val, message_global],
-            method_sig: assert_prototype.signature(),
+            method_sig: assert_prototype.signature().clone(),
         },
         LMIRType::unit(),
         false,
@@ -1364,29 +1370,79 @@ fn lower_struct_initializer(
 /// Generate LMIR for an MIR function
 pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResult<()> {
     let bc_proto = builder.convert_cx_prototype(&mir_fn.prototype);
-    let raw_return_type = builder.convert_cx_type(&mir_fn.prototype.return_type);
 
-    let return_buffer_size = if raw_return_type.is_memory_resident() {
-        Some(raw_return_type.size())
-    } else {
-        None
-    };
-
-    builder.new_function(mir_fn.prototype.clone(), return_buffer_size);
+    builder.new_function(mir_fn.prototype.clone());
     assert_eq!(builder.scope_depth(), 1);
 
     let entry_block = builder.create_block(Some("entry"));
     builder.set_current_block(entry_block);
 
-    let has_return_buffer = bc_proto.temp_buffer.is_some();
-    let param_offset = if has_return_buffer { 1 } else { 0 };
+    let has_return_buffer = bc_proto.signature.return_abi.has_indirect_return_param();
+    let mut lowered_param_index = if has_return_buffer { 1 } else { 0 };
 
     for (i, param) in mir_fn.prototype.params.iter().enumerate() {
+        let abi_param = bc_proto
+            .signature
+            .params
+            .get(i)
+            .expect("function ABI param missing for MIR parameter");
+        let lowered_param_count = abi_param.abi.slot_count();
+
         if let Some(name) = &param.name {
             let param_type = builder.convert_cx_parameter_type(&param._type);
             let raw_param_type = builder.convert_cx_type(&param._type);
 
-            if !raw_param_type.is_memory_resident() {
+            if raw_param_type.is_memory_resident()
+                && matches!(abi_param.abi, LMIRParameterABI::Direct { .. })
+            {
+                let alloc = builder.add_new_instruction(
+                    LMIRInstructionKind::Allocate {
+                        alignment: raw_param_type.alignment(),
+                        _type: raw_param_type.clone(),
+                    },
+                    LMIRType::default_pointer(),
+                    true,
+                )?;
+                if let LMIRParameterABI::Direct { slots } = &abi_param.abi {
+                    for (slot_i, slot) in slots.iter().enumerate() {
+                        let memory = if slot.offset == 0 {
+                            alloc.clone()
+                        } else {
+                            builder.add_new_instruction(
+                                LMIRInstructionKind::PointerBinOp {
+                                    op: LMIRPtrBinOp::ADD,
+                                    ptr_type: slot._type.clone(),
+                                    type_padded_size: 1,
+                                    left: alloc.clone(),
+                                    right: builder
+                                        .int_const(slot.offset as i32, LMIRIntegerType::I64),
+                                },
+                                LMIRType::default_pointer(),
+                                true,
+                            )?
+                        };
+                        builder.add_new_instruction(
+                            LMIRInstructionKind::Store {
+                                memory,
+                                value: LMIRValue::ParameterRef(
+                                    (lowered_param_index + slot_i) as u32,
+                                ),
+                                _type: slot._type.clone(),
+                            },
+                            LMIRType::unit(),
+                            false,
+                        )?;
+                    }
+                    lowered_param_index += slots.len();
+                }
+                builder.insert_symbol(name.clone(), alloc);
+            } else if raw_param_type.is_memory_resident() {
+                builder.insert_symbol(
+                    name.clone(),
+                    LMIRValue::ParameterRef(lowered_param_index as u32),
+                );
+                lowered_param_index += 1;
+            } else {
                 let alloc = builder.add_new_instruction(
                     LMIRInstructionKind::Allocate {
                         alignment: param_type.alignment(),
@@ -1398,19 +1454,17 @@ pub fn lower_function(builder: &mut LMIRBuilder, mir_fn: &MIRFunction) -> CXResu
                 builder.add_new_instruction(
                     LMIRInstructionKind::Store {
                         memory: alloc.clone(),
-                        value: LMIRValue::ParameterRef((i + param_offset) as u32),
+                        value: LMIRValue::ParameterRef(lowered_param_index as u32),
                         _type: param_type,
                     },
                     LMIRType::unit(),
                     false,
                 )?;
                 builder.insert_symbol(name.clone(), alloc);
-            } else {
-                builder.insert_symbol(
-                    name.clone(),
-                    LMIRValue::ParameterRef((i + param_offset) as u32),
-                );
+                lowered_param_index += 1;
             }
+        } else {
+            lowered_param_index += lowered_param_count;
         }
     }
 

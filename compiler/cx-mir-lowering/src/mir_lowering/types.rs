@@ -64,7 +64,7 @@ pub(crate) fn convert_cx_prototype(
         .map(|param| LMIRParameter {
             name: param.name.clone(),
             _type: convert_type(&param._type, definitions),
-            abi: LMIRParameterABI::Normal,
+            abi: LMIRParameterABI::Direct { slots: vec![] },
         })
         .collect::<Vec<_>>();
     let abi_mode = if cx_proto.linkage == CXLinkageMode::Extern {
@@ -72,23 +72,12 @@ pub(crate) fn convert_cx_prototype(
     } else {
         LMIRABIMode::Internal
     };
-    let abi_signature = classify_signature(
-        raw_return_type.clone(),
-        raw_params,
-        cx_proto.var_args,
-        abi_mode,
-    );
-    let bc_proto = abi_signature.lowered_signature();
-    let temp_buffer = abi_signature.return_kind.sret_type();
+    let signature = classify_signature(raw_return_type, raw_params, cx_proto.var_args, abi_mode);
 
     LMIRFunctionPrototype {
         name: cx_proto.name.to_string(),
-        return_type: bc_proto.return_type.clone(),
-        params: bc_proto.params.clone(),
-        var_args: bc_proto.var_args,
         linkage: convert_linkage(cx_proto.linkage),
-        temp_buffer,
-        abi_signature,
+        signature,
     }
 }
 
@@ -147,14 +136,14 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRTypeContext)
             fields: vec![
                 (
                     "data".to_string(),
-                    LMIRTypeKind::Union {
-                        name: String::new(),
-                        fields: cx_type
+                    LMIRTypeKind::Opaque {
+                        bytes: cx_type
                             .aggregate_fields(definitions)
                             .unwrap()
                             .iter()
-                            .map(|(name, _type)| (name.clone(), convert_type(_type, definitions)))
-                            .collect::<Vec<_>>(),
+                            .map(|(_, _type)| convert_type(_type, definitions).size())
+                            .max()
+                            .unwrap_or(0),
                     }
                     .into(),
                 ),
@@ -195,17 +184,8 @@ pub(crate) fn convert_type_kind(cx_type: &MIRType, definitions: &MIRTypeContext)
                 .map(|(_name, _type)| (_name.clone(), convert_type(_type, definitions)))
                 .collect::<Vec<_>>(),
         },
-        MIRTypeKind::Union { .. } => LMIRTypeKind::Union {
-            name: cx_type
-                .get_name()
-                .map(|name| name.as_string())
-                .unwrap_or_default(),
-            fields: cx_type
-                .aggregate_fields(definitions)
-                .unwrap()
-                .iter()
-                .map(|(_name, _type)| (_name.clone(), convert_type(_type, definitions)))
-                .collect::<Vec<_>>(),
+        MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
+            bytes: cx_type.type_size(definitions),
         },
 
         MIRTypeKind::Unit => LMIRTypeKind::Unit,

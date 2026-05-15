@@ -413,11 +413,12 @@ pub fn lower_return(
         builder.pop_scope()?;
     }
 
-    let has_return_buffer = builder.current_prototype().temp_buffer.is_some();
+    let signature = builder.current_prototype().signature().clone();
+    let has_return_buffer = signature.return_abi.has_indirect_return_param();
 
     if has_return_buffer {
         let return_buffer = LMIRValue::ParameterRef(0);
-        let return_type = builder.current_prototype().temp_buffer.clone().unwrap();
+        let return_type = signature.return_type.clone();
 
         if let Some(src) = bc_value {
             builder.add_new_instruction(
@@ -435,13 +436,16 @@ pub fn lower_return(
             )?;
         }
 
+        let return_value =
+            if signature.return_type.is_void() || !signature.return_abi.returns_pointer() {
+                None
+            } else {
+                Some(return_buffer)
+            };
+
         builder.add_new_instruction(
             LMIRInstructionKind::Return {
-                value: if builder.current_prototype().return_type.is_void() {
-                    None
-                } else {
-                    Some(return_buffer)
-                },
+                value: return_value,
             },
             LMIRType::unit(),
             false,

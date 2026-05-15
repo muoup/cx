@@ -1,4 +1,4 @@
-use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
+use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use std::collections::HashMap;
 
@@ -88,27 +88,27 @@ pub struct LMIRParameter {
 
 #[derive(Debug, Clone)]
 pub enum LMIRParameterABI {
-    Normal,
-    ByVal { pointee: LMIRType, alignment: u8 },
-    StructReturn { pointee: LMIRType, alignment: u8 },
+    Direct { slots: Vec<LMIRABISlot> },
+    Indirect { byval: bool, alignment: u8 },
 }
 
 #[derive(Debug, Clone)]
 pub struct LMIRFunctionSignature {
     pub return_type: LMIRType,
+    pub return_abi: LMIRReturnABI,
     pub params: Vec<LMIRParameter>,
     pub var_args: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum LMIRABIArgKind {
+pub enum LMIRReturnABI {
+    Void,
     Direct {
         slots: Vec<LMIRABISlot>,
     },
-    Indirect {
-        pointee: LMIRType,
-        byval: bool,
+    IndirectSret {
         alignment: u8,
+        returns_pointer: bool,
     },
 }
 
@@ -118,156 +118,83 @@ pub struct LMIRABISlot {
     pub offset: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct LMIRABIParameter {
-    pub name: Option<CXIdent>,
-    pub semantic_type: LMIRType,
-    pub kind: LMIRABIArgKind,
-}
-
-#[derive(Debug, Clone)]
-pub enum LMIRABIReturnKind {
-    Void,
-    Direct {
-        slots: Vec<LMIRABISlot>,
-    },
-    IndirectSret {
-        pointee: LMIRType,
-        alignment: u8,
-        returns_pointer: bool,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct LMIRABISignature {
-    pub return_kind: LMIRABIReturnKind,
-    pub params: Vec<LMIRABIParameter>,
-    pub var_args: bool,
-}
-
-impl LMIRABIArgKind {
-    pub fn lowered_params(&self, name: Option<CXIdent>) -> Vec<LMIRParameter> {
+impl LMIRParameterABI {
+    pub fn slot_count(&self) -> usize {
         match self {
-            LMIRABIArgKind::Direct { slots } => slots
-                .iter()
-                .enumerate()
-                .map(|(i, slot)| LMIRParameter {
-                    name: name.as_ref().map(|name| {
-                        if slots.len() == 1 {
-                            name.clone()
-                        } else {
-                            CXIdent::from(format!("{name}.__abi_slot_{i}"))
-                        }
-                    }),
-                    _type: slot._type.clone(),
-                    abi: LMIRParameterABI::Normal,
-                })
-                .collect(),
-            LMIRABIArgKind::Indirect {
-                pointee,
-                byval,
-                alignment,
-            } => vec![LMIRParameter {
-                name,
-                _type: LMIRType::default_pointer(),
-                abi: if *byval {
-                    LMIRParameterABI::ByVal {
-                        pointee: pointee.clone(),
-                        alignment: *alignment,
-                    }
-                } else {
-                    LMIRParameterABI::Normal
-                },
-            }],
+            LMIRParameterABI::Direct { slots } => slots.len(),
+            LMIRParameterABI::Indirect { .. } => 1,
         }
     }
 }
 
-impl LMIRABIReturnKind {
-    pub fn lowered_type(&self) -> LMIRType {
-        match self {
-            LMIRABIReturnKind::Void => LMIRType::unit(),
-            LMIRABIReturnKind::Direct { slots } if slots.len() == 1 => slots[0]._type.clone(),
-            LMIRABIReturnKind::Direct { slots } => LMIRTypeKind::ABIAggregate {
-                fields: slots.iter().map(|slot| slot._type.clone()).collect(),
-            }
-            .into(),
-            LMIRABIReturnKind::IndirectSret {
-                returns_pointer: true,
-                ..
-            } => LMIRType::default_pointer(),
-            LMIRABIReturnKind::IndirectSret {
-                returns_pointer: false,
-                ..
-            } => LMIRType::unit(),
-        }
+impl LMIRReturnABI {
+    pub fn has_indirect_return_param(&self) -> bool {
+        matches!(self, LMIRReturnABI::IndirectSret { .. })
     }
 
-    pub fn sret_type(&self) -> Option<LMIRType> {
+    pub fn returns_pointer(&self) -> bool {
         match self {
-            LMIRABIReturnKind::IndirectSret { pointee, .. } => Some(pointee.clone()),
-            _ => None,
+            LMIRReturnABI::IndirectSret {
+                returns_pointer, ..
+            } => *returns_pointer,
+            _ => false,
         }
     }
 }
 
-impl LMIRABISignature {
-    pub fn lowered_signature(&self) -> LMIRFunctionSignature {
-        let mut params = self
-            .params
+impl LMIRFunctionSignature {
+    pub fn has_indirect_return_param(&self) -> bool {
+        self.return_abi.has_indirect_return_param()
+    }
+
+    pub fn expanded_param_count(&self) -> usize {
+        self.params
             .iter()
-            .flat_map(|param| param.kind.lowered_params(param.name.clone()))
-            .collect::<Vec<_>>();
+            .map(|param| param.abi.slot_count())
+            .sum::<usize>()
+            + usize::from(self.has_indirect_return_param())
+    }
 
-        if let LMIRABIReturnKind::IndirectSret {
-            pointee,
-            alignment,
-            returns_pointer,
-        } = &self.return_kind
-        {
-            params.insert(
-                0,
-                LMIRParameter {
-                    name: Some(CXIdent::from("__internal_buffer")),
-                    _type: LMIRType::default_pointer(),
-                    abi: if *returns_pointer {
-                        LMIRParameterABI::Normal
-                    } else {
-                        LMIRParameterABI::StructReturn {
-                            pointee: pointee.clone(),
-                            alignment: *alignment,
-                        }
-                    },
-                },
-            );
+    pub fn expanded_param_type(&self, index: usize) -> Option<LMIRType> {
+        let mut index = index;
+        if self.has_indirect_return_param() {
+            if index == 0 {
+                return Some(LMIRType::default_pointer());
+            }
+            index -= 1;
         }
 
-        LMIRFunctionSignature {
-            return_type: self.return_kind.lowered_type(),
-            params,
-            var_args: self.var_args,
+        for param in &self.params {
+            match &param.abi {
+                LMIRParameterABI::Direct { slots } => {
+                    if index < slots.len() {
+                        return Some(slots[index]._type.clone());
+                    }
+                    index -= slots.len();
+                }
+                LMIRParameterABI::Indirect { .. } => {
+                    if index == 0 {
+                        return Some(LMIRType::default_pointer());
+                    }
+                    index -= 1;
+                }
+            }
         }
+
+        None
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct LMIRFunctionPrototype {
     pub name: String,
-    pub return_type: LMIRType,
-    pub params: Vec<LMIRParameter>,
-    pub var_args: bool,
     pub linkage: LinkageType,
-    pub temp_buffer: Option<LMIRType>,
-    pub abi_signature: LMIRABISignature,
+    pub signature: LMIRFunctionSignature,
 }
 
 impl LMIRFunctionPrototype {
-    pub fn signature(&self) -> LMIRFunctionSignature {
-        LMIRFunctionSignature {
-            return_type: self.return_type.clone(),
-            params: self.params.clone(),
-            var_args: self.var_args,
-        }
+    pub fn signature(&self) -> &LMIRFunctionSignature {
+        &self.signature
     }
 }
 

@@ -19,24 +19,18 @@ pub(crate) fn get_cranelift_type(val_type: &LMIRType) -> CXResult<ir::Type> {
         LMIRTypeKind::Float(LMIRFloatType::F32) => ir::types::F32,
         LMIRTypeKind::Float(LMIRFloatType::F64) => ir::types::F64,
         LMIRTypeKind::Vector { element, count } => {
-            let element = get_cranelift_type(element)?;
+            let element = get_cranelift_type(&LMIRTypeKind::Float(*element).into())?;
             element.by(*count as u32).ok_or_else(|| {
                 CXError::create_boxed(format!(
                     "Unsupported vector type for codegen: {element} x {count}"
                 ))
             })?
         }
-        LMIRTypeKind::ABIAggregate { .. } => {
-            return CXError::create_result(format!(
-                "ABI aggregate must be expanded before scalar codegen: {val_type:?}"
-            ));
-        }
         // LMIRTypeKind::Float { bytes: 16 } => ir::types::F128,
         //
-        LMIRTypeKind::Union { .. }
-        | LMIRTypeKind::Struct { .. }
-        | LMIRTypeKind::Pointer { .. }
-        | LMIRTypeKind::Array { .. } => ir::Type::int(64).unwrap(),
+        LMIRTypeKind::Struct { .. } | LMIRTypeKind::Pointer { .. } | LMIRTypeKind::Array { .. } => {
+            ir::Type::int(64).unwrap()
+        }
 
         // FIXME: This is a bit of a hack, but for opaque types we can just treat them as an integer of the appropriate size.
         LMIRTypeKind::Opaque { .. } => ir::Type::int(64).unwrap(),

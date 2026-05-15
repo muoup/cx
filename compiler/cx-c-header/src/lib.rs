@@ -45,11 +45,12 @@ pub fn generate_header(
     let mut forward_decls: BTreeSet<String> = BTreeSet::new();
 
     for proto in &exported_protos {
-        collect_types(&proto.return_type, &mut type_defs, &mut forward_decls);
-        if let Some(ref tb) = proto.temp_buffer {
-            collect_types(tb, &mut type_defs, &mut forward_decls);
-        }
-        for param in &proto.params {
+        collect_types(
+            &proto.signature.return_type,
+            &mut type_defs,
+            &mut forward_decls,
+        );
+        for param in &proto.signature.params {
             collect_types(&param._type, &mut type_defs, &mut forward_decls);
         }
     }
@@ -96,22 +97,6 @@ fn collect_types(
                 collect_types(field_ty, type_defs, forward_decls);
             }
             let mut def = format!("struct {name} {{\n");
-            for (field_name, field_ty) in fields {
-                let c_type = lmir_type_to_c(field_ty, Some(field_name));
-                writeln!(def, "    {c_type};").unwrap();
-            }
-            write!(def, "}}").unwrap();
-            type_defs.insert(name.clone(), def);
-        }
-        LMIRTypeKind::Union { name, fields } => {
-            if type_defs.contains_key(name) {
-                return;
-            }
-            forward_decls.insert(format!("union {name}"));
-            for (_, field_ty) in fields {
-                collect_types(field_ty, type_defs, forward_decls);
-            }
-            let mut def = format!("union {name} {{\n");
             for (field_name, field_ty) in fields {
                 let c_type = lmir_type_to_c(field_ty, Some(field_name));
                 writeln!(def, "    {c_type};").unwrap();
@@ -179,15 +164,6 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
                 format!("struct {struct_name} {name}")
             }
         }
-        LMIRTypeKind::Union {
-            name: union_name, ..
-        } => {
-            if name.is_empty() {
-                format!("union {union_name}")
-            } else {
-                format!("union {union_name} {name}")
-            }
-        }
         LMIRTypeKind::Array { element, size } => {
             let elem_c = lmir_type_to_c(element, None);
             if name.is_empty() {
@@ -196,7 +172,7 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
                 format!("{elem_c} {name}[{size}]")
             }
         }
-        LMIRTypeKind::Vector { .. } | LMIRTypeKind::ABIAggregate { .. } => {
+        LMIRTypeKind::Vector { .. } => {
             panic!("ABI-only type cannot be emitted in a C header: {ty:?}")
         }
         LMIRTypeKind::Opaque { bytes } => {
@@ -211,17 +187,17 @@ fn lmir_type_to_c(ty: &LMIRType, var_name: Option<&str>) -> String {
 }
 
 fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
-    let return_type = if let Some(ref tb) = proto.temp_buffer {
-        lmir_type_to_c(tb, None)
+    let return_type = if proto.signature.return_type.is_void() {
+        "void".to_string()
     } else {
-        lmir_type_to_c(&proto.return_type, None)
+        lmir_type_to_c(&proto.signature.return_type, None)
     };
 
     let params: Vec<String> = proto
+        .signature
         .params
         .iter()
         .enumerate()
-        .filter(|(i, _)| !(proto.temp_buffer.is_some() && *i == 0))
         .map(|(i, param)| {
             let name = param
                 .name

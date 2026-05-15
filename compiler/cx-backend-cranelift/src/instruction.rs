@@ -1,9 +1,8 @@
 use crate::inst_calling::{
-    get_cranelift_abi_types, get_func_ref, get_method_return, prepare_method_call,
-    prepare_parameters,
+    get_func_ref, get_method_return, prepare_function_sig, prepare_method_call, prepare_parameters,
 };
 use crate::routines::get_function;
-use crate::value_type::{get_cranelift_abi_type, get_cranelift_type};
+use crate::value_type::get_cranelift_type;
 use crate::{CodegenValue, FunctionState};
 use cranelift::codegen::ir;
 use cranelift::codegen::ir::stackslot::StackSize;
@@ -18,6 +17,26 @@ use cx_lmir::{
 };
 use cx_util::CXResult;
 use std::ops::IndexMut;
+
+fn load_return_slots(
+    context: &mut FunctionState,
+    target: cranelift::prelude::Value,
+) -> CXResult<Vec<cranelift::prelude::Value>> {
+    let cx_lmir::LMIRReturnABI::Direct { slots } = &context.signature.return_abi else {
+        return Ok(vec![target]);
+    };
+
+    let mut values = Vec::new();
+    for slot in slots.clone() {
+        values.push(context.builder.ins().load(
+            get_cranelift_type(&slot._type)?,
+            MemFlags::new(),
+            target,
+            slot.offset as i32,
+        ));
+    }
+    Ok(values)
+}
 
 pub(crate) fn codegen_instruction(
     context: &mut FunctionState,
@@ -61,21 +80,9 @@ pub(crate) fn codegen_instruction(
         } => {
             let (val, params) = prepare_method_call(context, func_ptr, args)?;
 
-            let mut sig = context.object_module.make_signature();
-            let return_type = &method_sig.return_type;
+            let mut sig = prepare_function_sig(context.object_module, method_sig)?;
 
-            sig.returns = if return_type.is_void() {
-                vec![]
-            } else {
-                get_cranelift_abi_types(return_type)?
-            };
-            sig.params = method_sig
-                .params
-                .iter()
-                .map(|arg| get_cranelift_abi_type(&arg._type))
-                .collect::<CXResult<Vec<_>>>()?;
-
-            for i in method_sig.params.len()..params.len() {
+            for i in method_sig.expanded_param_count()..params.len() {
                 let arg = params[i];
                 let arg_type = context.builder.func.dfg.value_type(arg);
 
@@ -97,7 +104,30 @@ pub(crate) fn codegen_instruction(
             match value {
                 Some(value) => {
                     let return_value = context.get_value(value)?;
-                    context.builder.ins().return_(&[return_value.as_value()]);
+                    match return_value {
+                        CodegenValue::Value(value)
+                            if context.signature.return_type.is_memory_resident()
+                                && matches!(
+                                    context.signature.return_abi,
+                                    cx_lmir::LMIRReturnABI::Direct { .. }
+                                ) =>
+                        {
+                            let values = load_return_slots(context, value)?;
+                            context.builder.ins().return_(values.as_slice())
+                        }
+                        CodegenValue::Value(value) => context.builder.ins().return_(&[value]),
+                        CodegenValue::Aggregate(values) => {
+                            context.builder.ins().return_(values.as_slice())
+                        }
+                        CodegenValue::AggregateSlots(values) => {
+                            let values = values
+                                .into_iter()
+                                .map(|(_, value)| value)
+                                .collect::<Vec<_>>();
+                            context.builder.ins().return_(values.as_slice())
+                        }
+                        CodegenValue::NULL => context.builder.ins().return_(&[]),
+                    };
                 }
                 None => {
                     context.builder.ins().return_(&[]);
@@ -110,27 +140,12 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Load { memory, _type } => {
             let target = context.get_value(memory)?.as_value();
 
-            if let LMIRTypeKind::ABIAggregate { fields } = &_type.kind {
-                let mut values = Vec::new();
-                let mut offset = 0;
-                for field in fields {
-                    values.push(context.builder.ins().load(
-                        get_cranelift_type(field)?,
-                        MemFlags::new(),
-                        target,
-                        offset as i32,
-                    ));
-                    offset += field.size();
-                }
-                CodegenValue::Aggregate(values)
-            } else {
-                CodegenValue::Value(context.builder.ins().load(
-                    get_cranelift_type(_type)?,
-                    MemFlags::new(),
-                    target,
-                    0,
-                ))
-            }
+            CodegenValue::Value(context.builder.ins().load(
+                get_cranelift_type(_type)?,
+                MemFlags::new(),
+                target,
+                0,
+            ))
         }
 
         LMIRInstructionKind::GetFunctionAddr { func } => {
@@ -496,18 +511,18 @@ pub(crate) fn codegen_instruction(
             let target = context.get_value(memory)?.as_value();
             let value = context.get_value(value)?;
 
-            match (&_type.kind, value) {
-                (LMIRTypeKind::ABIAggregate { fields }, CodegenValue::Aggregate(values)) => {
-                    let mut offset = 0;
-                    for (field, value) in fields.iter().zip(values) {
-                        context
-                            .builder
-                            .ins()
-                            .store(MemFlags::new(), value, target, offset as i32);
-                        offset += field.size();
+            match value {
+                CodegenValue::AggregateSlots(values) => {
+                    for (slot, value) in values {
+                        context.builder.ins().store(
+                            MemFlags::new(),
+                            value,
+                            target,
+                            slot.offset as i32,
+                        );
                     }
                 }
-                (_, value) => {
+                value => {
                     context
                         .builder
                         .ins()

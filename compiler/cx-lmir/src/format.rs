@@ -427,15 +427,6 @@ impl Display for LMIRTypeKind {
             LMIRTypeKind::Vector { element, count } => {
                 write!(f, "<{count} x {element}>")
             }
-            LMIRTypeKind::ABIAggregate { fields } => {
-                let fields = fields
-                    .iter()
-                    .map(|_type| format!("{_type}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                write!(f, "abi {{ {fields} }}")
-            }
             LMIRTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
@@ -444,15 +435,6 @@ impl Display for LMIRTypeKind {
                     .join(", ");
 
                 write!(f, "struct {{ {fields} }}")
-            }
-            LMIRTypeKind::Union { fields, .. } => {
-                let fields = fields
-                    .iter()
-                    .map(|(_, _type)| format!("{_type}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                write!(f, "union {{ {fields} }}")
             }
 
             LMIRTypeKind::Unit => write!(f, "()"),

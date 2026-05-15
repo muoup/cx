@@ -16,7 +16,7 @@ pub(crate) fn codegen_fn_prototype(
     global_state: &mut GlobalState,
     prototype: &LMIRFunctionPrototype,
 ) -> CXResult<()> {
-    let sig = prepare_function_sig(&mut global_state.object_module, &prototype.signature())?;
+    let sig = prepare_function_sig(&mut global_state.object_module, prototype.signature())?;
     let linkage = convert_linkage(prototype.linkage);
 
     let id = global_state
@@ -86,6 +86,7 @@ pub(crate) fn codegen_function(
 
         builder,
         pointer_type,
+        signature: bc_func.prototype.signature.clone(),
     };
 
     for fn_block in bc_func.blocks.iter() {
@@ -97,8 +98,14 @@ pub(crate) fn codegen_function(
     let first_block = bc_func.blocks.first().map(|b| &b.id).unwrap();
     let first_block = context.get_block(first_block);
 
-    for arg in bc_func.prototype.params.iter() {
-        let cranelift_type = get_cranelift_type(&arg._type)?;
+    for index in 0..bc_func.prototype.signature.expanded_param_count() {
+        let cranelift_type = get_cranelift_type(
+            &bc_func
+                .prototype
+                .signature
+                .expanded_param_type(index)
+                .unwrap(),
+        )?;
         let arg = context
             .builder
             .append_block_param(first_block, cranelift_type);
